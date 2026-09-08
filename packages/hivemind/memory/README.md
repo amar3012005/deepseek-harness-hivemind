@@ -1,11 +1,11 @@
 # @deepseek-ai/dsh-hivemind-memory
 
-Owns the single `hivemind_meta` read tool. It progressively selects company context, bounded recall, or the exact HyperAgent directory while tenant scope remains server-derived. Recall supports focused source, project, time, tag, media-kind, filename, and entity filters without accepting a tenant identifier.
+Owns compact `hivemind_meta` read routing plus direct `hivemind_save_memory` writes. The meta-tool progressively selects company context, bounded recall, or the exact HyperAgent directory; the direct writer exposes its exact save schema on the first model call. Tenant scope remains server-derived for both.
 
 ## Model Experience
 
-- **Visible tools:** one compact meta-tool.
-- **Prompt cost:** one schema; evidence appears only after invocation.
+- **Visible tools:** one compact read meta-tool and one direct governed writer.
+- **Prompt cost:** two small stable schemas; evidence appears only after invocation.
 - **KV-cache effect:** stable tool schema.
 
 ## Recall filters

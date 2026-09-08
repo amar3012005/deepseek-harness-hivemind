@@ -227,7 +227,7 @@ describe('HIVE-MIND runtime', () => {
     expect(decision.messages[0]?.content[0]?.text).toContain('Before a substantive response')
     expect(decision.messages[0]?.content[0]?.text).toContain('Do not recall for greetings, general knowledge, transformations')
     expect(decision.messages[0]?.content[0]?.text).toContain('valid_at')
-    expect(decision.messages[0]?.content[0]?.text).toContain('Use `save` only for a stable preference')
+    expect(decision.messages[0]?.content[0]?.text).toContain('Use `hivemind_save_memory` only for a stable preference')
     expect(value).toEqual({
       status: 'ready',
       context: expect.stringContaining('Company: Singulance'),
@@ -241,7 +241,7 @@ describe('HIVE-MIND runtime', () => {
     pluginConfig.legacyToolsEnabled = false
     const harness = mount(pluginConfig)
 
-    expect([...harness.tools.keys()]).toEqual(['hivemind_meta'])
+    expect([...harness.tools.keys()]).toEqual(['hivemind_meta', 'hivemind_save_memory'])
     expect(harness.skills.get('hivemind-company-brain')).toMatchObject({
       description: expect.stringContaining('Load only for a company-memory task'),
       content: expect.stringContaining('not a workspace path'),
@@ -408,14 +408,11 @@ describe('HIVE-MIND runtime', () => {
     })])
     const harness = mount(config(path))
 
-    const value = await tool(harness, 'hivemind_meta').execute({
-      operation: 'save',
-      save: {
-        title: 'Approved positioning',
-        content: 'The team confirmed the privacy-first positioning.',
-        source_type: 'decision',
-        tags: ['positioning'],
-      },
+    const value = await tool(harness, 'hivemind_save_memory').execute({
+      title: 'Approved positioning',
+      content: 'The team confirmed the privacy-first positioning.',
+      source_type: 'decision',
+      tags: ['positioning'],
     }, execContext())
     const saveInit = vi.mocked(fetch).mock.calls[3]?.[1]
     const saveBody = JSON.parse(String(saveInit?.body))
@@ -443,17 +440,15 @@ describe('HIVE-MIND runtime', () => {
 
   it('rejects a correction without the exact prior-memory reference', async () => {
     const harness = mount(config(await authorityFile()))
-    await expect(tool(harness, 'hivemind_meta').execute({
-      operation: 'save',
-      save: { title: 'Correction', content: 'Corrected fact.', relationship: 'update' },
+    await expect(tool(harness, 'hivemind_save_memory').execute({
+      title: 'Correction', content: 'Corrected fact.', relationship: 'update',
     }, execContext())).rejects.toThrow('related_to is required when relationship is set')
   })
 
   it('refuses credential-shaped memory content before making a network request', async () => {
     const harness = mount(config(await authorityFile()))
-    await expect(tool(harness, 'hivemind_meta').execute({
-      operation: 'save',
-      save: { title: 'Credential', content: 'api_key: sk_abcdefghijklmnop' },
+    await expect(tool(harness, 'hivemind_save_memory').execute({
+      title: 'Credential', content: 'api_key: sk_abcdefghijklmnop',
     }, execContext())).rejects.toThrow('save refuses credential material')
   })
 
@@ -462,9 +457,8 @@ describe('HIVE-MIND runtime', () => {
     profileResponses([jsonResponse({ id: 'replacement-id' })])
     const harness = mount(config(path))
 
-    await tool(harness, 'hivemind_meta').execute({
-      operation: 'save',
-      save: { title: 'Correction', content: 'Corrected fact.', relationship: 'update', related_to: 'prior-id' },
+    await tool(harness, 'hivemind_save_memory').execute({
+      title: 'Correction', content: 'Corrected fact.', relationship: 'update', related_to: 'prior-id',
     }, execContext())
     const saveBody = JSON.parse(String(vi.mocked(fetch).mock.calls[3]?.[1]?.body))
 
