@@ -1,6 +1,9 @@
 FROM node:24-bookworm-slim AS build
 ENV CI=true
 WORKDIR /opt/deepseek-harness
+RUN apt-get update \
+  && apt-get install --no-install-recommends -y python3 make g++ \
+  && rm -rf /var/lib/apt/lists/*
 RUN corepack enable
 COPY . .
 RUN pnpm install --frozen-lockfile
