@@ -1,0 +1,80 @@
+# HIVE-only final layer over dsh-base + dsh-web-app.
+- id: session-persistence-jsonl
+  disabled: true
+
+- id: workspace
+  disabled: true
+- id: workspace-files
+  disabled: true
+- id: workspace-controller
+  disabled: true
+- id: file-reference-local
+  disabled: true
+- id: directory-picker
+  disabled: true
+- id: plugin-inventory
+  disabled: true
+- id: settings-controller
+  disabled: true
+- id: open-in-app
+  disabled: true
+- id: ui-open-in-app
+  disabled: true
+- id: ui-sidebar
+  disabled: true
+- id: ui-sidebar-right
+  disabled: true
+- id: ui-sidebar-textpreview
+  disabled: true
+- id: ui-sidebar-files
+  disabled: true
+- id: ui-settings
+  disabled: true
+- id: ui-settings-general
+  disabled: true
+- id: ui-settings-models
+  disabled: true
+- id: ui-settings-plugin-inventory
+  disabled: true
+- id: ui-settings-plugins
+  disabled: true
+- id: ui-workspace
+  disabled: true
+
+- id: webserver
+  config:
+    host: 0.0.0.0
+    port: !!js Number(process.env.PORT ?? 3080)
+    compression: gzip
+    compressionLevel: 1
+    compressionThresholdBytes: 1024
+
+- id: agent-presets
+  config:
+    default: hivemind-chat
+    includeShippedRoot: true
+    includeUserRoot: false
+    allowed: [hivemind-chat]
+
+- insert:
+    - id: hivemind-execution-scope
+      name: '@deepseek-ai/dsh-hivemind-execution-scope'
+
+    - id: session-persistence-postgres
+      name: '@deepseek-ai/dsh-session-persistence-postgres'
+      config:
+        connectionStringEnv: DATABASE_URL
+        leaseTtlMs: 30000
+        maxConnections: 10
+
+    - id: hivemind-web-runner
+      name: '@deepseek-ai/dsh-hivemind-web-runner'
+      config:
+        parentOrigins: !!js (process.env.HIVEMIND_PARENT_ORIGINS ?? '').split(',').map(value => value.trim()).filter(Boolean)
+        ticketSecretEnv: HIVE_HARNESS_TICKET_SECRET
+        redisUrlEnv: REDIS_URL
+        redisJtiPrefix: 'hive:harness-ticket:'
+        sessionMaxAgeSeconds: 900
+
+    - id: ui-hivemind-connect
+      name: '@deepseek-ai/dsh-client-ui-hivemind-connect'
