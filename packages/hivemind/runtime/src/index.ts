@@ -28,7 +28,7 @@ export { completedExchanges, recentConversationText } from '@deepseek-ai/dsh-hiv
 export const name = 'hivemind-runtime'
 
 /** Services required to assemble context and expose progressive tools. */
-export const inject = ['tools', 'skills', 'hivemindIdentity']
+export const inject = ['tools', 'skills', 'hivemindIdentity', 'hivemindExecutionScope']
 
 const MAX_RESPONSE_BYTES = 2 * 1024 * 1024
 const MAX_PROFILE_CONTEXT_CHARS = 12_000
