@@ -56,11 +56,16 @@ function config(icarusConfigPath: string): Config {
   }
 }
 
-function mount(pluginConfig: Config): HarnessMock {
+function mount(pluginConfig: Config, attachmentBytes = new TextEncoder().encode('Attached HIVE brochure')): HarnessMock {
   const tools = new Map<string, ToolDefinition>()
   const skills = new Map<string, { description: string; content: string }>()
   const harness: HarnessMock = { tools, skills }
   const ctx = {
+    attachments: {
+      async *readFileStream() {
+        yield attachmentBytes
+      },
+    },
     on(event: string, listener: (payload: unknown, next: () => Promise<unknown>) => Promise<unknown>) {
       if (event === 'agent/pre-step') harness.preStep = listener
       return () => {}
@@ -241,7 +246,7 @@ describe('HIVE-MIND runtime', () => {
     pluginConfig.legacyToolsEnabled = false
     const harness = mount(pluginConfig)
 
-    expect([...harness.tools.keys()]).toEqual(['hivemind_meta', 'hivemind_save_memory'])
+    expect([...harness.tools.keys()]).toEqual(['hivemind_meta', 'hivemind_save_memory', 'hivemind_read_attachment'])
     expect(harness.skills.get('hivemind-company-brain')).toMatchObject({
       description: expect.stringContaining('Load only for a company-memory task'),
       content: expect.stringContaining('not a workspace path'),
@@ -460,6 +465,32 @@ describe('HIVE-MIND runtime', () => {
     const second = JSON.parse(String(vi.mocked(fetch).mock.calls[4]?.[1]?.body))
     expect(first).toMatchObject({ memory_type: 'fact', metadata: { source_type: 'document' } })
     expect(second).toMatchObject({ memory_type: 'fact', metadata: { source_type: 'code' } })
+  })
+
+  it('reads only a file attached by the current chat and returns a bounded window', async () => {
+    const attachment = {
+      attachmentId: 'sha256:brochure' as never,
+      name: 'HIVEMIND Brochure (1).html',
+      bytes: 30,
+    }
+    const attachedAgent = {
+      session: {
+        snapshotEvents: () => [{
+          type: 'user/message', seq: 0, time: 0,
+          data: createUserMessage({ content: [{ type: 'file', attachment }], source: { kind: 'user' } }),
+        }],
+      },
+    } as unknown as Agent
+    const harness = mount(config(await authorityFile()), new TextEncoder().encode('0123456789'))
+
+    await expect(tool(harness, 'hivemind_read_attachment').execute({
+      filename: 'HIVEMIND Brochure (1).html', offset: 3, max_chars: 4,
+    }, execContext(attachedAgent))).resolves.toEqual({
+      status: 'ready', filename: 'HIVEMIND Brochure (1).html', offset: 3,
+      total_chars: 10, truncated: true, content: '3456',
+    })
+    await expect(tool(harness, 'hivemind_read_attachment').execute({ filename: 'not-attached.html' }, execContext(attachedAgent)))
+      .rejects.toThrow('not attached in this chat')
   })
 
   it('returns a terminal skipped receipt when the memory backend deduplicates a write', async () => {

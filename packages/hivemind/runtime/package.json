@@ -27,6 +27,7 @@
   ],
   "license": "MIT",
   "dependencies": {
+    "@deepseek-ai/dsh-attachment": "workspace:^",
     "@deepseek-ai/dsh-hivemind-context": "workspace:^",
     "@deepseek-ai/dsh-hivemind-employee-directory": "workspace:^",
     "@deepseek-ai/dsh-hivemind-identity": "workspace:^",
@@ -37,6 +38,7 @@
   "peerDependencies": {
     "@deepseek-ai/cordis": "workspace:^",
     "@deepseek-ai/dsh-agent": "workspace:^",
+    "@deepseek-ai/dsh-attachment": "workspace:^",
     "@deepseek-ai/dsh-host-webserver": "workspace:^",
     "@deepseek-ai/dsh-hivemind-identity": "workspace:^",
     "@deepseek-ai/dsh-hivemind-execution-scope": "workspace:^",
@@ -49,6 +51,7 @@
   "devDependencies": {
     "@deepseek-ai/cordis": "workspace:^",
     "@deepseek-ai/dsh-agent": "workspace:^",
+    "@deepseek-ai/dsh-attachment": "workspace:^",
     "@deepseek-ai/dsh-host-webserver": "workspace:^",
     "@deepseek-ai/dsh-hivemind-identity": "workspace:^",
     "@deepseek-ai/dsh-hivemind-execution-scope": "workspace:^",

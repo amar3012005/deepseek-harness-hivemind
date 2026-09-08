@@ -6418,6 +6418,9 @@ importers:
 
   packages/hivemind/runtime:
     dependencies:
+      '@deepseek-ai/dsh-attachment':
+        specifier: workspace:^
+        version: link:../../attachment/attachment
       '@deepseek-ai/dsh-hivemind-context':
         specifier: workspace:^
         version: link:../context

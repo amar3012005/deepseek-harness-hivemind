@@ -11,6 +11,8 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import type {} from '@deepseek-ai/dsh-host-webserver'
 import type {} from '@deepseek-ai/dsh-skill'
+import type {} from '@deepseek-ai/dsh-attachment'
+import type { FileAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import { homedir } from 'node:os'
 import { isAbsolute, dirname, join } from 'node:path'
 import { lstat, readFile, rename, writeFile } from 'node:fs/promises'
@@ -28,10 +30,13 @@ export { completedExchanges, recentConversationText } from '@deepseek-ai/dsh-hiv
 export const name = 'hivemind-runtime'
 
 /** Services required to assemble context and expose progressive tools. */
-export const inject = ['tools', 'skills', 'hivemindIdentity', 'hivemindExecutionScope']
+export const inject = ['tools', 'skills', 'attachments', 'hivemindIdentity', 'hivemindExecutionScope']
 
 const MAX_RESPONSE_BYTES = 2 * 1024 * 1024
 const MAX_PROFILE_CONTEXT_CHARS = 12_000
+const MAX_ATTACHMENT_READ_BYTES = 2 * 1024 * 1024
+const DEFAULT_ATTACHMENT_WINDOW_CHARS = 16_000
+const MAX_ATTACHMENT_WINDOW_CHARS = 32_000
 const PROFILE_PATH = '/api/profile'
 const PROFILE_FACTS_PATH = '/api/profiles'
 const PROFILE_CONTEXT_PATH = '/api/profiles/context'
@@ -146,6 +151,44 @@ function nonEmptyString(value: unknown, label: string): string {
 function requireEmptyArgs(value: unknown, label: string): void {
   const args = record(value, label)
   if (Object.keys(args).length > 0) throw new HiveMindRuntimeError(`${label} accepts no arguments`)
+}
+
+/** Find a file explicitly attached by the user in this chat. */
+function chatAttachment(agent: Agent, filename: string): FileAttachmentRef {
+  let match: FileAttachmentRef | undefined
+  for (const event of agent.session.snapshotEvents()) {
+    if (event.type !== 'user/message' || event.data.source.kind !== 'user') continue
+    for (const block of event.data.content) {
+      if (block.type === 'file' && block.attachment.name === filename) match = block.attachment
+    }
+  }
+  if (match === undefined) throw new HiveMindRuntimeError('that file is not attached in this chat')
+  if (match.bytes > MAX_ATTACHMENT_READ_BYTES) {
+    throw new HiveMindRuntimeError(`attachment exceeds the ${MAX_ATTACHMENT_READ_BYTES} byte reading limit`)
+  }
+  return match
+}
+
+/** Read an attached UTF-8 file without granting access to a host path. */
+async function attachmentText(ctx: Context, ref: FileAttachmentRef, signal: AbortSignal): Promise<string> {
+  const chunks: Uint8Array[] = []
+  let size = 0
+  for await (const chunk of ctx.attachments.readFileStream(ref, signal)) {
+    size += chunk.byteLength
+    if (size > MAX_ATTACHMENT_READ_BYTES) throw new HiveMindRuntimeError(`attachment exceeds the ${MAX_ATTACHMENT_READ_BYTES} byte reading limit`)
+    chunks.push(chunk)
+  }
+  const bytes = new Uint8Array(size)
+  let offset = 0
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset)
+    offset += chunk.byteLength
+  }
+  try {
+    return new TextDecoder('utf-8', { fatal: true }).decode(bytes)
+  } catch (error: unknown) {
+    throw new HiveMindRuntimeError('attachment is not a UTF-8 text file', { cause: error })
+  }
 }
 
 
@@ -710,6 +753,39 @@ export function apply(ctx: Context, config: Config): void {
         }),
       }, signal, config)
       return compactSaveReceipt(apiRecord(result, 'meta save response'))
+    },
+  }))
+
+  ctx.tools.register(defineTool({
+    name: 'hivemind_read_attachment',
+    description: 'Read a text file explicitly attached by the user in this HIVE-MIND chat. Use before summarizing, extracting facts, or saving information from that file. This tool can read only chat attachments, never local filesystem paths.',
+    parameters: {
+      filename: { type: 'string', required: true, description: 'Exact displayed attachment filename.' },
+      offset: { type: 'integer', description: 'Zero-based character offset. Defaults to 0.' },
+      max_chars: { type: 'integer', description: `Maximum returned characters, from 1 to ${MAX_ATTACHMENT_WINDOW_CHARS}.` },
+    },
+    output: jsonOutput,
+    isConcurrencySafe: () => true,
+    async execute(args, exec) {
+      const input = record(args, 'attachment read arguments')
+      const filename = nonEmptyString(input['filename'], 'attachment filename')
+      const rawOffset = input['offset'] ?? 0
+      const rawMaxChars = input['max_chars'] ?? DEFAULT_ATTACHMENT_WINDOW_CHARS
+      if (!Number.isInteger(rawOffset) || (rawOffset as number) < 0) throw new HiveMindRuntimeError('attachment offset must be a non-negative integer')
+      if (!Number.isInteger(rawMaxChars) || (rawMaxChars as number) < 1 || (rawMaxChars as number) > MAX_ATTACHMENT_WINDOW_CHARS) {
+        throw new HiveMindRuntimeError(`attachment max_chars must be an integer from 1 to ${MAX_ATTACHMENT_WINDOW_CHARS}`)
+      }
+      const text = await attachmentText(ctx, chatAttachment(requireAgent(exec.agent), filename), exec.signal)
+      const offset = rawOffset as number
+      const maxChars = rawMaxChars as number
+      return {
+        status: 'ready',
+        filename,
+        offset,
+        total_chars: text.length,
+        truncated: offset + maxChars < text.length,
+        content: text.slice(offset, offset + maxChars),
+      }
     },
   }))
 

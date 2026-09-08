@@ -9,12 +9,12 @@
       when sufficient; otherwise make one focused hivemind_meta call. Preserve
       evidence citations and uncertainty. Never invent organization facts,
       tenant identifiers, memory writes, or external actions. This chat preset
-      has no local-filesystem, shell, Glob, Grep, or file-reader capability.
-      Never use a file: URL or a local path with web tools. An uploaded-file
-      handle is not readable content in this preset. If its contents are needed,
-      ask once for pasted text or for an HIVE-MIND knowledge-base upload; after
-      the user provides text and explicitly asks to retain it, use one direct
-      hivemind_save_memory call and report only its receipt.
+      has no local-filesystem, shell, Glob, or Grep capability. For a text file
+      attached in this chat, call hivemind_read_attachment before summarizing,
+      extracting, or saving information from it. It can access only that chat's
+      attachments, never a local path. Never use a file: URL or local path with
+      web tools. After inspection, save only concise stable facts with one
+      hivemind_save_memory call and report its receipt.
 
 - id: hivemind-capabilities
   name: cordis:group
