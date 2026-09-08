@@ -3,7 +3,10 @@
 Build the repository-owned runner from the committed `singulance-chat` branch:
 
 ```sh
-docker build -f deploy/hivemind-chat/Dockerfile -t hivemind/harness-chat:local .
+docker build \
+  --build-arg DSH_CLIENT_COMMIT_HASH="$(git rev-parse HEAD)" \
+  -f deploy/hivemind-chat/Dockerfile \
+  -t hivemind/harness-chat:local .
 ```
 
 The image launches only `dsh --profile hivemind-web`; it does not add another Node application entrypoint. Required runtime values are `DATABASE_URL`, `REDIS_URL`, `HIVE_HARNESS_TICKET_SECRET`, and `HIVEMIND_PARENT_ORIGINS` (comma-separated exact parent origins). The runner listens on `PORT` (default `3080`) and reports PostgreSQL plus Redis readiness at `/health`.

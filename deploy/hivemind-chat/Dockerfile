@@ -1,12 +1,17 @@
 FROM node:24-bookworm-slim AS build
+ARG DSH_CLIENT_COMMIT_HASH
 ENV CI=true
+ENV DSH_CLIENT_COMMIT_HASH=${DSH_CLIENT_COMMIT_HASH}
 WORKDIR /opt/deepseek-harness
 RUN apt-get update \
   && apt-get install --no-install-recommends -y python3 make g++ \
   && rm -rf /var/lib/apt/lists/*
 RUN corepack enable
 COPY . .
-RUN pnpm install --frozen-lockfile
+RUN test -n "${DSH_CLIENT_COMMIT_HASH}"
+RUN --mount=type=cache,id=deepseek-harness-pnpm,target=/pnpm/store \
+  pnpm config set store-dir /pnpm/store \
+  && pnpm install --frozen-lockfile
 RUN pnpm run build
 
 FROM node:24-bookworm-slim AS runtime
