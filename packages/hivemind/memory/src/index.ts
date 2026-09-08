@@ -21,7 +21,7 @@ export interface RecallRequest {
 export interface SaveRequest {
   title: string
   content: string
-  sourceType: 'text' | 'conversation' | 'documentation' | 'decision'
+  sourceType: 'text' | 'code' | 'conversation' | 'document' | 'documentation' | 'decision'
   tags?: string[]
   project?: string
   relationship?: 'update' | 'extend' | 'derive'
@@ -151,7 +151,7 @@ export function memoryPlugin(config: MemoryPluginConfig, provider: MemoryProvide
         parameters: {
           title: { type: 'string', required: true },
           content: { type: 'string', required: true },
-          source_type: { type: 'string', enum: ['text', 'conversation', 'documentation', 'decision'] },
+          source_type: { type: 'string', enum: ['text', 'code', 'conversation', 'document', 'documentation', 'decision'] },
           tags: { type: 'array', items: { type: 'string' } },
           project: { type: 'string' },
           relationship: { type: 'string', enum: ['update', 'extend', 'derive'] },
@@ -163,7 +163,7 @@ export function memoryPlugin(config: MemoryPluginConfig, provider: MemoryProvide
           if (execution.agent === undefined) throw new TypeError('hivemind-memory: active agent required')
           const input = object(args, 'save')
           const sourceType = text(input['source_type'] ?? 'text', 'source_type')
-          if (!['text', 'conversation', 'documentation', 'decision'].includes(sourceType)) throw new TypeError('hivemind-memory: source_type is unsupported')
+          if (!['text', 'code', 'conversation', 'document', 'documentation', 'decision'].includes(sourceType)) throw new TypeError('hivemind-memory: source_type is unsupported')
           const relationship = input['relationship'] === undefined ? undefined : text(input['relationship'], 'relationship')
           if (relationship !== undefined && !['update', 'extend', 'derive'].includes(relationship)) throw new TypeError('hivemind-memory: relationship is unsupported')
           const relatedTo = input['related_to'] === undefined ? undefined : text(input['related_to'], 'related_to')

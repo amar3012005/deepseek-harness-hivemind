@@ -441,6 +441,27 @@ describe('HIVE-MIND runtime', () => {
     expect(JSON.stringify(value)).not.toContain('org-1')
   })
 
+  it('accepts document and code source types from the direct HIVE writer schema', async () => {
+    const path = await authorityFile()
+    profileResponses([
+      jsonResponse({ id: 'document-memory', title: 'Brochure', memory_type: 'fact' }),
+      jsonResponse({ id: 'code-memory', title: 'Example', memory_type: 'fact' }),
+    ])
+    const harness = mount(config(path))
+
+    await tool(harness, 'hivemind_save_memory').execute({
+      title: 'Brochure', content: '<main>HIVE-MIND</main>', source_type: 'document',
+    }, execContext())
+    await tool(harness, 'hivemind_save_memory').execute({
+      title: 'Example', content: 'const hive = true', source_type: 'code',
+    }, execContext())
+
+    const first = JSON.parse(String(vi.mocked(fetch).mock.calls[3]?.[1]?.body))
+    const second = JSON.parse(String(vi.mocked(fetch).mock.calls[4]?.[1]?.body))
+    expect(first).toMatchObject({ memory_type: 'fact', metadata: { source_type: 'document' } })
+    expect(second).toMatchObject({ memory_type: 'fact', metadata: { source_type: 'code' } })
+  })
+
   it('returns a terminal skipped receipt when the memory backend deduplicates a write', async () => {
     const path = await authorityFile()
     profileResponses([jsonResponse({ success: true, skipped: true, mutation: { operation: 'skipped_redundant' } })])

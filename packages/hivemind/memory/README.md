@@ -4,7 +4,7 @@ Owns compact `hivemind_meta` read routing plus direct `hivemind_save_memory` wri
 
 ## Model Experience
 
-- **Visible tools:** one compact read meta-tool and one direct governed writer.
+- **Visible tools:** one compact read meta-tool and one direct governed writer. The writer accepts `text`, `code`, `conversation`, `document`, `documentation`, and `decision` source types; `document` is retained as the short form used by HIVE-MIND document-save requests.
 - **Prompt cost:** two small stable schemas; evidence appears only after invocation.
 - **KV-cache effect:** stable tool schema.
 
