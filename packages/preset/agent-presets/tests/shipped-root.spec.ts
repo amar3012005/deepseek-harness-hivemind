@@ -89,7 +89,7 @@ describe('the shipped preset root', () => {
     const ctx = await roster({ includeUserRoot: false })
 
     const listed = await ctx.agentPresets.list()
-    expect(listed.map(preset => preset.id).sort()).toEqual(['cordis', 'hivemind', 'minimal', 'ptc', 'standard'])
+    expect(listed.map(preset => preset.id).sort()).toEqual(['cordis', 'hivemind', 'hivemind-chat', 'hyperagents', 'minimal', 'ptc', 'standard'])
     expect(listed.every(preset => preset.trust === 'system')).toBe(true)
     // Not `broken === undefined`: health asks whether each row's package is
     // installed above the base, and the shipped rows name packages the
@@ -165,5 +165,13 @@ describe('the shipped preset root', () => {
       watch: false,
     })
     expect(findEntry(hivemind, 'tool-skill')?.disabled).not.toBe(true)
+  })
+
+  it('keeps the complete Standard tool composition while adding scoped company-brain access to HyperAgents', async () => {
+    const hyperagents = await shippedEntries('hyperagents')
+    expect(findEntry(hyperagents, 'tool-subagent')?.disabled).not.toBe(true)
+    expect(findEntry(hyperagents, 'tool-workflow')?.disabled).not.toBe(true)
+    expect(findEntry(hyperagents, 'tool-skill')?.disabled).not.toBe(true)
+    expect(findEntry(hyperagents, 'hivemind-runtime')?.disabled).not.toBe(true)
   })
 })
