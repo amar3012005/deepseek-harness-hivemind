@@ -28,10 +28,18 @@ export interface SaveRequest {
   relatedTo?: string
 }
 
+/** A request to retain a user-attached text document without exposing it to the model. */
+export interface SaveAttachmentRequest {
+  filename: string
+  title?: string
+  tags?: string[]
+}
+
 export interface MemoryProvider {
   context(agent: Agent, signal: AbortSignal): Promise<Record<string, JsonValue>>
   recall(request: RecallRequest, signal: AbortSignal): Promise<Record<string, JsonValue>>
   save(agent: Agent, request: SaveRequest, signal: AbortSignal): Promise<Record<string, JsonValue>>
+  saveAttachment?(agent: Agent, request: SaveAttachmentRequest, signal: AbortSignal): Promise<Record<string, JsonValue>>
   profiles(signal: AbortSignal): Promise<Record<string, JsonValue>>
 }
 
@@ -60,7 +68,7 @@ function boundedText(value: unknown, label: string, maxChars: number): string {
 }
 
 /** Refuse obvious credential material before it can leave the Harness process. */
-function containsCredentialMaterial(value: string): boolean {
+export function containsCredentialMaterial(value: string): boolean {
   return [
     /-----BEGIN(?: [A-Z]+)? PRIVATE KEY-----/i,
     /\b(?:api[ _-]?key|access[ _-]?token|auth(?:entication)?[ _-]?token|password|secret)\s*[:=]\s*\S+/i,
@@ -184,6 +192,30 @@ export function memoryPlugin(config: MemoryPluginConfig, provider: MemoryProvide
             throw new TypeError('hivemind-memory: save refuses credential material')
           }
           return provider.save(execution.agent, request, execution.signal)
+        },
+      }))
+      if (provider.saveAttachment !== undefined) ctx.tools.register(defineTool({
+        name: 'hivemind_save_attachment',
+        description: 'Save one text or HTML file that the user attached in this chat into authenticated HIVE-MIND memory. Use only when the user explicitly asks to retain that exact attachment. Supply its exact displayed filename; this tool reads the durable attachment server-side and never accepts local paths or content pasted by the model.',
+        parameters: {
+          filename: { type: 'string', required: true },
+          title: { type: 'string' },
+          tags: { type: 'array', items: { type: 'string' } },
+        },
+        output,
+        isConcurrencySafe: () => false,
+        async execute(args, execution) {
+          if (execution.agent === undefined) throw new TypeError('hivemind-memory: active agent required')
+          const input = object(args, 'save attachment')
+          const tags = strings(input['tags'], 'tags')
+          if (tags !== undefined && tags.length > 50) throw new TypeError('hivemind-memory: tags may contain at most 50 items')
+          const request: SaveAttachmentRequest = {
+            filename: boundedText(input['filename'], 'filename', 255),
+            ...input['title'] === undefined ? {} : { title: boundedText(input['title'], 'title', 500) },
+            ...tags === undefined ? {} : { tags },
+          }
+          return provider.saveAttachment?.(execution.agent, request, execution.signal)
+            ?? Promise.reject(new TypeError('hivemind-memory: attachment save is unavailable'))
         },
       }))
     },

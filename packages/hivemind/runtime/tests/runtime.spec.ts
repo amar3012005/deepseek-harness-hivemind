@@ -56,11 +56,16 @@ function config(icarusConfigPath: string): Config {
   }
 }
 
-function mount(pluginConfig: Config): HarnessMock {
+function mount(pluginConfig: Config, attachmentBytes = new TextEncoder().encode('<main>Attached HIVE brochure</main>')): HarnessMock {
   const tools = new Map<string, ToolDefinition>()
   const skills = new Map<string, { description: string; content: string }>()
   const harness: HarnessMock = { tools, skills }
   const ctx = {
+    attachments: {
+      async *readFileStream() {
+        yield attachmentBytes
+      },
+    },
     on(event: string, listener: (payload: unknown, next: () => Promise<unknown>) => Promise<unknown>) {
       if (event === 'agent/pre-step') harness.preStep = listener
       return () => {}
@@ -241,7 +246,7 @@ describe('HIVE-MIND runtime', () => {
     pluginConfig.legacyToolsEnabled = false
     const harness = mount(pluginConfig)
 
-    expect([...harness.tools.keys()]).toEqual(['hivemind_meta', 'hivemind_save_memory'])
+    expect([...harness.tools.keys()]).toEqual(['hivemind_meta', 'hivemind_save_memory', 'hivemind_save_attachment'])
     expect(harness.skills.get('hivemind-company-brain')).toMatchObject({
       description: expect.stringContaining('Load only for a company-memory task'),
       content: expect.stringContaining('not a workspace path'),
@@ -460,6 +465,66 @@ describe('HIVE-MIND runtime', () => {
     const second = JSON.parse(String(vi.mocked(fetch).mock.calls[4]?.[1]?.body))
     expect(first).toMatchObject({ memory_type: 'fact', metadata: { source_type: 'document' } })
     expect(second).toMatchObject({ memory_type: 'fact', metadata: { source_type: 'code' } })
+  })
+
+  it('saves an explicitly named text attachment without exposing a local path or its content to the model', async () => {
+    const path = await authorityFile()
+    profileResponses([jsonResponse({
+      success: true,
+      memory: { id: 'brochure-memory', title: 'HIVEMIND Brochure (1).html', memory_type: 'fact', citation_id: 'memory:brochure-memory' },
+    })])
+    const attachment = {
+      attachmentId: 'sha256:brochure' as never,
+      name: 'HIVEMIND Brochure (1).html',
+      bytes: 36,
+    }
+    const attachedAgent = {
+      session: {
+        snapshotEvents: () => [{
+          type: 'user/message', seq: 0, time: 0,
+          data: createUserMessage({ content: [{ type: 'file', attachment }], source: { kind: 'user' } }),
+        }],
+      },
+    } as unknown as Agent
+    const harness = mount(config(path), new TextEncoder().encode('<main>Attached HIVE brochure</main>'))
+
+    const value = await tool(harness, 'hivemind_save_attachment').execute({
+      filename: 'HIVEMIND Brochure (1).html', tags: ['brochure', 'marketing'],
+    }, execContext(attachedAgent))
+    const body = JSON.parse(String(vi.mocked(fetch).mock.calls[3]?.[1]?.body))
+
+    expect(body).toMatchObject({
+      title: 'HIVEMIND Brochure (1).html',
+      content: '<main>Attached HIVE brochure</main>',
+      memory_type: 'fact',
+      tags: ['brochure', 'marketing', 'attachment', 'filename:HIVEMIND Brochure (1).html'],
+      metadata: { source_type: 'document', governed: true, attachment_id: 'sha256:brochure' },
+      user_id: 'user-1', org_id: 'org-1', smartIngest: true, sync: true,
+    })
+    expect(value).toEqual({
+      status: 'saved', id: 'brochure-memory', title: 'HIVEMIND Brochure (1).html', memory_type: 'fact', citation_id: 'memory:brochure-memory',
+    })
+    expect(JSON.stringify(tool(harness, 'hivemind_save_attachment').parameters)).not.toContain('path')
+  })
+
+  it('refuses unsupported attachment types before it reads or writes them', async () => {
+    const attachment = {
+      attachmentId: 'sha256:pdf' as never,
+      name: 'Brochure.pdf',
+      bytes: 20,
+    }
+    const attachedAgent = {
+      session: {
+        snapshotEvents: () => [{
+          type: 'user/message', seq: 0, time: 0,
+          data: createUserMessage({ content: [{ type: 'file', attachment }], source: { kind: 'user' } }),
+        }],
+      },
+    } as unknown as Agent
+    const harness = mount(config(await authorityFile()))
+
+    await expect(tool(harness, 'hivemind_save_attachment').execute({ filename: 'Brochure.pdf' }, execContext(attachedAgent)))
+      .rejects.toThrow('attachment type is unsupported')
   })
 
   it('returns a terminal skipped receipt when the memory backend deduplicates a write', async () => {
