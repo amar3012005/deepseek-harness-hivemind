@@ -30,11 +30,12 @@ export function HivemindConnect({ wide, t, readStatus, start, disconnect }: Hive
     }
     void refresh()
     const timer = window.setInterval(() => { void refresh() }, status === 'connecting' ? 1_500 : 15_000)
-    window.addEventListener('focus', refresh)
+    const focus = (): void => { void refresh() }
+    window.addEventListener('focus', focus)
     return () => {
       active = false
       window.clearInterval(timer)
-      window.removeEventListener('focus', refresh)
+      window.removeEventListener('focus', focus)
     }
   }, [readStatus, status])
 

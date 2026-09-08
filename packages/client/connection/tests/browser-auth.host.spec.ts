@@ -91,6 +91,29 @@ afterEach(() => {
 })
 
 describe('BrowserAuth', () => {
+  it('keeps native cookies Strict and external principals inert until explicitly granted', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-09-08T12:00:00.000Z'))
+    const auth = await createAuth(new RecordCredentials())
+    const native = exchange(auth)
+    expect(native.state.headers?.['set-cookie']).toMatch(/HttpOnly; SameSite=Strict$/u)
+    expect(native.state.headers?.['set-cookie']).not.toContain('Secure')
+    expect(auth.principal(request('/', '127.0.0.1:3080', { cookie: native.cookie }))).toBeUndefined()
+
+    const grant = auth.authorizePrincipal(
+      request('/', 'chat.example'),
+      { user_id: 'user-1', org_id: 'org-1', profile: 'hivemind-chat' },
+      Date.now() + 15 * 60 * 1000,
+    )
+    expect(grant).toMatch(/HttpOnly; Secure; SameSite=None$/u)
+    const cookie = grant.split(';', 1)[0] as string
+    expect(auth.isAuthenticated(request('/', 'chat.example', { cookie }))).toBe(true)
+    expect(auth.principal(request('/', 'chat.example', { cookie }))).toEqual({
+      user_id: 'user-1', org_id: 'org-1', profile: 'hivemind-chat',
+    })
+    expect(auth.isAuthenticated(request('/', 'other.example', { cookie }))).toBe(false)
+  })
+
   it('mints one process token and a persistent authority-bound cookie', async () => {
     const store = new RecordCredentials()
     const processOwner = {}
