@@ -127,6 +127,11 @@
     "scripts/client-bundle-purity.spec.ts"
   ],
   "references": [
+    { "path": "./packages/hivemind/identity" },
+    { "path": "./packages/hivemind/context" },
+    { "path": "./packages/hivemind/memory" },
+    { "path": "./packages/hivemind/employee-directory" },
+    { "path": "./packages/hivemind/runtime" },
     { "path": "./vendor/cosmokit" },
     { "path": "./vendor/schemastery" },
     { "path": "./vendor/cordis" },
