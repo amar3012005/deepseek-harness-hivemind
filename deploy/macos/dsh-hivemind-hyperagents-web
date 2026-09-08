@@ -6,10 +6,10 @@ mkdir -p "$ROOT/.runtime/logs"
 cd "$ROOT"
 
 # Keep the origin private and admit the public Cloudflare hostname through the
-# native browser-trust fence. The Cloudflare key stays in the logged-in user's
-# launchd environment; it is deliberately neither committed nor written into
-# this job definition.
-export CLOUDFLARE_API_KEY="$(/bin/launchctl getenv CLOUDFLARE_API_KEY)"
+# native browser-trust fence. The Cloudflare key is read only at launch from
+# the logged-in user's Keychain; it is deliberately neither committed nor
+# written into this job definition.
+export CLOUDFLARE_API_KEY="$(/usr/bin/security find-generic-password -a amar -s com.singulance.deepseek-hivemind.cloudflare-api-key -w)"
 
 exec /opt/homebrew/bin/pnpm dsh web --no-open --host 127.0.0.1 --port 3094 \
   --trusted-host deepseek.singulancelabs.com
