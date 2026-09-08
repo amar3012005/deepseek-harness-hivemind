@@ -163,6 +163,10 @@ class TestPersistence extends SessionPersistence {
   }
 }
 
+class AuthoritativeTestPersistence extends TestPersistence {
+  override readonly authoritativeVisibility: boolean = true
+}
+
 async function liveContext(config: ConstructorParameters<typeof TestSessionQueryEngine>[1] = {}): Promise<Context> {
   const ctx = new Context()
   await ctx.plugin(SessionStore)
@@ -1156,6 +1160,24 @@ describe('session-query exact reads', () => {
     expect(TestPersistence.readSignals).toEqual([])
     await expect(ctx.sessionQuery.listSessions()).rejects.toThrow(expectCode('SESSION_QUERY_PERSISTENCE_FAILED'))
     await expect(ctx.sessionQuery.listEvents(SessionId('durable'))).rejects.toThrow(expectCode('SESSION_QUERY_PERSISTENCE_FAILED'))
+  })
+
+  it('does not expose process-global live sessions outside an authoritative persistence view', async () => {
+    TestPersistence.reset()
+    const ctx = await liveContext()
+    const live = ctx.sessions.create(SessionId('other-tenant-live'))
+    live.append('turn/start', { turn: 1 })
+    await ctx.plugin(AuthoritativeTestPersistence)
+
+    await expect(ctx.sessionQuery.listSessions()).resolves.toEqual([])
+    await expect(ctx.sessionQuery.readSession(live.id))
+      .rejects.toThrow(expectCode('SESSION_QUERY_SESSION_NOT_FOUND'))
+
+    TestPersistence.entries.set(live.id, { meta: structuredClone(live.header), events: [...live.snapshotEvents()] })
+    await expect(ctx.sessionQuery.listSessions()).resolves.toEqual([
+      { header: live.header, live: true, persisted: true },
+    ])
+    await expect(ctx.sessionQuery.readSession(live.id)).resolves.toMatchObject({ session: live.header })
   })
 
   it('wraps persisted corruption as SESSION_QUERY_CORRUPT_SESSION with its cause preserved', async () => {

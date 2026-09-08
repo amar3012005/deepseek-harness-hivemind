@@ -133,6 +133,15 @@ declare module '@deepseek-ai/cordis' {
  * on this backend instance observe at least that prefix.
  */
 export abstract class SessionPersistence extends Service {
+  /**
+   * When true, the persistence listing is the authority for whether an
+   * attached in-memory Session is visible to the current request. Scoped
+   * multi-tenant providers enable this so process-global live Sessions cannot
+   * bypass their request-local ownership policy. Ordinary native providers
+   * retain live-first behavior.
+   */
+  readonly authoritativeVisibility: boolean = false
+
   constructor(ctx: Context) {
     super(ctx, 'sessionPersistence')
   }

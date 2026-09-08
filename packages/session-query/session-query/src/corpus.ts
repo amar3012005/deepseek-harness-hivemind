@@ -69,6 +69,7 @@ export class SessionCorpus {
     }
     for (const session of this._ctx.sessions.list()) {
       const durable = records.get(session.id)
+      if (persistence?.authoritativeVisibility === true && durable === undefined) continue
       if (durable !== undefined) assertSessionHeadersCompatible(session.header, durable.header)
       records.set(session.id, {
         header: structuredClone(session.header),
@@ -91,12 +92,12 @@ export class SessionCorpus {
   async load(sessionId: SessionId, signal?: AbortSignal): Promise<LogicalSession> {
     signal?.throwIfAborted()
     const live = this._ctx.sessions.get(sessionId)
-    if (live !== undefined) {
+    const persistence = this._persistence
+    if (live !== undefined && persistence?.authoritativeVisibility !== true) {
       const snapshot = snapshotLive(live)
       signal?.throwIfAborted()
       return snapshot
     }
-    const persistence = this._persistence
     if (persistence === undefined) throw notFound(sessionId)
     const listed = (await listPersisted(persistence, signal)).find(header => header.id === sessionId)
     signal?.throwIfAborted()
@@ -138,9 +139,10 @@ export class SessionCorpus {
     signal?.throwIfAborted()
     const resolved = new Map<SessionId, LogicalProjectionResult<Value>>()
     const unresolved: SessionId[] = []
+    const persistence = this._persistence
     for (const id of ids) {
       const session = this._ctx.sessions.get(id)
-      if (session === undefined) {
+      if (session === undefined || persistence?.authoritativeVisibility === true) {
         unresolved.push(id)
       } else {
         resolved.set(id, projectSource(id, sourceLive(session), project, signal))
@@ -148,7 +150,6 @@ export class SessionCorpus {
     }
     if (unresolved.length === 0) return orderedResults(ids, resolved)
 
-    const persistence = this._persistence
     if (persistence === undefined) {
       for (const sessionId of unresolved) {
         resolved.set(sessionId, { sessionId, status: 'rejected', reason: notFound(sessionId) })
@@ -172,7 +173,7 @@ export class SessionCorpus {
       const listed = persistedById.get(sessionId)
       if (listed === undefined) {
         const attached = this._ctx.sessions.get(sessionId)
-        resolved.set(sessionId, attached === undefined
+        resolved.set(sessionId, attached === undefined || persistence.authoritativeVisibility === true
           ? { sessionId, status: 'rejected', reason: notFound(sessionId) }
           : projectSource(sessionId, sourceLive(attached), project, signal))
         return

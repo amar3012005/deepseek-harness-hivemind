@@ -106,6 +106,14 @@ export type ConnectionRpcHandler = (
 /** Synchronous ownership test for one endpoint on a shared RPC channel. */
 export type ConnectionRpcEndpointMatcher = (endpoint: string) => boolean
 
+/** Optional profile-specific authorization check run after RPC decoding. */
+export type ConnectionPrincipalRpcGuard = (
+  principal: Readonly<Record<string, string>>,
+  endpoint: string,
+  args: Readonly<Record<string, unknown>>,
+  signal: AbortSignal,
+) => Promise<ConnectionRpcFailure | undefined> | ConnectionRpcFailure | undefined
+
 /** HTTP methods supported by exact Fetch routes on the shared API channel. */
 export type ConnectionFetchMethod = 'GET' | 'HEAD' | 'POST'
 
@@ -197,6 +205,38 @@ export interface HostConnectionHandle {
    * @returns root URL accepted by {@link authorizeIndex} for initial login.
    */
   authenticatedUrl(baseUrl: string): string
+
+  /**
+   * Mint an authority-bound browser cookie for an already verified external principal.
+   * Profile-specific bootstrap routes own verification before calling this method.
+   * @param request - request whose Host authority binds the cookie.
+   * @param principal - JSON identity retained inside the signed cookie.
+   * @param expiresAt - absolute cookie expiry in Unix epoch milliseconds.
+   * @returns the complete Secure HttpOnly Set-Cookie value.
+   */
+  authorizePrincipal(
+    request: ConnectionTrustRequest,
+    principal: Readonly<Record<string, string>>,
+    expiresAt: number,
+  ): string
+
+  /**
+   * Read the verified external principal for one authenticated request.
+   * @param request - request carrying the authority-bound cookie.
+   * @returns detached principal fields, or undefined for native launch-token sessions.
+   */
+  principal(request: ConnectionTrustRequest): Readonly<Record<string, string>> | undefined
+
+  /** Register the sole profile-specific principal propagation owner. */
+  registerPrincipalScope(
+    run: <T>(principal: Readonly<Record<string, string>>, action: () => T) => T,
+  ): () => void
+
+  /** Register the sole profile-specific authorization check for decoded RPC calls. */
+  registerPrincipalRpcGuard(guard: ConnectionPrincipalRpcGuard): () => void
+
+  /** Run one authenticated dispatch inside its optional profile-specific principal scope. */
+  runInPrincipalScope<T>(request: ConnectionTrustRequest, action: () => T): T
 }
 
 /** Transport-independent Fetch handler used by HTTP and worker carriers. */

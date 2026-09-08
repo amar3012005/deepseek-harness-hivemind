@@ -21,6 +21,7 @@ import type {
   ConnectionRpcEndpointMatcher,
   ConnectionRpcFailure,
   ConnectionRpcHandler,
+  ConnectionPrincipalRpcGuard,
   ConnectionRpcResult,
   ConnectionRequestRejection,
   ConnectionTrustRequest,
@@ -60,6 +61,8 @@ declare module '@deepseek-ai/cordis' {
 export class HostConnectionService extends Service implements HostConnectionHandle {
   private readonly interceptors = new Map<string, ConnectionRpcInterceptor>()
   private readonly fetchRoutes = new Map<string, RegisteredFetchRoute>()
+  private principalScope: (<T>(principal: Readonly<Record<string, string>>, action: () => T) => T) | undefined
+  private principalRpcGuard: ConnectionPrincipalRpcGuard | undefined
 
   /**
    * Provide the Host half over the active HTTP server.
@@ -109,6 +112,39 @@ export class HostConnectionService extends Service implements HostConnectionHand
     return this.browserAuth.authenticatedUrl(baseUrl)
   }
 
+  /** Mint an embedded-session cookie only after the caller verifies its external grant. */
+  authorizePrincipal(
+    request: ConnectionTrustRequest,
+    principal: Readonly<Record<string, string>>,
+    expiresAt: number,
+  ): string {
+    return this.browserAuth.authorizePrincipal(request, principal, expiresAt)
+  }
+
+  /** Read the verified principal attached to the current browser session. */
+  principal(request: ConnectionTrustRequest): Readonly<Record<string, string>> | undefined {
+    return this.browserAuth.principal(request)
+  }
+
+  /** Register one optional profile-specific principal propagation owner. */
+  registerPrincipalScope(run: <T>(principal: Readonly<Record<string, string>>, action: () => T) => T): () => void {
+    if (this.principalScope !== undefined) throw new Error('connection: principal scope is already registered')
+    this.principalScope = run
+    return () => { if (this.principalScope === run) this.principalScope = undefined }
+  }
+
+  /** Register one optional decoded-RPC authorization owner. */
+  registerPrincipalRpcGuard(guard: ConnectionPrincipalRpcGuard): () => void {
+    if (this.principalRpcGuard !== undefined) throw new Error('connection: principal RPC guard is already registered')
+    this.principalRpcGuard = guard
+    return () => { if (this.principalRpcGuard === guard) this.principalRpcGuard = undefined }
+  }
+
+  /** Run a dispatch under its signed external principal when one exists. */
+  runInPrincipalScope<T>(request: ConnectionTrustRequest, action: () => T): T {
+    const principal = this.browserAuth.principal(request)
+    return principal === undefined || this.principalScope === undefined ? action() : this.principalScope(principal, action)
+  }
   /**
    * Compose one shared-channel Fetch handler from exact routes and its interceptor.
    * @param channel - shared channel mounted by Connection.
@@ -161,7 +197,8 @@ export class HostConnectionService extends Service implements HostConnectionHand
     handler: ConnectionRpcHandler,
   ): () => Promise<void> {
     assertChannel(channel)
-    const fetchHandler = rpcFetchHandler(channel, handler)
+    const fetchHandler = rpcFetchHandler(channel, handler, (request, endpoint, args, signal) =>
+      this.guardPrincipalRpc(request, endpoint, args, signal))
     const route: WebRoute = {
       kind: 'prefix',
       path: channel,
@@ -192,7 +229,8 @@ export class HostConnectionService extends Service implements HostConnectionHand
     }
     const interceptor: ConnectionRpcInterceptor = {
       matches,
-      fetchHandler: rpcFetchHandler(channel, handler),
+      fetchHandler: rpcFetchHandler(channel, handler, (request, endpoint, args, signal) =>
+        this.guardPrincipalRpc(request, endpoint, args, signal)),
     }
     return owner.effect(() => {
       if (this.interceptors.has(channel)) {
@@ -204,11 +242,29 @@ export class HostConnectionService extends Service implements HostConnectionHand
       }
     }, `client-connection: ${channel} rpc interceptor`)
   }
+
+
+  private guardPrincipalRpc(
+    request: Request,
+    endpoint: string,
+    args: Readonly<Record<string, unknown>>,
+    signal: AbortSignal,
+  ): Promise<ConnectionRpcFailure | undefined> | ConnectionRpcFailure | undefined {
+    const principal = this.browserAuth.principal(request)
+    if (principal === undefined || this.principalRpcGuard === undefined) return
+    return this.principalRpcGuard(principal, endpoint, args, signal)
+  }
 }
 
 function rpcFetchHandler(
   channel: string,
   handler: ConnectionRpcHandler,
+  guard?: (
+    request: Request,
+    endpoint: string,
+    args: Readonly<Record<string, unknown>>,
+    signal: AbortSignal,
+  ) => Promise<ConnectionRpcFailure | undefined> | ConnectionRpcFailure | undefined,
 ): ConnectionFetchHandler {
   return {
     requestBodyMode: () => 'buffered',
@@ -244,6 +300,9 @@ function rpcFetchHandler(
       }
 
       try {
+        const args = (message.payload as { readonly args: Readonly<Record<string, unknown>> }).args
+        const rejection = await guard?.(request, endpoint, args, request.signal)
+        if (rejection !== undefined) return errorResponse(message.rpcId, rejection)
         const result = await handler(endpoint, message.payload, request.signal)
         return fullResponse(message.rpcId, result)
       } catch (error) {

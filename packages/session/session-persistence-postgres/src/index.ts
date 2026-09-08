@@ -104,6 +104,7 @@ export class PostgresSessionPersistence extends SessionPersistence {
   static Config = Config
   static inject = ['hivemindExecutionScope']
   override readonly name = 'session-persistence-postgres'
+  override readonly authoritativeVisibility: boolean = true
   private readonly pool: Pool
   private readonly handles = new Set<PostgresHandle>()
   private readonly executionScope: HivemindExecutionScope
