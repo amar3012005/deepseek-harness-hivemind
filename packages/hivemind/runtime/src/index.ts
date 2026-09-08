@@ -15,7 +15,9 @@ import { homedir } from 'node:os'
 import { isAbsolute, dirname, join } from 'node:path'
 import { lstat, readFile, rename, writeFile } from 'node:fs/promises'
 import { spawn } from 'node:child_process'
+import { createHmac, randomUUID } from 'node:crypto'
 import type {} from '@deepseek-ai/dsh-hivemind-identity'
+import type {} from '@deepseek-ai/dsh-hivemind-execution-scope'
 import { contextPlugin, type ProfileSnapshot } from '@deepseek-ai/dsh-hivemind-context'
 import { memoryPlugin, type RecallRequest, type SaveRequest } from '@deepseek-ai/dsh-hivemind-memory'
 import { projectHyperagentProfiles } from '@deepseek-ai/dsh-hivemind-employee-directory'
@@ -47,6 +49,12 @@ export interface Config {
   legacyToolsEnabled: boolean
   /** ICARUS JSON file holding the browser-issued HIVE-MIND credential. */
   icarusConfigPath: string
+  /** Identity transport. Local mode uses ICARUS; scoped-service uses the authenticated request principal. */
+  authorityMode?: 'local' | 'scoped-service'
+  /** HIVE control-plane origin used only by the scoped production transport. */
+  serviceApiBase?: string
+  /** Environment variable holding the dedicated runner-to-control-plane signing secret. */
+  serviceSecretEnv?: string
   /** Complete HTTP-operation deadline. */
   requestTimeoutMs: number
   /** Maximum accepted HTTP response bytes, capped by the security invariant. */
@@ -70,6 +78,9 @@ export const Config: z<Config> = z.object({
   agentFeaturesEnabled: z.boolean().required(),
   legacyToolsEnabled: z.boolean().required(),
   icarusConfigPath: z.string().required(),
+  authorityMode: z.union(['local', 'scoped-service'] as const).default('local'),
+  serviceApiBase: z.string(),
+  serviceSecretEnv: z.string(),
   requestTimeoutMs: z.natural().min(1).required(),
   responseMaxBytes: z.natural().min(1).max(MAX_RESPONSE_BYTES).required(),
   profileContextMaxChars: z.natural().min(1).max(MAX_PROFILE_CONTEXT_CHARS).required(),
@@ -88,6 +99,7 @@ interface IcarusAuthority {
   token: string
   apiBase: URL
   userEmail?: string
+  pathPrefix?: string
 }
 
 interface TenantIdentity {
@@ -209,6 +221,54 @@ async function loadAuthority(configPath: string, maxBytes: number): Promise<Icar
   }
 }
 
+function base64url(value: unknown): string {
+  return Buffer.from(JSON.stringify(value)).toString('base64url')
+}
+
+function allowedServiceBase(value: unknown): URL {
+  const raw = nonEmptyString(value, 'HIVE scoped service API base')
+  let url: URL
+  try { url = new URL(raw) } catch (error: unknown) {
+    throw new HiveMindRuntimeError('HIVE scoped service API base is invalid', { cause: error })
+  }
+  const loopback = (url.protocol === 'http:' || url.protocol === 'https:')
+    && (url.hostname === 'localhost' || url.hostname === '127.0.0.1' || url.hostname === '[::1]')
+  if (url.protocol !== 'https:' && !loopback) throw new HiveMindRuntimeError('HIVE scoped service API base must use HTTPS or loopback')
+  if (url.username || url.password || url.search || url.hash || (url.pathname !== '/' && url.pathname !== '')) {
+    throw new HiveMindRuntimeError('HIVE scoped service API base must contain only an origin')
+  }
+  return new URL(url.origin)
+}
+
+function scopedServiceAuthority(ctx: Context, config: Config): IcarusAuthority {
+  const principal = ctx.hivemindExecutionScope.require()
+  const envName = config.serviceSecretEnv?.trim() || 'HIVE_HARNESS_RUNNER_SERVICE_SECRET'
+  const secret = process.env[envName]
+  if (typeof secret !== 'string' || Buffer.byteLength(secret, 'utf8') < 32) {
+    throw new HiveMindRuntimeError(`scoped service secret ${envName} is unavailable or too short`)
+  }
+  const now = Math.floor(Date.now() / 1000)
+  const claims = {
+    iss: 'hivemind-harness-runner', aud: 'hivemind-control-plane-harness-proxy',
+    sub: principal.userId, org_id: principal.orgId, profile: principal.profile,
+    ...(principal.projectId === undefined ? {} : { project_id: principal.projectId }),
+    iat: now, exp: now + 30, jti: randomUUID(),
+  }
+  const input = `${base64url({ alg: 'HS256', typ: 'JWT' })}.${base64url(claims)}`
+  const signature = createHmac('sha256', secret).update(input).digest('base64url')
+  return {
+    token: `${input}.${signature}`,
+    apiBase: allowedServiceBase(config.serviceApiBase),
+    pathPrefix: '/internal/v1/harness-chat/core',
+  }
+}
+
+async function resolveAuthority(ctx: Context, config: Config): Promise<IcarusAuthority> {
+  return config.authorityMode === 'scoped-service'
+    ? scopedServiceAuthority(ctx, config)
+    : loadAuthority(config.icarusConfigPath, config.responseMaxBytes)
+}
+
 function requestSignal(caller: AbortSignal, timeoutMs: number): { signal: AbortSignal; dispose(): void; timedOut(): boolean } {
   const timeout = new AbortController()
   let expired = false
@@ -256,7 +316,8 @@ async function hiveRequest(
   config: Config,
   allowedTargetOrigin = authority.apiBase.origin,
 ): Promise<unknown> {
-  const target = new URL(path, authority.apiBase)
+  const targetPath = authority.pathPrefix === undefined ? path : `${authority.pathPrefix}${path}`
+  const target = new URL(targetPath, authority.apiBase)
   if (target.origin !== allowedTargetOrigin) throw new HiveMindRuntimeError('HIVE-MIND request escaped its allowed origin')
   const operation = requestSignal(callerSignal, config.requestTimeoutMs)
   try {
@@ -405,8 +466,8 @@ function compactSaveReceipt(value: JsonRecord): Record<string, JsonValue> {
   return receipt
 }
 
-async function loadProfileSnapshot(config: Config, signal: AbortSignal): Promise<ProfileSnapshot> {
-  const authority = await loadAuthority(config.icarusConfigPath, config.responseMaxBytes)
+async function loadProfileSnapshot(ctx: Context, config: Config, signal: AbortSignal): Promise<ProfileSnapshot> {
+  const authority = await resolveAuthority(ctx, config)
   const profile = await hiveRequest(authority, PROFILE_PATH, { method: 'GET' }, signal, config)
   const identity = identityFromProfile(profile)
   const contextResponse = await hiveRequest(authority, PROFILE_CONTEXT_PATH, { method: 'GET' }, signal, config)
@@ -542,7 +603,7 @@ function registerWebConnectRoutes(ctx: Context, config: Config): void {
 export function apply(ctx: Context, config: Config): void {
   ctx.hivemindIdentity.register({
     async identity(signal) {
-      const authority = await loadAuthority(config.icarusConfigPath, config.responseMaxBytes)
+      const authority = await resolveAuthority(ctx, config)
       return identityFromProfile(await hiveRequest(authority, PROFILE_PATH, { method: 'GET' }, signal, config))
     },
   })
@@ -550,13 +611,13 @@ export function apply(ctx: Context, config: Config): void {
   const snapshotFor = (agent: Agent, signal: AbortSignal): Promise<ProfileSnapshot> => {
     const current = snapshots.get(agent)
     if (current !== undefined) return current
-    const pending = loadProfileSnapshot(config, signal)
+    const pending = loadProfileSnapshot(ctx, config, signal)
     snapshots.set(agent, pending)
     void pending.catch(() => snapshots.delete(agent))
     return pending
   }
 
-  registerWebConnectRoutes(ctx, config)
+  if (config.authorityMode !== 'scoped-service') registerWebConnectRoutes(ctx, config)
   if (!config.agentFeaturesEnabled) return
   ctx.skills.register({
     name: 'hivemind-company-brain',
@@ -581,12 +642,14 @@ export function apply(ctx: Context, config: Config): void {
       return { status: 'ready', operation: 'context', context: snapshot.fullContext }
     },
     async profiles(signal) {
-      const authority = await loadAuthority(config.icarusConfigPath, config.responseMaxBytes)
-      const result = await hiveRequest(authority, HYPERAGENT_PROFILES_URL, { method: 'GET' }, signal, config, 'https://api.singulancelabs.com')
+      const authority = await resolveAuthority(ctx, config)
+      const result = config.authorityMode === 'scoped-service'
+        ? await hiveRequest(authority, '/v1/hyperagents/profiles', { method: 'GET' }, signal, config)
+        : await hiveRequest(authority, HYPERAGENT_PROFILES_URL, { method: 'GET' }, signal, config, 'https://api.singulancelabs.com')
       return { operation: 'profiles', ...hyperagentProfilesFromResponse(result) }
     },
     async recall(request: RecallRequest, signal) {
-      const authority = await loadAuthority(config.icarusConfigPath, config.responseMaxBytes)
+      const authority = await resolveAuthority(ctx, config)
       const result = await hiveRequest(authority, RECALL_PATH, {
         method: 'POST',
         body: JSON.stringify({
@@ -610,7 +673,7 @@ export function apply(ctx: Context, config: Config): void {
     },
     async save(agent, request: SaveRequest, signal) {
       const snapshot = await snapshotFor(agent, signal)
-      const authority = await loadAuthority(config.icarusConfigPath, config.responseMaxBytes)
+      const authority = await resolveAuthority(ctx, config)
       const result = await hiveRequest(authority, '/api/memories?sync=true', {
         method: 'POST',
         body: JSON.stringify({
@@ -663,7 +726,7 @@ export function apply(ctx: Context, config: Config): void {
       const query = nonEmptyString(args.query, 'recall query')
       const agent = requireAgent(exec.agent)
       const snapshot = await snapshotFor(agent, exec.signal)
-      const authority = await loadAuthority(config.icarusConfigPath, config.responseMaxBytes)
+      const authority = await resolveAuthority(ctx, config)
       const result = await hiveRequest(authority, RECALL_PATH, {
         method: 'POST',
         body: JSON.stringify({
@@ -693,8 +756,10 @@ export function apply(ctx: Context, config: Config): void {
     isConcurrencySafe: () => true,
     async execute(args, exec) {
       requireEmptyArgs(args, 'hyperagent profiles arguments')
-      const authority = await loadAuthority(config.icarusConfigPath, config.responseMaxBytes)
-      const result = await hiveRequest(authority, HYPERAGENT_PROFILES_URL, { method: 'GET' }, exec.signal, config, 'https://api.singulancelabs.com')
+      const authority = await resolveAuthority(ctx, config)
+      const result = config.authorityMode === 'scoped-service'
+        ? await hiveRequest(authority, '/v1/hyperagents/profiles', { method: 'GET' }, exec.signal, config)
+        : await hiveRequest(authority, HYPERAGENT_PROFILES_URL, { method: 'GET' }, exec.signal, config, 'https://api.singulancelabs.com')
       return hyperagentProfilesFromResponse(result)
     },
   }))

@@ -7,6 +7,7 @@
   "include": ["src"],
   "references": [
     { "path": "../identity" },
+    { "path": "../execution-scope" },
     { "path": "../context" },
     { "path": "../memory" },
     { "path": "../employee-directory" },
