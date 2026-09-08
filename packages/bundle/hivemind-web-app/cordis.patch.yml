@@ -64,6 +64,7 @@
       name: '@deepseek-ai/dsh-session-persistence-postgres'
       config:
         connectionStringEnv: DATABASE_URL
+        schema: hivemind
         leaseTtlMs: 30000
         maxConnections: 10
 

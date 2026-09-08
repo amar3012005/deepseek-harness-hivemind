@@ -61,7 +61,7 @@ integration('PostgreSQL HIVE SessionPersistence contract', () => {
     const ctx = new Context()
     scope = new HivemindExecutionScope(ctx)
     persistence = new PostgresSessionPersistence(ctx, {
-      connectionStringEnv: 'UNUSED_IN_INTEGRATION_TEST', leaseTtlMs: 30_000, maxConnections: 2,
+      connectionStringEnv: 'UNUSED_IN_INTEGRATION_TEST', schema: 'public', leaseTtlMs: 30_000, maxConnections: 2,
     }, pool)
   })
 

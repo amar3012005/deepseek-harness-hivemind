@@ -20,9 +20,10 @@ import type {
   SessionPersistenceStatOptions,
 } from '@deepseek-ai/dsh-session-persistence'
 
-export interface Config { connectionStringEnv: string; leaseTtlMs: number; maxConnections: number }
+export interface Config { connectionStringEnv: string; schema: string; leaseTtlMs: number; maxConnections: number }
 export const Config: z<Config> = z.object({
-  connectionStringEnv: z.string().required(), leaseTtlMs: z.natural().min(1000).required(),
+  connectionStringEnv: z.string().required(), schema: z.string().required().pattern(/^[a-z_][a-z0-9_]*$/u),
+  leaseTtlMs: z.natural().min(1000).required(),
   maxConnections: z.natural().min(1).required(),
 })
 interface SessionRow extends QueryResultRow {
@@ -109,7 +110,11 @@ export class PostgresSessionPersistence extends SessionPersistence {
   constructor(ctx: Context, readonly config: Config, testPool?: Pool) {
     super(ctx)
     this.executionScope = ctx.hivemindExecutionScope
-    this.pool = testPool ?? new Pool({ connectionString: connectionString(config.connectionStringEnv), max: config.maxConnections })
+    this.pool = testPool ?? new Pool({
+      connectionString: connectionString(config.connectionStringEnv),
+      max: config.maxConnections,
+      options: `-c search_path=${config.schema},public`,
+    })
   }
   protected async* [Service.init](): AsyncGenerator<() => Promise<void>, void, void> {
     await this.pool.query('SELECT 1 FROM harness_sessions LIMIT 0')
