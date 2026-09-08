@@ -19,4 +19,5 @@ if [ "$HIVE_HARNESS_TICKET_SECRET" = "$HIVE_HARNESS_RUNNER_SERVICE_SECRET" ]; th
   exit 64
 fi
 
+cd /var/lib/dsh/hivemind-chat
 exec node /opt/deepseek-harness/apps/cli/lib/bin.js --profile hivemind-web --no-open

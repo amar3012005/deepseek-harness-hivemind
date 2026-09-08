@@ -37,8 +37,8 @@
 - id: session-persistence-jsonl
   disabled: true
 
-# Keep the internal workspace registry required by native session lifecycle.
-# Its filesystem, controller, and UI consumers remain unavailable below.
+- id: workspace
+  disabled: true
 - id: workspace-files
   disabled: true
 - id: workspace-controller
@@ -94,6 +94,9 @@
 - insert:
     - id: hivemind-execution-scope
       name: '@deepseek-ai/dsh-hivemind-execution-scope'
+
+    - id: hivemind-virtual-workspace
+      name: '@deepseek-ai/dsh-hivemind-virtual-workspace'
 
     - id: session-persistence-postgres
       name: '@deepseek-ai/dsh-session-persistence-postgres'

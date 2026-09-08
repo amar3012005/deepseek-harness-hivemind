@@ -141,6 +141,7 @@
     { "path": "./packages/hivemind/runtime" },
     { "path": "./packages/hivemind/execution-scope" },
     { "path": "./packages/hivemind/web-runner" },
+    { "path": "./packages/hivemind/virtual-workspace" },
     { "path": "./vendor/cosmokit" },
     { "path": "./vendor/schemastery" },
     { "path": "./vendor/cordis" },
