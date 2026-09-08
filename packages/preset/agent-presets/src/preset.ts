@@ -68,5 +68,5 @@ export interface Config {
    */
   includeUserRoot: boolean
   /** Optional deployment allowlist; empty exposes every discovered preset. */
-  allowed: string[]
+  allowed?: string[]
 }

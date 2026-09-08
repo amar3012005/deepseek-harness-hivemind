@@ -248,9 +248,9 @@ export class AgentPresets extends TypertRemoteService {
    */
   async list(): Promise<AgentPreset[]> {
     const presets = await discoverPresets(this.resolvedRoots, this.harnessBase)
-    return this.config.allowed.length === 0
+    return (this.config.allowed ?? []).length === 0
       ? presets
-      : presets.filter(preset => this.config.allowed.includes(preset.id))
+      : presets.filter(preset => this.config.allowed?.includes(preset.id) === true)
   }
 
   /**
