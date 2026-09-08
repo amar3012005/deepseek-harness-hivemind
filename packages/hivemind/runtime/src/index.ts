@@ -456,13 +456,25 @@ function compactRecallResponse(value: JsonRecord, limit: number, itemMaxChars: n
   }
 }
 
-/** Expose only a receipt from a successful memory write; tenant fields remain transport-private. */
+/** Expose only a terminal memory-write receipt; tenant fields remain transport-private. */
 function compactSaveReceipt(value: JsonRecord): Record<string, JsonValue> {
+  if (value['skipped'] === true) {
+    const mutation = value['mutation']
+    const compact: Record<string, JsonValue> = { status: 'skipped' }
+    if (typeof mutation === 'object' && mutation !== null && !Array.isArray(mutation)) {
+      const operation = (mutation as JsonRecord)['operation']
+      if (typeof operation === 'string') compact['operation'] = operation
+    }
+    return compact
+  }
+  const persisted = typeof value['memory'] === 'object' && value['memory'] !== null && !Array.isArray(value['memory'])
+    ? value['memory'] as JsonRecord
+    : value
   const receipt: Record<string, JsonValue> = { status: 'saved' }
   for (const field of ['id', 'title', 'memory_type', 'citation_id', 'created_at', 'updated_at']) {
-    if (typeof value[field] === 'string') receipt[field] = value[field]
+    if (typeof persisted[field] === 'string') receipt[field] = persisted[field]
   }
-  if (typeof value['id'] !== 'string') throw new HiveMindRuntimeError('memory save response is missing its receipt id')
+  if (typeof persisted['id'] !== 'string') throw new HiveMindRuntimeError('memory save response is missing its receipt id')
   return receipt
 }
 

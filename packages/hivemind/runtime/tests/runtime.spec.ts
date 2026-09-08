@@ -399,12 +399,15 @@ describe('HIVE-MIND runtime', () => {
   it('saves only a bounded, profile-scoped memory and returns a compact receipt', async () => {
     const path = await authorityFile()
     profileResponses([jsonResponse({
-      id: 'memory-1',
-      title: 'Approved positioning',
-      memory_type: 'decision',
-      citation_id: 'memory:memory-1',
-      user_id: 'user-1',
-      org_id: 'org-1',
+      success: true,
+      memory: {
+        id: 'memory-1',
+        title: 'Approved positioning',
+        memory_type: 'decision',
+        citation_id: 'memory:memory-1',
+        user_id: 'user-1',
+        org_id: 'org-1',
+      },
     })])
     const harness = mount(config(path))
 
@@ -436,6 +439,18 @@ describe('HIVE-MIND runtime', () => {
     })
     expect(JSON.stringify(value)).not.toContain('user-1')
     expect(JSON.stringify(value)).not.toContain('org-1')
+  })
+
+  it('returns a terminal skipped receipt when the memory backend deduplicates a write', async () => {
+    const path = await authorityFile()
+    profileResponses([jsonResponse({ success: true, skipped: true, mutation: { operation: 'skipped_redundant' } })])
+    const harness = mount(config(path))
+
+    await expect(tool(harness, 'hivemind_save_memory').execute({
+      title: 'Already known fact',
+      content: 'A fact that is already stored.',
+      tags: ['test'],
+    }, execContext())).resolves.toEqual({ status: 'skipped', operation: 'skipped_redundant' })
   })
 
   it('rejects a correction without the exact prior-memory reference', async () => {
