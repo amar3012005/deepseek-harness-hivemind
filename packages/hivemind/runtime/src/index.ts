@@ -11,8 +11,6 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import type {} from '@deepseek-ai/dsh-host-webserver'
 import type {} from '@deepseek-ai/dsh-skill'
-import type {} from '@deepseek-ai/dsh-attachment'
-import type { FileAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import { homedir } from 'node:os'
 import { isAbsolute, dirname, join } from 'node:path'
 import { lstat, readFile, rename, writeFile } from 'node:fs/promises'
@@ -21,7 +19,7 @@ import { createHmac, randomUUID } from 'node:crypto'
 import type {} from '@deepseek-ai/dsh-hivemind-identity'
 import type {} from '@deepseek-ai/dsh-hivemind-execution-scope'
 import { contextPlugin, type ProfileSnapshot } from '@deepseek-ai/dsh-hivemind-context'
-import { containsCredentialMaterial, memoryPlugin, type RecallRequest, type SaveAttachmentRequest, type SaveRequest } from '@deepseek-ai/dsh-hivemind-memory'
+import { memoryPlugin, type RecallRequest, type SaveRequest } from '@deepseek-ai/dsh-hivemind-memory'
 import { projectHyperagentProfiles } from '@deepseek-ai/dsh-hivemind-employee-directory'
 
 export { completedExchanges, recentConversationText } from '@deepseek-ai/dsh-hivemind-context'
@@ -30,11 +28,10 @@ export { completedExchanges, recentConversationText } from '@deepseek-ai/dsh-hiv
 export const name = 'hivemind-runtime'
 
 /** Services required to assemble context and expose progressive tools. */
-export const inject = ['tools', 'skills', 'attachments', 'hivemindIdentity', 'hivemindExecutionScope']
+export const inject = ['tools', 'skills', 'hivemindIdentity', 'hivemindExecutionScope']
 
 const MAX_RESPONSE_BYTES = 2 * 1024 * 1024
 const MAX_PROFILE_CONTEXT_CHARS = 12_000
-const MAX_ATTACHMENT_SAVE_BYTES = 1024 * 1024
 const PROFILE_PATH = '/api/profile'
 const PROFILE_FACTS_PATH = '/api/profiles'
 const PROFILE_CONTEXT_PATH = '/api/profiles/context'
@@ -151,54 +148,6 @@ function requireEmptyArgs(value: unknown, label: string): void {
   if (Object.keys(args).length > 0) throw new HiveMindRuntimeError(`${label} accepts no arguments`)
 }
 
-function supportedAttachmentFilename(filename: string): boolean {
-  return /\.(?:html?|md|markdown|txt|json|csv|xml|ya?ml)$/i.test(filename)
-}
-
-/** Finds the latest exact file reference from user-authored session events only. */
-function attachedFile(agent: Agent, filename: string): FileAttachmentRef {
-  let match: FileAttachmentRef | undefined
-  for (const event of agent.session.snapshotEvents()) {
-    if (event.type !== 'user/message' || event.data.source.kind !== 'user') continue
-    for (const block of event.data.content) {
-      if (block.type === 'file' && block.attachment.name === filename) match = block.attachment
-    }
-  }
-  if (match === undefined) throw new HiveMindRuntimeError('the named attachment is not available in this chat')
-  if (match.bytes > MAX_ATTACHMENT_SAVE_BYTES) {
-    throw new HiveMindRuntimeError(`attachment exceeds the ${MAX_ATTACHMENT_SAVE_BYTES} byte save limit`)
-  }
-  return match
-}
-
-/** Reads a bounded UTF-8 attachment without exposing its content to the model prompt. */
-async function readAttachedText(ctx: Context, attachment: FileAttachmentRef, signal: AbortSignal): Promise<string> {
-  const chunks: Uint8Array[] = []
-  let total = 0
-  for await (const chunk of ctx.attachments.readFileStream(attachment, signal)) {
-    total += chunk.byteLength
-    if (total > MAX_ATTACHMENT_SAVE_BYTES) {
-      throw new HiveMindRuntimeError(`attachment exceeds the ${MAX_ATTACHMENT_SAVE_BYTES} byte save limit`)
-    }
-    chunks.push(chunk)
-  }
-  const bytes = new Uint8Array(total)
-  let offset = 0
-  for (const chunk of chunks) {
-    bytes.set(chunk, offset)
-    offset += chunk.byteLength
-  }
-  let content: string
-  try {
-    content = new TextDecoder('utf-8', { fatal: true }).decode(bytes)
-  } catch (error: unknown) {
-    throw new HiveMindRuntimeError('attachment must be valid UTF-8 text', { cause: error })
-  }
-  if (content.trim() === '' || content.includes('\u0000')) {
-    throw new HiveMindRuntimeError('attachment must contain non-empty text')
-  }
-  return content
-}
 
 function allowedApiBase(value: unknown): URL {
   const raw = nonEmptyString(value, 'ICARUS hivemind.apiUrl')
@@ -761,34 +710,6 @@ export function apply(ctx: Context, config: Config): void {
         }),
       }, signal, config)
       return compactSaveReceipt(apiRecord(result, 'meta save response'))
-    },
-    async saveAttachment(agent, request: SaveAttachmentRequest, signal) {
-      if (!supportedAttachmentFilename(request.filename)) {
-        throw new HiveMindRuntimeError('attachment type is unsupported; save text, HTML, Markdown, JSON, CSV, XML, or YAML files only')
-      }
-      const attachment = attachedFile(agent, request.filename)
-      const content = await readAttachedText(ctx, attachment, signal)
-      if (containsCredentialMaterial(content)) {
-        throw new HiveMindRuntimeError('attachment save refuses credential material')
-      }
-      const snapshot = await snapshotFor(agent, signal)
-      const authority = await resolveAuthority(ctx, config)
-      const result = await hiveRequest(authority, '/api/memories?sync=true', {
-        method: 'POST',
-        body: JSON.stringify({
-          title: request.title ?? request.filename,
-          content,
-          memory_type: 'fact',
-          source_platform: 'deepseek-harness',
-          tags: [...new Set([...(request.tags ?? []), 'attachment', `filename:${request.filename}`])],
-          metadata: { source_type: 'document', governed: true, attachment_id: attachment.attachmentId },
-          user_id: snapshot.identity.userId,
-          org_id: snapshot.identity.orgId,
-          smartIngest: true,
-          sync: true,
-        }),
-      }, signal, config)
-      return compactSaveReceipt(apiRecord(result, 'attachment save response'))
     },
   }))
 
