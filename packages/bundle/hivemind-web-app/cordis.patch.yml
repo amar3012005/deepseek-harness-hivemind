@@ -70,7 +70,7 @@
     - id: hivemind-web-runner
       name: '@deepseek-ai/dsh-hivemind-web-runner'
       config:
-        parentOrigins: !!js JSON.parse(process.env.HIVEMIND_PARENT_ORIGINS ?? '[]')
+        parentOrigins: !!js (process.env.HIVEMIND_PARENT_ORIGINS ?? '').split(',').map(value => value.trim()).filter(Boolean)
         ticketSecretEnv: HIVE_HARNESS_TICKET_SECRET
         redisUrlEnv: REDIS_URL
         redisJtiPrefix: 'hive:harness-ticket:'
