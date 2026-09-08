@@ -78,6 +78,12 @@
 # `dsh.client` rows are the browser roster the modules node half scans into
 # window.__DSH_BOOT__; the modules row is simultaneously a host row.
 - insert:
+    # HIVE-MIND presets use this host-scoped AsyncLocalStorage service to bind
+    # an authenticated user/org principal for an individual request. It exposes
+    # no model tool and has no effect on non-HIVE presets.
+    - id: hivemind-execution-scope
+      name: '@deepseek-ai/dsh-hivemind-execution-scope'
+
     # Host-owned opt-in sampled when a new Web session receives its preset
     # delegation tools. The Plugins page edits this settings namespace.
     - id: subagent-model-selection-settings

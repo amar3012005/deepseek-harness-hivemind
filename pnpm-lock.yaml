@@ -1918,6 +1918,9 @@ importers:
       '@deepseek-ai/dsh-file-reference-local':
         specifier: workspace:^
         version: link:../../context/file-reference-local
+      '@deepseek-ai/dsh-hivemind-execution-scope':
+        specifier: workspace:^
+        version: link:../../hivemind/execution-scope
       '@deepseek-ai/dsh-hivemind-identity':
         specifier: workspace:^
         version: link:../../hivemind/identity
