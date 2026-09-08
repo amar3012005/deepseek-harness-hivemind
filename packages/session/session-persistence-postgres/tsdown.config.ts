@@ -1,2 +1,1 @@
-import { defineConfig } from '../../../tsdown.config.ts'
-export default defineConfig({ entry: ['src/index.ts'] })
+export { default } from '../../../tsdown.config.ts'
