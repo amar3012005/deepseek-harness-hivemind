@@ -151,4 +151,19 @@ describe('the shipped preset root', () => {
       expect(findEntry(await shippedEntries(id), 'tool-workflow')?.disabled, id).not.toBe(true)
     }
   })
+
+  it('keeps HIVE-MIND skill discovery separate from the broad local skill catalog', async () => {
+    const hivemind = await shippedEntries('hivemind')
+    const filesystem = findEntry(hivemind, 'skill-filesystem')
+    if (typeof filesystem?.config !== 'object' || filesystem.config === null) {
+      throw new TypeError('hivemind preset must configure skill-filesystem')
+    }
+
+    expect(filesystem.config).toMatchObject({
+      providerName: 'hivemind-filesystem',
+      includeDefaultRoots: false,
+      watch: false,
+    })
+    expect(findEntry(hivemind, 'tool-skill')?.disabled).not.toBe(true)
+  })
 })

@@ -189,6 +189,7 @@
       "@deepseek-ai/dsh-client-ui-layout": ["./packages/client/ui-layout/src"],
       "@deepseek-ai/dsh-client-ui-sidebar": ["./packages/client/ui-sidebar/src"],
       "@deepseek-ai/dsh-client-ui-brand-official": ["./packages/client/ui-brand-official/src"],
+      "@deepseek-ai/dsh-client-ui-hivemind-connect": ["./packages/client/ui-hivemind-connect/src"],
       "@deepseek-ai/dsh-client-ui-approval": ["./packages/client/ui-approval/src"],
       "@deepseek-ai/dsh-client-ui-approval/client": ["./packages/client/ui-approval/src/client/index.ts"],
       "@deepseek-ai/dsh-client-ui-chat": ["./packages/client/ui-chat/src"],
@@ -249,6 +250,12 @@
       // util/ folders are role-named without the util- prefix their npm names carry,
       // so these aliases stay hand-written like dsh-util-crypto above.
       "@deepseek-ai/dsh-util-time": ["./packages/util/time/src"],
+      // hivemind/* folders are capability-role names rather than complete npm names.
+      "@deepseek-ai/dsh-hivemind-context": ["./packages/hivemind/context/src"],
+      "@deepseek-ai/dsh-hivemind-employee-directory": ["./packages/hivemind/employee-directory/src"],
+      "@deepseek-ai/dsh-hivemind-identity": ["./packages/hivemind/identity/src"],
+      "@deepseek-ai/dsh-hivemind-memory": ["./packages/hivemind/memory/src"],
+      "@deepseek-ai/dsh-hivemind-runtime": ["./packages/hivemind/runtime/src"],
       // BEGIN generated package aliases — pnpm run gen-tsconfig-paths
       "@deepseek-ai/dsh-acp": ["./packages/acp/acp/src"],
       "@deepseek-ai/dsh-acp-app": ["./packages/bundle/acp-app/src"],
