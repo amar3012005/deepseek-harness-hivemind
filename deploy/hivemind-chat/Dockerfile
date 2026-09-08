@@ -1,12 +1,12 @@
 FROM node:24-bookworm-slim AS build
-ARG DSH_CLIENT_COMMIT_HASH
 ENV CI=true
-ENV DSH_CLIENT_COMMIT_HASH=${DSH_CLIENT_COMMIT_HASH}
 WORKDIR /opt/deepseek-harness
 RUN apt-get update \
   && apt-get install --no-install-recommends -y python3 make g++ \
   && rm -rf /var/lib/apt/lists/*
 RUN corepack enable
+ARG DSH_CLIENT_COMMIT_HASH
+ENV DSH_CLIENT_COMMIT_HASH=${DSH_CLIENT_COMMIT_HASH}
 COPY . .
 RUN test -n "${DSH_CLIENT_COMMIT_HASH}"
 RUN --mount=type=cache,id=deepseek-harness-pnpm,target=/pnpm/store \
