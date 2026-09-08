@@ -1,0 +1,13 @@
+# Local macOS development origin; Cloudflare is the sole public ingress.
+tunnel: c5dbf395-9e2b-40aa-b033-bcf85bde0240
+credentials-file: /Users/amar/.cloudflared/c5dbf395-9e2b-40aa-b033-bcf85bde0240.json
+
+ingress:
+  - hostname: deepseek.singulancelabs.com
+    service: http://127.0.0.1:3094
+    originRequest:
+      connectTimeout: 30s
+      tcpKeepAlive: 30s
+      keepAliveTimeout: 90s
+      keepAliveConnections: 100
+  - service: http_status:404

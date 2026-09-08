@@ -1,0 +1,8 @@
+#!/bin/zsh
+set -eu
+
+readonly ROOT=/Users/amar/deepseek-harness-hivemind-hyperagents
+mkdir -p "$ROOT/.runtime/logs"
+
+exec /opt/homebrew/bin/cloudflared --no-autoupdate \
+  --config "$ROOT/deploy/cloudflared/hivemind-mac.yml" tunnel run
