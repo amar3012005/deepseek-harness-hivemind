@@ -47,6 +47,3 @@
 
 - id: tool-goal
   name: '@deepseek-ai/dsh-tool-goal'
-
-- id: plan-mode
-  name: '@deepseek-ai/dsh-plan-mode'
