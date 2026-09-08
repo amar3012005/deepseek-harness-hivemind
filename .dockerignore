@@ -1,0 +1,13 @@
+/.git
+/.github
+/.changeset
+/.turbo
+/.vite
+/**/node_modules
+/**/lib
+/**/coverage
+/**/.cache
+/**/.turbo
+/**/.vite
+/**/*.tsbuildinfo
+/.DS_Store
