@@ -23,7 +23,7 @@
       config:
         agentFeaturesEnabled: true
         legacyToolsEnabled: false
-        authorityMode: scoped-service
+        authorityMode: local
         icarusConfigPath: !!js process.env.HIVEMIND_ICARUS_CONFIG_PATH ?? `${process.env.HOME}/.icarus/config.json`
         serviceApiBase: !!js process.env.HIVEMIND_CONTROL_PLANE_URL ?? 'http://127.0.0.1:8081'
         serviceSecretEnv: HIVE_HARNESS_RUNNER_SERVICE_SECRET
