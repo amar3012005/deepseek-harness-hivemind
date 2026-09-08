@@ -67,4 +67,6 @@ export interface Config {
    * configured root. False mounts a roster without the derived writable root.
    */
   includeUserRoot: boolean
+  /** Optional deployment allowlist; empty exposes every discovered preset. */
+  allowed: string[]
 }

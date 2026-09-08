@@ -1,6 +1,6 @@
 /** Localized copy for the HIVE-MIND connection control. */
 export type HivemindConnectKey =
-  | 'connect' | 'connected' | 'connecting' | 'unavailable' | 'disconnect'
+  | 'connect' | 'connected' | 'connecting' | 'unavailable' | 'disconnect' | 'history' | 'history.empty'
 
 export const en: Record<HivemindConnectKey, string> = {
   connect: 'Connect HIVE-MIND',
@@ -8,6 +8,8 @@ export const en: Record<HivemindConnectKey, string> = {
   connecting: 'Connecting HIVE-MIND…',
   unavailable: 'HIVE-MIND unavailable',
   disconnect: 'Disconnect HIVE-MIND',
+  history: 'History',
+  'history.empty': 'No previous conversations',
 }
 
 export const zh: Record<HivemindConnectKey, string> = {
@@ -16,4 +18,6 @@ export const zh: Record<HivemindConnectKey, string> = {
   connecting: '正在连接 HIVE-MIND…',
   unavailable: 'HIVE-MIND 不可用',
   disconnect: '断开 HIVE-MIND',
+  history: '历史记录',
+  'history.empty': '暂无历史对话',
 }

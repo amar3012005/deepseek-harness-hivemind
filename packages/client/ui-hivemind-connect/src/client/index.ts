@@ -4,7 +4,11 @@ import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
 import { HivemindConnect, type HivemindConnectInjected } from './HivemindConnect.tsx'
+import { HivemindHistory, type HivemindHistoryInjected } from './HivemindHistory.tsx'
+import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
+import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import { en, zh, type HivemindConnectKey } from './locales.ts'
+import { setupEmbedMessaging } from './embed.ts'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap { 'hivemind-connect': HivemindConnectKey }
@@ -13,7 +17,7 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 const NS = 'hivemind-connect'
 
 /** Browser dependencies for the shell-overlay connection control. */
-export const inject = ['slots', 'locale']
+export const inject = ['slots', 'locale', 'sessions']
 
 export interface ConnectionStatus {
   status: 'connected' | 'connecting' | 'disconnected' | 'unavailable'
@@ -35,6 +39,7 @@ async function call(path: string, init?: RequestInit): Promise<ConnectionStatus>
 
 /** Register the localized HIVE-MIND connection control above sidebar Settings. */
 export function apply(ctx: ClientContext): void {
+  ctx.effect(setupEmbedMessaging, 'ui-hivemind-connect: embedded authentication')
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-hivemind-connect: dictionaries')
   ctx.slots.inject('sidebar.footer.action', () => ctx.slots.register({
     name: 'sidebar.footer.action',
@@ -47,4 +52,8 @@ export function apply(ctx: ClientContext): void {
       disconnect: () => call('/hivemind/connect', { method: 'DELETE' }),
     }),
   }, HivemindConnect))
+  ctx.slots.inject('conversation.session.header.actions', () => ctx.slots.register({
+    name: 'conversation.session.header.actions', id: 'hivemind-history', order: 5, locale: NS,
+    inject: (): HivemindHistoryInjected => ({ openSession: (id) => { ctx.sessions.open(id) } }),
+  }, HivemindHistory))
 }

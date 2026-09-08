@@ -29,6 +29,7 @@ interface BrowserCookiePayload {
   readonly authority: string
   readonly issuedAt: number
   readonly expiresAt: number
+  readonly principal?: Readonly<Record<string, string>>
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -118,8 +119,14 @@ function cookieValue(headerValue: string, name: string): string | undefined {
 }
 
 /** Serialize the fixed browser-session attributes; generated names and values are cookie-safe base64url. */
-function sessionCookie(name: string, value: string, expiresAt: number, maxAgeSeconds: number): string {
-  return `${name}=${value}; Max-Age=${String(maxAgeSeconds)}; Path=/; Expires=${new Date(expiresAt).toUTCString()}; HttpOnly; SameSite=Strict`
+function sessionCookie(
+  name: string,
+  value: string,
+  expiresAt: number,
+  maxAgeSeconds: number,
+  embedded = false,
+): string {
+  return `${name}=${value}; Max-Age=${String(maxAgeSeconds)}; Path=/; Expires=${new Date(expiresAt).toUTCString()}; HttpOnly; ${embedded ? 'Secure; SameSite=None' : 'SameSite=Strict'}`
 }
 
 function signature(secret: Buffer, body: string): Buffer {
@@ -154,7 +161,9 @@ function decodeCookie(value: string, secret: Buffer): BrowserCookiePayload | und
     || decoded.version !== COOKIE_PAYLOAD_VERSION
     || typeof decoded.authority !== 'string'
     || !Number.isSafeInteger(decoded.issuedAt)
-    || !Number.isSafeInteger(decoded.expiresAt)) return undefined
+    || !Number.isSafeInteger(decoded.expiresAt)
+    || (decoded.principal !== undefined && (!isRecord(decoded.principal)
+      || Object.values(decoded.principal).some(value => typeof value !== 'string')))) return undefined
   return decoded as unknown as BrowserCookiePayload
 }
 
@@ -299,6 +308,40 @@ export class BrowserAuth {
       && payload.expiresAt > now
       && payload.expiresAt > payload.issuedAt
       && payload.expiresAt - payload.issuedAt <= this.maxAgeMilliseconds
+  }
+
+  /** Mint the ordinary Connection cookie after a profile-specific route verifies an external principal. */
+  authorizePrincipal(
+    request: ConnectionTrustRequest,
+    principal: Readonly<Record<string, string>>,
+    expiresAt: number,
+  ): string {
+    const authority = requestAuthority(request.headers)
+    const issuedAt = Date.now()
+    if (authority === undefined || !Number.isSafeInteger(expiresAt)
+      || expiresAt <= issuedAt || expiresAt - issuedAt > this.maxAgeMilliseconds) {
+      throw new Error('client-connection: invalid external browser-session grant')
+    }
+    const value = encodeCookie({
+      version: COOKIE_PAYLOAD_VERSION,
+      authority,
+      issuedAt,
+      expiresAt,
+      principal: { ...principal },
+    }, this.secret)
+    return sessionCookie(cookieName(authority), value, expiresAt, Math.floor((expiresAt - issuedAt) / 1000), true)
+  }
+
+  /** Return the signed external principal without granting authority to an unverified cookie. */
+  principal(request: ConnectionTrustRequest): Readonly<Record<string, string>> | undefined {
+    const authority = requestAuthority(request.headers)
+    const rawCookie = header(request.headers, 'cookie')
+    if (authority === undefined || rawCookie === undefined) return undefined
+    const value = cookieValue(rawCookie, cookieName(authority))
+    if (value === undefined) return undefined
+    const payload = decodeCookie(value, this.secret)
+    if (payload?.authority !== authority || !this.isAuthenticated(request)) return undefined
+    return payload.principal === undefined ? undefined : { ...payload.principal }
   }
 
   private writeUnauthorized(req: ConnectionIndexRequest, res: ConnectionIndexResponse): void {

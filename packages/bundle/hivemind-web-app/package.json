@@ -1,0 +1,25 @@
+{
+  "name": "@deepseek-ai/dsh-hivemind-web-app",
+  "description": "HIVE-MIND chat-only Web profile layer",
+  "version": "0.1.3-alpha.2",
+  "type": "module",
+  "main": "lib/index.js",
+  "types": "lib/types/index.d.ts",
+  "exports": {
+    ".": { "types": "./lib/types/index.d.ts", "default": "./lib/index.js" },
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./src/*": "./src/*",
+    "./package.json": "./package.json"
+  },
+  "files": ["lib/index.js", "cordis.patch.yml", "lib/types/**/*.d.ts"],
+  "license": "MIT",
+  "dsh": { "bundle": { "patch": "./cordis.patch.yml" } },
+  "dependencies": {
+    "@deepseek-ai/dsh-hivemind-execution-scope": "workspace:^",
+    "@deepseek-ai/dsh-client-ui-hivemind-connect": "workspace:^",
+    "@deepseek-ai/dsh-hivemind-web-runner": "workspace:^",
+    "@deepseek-ai/dsh-session-persistence-postgres": "workspace:^"
+  },
+  "peerDependencies": { "@deepseek-ai/cordis": "workspace:^" },
+  "devDependencies": { "@deepseek-ai/cordis": "workspace:^" }
+}

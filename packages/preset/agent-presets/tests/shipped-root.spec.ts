@@ -89,7 +89,7 @@ describe('the shipped preset root', () => {
     const ctx = await roster({ includeUserRoot: false })
 
     const listed = await ctx.agentPresets.list()
-    expect(listed.map(preset => preset.id).sort()).toEqual(['cordis', 'hivemind', 'minimal', 'ptc', 'standard'])
+    expect(listed.map(preset => preset.id).sort()).toEqual(['cordis', 'hivemind', 'hivemind-chat', 'minimal', 'ptc', 'standard'])
     expect(listed.every(preset => preset.trust === 'system')).toBe(true)
     // Not `broken === undefined`: health asks whether each row's package is
     // installed above the base, and the shipped rows name packages the
@@ -98,6 +98,14 @@ describe('the shipped preset root', () => {
     // malformed would be a different one, and this asserts there is none.
     expect(listed.map(preset => preset.broken)
       .filter(reason => reason !== undefined && !reason.includes('cannot be resolved'))).toEqual([])
+  })
+
+  it('can expose only the HIVE chat preset without removing shipped packages', async () => {
+    const ctx = await roster({ includeUserRoot: false, allowed: ['hivemind-chat'], default: 'hivemind-chat' })
+
+    expect((await ctx.agentPresets.list()).map(preset => preset.id)).toEqual(['hivemind-chat'])
+    await expect(ctx.agentPresets.resolve('standard')).rejects.toThrow(/not found/u)
+    await expect(ctx.agentPresets.resolve()).resolves.toMatchObject({ id: 'hivemind-chat' })
   })
 
   it('prepends the shipped root before configured roots and the derived user root', async () => {

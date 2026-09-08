@@ -60,6 +60,7 @@ declare module '@deepseek-ai/cordis' {
 export class HostConnectionService extends Service implements HostConnectionHandle {
   private readonly interceptors = new Map<string, ConnectionRpcInterceptor>()
   private readonly fetchRoutes = new Map<string, RegisteredFetchRoute>()
+  private principalScope: (<T>(principal: Readonly<Record<string, string>>, action: () => T) => T) | undefined
 
   /**
    * Provide the Host half over the active HTTP server.
@@ -107,6 +108,33 @@ export class HostConnectionService extends Service implements HostConnectionHand
   /** Add this process's launch token to the clean application URL. */
   authenticatedUrl(baseUrl: string): string {
     return this.browserAuth.authenticatedUrl(baseUrl)
+  }
+
+  /** Mint an embedded-session cookie only after the caller verifies its external grant. */
+  authorizePrincipal(
+    request: ConnectionTrustRequest,
+    principal: Readonly<Record<string, string>>,
+    expiresAt: number,
+  ): string {
+    return this.browserAuth.authorizePrincipal(request, principal, expiresAt)
+  }
+
+  /** Read the verified principal attached to the current browser session. */
+  principal(request: ConnectionTrustRequest): Readonly<Record<string, string>> | undefined {
+    return this.browserAuth.principal(request)
+  }
+
+  /** Register one optional profile-specific principal propagation owner. */
+  registerPrincipalScope(run: <T>(principal: Readonly<Record<string, string>>, action: () => T) => T): () => void {
+    if (this.principalScope !== undefined) throw new Error('connection: principal scope is already registered')
+    this.principalScope = run
+    return () => { if (this.principalScope === run) this.principalScope = undefined }
+  }
+
+  /** Run a dispatch under its signed external principal when one exists. */
+  runInPrincipalScope<T>(request: ConnectionTrustRequest, action: () => T): T {
+    const principal = this.browserAuth.principal(request)
+    return principal === undefined || this.principalScope === undefined ? action() : this.principalScope(principal, action)
   }
 
   /**
@@ -172,7 +200,7 @@ export class HostConnectionService extends Service implements HostConnectionHand
           res.end(rejection === 401 ? 'unauthorized' : 'forbidden')
           return
         }
-        await bridge(req, res, fetchHandler)
+        await this.runInPrincipalScope(req, () => bridge(req, res, fetchHandler))
       },
     }
     return owner.effect(

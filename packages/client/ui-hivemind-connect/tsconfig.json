@@ -5,8 +5,12 @@
   "references": [
     { "path": "../../../vendor/cordis" },
     { "path": "../locale" },
+    { "path": "../../api/session-controller/tsconfig.client.json" },
+    { "path": "../ui-conversation" },
     { "path": "../ui-renderer" },
+    { "path": "../ui-session" },
     { "path": "../ui-sidebar" },
-    { "path": "../ui-slots" }
+    { "path": "../ui-slots" },
+    { "path": "../../util/crypto" }
   ]
 }
