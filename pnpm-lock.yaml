@@ -6535,6 +6535,9 @@ importers:
       '@deepseek-ai/dsh-hivemind-employee-directory':
         specifier: workspace:^
         version: link:../employee-directory
+      '@deepseek-ai/dsh-hivemind-execution-scope':
+        specifier: workspace:^
+        version: link:../execution-scope
       '@deepseek-ai/dsh-hivemind-identity':
         specifier: workspace:^
         version: link:../identity

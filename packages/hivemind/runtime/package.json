@@ -30,6 +30,7 @@
     "@deepseek-ai/dsh-hivemind-context": "workspace:^",
     "@deepseek-ai/dsh-hivemind-employee-directory": "workspace:^",
     "@deepseek-ai/dsh-hivemind-identity": "workspace:^",
+    "@deepseek-ai/dsh-hivemind-execution-scope": "workspace:^",
     "@deepseek-ai/dsh-hivemind-memory": "workspace:^",
     "@deepseek-ai/schemastery": "workspace:^"
   },
@@ -38,6 +39,7 @@
     "@deepseek-ai/dsh-agent": "workspace:^",
     "@deepseek-ai/dsh-host-webserver": "workspace:^",
     "@deepseek-ai/dsh-hivemind-identity": "workspace:^",
+    "@deepseek-ai/dsh-hivemind-execution-scope": "workspace:^",
     "@deepseek-ai/dsh-llm": "workspace:^",
     "@deepseek-ai/dsh-session": "workspace:^",
     "@deepseek-ai/dsh-skill": "workspace:^",
@@ -49,6 +51,7 @@
     "@deepseek-ai/dsh-agent": "workspace:^",
     "@deepseek-ai/dsh-host-webserver": "workspace:^",
     "@deepseek-ai/dsh-hivemind-identity": "workspace:^",
+    "@deepseek-ai/dsh-hivemind-execution-scope": "workspace:^",
     "@deepseek-ai/dsh-llm": "workspace:^",
     "@deepseek-ai/dsh-session": "workspace:^",
     "@deepseek-ai/dsh-skill": "workspace:^",

@@ -1,0 +1,52 @@
+- id: persona
+  name: '@deepseek-ai/dsh-persona'
+  config:
+    complete: true
+    includeRuntimeContext: false
+    prefix: >-
+      You are HIVE-MIND, the authenticated user's company brain, powered by
+      DeepSeek Harness. Use recent conversation or the compact company brief
+      when sufficient; otherwise make one focused hivemind_meta call. Preserve
+      evidence citations and uncertainty. Never invent organization facts,
+      tenant identifiers, memory writes, or external actions.
+
+- id: hivemind-capabilities
+  name: cordis:group
+  group: true
+  isolate:
+    hivemindIdentity: true
+  config:
+    - id: hivemind-identity
+      name: '@deepseek-ai/dsh-hivemind-identity'
+    - id: hivemind-runtime
+      name: '@deepseek-ai/dsh-hivemind-runtime'
+      config:
+        agentFeaturesEnabled: true
+        legacyToolsEnabled: false
+        authorityMode: scoped-service
+        icarusConfigPath: !!js process.env.HIVEMIND_ICARUS_CONFIG_PATH ?? `${process.env.HOME}/.icarus/config.json`
+        serviceApiBase: !!js process.env.HIVEMIND_CONTROL_PLANE_URL ?? 'http://127.0.0.1:8081'
+        serviceSecretEnv: HIVE_HARNESS_RUNNER_SERVICE_SECRET
+        requestTimeoutMs: 20000
+        responseMaxBytes: 2097152
+        profileContextMaxChars: 12000
+        profileBriefMaxChars: 1200
+        recallResultLimit: 5
+        recallItemMaxChars: 16000
+        historyTurns: 5
+        historyMaxChars: 8000
+
+- id: tool-web
+  name: '@deepseek-ai/dsh-tool-web'
+  config:
+    fetch: true
+    searchTimeoutMs: 60000
+
+- id: tool-ask-user
+  name: '@deepseek-ai/dsh-tool-ask-user'
+
+- id: tool-goal
+  name: '@deepseek-ai/dsh-tool-goal'
+
+- id: plan-mode
+  name: '@deepseek-ai/dsh-plan-mode'

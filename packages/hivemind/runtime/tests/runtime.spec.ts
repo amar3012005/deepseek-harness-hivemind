@@ -20,6 +20,7 @@ const signal = new AbortController().signal
 const agent = {} as Agent
 
 afterEach(async () => {
+  delete process.env.TEST_HIVE_RUNNER_SECRET
   vi.restoreAllMocks()
   await Promise.all(roots.splice(0).map(path => rm(path, { recursive: true, force: true })))
 })
@@ -81,6 +82,13 @@ function mount(pluginConfig: Config): HarnessMock {
       },
     },
     hivemindIdentity: { register: () => () => {} },
+    hivemindExecutionScope: {
+      require: () => ({
+        userId: '54f5568b-4d6a-4ae1-9a33-48cb2909d59b',
+        orgId: '67503d34-97e9-49a8-8c52-8ee30cc7603e',
+        profile: 'hivemind-chat', variation: 'preview',
+      }),
+    },
   }
   apply(ctx as never, pluginConfig)
   return harness
@@ -129,6 +137,34 @@ function tool(harness: HarnessMock, name: string): ToolDefinition {
 }
 
 describe('HIVE-MIND runtime', () => {
+  it('uses the request-scoped service proxy without reading an ICARUS credential', async () => {
+    const pluginConfig = config('/does/not/exist')
+    pluginConfig.authorityMode = 'scoped-service'
+    pluginConfig.serviceApiBase = 'http://127.0.0.1:8081'
+    pluginConfig.serviceSecretEnv = 'TEST_HIVE_RUNNER_SECRET'
+    process.env.TEST_HIVE_RUNNER_SECRET = 'runner-service-secret-that-is-at-least-32-bytes'
+    const requests: Array<{ url: string; authorization: string }> = []
+    const responses = [
+      jsonResponse({ ok: true, profile: { user_id: '54f5568b-4d6a-4ae1-9a33-48cb2909d59b', org_id: '67503d34-97e9-49a8-8c52-8ee30cc7603e' } }),
+      jsonResponse({ context: 'Singulance builds governed AI systems.' }),
+      jsonResponse({ facts: [{ key: 'company', value: 'Singulance' }] }),
+    ]
+    vi.stubGlobal('fetch', vi.fn(async (url: URL, init: RequestInit) => {
+      requests.push({ url: String(url), authorization: String((init.headers as Record<string, string>).authorization) })
+      return responses.shift() as Response
+    }))
+    const harness = mount(pluginConfig)
+    await tool(harness, 'hivemind_profile_context').execute({}, execContext())
+    expect(requests.map(item => item.url)).toEqual([
+      'http://127.0.0.1:8081/internal/v1/harness-chat/core/api/profile',
+      'http://127.0.0.1:8081/internal/v1/harness-chat/core/api/profiles/context',
+      'http://127.0.0.1:8081/internal/v1/harness-chat/core/api/profiles',
+    ])
+    expect(requests.every(item => item.authorization.split('.').length === 3)).toBe(true)
+    expect(JSON.stringify(requests)).not.toContain('ICARUS')
+    delete process.env.TEST_HIVE_RUNNER_SECRET
+  })
+
   it('rejects an ICARUS credential file writable by group', async () => {
     const path = await authorityFile(0o660)
     const harness = mount(config(path))
