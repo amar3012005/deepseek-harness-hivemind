@@ -1,0 +1,54 @@
+# Local-only Cloudflare AI Gateway route. The credential is resolved at request
+# time from the existing Harness credential store; no secret is kept in source.
+- id: llm-pi-ai
+  config:
+    providers:
+      cloudflare-openrouter:
+        displayName: Cloudflare AI Gateway / OpenRouter
+        apiKeyEnv: CLOUDFLARE_API_KEY
+        api: openai-completions
+        baseURL: https://gateway.ai.cloudflare.com/v1/0dc6b9186b5a9b8985613b10c1c59f4f/hivemind-prod/compat
+        headers:
+          cf-aig-byok-alias: first-bundb
+        defaultContextWindow: 131072
+        defaultMaxTokens: 32768
+        defaultInput: [text]
+        retryPolicy:
+          mode: normal
+          maxRetries: 3
+        models:
+          - id: openrouter/openai/gpt-oss-120b
+            name: GPT OSS 120B via Cloudflare
+            contextWindow: 131072
+            maxTokens: 32768
+            input: [text]
+            reasoningEfforts:
+              off:
+              low: low
+              medium: medium
+              high: high
+          - id: openrouter/openai/gpt-oss-20b:nitro
+            name: GPT OSS 20B Nitro via Cloudflare
+            contextWindow: 131072
+            maxTokens: 32768
+            input: [text]
+            reasoningEfforts:
+              off:
+              low: low
+              medium: medium
+              high: high
+          - id: '@cf/zai-org/glm-5.3-flash'
+            name: GLM-5.3 Flash via Cloudflare Workers AI
+            contextWindow: 1048576
+            maxTokens: 32768
+            input: [text]
+            reasoningEfforts:
+              off:
+              low: low
+              medium: medium
+              high: high
+
+- id: agent-default-model
+  config:
+    provider: cloudflare-openrouter
+    model: openrouter/openai/gpt-oss-120b
