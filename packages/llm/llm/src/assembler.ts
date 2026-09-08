@@ -134,16 +134,23 @@ export class BlockAssembler {
    */
   private assembled(): { blocks: ContentBlock[]; replay: ReplayEnvelope | undefined } {
     const all = this.order.map(index => this.assemble(this.mustGet(index), index))
-    const kept = this.finish.kind === 'max-tokens'
-      ? all.map(block => block.type !== 'tool-call')
-      : undefined
-    const blocks = kept === undefined ? all : all.filter((_, position) => kept[position])
+    // A provider can occasionally begin a tool block and never supply its
+    // name. Such a block is not dispatchable: executing it would manufacture
+    // an `unknown tool ""` side effect from corrupt provider data. Keep the
+    // raw chunks in the event log, but never expose an unnamed call as durable
+    // assistant content. Max-token truncation remains stricter and drops all
+    // tool calls because their arguments are not safe to execute.
+    const kept = all.map(block => (
+      block.type !== 'tool-call'
+      || (this.finish.kind !== 'max-tokens' && block.name.trim().length > 0)
+    ))
+    const blocks = all.filter((_, position) => kept[position])
     const envelope = this._replayState
     if (envelope?.blocks === undefined) return { blocks, replay: envelope }
     if (envelope.blocks.length !== all.length) return { blocks, replay: undefined }
     return {
       blocks,
-      replay: kept === undefined || blocks.length === all.length
+      replay: blocks.length === all.length
         ? envelope
         : { response: envelope.response, blocks: envelope.blocks.filter((_, position) => kept[position]) },
     }

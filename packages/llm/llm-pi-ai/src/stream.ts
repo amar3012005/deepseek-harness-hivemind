@@ -127,6 +127,28 @@ export function mapStopReason(message: AssistantMessage, contextWindow?: number)
   }
 }
 
+/** A provider tool call must identify a concrete callable tool before dispatch. */
+function isDispatchableToolCall(piece: AssistantMessage['content'][number]): boolean {
+  return piece.type !== 'toolCall' || (piece.id.trim().length > 0 && piece.name.trim().length > 0)
+}
+
+/**
+ * Remove provider-corrupt tool blocks from replay and terminal classification.
+ * Raw stream chunks remain recorded by the host, while the durable assistant
+ * message contains only calls that the Harness can actually dispatch.
+ */
+function sanitizeTerminalMessage(message: AssistantMessage): AssistantMessage {
+  const content = message.content.filter(isDispatchableToolCall)
+  if (content.length === message.content.length) return message
+  return {
+    ...message,
+    content,
+    stopReason: message.stopReason === 'toolUse' && !content.some(piece => piece.type === 'toolCall')
+      ? 'stop'
+      : message.stopReason,
+  }
+}
+
 /**
  * Translate the pi-ai event stream into StreamChunks. pi-ai never throws
  * mid-stream — failures arrive as `error` events, which become error/aborted
@@ -148,6 +170,7 @@ export async function* toStreamChunks(
   // pi-ai contentIndex ↔ our block index map 1:1 (both count blocks from 0
   // in stream order), but we track ids per index for tool calls.
   const toolIds = new Map<number, { id: string; name: string }>()
+  const dispatchableToolIndices = new Set<number>()
 
   for await (const event of events) {
     switch (event.type) {
@@ -177,6 +200,7 @@ export async function* toStreamChunks(
         const id = partial?.type === 'toolCall' ? partial.id : ''
         const name = partial?.type === 'toolCall' ? partial.name : ''
         toolIds.set(event.contentIndex, { id, name })
+        if (id.length > 0 && name.length > 0) dispatchableToolIndices.add(event.contentIndex)
         yield { type: 'block-start', index: event.contentIndex, blockType: 'tool-call' }
         break
       }
@@ -192,6 +216,9 @@ export async function* toStreamChunks(
         break
       }
       case 'toolcall_end':
+        if (event.toolCall.id.length > 0 && event.toolCall.name.length > 0) {
+          dispatchableToolIndices.add(event.contentIndex)
+        }
         yield {
           type: 'block-end',
           index: event.contentIndex,
@@ -206,13 +233,26 @@ export async function* toStreamChunks(
         }
         break
       case 'done':
+      {
+        const message = sanitizeTerminalMessage(event.message)
+        const malformedToolOnly = event.message.stopReason === 'toolUse'
+            && message.stopReason === 'stop'
+            && message.content.length === 0
+        const mapped = malformedToolOnly
+          ? { kind: 'stop' } as FinishReason
+          : mapStopReason(message, contextWindow)
         yield { type: 'usage', usage: mapUsage(event.message.usage) }
         yield {
           type: 'finish',
-          reason: mapStopReason(event.message, contextWindow),
-          replayState: toPiReplayState(event.message, requestedModel),
+          // A toolUse terminal without one dispatchable call is provider noise,
+          // not a request to run a fictional empty-named tool.
+          reason: mapped.kind === 'tool-calls' && dispatchableToolIndices.size === 0
+            ? { kind: 'stop' }
+            : mapped,
+          replayState: toPiReplayState(message, requestedModel),
         }
         return
+      }
       case 'error':
         // In-stream error delivery (pi-ai's style) → error finish chunk
         // (the harness's other sanctioned error path besides throwing).

@@ -800,13 +800,36 @@ describe('toStreamChunks', () => {
     ])
   })
 
-  it('tolerates toolcall_start with a missing partial entry', async () => {
+  it('does not turn a missing provider tool identity into an unknown tool call', async () => {
     const chunks = await collect(toStreamChunks(feed(
       { type: 'toolcall_start', contentIndex: 0, partial: assistant() },
       { type: 'toolcall_delta', contentIndex: 0, delta: '{}', partial: assistant() },
-      { type: 'done', reason: 'stop', message: assistant() },
+      { type: 'done', reason: 'toolUse', message: assistant({ stopReason: 'toolUse' }) },
     )))
-    expect(chunks[1]).toEqual({ type: 'tool-call-delta', index: 0, id: '', argumentsDelta: '{}' })
+    expect(chunks.at(-1)).toEqual(expect.objectContaining({
+      type: 'finish',
+      reason: { kind: 'stop' },
+    }))
+  })
+
+  it('sanitizes a completed empty-named provider tool call before replay', async () => {
+    const malformed = assistant({
+      content: [{ type: 'toolCall', id: '', name: '', arguments: {} }],
+      stopReason: 'toolUse',
+    })
+    const chunks = await collect(toStreamChunks(feed(
+      { type: 'toolcall_start', contentIndex: 0, partial: malformed },
+      {
+        type: 'toolcall_end', contentIndex: 0,
+        toolCall: { type: 'toolCall', id: '', name: '', arguments: {} },
+        partial: malformed,
+      },
+      { type: 'done', reason: 'toolUse', message: malformed },
+    )))
+    expect(chunks.at(-1)).toEqual({
+      type: 'finish', reason: { kind: 'stop' },
+      replayState: expect.objectContaining({ blocks: [] }),
+    })
   })
 
   it('maps error events to error finish chunks (in-stream error style)', async () => {

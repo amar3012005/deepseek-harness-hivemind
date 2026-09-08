@@ -100,14 +100,10 @@ describe('BlockAssembler', () => {
     expect(assembler.blocks()).toEqual([{ type: 'tool-call', id: ToolCallId('c1'), name: 'echo', arguments: '{}' }])
   })
 
-  it('assembles tool-call with generated id fallback when no id provided', () => {
+  it('drops a malformed unnamed tool call instead of exposing an unknown tool', () => {
     const assembler = new BlockAssembler()
     assembler.push({ type: 'tool-call-delta', index: 0, argumentsDelta: '{}' } as StreamChunk)
-    // No id and no name provided — uses fallback id `call-{index}` and empty name
-    const blocks = assembler.blocks()
-    expect(blocks).toEqual([
-      { type: 'tool-call', id: ToolCallId('call-0'), name: '', arguments: '{}' },
-    ])
+    expect(assembler.blocks()).toEqual([])
   })
 
   it('exposes usage via the getter when a usage chunk was received', () => {
