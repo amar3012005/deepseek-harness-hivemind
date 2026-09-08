@@ -1,9 +1,44 @@
-# HIVE-only final layer over dsh-base + dsh-web-app.
+# HIVE-only final layer over dsh-base + dsh-web-app. HIVE model and tenant
+# capabilities live here so the shipped Web, Standard, Minimal, PTC, and
+# Creator compositions remain unchanged.
+- id: llm-pi-ai
+  config:
+    providers:
+      cloudflare-openrouter:
+        displayName: Cloudflare AI Gateway / OpenRouter
+        apiKeyEnv: CLOUDFLARE_API_KEY
+        api: openai-completions
+        baseURL: https://gateway.ai.cloudflare.com/v1/0dc6b9186b5a9b8985613b10c1c59f4f/hivemind-prod/compat
+        headers:
+          cf-aig-byok-alias: first-bundb
+        defaultContextWindow: 131072
+        defaultMaxTokens: 32768
+        defaultInput: [text]
+        retryPolicy:
+          mode: normal
+          maxRetries: 3
+        models:
+          - id: openrouter/openai/gpt-oss-120b
+            name: GPT OSS 120B via Cloudflare
+            contextWindow: 131072
+            maxTokens: 32768
+            input: [text]
+            reasoningEfforts:
+              off:
+              low: low
+              medium: medium
+              high: high
+
+- id: agent-default-model
+  config:
+    provider: cloudflare-openrouter
+    model: openrouter/openai/gpt-oss-120b
+
 - id: session-persistence-jsonl
   disabled: true
 
-- id: workspace
-  disabled: true
+# Keep the internal workspace registry required by native session lifecycle.
+# Its filesystem, controller, and UI consumers remain unavailable below.
 - id: workspace-files
   disabled: true
 - id: workspace-controller
@@ -76,6 +111,3 @@
         redisUrlEnv: REDIS_URL
         redisJtiPrefix: 'hive:harness-ticket:'
         sessionMaxAgeSeconds: 900
-
-    - id: ui-hivemind-connect
-      name: '@deepseek-ai/dsh-client-ui-hivemind-connect'
