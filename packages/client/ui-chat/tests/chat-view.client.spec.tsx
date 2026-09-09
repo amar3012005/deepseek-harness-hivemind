@@ -178,6 +178,20 @@ const toolResult = (seq: number, callId: string, name = 'bash'): ToolResultNode 
   callTime: seq * 1_000 - 500,
   content: [], isError: false, subCalls: [],
 })
+const imageToolResult = (seq: number, callId: string): ToolResultNode => ({
+  ...toolResult(seq, callId, 'browser_take_screenshot'),
+  content: [{
+    type: 'image',
+    attachment: {
+      attachmentId: 'sha256:preview' as never,
+      mediaType: 'image/png',
+      bytes: 4_254,
+      width: 1_280,
+      height: 720,
+      name: 'page.png',
+    },
+  }],
+})
 const runningCall = (callId: string, name = 'bash'): RunningToolCall => ({
   callId, name, argsRaw: `{"command":"cmd-${callId}"}`, turn: 2, step: 1, time: 1_000, subCalls: [],
 })
@@ -1379,6 +1393,25 @@ describe('ChatView', () => {
     const renewedToggle = view.getByRole('button', { name: '1 次工具调用 · 1 条消息 · 1 个 subagent' })
     expect(renewedToggle.getAttribute('aria-expanded')).toBe('true')
     expect(members[0]?.getAttribute('hidden')).toBeNull()
+  })
+
+  it('keeps admitted Tool image previews visible when completed Tool details are folded', () => {
+    const h = makeHarness({
+      nodes: [
+        user(1, 'show me the page'),
+        reasoningAssistant(2, 'capture the requested page', 1, 1),
+        imageToolResult(3, 'capture'),
+        assistant(4, 'Here is the screenshot.', 1, 2),
+      ],
+      turnEnds: new Map([[1, 5]]),
+    })
+    const view = render(<h.ChatView {...h.props} />)
+    const tool = view.container.querySelector<HTMLElement>('[data-chat-flow-kind="tool-call"]')
+    const preview = view.container.querySelector<HTMLElement>('[data-chat-tool-preview]')
+
+    expect(tool?.getAttribute('hidden')).toBe('until-found')
+    expect(preview).not.toBeNull()
+    expect(preview?.getAttribute('hidden')).toBeNull()
   })
 
   it('folds injected Context in place with the rest of the Turn process', () => {
