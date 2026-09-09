@@ -32,6 +32,10 @@ export interface ToolBridgeOptions {
   registrationFailure: 'contain' | 'throw'
   serverName: string
   toolCallTimeoutMs: number
+  /** Deployment-provided guidance appended to specific server tool descriptions. */
+  toolDescriptionSuffixes: Readonly<Record<string, string>>
+  /** Await one fresh protocol generation after a recoverable transport failure. */
+  recoverClient?: (failedClient: Client, signal: AbortSignal) => Promise<Client>
 }
 
 /** State for one sync generation: the current set of disposers keyed by public name. */
@@ -93,6 +97,27 @@ function callToolUncached(
       timeout: opts.toolCallTimeoutMs,
     },
   )
+}
+
+/**
+ * A transport error means the client generation itself cannot safely serve a
+ * later tool call. Streamable HTTP servers commonly report this after their
+ * upstream lost an MCP session; closing lets the existing connection
+ * supervisor establish a fresh protocol generation and re-register tools.
+ *
+ * This deliberately excludes ordinary MCP tool failures: those remain model
+ * visible results and must not reset a healthy connection.
+ */
+function isRecoverableTransportFailure(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error)
+  if (/\bSession not found\b/i.test(message)) return true
+  return /Streamable HTTP error/i.test(message) && /\b(?:502|503|504)\b/.test(message)
+}
+
+/** Request close through the native supervisor without masking the tool error. */
+function recoverTransportGeneration(client: Client, error: unknown): void {
+  if (!isRecoverableTransportFailure(error)) return
+  void client.close().catch(() => {})
 }
 
 /**
@@ -164,10 +189,11 @@ export async function syncTools(
         ctx,
         publicName,
         tool.name,
-        tool.description ?? '',
+        [tool.description ?? '', opts.toolDescriptionSuffixes[tool.name] ?? ''].filter(Boolean).join('\n\n'),
         tool.inputSchema,
         supportedOutputSchema(tool.outputSchema),
         tool.execution?.taskSupport === 'required',
+        tool.annotations?.readOnlyHint === true,
         opts,
       ))
     }
@@ -239,6 +265,7 @@ function supportedOutputSchema(candidate: unknown): JsonSchemaNode | undefined {
  * @param parameters - MCP input schema.
  * @param structuredSchema - supported structured-output schema, when advertised.
  * @param taskRequired - whether this MCP tool requires unsupported task execution.
+ * @param retrySafe - whether the server explicitly declares the tool read-only.
  * @param opts - bridge timeout and namespace options.
  * @returns a complete ToolRuntime definition.
  */
@@ -251,6 +278,7 @@ function createDefinition(
   parameters: Record<string, unknown>,
   structuredSchema: JsonSchemaNode | undefined,
   taskRequired: boolean,
+  retrySafe: boolean,
   opts: ToolBridgeOptions,
 ): ToolDefinition {
   const projections = new WeakMap<ToolExecution, PreparedProjection>()
@@ -259,7 +287,7 @@ function createDefinition(
     description,
     parameters,
     output: createOutput(rawName, structuredSchema),
-    execute: createExecutor(client, ctx, rawName, taskRequired, opts, projections),
+    execute: createExecutor(client, ctx, rawName, taskRequired, retrySafe, opts, projections),
     finalizeContent(exec: Readonly<ToolExecution>, result: Readonly<ToolExecutionResult>) {
       const projection = projections.get(exec)
       if (projection === undefined) return undefined
@@ -300,12 +328,15 @@ function createOutput(rawName: string, structuredSchema: JsonSchemaNode | undefi
  *
  * When the MCP server returns `isError: true`, the executor throws so that
  * the ToolRuntime's catch path produces an `isError` result for the model.
+ * A recoverable transport failure is retried once only when the server marks
+ * the tool read-only; write and unannotated tools fail without replay.
  */
 function createExecutor(
   client: Client,
   ctx: Context,
   rawName: string,
   taskRequired: boolean,
+  retrySafe: boolean,
   opts: ToolBridgeOptions,
   projections: WeakMap<ToolExecution, PreparedProjection>,
 ): ToolDefinition['execute'] {
@@ -318,7 +349,23 @@ function createExecutor(
     // string/number/null). Fallback to {} lets the MCP server produce a
     // specific "missing required param" error the model can learn from.
     const argsObj = (typeof args === 'object' && args !== null ? args : {}) as Record<string, unknown>
-    const result = await callToolUncached(client, rawName, argsObj, exec, opts)
+    let result: Awaited<ReturnType<typeof callToolUncached>>
+    try {
+      result = await callToolUncached(client, rawName, argsObj, exec, opts)
+    } catch (error: unknown) {
+      if (!isRecoverableTransportFailure(error)) throw error
+      if (!retrySafe || opts.recoverClient === undefined) {
+        recoverTransportGeneration(client, error)
+        throw error
+      }
+      const recovered = await opts.recoverClient(client, exec.signal)
+      try {
+        result = await callToolUncached(recovered, rawName, argsObj, exec, opts)
+      } catch (retryError: unknown) {
+        recoverTransportGeneration(recovered, retryError)
+        throw retryError
+      }
+    }
 
     // The SDK may return a legacy `toolResult` shape; normalize to content array.
     if (!Array.isArray(result.content)) {
@@ -392,30 +439,21 @@ function decodeImage(block: McpContentBlock): SaveImageAttachment {
 }
 
 /**
- * Resolve the active model route and durable store for an image-bearing result.
- * @param ctx - plugin context with optional services.
- * @param exec - exact tool execution whose agent supplies the latest route.
- * @returns the attachment store after exact positive image-capability proof.
+ * Resolve the durable store for an image-bearing result.
+ *
+ * Image persistence is independent of the active model route. The LLM runtime
+ * already projects durable image references to an actual image for vision
+ * routes and to a stable textual placeholder for text-only routes. Making the
+ * MCP bridge repeat that route check loses otherwise valid browser evidence
+ * from the session and the native tool card.
+ *
+ * @param ctx - plugin context with an optional attachment service.
+ * @param exec - exact tool execution, used only to respect cancellation.
+ * @returns the attachment store that owns the durable image reference.
  */
-async function resolveImageAdmission(ctx: Context, exec: ToolExecution): Promise<AttachmentStore> {
+async function resolveImageStore(ctx: Context, exec: ToolExecution): Promise<AttachmentStore> {
   const attachments = ctx.get('attachments')
   if (attachments === undefined) throw new Error('no attachment store is mounted')
-  const routed = exec.agent?.session.requestHeader()?.config
-  const provider = routed?.provider ?? exec.agent?.options.provider
-  const model = routed?.model ?? exec.agent?.options.model
-  const llm = ctx.get('llm')
-  if (provider === undefined || model === undefined || llm === undefined) {
-    throw new Error('the current model route could not be resolved')
-  }
-  let info: Awaited<ReturnType<typeof llm.resolveModelInfo>>
-  try {
-    info = await llm.resolveModelInfo(provider, model, exec.signal)
-  } catch {
-    throw new Error('the current model route could not be verified')
-  }
-  if (info.inputModalities === undefined || !info.inputModalities.includes('image')) {
-    throw new Error(`model "${model}" does not declare image input`)
-  }
   if (exec.signal.aborted) throw new Error('the tool call was canceled before image storage')
   return attachments
 }
@@ -462,9 +500,9 @@ async function prepareImageProjection(
 
   let attachments: AttachmentStore
   try {
-    attachments = await resolveImageAdmission(ctx, exec)
+    attachments = await resolveImageStore(ctx, exec)
   } catch (error: unknown) {
-    // resolveImageAdmission contains provider failures and throws Error only.
+    // resolveImageStore contains storage-admission failures and throws Error only.
     const reason = (error as Error).message
     return projectContent(content, toolName, block => ({ type: 'text', text: imageDiagnostic(block, reason) }))
   }

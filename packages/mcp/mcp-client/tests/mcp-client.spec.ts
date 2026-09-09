@@ -148,6 +148,7 @@ const defaultOpts: ToolBridgeOptions = {
   registrationFailure: 'contain',
   serverName: 'srv',
   toolCallTimeoutMs: 60_000,
+  toolDescriptionSuffixes: {},
 }
 
 // ---- Tests ----
@@ -562,7 +563,7 @@ describe('tool execution', () => {
     expect(textAt(result.content, 2)).toContain('not canonical base64')
   })
 
-  it('does not admit images for a route without declared image input', async () => {
+  it('persists tool images on a text-only route for native history and UI rendering', async () => {
     const rich = await mountRichRegistry()
     const client = createMockClient(
       [{ name: 'img', inputSchema: { type: 'object' } }],
@@ -578,11 +579,11 @@ describe('tool execution', () => {
       agent: agentOn('text') as never,
     })
 
-    expect(rich.attachments.saved).toEqual([])
-    expect(textAt(result.content)).toContain('does not declare image input')
+    expect(rich.attachments.saved).toHaveLength(1)
+    expect(result.content[0]).toMatchObject({ type: 'image' })
   })
 
-  it('refuses images when the exact route is missing, unverifiable, or canceled', async () => {
+  it('requires attachment storage and honors cancellation when persisting images', async () => {
     const rich = await mountRichRegistry()
     const client = createMockClient(
       [{ name: 'img', inputSchema: { type: 'object' } }],
@@ -590,26 +591,7 @@ describe('tool execution', () => {
     )
     await syncTools(client as never, rich.ctx, defaultOpts, new Map())
 
-    const noProvider = await rich.ctx.tools.execute({
-      signal: testToolSignal,
-      callId: ToolCallId('no-provider'),
-      name: 'mcp__srv__img',
-      arguments: {},
-      agent: { options: { model: 'vision' }, session: { requestHeader: () => undefined } } as never,
-    })
-    expect(textAt(noProvider.content)).toContain('route could not be resolved')
-
-    const noModel = await rich.ctx.tools.execute({
-      signal: testToolSignal,
-      callId: ToolCallId('no-model'),
-      name: 'mcp__srv__img',
-      arguments: {},
-      agent: { options: { provider: 'visual' }, session: { requestHeader: () => undefined } } as never,
-    })
-    expect(textAt(noModel.content)).toContain('route could not be resolved')
-
     const noLlmCtx = await mountRegistry()
-    await noLlmCtx.plugin(RecordingAttachmentStore)
     await syncTools(client as never, noLlmCtx, defaultOpts, new Map())
     const noLlm = await noLlmCtx.tools.execute({
       signal: testToolSignal,
@@ -618,35 +600,10 @@ describe('tool execution', () => {
       arguments: {},
       agent: agentOn() as never,
     })
-    expect(textAt(noLlm.content)).toContain('route could not be resolved')
-
-    vi.spyOn(rich.ctx.llm, 'resolveModelInfo').mockRejectedValueOnce(new Error('catalog down'))
-    const unverified = await rich.ctx.tools.execute({
-      signal: testToolSignal,
-      callId: ToolCallId('unverified'),
-      name: 'mcp__srv__img',
-      arguments: {},
-      agent: agentOn() as never,
-    })
-    expect(textAt(unverified.content)).toContain('route could not be verified')
-
-    vi.spyOn(rich.ctx.llm, 'resolveModelInfo').mockResolvedValueOnce({
-      provider: 'visual', id: 'vision', name: 'vision',
-    })
-    const unknown = await rich.ctx.tools.execute({
-      signal: testToolSignal,
-      callId: ToolCallId('unknown-modalities'),
-      name: 'mcp__srv__img',
-      arguments: {},
-      agent: agentOn() as never,
-    })
-    expect(textAt(unknown.content)).toContain('does not declare image input')
+    expect(textAt(noLlm.content)).toContain('no attachment store is mounted')
 
     const controller = new AbortController()
-    vi.spyOn(rich.ctx.llm, 'resolveModelInfo').mockImplementationOnce(async (provider, model) => {
-      controller.abort(new Error('stop'))
-      return { provider, id: model, name: model, inputModalities: ['text', 'image'] }
-    })
+    controller.abort(new Error('stop'))
     const canceled = await rich.ctx.tools.execute({
       signal: controller.signal,
       callId: ToolCallId('canceled'),
@@ -655,7 +612,7 @@ describe('tool execution', () => {
       agent: agentOn() as never,
     })
     expect(canceled.isError).toBe(true)
-    expect(canceled.content[0]).toEqual({ type: 'text', text: 'Error: tool call aborted' })
+    expect(canceled.content[0]).toEqual({ type: 'text', text: 'Error: tool call aborted before dispatch' })
     expect(rich.attachments.saved).toEqual([])
   })
 
@@ -1105,6 +1062,19 @@ describe('tool execution edge cases', () => {
     await syncTools(client as never, ctx, defaultOpts, new Map())
     const tool = ctx.tools.get('mcp__srv__described')
     expect(tool?.description).toBe('A described tool')
+  })
+
+  it('appends deployment guidance to a matching MCP tool description', async () => {
+    const client = createMockClient([
+      { name: 'described', description: 'A described tool', inputSchema: { type: 'object' } },
+    ])
+
+    await syncTools(client as never, ctx, {
+      ...defaultOpts,
+      toolDescriptionSuffixes: { described: 'Use the full task intent.' },
+    }, new Map())
+    const tool = ctx.tools.get('mcp__srv__described')
+    expect(tool?.description).toBe('A described tool\n\nUse the full task intent.')
   })
 
   it('uses empty description when tool has no description', async () => {

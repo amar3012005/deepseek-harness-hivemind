@@ -126,6 +126,8 @@ export function startConnection(ctx: Context, config: Config, policy: ResolvedRe
     registrationFailure: 'contain',
     serverName: config.serverName,
     toolCallTimeoutMs: config.toolCallTimeoutMs,
+    toolDescriptionSuffixes: config.toolDescriptionSuffixes ?? {},
+    recoverClient: waitForRecoveredClient,
   }
   // The initial sync uses 'throw' when failOnStartupError is configured, so
   // a registration conflict propagates to the startup-await path. Re-syncs
@@ -146,11 +148,70 @@ export function startConnection(ctx: Context, config: Config, policy: ResolvedRe
   let failedAttempts = 0
   /** When the current generation finished connect + initial sync; undefined while down. */
   let connectedAt: number | undefined
+  /** Generation whose close has already been requested by a failed tool call. */
+  let recoveryRequestedFor: Client | undefined
+  /** Read-only calls waiting to retry against the next connected generation. */
+  const recoveryWaiters = new Set<{
+    resolve(client: Client): void
+    reject(error: Error): void
+    signal: AbortSignal
+    onAbort(): void
+    timeout: NodeJS.Timeout
+  }>()
   /** The real error from the first connection attempt, for startup-await diagnostics. */
   let firstAttemptError: unknown
 
   /** A generation may act only while it is the current one on a live plugin. */
   const isCurrent = (generation: Client): boolean => !disposed && client === generation
+
+  /** Settle and remove every caller waiting for a replacement generation. */
+  function settleRecoveryWaiters(generation: Client | Error): void {
+    for (const waiter of recoveryWaiters) {
+      recoveryWaiters.delete(waiter)
+      clearTimeout(waiter.timeout)
+      waiter.signal.removeEventListener('abort', waiter.onAbort)
+      if (generation instanceof Error) waiter.reject(generation)
+      else waiter.resolve(generation)
+    }
+  }
+
+  /**
+   * Close one failed generation and await the next connected client. Multiple
+   * read-only calls share the same rotation; each caller still retries only
+   * its own wire request once.
+   */
+  function waitForRecoveredClient(failedClient: Client, signal: AbortSignal): Promise<Client> {
+    if (disposed) return Promise.reject(new Error(`${label}: connection disposed during recovery`))
+    if (client !== undefined && client !== failedClient && connectedAt !== undefined) return Promise.resolve(client)
+    if (signal.aborted) return Promise.reject(new Error(`${label}: recovery canceled`))
+
+    const waiting = Promise.withResolvers<Client>()
+    const waiter = {
+      resolve: waiting.resolve,
+      reject: waiting.reject,
+      signal,
+      onAbort(): void {
+        recoveryWaiters.delete(waiter)
+        clearTimeout(waiter.timeout)
+        waiting.reject(new Error(`${label}: recovery canceled`))
+      },
+      timeout: undefined as unknown as NodeJS.Timeout,
+    }
+    waiter.timeout = setTimeout(() => {
+      recoveryWaiters.delete(waiter)
+      signal.removeEventListener('abort', waiter.onAbort)
+      waiting.reject(new Error(`${label}: recovery timed out`))
+    }, config.toolCallTimeoutMs)
+    waiter.timeout.unref()
+    recoveryWaiters.add(waiter)
+    signal.addEventListener('abort', waiter.onAbort, { once: true })
+
+    if (isCurrent(failedClient) && recoveryRequestedFor !== failedClient) {
+      recoveryRequestedFor = failedClient
+      void failedClient.close().catch(() => {})
+    }
+    return waiting.promise
+  }
 
   /**
    * Serializes every syncTools call — initial syncs and notification re-syncs
@@ -196,6 +257,7 @@ export function startConnection(ctx: Context, config: Config, policy: ResolvedRe
         ? 'connection lost and reconnect is disabled — registered tools will fail until an HMR reload or Host restart'
         : 'connection failed and reconnect is disabled — no tools were registered; reload the plugin or restart the Host to connect'
       ctx.logger.error(`${label}: ${message}`)
+      settleRecoveryWaiters(new Error(`${label}: automatic reconnect is disabled`))
       return
     }
     // A connection that stayed up past the stability window (= maxDelayMs, the
@@ -211,6 +273,7 @@ export function startConnection(ctx: Context, config: Config, policy: ResolvedRe
         disposers = new Map()
       })
       ctx.logger.error(`${label}: giving up after ${policy.maxAttempts} consecutive failed reconnect attempts — tools unregistered; reload the plugin or restart the Host to reconnect`)
+      settleRecoveryWaiters(new Error(`${label}: reconnect attempts exhausted`))
       return
     }
     const delayMs = Math.min(policy.maxDelayMs, policy.initialDelayMs * 2 ** (failedAttempts - 1))
@@ -301,6 +364,8 @@ export function startConnection(ctx: Context, config: Config, policy: ResolvedRe
     }
     if (!isCurrent(generation)) return
     connectedAt = Date.now()
+    recoveryRequestedFor = undefined
+    settleRecoveryWaiters(generation)
     if (failedAttempts > 0) ctx.logger.info(`${label}: reconnected and re-synced tools (attempt ${failedAttempts}/${policy.maxAttempts})`)
   }
 
@@ -326,6 +391,7 @@ export function startConnection(ctx: Context, config: Config, policy: ResolvedRe
     ready,
     async dispose(): Promise<void> {
       disposed = true
+      settleRecoveryWaiters(new Error(`${label}: connection disposed during recovery`))
       if (reconnectTimer !== undefined) {
         clearTimeout(reconnectTimer)
         reconnectTimer = undefined

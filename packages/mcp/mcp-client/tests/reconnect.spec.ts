@@ -114,6 +114,17 @@ function listing(...names: string[]): { tools: { name: string; inputSchema: { ty
   }
 }
 
+/** One explicitly read-only tool eligible for a single transport retry. */
+function readOnlyListing(name: string): {
+  tools: { name: string; inputSchema: { type: string }; annotations: { readOnlyHint: true } }[]
+  nextCursor: undefined
+} {
+  return {
+    tools: [{ name, inputSchema: { type: 'object' }, annotations: { readOnlyHint: true } }],
+    nextCursor: undefined,
+  }
+}
+
 let callSeq = 0
 function nextCallId(): ToolCallId {
   return ToolCallId(`reconnect-${++callSeq}`)
@@ -168,6 +179,58 @@ describe('reconnect supervisor', () => {
     instances[0]!.onclose?.()
     await sleep(30)
     expect(instances).toHaveLength(2)
+  })
+
+  it('rotates a stale Streamable HTTP session after a recoverable call failure', async () => {
+    const { warns, infos } = captureLogs(ctx)
+    await apply(ctx, stdioConfig({ initialDelayMs: 5, maxDelayMs: 40, maxAttempts: 5 }))
+    await vi.waitFor(() => { expect(ctx.tools.get('mcp__srv__remote')).toBeDefined() })
+
+    mockCallTool.mockRejectedValueOnce(new Error('Streamable HTTP error: Error POSTing to endpoint: Session not found'))
+    const failed = await ctx.tools.execute({
+      signal: testToolSignal,
+      callId: nextCallId(), name: 'mcp__srv__remote', arguments: {},
+    })
+    expect(failed.isError).toBe(true)
+
+    await vi.waitFor(() => { expect(instances).toHaveLength(2) })
+    await vi.waitFor(() => { expect(ctx.tools.get('mcp__srv__remote')).toBeDefined() })
+    expect(mockClose).toHaveBeenCalled()
+    expect(warns.some(line => line.includes('connection lost; reconnecting in 5ms'))).toBe(true)
+    expect(infos.some(line => line.includes('reconnected and re-synced tools'))).toBe(true)
+  })
+
+  it('reconnects and retries one explicitly read-only call after a retryable HTTP failure', async () => {
+    mockListTools.mockResolvedValue(readOnlyListing('remote'))
+    mockCallTool
+      .mockRejectedValueOnce(new Error('Streamable HTTP error: Error POSTing to endpoint: 502 Bad gateway'))
+      .mockResolvedValueOnce({ content: [{ type: 'text', text: 'recovered' }] })
+    await apply(ctx, stdioConfig({ initialDelayMs: 2, maxDelayMs: 20, maxAttempts: 2 }))
+    await vi.waitFor(() => { expect(ctx.tools.get('mcp__srv__remote')).toBeDefined() })
+
+    const result = await ctx.tools.execute({
+      signal: testToolSignal,
+      callId: nextCallId(), name: 'mcp__srv__remote', arguments: {},
+    })
+
+    expect(result.isError).toBe(false)
+    expect(mockCallTool).toHaveBeenCalledTimes(2)
+    expect(instances).toHaveLength(2)
+  })
+
+  it('rotates but never retries an unannotated call after a retryable HTTP failure', async () => {
+    await apply(ctx, stdioConfig({ initialDelayMs: 2, maxDelayMs: 20, maxAttempts: 2 }))
+    await vi.waitFor(() => { expect(ctx.tools.get('mcp__srv__remote')).toBeDefined() })
+    mockCallTool.mockRejectedValueOnce(new Error('Streamable HTTP error: Error POSTing to endpoint: 503 unavailable'))
+
+    const result = await ctx.tools.execute({
+      signal: testToolSignal,
+      callId: nextCallId(), name: 'mcp__srv__remote', arguments: {},
+    })
+
+    expect(result.isError).toBe(true)
+    expect(mockCallTool).toHaveBeenCalledTimes(1)
+    await vi.waitFor(() => { expect(instances).toHaveLength(2) })
   })
 
   it('stops at the failure cap, unregisters the tools, and reports final failure', async () => {

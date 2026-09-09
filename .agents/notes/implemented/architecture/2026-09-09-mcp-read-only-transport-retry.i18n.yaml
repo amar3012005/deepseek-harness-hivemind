@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-09-09-mcp-read-only-transport-retry.md
+2026-09-09-mcp-read-only-transport-retry.md: f444ccae58a316218886f25dbde5f0535f88e67d
+2026-09-09-mcp-read-only-transport-retry.zh.md: 36eb14cfb0612687446b5f60439bb52da48302c1
