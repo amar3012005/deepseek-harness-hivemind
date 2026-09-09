@@ -924,6 +924,10 @@ describe('mapStopReason / mapUsage', () => {
       .toMatchObject({ kind: 'error', failure: { code: 'TRANSPORT' } })
     expect(mapStopReason(assistant({
       stopReason: 'error',
+      errorMessage: 'Upstream error from Groq: Failed to parse tool call arguments as JSON',
+    }))).toMatchObject({ kind: 'error', failure: { code: 'MALFORMED_TOOL_CALL' } })
+    expect(mapStopReason(assistant({
+      stopReason: 'error',
       errorMessage: 'HTTP 400: input exceeds the model context window limit',
     }))).toMatchObject({ kind: 'error', failure: { code: CONTEXT_WINDOW_EXCEEDED_CODE } })
     expect(mapStopReason(assistant({

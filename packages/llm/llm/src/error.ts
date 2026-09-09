@@ -39,6 +39,14 @@ export const QUOTA_EXCEEDED_CODE = 'QUOTA'
 export const EMPTY_RESPONSE_CODE = 'EMPTY_RESPONSE'
 
 /**
+ * Canonical provider-neutral code for a model response whose tool-call payload
+ * could not be decoded. The request itself was valid and no tool was executed,
+ * so a bounded model-request retry is safe and may recover from stochastic
+ * malformed JSON emitted by an upstream model or provider.
+ */
+export const MALFORMED_TOOL_CALL_CODE = 'MALFORMED_TOOL_CALL'
+
+/**
  * Canonical provider-neutral code for a credential that was supplied but
  * cannot be used — malformed rather than absent. Distinct from
  * `MISSING_CREDENTIAL` because the fix differs: correct the stored value
