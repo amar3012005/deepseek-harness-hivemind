@@ -6,7 +6,7 @@ import type { SessionSnapshot } from '@deepseek-ai/dsh-api-session-controller/cl
 import type { ToolResultNode } from '@deepseek-ai/dsh-client-ui-chat/client'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts'
-import type { ToolCallOwnerProps, ToolTreeProps } from '../src/client/contract/slots.ts'
+import type { ToolCallOwnerProps, ToolImagesOwnerProps, ToolTreeProps } from '../src/client/contract/slots.ts'
 import { ToolCallTree } from '../src/client/tool/ToolCallTree.tsx'
 import { zh } from '@deepseek-ai/dsh-client-ui-conversation/src/client/locales.ts'
 
@@ -24,11 +24,13 @@ function props(
   selectedCallId?: string,
   home?: string,
   owners?: ToolCallOwnerProps[],
+  inlineImages?: ToolImagesOwnerProps[],
 ): ToolTreeProps {
   const snapshot = {} as SessionSnapshot
   const useSession = ((selector: (value: SessionSnapshot) => unknown) => selector(snapshot)) as ToolTreeProps['useSession']
-  const renderSlot = ((_key: string, owner: ToolCallOwnerProps, options?: { fallback?: React.ReactNode }) => {
-    owners?.push(owner)
+  const renderSlot = ((key: string, owner: ToolCallOwnerProps | ToolImagesOwnerProps, options?: { fallback?: React.ReactNode }) => {
+    if (key === 'tool.call.inline-images') inlineImages?.push(owner as ToolImagesOwnerProps)
+    else owners?.push(owner as ToolCallOwnerProps)
     return options?.fallback ?? null
   }) as unknown as ToolTreeProps['renderSlot']
   return {
@@ -69,5 +71,49 @@ describe('ToolCallTree', () => {
     const block = root('w1', { name: 'read', argsRaw: '{"path":"/h/docs/a.ts"}' })
     const view = render(<ToolCallTree {...props(block, 'w1', '/h')} />)
     expect(view.getByText('~/docs/a.ts')).toBeTruthy()
+  })
+
+  it('renders durable images returned by an arbitrary tool through the inline media slot', () => {
+    const image = {
+      attachmentId: 'opaque-browser-capture' as never,
+      mediaType: 'image/png' as const,
+      bytes: 128,
+      width: 1280,
+      height: 720,
+      name: 'capture.png',
+    }
+    const block = root('capture-1', { name: 'browser_take_screenshot', argsRaw: '{}' })
+    block.content = [
+      { type: 'text', text: 'Screenshot captured' },
+      { type: 'image', attachment: image },
+    ] as never
+    const images: ToolImagesOwnerProps[] = []
+
+    render(<ToolCallTree {...props(block, undefined, undefined, undefined, images)} />)
+
+    expect(images).toEqual([{
+      images: [{ attachment: image }],
+      loadImage: expect.any(Function),
+      align: 'start',
+    }])
+  })
+
+  it('does not render inline media for failed or malformed image results', () => {
+    const malformed = root('capture-2', { name: 'future_image_generator', argsRaw: '{}' })
+    malformed.content = [{ type: 'image', attachment: { mediaType: 'image/png' } }] as never
+    const images: ToolImagesOwnerProps[] = []
+    render(<ToolCallTree {...props(malformed, undefined, undefined, undefined, images)} />)
+    expect(images).toHaveLength(0)
+
+    const failed = root('capture-3', { name: 'future_image_generator', argsRaw: '{}' })
+    failed.content = [{
+      type: 'image',
+      attachment: {
+        attachmentId: 'opaque', mediaType: 'image/png', bytes: 1, width: 1, height: 1,
+      },
+    }] as never
+    failed.isError = true
+    render(<ToolCallTree {...props(failed, undefined, undefined, undefined, images)} />)
+    expect(images).toHaveLength(0)
   })
 })

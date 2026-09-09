@@ -2,6 +2,7 @@
 import { memo, useMemo, type ReactNode } from 'react'
 import type { ToolCallBlock } from '@deepseek-ai/dsh-client-ui-chat/client'
 import type { ToolCallOwnerProps, ToolTreeProps } from '../contract/slots.ts'
+import { toolResultImages } from './models/image-card-model.ts'
 import { GenericToolCard } from './toolviews/GenericToolCard.tsx'
 import css from './ToolCallTree.module.css'
 
@@ -30,6 +31,7 @@ const ToolCall = memo(function ToolCall({
     loadImage,
     inspect: () => { inspectCall(callId) },
   }), [callId, toolName, block, openFile, cwd, home, loadImage, inspectCall])
+  const images = useMemo(() => toolResultImages(block), [block])
   return (
     <div
       className={css.callRow}
@@ -40,6 +42,15 @@ const ToolCall = memo(function ToolCall({
         entryKey: toolName,
         fallback: <GenericToolCard {...owner} t={t} />,
       })}
+      {images !== null && (
+        <div className={css.inlineImages} data-tool-inline-images>
+          {renderSlot('tool.call.inline-images', {
+            images,
+            loadImage,
+            align: 'start',
+          })}
+        </div>
+      )}
       {children}
     </div>
   )

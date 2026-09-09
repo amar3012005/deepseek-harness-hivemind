@@ -39,7 +39,7 @@ ctx.slots.inject('tool.call.toolview', () =>
   }, BusinessToolRow))
 ```
 
-owner 载荷为 `ToolCallOwnerProps`：`callId`、`toolName`、冻结的 `block`、可选 `cwd` 与 `home`、会话授权的 `loadImage` loader（供结果携带持久图像的视图使用），以及普通的 `openFile`/`inspect` 回调。Code Dispatch block 保留事件的 `parentCallId`；root Session call 没有该字段，因此 descendant 走同一条按 key 分发——注册过视图的调用（如 `read_image`）在嵌套处也渲染其卡片，未注册的 descendant 保持 generic 压平形式。路径摘要先相对 Session cwd 缩短，再把剩余的 POSIX Host home 写成 `~`；`filePath` 与 Host 打开仍使用作者给出的文件系统路径。注册项会收到常规 Session slot runtime share，但不会收到 React node 或 runtime service。
+owner 载荷为 `ToolCallOwnerProps`：`callId`、`toolName`、冻结的 `block`、可选 `cwd` 与 `home`、会话授权的 `loadImage` loader（供结果携带持久图像的视图使用），以及普通的 `openFile`/`inspect` 回调。Code Dispatch block 保留事件的 `parentCallId`；root Session call 没有该字段，因此 descendant 走同一条按 key 分发——注册过视图的调用（如 `read_image`）在嵌套处也渲染其卡片，未注册的 descendant 保持 generic 压平形式。独立于该 keyed view，每个携带有效持久图像 block 的成功工具结果都会通过 `tool.call.inline-images` 内联渲染；该路由只看内容形状，因此 MCP 截图与未来图像 provider 不需要注册 wire 名称。路径摘要先相对 Session cwd 缩短，再把剩余的 POSIX Host home 写成 `~`；`filePath` 与 Host 打开仍使用作者给出的文件系统路径。注册项会收到常规 Session slot runtime share，但不会收到 React node 或 runtime service。
 
 ### 内置视图
 
@@ -62,7 +62,7 @@ owner 载荷为 `ToolCallOwnerProps`：`callId`、`toolName`、冻结的 `block`
 ### 卡片
 
 
-每张卡片都在调用树里就地阅读；不存在选中调用的第二个全高展示面。行 renderer 为 terminal、read、diff、search 和 web 卡片各复用同一个纯 card model，image 卡片的图库经由工具自有 `tool.call.images` 槽位渲染。这些 model 校验原始调用参数、结果内容、失败状态、持久 metadata、Code Dispatch 的 `parentCallId` 与 Session 路径事实。不受支持或格式错误的输入使用压平的工具结果文本。文件路径摘要经属主的 `openFile` 打开文件，chat 视图把它路由到右侧 Sidebar 的文本预览；`inspect` 打开轨迹视图。terminal、diff、read、search 与 web 卡片的上限与 fallback 规则仍由 [ui-primitives README](../ui-primitives/README.zh.md) 负责；image 卡片的 fallback 规则由本包内的 card model 自行承载。
+每张卡片都在调用树里就地阅读；不存在选中调用的第二个全高展示面。行 renderer 为 terminal、read、diff、search 和 web 卡片各复用同一个纯 card model，`read_image` 卡片的展开图库经由 `tool.call.images` 渲染。调用树还会把任意成功工具结果中的有效图像 block 投影到 `tool.call.inline-images`，直接显示在未改动的工具回执下方。两个图库都只接收持久引用与 Session 授权 loader；格式错误或失败的结果仍走真实的 generic fallback。这些 model 校验原始调用参数、结果内容、失败状态、持久 metadata、Code Dispatch 的 `parentCallId` 与 Session 路径事实。不受支持或格式错误的输入使用压平的工具结果文本。文件路径摘要经属主的 `openFile` 打开文件，chat 视图把它路由到右侧 Sidebar 的文本预览；`inspect` 打开轨迹视图。terminal、diff、read、search 与 web 卡片的上限与 fallback 规则仍由 [ui-primitives README](../ui-primitives/README.zh.md) 负责；image 卡片的 fallback 规则由本包内的 card model 自行承载。
 
 terminal model 使用浏览器安全入口 `@deepseek-ai/dsh-spill-policy/notice` 的 `hasSpillNotice`，而非独立的 UI 匹配规则。[spill-policy README](../../spill/spill-policy/README.zh.md#shared-notice-ownership) 负责通知的格式化与识别。该检查保守地选择通用输出；匹配文本不能认证其来源，回放也不改变已记录的结果字节。
 </details>

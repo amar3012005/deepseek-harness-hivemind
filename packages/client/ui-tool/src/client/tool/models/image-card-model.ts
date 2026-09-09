@@ -150,6 +150,25 @@ function imageReferences(content: readonly unknown[]): ImageAttachmentRef[] | nu
 }
 
 /**
+ * Derive the durable images returned by any successful Tool result.
+ *
+ * This is deliberately shape-based rather than tool-name-based: MCP browser
+ * captures, image generators, and future media providers all share the native
+ * Harness content-block contract. A malformed image block refuses the complete
+ * gallery so the generic Tool receipt remains the truthful fallback.
+ *
+ * @param block - running or settled Tool lifecycle node.
+ * @returns ordered durable image sources, or null when none can be rendered.
+ */
+export function toolResultImages(
+  block: ToolCallBlock,
+): readonly { readonly attachment: ImageAttachmentRef }[] | null {
+  if (!('kind' in block) || block.isError) return null
+  const refs = imageReferences(block.content)
+  return refs === null ? null : refs.map(attachment => ({ attachment }))
+}
+
+/**
  * Read the text of every text block of a settled image result, joined in order.
  *
  * The envelope is one of them; a post-execute hook that appends further text
@@ -229,13 +248,13 @@ export function imageCardModel(
   if (!fullyRendered(block.content)) return null
   // The references come from the result's own image blocks, the single source of
   // truth; `meta` contributes only the path, which the content does not carry.
-  const refs = imageReferences(block.content)
-  if (refs === null) return null
+  const images = toolResultImages(block)
+  if (images === null) return null
   const text = imageTexts(block.content)
   if (text === null) return null
   return {
     label: abbreviateHomePath(relativizeToCwd(path, sessionCwd), home),
-    images: refs.map(ref => ({ attachment: ref })),
+    images,
     text,
   }
 }

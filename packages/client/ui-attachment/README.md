@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-This package renders everything the conversation UI shows about attachments: one ordered draft rail under the composer, a full-viewport drop invitation, durable images in Chat, Trajectory, and Tool results, and a lightbox for the original image. Attachment data, upload state, image loading, and callbacks come from the declared slot owners. Choose it for the DeepSeek Chat-style attachment experience.
+This package renders everything the conversation UI shows about attachments: one ordered draft rail under the composer, a full-viewport drop invitation, durable images in Chat, Trajectory, specialized Tool cards, generic inline Tool results, and a lightbox for the original image. Attachment data, upload state, image loading, and callbacks come from the declared slot owners. Choose it for the DeepSeek Chat-style attachment experience.
 
 ## Table of Contents
 
@@ -25,7 +25,7 @@ This package renders everything the conversation UI shows about attachments: one
 <a id="use-this-package"></a>
 ## Use this package
 
-Mount this plugin alongside [`ui-conversation`](../ui-conversation/README.md) and [`ui-tool`](../ui-tool/README.md) when tool results need an image gallery. It waits for their slot declarations and registers its components into them. Users then see the mixed draft-attachment rail, DeepSeek Web file cards with upload controls, the drop overlay with its limits line, message images sized by count, the tool card's gallery, and the Escape/mask/close lightbox.
+Mount this plugin alongside [`ui-conversation`](../ui-conversation/README.md) and [`ui-tool`](../ui-tool/README.md) when tool results need an image gallery. It waits for their slot declarations and registers its components into them. Users then see the mixed draft-attachment rail, DeepSeek Web file cards with upload controls, the drop overlay with its limits line, message images sized by count, specialized and generic inline Tool galleries, and the Escape/mask/close lightbox. Any successful Tool can participate by returning the native durable image content block; the renderer does not maintain a list of screenshot or generation tool names.
 
 ### Draft attachments
 
@@ -47,7 +47,7 @@ While a file drag is over the page, the full-viewport overlay announces the drop
 <details>
 <summary>Implementation internals — click to expand</summary>
 
-The plugin waits for `conversation.input.attachments`, `conversation.message.images`, `conversation.trajectory.images`, and `tool.call.images` through `ctx.slots.inject`. It then registers the composer rail, document drop target, shared history gallery for Chat, Trajectory, and Tool results, and original-image lightbox. The presentation components are pure props: the slot owner supplies attachment data, image loading, callbacks, and the locale translator; the package entry exports no components.
+The plugin waits for `conversation.input.attachments`, `conversation.message.images`, `conversation.trajectory.images`, `tool.call.images`, and `tool.call.inline-images` through `ctx.slots.inject`. It then registers the composer rail, document drop target, shared history gallery for Chat, Trajectory, specialized Tool cards and inline Tool results, and original-image lightbox. The presentation components are pure props: the slot owner supplies attachment data, image loading, callbacks, and the locale translator; the package entry exports no components.
 
 | File | Role |
 |---|---|

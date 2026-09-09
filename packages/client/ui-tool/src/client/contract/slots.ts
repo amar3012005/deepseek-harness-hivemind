@@ -38,6 +38,12 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
      * slot.
      */
     'tool.call.images': { kind: 'single'; scope: 'session'; owner: ToolImagesOwnerProps }
+    /**
+     * Inline durable media returned by any Tool, independent of its wire name.
+     * The Tool tree derives this projection from the canonical result content;
+     * the attachment plugin supplies the actual gallery renderer.
+     */
+    'tool.call.inline-images': { kind: 'single'; scope: 'session'; owner: ToolImagesOwnerProps }
   }
 }
 
@@ -98,6 +104,6 @@ export type ToolHostInfoInjected = {
 
 /** Full props of the Tool call-tree renderer registered as a `tool-call` Chat Node. */
 export type ToolTreeProps = PropsRuntime<'conversation.chat.node', 'tool-call'>
-  & PropsRenderSlots<'tool.call.toolview'>
+  & PropsRenderSlots<'tool.call.toolview' | 'tool.call.inline-images'>
   & PropsLocale<'conversation'>
   & InjectFace<ToolHostInfoInjected>

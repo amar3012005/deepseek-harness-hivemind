@@ -2,6 +2,11 @@
   border-radius: 6px;
 }
 
+.inlineImages {
+  max-width: 100%;
+  margin: 8px 0 10px 22px;
+}
+
 .subCalls {
   display: flex;
   flex-direction: column;
