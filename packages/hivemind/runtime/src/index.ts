@@ -632,6 +632,14 @@ export function apply(ctx: Context, config: Config): void {
   ctx.skills.register({
     name: 'hivemind-company-brain',
     description: 'Load only for a company-memory task that needs focused HIVE-MIND retrieval, evidence filters, or exact employee records.',
+    // The compact `hivemind_meta` router and profile injection are sufficient
+    // for every turn. Publishing this long-form skill to the model on every
+    // turn made small models load it alongside the Composio skill even for a
+    // greeting, wasting context and sometimes producing unsupported parallel
+    // tool calls. Keep it registered for an explicit user invocation, while
+    // the HIVE prompt routes identity and company work directly to the meta
+    // tool.
+    invocation: { modelInvocable: false, userInvocable: true },
     source: 'runtime',
     content: `Use this skill only for a question about the authenticated user's organization, internal memories, files, documents, evidence, decisions, people, projects, or HyperAgents. HIVE-MIND should be considered automatically for such work, but do not load this skill or call recall for greetings, general knowledge, simple transformations, or a fact already established by a recent completed answer.
 

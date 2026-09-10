@@ -269,6 +269,7 @@ describe('HIVE-MIND runtime', () => {
     expect(harness.skills.get('hivemind-company-brain')).toMatchObject({
       description: expect.stringContaining('Load only for a company-memory task'),
       content: expect.stringContaining('not a workspace path'),
+      invocation: { modelInvocable: false, userInvocable: true },
     })
     expect(harness.skills.get('hivemind-company-brain')?.content).toContain('Never save secrets')
   })
