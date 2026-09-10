@@ -53,6 +53,8 @@ export interface Config {
   authorityMode?: 'local' | 'scoped-service'
   /** HIVE control-plane origin used only by the scoped production transport. */
   serviceApiBase?: string
+  /** Extra http origins allowed for runner-to-control-plane calls (Compose DNS). */
+  serviceHttpOrigins?: string[]
   /** Environment variable holding the dedicated runner-to-control-plane signing secret. */
   serviceSecretEnv?: string
   /** Complete HTTP-operation deadline. */
@@ -80,6 +82,7 @@ export const Config: z<Config> = z.object({
   icarusConfigPath: z.string().required(),
   authorityMode: z.union(['local', 'scoped-service'] as const).default('local'),
   serviceApiBase: z.string(),
+  serviceHttpOrigins: z.array(String).default([]),
   serviceSecretEnv: z.string(),
   requestTimeoutMs: z.natural().min(1).required(),
   responseMaxBytes: z.natural().min(1).max(MAX_RESPONSE_BYTES).required(),
@@ -225,7 +228,7 @@ function base64url(value: unknown): string {
   return Buffer.from(JSON.stringify(value)).toString('base64url')
 }
 
-function allowedServiceBase(value: unknown): URL {
+function allowedServiceBase(value: unknown, allowedOrigins: string[] = []): URL {
   const raw = nonEmptyString(value, 'HIVE scoped service API base')
   let url: URL
   try { url = new URL(raw) } catch (error: unknown) {
@@ -233,7 +236,14 @@ function allowedServiceBase(value: unknown): URL {
   }
   const loopback = (url.protocol === 'http:' || url.protocol === 'https:')
     && (url.hostname === 'localhost' || url.hostname === '127.0.0.1' || url.hostname === '[::1]')
-  if (url.protocol !== 'https:' && !loopback) throw new HiveMindRuntimeError('HIVE scoped service API base must use HTTPS or loopback')
+  const compose = url.protocol === 'http:'
+    && (url.hostname === 'control-plane' || url.hostname === 'hivemind-control-plane')
+  const allowlisted = allowedOrigins.some((origin) => {
+    try { return new URL(origin).origin === url.origin } catch { return false }
+  })
+  if (url.protocol !== 'https:' && !loopback && !compose && !allowlisted) {
+    throw new HiveMindRuntimeError('HIVE scoped service API base must use HTTPS, loopback, or an allowlisted Compose origin')
+  }
   if (url.username || url.password || url.search || url.hash || (url.pathname !== '/' && url.pathname !== '')) {
     throw new HiveMindRuntimeError('HIVE scoped service API base must contain only an origin')
   }
@@ -258,7 +268,7 @@ function scopedServiceAuthority(ctx: Context, config: Config): IcarusAuthority {
   const signature = createHmac('sha256', secret).update(input).digest('base64url')
   return {
     token: `${input}.${signature}`,
-    apiBase: allowedServiceBase(config.serviceApiBase),
+    apiBase: allowedServiceBase(config.serviceApiBase, config.serviceHttpOrigins),
     pathPrefix: '/internal/v1/harness-chat/core',
   }
 }

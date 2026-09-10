@@ -1,7 +1,7 @@
 /** HIVE-MIND embedded Web authentication and production health routes. */
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
-import { createHmac, timingSafeEqual } from 'node:crypto'
+import { createHash, createHmac, timingSafeEqual } from 'node:crypto'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { createClient, type RedisClientType } from 'redis'
 import type {} from '@deepseek-ai/dsh-client-connection'
@@ -14,7 +14,9 @@ export const name = 'hivemind-web-runner'
 export const inject = ['webServer', 'connection', 'sessionPersistence', 'hivemindExecutionScope']
 
 const EXCHANGE_PATH = '/api/hivemind/embed/exchange'
+const ESTABLISH_PATH = '/api/hivemind/session/establish'
 const HEALTH_PATH = '/health'
+const TICKET_NONCE_PREFIX = 'hive:harness-ticket:'
 const MAX_BODY_BYTES = 8192
 const MAX_TICKET_TTL_SECONDS = 60
 const CLOCK_SKEW_SECONDS = 5
@@ -62,40 +64,58 @@ function nonEmpty(value: unknown): value is string {
   return typeof value === 'string' && value.length > 0
 }
 
+function ticketHash(token: string): string {
+  return createHash('sha256').update(token).digest('hex')
+}
+
+function equalText(left: string, right: string): boolean {
+  const a = Buffer.from(left)
+  const b = Buffer.from(right)
+  return a.length === b.length && timingSafeEqual(a, b)
+}
+
+class AdmissionError extends Error {
+  readonly code: string
+  constructor(code: string) {
+    super(code)
+    this.code = code
+  }
+}
+
 /** Verify the compact HMAC ticket and its fixed runner audience. */
 export function verifyTicket(token: string, secret: string, nowSeconds = Math.floor(Date.now() / 1000)): TicketClaims {
-  if (!TOKEN_PATTERN.test(token)) throw new Error('invalid ticket encoding')
+  if (!TOKEN_PATTERN.test(token)) throw new AdmissionError('invalid_ticket')
   const [encodedHeader, encodedPayload, encodedSignature] = token.split('.') as [string, string, string]
   const expected = createHmac('sha256', secret).update(`${encodedHeader}.${encodedPayload}`).digest()
   const actual = base64url(encodedSignature)
-  if (actual.length !== expected.length || !timingSafeEqual(actual, expected)) throw new Error('invalid ticket signature')
+  if (actual.length !== expected.length || !timingSafeEqual(actual, expected)) throw new AdmissionError('invalid_ticket_signature')
   let header: unknown
   let claims: unknown
   try {
     header = JSON.parse(base64url(encodedHeader).toString('utf8'))
     claims = JSON.parse(base64url(encodedPayload).toString('utf8'))
   } catch {
-    throw new Error('invalid ticket JSON')
+    throw new AdmissionError('invalid_ticket')
   }
   if (typeof header !== 'object' || header === null
     || (header as Record<string, unknown>).alg !== 'HS256'
     || (header as Record<string, unknown>).typ !== 'JWT') {
-    throw new Error('invalid ticket algorithm')
+    throw new AdmissionError('invalid_ticket')
   }
-  if (typeof claims !== 'object' || claims === null) throw new Error('invalid ticket claims')
+  if (typeof claims !== 'object' || claims === null) throw new AdmissionError('invalid_ticket_claims')
   const value = claims as Record<string, unknown>
   if (value.iss !== 'hivemind-control-plane' || value.aud !== 'hivemind-harness-runner'
     || value.profile !== 'hivemind-chat' || !nonEmpty(value.sub) || !nonEmpty(value.org_id)
     || !nonEmpty(value.variation) || !nonEmpty(value.jti)
     || !Number.isSafeInteger(value.iat) || !Number.isSafeInteger(value.exp)
     || (value.project_id !== undefined && !nonEmpty(value.project_id))) {
-    throw new Error('invalid ticket claims')
+    throw new AdmissionError('invalid_ticket_claims')
   }
   const issuedAt = value.iat as number
   const expiresAt = value.exp as number
   if (issuedAt > nowSeconds + CLOCK_SKEW_SECONDS || expiresAt <= nowSeconds
     || expiresAt <= issuedAt || expiresAt - issuedAt > MAX_TICKET_TTL_SECONDS) {
-    throw new Error('expired or invalid ticket lifetime')
+    throw new AdmissionError('expired_ticket')
   }
   return value as unknown as TicketClaims
 }
@@ -108,7 +128,7 @@ export async function consumeTicket(
   nowSeconds?: number,
 ): Promise<TicketClaims> {
   const claims = verifyTicket(token, secret, nowSeconds)
-  if (!await consume(claims.jti)) throw new Error('ticket already consumed')
+  if (!await consume(claims.jti)) throw new AdmissionError('ticket_already_consumed')
   return claims
 }
 
@@ -124,8 +144,14 @@ async function body(req: IncomingMessage): Promise<unknown> {
   return JSON.parse(Buffer.concat(chunks).toString('utf8'))
 }
 
+function publicHost(req: IncomingMessage): string | undefined {
+  const forwarded = req.headers['x-forwarded-host']
+  if (typeof forwarded === 'string' && forwarded.trim()) return forwarded.split(',', 1)[0]?.trim()
+  return typeof req.headers.host === 'string' ? req.headers.host : undefined
+}
+
 function sameOrigin(req: IncomingMessage): boolean {
-  const host = req.headers.host
+  const host = publicHost(req)
   const origin = req.headers.origin
   if (host === undefined || origin === undefined) return false
   try {
@@ -203,19 +229,31 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
     name: '__HIVEMIND_EMBED_CONFIG__',
     value: { version: 1, parentOrigins },
   }))
-  ctx.effect(() => ctx.webServer.register({ kind: 'exact', path: EXCHANGE_PATH, handler: async (req, res) => {
-    if (req.method !== 'POST' || !sameOrigin(req)
-      || req.headers['content-type']?.split(';', 1)[0]?.trim().toLowerCase() !== 'application/json') {
-      json(res, 400, { ok: false })
+  const exchange = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
+    const origin = req.headers.origin
+    if (req.method !== 'POST') {
+      json(res, 405, { ok: false, diagnostic: 'method_not_allowed' })
+      return
+    }
+    if (typeof origin !== 'string' || !parentOrigins.includes(origin) || !sameOrigin(req)) {
+      json(res, 403, { ok: false, diagnostic: 'origin_denied' })
+      return
+    }
+    if (req.headers['content-type']?.split(';', 1)[0]?.trim().toLowerCase() !== 'application/json') {
+      json(res, 400, { ok: false, diagnostic: 'invalid_request' })
       return
     }
     try {
       const input = await body(req)
-      if (typeof input !== 'object' || input === null) throw new Error('invalid request')
+      if (typeof input !== 'object' || input === null) throw new AdmissionError('invalid_request')
       const request = input as Record<string, unknown>
-      if (!nonEmpty(request.ticket) || !nonEmpty(request.request_id)) throw new Error('invalid request')
-      const claims = await consumeTicket(request.ticket, secret, async jti =>
-        await redis.getDel(`${config.redisJtiPrefix}${jti}`) !== null)
+      if (!nonEmpty(request.ticket) || !nonEmpty(request.request_id)) throw new AdmissionError('invalid_request')
+      const ticket = request.ticket
+      const noncePrefix = config.redisJtiPrefix || TICKET_NONCE_PREFIX
+      const claims = await consumeTicket(ticket, secret, async (jti) => {
+        const stored = await redis.getDel(`${noncePrefix}${jti}`)
+        return typeof stored === 'string' && equalText(stored, ticketHash(ticket))
+      })
       const expiresAt = Date.now() + config.sessionMaxAgeSeconds * 1000
       const principal: Record<string, string> = {
         user_id: claims.sub,
@@ -224,16 +262,19 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
         variation: claims.variation,
         ...claims.project_id === undefined ? {} : { project_id: claims.project_id },
       }
-      const cookie = ctx.connection.authorizePrincipal(req, principal, expiresAt)
+      const authorityHost = publicHost(req)
+      const cookie = ctx.connection.authorizePrincipal({
+        headers: { host: authorityHost || req.headers.host, cookie: req.headers.cookie },
+      }, principal, expiresAt)
       json(res, 200, { ok: true, expires_at: expiresAt, profile: 'hivemind-chat' }, { 'set-cookie': cookie })
     } catch (error) {
-      ctx.logger.warn(
-        'hivemind-web-runner: ticket exchange rejected',
-        error instanceof Error ? error.message : 'unknown error',
-      )
-      json(res, 401, { ok: false })
+      const diagnostic = error instanceof AdmissionError ? error.code : 'admission_denied'
+      ctx.logger.warn('hivemind-web-runner: ticket exchange rejected', diagnostic)
+      json(res, diagnostic === 'origin_denied' ? 403 : 401, { ok: false, diagnostic })
     }
-  } }), 'hivemind-web-runner: embed ticket exchange')
+  }
+  ctx.effect(() => ctx.webServer.register({ kind: 'exact', path: EXCHANGE_PATH, handler: exchange }), 'hivemind-web-runner: embed ticket exchange')
+  ctx.effect(() => ctx.webServer.register({ kind: 'exact', path: ESTABLISH_PATH, handler: exchange }), 'hivemind-web-runner: session establish')
   ctx.effect(() => ctx.webServer.register({ kind: 'exact', path: HEALTH_PATH, handler: async (_req, res) => {
     try {
       const persistence = ctx.sessionPersistence as typeof ctx.sessionPersistence & { health?: () => Promise<void> }
