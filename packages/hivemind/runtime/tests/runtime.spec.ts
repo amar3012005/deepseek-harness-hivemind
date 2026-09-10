@@ -248,6 +248,7 @@ describe('HIVE-MIND runtime', () => {
     expect(decision.messages[0]?.content[0]?.text).toContain('Mission: Give organizations a trustworthy company brain.')
     expect(decision.messages[0]?.content[0]?.text).toContain('HIVE-MIND is the authenticated company brain')
     expect(decision.messages[0]?.content[0]?.text).toContain('Before a substantive response')
+    expect(decision.messages[0]?.content[0]?.text).toContain('what do you know about me?')
     expect(decision.messages[0]?.content[0]?.text).toContain('Do not recall for greetings, general knowledge, transformations')
     expect(decision.messages[0]?.content[0]?.text).toContain('valid_at')
     expect(decision.messages[0]?.content[0]?.text).toContain('Use `save` only for a stable preference')
@@ -304,6 +305,23 @@ describe('HIVE-MIND runtime', () => {
     expect(text).toContain('separate user message after this block is the current request')
   })
 
+  it('bounds the projected conversation to the latest three completed exchanges', () => {
+    const exchanges = [1, 2, 3, 4].map(turn => ({
+      turn,
+      user: `User ${turn}`,
+      assistant: `Final ${turn}`,
+    }))
+
+    const text = recentConversationText(exchanges, 3, 3_000)
+
+    expect(text).not.toContain('User 1')
+    expect(text).not.toContain('Final 1')
+    for (const turn of [2, 3, 4]) {
+      expect(text).toContain(`User ${turn}`)
+      expect(text).toContain(`Final ${turn}`)
+    }
+  })
+
   it('replaces prior tool history before a new turn while preserving the profile context', async () => {
     profileResponses()
     const profile = createUserMessage({
@@ -344,7 +362,7 @@ describe('HIVE-MIND runtime', () => {
     expect(append).toHaveBeenCalledOnce()
     const [type, message, options] = append.mock.calls[0] as [string, UserMessage, { surfaceOp: object; sourceEventSeqs: number[] }]
     expect(type).toBe('user/message')
-    expect(options).toEqual({ surfaceOp: { op: 'replace', start: 2, end: 4 }, sourceEventSeqs: [2, 3, 4] })
+    expect(options).toEqual({ surfaceOp: { op: 'replace', startSeq: 2, endSeq: 4 }, sourceEventSeqs: [2, 3, 4] })
     expect(textOfForTest(message)).toContain('The decision was approved.')
     expect(textOfForTest(message)).not.toContain('large private result')
 

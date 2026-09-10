@@ -635,7 +635,7 @@ export function apply(ctx: Context, config: Config): void {
     source: 'runtime',
     content: `Use this skill only for a question about the authenticated user's organization, internal memories, files, documents, evidence, decisions, people, projects, or HyperAgents. HIVE-MIND should be considered automatically for such work, but do not load this skill or call recall for greetings, general knowledge, simple transformations, or a fact already established by a recent completed answer.
 
-1. First decide whether company history is actually needed. Use a sufficient compact organization brief or recent completed answer directly. Otherwise call \`hivemind_meta\` with exactly one operation:
+1. First decide whether company history is actually needed. For “what do you know about me?”, “tell me about myself”, “my profile”, or a company-profile question, call \`hivemind_meta\` with \`operation: "context"\` before answering; if the request also asks for stored preferences, decisions, projects, or past activity, make one focused \`recall\` call after context. For other requests, use a sufficient compact organization brief or recent completed answer directly. Otherwise call \`hivemind_meta\` with exactly one operation:
    - \`context\`: load the full onboarding-derived user and organization profile.
    - \`recall\`: search internal company memory and evidence.
    - \`profiles\`: fetch the authenticated organization's exact HyperAgent directory. Never invent employees.
