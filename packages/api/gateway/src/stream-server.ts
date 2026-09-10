@@ -18,6 +18,7 @@ export type RemoteStreamOpener = (
 
 /** Convert an invocation or carrier failure to a stable wire value. */
 export type RemoteStreamFailureMapper = (error: unknown) => RemoteStreamFailure
+export type RemoteStreamScope = <T>(action: () => T) => T
 
 const MAX_MISSED_HEARTBEATS = 2
 
@@ -45,12 +46,14 @@ export class RemoteStreamMuxServer {
    * @param socket - carrier socket transferred to the WebSocket server.
    * @param head - bytes already read after the HTTP upgrade headers.
    */
-  handleUpgrade(req: IncomingMessage, socket: Duplex, head: Buffer): void {
+  handleUpgrade(req: IncomingMessage, socket: Duplex, head: Buffer, scope?: RemoteStreamScope): void {
     this.server.handleUpgrade(req, socket, head, (websocket) => {
       this.missedHeartbeats.set(websocket, 0)
       websocket.on('pong', () => { this.missedHeartbeats.set(websocket, 0) })
       this.startHeartbeat()
-      const connection = new RemoteStreamMuxConnection(websocket, this.open, this.failure)
+      const open = scope === undefined ? this.open : (endpoint: string, payload: unknown, signal: AbortSignal) =>
+        scope(() => this.open(endpoint, payload, signal))
+      const connection = new RemoteStreamMuxConnection(websocket, open, this.failure)
       const done = connection.run()
       this.connections.add(done)
       void done.then(() => { this.connections.delete(done) })

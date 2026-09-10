@@ -217,7 +217,9 @@ export class TypertGatewayService extends Service implements TypertGateway {
               rejectRemoteStreamUpgrade(socket, rejection)
               return
             }
-            webCtx.connection.runInPrincipalScope(req, () => { mux.handleUpgrade(req, socket, head) })
+            webCtx.connection.runInPrincipalScope(req, () => {
+              mux.handleUpgrade(req, socket, head, action => webCtx.connection.runInPrincipalScope(req, action))
+            })
           },
         }
         const unregister = webCtx.webServer.registerUpgrade(route)
