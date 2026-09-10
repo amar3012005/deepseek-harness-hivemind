@@ -28,6 +28,43 @@
               low: low
               medium: medium
               high: high
+          # Economical OpenRouter catalogue entries. The gateway keeps the
+          # provider route stable while the picker exposes these alternatives.
+          - id: openrouter/nvidia/nemotron-3-nano-omni:free
+            name: NVIDIA Nemotron 3 Nano Omni (free)
+            contextWindow: 300000
+            maxTokens: 16384
+            input: [text, image, audio, video]
+          - id: openrouter/google/gemma-4-26b-a4b:free
+            name: Google Gemma 4 26B A4B (free)
+            contextWindow: 262144
+            maxTokens: 16384
+            input: [text, image]
+          - id: openrouter/google/gemma-4-31b:free
+            name: Google Gemma 4 31B (free)
+            contextWindow: 262144
+            maxTokens: 16384
+            input: [text, image]
+          - id: openrouter/nvidia/nemotron-3-super:free
+            name: NVIDIA Nemotron 3 Super (free)
+            contextWindow: 1048576
+            maxTokens: 32768
+            input: [text]
+          - id: openrouter/mistralai/mistral-nemo
+            name: Mistral Nemo
+            contextWindow: 131072
+            maxTokens: 16384
+            input: [text]
+          - id: openrouter/meta-llama/llama-3.1-8b-instruct
+            name: Meta Llama 3.1 8B Instruct
+            contextWindow: 131072
+            maxTokens: 16384
+            input: [text]
+          - id: openrouter/openai/gpt-oss-20b
+            name: OpenAI GPT OSS 20B
+            contextWindow: 131072
+            maxTokens: 16384
+            input: [text]
 
 - id: agent-default-model
   config:
