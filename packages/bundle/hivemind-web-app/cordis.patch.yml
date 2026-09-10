@@ -50,11 +50,6 @@
 - id: open-in-app
   disabled: true
 
-# These browser surfaces require the filesystem/developer providers above.
-# Keep their packages in the native bundle, but do not activate them in the
-# governed HIVE profile; native `web` still activates them unchanged.
-- id: ui-deliverables
-  disabled: true
 # Da-vinci owns browser navigation; keep the native Harness conversation,
 # tool, trajectory, and replay surfaces without a second shell/sidebar track.
 - id: ui-layout

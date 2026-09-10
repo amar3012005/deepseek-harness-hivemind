@@ -11,7 +11,8 @@ describe('hivemind-web native renderer parity', () => {
       'ui-chat', 'ui-attachment', 'ui-tool', 'ui-workspace', 'ui-input-trigger',
       'ui-commands', 'ui-skill', 'ui-subagent', 'ui-reference', 'ui-jobs',
       'ui-goal', 'ui-message-feedback', 'ui-model-selection', 'ui-agent-preset',
-      'ui-plan', 'ui-user-questions', 'ui-trajectory',
+      'ui-plan', 'ui-user-questions', 'ui-trajectory', 'ui-approval',
+      'ui-workflow-run', 'ui-deliverables',
     ]
     for (const id of nativeSurfaces) {
       expect(patch).not.toMatch(new RegExp(`- id: ${id}\\n  disabled: true`))
