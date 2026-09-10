@@ -34,7 +34,9 @@
             name: NVIDIA Nemotron 3 Nano Omni (free)
             contextWindow: 300000
             maxTokens: 16384
-            input: [text, image, audio, video]
+            # The installed Harness model schema presently exposes text/image
+            # input only. Keep Omni selectable for text/image workflows.
+            input: [text, image]
           - id: openrouter/google/gemma-4-26b-a4b:free
             name: Google Gemma 4 26B A4B (free)
             contextWindow: 262144

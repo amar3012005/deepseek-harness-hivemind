@@ -51,9 +51,10 @@ export class RemoteStreamMuxServer {
       this.missedHeartbeats.set(websocket, 0)
       websocket.on('pong', () => { this.missedHeartbeats.set(websocket, 0) })
       this.startHeartbeat()
-      const open = scope === undefined ? this.open : (endpoint: string, payload: unknown, signal: AbortSignal) =>
-        scope(() => this.open(endpoint, payload, signal))
-      const connection = new RemoteStreamMuxConnection(websocket, open, this.failure)
+      // The websocket callbacks run after the HTTP upgrade scope has returned.
+      // Keep that scope on the connection itself so the entire async RPC pump
+      // (including later iterator reads) retains the admitted principal.
+      const connection = new RemoteStreamMuxConnection(websocket, this.open, this.failure, scope)
       const done = connection.run()
       this.connections.add(done)
       void done.then(() => { this.connections.delete(done) })
@@ -110,6 +111,7 @@ class RemoteStreamMuxConnection {
     private readonly socket: WebSocket,
     private readonly open: RemoteStreamOpener,
     private readonly failure: RemoteStreamFailureMapper,
+    private readonly scope?: RemoteStreamScope,
   ) {}
 
   async run(): Promise<void> {
@@ -122,7 +124,9 @@ class RemoteStreamMuxConnection {
           return
         }
         try {
-          this.receive(rawText(data))
+          const receive = () => this.receive(rawText(data))
+          if (this.scope === undefined) receive()
+          else this.scope(receive)
         } catch {
           this.socket.close(1008, 'invalid Remote stream request')
         }
@@ -149,7 +153,8 @@ class RemoteStreamMuxConnection {
       done: Promise.resolve(),
     }
     this.streams.set(message.streamId, active)
-    const done = this.pump(message.streamId, message.endpoint, message.payload, active)
+    const pump = () => this.pump(message.streamId, message.endpoint, message.payload, active)
+    const done = this.scope === undefined ? pump() : this.scope(pump)
     active.done = done
     const remove = (): void => { this.streams.delete(message.streamId) }
     void done.then(remove, remove)
