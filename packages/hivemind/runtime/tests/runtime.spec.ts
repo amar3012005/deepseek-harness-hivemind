@@ -260,6 +260,42 @@ describe('HIVE-MIND runtime', () => {
     expect(JSON.stringify(value)).not.toContain('org-1')
   })
 
+  it('supplies authenticated full profile context for an identity request without a model skill load', async () => {
+    const path = await authorityFile()
+    profileResponses()
+    const harness = mount(config(path))
+    const scopedAgent = {
+      session: {
+        surface: { nodes: [] },
+        eventAt: () => undefined,
+        snapshotEvents: () => [],
+      },
+    } as unknown as Agent
+    const decision = await harness.preStep?.({
+      agent: scopedAgent,
+      turn: 1,
+      step: 0,
+      signal,
+    }, async () => ({
+      kind: 'enter' as const,
+      messages: [createUserMessage({ content: [{ type: 'text', text: 'What do you know about me?' }], source: { kind: 'user' } })],
+    })) as {
+      kind: 'enter'
+      messages: UserMessage[]
+    }
+
+    expect(decision.messages).toHaveLength(3)
+    expect(decision.messages[1]?.source).toMatchObject({
+      kind: 'plugin',
+      plugin: 'dsh-hivemind-runtime/identity-context',
+    })
+    expect(textOfForTest(decision.messages[1] as UserMessage)).toContain('Singulance builds governed AI systems.')
+    expect(textOfForTest(decision.messages[1] as UserMessage)).not.toContain('user-1')
+    expect(harness.skills.get('hivemind-company-brain')).toMatchObject({
+      invocation: { modelInvocable: false, userInvocable: true },
+    })
+  })
+
   it('exposes only the progressive meta-tool when compatibility tools are disabled', async () => {
     const pluginConfig = config(await authorityFile())
     pluginConfig.legacyToolsEnabled = false
