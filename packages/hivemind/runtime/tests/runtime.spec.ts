@@ -165,6 +165,29 @@ describe('HIVE-MIND runtime', () => {
     delete process.env.TEST_HIVE_RUNNER_SECRET
   })
 
+  it('uses the internal Compose control-plane origin with the runner service token', async () => {
+    const pluginConfig = config('/does/not/exist')
+    pluginConfig.authorityMode = 'scoped-service'
+    pluginConfig.serviceApiBase = 'http://control-plane:3000'
+    pluginConfig.serviceHttpOrigins = ['http://control-plane:3000']
+    pluginConfig.serviceSecretEnv = 'TEST_HIVE_RUNNER_SECRET'
+    process.env.TEST_HIVE_RUNNER_SECRET = 'runner-service-secret-that-is-at-least-32-bytes'
+    const requests: string[] = []
+    const responses = [
+      jsonResponse({ ok: true, profile: { user_id: '54f5568b-4d6a-4ae1-9a33-48cb2909d59b', org_id: '67503d34-97e9-49a8-8c52-8ee30cc7603e' } }),
+      jsonResponse({ context: 'Singulance builds governed AI systems.' }),
+      jsonResponse({ facts: [{ key: 'company', value: 'Singulance' }] }),
+    ]
+    vi.stubGlobal('fetch', vi.fn(async (url: URL) => {
+      requests.push(String(url))
+      return responses.shift() as Response
+    }))
+    const harness = mount(pluginConfig)
+    await tool(harness, 'hivemind_profile_context').execute({}, execContext())
+    expect(requests[0]).toBe('http://control-plane:3000/internal/v1/harness-chat/core/api/profile')
+    delete process.env.TEST_HIVE_RUNNER_SECRET
+  })
+
   it('rejects an ICARUS credential file writable by group', async () => {
     const path = await authorityFile(0o660)
     const harness = mount(config(path))
