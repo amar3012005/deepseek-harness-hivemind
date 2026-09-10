@@ -5,7 +5,7 @@ import { createHash, createHmac, timingSafeEqual } from 'node:crypto'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { createClient, type RedisClientType } from 'redis'
 import type {} from '@deepseek-ai/dsh-client-connection'
-import type {} from '@deepseek-ai/dsh-host-webserver'
+import type { IndexInjection } from '@deepseek-ai/dsh-host-webserver'
 import type {} from '@deepseek-ai/dsh-session-persistence'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-hivemind-execution-scope'
@@ -15,6 +15,7 @@ export const inject = ['webServer', 'connection', 'sessionPersistence', 'hivemin
 
 const EXCHANGE_PATH = '/api/hivemind/embed/exchange'
 const ESTABLISH_PATH = '/api/hivemind/session/establish'
+const BOOT_PATH = '/api/hivemind/boot'
 const HEALTH_PATH = '/health'
 const TICKET_NONCE_PREFIX = 'hive:harness-ticket:'
 const MAX_BODY_BYTES = 8192
@@ -275,6 +276,23 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
   }
   ctx.effect(() => ctx.webServer.register({ kind: 'exact', path: EXCHANGE_PATH, handler: exchange }), 'hivemind-web-runner: embed ticket exchange')
   ctx.effect(() => ctx.webServer.register({ kind: 'exact', path: ESTABLISH_PATH, handler: exchange }), 'hivemind-web-runner: session establish')
+  ctx.effect(() => ctx.webServer.register({
+    kind: 'exact',
+    path: BOOT_PATH,
+    handler: async (req, res) => {
+      const authorityHost = publicHost(req)
+      const principal = ctx.connection.principal({
+        headers: { host: authorityHost || req.headers.host, cookie: req.headers.cookie },
+      })
+      if (principal?.['profile'] !== 'hivemind-chat') {
+        json(res, 401, { ok: false, diagnostic: 'authentication_required' })
+        return
+      }
+      const injections: IndexInjection[] = []
+      ctx.emit('webserver/index-inject', injections)
+      json(res, 200, { ok: true, profile: 'hivemind-chat', injections })
+    },
+  }), 'hivemind-web-runner: authenticated browser boot graph')
   ctx.effect(() => ctx.webServer.register({ kind: 'exact', path: HEALTH_PATH, handler: async (_req, res) => {
     try {
       const persistence = ctx.sessionPersistence as typeof ctx.sessionPersistence & { health?: () => Promise<void> }
