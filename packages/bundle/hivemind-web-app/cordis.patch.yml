@@ -50,6 +50,12 @@
 - id: open-in-app
   disabled: true
 
+# Keep the complete native deliverables package in the image and browser bundle,
+# but do not activate its privileged host half when HIVE filesystem services are
+# policy-disabled. Native mode still activates the stock plugin unchanged.
+- id: ui-deliverables
+  disabled: true
+
 # Da-vinci owns browser navigation; keep the native Harness conversation,
 # tool, trajectory, and replay surfaces without a second shell/sidebar track.
 - id: ui-layout
