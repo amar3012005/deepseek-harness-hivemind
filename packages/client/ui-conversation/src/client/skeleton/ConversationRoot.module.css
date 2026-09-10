@@ -385,6 +385,115 @@
   );
 }
 
+/* Da-vinci owns the page title and global navigation. In the embedded HIVE
+   composition the native Session title/action row is redundant, while the
+   native Chat/Trajectory switch remains useful. Seat that switch beside the
+   bottom composer rather than spending a full header row above the transcript. */
+:global(html[data-dsh-mode='hivemind-chat']) .root[data-phase='active'] .header {
+  position: absolute;
+  z-index: 8;
+  left: max(16px, calc(50% - var(--dsh-composer-card-max-width) / 2 - 176px));
+  bottom: 45px;
+  width: 160px;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+/* Da-vinci's application header is 56px high. Its generic Overview wrapper
+   reserved another 48px (`100vh - 104px`), which prevented the native sticky
+   composer from ever reaching the viewport floor. Correct the host boundary
+   only when it contains the semantic Harness scroll root. */
+:global(html[data-dsh-mode='hivemind-chat']) :global(main:has([data-conversation-scroll])),
+:global(html[data-dsh-mode='hivemind-chat']) :global(section:has([data-conversation-scroll])) {
+  height: calc(100vh - 56px) !important;
+  max-height: none;
+  overflow: hidden;
+}
+
+:global(html[data-dsh-mode='hivemind-chat']) .root[data-phase='active'] .titleRow {
+  display: none;
+}
+
+:global(html[data-dsh-mode='hivemind-chat']) .root[data-phase='active'] .tabs {
+  gap: 22px;
+  margin: 0;
+  padding: 0;
+}
+
+:global(html[data-dsh-mode='hivemind-chat']) .root[data-phase='active'] .tab {
+  padding-bottom: 7px;
+}
+
+/* DisclosureRow is supplied through the runtime package graph while its
+   hashed module stylesheet is owned by the static web shell. Keep the native
+   DOM and interaction component, but restate its structural geometry through
+   the stable semantic marker when the two bundles are mounted together in
+   HIVE mode. This prevents the icon and preview chevron from becoming normal
+   block-flow children if their independently-built class maps differ. */
+:global(html[data-dsh-mode='hivemind-chat']) .root :global([data-disclosure-row]) {
+  position: relative;
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  min-height: calc(24px + var(--dsh-content-font-delta, 0px));
+  overflow: hidden;
+}
+
+:global(html[data-dsh-mode='hivemind-chat']) .root :global([data-disclosure-row]) > :first-child {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: calc(16px + var(--dsh-content-font-delta, 0px));
+  height: calc(16px + var(--dsh-content-font-delta, 0px));
+  margin-right: 6px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+:global(html[data-dsh-mode='hivemind-chat']) .root :global([data-disclosure-row]) > :first-child > :global(svg) {
+  width: calc(14px + var(--dsh-content-font-delta, 0px));
+  height: calc(14px + var(--dsh-content-font-delta, 0px));
+}
+
+:global(html[data-dsh-mode='hivemind-chat']) .root :global([data-disclosure-row]) > :first-child > :global(span) {
+  display: inline-flex;
+}
+
+:global(html[data-dsh-mode='hivemind-chat']) .root :global([data-disclosure-row]) > :first-child:has(> :global(span)) > :global(svg) {
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  opacity: 0;
+}
+
+/* The stable disclosure marker also bridges typography when the runtime
+   package and static shell have independently-generated CSS-module hashes. */
+:global(html[data-dsh-mode='hivemind-chat']) .root :global([data-disclosure-row]) > :first-child {
+  color: var(--dsw-alias-label-tertiary);
+}
+
+:global(html[data-dsh-mode='hivemind-chat']) .root :global([data-disclosure-row]) > :nth-child(2) {
+  flex: none;
+  color: var(--dsw-alias-label-secondary);
+  font-size: var(--dsh-content-font-size-secondary, 13px);
+  line-height: calc(24px + var(--dsh-content-font-delta, 0px));
+}
+
+/* When the host leaves no side room, keep the view switch directly above the
+   composer instead of letting either control overlap or clip. */
+@media (max-width: 1100px) {
+  :global(html[data-dsh-mode='hivemind-chat']) .root[data-phase='active'] .header {
+    left: var(--dsh-composer-side-clearance);
+    bottom: 132px;
+    width: auto;
+  }
+}
+
 /* An open @/slash menu (data-trigger-menu, ui-input-trigger) renders inside
    the input card, so the seat's stacking context caps its z-index; lift the
    seat above the back-to-bottom control (z-index 8, ui-chat ChatView) while

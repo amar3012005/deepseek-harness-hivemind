@@ -14,5 +14,5 @@
 .mark i:nth-child(2) { height: 12px; }
 .mark i:nth-child(3) { height: 9px; }
 .controls[data-wide='false'] { width: 36px; justify-content: center; }
-.controls[data-wide='false'] .button { flex: none; width: 36px; height: 36px; min-height: 36px; justify-content: center; padding: 0; border-radius: 50%; }
+.controls[data-wide='false'] .button { flex: none; width: 36px; height: 36px; min-height: 36px; justify-content: center; padding: 0; border-radius: 50%; corner-shape: round; }
 .controls[data-wide='false'] .iconButton, .controls[data-wide='false'] .disconnect { display: none; }

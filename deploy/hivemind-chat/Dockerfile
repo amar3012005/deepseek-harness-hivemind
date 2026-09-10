@@ -13,6 +13,22 @@ RUN --mount=type=cache,id=deepseek-harness-pnpm,target=/pnpm/store \
   pnpm config set store-dir /pnpm/store \
   && pnpm install --frozen-lockfile
 RUN pnpm run build
+# Cordis resolves profile rows from its loader package, so the production
+# image needs the complete workspace package graph at the repository root.
+# pnpm only hoists root-declared workspaces there; materialize the same stable
+# links for every built @deepseek-ai package used by shipped compositions.
+RUN set -eu; \
+  mkdir -p /opt/deepseek-harness/node_modules/@deepseek-ai; \
+  find apps packages vendor -name package.json -type f | while IFS= read -r manifest; do \
+    name="$(node -p "require('./$manifest').name || ''")"; \
+    case "$name" in \
+      @deepseek-ai/*) \
+        package="${name#@deepseek-ai/}"; \
+        target="/opt/deepseek-harness/${manifest%/package.json}"; \
+        ln -sfn "$target" "/opt/deepseek-harness/node_modules/@deepseek-ai/$package"; \
+        ;; \
+    esac; \
+  done
 
 FROM node:24-bookworm-slim AS runtime
 ENV NODE_ENV=production DSH_HOME=/var/lib/dsh PORT=3080

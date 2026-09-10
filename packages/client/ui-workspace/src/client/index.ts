@@ -28,6 +28,7 @@ import { UiWorkspaceService } from './navigation.ts'
 import { createWorkspaceViewStore } from './stores.ts'
 import { WorkspaceBrowser } from './rows/WorkspaceBrowser.tsx'
 import { WorkspacePicker } from './WorkspacePicker.tsx'
+import { HiveSessionProjection, type HiveSessionProjectionInjected } from './HiveSessionProjection.tsx'
 import { en, zh, type WorkspaceKey } from './locales.ts'
 
 export type { UiWorkspace } from './navigation.ts'
@@ -157,4 +158,12 @@ export function apply(ctx: Context): void {
     },
     WorkspacePicker,
   ))
+  ctx.slots.inject('shell.sessionRail', () => ctx.slots.register({
+    name: 'shell.sessionRail',
+    locale: NS,
+    inject: (): HiveSessionProjectionInjected => ({
+      createSession: () => sessions.create(),
+      openSession,
+    }),
+  }, HiveSessionProjection))
 }

@@ -1,0 +1,10 @@
+**
+!apps/
+!apps/web/
+!apps/web/dist/
+!apps/web/dist/**
+!packages/
+!packages/**/
+!packages/bundle/hivemind-web-app/cordis.patch.yml
+!packages/**/lib/
+!packages/**/lib/**

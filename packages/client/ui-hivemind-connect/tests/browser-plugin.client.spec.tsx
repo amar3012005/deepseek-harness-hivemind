@@ -19,26 +19,34 @@ afterEach(() => {
 })
 
 describe('HIVE-MIND connection UI', () => {
-  it('registers above Settings through the sidebar footer slot', async () => {
+  it('keeps session projection ownership in the native workspace plugin', async () => {
     const ctx = new Context()
     await ctx.plugin(SlotRegistry).await()
     ctx.provide('locale', { register: () => () => {} } as never)
-    ctx.provide('sessions', { open: vi.fn() } as never)
+    ctx.provide('sessions', {
+      open: vi.fn(),
+      create: vi.fn(async () => 'session-1'),
+      list: {
+        getSnapshot: () => ({ current: 'session-1', ids: ['session-1'], phase: 'ready' }),
+        subscribe: () => () => {},
+      },
+    } as never)
+    ctx.provide('uiConversation', { configureWorkspaceRequirement: () => () => {} } as never)
     const slots = ctx.get('slots') as SlotRegistry
     slots.register({
       name: 'root',
       children: {
         'sidebar.footer.action': { kind: 'list', scope: 'root' },
         'conversation.session.header.actions': { kind: 'list', scope: 'root' },
+        'shell.sessionRail': { kind: 'single', scope: 'root' },
       },
     } as never, () => null)
 
     await ctx.plugin({ inject: [...inject], apply }).await()
 
-    const entry = slots.entries('sidebar.footer.action')[0]
-    expect(entry?.component).toBe(HivemindConnect)
-    expect(entry?.options.id).toBe('hivemind-connect')
-    expect(slots.entries('conversation.session.header.actions')[0]?.options.id).toBe('hivemind-history')
+    expect(slots.entries('sidebar.footer.action')).toHaveLength(0)
+    expect(slots.entries('shell.sessionRail')).toHaveLength(0)
+    expect(slots.entries('conversation.session.header.actions')).toHaveLength(0)
   })
 
   it('shows the authenticated email after live status verification', async () => {

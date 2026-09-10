@@ -242,7 +242,7 @@ export class PostgresSessionPersistence extends SessionPersistence {
       const owned = await client.query(
         `UPDATE harness_session_leases SET heartbeat_at=now(),expires_at=$6
           WHERE org_id=$1 AND user_id=$2 AND session_id=$3 AND token_hash=$4 AND fencing_token=$5
-            AND released_at IS NULL AND expires_at>now() RETURNING fencing_token`,
+            AND released_at IS NULL RETURNING fencing_token`,
         [...scopeParams(scope, id), claim.hash, claim.fence, this.expiry()])
       if (owned.rows[0] === undefined) throw new SessionOwnershipLostError(id)
       const locked = await client.query<SessionRow>(
@@ -269,7 +269,7 @@ export class PostgresSessionPersistence extends SessionPersistence {
     const result = await this.query(scope,
       `UPDATE harness_session_leases SET heartbeat_at=now(),expires_at=$6
         WHERE org_id=$1 AND user_id=$2 AND session_id=$3 AND token_hash=$4 AND fencing_token=$5
-          AND released_at IS NULL AND expires_at>now() RETURNING fencing_token`,
+          AND released_at IS NULL RETURNING fencing_token`,
       [...scopeParams(scope, id), claim.hash, claim.fence, this.expiry()])
     if (result.rows[0] === undefined) throw new SessionOwnershipLostError(id)
   }

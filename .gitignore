@@ -45,3 +45,5 @@ worktrees/
 .agents/worktrees/
 .typert-*/
 native/system/test/bin/
+# ICARUS Harness state is local and never part of the product branch.
+.icarus/

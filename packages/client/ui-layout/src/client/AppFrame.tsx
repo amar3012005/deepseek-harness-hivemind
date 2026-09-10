@@ -27,13 +27,21 @@ import css from './AppFrame.module.css'
 /** Full composed props: runtime share + child-slot render share + store share. */
 export type AppFrameProps =
   & PropsRuntime<'root'>
-  & PropsRenderSlots<'sidebar' | 'main' | 'rightbar' | 'shell.overlay'>
+  & PropsRenderSlots<'sidebar' | 'main' | 'rightbar' | 'shell.overlay' | 'shell.sessionRail'>
   & PropsStore<ReturnType<typeof createLayoutStore>>
   & PropsLocale<'common'>
+  & {
+    externalChrome?: boolean
+    embeddedSessionRail?: boolean
+  }
 
 /** Center column grid item (session-body building block). */
-function CenterColumn(props: { children?: ReactNode }) {
-  return <div className={css.centerCol}>{props.children}</div>
+function CenterColumn(props: { children?: ReactNode; column: number }) {
+  // Embedded mode has no Harness sidebar track. Keep the conversation in the
+  // first real grid track rather than relying on an empty zero-width column.
+  // This matters during first paint and every host resize, when CSS grid's
+  // automatic placement can otherwise briefly select the empty track.
+  return <div className={css.centerCol} style={{ gridColumn: props.column }}>{props.children}</div>
 }
 
 /** Subscribe to the main key without subscribing the column frame to each panel id. */
@@ -126,6 +134,13 @@ export function AppFrame({
   renderSlot,
   t,
 }: AppFrameProps) {
+  const hiveMode = typeof document !== 'undefined'
+    && document.documentElement.dataset.dshMode === 'hivemind-chat'
+  // The typed composition mode is the single runtime authority for HIVE
+  // visibility. Profile booleans remain accepted for configuration parity,
+  // but can never leak embedded layout into native mode or suppress it in HIVE.
+  const hostOwnsChrome = hiveMode
+  const showSessionRail = hiveMode
   const layoutInfo = useStore(state => state.layoutInfo)
   const frameRef = useRef<HTMLDivElement | null>(null)
   const viewport = layoutInfo.viewportWidth
@@ -158,15 +173,23 @@ export function AppFrame({
   }, [actions])
 
   const narrow = viewport < SIDEBAR_AUTO_COLLAPSE
-  const sidebarCollapsed = narrow ? !layoutInfo.narrowExpanded : layoutInfo.sidebar === 0
-  const sidebarPreference = sidebarCollapsed
+  const sidebarCollapsed = !hostOwnsChrome && (narrow ? !layoutInfo.narrowExpanded : layoutInfo.sidebar === 0)
+  const sidebarPreference = hostOwnsChrome
     ? 0
-    : layoutInfo.sidebar === 0 ? SIDEBAR_DEFAULT : layoutInfo.sidebar
+    : sidebarCollapsed
+      ? 0
+      : layoutInfo.sidebar === 0 ? SIDEBAR_DEFAULT : layoutInfo.sidebar
   const rightbarPreference = layoutInfo.rightbar ?? viewport * RIGHTBAR_DEFAULT_RATIO
   // Opening on a narrow frame collapses the left sidebar. Eligibility must
   // include that space before the occupant's first shown report arrives.
-  const normal = computeColumns(viewport, !layoutInfo.rightbarShown && narrow ? 0 : sidebarPreference, rightbarPreference)
-  const cols = computeColumns(viewport, sidebarPreference, layoutInfo.rightbarTrack ? rightbarPreference : 0)
+  // The embedding host already supplies navigation, so its measured frame is
+  // the complete available width. Do not add the native collapsed-rail width:
+  // that phantom space makes right-panel eligibility and centering drift.
+  const solverViewport = viewport
+  const normalSolved = computeColumns(solverViewport, !layoutInfo.rightbarShown && narrow ? 0 : sidebarPreference, rightbarPreference)
+  const solved = computeColumns(solverViewport, sidebarPreference, layoutInfo.rightbarTrack ? rightbarPreference : 0)
+  const normal = hostOwnsChrome ? { ...normalSolved, sidebar: 0 } : normalSolved
+  const cols = hostOwnsChrome ? { ...solved, sidebar: 0 } : solved
   const colsRef = useRef(cols)
   colsRef.current = cols
   const rightbarWidth = useRef(normal.rightbar)
@@ -190,10 +213,10 @@ export function AppFrame({
     actions.setRightbar(rightbarBase.current - dx)
   }, [actions])
   const productTitle = process.env.DSH_CLIENT_TITLE ?? t('brand.localBuild')
-  const sidebar = useMemo(() => renderSlot('sidebar', {
+  const sidebar = useMemo(() => hostOwnsChrome ? null : renderSlot('sidebar', {
     collapsed: sidebarCollapsed,
     width: cols.sidebar,
-  }), [renderSlot, sidebarCollapsed, cols.sidebar])
+  }), [hostOwnsChrome, renderSlot, sidebarCollapsed, cols.sidebar])
   const main = useMemo(() => (
     <MainPanel usePanelInfo={usePanelInfo} renderSlot={renderSlot} />
   ), [usePanelInfo, renderSlot])
@@ -204,25 +227,30 @@ export function AppFrame({
       ref={frameRef}
       className={css.frame}
       style={{
-        gridTemplateColumns:
-          `${cols.sidebar}px minmax(0, 1fr) ${cols.rightbar}px`,
+        gridTemplateColumns: hostOwnsChrome
+          ? `minmax(0, 1fr) ${cols.rightbar}px`
+          : `${cols.sidebar}px minmax(0, 1fr) ${cols.rightbar}px`,
       }}
       data-sidebar-collapsed={sidebarCollapsed || undefined}
       data-rightbar-collapsed={cols.rightbar === 0 || undefined}
       data-rightbar-fullscreen={layoutInfo.rightbarFullscreen || undefined}
       data-rightbar-instant={layoutInfo.rightbarInstant || undefined}
       data-dragging={dragging || undefined}
+      data-external-chrome={hostOwnsChrome || undefined}
     >
       <DocumentTitle
         productTitle={productTitle}
         useSessions={useSessions}
         usePanelInfo={usePanelInfo}
       />
-      <div className={css.sidebarCol}>
+      {!hostOwnsChrome && <div className={css.sidebarCol}>
         {sidebar}
-      </div>
+      </div>}
+      {showSessionRail && <aside className={css.sessionRailCol} aria-label="HIVE chat sessions">
+        {renderSlot('shell.sessionRail', {})}
+      </aside>}
       <>
-        <CenterColumn>{main}</CenterColumn>
+        <CenterColumn column={hostOwnsChrome ? 1 : 2}>{main}</CenterColumn>
         <RightbarColumn>
           {renderSlot('rightbar', { width: normal.rightbar, viewportWidth: viewport, canShow: normal.rightbar > 0 })}
         </RightbarColumn>
@@ -231,7 +259,7 @@ export function AppFrame({
         {overlays}
       </div>
       {/* The collapsed rail is fixed-width: no resize handle while closed. */}
-      {!sidebarCollapsed && <DragHandle side="sidebar" left={cols.sidebar} onStart={onSidebarStart} onDrag={onSidebarDrag} onEnd={onDragEnd} />}
+      {!hostOwnsChrome && !sidebarCollapsed && <DragHandle side="sidebar" left={cols.sidebar} onStart={onSidebarStart} onDrag={onSidebarDrag} onEnd={onDragEnd} />}
       {layoutInfo.rightbarShown && !layoutInfo.rightbarFullscreen && normal.rightbar > 0 && (
         <DragHandle side="rightbar" left={viewport - normal.rightbar} onStart={onRightbarStart} onDrag={onRightbarDrag} onEnd={onDragEnd} />
       )}

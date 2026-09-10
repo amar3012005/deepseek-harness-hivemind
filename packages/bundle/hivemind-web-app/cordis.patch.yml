@@ -41,40 +41,26 @@
   disabled: true
 - id: workspace-files
   disabled: true
-- id: workspace-controller
-  disabled: true
 - id: file-reference-local
   disabled: true
 - id: directory-picker
   disabled: true
 - id: plugin-inventory
   disabled: true
-- id: settings-controller
-  disabled: true
 - id: open-in-app
   disabled: true
-- id: ui-open-in-app
+
+# These browser surfaces require the filesystem/developer providers above.
+# Keep their packages in the native bundle, but do not activate them in the
+# governed HIVE profile; native `web` still activates them unchanged.
+- id: ui-deliverables
   disabled: true
-- id: ui-sidebar
-  disabled: true
-- id: ui-sidebar-right
-  disabled: true
-- id: ui-sidebar-textpreview
-  disabled: true
-- id: ui-sidebar-files
-  disabled: true
-- id: ui-settings
-  disabled: true
-- id: ui-settings-general
-  disabled: true
-- id: ui-settings-models
-  disabled: true
-- id: ui-settings-plugin-inventory
-  disabled: true
-- id: ui-settings-plugins
-  disabled: true
-- id: ui-workspace
-  disabled: true
+# Da-vinci owns browser navigation; keep the native Harness conversation,
+# tool, trajectory, and replay surfaces without a second shell/sidebar track.
+- id: ui-layout
+  config:
+    externalChrome: true
+    embeddedSessionRail: true
 
 - id: webserver
   config:
@@ -83,6 +69,12 @@
     compression: gzip
     compressionLevel: 1
     compressionThresholdBytes: 1024
+
+# Preview requests arrive through the existing private edge authority. Keep
+# the established admission trust list while replacing only browser UI.
+- id: connection
+  config:
+    trustedHosts: !!js ctx.webRuntime.trustedHosts.concat((process.env.HIVEMIND_HARNESS_TRUSTED_HOSTS ?? '').split(',').map(value => value.trim()).filter(Boolean))
 
 - id: agent-presets
   config:
@@ -113,4 +105,10 @@
         ticketSecretEnv: HIVE_HARNESS_TICKET_SECRET
         redisUrlEnv: REDIS_URL
         redisJtiPrefix: 'hive:harness-ticket:'
-        sessionMaxAgeSeconds: 900
+        # The native Harness application replaces the Da-vinci route after
+        # admission, so there is no shell component left to refresh a
+        # short-lived runner cookie. Keep the signed runner grant bounded by
+        # the plugin's one-day maximum; Core/Control Plane still exclusively
+        # mint the one-time admission ticket and tenant principal.
+        sessionMaxAgeSeconds: 86400
+        databaseUrlEnv: DATABASE_URL

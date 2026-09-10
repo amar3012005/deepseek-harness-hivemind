@@ -377,7 +377,7 @@ export function SearchResultItem({ result, currentId, onOpen, t }: {
  * @returns the session row.
  */
 export function SessionNodeItem({
-  node, currentId, now, onOpen, onRename, onFork, onArchive, onReveal, drag, flat = false, t,
+  node, currentId, now, onOpen, onRename, onFork, onArchive, onReveal, drag, flat = false, showActions = true, t,
 }: {
   node: SessionNode
   currentId: string | undefined
@@ -395,6 +395,8 @@ export function SessionNodeItem({
   drag?: RowDragProps | undefined
   /** The row is rendered without a parent Workspace header. */
   flat?: boolean | undefined
+  /** Whether to expose rename, fork, and archive actions for this projection. */
+  showActions?: boolean | undefined
   t: RowTranslate
 }) {
   const row = node
@@ -471,7 +473,7 @@ export function SessionNodeItem({
           (rename/fork/archive) would all act on content that does not
           exist — both trailing cells stay off until the first prompt. */}
       {!row.blank && <span className={css.time}>{timeLabel(row.updatedAt, now, t)}</span>}
-      {!row.blank && (
+      {!row.blank && showActions && (
         <span className={css.rowActions}>
           <Menu
             open={menuOpen}

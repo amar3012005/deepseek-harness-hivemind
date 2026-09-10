@@ -121,9 +121,16 @@ function packageInstalled(name: string, base: string): boolean {
   for (;;) {
     if (existsSync(join(dir, 'node_modules', pkg, 'package.json'))) return true
     const parent = dirname(dir)
-    if (parent === dir) return false
+    if (parent === dir) break
     dir = parent
   }
+  // A deployed runner may deliberately use a read-only session workspace as
+  // its Loader base. In that layout the composition roster and all installed
+  // plugins still live in the Harness application tree, which is the other
+  // supported resolution root. Keep the check filesystem-only while making
+  // discovery agree with the Loader that mounts the shipped preset.
+  const harnessModules = fileURLToPath(new URL('../../../../node_modules/', import.meta.url))
+  return existsSync(join(harnessModules, pkg, 'package.json'))
 }
 
 /**

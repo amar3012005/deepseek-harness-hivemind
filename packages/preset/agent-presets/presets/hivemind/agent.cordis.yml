@@ -73,6 +73,11 @@
         historyTurns: 5
         historyMaxChars: 8000
 
+    - id: hivemind-connected-apps
+      name: '@deepseek-ai/dsh-hivemind-connected-apps'
+      config:
+        apiKey: !!js process.env.COMPOSIO_API_KEY
+
 # ── shell ───────────────────────────────────────────────────────────────────
 
 # `shell-env` stays in the HOST composition: `apps/cli/src/web.ts` injects it to

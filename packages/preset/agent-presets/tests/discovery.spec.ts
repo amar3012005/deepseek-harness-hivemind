@@ -263,6 +263,18 @@ describe('rows naming a plugin that cannot be resolved', () => {
       .toBe('row "stale" names a plugin that cannot be resolved: @deepseek-ai/dsh-no-such-package')
   })
 
+  it('accepts an installed Harness plugin when the loader base is an isolated session workspace', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'dsh-presets-installed-'))
+    roots.push(root)
+    await mkdir(join(root, 'probe'))
+    await writeFile(join(root, 'probe', COMPOSITION_FILE), '- id: installed\n  name: js-yaml\n')
+    const isolated = pathToFileURL(join(root, 'read-only-session', '/')).href
+
+    const [preset] = await scanRoot({ path: root, trust: 'user' }, isolated)
+
+    expect(preset?.broken).toBeUndefined()
+  })
+
   it('names every unresolvable row rather than only the first', async () => {
     // Unlike a parse failure, one unresolvable name tells you nothing about
     // the next: fixing them one reload at a time is the avoidable part.

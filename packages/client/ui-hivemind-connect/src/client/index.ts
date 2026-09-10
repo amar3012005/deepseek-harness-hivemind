@@ -3,12 +3,12 @@ import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
-import { HivemindConnect, type HivemindConnectInjected } from './HivemindConnect.tsx'
-import { HivemindHistory, type HivemindHistoryInjected } from './HivemindHistory.tsx'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import { en, zh, type HivemindConnectKey } from './locales.ts'
 import { setupEmbedMessaging } from './embed.ts'
+import { ComposioConnectionCard } from './ComposioConnectionCard.tsx'
+import type {} from '@deepseek-ai/dsh-client-ui-tool/client'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap { 'hivemind-connect': HivemindConnectKey }
@@ -17,43 +17,57 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 const NS = 'hivemind-connect'
 
 /** Browser dependencies for the shell-overlay connection control. */
-export const inject = ['slots', 'locale', 'sessions']
+export const inject = ['slots', 'locale', 'sessions', 'uiConversation']
 
 export interface ConnectionStatus {
   status: 'connected' | 'connecting' | 'disconnected' | 'unavailable'
   userEmail?: string
 }
 
-async function call(path: string, init?: RequestInit): Promise<ConnectionStatus> {
-  const response = await fetch(path, { credentials: 'same-origin', ...init })
-  if (!response.ok) throw new Error('HIVE-MIND connection request failed')
-  const body: unknown = await response.json()
-  if (typeof body !== 'object' || body === null || !('status' in body)) throw new Error('invalid HIVE-MIND connection response')
-  const status = body.status
-  if (status !== 'connected' && status !== 'connecting' && status !== 'disconnected') throw new Error('invalid HIVE-MIND connection status')
-  const email = 'user_email' in body && typeof body.user_email === 'string' && body.user_email.trim() !== ''
-    ? body.user_email.trim()
-    : undefined
-  return { status, ...email === undefined ? {} : { userEmail: email } }
-}
-
 /** Register the localized HIVE-MIND connection control above sidebar Settings. */
 export function apply(ctx: ClientContext): void {
   ctx.effect(setupEmbedMessaging, 'ui-hivemind-connect: embedded authentication')
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-hivemind-connect: dictionaries')
-  ctx.slots.inject('sidebar.footer.action', () => ctx.slots.register({
-    name: 'sidebar.footer.action',
-    id: 'hivemind-connect',
-    order: 100,
-    locale: NS,
-    inject: (): HivemindConnectInjected => ({
-      readStatus: () => call('/hivemind/connect/status'),
-      start: () => call('/hivemind/connect/start', { method: 'POST' }),
-      disconnect: () => call('/hivemind/connect', { method: 'DELETE' }),
-    }),
-  }, HivemindConnect))
-  ctx.slots.inject('conversation.session.header.actions', () => ctx.slots.register({
-    name: 'conversation.session.header.actions', id: 'hivemind-history', order: 5, locale: NS,
-    inject: (): HivemindHistoryInjected => ({ openSession: (id) => { ctx.sessions.open(id) } }),
-  }, HivemindHistory))
+  ctx.effect(() => ctx.uiConversation.configureWorkspaceRequirement(false), 'ui-hivemind-connect: filesystem-free conversation')
+  ctx.slots.inject('tool.call.toolview', function* () {
+    yield ctx.slots.register({ name: 'tool.call.toolview', key: 'hivemind_connected_task', locale: NS }, ComposioConnectionCard)
+    yield ctx.slots.register({ name: 'tool.call.toolview', key: 'mcp__composio__COMPOSIO_MANAGE_CONNECTIONS', locale: NS }, ComposioConnectionCard)
+  })
+  ctx.effect(() => {
+    let creating = false
+    let disposed = false
+    let pending: ReturnType<typeof setTimeout> | undefined
+    const ensureSession = (): void => {
+      const state = ctx.sessions.list.getSnapshot()
+      if (state.current !== undefined || creating) return
+      if (pending !== undefined) return
+      pending = setTimeout(() => {
+        pending = undefined
+        if (disposed) return
+        const settled = ctx.sessions.list.getSnapshot()
+        if (settled.current !== undefined) return
+        const existing = settled.ids[0]
+        if (existing !== undefined) {
+          ctx.sessions.open(existing)
+          return
+        }
+        creating = true
+        void ctx.sessions.create().then((sessionId) => {
+          if (!disposed) ctx.sessions.open(sessionId)
+        }).catch((reason: unknown) => {
+          console.warn('HIVE-MIND session bootstrap failed:', reason)
+        }).finally(() => {
+          creating = false
+          ensureSession()
+        })
+      }, state.phase === 'ready' ? 50 : 750)
+    }
+    const stop = ctx.sessions.list.subscribe(ensureSession)
+    ensureSession()
+    return () => {
+      disposed = true
+      if (pending !== undefined) clearTimeout(pending)
+      stop()
+    }
+  }, 'ui-hivemind-connect: filesystem-free native session bootstrap')
 }

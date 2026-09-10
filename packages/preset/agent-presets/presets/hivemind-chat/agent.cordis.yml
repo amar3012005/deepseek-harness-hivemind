@@ -26,6 +26,7 @@
         authorityMode: scoped-service
         icarusConfigPath: !!js process.env.HIVEMIND_ICARUS_CONFIG_PATH ?? `${process.env.HOME}/.icarus/config.json`
         serviceApiBase: !!js process.env.HIVEMIND_CONTROL_PLANE_URL ?? 'http://127.0.0.1:8081'
+        serviceHttpOrigins: !!js (process.env.HIVEMIND_SERVICE_HTTP_ORIGINS ?? '').split(',').map(value => value.trim()).filter(Boolean)
         serviceSecretEnv: HIVE_HARNESS_RUNNER_SERVICE_SECRET
         requestTimeoutMs: 20000
         responseMaxBytes: 2097152
@@ -35,6 +36,23 @@
         recallItemMaxChars: 16000
         historyTurns: 5
         historyMaxChars: 8000
+    - id: hivemind-connected-apps
+      name: '@deepseek-ai/dsh-hivemind-connected-apps'
+      config:
+        apiKey: !!js process.env.COMPOSIO_API_KEY
+        enabledByDefault: true
+
+- id: hivemind-skill-filesystem
+  name: '@deepseek-ai/dsh-skill-filesystem'
+  config:
+    providerName: hivemind-chat-filesystem
+    includeDefaultRoots: false
+    customSkillDirs:
+      - !!js "process.getBuiltinModule('node:url').fileURLToPath(new URL('../hivemind/skills/', baseUrl))"
+    watch: false
+
+- id: hivemind-tool-skill
+  name: '@deepseek-ai/dsh-tool-skill'
 
 - id: tool-web
   name: '@deepseek-ai/dsh-tool-web'

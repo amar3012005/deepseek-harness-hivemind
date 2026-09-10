@@ -52,10 +52,15 @@ export class WorkspaceFeed {
 
   /** @param ctx - Host context containing the authoritative Workspace registry. */
   constructor(private readonly ctx: Context) {
-    const baseline = ctx.workspaceRegistry.list()
+    // Cordis publishes injected Service proxies before their asynchronous
+    // Service.init hook has necessarily completed. During a parallel profile
+    // mount the proxy can therefore yield no initial projection yet. Treat
+    // that instant as an empty seed; baseline() reads the authoritative
+    // registry again after startup and domain/changed keeps followers current.
+    const baseline = ctx.workspaceRegistry.list() ?? []
     this.knownIds = new Set(baseline.map(workspace => String(workspace.id)))
     this.order = baseline.map(workspace => String(workspace.id))
-    this.archived = ctx.workspaceRegistry.archivedSessionIds.map(String)
+    this.archived = (ctx.workspaceRegistry.archivedSessionIds ?? []).map(String)
     ctx.on('domain/changed', (change: DomainChanged) => { this.changed(change) })
     ctx.effect(() => () => {
       for (const follower of this.followers) follower.close()

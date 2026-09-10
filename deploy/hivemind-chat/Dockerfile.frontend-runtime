@@ -1,0 +1,64 @@
+ARG HIVE_BACKEND_IMAGE=hivemind/harness-chat:backend-frozen
+FROM ${HIVE_BACKEND_IMAGE}
+
+USER root
+
+# The base image retains the admitted HIVE runner and host packages. This
+# layer replaces only browser-delivered assets and client package products
+# built from the clean upstream Harness package graph.
+RUN rm -rf /opt/deepseek-harness/apps/web/dist
+COPY apps/web/dist /opt/deepseek-harness/apps/web/dist
+RUN set -eu; \
+  index_css="$(find /opt/deepseek-harness/apps/web/dist/assets -maxdepth 1 -type f -name 'index-*.css' -print -quit)"; \
+  vendor_css="$(find /opt/deepseek-harness/apps/web/dist/assets -maxdepth 1 -type f -name 'vendor-*.css' -print -quit)"; \
+  test -n "$index_css"; \
+  test -n "$vendor_css"; \
+  cp "$index_css" /opt/deepseek-harness/apps/web/dist/assets/harness-native.css; \
+  cp "$vendor_css" /opt/deepseek-harness/apps/web/dist/assets/harness-vendor.css
+COPY packages/bundle/hivemind-web-app/cordis.patch.yml /opt/deepseek-harness/packages/bundle/hivemind-web-app/cordis.patch.yml
+COPY packages /tmp/clean-harness-packages
+
+RUN set -eu; \
+  find /tmp/clean-harness-packages/client -mindepth 2 -maxdepth 2 -type d -name lib | while IFS= read -r source; do \
+    relative="${source#/tmp/clean-harness-packages/}"; \
+    case "$relative" in \
+      client/ui-message-feedback/lib) continue ;; \
+    esac; \
+    target="/opt/deepseek-harness/packages/${relative}"; \
+    rm -rf "$target"; \
+    mkdir -p "$(dirname "$target")"; \
+    cp -a "$source" "$target"; \
+  done; \
+  for source in \
+    /tmp/clean-harness-packages/client/ui-hivemind-connect/package.json \
+    /tmp/clean-harness-packages/hivemind/connected-apps/package.json \
+    /tmp/clean-harness-packages/hivemind/connected-apps/lib/index.js \
+    /tmp/clean-harness-packages/hivemind/connected-apps/lib/index.js.map \
+    /tmp/clean-harness-packages/preset/agent-presets/lib/index.js \
+    /tmp/clean-harness-packages/preset/agent-presets/lib/index.js.map \
+    /tmp/clean-harness-packages/preset/agent-presets/lib/invariant.js \
+    /tmp/clean-harness-packages/preset/agent-presets/lib/invariant.js.map \
+    /tmp/clean-harness-packages/session/session-persistence-postgres/lib/index.js \
+    /tmp/clean-harness-packages/session/session-persistence-postgres/lib/index.js.map \
+    /tmp/clean-harness-packages/api/session-controller/lib/client.js \
+    /tmp/clean-harness-packages/api/session-controller/lib/client.js.map; do \
+    test -f "$source" || continue; \
+    relative="${source#/tmp/clean-harness-packages/}"; \
+    target="/opt/deepseek-harness/packages/${relative}"; \
+    mkdir -p "$(dirname "$target")"; \
+    cp "$source" "$target"; \
+  done; \
+  rm -rf /opt/deepseek-harness/packages/preset/agent-presets/presets/hivemind-chat; \
+  cp -a /tmp/clean-harness-packages/preset/agent-presets/presets/hivemind-chat \
+    /opt/deepseek-harness/packages/preset/agent-presets/presets/hivemind-chat; \
+  rm -rf /opt/deepseek-harness/packages/preset/agent-presets/presets/hivemind; \
+  cp -a /tmp/clean-harness-packages/preset/agent-presets/presets/hivemind \
+    /opt/deepseek-harness/packages/preset/agent-presets/presets/hivemind; \
+  ln -sfn ../../packages/hivemind/connected-apps \
+    /opt/deepseek-harness/node_modules/@deepseek-ai/dsh-hivemind-connected-apps; \
+  mkdir -p /opt/deepseek-harness/packages/preset/agent-presets/node_modules/@deepseek-ai; \
+  ln -sfn ../../../../hivemind/connected-apps \
+    /opt/deepseek-harness/packages/preset/agent-presets/node_modules/@deepseek-ai/dsh-hivemind-connected-apps; \
+  rm -rf /tmp/clean-harness-packages
+
+USER node

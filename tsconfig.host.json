@@ -135,6 +135,7 @@
   "references": [
     { "path": "./packages/client/ui-deliverables/tsconfig.host.json" },
     { "path": "./packages/hivemind/identity" },
+    { "path": "./packages/hivemind/connected-apps" },
     { "path": "./packages/hivemind/context" },
     { "path": "./packages/hivemind/memory" },
     { "path": "./packages/hivemind/employee-directory" },

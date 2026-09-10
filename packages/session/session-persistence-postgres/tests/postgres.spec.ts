@@ -100,4 +100,27 @@ integration('PostgreSQL HIVE SessionPersistence contract', () => {
     await successor.close()
     await writer.close()
   })
+
+  it('lets the current fenced holder persist a delayed first prompt after its lease expires', async () => {
+    const writer = await scope.run(principal, () => persistence.create(header('delayed-first-prompt')))
+    await pool.query(
+      "UPDATE harness_session_leases SET expires_at=now()-interval '1 second' WHERE session_id=$1",
+      ['delayed-first-prompt'],
+    )
+
+    await writer.append([start(0)])
+    await writer.flush()
+
+    const stored = await pool.query<{ event_type: string; sequence: string }>(
+      'SELECT event_type,sequence FROM harness_session_events WHERE session_id=$1 ORDER BY sequence',
+      ['delayed-first-prompt'],
+    )
+    expect(stored.rows).toEqual([{ event_type: 'turn/start', sequence: '0' }])
+    const renewed = await pool.query<{ active: boolean }>(
+      'SELECT expires_at>now() AS active FROM harness_session_leases WHERE session_id=$1',
+      ['delayed-first-prompt'],
+    )
+    expect(renewed.rows[0]?.active).toBe(true)
+    await writer.close()
+  })
 })

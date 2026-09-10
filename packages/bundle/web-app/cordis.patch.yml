@@ -173,8 +173,14 @@
     # and serves /plugins/<id>/client.js; the browser half is the module table
     # the shell kernel constructs before cordis exists (adopted as a plugin
     # entry by the kernel, never fetched).
+    # Passive connected-app receipt renderer. It contributes no visible UI
+    # unless a profile exposes the matching governed tool receipt.
+    - id: ui-hivemind-connect
+      name: '@deepseek-ai/dsh-client-ui-hivemind-connect'
+
     - id: modules
       name: '@deepseek-ai/dsh-client-modules'
+      inject: [hivemindConnectUi]
 
     # Owns both ends of the web transport: node half binds the gateway to the
     # webserver under /api; browser half is the fetch/SSE client.

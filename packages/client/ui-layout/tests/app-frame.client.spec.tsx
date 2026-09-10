@@ -60,7 +60,7 @@ function resize(width: number): void {
   })
 }
 
-function mountFrame(windowWidth = frameWidth) {
+function mountFrame(windowWidth = frameWidth, externalChrome = false, embeddedSessionRail = false) {
   vi.stubGlobal('innerWidth', windowWidth)
   const instance = createLayoutStore().create()
   const slotCalls: { key: string; props: object; options: RenderOpts | undefined }[] = []
@@ -102,6 +102,8 @@ function mountFrame(windowWidth = frameWidth) {
       useResource={useResource}
       useWorkspaces={sel => sel(workspaceState)}
       t={key => key === 'brand.localBuild' ? 'DSH Local Build' : key}
+      externalChrome={externalChrome}
+      embeddedSessionRail={embeddedSessionRail}
     />
   )
   const utils = render(element())
@@ -138,6 +140,7 @@ function drag(handle: Element, fromX: number, toX: number): void {
 }
 
 beforeEach(() => {
+  document.documentElement.dataset.dshMode = 'native'
   originalTitle = document.title
   frameWidth = 1920
   selectedSession = 's-test' as SessionId
@@ -172,6 +175,7 @@ afterEach(() => {
   } finally {
     for (const restore of restoreProperties.splice(0).reverse()) restore()
     document.title = originalTitle
+    delete document.documentElement.dataset.dshMode
     vi.restoreAllMocks()
     vi.unstubAllGlobals()
     vi.unstubAllEnvs()
@@ -548,6 +552,47 @@ describe('AppFrame pointer resizing', () => {
     expect(animationFrames.size).toBe(0)
     expect(handle.hasPointerCapture(1)).toBe(false)
     if (change !== 'unmount') expect(frame.dataset.dragging).toBeUndefined()
+  })
+})
+
+describe('AppFrame embedded host geometry', () => {
+  it('uses only real grid tracks when the host owns navigation', () => {
+    document.documentElement.dataset.dshMode = 'hivemind-chat'
+    frameWidth = 720
+    const { frame } = mountFrame(frameWidth, true)
+    const center = frame.querySelector<HTMLElement>('[data-testid="main-content"]')!.parentElement
+
+    expect(frame.style.gridTemplateColumns).toBe('minmax(0, 1fr) 0px')
+    expect(center?.style.gridColumn).toBe('1')
+    expect(frame.querySelector('[data-testid="sidebar-content"]')).toBeNull()
+  })
+
+  it('uses the host frame width without adding a phantom collapsed sidebar', () => {
+    document.documentElement.dataset.dshMode = 'hivemind-chat'
+    frameWidth = 720
+    const { instance, rightOwner } = mountFrame(frameWidth, true)
+
+    expect(instance.getSnapshot().layoutInfo.viewportWidth).toBe(720)
+    expect(rightOwner().viewportWidth).toBe(720)
+  })
+
+  it('adds a sessions-only rail without restoring the native product sidebar', () => {
+    document.documentElement.dataset.dshMode = 'hivemind-chat'
+    const { frame, getByTestId } = mountFrame(frameWidth, true, true)
+    const center = getByTestId('main-content').parentElement
+
+    expect(frame.style.gridTemplateColumns).toBe('minmax(0, 1fr) 0px')
+    expect(getByTestId('shell.sessionRail-content')).toBeTruthy()
+    expect(center?.style.gridColumn).toBe('1')
+    expect(frame.querySelector('[data-testid="sidebar-content"]')).toBeNull()
+  })
+
+  it('keeps the complete native shell when the mode is native', () => {
+    document.documentElement.dataset.dshMode = 'native'
+    const { frame } = mountFrame(frameWidth, true, true)
+
+    expect(frame.querySelector('[data-testid="sidebar-content"]')).not.toBeNull()
+    expect(frame.querySelector('[data-testid="shell.sessionRail-content"]')).toBeNull()
   })
 })
 

@@ -9,7 +9,12 @@ import { pathToFileURL } from 'node:url'
 import { runInNewContext } from 'node:vm'
 import { Context, type Fiber } from '@deepseek-ai/cordis'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { renderIndexInjections, type WebServer, type WebRoute } from '@deepseek-ai/dsh-host-webserver'
+import {
+  renderIndexInjections,
+  type IndexInjection,
+  type WebRoute,
+  type WebServer,
+} from '@deepseek-ai/dsh-host-webserver'
 import * as modulesClient from '../src/client/index.ts'
 import { ClientModuleRegistry, bootInjections, orderByModuleGraph } from '../src/index.ts'
 import type { ClientModuleLoaderTarget, WebBootEntry, WebBootGraph } from '../src/client/index.ts'
@@ -751,6 +756,24 @@ function emitLoaderEntryChange(context: Context, name: string): void {
     entry: { options: { name } },
   } as unknown as Fiber)
 }
+
+describe('late loader rows', () => {
+  it('reconciles an active client package before publishing the HTML boot graph', () => {
+    const initialName = '@fixture/boot-initial'
+    const lateName = '@fixture/boot-late'
+    writeBuiltPackage(initialName, {})
+    writeBuiltPackage(lateName, {})
+    const packageNames = [initialName]
+    const { context, service } = constructWithRoute(packageNames)
+
+    packageNames.push(lateName)
+    const injections: IndexInjection[] = []
+    context.emit('webserver/index-inject', injections)
+
+    expect(service.graph().entries.map(entry => entry.id)).toEqual([initialName, lateName])
+    expect(injections.some(row => row.kind === 'global' && row.name === '__DSH_BOOT__')).toBe(true)
+  })
+})
 
 describe('shared module declarations', () => {
   it('accepts external requests and carries them onto the graph row', () => {

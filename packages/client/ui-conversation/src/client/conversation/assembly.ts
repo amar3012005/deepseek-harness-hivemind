@@ -173,6 +173,15 @@ interface BindingRecord {
 
 /** Root service owning Conversation registries and per-Session bindings. */
 export class UiConversation extends Service {
+  /** Whether the active product profile requires a filesystem workspace. */
+  requiresWorkspace = true
+
+  /** Temporarily override the native workspace prerequisite for an embedded profile. */
+  configureWorkspaceRequirement(required: boolean): () => void {
+    const previous = this.requiresWorkspace
+    this.requiresWorkspace = required
+    return () => { this.requiresWorkspace = previous }
+  }
   /** Registry of event matchers and target snapshot builders. */
   readonly events: ConversationEventRegistry
   /** Registry of target View definitions. */

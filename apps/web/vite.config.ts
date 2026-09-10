@@ -166,7 +166,9 @@ export default defineConfig({
         // itself stays at dist/preview.html), so the published payload can
         // exclude it as one directory.
         entryFileNames(chunk): string {
-          return chunk.name === 'bootstrap' ? 'preview/[name]-[hash].js' : 'assets/[name]-[hash].js'
+          if (chunk.name === 'bootstrap') return 'preview/[name]-[hash].js'
+          if (chunk.name === 'index') return 'assets/harness-shell.js'
+          return 'assets/[name]-[hash].js'
         },
         // Output layout: the two main chunks stay at assets/ root; lazy
         // @shikijs/langs grammar chunks group under assets/langs/; fonts

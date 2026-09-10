@@ -1,6 +1,6 @@
 .root { position: relative; }
 .trigger { border: 0; border-radius: 8px; padding: 6px 10px; color: var(--dsw-alias-label-secondary); background: transparent; cursor: pointer; }
-.drawer { position: absolute; z-index: 20; top: calc(100% + 8px); right: 0; width: min(320px, 80vw); max-height: 360px; overflow: auto; padding: 8px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 12px; background: var(--dsw-alias-bg-layer-1); box-shadow: var(--dsw-shadow-lv3); }
+.drawer { position: absolute; z-index: 20; top: calc(100% + 8px); right: 0; width: min(320px, 80vw); max-height: 360px; overflow: auto; padding: 8px; border: 0; border-radius: 12px; background: var(--dsw-alias-bg-layer-1); box-shadow: var(--dsw-shadow-lv3); }
 .drawer button { display: block; width: 100%; border: 0; border-radius: 8px; padding: 9px 10px; overflow: hidden; color: var(--dsw-alias-label-primary); background: transparent; text-align: left; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
 .drawer button:hover { background: var(--dsw-alias-interactive-bg-hover); }
 .drawer p { margin: 8px; color: var(--dsw-alias-label-secondary); }

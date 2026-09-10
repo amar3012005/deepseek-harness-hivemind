@@ -29,6 +29,37 @@
   border-right: 0.5px solid var(--dsw-alias-border-l3);
 }
 
+.sessionRailCol {
+  position: absolute;
+  top: 18px;
+  left: 18px;
+  z-index: 6;
+  width: 196px;
+  max-height: 286px;
+  min-width: 0;
+  overflow: visible;
+  background: transparent;
+}
+
+/* Trajectory deliberately owns the complete canvas. Its native composer
+   overlay marker is the only reliable shell-visible signal, so temporarily
+   hide the projected session rail rather than painting it across the ledger.
+   The workspace plugin and its rows remain registered and return unchanged
+   when Chat is selected again. */
+.frame:has([data-conversation-composer-overlay]) .sessionRailCol {
+  display: none;
+}
+
+/* At compact host widths there is no guaranteed whitespace beside the native
+   transcript. Preserve the full conversation width and avoid a floating rail
+   collision; the same projection returns at the desktop breakpoint. */
+@media (max-width: 1100px) {
+  .sessionRailCol {
+    display: none;
+  }
+}
+
+
 .centerCol {
   min-width: 0;
   display: flex;

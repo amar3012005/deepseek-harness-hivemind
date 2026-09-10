@@ -15,6 +15,7 @@
   "license": "MIT",
   "dsh": { "bundle": { "patch": "./cordis.patch.yml" } },
   "dependencies": {
+    "@deepseek-ai/dsh-client-ui-hivemind-connect": "workspace:^",
     "@deepseek-ai/dsh-hivemind-execution-scope": "workspace:^",
     "@deepseek-ai/dsh-hivemind-web-runner": "workspace:^",
     "@deepseek-ai/dsh-hivemind-virtual-workspace": "workspace:^",

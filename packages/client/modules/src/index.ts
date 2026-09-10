@@ -554,7 +554,7 @@ export class ClientModuleRegistry extends Service {
         this.flushQueued = false
         this.flush((err) => { ctx.logger.warn(err) })
       })
-    })
+    }, { global: true })
 
     // Activation pass: the initial scan IS the incremental path over the
     // current entries, flushed synchronously (nothing async between subscribe,
@@ -576,6 +576,12 @@ export class ClientModuleRegistry extends Service {
     if (ctx.get('webServer') === undefined) ctx.inject(['webServer'], registerWebCarrier)
     else registerWebCarrier(ctx)
     ctx.on('webserver/index-inject', (table) => {
+      // Loader rows declared after client-modules can finish activation after
+      // their construction event has fired. Reconcile the live host tree at
+      // the HTML publication boundary so every active late client package is
+      // represented in the boot graph served to a newly opened browser.
+      for (const entry of ctx.loader.entries()) this.dirty.add(entry.options.name)
+      this.flush((err) => { ctx.logger.warn(err) })
       table.push(...bootInjections(this.composed))
     })
   }

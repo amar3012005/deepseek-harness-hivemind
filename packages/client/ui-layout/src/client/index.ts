@@ -89,6 +89,8 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
      * `id` is added beside the shipped entries instead of replacing them.
      */
     'shell.overlay': { kind: 'list'; scope: 'root' }
+    /** Host-embedded, sessions-only navigation beside the conversation. */
+    'shell.sessionRail': { kind: 'single'; scope: 'root' }
   }
 }
 
@@ -122,13 +124,21 @@ export interface RightbarOwnerProps {
 /** Required services (cordis fiber inject — the loader passes all module exports as an object plugin). */
 export const inject = ['slots', 'theme', 'locale']
 
+/** Product-profile layout options. */
+export interface LayoutConfig {
+  /** The embedding host owns navigation, so render no Harness sidebar track. */
+  externalChrome?: boolean
+  /** Keep native session creation/history without restoring the full Harness sidebar. */
+  embeddedSessionRail?: boolean
+}
+
 /**
  * Client plugin body: provide ctx.layout, then one register() call — AppFrame
  * into 'root' with the four child-slot declarations, the layout store seat,
  * and the shared root instance supplying commands and the panel-info source.
  * @param ctx - client root context.
  */
-export function apply(ctx: ClientContext): void {
+export function apply(ctx: ClientContext, config: LayoutConfig = {}): void {
   ctx.effect(() => {
     const handle = createLayoutStore()
     const instance = handle.create()
@@ -153,8 +163,13 @@ export function apply(ctx: ClientContext): void {
         'main': { kind: 'keyed', scope: 'root' },
         'rightbar': { kind: 'single', scope: 'root' },
         'shell.overlay': { kind: 'list', scope: 'root' },
+        'shell.sessionRail': { kind: 'single', scope: 'root' },
       },
       store,
+      inject: () => ({
+        externalChrome: config.externalChrome === true,
+        embeddedSessionRail: config.embeddedSessionRail === true,
+      }) as never,
     }, AppFrame)
     const disposePanels = ctx.slots.subscribe('main', retainMainPanels)
     retainMainPanels()

@@ -90,6 +90,9 @@
    shrinks with the code chip's 0.875em); the small negative offset seats
    its optical center on the cap height. */
 .linkIcon {
+  /* Embedded product shells commonly reset every svg to display:block.
+     Keep the native leading-link glyph in the anchor's inline flow. */
+  display: inline-block;
   flex: none;
   width: 1.1em;
   height: 1.1em;
@@ -100,6 +103,16 @@
 .markdown :where(ul, ol) {
   margin: 16px 0;
   padding-left: 18px;
+}
+
+/* Restore semantic markers when the host application ships a Tailwind-style
+   list reset. These declarations stay inside native Harness Markdown. */
+.markdown ul {
+  list-style: disc outside;
+}
+
+.markdown ol {
+  list-style: decimal outside;
 }
 
 .markdown li:not(:first-child) {

@@ -97,9 +97,10 @@ export function inspectRequestPrompt(
 ): RequestPromptInspection {
   const header = event.data.header
   const rawTools: unknown = header.tools
+  const legacySystem = (header as unknown as Record<string, unknown>)['hiveLegacySystem']
   const prompt: ConversationPromptSnapshot = {
     config: header.config,
-    system: system?.text ?? '',
+    system: system?.text ?? (typeof legacySystem === 'string' ? legacySystem : ''),
     tools: Array.isArray(rawTools) ? rawTools as readonly ToolSchema[] : [],
   }
   if (previous === undefined && event.data.reason !== 'initial') return { prompt }

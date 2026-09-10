@@ -11,6 +11,7 @@
     { "path": "../ui-session" },
     { "path": "../ui-sidebar" },
     { "path": "../ui-slots" },
+    { "path": "../ui-tool" },
     { "path": "../../util/crypto" }
   ]
 }

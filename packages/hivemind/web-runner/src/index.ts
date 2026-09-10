@@ -226,7 +226,11 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
       }
       const cookie = ctx.connection.authorizePrincipal(req, principal, expiresAt)
       json(res, 200, { ok: true, expires_at: expiresAt, profile: 'hivemind-chat' }, { 'set-cookie': cookie })
-    } catch {
+    } catch (error) {
+      ctx.logger.warn(
+        'hivemind-web-runner: ticket exchange rejected',
+        error instanceof Error ? error.message : 'unknown error',
+      )
       json(res, 401, { ok: false })
     }
   } }), 'hivemind-web-runner: embed ticket exchange')

@@ -122,6 +122,42 @@ export function apply(ctx: Context, config: Config = Config({})): void {
   const workspaceNavigation = ctx.get('uiWorkspace') as unknown as WorkspaceNavigation
   const uiConversation = new UiConversation(ctx, sessions)
 
+  // Da-vinci supplies the authenticated HIVE shell and has no filesystem
+  // workspace picker. Keep the native conversation/session implementation,
+  // but start its first session directly when this clean UI is React-mounted.
+  if (document.documentElement.dataset.dshEmbedded === 'true') {
+    uiConversation.configureWorkspaceRequirement(false)
+    ctx.effect(() => {
+      let creating = false
+      let pending: ReturnType<typeof setTimeout> | undefined
+      const ensureSession = (): void => {
+        const state = sessions.list.getSnapshot()
+        if (state.current !== undefined || creating || pending !== undefined) return
+        pending = setTimeout(() => {
+          pending = undefined
+          const settled = sessions.list.getSnapshot()
+          if (settled.current !== undefined) return
+          const existing = settled.ids[0]
+          if (existing !== undefined) {
+            sessions.open(existing)
+            return
+          }
+          creating = true
+          void sessions.create().then(id => sessions.open(id)).finally(() => {
+            creating = false
+            ensureSession()
+          })
+        }, state.phase === 'ready' ? 50 : 750)
+      }
+      const stop = sessions.list.subscribe(ensureSession)
+      ensureSession()
+      return () => {
+        if (pending !== undefined) clearTimeout(pending)
+        stop()
+      }
+    }, 'ui-conversation: embedded HIVE session bootstrap')
+  }
+
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-conversation: dictionaries')
   const t = ctx.locale.bind(NS)
   const conversationStore = createConversationStore()
@@ -230,6 +266,7 @@ export function apply(ctx: Context, config: Config = Config({})): void {
       'conversation.hero.agentPreset': { kind: 'single', scope: 'root' },
     },
     inject: (sessionId: SessionId | undefined): ConversationInjected => ({
+      requiresWorkspace: uiConversation.requiresWorkspace,
       hooks: {
         composerBlock: sessionId === undefined ? ABSENT_BLOCK : composerBlocks.storeFor(sessionId),
       },
