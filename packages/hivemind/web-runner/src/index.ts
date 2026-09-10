@@ -9,6 +9,8 @@ import type { IndexInjection } from '@deepseek-ai/dsh-host-webserver'
 import type {} from '@deepseek-ai/dsh-session-persistence'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-hivemind-execution-scope'
+import { readFile } from 'node:fs/promises'
+import { join } from 'node:path'
 
 export const name = 'hivemind-web-runner'
 export const inject = ['webServer', 'connection', 'sessionPersistence', 'hivemindExecutionScope']
@@ -22,6 +24,19 @@ const MAX_BODY_BYTES = 8192
 const MAX_TICKET_TTL_SECONDS = 60
 const CLOCK_SKEW_SECONDS = 5
 const TOKEN_PATTERN = /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/u
+
+let nativeStylesPromise: Promise<string[]> | undefined
+function nativeStyles(): Promise<string[]> {
+  nativeStylesPromise ??= readFile(join(process.env.HIVEMIND_WEB_DIST || '/opt/deepseek-harness/apps/web/dist', 'index.html'), 'utf8')
+    .then(html => [...html.matchAll(/<link\b[^>]*>/gi)]
+      .map(([tag]) => tag)
+      .filter(tag => /\brel=["']stylesheet["']/i.test(tag))
+      .map(tag => tag.match(/\bhref=["']([^"']+)["']/i)?.[1])
+      .filter((href): href is string => Boolean(href))
+      .map(href => href.replace(/^\.\//, '/')))
+    .catch(() => [])
+  return nativeStylesPromise
+}
 
 export interface Config {
   parentOrigins: string[]
@@ -290,7 +305,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
       }
       const injections: IndexInjection[] = []
       ctx.emit('webserver/index-inject', injections)
-      json(res, 200, { ok: true, profile: 'hivemind-chat', injections })
+      json(res, 200, { ok: true, profile: 'hivemind-chat', injections, styles: await nativeStyles() })
     },
   }), 'hivemind-web-runner: authenticated browser boot graph')
   ctx.effect(() => ctx.webServer.register({ kind: 'exact', path: HEALTH_PATH, handler: async (_req, res) => {
