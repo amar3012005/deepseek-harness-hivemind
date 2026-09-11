@@ -27,6 +27,8 @@ The runtime supplies status, start, and disconnect endpoints. Starting a connect
 
 The client contributes one `sidebar.footer.action` slot. It refreshes connection state after browser focus, polls quickly while login is in progress, and otherwise checks at a bounded interval. A connected state displays the authenticated email plus reconnect and disconnect controls.
 
+The package also contributes the keyed `hivemind_connected_task` tool view. Its durable result projects each bounded Composio operation, including search and connection management, before showing a connection, approval, completion, or failure card. Replay derives the same progress rows from the recorded tool result; browser state is not authoritative.
+
 ## Model Experience
 
 The model sees nothing from this browser-only plugin. The paired runtime adds authenticated company context and the progressive HIVE-MIND tool after server-side validation. This package adds no prompt tokens and does not affect the model KV cache.

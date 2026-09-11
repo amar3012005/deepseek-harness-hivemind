@@ -16,6 +16,12 @@ interface Receipt {
   readonly draft_id?: string
   readonly summary?: string
   readonly error?: string
+  readonly operations?: readonly OperationReceipt[]
+}
+
+interface OperationReceipt {
+  readonly tool?: string
+  readonly status?: string
 }
 
 function record(value: unknown): value is Record<string, unknown> {
@@ -80,6 +86,7 @@ export function ComposioConnectionCard({ block, t }: Props) {
       : draft ? t('composio.approvalRequired')
         : failed ? t('composio.failed') : t('composio.completed')
   return <section className={css.root} aria-live="polite"><div className={css.summary}><span className={css.symbol} aria-hidden="true">✦</span><span>{title}</span>{receipt?.status?<span className={css.status}>{receipt.status.replaceAll('_',' ')}</span>:null}</div>
+    {receipt?.operations?.map((operation, index) => operation.tool?<div className={css.operation} key={`${operation.tool}:${index}`}><span className={css.symbol} aria-hidden="true">✦</span><code>{operation.tool}</code>{operation.status?<span className={css.operationStatus}>→ {operation.status}</span>:null}</div>:null)}
     {receipt?.status==='connection_required'?<><p className={css.prompt}>{receipt.prompt||`Connect ${app} to continue, then return here.`}</p>{redirect?<a className={css.connection} href={redirect} target="_blank" rel="noreferrer"><img src={logo} alt=""/><span><strong>{t('composio.connect',{ app })}</strong><small>Authorize in a new tab, then continue this request.</small></span></a>:null}</>:null}
     {redirect&&receipt?.status!=='connection_required'?<div className={css.connection}><div><strong>{t('composio.connect',{ app })}</strong><p>{t('composio.connectDetail')}</p></div><a href={redirect} target="_blank" rel="noreferrer">{t('composio.authorize')}</a></div>:null}
     {draft?<p className={css.detail}>{t('composio.draftDetail')}</p>:null}{!redirect&&!draft&&receipt?.summary?<p className={css.detail}>{receipt.summary}</p>:null}{receipt?.error?<p className={css.error}>{receipt.error}</p>:null}</section>

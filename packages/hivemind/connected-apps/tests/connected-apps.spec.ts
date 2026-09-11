@@ -27,12 +27,13 @@ describe('progressive Composio bridge', () => {
   beforeEach(() => { execute.mockReset(); create.mockClear() })
 
   it('preserves Composio planning skill while dropping schemas', () => {
-    expect(compactComposioSearchReceipt({ data: {
+    expect(compactComposioSearchReceipt({ operations: [{ tool: 'COMPOSIO_SEARCH_TOOLS', status: 'completed' }], data: {
       results: [{ primary_tool_slugs: ['SLACK_SEND_MESSAGE'], toolkits: ['slack'], recommended_plan_steps: ['resolve channel'], known_pitfalls: ['do not guess'], difficulty: 'medium', tool_schemas: { huge: true } }],
       recommended_plan_steps: ['connect first'], known_pitfalls: ['confirm destination'], difficulty: 'hard',
     } }, receipt)).toMatchObject({
       results: [{ recommended_plan_steps: ['resolve channel'], known_pitfalls: ['do not guess'], difficulty: 'medium' }],
       recommended_plan_steps: ['connect first'], known_pitfalls: ['confirm destination'], difficulty: 'hard',
+      operations: [{ tool: 'COMPOSIO_SEARCH_TOOLS', status: 'completed' }],
     })
     expect(JSON.stringify(compactComposioSearchReceipt({ data: { results: [{ primary_tool_slugs: ['X'], tool_schemas: { huge: true } }] } }, receipt))).not.toContain('tool_schemas')
   })
@@ -69,6 +70,10 @@ describe('progressive Composio bridge', () => {
       session: { generate_id: true },
     }, { signal: AbortSignal.abort() })).resolves.toMatchObject({
       status: 'connection_required',
+      operations: [
+        { tool: 'COMPOSIO_SEARCH_TOOLS', status: 'completed' },
+        { tool: 'COMPOSIO_MANAGE_CONNECTIONS', status: 'completed' },
+      ],
       toolkit: 'slack',
       app_label: 'Slack',
       redirect_url: 'https://connect.example/slack',
@@ -129,5 +134,22 @@ describe('progressive Composio bridge', () => {
     const { tool } = harness()
     await expect(tool().execute({ action: 'search', task: 'read inbox' }, { signal: AbortSignal.abort() })).rejects.toThrow('Search requires queries')
     expect(execute).not.toHaveBeenCalled()
+  })
+
+  it('allows only one connected-app search per agent turn', async () => {
+    execute.mockResolvedValue({ data: { results: [] } })
+    const app = harness()
+    const agent = {}
+    const next = vi.fn(async () => undefined)
+    await app.listeners.get('agent/pre-step')?.({ agent, turn: 1 } as never, next as never)
+    const execution = { signal: AbortSignal.abort(), agent }
+    const request = {
+      action: 'search',
+      queries: [{ use_case: 'List the five newest Gmail inbox messages, ordered newest first, returning sender, subject, timestamp, and snippet.' }],
+      session: { generate_id: true },
+    }
+    await expect(app.tool().execute(request, execution as never)).resolves.toMatchObject({ status: 'ready' })
+    await expect(app.tool().execute(request, execution as never)).rejects.toThrow('already completed for this turn')
+    expect(execute).toHaveBeenCalledTimes(1)
   })
 })

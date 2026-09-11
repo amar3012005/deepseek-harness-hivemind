@@ -85,6 +85,17 @@ function connectionStatuses(value: unknown, depth = 0): Array<{ toolkit: string;
   return Object.values(value).flatMap(item => connectionStatuses(item, depth + 1))
 }
 
+function operationReceipts(value: unknown): JsonValue[] {
+  if (!Array.isArray(value)) return []
+  return value.flatMap((item) => {
+    if (!record(item)) return []
+    const tool = stringValue(item['tool'])
+    const status = stringValue(item['status'])
+    if (tool === undefined) return []
+    return [{ tool, ...(status === undefined ? {} : { status }) }]
+  })
+}
+
 function titleCaseToolkit(toolkit: string): string {
   return toolkit.split(/[-_\s]+/).filter(Boolean).map(part => `${part[0]?.toUpperCase() ?? ''}${part.slice(1)}`).join(' ')
 }
@@ -197,6 +208,8 @@ export function compactComposioSearchReceipt(value: unknown, receipt: SpillRef):
     source_receipt: { locator: receipt.locator, bytes: receipt.bytes, retrieval_hint: receipt.retrievalHint },
     schema_policy: 'Load schemas only for selected tool slugs. Execute only slugs returned by this search.',
   }
+  const operations = operationReceipts(value['operations'])
+  if (operations.length > 0) compact['operations'] = operations
   const outerStatus = stringValue(value['status'])
   const toolkit = stringValue(value['toolkit'])
   const redirectUrl = stringValue(value['redirect_url']) ?? stringValue(value['redirectUrl'])
@@ -229,7 +242,7 @@ async function saveReceipt(ctx: Context, execution: ToolExecution, content: stri
 
 /** Register the compact progressive Composio router and its policy guards. */
 export function apply(ctx: Context, config: Config = {}): void {
-  const turns = new WeakMap<object, { turn: number; enabled: boolean }>()
+  const turns = new WeakMap<object, { turn: number; enabled: boolean; searches: number }>()
   const apiKey = config.apiKey?.trim()
   const composio = apiKey
     ? import('@composio/core').then(({ Composio }) => new Composio({ apiKey, allowTracking: false, disableVersionCheck: true }))
@@ -292,6 +305,11 @@ export function apply(ctx: Context, config: Config = {}): void {
       const key = sessionKey(identity)
       const session = await getSession(identity)
       if (args.action === 'search') {
+        const turnState = execution.agent === undefined ? undefined : turns.get(execution.agent)
+        if (turnState !== undefined) {
+          if (turnState.searches > 0) throw new Error('Connected-app search already completed for this turn. Follow its result or wait for the user to continue.')
+          turnState.searches += 1
+        }
         const queries = searchQueries(args.queries)
         const workflowSession = searchSession(args.session)
         const searchStrategy = stringValue(args.search_strategy)
@@ -326,6 +344,10 @@ export function apply(ctx: Context, config: Config = {}): void {
           const label = titleCaseToolkit(toolkit)
           return {
             status: 'connection_required',
+            operations: [
+              { tool: 'COMPOSIO_SEARCH_TOOLS', status: 'completed' },
+              { tool: 'COMPOSIO_MANAGE_CONNECTIONS', status: redirectUrl === undefined ? 'failed' : 'completed' },
+            ],
             toolkit,
             app_label: label,
             logo_url: `https://logos.composio.dev/api/${encodeURIComponent(toolkit)}`,
@@ -335,7 +357,11 @@ export function apply(ctx: Context, config: Config = {}): void {
             result: result as unknown as JsonValue,
           }
         }
-        return { status: 'ready', result: result as unknown as JsonValue }
+        return {
+          status: 'ready',
+          operations: [{ tool: 'COMPOSIO_SEARCH_TOOLS', status: 'completed' }],
+          result: result as unknown as JsonValue,
+        }
       }
       const metaArguments: Record<string, unknown> = {}
       if (stringValue(args.session_id) !== undefined) metaArguments['session_id'] = args.session_id
@@ -344,13 +370,21 @@ export function apply(ctx: Context, config: Config = {}): void {
         if (slugs.length === 0 || slugs.some(slug => !selectedTools.get(key)?.has(slug))) {
           throw new Error('Schema request contains a tool not selected by the current search')
         }
-        return { status: 'ready', result: await session.execute('COMPOSIO_GET_TOOL_SCHEMAS', { ...metaArguments, tool_slugs: slugs }) as unknown as JsonValue }
+        return {
+          status: 'ready',
+          operations: [{ tool: 'COMPOSIO_GET_TOOL_SCHEMAS', status: 'completed' }],
+          result: await session.execute('COMPOSIO_GET_TOOL_SCHEMAS', { ...metaArguments, tool_slugs: slugs }) as unknown as JsonValue,
+        }
       }
       if (args.action === 'manage_connection' || args.action === 'wait_connection') {
         const toolkits = stringArray(args.toolkits)
         if (toolkits.length === 0) throw new TypeError('Connection operation requires at least one toolkit')
         const metaTool = args.action === 'manage_connection' ? 'COMPOSIO_MANAGE_CONNECTIONS' : 'COMPOSIO_WAIT_FOR_CONNECTIONS'
-        return { status: 'ready', result: await session.execute(metaTool, { ...metaArguments, toolkits }) as unknown as JsonValue }
+        return {
+          status: 'ready',
+          operations: [{ tool: metaTool, status: 'completed' }],
+          result: await session.execute(metaTool, { ...metaArguments, toolkits }) as unknown as JsonValue,
+        }
       }
       if (args.action !== 'execute') throw new TypeError('Unsupported connected-app action')
       const slug = stringValue(args.tool_slug)
@@ -360,12 +394,22 @@ export function apply(ctx: Context, config: Config = {}): void {
       if (MUTATING_TOOL.test(slug)) {
         return { status: 'approval_required', mode: 'prepare', tool_slug: slug, arguments: args.arguments as JsonValue }
       }
-      return { status: 'ready', result: await session.execute(slug, args.arguments) as unknown as JsonValue }
+      return {
+        status: 'ready',
+        operations: [{ tool: slug, status: 'completed' }],
+        result: await session.execute(slug, args.arguments) as unknown as JsonValue,
+      }
     },
   }))
 
   ctx.on('agent/pre-step', async ({ agent, turn }, next) => {
-    if (turns.get(agent)?.turn !== turn) turns.set(agent, { turn, enabled: connectedAppsEnabled(ctx, config.enabledByDefault === true) })
+    if (turns.get(agent)?.turn !== turn) {
+      turns.set(agent, {
+        turn,
+        enabled: connectedAppsEnabled(ctx, config.enabledByDefault === true),
+        searches: 0,
+      })
+    }
     return next()
   })
   ctx.on('tools/pre-execute', async (execution, next) => {
