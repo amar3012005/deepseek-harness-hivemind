@@ -116,16 +116,18 @@ function installTurnCapabilityPolicy(ctx: Context): void {
     }
     return next()
   }, { prepend: true })
-  ctx.on('tools/result', (execution) => {
+  ctx.on('tools/pre-execute', (execution, next) => {
     const agent = execution.agent
-    if (agent === undefined || execution.name !== HIVE_META_TOOL
-      || memoryBudget.get(agent) !== undefined
-      || ctx.tools.get(HIVE_META_TOOL) === undefined) return
+    if (agent !== undefined && execution.name === HIVE_META_TOOL
+      && memoryBudget.get(agent) === undefined
+      && ctx.tools.get(HIVE_META_TOOL) !== undefined) {
     // A Harness step may contain several model/tool exchanges, so pre-step is
-    // not a reliable boundary for sequential retries. Remove the router as
-    // soon as its first result settles; the next model request then cannot see
-    // or call it again during this turn.
-    memoryBudget.set(agent, agent.ctx.tools.restrict({ deny: [HIVE_META_TOOL] }))
+      // not a reliable boundary for sequential retries. Remove the router
+      // before its first execution; the accepted call still owns its frozen
+      // definition while the next model request can no longer see it.
+      memoryBudget.set(agent, agent.ctx.tools.restrict({ deny: [HIVE_META_TOOL] }))
+    }
+    return next()
   })
   ctx.on('agent/turn-stopping', ({ agent }) => {
     active.get(agent)?.()

@@ -17,7 +17,7 @@ interface HarnessMock {
   preStep?: (payload: unknown, next: () => Promise<unknown>) => Promise<unknown>
   inboxInserted?: (payload: { agent: Agent; message: UserMessage }) => void
   turnStopping?: (payload: { agent: Agent }) => void
-  toolResult?: (execution: { agent?: Agent; name: string }) => void
+  toolPreExecute?: (execution: { agent?: Agent; name: string }, next: () => Promise<unknown>) => Promise<unknown>
   skills: Map<string, { description: string; content: string }>
 }
 
@@ -76,8 +76,8 @@ function mount(pluginConfig: Config): HarnessMock {
       if (event === 'agent/turn-stopping') {
         harness.turnStopping = listener as unknown as NonNullable<HarnessMock['turnStopping']>
       }
-      if (event === 'tools/result') {
-        harness.toolResult = listener as unknown as NonNullable<HarnessMock['toolResult']>
+      if (event === 'tools/pre-execute') {
+        harness.toolPreExecute = listener as unknown as NonNullable<HarnessMock['toolPreExecute']>
       }
       return () => {}
     },
@@ -337,17 +337,19 @@ describe('HIVE-MIND runtime', () => {
     expect(hiveMemoryBudgetExhausted([{ ...events[0], data: { ...events[0]!.data, name: 'hivemind_connected_task' } }] as SessionEvent[], 4)).toBe(false)
   })
 
-  it('removes the memory router immediately after its first settled result', async () => {
+  it('removes the memory router before its first execution continuation', async () => {
     const harness = mount(config(await authorityFile()))
     const lift = vi.fn()
     const restrict = vi.fn(() => lift)
     const scopedAgent = { ctx: { tools: { restrict } } } as unknown as Agent
 
-    harness.toolResult?.({ agent: scopedAgent, name: 'hivemind_meta' })
+    const next = vi.fn(async () => undefined)
+    await harness.toolPreExecute?.({ agent: scopedAgent, name: 'hivemind_meta' }, next)
     expect(restrict).toHaveBeenCalledOnce()
     expect(restrict).toHaveBeenCalledWith({ deny: ['hivemind_meta'] })
+    expect(next).toHaveBeenCalledOnce()
 
-    harness.toolResult?.({ agent: scopedAgent, name: 'hivemind_meta' })
+    await harness.toolPreExecute?.({ agent: scopedAgent, name: 'hivemind_meta' }, next)
     expect(restrict).toHaveBeenCalledOnce()
     harness.turnStopping?.({ agent: scopedAgent })
     expect(lift).toHaveBeenCalledOnce()
