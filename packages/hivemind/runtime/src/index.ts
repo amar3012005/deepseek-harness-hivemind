@@ -9,6 +9,7 @@ import z from '@deepseek-ai/schemastery'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { UserMessage } from '@deepseek-ai/dsh-llm'
+import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import type {} from '@deepseek-ai/dsh-host-webserver'
 import type {} from '@deepseek-ai/dsh-skill'
@@ -73,16 +74,33 @@ export function hiveTurnCapabilities(messages: readonly UserMessage[]): HiveTurn
   return { memory: true, connectedApps: CONNECTED_APP_REQUEST.test(request) }
 }
 
+/**
+ * Check whether the current turn has already spent its single focused HIVE memory call.
+ * @param events - durable session events visible before the next model step.
+ * @param turn - current Harness turn number.
+ * @returns whether a HIVE memory call already exists in this turn.
+ */
+export function hiveMemoryBudgetExhausted(
+  events: readonly SessionEvent[],
+  turn: number,
+): boolean {
+  return events.some(event =>
+    event.type === 'tool/call' && event.data.turn === turn && event.data.name === HIVE_META_TOOL)
+}
+
 function textOfUserMessage(message: UserMessage): string {
   return message.content.flatMap(block => block.type === 'text' ? [block.text] : []).join('\n')
 }
 
 function installTurnCapabilityPolicy(ctx: Context): void {
   const active = new WeakMap<Agent, () => void>()
+  const memoryBudget = new WeakMap<Agent, () => void>()
   ctx.on('agent/inbox/inserted', ({ agent, message }) => {
     if (message.source.kind !== 'user') return
     active.get(agent)?.()
     active.delete(agent)
+    memoryBudget.get(agent)?.()
+    memoryBudget.delete(agent)
     const capabilities = hiveTurnCapabilities([message])
     const deny = [
       ...!capabilities.memory && ctx.tools.get(HIVE_META_TOOL) !== undefined ? [HIVE_META_TOOL] : [],
@@ -90,9 +108,19 @@ function installTurnCapabilityPolicy(ctx: Context): void {
     ]
     if (deny.length > 0) active.set(agent, agent.ctx.tools.restrict({ deny }))
   })
+  ctx.on('agent/pre-step', ({ agent, turn }, next) => {
+    if (hiveMemoryBudgetExhausted(agent.session.snapshotEvents(), turn)
+      && memoryBudget.get(agent) === undefined
+      && ctx.tools.get(HIVE_META_TOOL) !== undefined) {
+      memoryBudget.set(agent, agent.ctx.tools.restrict({ deny: [HIVE_META_TOOL] }))
+    }
+    return next()
+  }, { prepend: true })
   ctx.on('agent/turn-stopping', ({ agent }) => {
     active.get(agent)?.()
     active.delete(agent)
+    memoryBudget.get(agent)?.()
+    memoryBudget.delete(agent)
   })
 }
 
@@ -707,13 +735,12 @@ export function apply(ctx: Context, config: Config): void {
 4. A returned title, filename, citation ID, or memory ID is an internal evidence reference, not a workspace path and not proof that a downloadable artifact is available. Do not use shell, filesystem, Glob, Grep, or web tools to locate it unless the user explicitly asks about a local workspace or supplies a local path.
 5. For temporal questions, preserve the user's date or timeframe and use \`valid_at\` for what was true then or \`transaction_at\` for what the system knew then.\n6. Use \`save\` only for a stable user preference, explicit or confirmed decision, correction, or completed outcome that will matter in a future session. Save a concise factual statement with a descriptive title. Never save secrets, credentials, private authentication material, ephemeral chat, speculation, or unverified claims. For a correction, first recall the old memory and use \`relationship: "update"\` with its exact \`related_to\` ID. Report a save only after its receipt returns.\n7. Read returned evidence and citations completely enough to answer. Identify conflicts or gaps, and do not claim that a file, image, or fact is available beyond the receipt. Recall again only when the first focused result set is insufficient or the user explicitly asks for deeper coverage.\n8. HIVE-MIND supplies internal company knowledge. Use native Harness tools for independent web evidence, coding, artifacts, workflows, and subagents when those tasks are actually requested.`,
   })
+  installTurnCapabilityPolicy(ctx)
   ctx.plugin(contextPlugin({
     historyTurns: config.historyTurns,
     historyMaxChars: config.historyMaxChars,
     profileContextMaxChars: config.profileContextMaxChars,
   }, snapshotFor))
-  installTurnCapabilityPolicy(ctx)
-
   ctx.plugin(memoryPlugin({ defaultLimit: config.recallResultLimit }, {
     async context(agent, signal) {
       const snapshot = await snapshotFor(agent, signal)

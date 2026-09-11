@@ -37,7 +37,7 @@ ICARUS 凭据必须是当前用户拥有且组或其他用户不可写的普通�
 
 ## 语义
 
-运行时组合三个可独立测试的能力：`hivemind-context` 负责等待式提示投影，`hivemind-memory` 负责模型可见工具，`hivemind-employee-directory` 验证准确的组织 HyperAgent 档案。在用户消息唤醒代理之前，作用域轮次策略会隐藏该请求不需要的 HIVE 自有路由器。问候和直接档案问题不会收到路由器，普通公司工作收到 `hivemind_meta`，连接应用工作可以同时收到 `hivemind_meta` 与 `hivemind_connected_task`；该策略绝不改变原生 Harness 工具。限制在轮次的所有步骤中保持，并在轮次停止时解除。历史投影在 `historyMaxChars` 内最多保留 `historyTurns` 个完成的用户请求和最终助手回答；推理、工具调用和工具输出保留在仅追加日志中，但不会进入后续模型请求。
+运行时组合三个可独立测试的能力：`hivemind-context` 负责等待式提示投影，`hivemind-memory` 负责模型可见工具，`hivemind-employee-directory` 验证准确的组织 HyperAgent 档案。在用户消息唤醒代理之前，作用域轮次策略会隐藏该请求不需要的 HIVE 自有路由器。问候和直接档案问题不会收到路由器，普通公司工作收到 `hivemind_meta`，连接应用工作可以同时收到 `hivemind_meta` 与 `hivemind_connected_task`；该策略绝不改变原生 Harness 工具。限制在轮次的所有步骤中保持，并在轮次停止时解除。一次持久化的 `hivemind_meta` 调用完成后，该路由器会从同一轮次的后续步骤中隐藏，避免弱模型在空结果后反复扩大查询。历史投影在 `historyMaxChars` 内最多保留 `historyTurns` 个完成的用户请求和最终助手回答；推理、工具调用和工具输出保留在仅追加日志中，但不会进入后续模型请求。
 
 `hivemind_meta` 支持 `context`、`recall` 和 `profiles`。召回暴露一个去重后的前五条结果，保留重要内容和引用元数据，并将每条证据限制在 `recallItemMaxChars` 内。其聚焦 schema 支持来源、项目、时间、显式标签、媒体类型、文件名和实体过滤器。任何操作都不接受用户或组织标识。
 

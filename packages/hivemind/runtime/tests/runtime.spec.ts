@@ -7,7 +7,10 @@ import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import type { ToolDefinition } from '@deepseek-ai/dsh-tools'
 import { createAssistantMessage, createToolResultMessage, createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { UserMessage } from '@deepseek-ai/dsh-llm'
-import { apply, completedExchanges, hiveTurnCapabilities, recentConversationText, type Config } from '../src/index.ts'
+import {
+  apply, completedExchanges, hiveMemoryBudgetExhausted, hiveTurnCapabilities,
+  recentConversationText, type Config,
+} from '../src/index.ts'
 
 interface HarnessMock {
   tools: Map<string, ToolDefinition>
@@ -318,6 +321,16 @@ describe('HIVE-MIND runtime', () => {
     expect(hiveTurnCapabilities([user('Find my last five decisions')])).toEqual({ memory: true, connectedApps: false })
     expect(hiveTurnCapabilities([user('Check my last five Gmail messages')])).toEqual({ memory: true, connectedApps: true })
     expect(hiveTurnCapabilities([user('Find my last five decisions and send them to Rama in Slack')])).toEqual({ memory: true, connectedApps: true })
+  })
+
+  it('exhausts the HIVE memory budget after one focused call in the current turn', () => {
+    const events = [{
+      type: 'tool/call', seq: 1, time: 1,
+      data: { turn: 4, step: 1, callId: 'call-1', name: 'hivemind_meta', arguments: '{}' },
+    }] as unknown as SessionEvent[]
+    expect(hiveMemoryBudgetExhausted(events, 4)).toBe(true)
+    expect(hiveMemoryBudgetExhausted(events, 5)).toBe(false)
+    expect(hiveMemoryBudgetExhausted([{ ...events[0], data: { ...events[0]!.data, name: 'hivemind_connected_task' } }] as SessionEvent[], 4)).toBe(false)
   })
 
   it('removes unneeded HIVE routers before assembly and restores them after the turn', async () => {
