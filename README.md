@@ -56,6 +56,21 @@ Start with the [development guide](docs/development.md) and [architecture docume
 
 For agents, follow [AGENTS.md](AGENTS.md).
 
+## HIVE k3-harness (this fork)
+
+One command on any Harness box (does **not** install Core / Control Plane / Postgres):
+
+```sh
+git clone https://github.com/amar3012005/deepseek-harness-hivemind.git
+cd deepseek-harness-hivemind
+git checkout k3-harness
+cp deploy/k3-harness/env.example deploy/k3-harness/.env
+# set Box A private IPs and ticket secrets in deploy/k3-harness/.env
+./deploy/k3-harness/k3-harness-up.sh
+```
+
+See [deploy/k3-harness/README.md](deploy/k3-harness/README.md).
+
 ## License
 
 [MIT](LICENSE)
