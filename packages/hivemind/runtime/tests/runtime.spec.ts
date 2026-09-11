@@ -7,17 +7,20 @@ import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import type { ToolDefinition } from '@deepseek-ai/dsh-tools'
 import { createAssistantMessage, createToolResultMessage, createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { UserMessage } from '@deepseek-ai/dsh-llm'
-import { apply, completedExchanges, recentConversationText, type Config } from '../src/index.ts'
+import { apply, completedExchanges, hiveTurnCapabilities, recentConversationText, type Config } from '../src/index.ts'
 
 interface HarnessMock {
   tools: Map<string, ToolDefinition>
   preStep?: (payload: unknown, next: () => Promise<unknown>) => Promise<unknown>
+  inboxInserted?: (payload: { agent: Agent; message: UserMessage }) => void
+  turnStopping?: (payload: { agent: Agent }) => void
   skills: Map<string, { description: string; content: string }>
 }
 
 const roots: string[] = []
 const signal = new AbortController().signal
 const agent = {} as Agent
+const CONNECTED_TASK_NAME = 'hivemind_connected_task'
 
 afterEach(async () => {
   delete process.env.TEST_HIVE_RUNNER_SECRET
@@ -63,6 +66,12 @@ function mount(pluginConfig: Config): HarnessMock {
   const ctx = {
     on(event: string, listener: (payload: unknown, next: () => Promise<unknown>) => Promise<unknown>) {
       if (event === 'agent/pre-step') harness.preStep = listener
+      if (event === 'agent/inbox/inserted') {
+        harness.inboxInserted = listener as unknown as NonNullable<HarnessMock['inboxInserted']>
+      }
+      if (event === 'agent/turn-stopping') {
+        harness.turnStopping = listener as unknown as NonNullable<HarnessMock['turnStopping']>
+      }
       return () => {}
     },
     plugin(plugin: { apply(inner: unknown): void }) {
@@ -70,6 +79,9 @@ function mount(pluginConfig: Config): HarnessMock {
       return { dispose: async () => {} }
     },
     tools: {
+      get(name: string) {
+        return tools.get(name)
+      },
       register(tool: ToolDefinition) {
         tools.set(tool.name, tool)
         return () => tools.delete(tool.name)
@@ -107,6 +119,10 @@ function jsonResponse(value: unknown, status = 200): Response {
 
 function textOfForTest(message: UserMessage): string {
   return message.content.flatMap(block => block.type === 'text' ? [block.text] : []).join('\n')
+}
+
+function user(text: string): UserMessage {
+  return createUserMessage({ content: [{ type: 'text', text }], source: { kind: 'user' } })
 }
 
 function profileResponses(extra: Response[] = []): void {
@@ -278,7 +294,7 @@ describe('HIVE-MIND runtime', () => {
       signal,
     }, async () => ({
       kind: 'enter' as const,
-      messages: [createUserMessage({ content: [{ type: 'text', text: 'What do you know about me?' }], source: { kind: 'user' } })],
+      messages: [createUserMessage({ content: [{ type: 'text', text: 'What do u know about me?' }], source: { kind: 'user' } })],
     })) as {
       kind: 'enter'
       messages: UserMessage[]
@@ -294,6 +310,35 @@ describe('HIVE-MIND runtime', () => {
     expect(harness.skills.get('hivemind-company-brain')).toMatchObject({
       invocation: { modelInvocable: false, userInvocable: true },
     })
+  })
+
+  it('selects only the HIVE routers required by the current request', () => {
+    expect(hiveTurnCapabilities([user('hello')])).toEqual({ memory: false, connectedApps: false })
+    expect(hiveTurnCapabilities([user('what do u know about me?')])).toEqual({ memory: false, connectedApps: false })
+    expect(hiveTurnCapabilities([user('Find my last five decisions')])).toEqual({ memory: true, connectedApps: false })
+    expect(hiveTurnCapabilities([user('Check my last five Gmail messages')])).toEqual({ memory: true, connectedApps: true })
+    expect(hiveTurnCapabilities([user('Find my last five decisions and send them to Rama in Slack')])).toEqual({ memory: true, connectedApps: true })
+  })
+
+  it('removes unneeded HIVE routers before assembly and restores them after the turn', async () => {
+    const harness = mount(config(await authorityFile()))
+    harness.tools.set(CONNECTED_TASK_NAME, { ...tool(harness, 'hivemind_meta'), name: CONNECTED_TASK_NAME })
+    const lift = vi.fn()
+    const restrict = vi.fn(() => lift)
+    const scopedAgent = { ctx: { tools: { restrict } } } as unknown as Agent
+
+    harness.inboxInserted?.({ agent: scopedAgent, message: user('hello') })
+    expect(restrict).toHaveBeenLastCalledWith({ deny: ['hivemind_meta', CONNECTED_TASK_NAME] })
+
+    harness.inboxInserted?.({ agent: scopedAgent, message: user('Explain TCP congestion control') })
+    expect(lift).toHaveBeenCalledOnce()
+    expect(restrict).toHaveBeenLastCalledWith({ deny: [CONNECTED_TASK_NAME] })
+
+    harness.inboxInserted?.({ agent: scopedAgent, message: user('Find my last five decisions and send them in Slack') })
+    expect(lift).toHaveBeenCalledTimes(2)
+    expect(restrict).toHaveBeenCalledTimes(2)
+
+    harness.turnStopping?.({ agent: scopedAgent })
   })
 
   it('exposes only the progressive meta-tool when compatibility tools are disabled', async () => {

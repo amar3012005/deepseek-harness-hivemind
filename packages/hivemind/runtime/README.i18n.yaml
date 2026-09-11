@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write packages/hivemind/runtime/README.md
-README.md: caf0d6f92f6d3e19008fba9f2ba1eecaca9af558
-README.zh.md: 6efe6756dbd2bf5e2e451ee6e1598291a279335f
+README.md: 7d6246e956ca9e422f01a0060f6f7fb960177efc
+README.zh.md: b083840f03204c02760cf4cfc87647e512a6cd7d

@@ -37,13 +37,13 @@ ICARUS 凭据必须是当前用户拥有且组或其他用户不可写的普通�
 
 ## 语义
 
-运行时组合三个可独立测试的能力：`hivemind-context` 负责等待式提示投影，`hivemind-memory` 负责模型可见工具，`hivemind-employee-directory` 验证准确的组织 HyperAgent 档案。历史投影在 `historyMaxChars` 内最多保留 `historyTurns` 个完成的用户请求和最终助手回答；推理、工具调用和工具输出保留在仅追加日志中，但不会进入后续模型请求。
+运行时组合三个可独立测试的能力：`hivemind-context` 负责等待式提示投影，`hivemind-memory` 负责模型可见工具，`hivemind-employee-directory` 验证准确的组织 HyperAgent 档案。在用户消息唤醒代理之前，作用域轮次策略会隐藏该请求不需要的 HIVE 自有路由器。问候和直接档案问题不会收到路由器，普通公司工作收到 `hivemind_meta`，连接应用工作可以同时收到 `hivemind_meta` 与 `hivemind_connected_task`；该策略绝不改变原生 Harness 工具。限制在轮次的所有步骤中保持，并在轮次停止时解除。历史投影在 `historyMaxChars` 内最多保留 `historyTurns` 个完成的用户请求和最终助手回答；推理、工具调用和工具输出保留在仅追加日志中，但不会进入后续模型请求。
 
 `hivemind_meta` 支持 `context`、`recall` 和 `profiles`。召回暴露一个去重后的前五条结果，保留重要内容和引用元数据，并将每条证据限制在 `recallItemMaxChars` 内。其聚焦 schema 支持来源、项目、时间、显式标签、媒体类型、文件名和实体过滤器。任何操作都不接受用户或组织标识。
 
 ## 模型体验
 
-模型看到一条精简组织消息、最近完成的对话、一个元工具 schema 和一条精简技能目录。目录只包含简短说明；详细的公司大脑指令只会在适用的 HIVE-MIND 任务中通过原生 `skill` 工具加载。初始简介受 `profileBriefMaxChars` 限制；完整入职档案仅通过 `context` 加载。当前轮次的工具结果可用于综合，并由历史投影从后续轮次中移除。
+模型看到一条精简组织消息、最近完成的对话，以及在提示组装前选定的 HIVE 自有路由器 schema。详细的公司大脑指令保持注册供用户明确调用，而不会出现在每个模型技能目录中。初始简介受 `profileBriefMaxChars` 限制；直接身份请求无需依赖模型选择工具即可获得有界的已验证档案上下文，其他详细公司工作通过 `context` 加载。当前轮次的工具结果可用于综合，并由历史投影从后续轮次中移除。
 
 ## 已知限制和延后工作
 

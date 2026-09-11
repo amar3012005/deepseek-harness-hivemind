@@ -37,13 +37,13 @@ The ICARUS credential must be a regular file owned by the current user and not w
 
 ## Semantics
 
-The runtime composes three independently testable capabilities: `hivemind-context` owns the awaited prompt projection, `hivemind-memory` owns the model-facing tool, and `hivemind-employee-directory` validates exact organization HyperAgent profiles. The history projection retains at most `historyTurns` completed direct-user/final-assistant exchanges within `historyMaxChars`; reasoning, tool calls, and tool outputs remain in the append-only session log but leave later model requests.
+The runtime composes three independently testable capabilities: `hivemind-context` owns the awaited prompt projection, `hivemind-memory` owns the model-facing tool, and `hivemind-employee-directory` validates exact organization HyperAgent profiles. Before a user message wakes the agent, a scoped turn policy hides HIVE-owned routers that the request cannot need. Greetings and direct profile questions receive neither router, ordinary company work receives `hivemind_meta`, and connected-application work may receive both `hivemind_meta` and `hivemind_connected_task`; native Harness tools are never changed by this policy. The restriction remains through every step in the turn and is lifted when the turn stops. The history projection retains at most `historyTurns` completed direct-user/final-assistant exchanges within `historyMaxChars`; reasoning, tool calls, and tool outputs remain in the append-only session log but leave later model requests.
 
 `hivemind_meta` supports `context`, `recall`, and `profiles`. Recall exposes one deduplicated top-five list, preserves material content and citation metadata, and caps each evidence item at `recallItemMaxChars`. Its focused schema supports source, project, time, explicit tag, media-kind, filename, and entity filters. No operation accepts a user or organization identifier.
 
 ## Model Experience
 
-The model sees one compact organization message, recent completed conversation, one meta-tool schema, and one compact skill-catalog entry. The catalog contains only a short description; the detailed company-brain instructions load through the native `skill` tool only for an applicable HIVE-MIND task. The initial brief is capped by `profileBriefMaxChars`; the complete onboarding profile loads only through `context`. A current-turn tool result remains available for synthesis and is omitted from later turns by the history projection.
+The model sees one compact organization message, recent completed conversation, and only the HIVE-owned router schemas selected before prompt assembly. Detailed company-brain instructions remain registered for explicit user invocation rather than appearing in every model skill catalog. The initial brief is capped by `profileBriefMaxChars`; a direct identity request receives bounded authenticated profile context without relying on model tool selection, while other detailed company work loads it through `context`. A current-turn tool result remains available for synthesis and is omitted from later turns by the history projection.
 
 ## Known Limitations and Deferred Work
 

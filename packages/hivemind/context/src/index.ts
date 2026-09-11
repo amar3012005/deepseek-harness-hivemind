@@ -21,7 +21,7 @@ export function recentConversationText(exchanges: readonly ConversationExchange[
 function profileMessage(snapshot:ProfileSnapshot):UserMessage { const text=`## HIVE-MIND organization context\n\n${snapshot.initialContext}\n\n${HIVE_TOOL_ROUTING}`; return createUserMessage({ content:[{ type:'text',text }],source:{ kind:'plugin',plugin:PROFILE_CONTEXT_SOURCE,form:'snapshot',sections:[{ name:'hivemind:profile-context',text }] } }) }
 const IDENTITY_CONTEXT_SOURCE = 'dsh-hivemind-runtime/identity-context'
 const IDENTITY_REQUEST = new RegExp([
-  '\\bwhat\\s+(?:do|can)\\s+you\\s+know\\s+about\\s+me\\b',
+  '\\bwhat\\s+(?:do|can)\\s+(?:you|u)\\s+know\\s+about\\s+me\\b',
   '\\btell\\s+me\\s+about\\s+(?:me|myself)\\b',
   '\\bmy\\s+(?:user\\s+)?profile\\b',
   '\\bour\\s+company(?:\\s+profile)?\\b',

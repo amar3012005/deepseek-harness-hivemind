@@ -8,6 +8,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { Agent } from '@deepseek-ai/dsh-agent'
+import type { UserMessage } from '@deepseek-ai/dsh-llm'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import type {} from '@deepseek-ai/dsh-host-webserver'
 import type {} from '@deepseek-ai/dsh-skill'
@@ -40,6 +41,60 @@ const HYPERAGENT_PROFILES_URL = 'https://api.singulancelabs.com/v1/hyperagents/p
 const CONNECT_STATUS_PATH = '/hivemind/connect/status'
 const CONNECT_START_PATH = '/hivemind/connect/start'
 const CONNECT_DISCONNECT_PATH = '/hivemind/connect'
+const HIVE_META_TOOL = 'hivemind_meta'
+const CONNECTED_TASK_TOOL = 'hivemind_connected_task'
+
+/** HIVE-specific capabilities needed by one user request. */
+export interface HiveTurnCapabilities {
+  memory: boolean
+  connectedApps: boolean
+}
+
+const DIRECT_REQUEST = new RegExp([
+  '^(?:(?:hi|hello|hey|hiya|yo|good\\s+(?:morning|afternoon|evening))\\b[!.?\\s]*|',
+  '(?:what\\s+(?:do|can)\\s+(?:you|u)\\s+know\\s+about\\s+me|tell\\s+me\\s+about\\s+(?:me|myself)|',
+  'show\\s+me\\s+my\\s+(?:user\\s+)?profile|what\\s+is\\s+my\\s+(?:user\\s+)?profile|',
+  '(?:tell\\s+me\\s+)?about\\s+(?:my|our)\\s+company|our\\s+company\\s+profile)\\??)$',
+].join(''), 'i')
+const CONNECTED_APP_REQUEST = new RegExp([
+  '\\b(?:connected\\s+apps?|gmail|google\\s+(?:mail|calendar|drive|sheets|docs)|email|inbox|slack|',
+  'microsoft\\s+(?:outlook|teams|365)|outlook|calendar|notion|hubspot|salesforce|jira|linear|asana|',
+  'trello|discord|dropbox|onedrive|github|gitlab|linkedin|twitter|x\\b|whatsapp|telegram|zoom|stripe|shopify)\\b',
+].join(''), 'i')
+
+/**
+ * Classify only HIVE-owned routers; native Harness capabilities stay untouched.
+ * @param messages - pending direct-user messages for the next turn.
+ * @returns the HIVE routers required by those messages.
+ */
+export function hiveTurnCapabilities(messages: readonly UserMessage[]): HiveTurnCapabilities {
+  const request = messages.filter(message => message.source.kind === 'user').map(textOfUserMessage).join('\n').trim()
+  if (DIRECT_REQUEST.test(request)) return { memory: false, connectedApps: false }
+  return { memory: true, connectedApps: CONNECTED_APP_REQUEST.test(request) }
+}
+
+function textOfUserMessage(message: UserMessage): string {
+  return message.content.flatMap(block => block.type === 'text' ? [block.text] : []).join('\n')
+}
+
+function installTurnCapabilityPolicy(ctx: Context): void {
+  const active = new WeakMap<Agent, () => void>()
+  ctx.on('agent/inbox/inserted', ({ agent, message }) => {
+    if (message.source.kind !== 'user') return
+    active.get(agent)?.()
+    active.delete(agent)
+    const capabilities = hiveTurnCapabilities([message])
+    const deny = [
+      ...!capabilities.memory && ctx.tools.get(HIVE_META_TOOL) !== undefined ? [HIVE_META_TOOL] : [],
+      ...!capabilities.connectedApps && ctx.tools.get(CONNECTED_TASK_TOOL) !== undefined ? [CONNECTED_TASK_TOOL] : [],
+    ]
+    if (deny.length > 0) active.set(agent, agent.ctx.tools.restrict({ deny }))
+  })
+  ctx.on('agent/turn-stopping', ({ agent }) => {
+    active.get(agent)?.()
+    active.delete(agent)
+  })
+}
 
 /** Deployment configuration. Every operational budget is explicit. */
 export interface Config {
@@ -657,6 +712,7 @@ export function apply(ctx: Context, config: Config): void {
     historyMaxChars: config.historyMaxChars,
     profileContextMaxChars: config.profileContextMaxChars,
   }, snapshotFor))
+  installTurnCapabilityPolicy(ctx)
 
   ctx.plugin(memoryPlugin({ defaultLimit: config.recallResultLimit }, {
     async context(agent, signal) {
