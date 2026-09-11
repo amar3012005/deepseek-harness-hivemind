@@ -1,0 +1,167 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: harness-runner
+  namespace: hivemind-harness
+  labels:
+    app: harness-runner
+spec:
+  replicas: ${HARNESS_MIN_REPLICAS}
+  selector:
+    matchLabels:
+      app: harness-runner
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  template:
+    metadata:
+      labels:
+        app: harness-runner
+    spec:
+      terminationGracePeriodSeconds: 20
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app: harness-runner
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                topologyKey: kubernetes.io/hostname
+                labelSelector:
+                  matchLabels:
+                    app: harness-runner
+      containers:
+        - name: harness
+          image: ${HARNESS_IMAGE}
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 3080
+          env:
+            - name: NODE_ENV
+              value: production
+            - name: PORT
+              value: "3080"
+            - name: DSH_HOME
+              value: /tmp/dsh
+            - name: DATABASE_URL
+              value: ${DATABASE_URL}
+            - name: PGOPTIONS
+              value: -c search_path=hivemind,public
+            - name: REDIS_URL
+              value: ${REDIS_URL}
+            - name: HIVE_HARNESS_PROFILE
+              value: hivemind-chat
+            - name: HIVEMIND_CONTROL_PLANE_URL
+              value: ${HIVEMIND_CONTROL_PLANE_URL}
+            - name: HIVEMIND_SERVICE_HTTP_ORIGINS
+              value: ${HIVEMIND_SERVICE_HTTP_ORIGINS}
+            - name: HIVEMIND_PARENT_ORIGINS
+              value: ${HIVEMIND_PARENT_ORIGINS}
+            - name: HIVEMIND_HARNESS_TRUSTED_HOSTS
+              value: ${HIVEMIND_HARNESS_TRUSTED_HOSTS}
+          envFrom:
+            - secretRef:
+                name: harness-env
+                optional: true
+          resources:
+            requests:
+              cpu: "500m"
+              memory: 512Mi
+            limits:
+              cpu: "2"
+              memory: 2Gi
+          startupProbe:
+            httpGet:
+              path: /health
+              port: http
+            failureThreshold: 18
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 10
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 5
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 128Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: harness-runner
+  namespace: hivemind-harness
+spec:
+  selector:
+    app: harness-runner
+  ports:
+    - name: http
+      port: 3080
+      targetPort: http
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: harness-runner
+  namespace: hivemind-harness
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: harness-runner
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: harness-runner
+  namespace: hivemind-harness
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: harness-runner
+  minReplicas: ${HARNESS_MIN_REPLICAS}
+  maxReplicas: ${HARNESS_MAX_REPLICAS}
+  metrics:
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 70
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 180
+      policies:
+        - type: Pods
+          value: 1
+          periodSeconds: 60
+    scaleUp:
+      stabilizationWindowSeconds: 30
+      policies:
+        - type: Pods
+          value: 2
+          periodSeconds: 60

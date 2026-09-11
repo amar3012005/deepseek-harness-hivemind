@@ -1,0 +1,83 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  namespace: hivemind-harness
+spec:
+  ports:
+    - port: 5432
+      targetPort: 5432
+---
+apiVersion: v1
+kind: Endpoints
+metadata:
+  name: postgres
+  namespace: hivemind-harness
+subsets:
+  - addresses:
+      - ip: ${POSTGRES_HOST}
+    ports:
+      - port: ${POSTGRES_PORT}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis
+  namespace: hivemind-harness
+spec:
+  ports:
+    - port: 6379
+      targetPort: 6379
+---
+apiVersion: v1
+kind: Endpoints
+metadata:
+  name: redis
+  namespace: hivemind-harness
+subsets:
+  - addresses:
+      - ip: ${REDIS_HOST}
+    ports:
+      - port: ${REDIS_PORT}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: control-plane
+  namespace: hivemind-harness
+spec:
+  ports:
+    - port: 3000
+      targetPort: 3000
+---
+apiVersion: v1
+kind: Endpoints
+metadata:
+  name: control-plane
+  namespace: hivemind-harness
+subsets:
+  - addresses:
+      - ip: ${CONTROL_PLANE_HOST}
+    ports:
+      - port: ${CONTROL_PLANE_PORT}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: core
+  namespace: hivemind-harness
+spec:
+  ports:
+    - port: 3000
+      targetPort: 3000
+---
+apiVersion: v1
+kind: Endpoints
+metadata:
+  name: core
+  namespace: hivemind-harness
+subsets:
+  - addresses:
+      - ip: ${CORE_HOST}
+    ports:
+      - port: ${CORE_PORT}
