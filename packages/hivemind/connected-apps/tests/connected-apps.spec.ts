@@ -3,7 +3,8 @@ import { SpillLocator, type SpillRef } from '@deepseek-ai/dsh-spill'
 
 const execute = vi.fn()
 const create = vi.fn(async () => ({ execute }))
-vi.mock('@composio/core', () => ({ Composio: class { sessions = { create } } }))
+const list = vi.fn(async (): Promise<{ items: Array<{ status: string; toolkit?: { slug: string } }> }> => ({ items: [] }))
+vi.mock('@composio/core', () => ({ Composio: class { sessions = { create }; connectedAccounts = { list } } }))
 
 const { apply, compactComposioSearchReceipt } = await import('../src/index.ts')
 
@@ -24,7 +25,7 @@ function harness(enabled: boolean | undefined = true, identity = { orgId: 'org-a
 }
 
 describe('progressive Composio bridge', () => {
-  beforeEach(() => { execute.mockReset(); create.mockClear() })
+  beforeEach(() => { execute.mockReset(); create.mockClear(); list.mockReset(); list.mockResolvedValue({ items: [] }) })
 
   it('preserves Composio planning skill while dropping schemas', () => {
     expect(compactComposioSearchReceipt({ operations: [{ tool: 'COMPOSIO_SEARCH_TOOLS', status: 'completed' }], data: {
@@ -44,6 +45,16 @@ describe('progressive Composio bridge', () => {
     await first.tool().execute({ action: 'search', queries: [{ use_case: 'List Slack channels ordered by name and return channel id and name.' }], session: { generate_id: true } }, { signal: AbortSignal.abort() })
     expect(create).toHaveBeenCalledWith('hivemind:same-user', { mcp: true })
     await expect(first.tool().execute({ action: 'execute', tool_slug: 'GMAIL_FETCH_EMAILS', arguments: {} }, { signal: AbortSignal.abort() })).rejects.toThrow('not selected')
+  })
+
+  it('reuses an active legacy organization connection until the user reconnects canonically', async () => {
+    list
+      .mockResolvedValueOnce({ items: [] })
+      .mockResolvedValueOnce({ items: [{ status: 'ACTIVE', toolkit: { slug: 'gmail' } }] })
+    execute.mockResolvedValueOnce({ data: { results: [{ primary_tool_slugs: ['GMAIL_FETCH_EMAILS'] }] } })
+    const app = harness(true, { orgId: 'org-legacy', userId: 'user-a' })
+    await app.tool().execute({ action: 'search', queries: [{ use_case: 'Read Gmail inbox messages.' }], session: { generate_id: true } }, { signal: AbortSignal.abort() })
+    expect(create).toHaveBeenCalledWith('org-legacy', { mcp: true })
   })
 
   it('supports connection management and bounded waiting', async () => {
@@ -82,6 +93,23 @@ describe('progressive Composio bridge', () => {
     expect(execute).toHaveBeenNthCalledWith(2, 'COMPOSIO_MANAGE_CONNECTIONS', {
       toolkits: ['slack'], session_id: 'workflow-1',
     })
+  })
+
+  it('asks for the toolkit selected by the search instead of an unrelated missing toolkit', async () => {
+    execute
+      .mockResolvedValueOnce({ data: {
+        results: [{ primary_tool_slugs: ['GMAIL_FETCH_EMAILS'], toolkits: ['gmail'] }],
+        toolkit_connection_statuses: [
+          { toolkit: 'agent_mail', has_active_connection: false },
+          { toolkit: 'gmail', has_active_connection: false },
+        ],
+        session: { id: 'workflow-gmail' },
+      } })
+      .mockResolvedValueOnce({ data: { redirect_url: 'https://connect.example/gmail' } })
+    const app = harness()
+    await expect(app.tool().execute({
+      action: 'search', queries: [{ use_case: 'Read five Gmail inbox messages.' }], session: { generate_id: true },
+    }, { signal: AbortSignal.abort() })).resolves.toMatchObject({ toolkit: 'gmail', app_label: 'Gmail' })
   })
 
   it('always routes a selected mutation to durable approval instead of executing provider side effects', async () => {

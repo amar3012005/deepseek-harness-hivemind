@@ -155,6 +155,41 @@ function sessionKey(identity: { userId: string; orgId: string }): string {
   return `hivemind:${identity.userId}`
 }
 
+function legacySessionKey(identity: { userId: string; orgId: string }): string {
+  return identity.orgId
+}
+
+function hasActiveAccount(value: unknown): boolean {
+  if (!record(value)) return false
+  const items = Array.isArray(value['items']) ? value['items'] : []
+  return items.some(item => record(item) && /^(?:active|connected)$/i.test(stringValue(item['status']) ?? ''))
+}
+
+function toolkitFromToolSlug(slug: string): string | undefined {
+  const separator = slug.indexOf('_')
+  return separator > 0 ? slug.slice(0, separator).toLowerCase() : undefined
+}
+
+function preferredMissingToolkit(value: unknown, statuses: Array<{ toolkit: string; connected: boolean }>): string | undefined {
+  const missing = new Set(statuses.filter(item => !item.connected).map(item => item.toolkit.toLowerCase()))
+  if (missing.size === 0) return undefined
+  if (record(value)) {
+    const unwrapped = record(value['data']) ? value['data'] : value
+    const results = Array.isArray(unwrapped['results']) ? unwrapped['results'] : []
+    for (const result of results) {
+      if (!record(result)) continue
+      for (const toolkit of stringArray(result['toolkits']).map(item => item.toLowerCase())) {
+        if (missing.has(toolkit)) return toolkit
+      }
+      for (const slug of [...stringArray(result['primary_tool_slugs']), ...stringArray(result['related_tool_slugs'])]) {
+        const toolkit = toolkitFromToolSlug(slug)
+        if (toolkit !== undefined && missing.has(toolkit)) return toolkit
+      }
+    }
+  }
+  return missing.values().next().value
+}
+
 function copyPlanningFields(source: Record<string, unknown>, target: Record<string, JsonValue>): void {
   const steps = stringArray(source['recommended_plan_steps'])
   const pitfalls = stringArray(source['known_pitfalls'])
@@ -254,7 +289,22 @@ export function apply(ctx: Context, config: Config = {}): void {
   async function getSession(identity: { userId: string; orgId: string }): Promise<ComposioSession> {
     if (composio === undefined) throw new Error('Connected tools are not configured on this runtime')
     const client = await composio
-    const key = sessionKey(identity)
+    const canonicalKey = sessionKey(identity)
+    let key = canonicalKey
+    try {
+      const accounts = await client.connectedAccounts.list({ userIds: [canonicalKey], statuses: ['ACTIVE'] })
+      // Existing local HIVE connections were historically created under the
+      // organization id. Reuse that tenant-bounded subject only when the
+      // authenticated user has no active canonical account. New connections
+      // remain user-owned and automatically take precedence once present.
+      if (!hasActiveAccount(accounts)) {
+        const legacyKey = legacySessionKey(identity)
+        const legacyAccounts = await client.connectedAccounts.list({ userIds: [legacyKey], statuses: ['ACTIVE'] })
+        if (hasActiveAccount(legacyAccounts)) key = legacyKey
+      }
+    } catch (error: unknown) {
+      ctx.logger.warn(`hivemind-connected-apps: could not inspect legacy connection scope: ${String(error)}`)
+    }
     let pending = sessions.get(key)
     if (pending === undefined) {
       pending = client.sessions.create(key, { mcp: true })
@@ -339,7 +389,7 @@ export function apply(ctx: Context, config: Config = {}): void {
             ...(workflowSessionId === undefined ? {} : { session_id: workflowSessionId }),
           })
           const redirectUrl = firstString(managed, ['redirect_url', 'redirectUrl', 'connection_url', 'url'])
-          const toolkit = missing[0]
+          const toolkit = preferredMissingToolkit(result, statuses)
           if (toolkit === undefined) throw new Error('Connection search returned no missing toolkit')
           const label = titleCaseToolkit(toolkit)
           return {
