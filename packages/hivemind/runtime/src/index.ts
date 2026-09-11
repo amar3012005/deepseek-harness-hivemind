@@ -43,7 +43,6 @@ const CONNECT_STATUS_PATH = '/hivemind/connect/status'
 const CONNECT_START_PATH = '/hivemind/connect/start'
 const CONNECT_DISCONNECT_PATH = '/hivemind/connect'
 const HIVE_META_TOOL = 'hivemind_meta'
-const CONNECTED_TASK_TOOL = 'hivemind_connected_task'
 
 /** HIVE-specific capabilities needed by one user request. */
 export interface HiveTurnCapabilities {
@@ -90,51 +89,6 @@ export function hiveMemoryBudgetExhausted(
 
 function textOfUserMessage(message: UserMessage): string {
   return message.content.flatMap(block => block.type === 'text' ? [block.text] : []).join('\n')
-}
-
-function installTurnCapabilityPolicy(ctx: Context): void {
-  const active = new WeakMap<Agent, () => void>()
-  const memoryBudget = new WeakMap<Agent, () => void>()
-  ctx.on('agent/inbox/inserted', ({ agent, message }) => {
-    if (message.source.kind !== 'user') return
-    active.get(agent)?.()
-    active.delete(agent)
-    memoryBudget.get(agent)?.()
-    memoryBudget.delete(agent)
-    const capabilities = hiveTurnCapabilities([message])
-    const deny = [
-      ...!capabilities.memory && ctx.tools.get(HIVE_META_TOOL) !== undefined ? [HIVE_META_TOOL] : [],
-      ...!capabilities.connectedApps && ctx.tools.get(CONNECTED_TASK_TOOL) !== undefined ? [CONNECTED_TASK_TOOL] : [],
-    ]
-    if (deny.length > 0) active.set(agent, agent.ctx.tools.restrict({ deny }))
-  })
-  ctx.on('agent/pre-step', ({ agent, turn }, next) => {
-    if (hiveMemoryBudgetExhausted(agent.session.snapshotEvents(), turn)
-      && memoryBudget.get(agent) === undefined
-      && ctx.tools.get(HIVE_META_TOOL) !== undefined) {
-      memoryBudget.set(agent, agent.ctx.tools.restrict({ deny: [HIVE_META_TOOL] }))
-    }
-    return next()
-  }, { prepend: true })
-  ctx.on('tools/pre-execute', (execution, next) => {
-    const agent = execution.agent
-    if (agent !== undefined && execution.name === HIVE_META_TOOL
-      && memoryBudget.get(agent) === undefined
-      && ctx.tools.get(HIVE_META_TOOL) !== undefined) {
-    // A Harness step may contain several model/tool exchanges, so pre-step is
-      // not a reliable boundary for sequential retries. Remove the router
-      // before its first execution; the accepted call still owns its frozen
-      // definition while the next model request can no longer see it.
-      memoryBudget.set(agent, agent.ctx.tools.restrict({ deny: [HIVE_META_TOOL] }))
-    }
-    return next()
-  })
-  ctx.on('agent/turn-stopping', ({ agent }) => {
-    active.get(agent)?.()
-    active.delete(agent)
-    memoryBudget.get(agent)?.()
-    memoryBudget.delete(agent)
-  })
 }
 
 /** Deployment configuration. Every operational budget is explicit. */
@@ -728,14 +682,10 @@ export function apply(ctx: Context, config: Config): void {
   ctx.skills.register({
     name: 'hivemind-company-brain',
     description: 'Load only for a company-memory task that needs focused HIVE-MIND retrieval, evidence filters, or exact employee records.',
-    // The compact `hivemind_meta` router and profile injection are sufficient
-    // for every turn. Publishing this long-form skill to the model on every
-    // turn made small models load it alongside the Composio skill even for a
-    // greeting, wasting context and sometimes producing unsupported parallel
-    // tool calls. Keep it registered for an explicit user invocation, while
-    // the HIVE prompt routes identity and company work directly to the meta
-    // tool.
-    invocation: { modelInvocable: false, userInvocable: true },
+    // Keep routing knowledge in the native skill catalogue. The model chooses
+    // between this HIVE memory skill and the Composio workflow skill; runtime
+    // classifiers must not hide either capability based on prompt keywords.
+    invocation: { modelInvocable: true, userInvocable: true },
     source: 'runtime',
     content: `Use this skill only for a question about the authenticated user's organization, internal memories, files, documents, evidence, decisions, people, projects, or HyperAgents. HIVE-MIND should be considered automatically for such work, but do not load this skill or call recall for greetings, general knowledge, simple transformations, or a fact already established by a recent completed answer.
 
@@ -748,7 +698,6 @@ export function apply(ctx: Context, config: Config): void {
 4. A returned title, filename, citation ID, or memory ID is an internal evidence reference, not a workspace path and not proof that a downloadable artifact is available. Do not use shell, filesystem, Glob, Grep, or web tools to locate it unless the user explicitly asks about a local workspace or supplies a local path.
 5. For temporal questions, preserve the user's date or timeframe and use \`valid_at\` for what was true then or \`transaction_at\` for what the system knew then.\n6. Use \`save\` only for a stable user preference, explicit or confirmed decision, correction, or completed outcome that will matter in a future session. Save a concise factual statement with a descriptive title. Never save secrets, credentials, private authentication material, ephemeral chat, speculation, or unverified claims. For a correction, first recall the old memory and use \`relationship: "update"\` with its exact \`related_to\` ID. Report a save only after its receipt returns.\n7. Read returned evidence and citations completely enough to answer. Identify conflicts or gaps, and do not claim that a file, image, or fact is available beyond the receipt. Recall again only when the first focused result set is insufficient or the user explicitly asks for deeper coverage.\n8. HIVE-MIND supplies internal company knowledge. Use native Harness tools for independent web evidence, coding, artifacts, workflows, and subagents when those tasks are actually requested.`,
   })
-  installTurnCapabilityPolicy(ctx)
   ctx.plugin(contextPlugin({
     historyTurns: config.historyTurns,
     historyMaxChars: config.historyMaxChars,

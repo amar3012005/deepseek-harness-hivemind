@@ -1,7 +1,6 @@
 ---
 name: composio-connected-workflows
 description: Discover and execute tenant-scoped connected-app workflows progressively through Composio Meta Tools.
-disable-model-invocation: true
 ---
 
 # Composio connected workflows

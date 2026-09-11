@@ -315,7 +315,7 @@ describe('HIVE-MIND runtime', () => {
     expect(textOfForTest(decision.messages[1] as UserMessage)).toContain('Singulance builds governed AI systems.')
     expect(textOfForTest(decision.messages[1] as UserMessage)).not.toContain('user-1')
     expect(harness.skills.get('hivemind-company-brain')).toMatchObject({
-      invocation: { modelInvocable: false, userInvocable: true },
+      invocation: { modelInvocable: true, userInvocable: true },
     })
   })
 
@@ -337,43 +337,16 @@ describe('HIVE-MIND runtime', () => {
     expect(hiveMemoryBudgetExhausted([{ ...events[0], data: { ...events[0]!.data, name: 'hivemind_connected_task' } }] as SessionEvent[], 4)).toBe(false)
   })
 
-  it('removes the memory router before its first execution continuation', async () => {
-    const harness = mount(config(await authorityFile()))
-    const lift = vi.fn()
-    const restrict = vi.fn(() => lift)
-    const scopedAgent = { ctx: { tools: { restrict } } } as unknown as Agent
-
-    const next = vi.fn(async () => undefined)
-    await harness.toolPreExecute?.({ agent: scopedAgent, name: 'hivemind_meta' }, next)
-    expect(restrict).toHaveBeenCalledOnce()
-    expect(restrict).toHaveBeenCalledWith({ deny: ['hivemind_meta'] })
-    expect(next).toHaveBeenCalledOnce()
-
-    await harness.toolPreExecute?.({ agent: scopedAgent, name: 'hivemind_meta' }, next)
-    expect(restrict).toHaveBeenCalledOnce()
-    harness.turnStopping?.({ agent: scopedAgent })
-    expect(lift).toHaveBeenCalledOnce()
-  })
-
-  it('removes unneeded HIVE routers before assembly and restores them after the turn', async () => {
+  it('leaves HIVE routing to the native skill catalogue without prompt classifiers', async () => {
     const harness = mount(config(await authorityFile()))
     harness.tools.set(CONNECTED_TASK_NAME, { ...tool(harness, 'hivemind_meta'), name: CONNECTED_TASK_NAME })
-    const lift = vi.fn()
-    const restrict = vi.fn(() => lift)
+    const restrict = vi.fn(() => vi.fn())
     const scopedAgent = { ctx: { tools: { restrict } } } as unknown as Agent
 
     harness.inboxInserted?.({ agent: scopedAgent, message: user('hello') })
-    expect(restrict).toHaveBeenLastCalledWith({ deny: ['hivemind_meta', CONNECTED_TASK_NAME] })
-
-    harness.inboxInserted?.({ agent: scopedAgent, message: user('Explain TCP congestion control') })
-    expect(lift).toHaveBeenCalledOnce()
-    expect(restrict).toHaveBeenLastCalledWith({ deny: [CONNECTED_TASK_NAME] })
-
     harness.inboxInserted?.({ agent: scopedAgent, message: user('Find my last five decisions and send them in Slack') })
-    expect(lift).toHaveBeenCalledTimes(2)
-    expect(restrict).toHaveBeenCalledTimes(2)
-
-    harness.turnStopping?.({ agent: scopedAgent })
+    expect(restrict).not.toHaveBeenCalled()
+    expect(harness.skills.get('hivemind-company-brain')?.invocation.modelInvocable).toBe(true)
   })
 
   it('exposes only the progressive meta-tool when compatibility tools are disabled', async () => {
@@ -385,7 +358,7 @@ describe('HIVE-MIND runtime', () => {
     expect(harness.skills.get('hivemind-company-brain')).toMatchObject({
       description: expect.stringContaining('Load only for a company-memory task'),
       content: expect.stringContaining('not a workspace path'),
-      invocation: { modelInvocable: false, userInvocable: true },
+      invocation: { modelInvocable: true, userInvocable: true },
     })
     expect(harness.skills.get('hivemind-company-brain')?.content).toContain('Never save secrets')
   })
