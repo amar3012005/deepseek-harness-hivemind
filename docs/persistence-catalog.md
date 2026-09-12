@@ -464,6 +464,23 @@ Source: [`packages/feedback/command-feedback/src/types.ts:40`](../packages/feedb
 
 Source: [`packages/goal/goal/src/domain.ts:66`](../packages/goal/goal/src/domain.ts)
 
+### `hivemind/*`
+
+<a id="hivemindcomposio-session--log-only"></a>
+
+#### `hivemind/composio-session` — log-only
+
+```ts persistence-catalog
+/**
+ * Authenticated Composio router session bound to one HIVE conversation.
+ * Log-only: it restores provider state after runner restart and never
+ * enters derived model history.
+ */
+'hivemind/composio-session': ComposioRouterSessionEventData
+```
+
+Source: [`packages/hivemind/connected-apps/src/index.ts:30`](../packages/hivemind/connected-apps/src/index.ts)
+
 ### `hook/*`
 
 <a id="hookinvoked--log-only"></a>
