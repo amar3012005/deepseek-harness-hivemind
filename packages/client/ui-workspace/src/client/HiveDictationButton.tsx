@@ -8,16 +8,19 @@ type DictationState = 'idle' | 'recording' | 'transcribing'
 type Props = PropsRuntime<'conversation.input.left'> & PropsLocale<'workspace'>
 
 declare global {
-  interface Window { __HIVEMIND_DICTATION_ENDPOINT__?: string }
+  interface Window { __HIVEMIND_TRANSCRIBE_AUDIO__?: (blob: Blob) => Promise<string> }
 }
 
 /** HIVE-only speech input composed into the native resident composer. */
 export function HiveDictationButton({ useInput, inputActions, t }: Props) {
   const draft = useInput(value => value?.draft ?? '')
   const [state, setState] = useState<DictationState>('idle')
+  const [error, setError] = useState<string>()
   const recorder = useRef<MediaRecorder>()
   const stream = useRef<MediaStream>()
   const chunks = useRef<Blob[]>([])
+  const draftRef = useRef(draft)
+  draftRef.current = draft
 
   const cleanup = useCallback(() => {
     stream.current?.getTracks().forEach((track) => { track.stop() })
@@ -29,50 +32,89 @@ export function HiveDictationButton({ useInput, inputActions, t }: Props) {
   const transcribe = useCallback(async (blob: Blob) => {
     if (blob.size < 1024) { setState('idle'); return }
     setState('transcribing')
+    setError(undefined)
     try {
-      const endpoint = window.__HIVEMIND_DICTATION_ENDPOINT__
-      if (endpoint === undefined) throw new Error('Speech input is unavailable')
-      const response = await fetch(`${endpoint}?diarize=false&prompt=${encodeURIComponent('Spoken message to an AI assistant.')}`, {
-        method: 'POST', credentials: 'include', headers: { 'content-type': blob.type || 'audio/webm' }, body: blob,
-      })
-      const value = await response.json() as { text?: string; transcript?: string; message?: string }
-      if (!response.ok) throw new Error(value.message ?? 'Transcription failed')
-      const text = (value.text ?? value.transcript ?? '').trim()
-      if (text !== '') inputActions?.setDraft(`${draft}${draft.trim() === '' ? '' : ' '}${text}`)
-    } catch (error) {
-      console.warn('hivemind dictation failed:', error)
+      const send = window.__HIVEMIND_TRANSCRIBE_AUDIO__
+      if (send === undefined) throw new Error('Speech input is unavailable')
+      const text = (await send(blob)).trim()
+      if (text === '') throw new Error('No speech detected')
+      const currentDraft = draftRef.current
+      inputActions?.setDraft(`${currentDraft}${currentDraft.trim() === '' ? '' : ' '}${text}`)
+    } catch (cause) {
+      const message = cause instanceof Error ? cause.message : 'Transcription failed'
+      setError(message)
+      console.warn('hivemind dictation failed:', cause)
     } finally {
       cleanup()
       setState('idle')
     }
-  }, [cleanup, draft, inputActions])
+  }, [cleanup, inputActions])
 
   const toggle = useCallback(async () => {
     if (state === 'recording') { recorder.current?.stop(); return }
     if (state !== 'idle') return
     try {
+      setError(undefined)
       const nextStream = await navigator.mediaDevices.getUserMedia({
         audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
       })
-      const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
-        ? 'audio/webm;codecs=opus' : 'audio/webm'
-      const next = new MediaRecorder(nextStream, { mimeType })
+      const mimeType = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4']
+        .find(value => MediaRecorder.isTypeSupported(value))
+      const next = mimeType === undefined
+        ? new MediaRecorder(nextStream)
+        : new MediaRecorder(nextStream, { mimeType })
       stream.current = nextStream
       recorder.current = next
       chunks.current = []
       next.ondataavailable = (event) => { if (event.data.size > 0) chunks.current.push(event.data) }
-      next.onstop = () => { void transcribe(new Blob(chunks.current, { type: mimeType })) }
+      next.onstop = () => {
+        const type = next.mimeType || mimeType || chunks.current[0]?.type || 'audio/webm'
+        void transcribe(new Blob(chunks.current, { type }))
+      }
       next.start(250)
       setState('recording')
-    } catch (error) {
+    } catch (cause) {
       cleanup()
-      console.warn('hivemind microphone unavailable:', error)
+      const message = cause instanceof Error ? cause.message : 'Microphone permission denied'
+      setError(message)
+      console.warn('hivemind microphone unavailable:', cause)
     }
   }, [cleanup, state, transcribe])
 
+  const cancel = useCallback(() => {
+    const active = recorder.current
+    if (active !== undefined) {
+      active.onstop = null
+      if (active.state !== 'inactive') active.stop()
+    }
+    cleanup()
+    setState('idle')
+  }, [cleanup])
+
   useEffect(() => cleanup, [cleanup])
-  const label = state === 'recording' ? t('dictation.stop')
+  const label = error ?? (state === 'recording' ? t('dictation.stop')
     : state === 'transcribing' ? t('dictation.transcribing') : t('dictation.start')
+  )
+
+  if (state !== 'idle') return <div className={css.recorder} role="status" aria-label={label}>
+    <button type="button" className={css.cancel} aria-label={t('dictation.cancel')} onClick={cancel}>
+      <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden>
+        <path d="m4 4 8 8M12 4l-8 8" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+      </svg>
+    </button>
+    <span className={clsx(css.waveform, state === 'transcribing' && css.transcribing)} aria-hidden>
+      {Array.from({ length: 28 }, (_, index) => <i key={index} style={{
+        '--wave-index': index,
+        '--wave-height': `${3 + ((index * 7) % 18)}px`,
+      } as React.CSSProperties} />)}
+    </span>
+    <button type="button" className={css.stop} aria-label={label} disabled={state === 'transcribing'} onClick={() => { void toggle() }}>
+      {state === 'transcribing'
+        ? <span className={css.spinner} />
+        : <span className={css.stopSquare} />}
+    </button>
+  </div>
+
   return <Tooltip label={label} side="top" delayMs={400}>
     <button
       type="button"

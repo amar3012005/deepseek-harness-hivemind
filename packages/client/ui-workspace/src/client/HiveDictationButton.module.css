@@ -30,3 +30,91 @@
 @keyframes hive-dictation-pulse {
   50% { opacity: 0.58; }
 }
+
+.recorder {
+  display: flex;
+  width: clamp(180px, 28vw, 420px);
+  height: 32px;
+  align-items: center;
+  gap: 10px;
+  color: var(--dsw-alias-label-primary);
+}
+
+.cancel,
+.stop {
+  display: inline-flex;
+  width: 30px;
+  height: 30px;
+  flex: 0 0 30px;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.cancel {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+.stop {
+  background: var(--dsw-alias-label-primary);
+  color: var(--dsw-alias-bg-primary);
+}
+
+.stop:disabled { cursor: wait; }
+
+.stopSquare {
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+  background: currentColor;
+}
+
+.waveform {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  align-items: center;
+  justify-content: space-between;
+  gap: 3px;
+  overflow: hidden;
+}
+
+.waveform i {
+  width: 3px;
+  height: var(--wave-height);
+  min-height: 3px;
+  border-radius: 999px;
+  background: var(--dsw-alias-label-tertiary);
+  animation: hive-dictation-wave 900ms ease-in-out infinite alternate;
+  animation-delay: calc(var(--wave-index) * -43ms);
+}
+
+.transcribing i {
+  height: 3px;
+  animation-duration: 1.35s;
+}
+
+.spinner {
+  width: 12px;
+  height: 12px;
+  border: 2px solid color-mix(in srgb, currentColor 35%, transparent);
+  border-top-color: currentColor;
+  border-radius: 999px;
+  animation: hive-dictation-spin 700ms linear infinite;
+}
+
+@keyframes hive-dictation-wave {
+  50% { transform: scaleY(0.35); opacity: 0.55; }
+}
+
+@keyframes hive-dictation-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (max-width: 720px) {
+  .recorder { width: clamp(150px, 45vw, 260px); }
+  .waveform i:nth-child(n + 19) { display: none; }
+}
