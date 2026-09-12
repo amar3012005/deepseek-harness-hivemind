@@ -10,7 +10,7 @@ import clsx from 'clsx'
 import {
   HoverCard, IconAlarmClockOutline16, IconArchiveOutline20, IconBranchOutline16,
   IconEditOutline16, IconEllipsisOutline16, IconFolderClose16, IconFolderOpen16,
-  IconPlusOutline16, IconTrashOutline16, IconTriangleRightFill14, Menu, relativeTime,
+  IconPlusOutline16, IconShareOutline16, IconTrashOutline16, IconTriangleRightFill14, Menu, relativeTime,
   StateDot,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { StateDotState } from '@deepseek-ai/dsh-client-ui-primitives'
@@ -377,7 +377,8 @@ export function SearchResultItem({ result, currentId, onOpen, t }: {
  * @returns the session row.
  */
 export function SessionNodeItem({
-  node, currentId, now, onOpen, onRename, onFork, onArchive, onReveal, drag, flat = false, showActions = true, t,
+  node, currentId, now, onOpen, onRename, onFork, onArchive, onShare, onReveal, drag, flat = false,
+  showActions = true, actionsPersistent = false, t,
 }: {
   node: SessionNode
   currentId: string | undefined
@@ -389,6 +390,8 @@ export function SessionNodeItem({
   onFork: (id: SessionNode['id']) => void
   /** Archive this session (row menu action; commits without a dialog). */
   onArchive: (id: SessionNode['id']) => void
+  /** Share this session when the owning surface exposes a stable address. */
+  onShare?: ((id: SessionNode['id'], title: string) => void) | undefined
   /** Scroll this row into view after search navigation, then acknowledge it. */
   onReveal?: (() => void) | undefined
   /** Present only on draggable rows (workspace-group sessions outside search). */
@@ -397,6 +400,8 @@ export function SessionNodeItem({
   flat?: boolean | undefined
   /** Whether to expose rename, fork, and archive actions for this projection. */
   showActions?: boolean | undefined
+  /** Keep the trailing ellipsis visible instead of revealing it only on hover. */
+  actionsPersistent?: boolean | undefined
   t: RowTranslate
 }) {
   const row = node
@@ -418,6 +423,7 @@ export function SessionNodeItem({
   const sessionMenuItems = [
     { id: 'rename', label: t('rename'), icon: <IconEditOutline16 /> },
     { id: 'fork', label: t('menu.fork'), icon: <IconBranchOutline16 /> },
+    ...(onShare === undefined ? [] : [{ id: 'share', label: t('menu.shareSession'), icon: <IconShareOutline16 /> }]),
     // 20-native glyph in the menu's 16px icon slot (Menu.module.css .itemIcon).
     { id: 'archive', label: t('menu.archiveSession'), icon: <IconArchiveOutline20 size={16} /> },
   ]
@@ -427,6 +433,7 @@ export function SessionNodeItem({
       ref={rowRef}
       className={clsx(
         css.sessionRow, selected && css.selected, menuOpen && css.menuOpen,
+        actionsPersistent && css.actionsPersistent,
         flat && !showStatus && css.flatSessionRowWithoutStatus,
         drag?.marker === 'before' && css.dropBefore, drag?.marker === 'after' && css.dropAfter,
       )}
@@ -483,6 +490,7 @@ export function SessionNodeItem({
               setMenuOpen(false)
               if (id === 'rename') onRename(node.id, row.title)
               if (id === 'fork') onFork(node.id)
+              if (id === 'share') onShare?.(node.id, row.title)
               if (id === 'archive') onArchive(node.id)
             }}
             portal

@@ -244,6 +244,10 @@
   display: inline-flex;
 }
 
+.sessionRow.actionsPersistent .rowActions {
+  display: inline-flex;
+}
+
 .sessionRow:hover .time,
 .sessionRow.menuOpen .time {
   display: none;

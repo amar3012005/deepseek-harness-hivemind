@@ -16,10 +16,11 @@ function harness(
   enabled: boolean | undefined = true,
   identity = { orgId: 'org-a', userId: 'user-a' },
   enabledByDefault = false,
-  config: { connectionCallbackBaseUrl?: string; maxDiscoverySearches?: number } = {},
+  config: { connectionCallbackBaseUrl?: string; maxDiscoverySearches?: number; withSpill?: boolean } = {},
 ) {
   const concludeTurn = vi.fn()
   const ask = vi.fn()
+  const spills: Array<{ suggestedName: string; content: string }> = []
   let tool: {
     execute(
       args: Record<string, unknown>,
@@ -32,7 +33,14 @@ function harness(
     hivemindIdentity: { resolve: vi.fn(async () => identity) },
     userQuestions: { ask },
     on(name: string, listener: (...args: never[]) => unknown) { listeners.set(name, listener) },
-    get(name: string) { return name === 'settings' ? { get: () => enabled === undefined ? undefined : ({ pluginsEnabled: enabled }) } : undefined },
+    get(name: string) {
+      if (name === 'settings') return { get: () => enabled === undefined ? undefined : ({ pluginsEnabled: enabled }) }
+      if (name === 'spillStore' && config.withSpill === true) return { saveText: async (input: { suggestedName: string; content: string }) => {
+        spills.push(input)
+        return { locator: SpillLocator(`private:${spills.length}`), bytes: input.content.length, retrievalHint: 'Inspect privately.' }
+      } }
+      return undefined
+    },
     logger: { warn: vi.fn() },
   }
   apply(ctx as never, { apiKey: 'server-secret', enabledByDefault, ...config })
@@ -44,6 +52,7 @@ function harness(
     listeners,
     concludeTurn,
     ask,
+    spills,
   }
 }
 
@@ -158,6 +167,33 @@ describe('progressive Composio bridge', () => {
     }, { signal: AbortSignal.abort() })
     expect(JSON.stringify(result)).not.toContain('tool_schemas')
     expect(result).toMatchObject({ status: 'ready', results: [{ primary_tool_slugs: ['SLACK_LIST_CHANNELS'] }] })
+  })
+
+  it('persists the original provider response before projecting search and execution', async () => {
+    const search = { data: { results: [{ primary_tool_slugs: ['EXAMPLE_READ'], tool_schemas: {
+      EXAMPLE_READ: { input_schema: { type: 'object', required: ['query'], properties: {
+        query: { type: 'string', minLength: 3 },
+      } } },
+    } }] } }
+    const provider = { data: { value: 'complete provider result', headers: { private: 'transport detail' } } }
+    execute.mockResolvedValueOnce(search).mockResolvedValueOnce(provider)
+    const app = harness(true, undefined, false, { withSpill: true })
+    const agent = { session: { header: { id: 'conversation-receipts' }, snapshotEvents: () => [], append: vi.fn() } }
+
+    const discovered = await app.tool().execute({
+      action: 'search', queries: [{ use_case: 'Example: read one value.' }], session: { generate_id: true },
+    }, { signal: AbortSignal.abort(), agent, name: 'hivemind_connected_task', callId: 'search-call' } as never)
+    const completed = await app.tool().execute({
+      action: 'execute', tool_slug: 'EXAMPLE_READ', arguments: { query: 'value' },
+    }, { signal: AbortSignal.abort(), agent, name: 'hivemind_connected_task', callId: 'execute-call' } as never)
+
+    expect(app.spills).toMatchObject([
+      { suggestedName: 'composio-search-tools.json', content: JSON.stringify(search) },
+      { suggestedName: 'composio-example_read.json', content: JSON.stringify(provider) },
+    ])
+    expect(discovered).toMatchObject({ source_receipt: { locator: 'private:1' } })
+    expect(completed).toMatchObject({ source_receipt: { locator: 'private:2' } })
+    expect(JSON.stringify(completed)).not.toContain('transport detail')
   })
 
   it('reuses the stable authenticated user connection while isolating selected tools', async () => {
@@ -568,7 +604,23 @@ describe('progressive Composio bridge', () => {
     } }] } })
     const app = harness()
     await app.tool().execute({ action: 'search', queries: [{ app: 'Slack', use_case: 'Find the exact Slack channel named davinci and return its id.' }], session: { generate_id: true } }, { signal: AbortSignal.abort() })
-    await expect(app.tool().execute({ action: 'execute', tool_slug: 'SLACK_FIND_CHANNELS', arguments: { channel_name: 'davinci' } }, { signal: AbortSignal.abort() })).rejects.toThrow('missing required field: query')
+    await expect(app.tool().execute({ action: 'execute', tool_slug: 'SLACK_FIND_CHANNELS', arguments: { channel_name: 'davinci' } }, { signal: AbortSignal.abort() })).rejects.toThrow("required property 'query'")
+    expect(execute).toHaveBeenCalledTimes(1)
+  })
+
+  it('validates nested constraints from the authoritative schema before provider execution', async () => {
+    execute.mockResolvedValueOnce({ data: { results: [{ primary_tool_slugs: ['EXAMPLE_READ'], tool_schemas: {
+      EXAMPLE_READ: { input_schema: { type: 'object', additionalProperties: false, required: ['filter'], properties: {
+        filter: { type: 'object', additionalProperties: false, required: ['ids'], properties: {
+          ids: { type: 'array', minItems: 1, items: { type: 'string', minLength: 3 } },
+        } },
+      } } },
+    } }] } })
+    const app = harness()
+    await app.tool().execute({ action: 'search', queries: [{ use_case: 'Example: read selected values.' }], session: { generate_id: true } }, { signal: AbortSignal.abort() })
+    await expect(app.tool().execute({
+      action: 'execute', tool_slug: 'EXAMPLE_READ', arguments: { filter: { ids: ['x'], guessed: true } },
+    }, { signal: AbortSignal.abort() })).rejects.toThrow('authoritative schema')
     expect(execute).toHaveBeenCalledTimes(1)
   })
 

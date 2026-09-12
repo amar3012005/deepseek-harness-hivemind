@@ -15,7 +15,8 @@
   "license": "MIT",
   "dependencies": {
     "@composio/core": "^0.18.1",
-    "@deepseek-ai/schemastery": "workspace:^"
+    "@deepseek-ai/schemastery": "workspace:^",
+    "ajv": "^8.20.0"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "workspace:^",

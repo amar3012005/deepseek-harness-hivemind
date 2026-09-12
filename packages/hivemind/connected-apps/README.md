@@ -14,6 +14,6 @@ The model still selects skills, searches, and executes tools. A cached negative 
 
 ## Known Limitations and Deferred Work
 
-Selected execution contracts preserve complete property schemas and root schema keywords through repeated projection. Returned planning steps and pitfalls are not character-truncated. This preserves model guidance; it does not upgrade the existing shallow argument validator into a complete JSON Schema validator.
+Selected execution contracts preserve complete property schemas and root schema keywords through repeated projection. Returned planning steps and pitfalls are not character-truncated. Ajv validates the complete selected contract locally before any provider execution. The original search, schema, and provider responses are written to session-authorized private spill storage before the bounded model projection is returned.
 
-This cache does not reuse live app reads or connection authorization. Successful search/schema caching requires authoritative versioned schemas and connection invalidation; the existing compact execution contracts are not a substitute for complete JSON Schema validation. Durable negative lookup currently scans the owning session log. The bridge has no separate invariant companion because its cache is derived directly from committed tool receipts rather than an independent persistent store.
+This cache does not reuse live app reads or connection authorization. Successful search/schema caching requires authoritative versioned schemas and connection invalidation. Durable negative lookup currently scans the owning session log. The bridge has no separate invariant companion because its cache is derived directly from committed tool receipts rather than an independent persistent store.

@@ -164,6 +164,16 @@ export function apply(ctx: Context): void {
     inject: (): HiveSessionProjectionInjected => ({
       createSession: () => sessions.create(),
       openSession,
+      renameSession: async (sessionId, title) => {
+        const session = sessions.binding(sessionId)?.session
+        if (session === undefined) throw new Error(`unknown session "${sessionId}"`)
+        const result = await session.rename(title)
+        if (!result.ok) throw new Error(result.error.message)
+      },
+      forkSession: (sessionId) => {
+        void uiWorkspace.forkSession(sessionId).catch(() => {})
+      },
+      archiveSession: async (sessionId) => { await uiWorkspace.archiveSession(sessionId) },
     }),
   }, HiveSessionProjection))
 }

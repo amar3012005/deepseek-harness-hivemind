@@ -36,6 +36,11 @@ function list(...items: SessionSummary[]): SessionListState {
 const t = makeTranslate(en, commonEn) as never
 const noAttention: SessionPendingInteractionSnapshot = new Map()
 const runtime = {} as GlobalStandardProps
+const actions = {
+  renameSession: vi.fn(async () => {}),
+  forkSession: vi.fn(),
+  archiveSession: vi.fn(async () => {}),
+}
 
 describe('HIVE native session projection', () => {
   it('shows the five newest non-empty root sessions and opens a persisted row', () => {
@@ -52,6 +57,7 @@ describe('HIVE native session projection', () => {
       useSessionPendingInteraction={selector => selector(noAttention)}
       createSession={vi.fn()}
       openSession={openSession}
+      {...actions}
       t={t}
     />)
 
@@ -78,11 +84,38 @@ describe('HIVE native session projection', () => {
       useSessionPendingInteraction={selector => selector(noAttention)}
       createSession={createSession}
       openSession={openSession}
+      {...actions}
       t={t}
     />)
 
     fireEvent.click(screen.getByRole('button', { name: 'New Session' }))
     await waitFor(() => { expect(openSession).toHaveBeenCalledWith(created) })
     expect(createSession).toHaveBeenCalledOnce()
+  })
+
+  it('exposes native actions for each persisted recent session', () => {
+    const sessions = list(summary('share-me', 10))
+    const share = vi.fn(async () => {})
+    Object.defineProperty(navigator, 'share', { configurable: true, value: share })
+    render(<HiveSessionProjection
+      {...runtime}
+      useSessions={selector => selector(sessions)}
+      useSessionPendingInteraction={selector => selector(noAttention)}
+      createSession={vi.fn()}
+      openSession={vi.fn()}
+      {...actions}
+      t={t}
+    />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Session actions for share-me' }))
+    expect(screen.getByText('Rename')).toBeTruthy()
+    expect(screen.getByText('Fork session')).toBeTruthy()
+    expect(screen.getByText('Share session')).toBeTruthy()
+    expect(screen.getByText('Archive session')).toBeTruthy()
+    fireEvent.click(screen.getByText('Share session'))
+    expect(share).toHaveBeenCalledWith(expect.objectContaining({
+      title: 'share-me', url: expect.stringContaining('/hivemind/app/overview/session/share-me'),
+    }))
+    expect(share.mock.calls[0]?.[0]?.url).not.toMatch(/[?#]/)
   })
 })

@@ -9,5 +9,5 @@ export default defineConfig({
   fixedExtension: false,
   dts: false,
   clean: false,
-  deps: { alwaysBundle: ['@composio/core'] },
+  deps: { alwaysBundle: ['@composio/core', 'ajv'] },
 })

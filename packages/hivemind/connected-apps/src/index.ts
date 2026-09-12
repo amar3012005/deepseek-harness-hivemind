@@ -9,6 +9,7 @@ import type {} from '@deepseek-ai/dsh-hivemind-identity'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import type {} from '@deepseek-ai/dsh-settings'
 import type { SaveTextSpill, SpillRef } from '@deepseek-ai/dsh-spill'
+import Ajv, { type ValidateFunction } from 'ajv'
 import type { PostToolDecision, ToolExecution } from '@deepseek-ai/dsh-tools'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import type {} from '@deepseek-ai/dsh-user-questions'
@@ -626,24 +627,24 @@ function restoreWorkflowState(execution: Pick<ToolExecution, 'agent'>, requested
   return foundSearch ? { selected, contracts: restoredContracts } : undefined
 }
 
+const argumentSchemaValidator = new Ajv({ allErrors: true, strict: false, validateFormats: false })
+const argumentValidators = new WeakMap<ExecutionContract, ValidateFunction>()
+
 function validateArguments(contract: ExecutionContract, args: Record<string, unknown>): void {
-  for (const field of contract.required_fields) {
-    if (!(field in args)) throw new TypeError(`Connected-app arguments missing required field: ${field}`)
+  let validate = argumentValidators.get(contract)
+  if (validate === undefined) {
+    validate = argumentSchemaValidator.compile({
+      ...contract.schema_keywords,
+      type: contract.schema_keywords?.['type'] ?? 'object',
+      properties: contract.properties,
+      required: contract.required_fields,
+      additionalProperties: contract.schema_keywords?.['additionalProperties'] ?? false,
+    })
+    argumentValidators.set(contract, validate)
   }
-  for (const [field, value] of Object.entries(args)) {
-    const property = contract.properties[field]
-    if (!record(property)) throw new TypeError(`Connected-app argument is not in the authoritative schema: ${field}`)
-    const type = stringValue(property['type'])
-    const valid = type === undefined
-      || (type === 'string' && typeof value === 'string')
-      || (type === 'boolean' && typeof value === 'boolean')
-      || (type === 'number' && typeof value === 'number')
-      || (type === 'integer' && Number.isInteger(value))
-      || (type === 'array' && Array.isArray(value))
-      || (type === 'object' && record(value))
-      || (type === 'null' && value === null)
-    if (!valid) throw new TypeError(`Connected-app argument has invalid type for field: ${field}`)
-  }
+  if (validate(args)) return
+  const details = argumentSchemaValidator.errorsText(validate.errors, { separator: '; ' })
+  throw new TypeError(`Connected-app arguments do not match the authoritative schema: ${details}`)
 }
 
 const PROVIDER_NOISE = new Set([
@@ -754,14 +755,19 @@ export function compactComposioSearchReceipt(value: unknown, receipt?: SpillRef)
   return compact
 }
 
-async function saveReceipt(ctx: Context, execution: ToolExecution, content: string): Promise<SpillRef | undefined> {
+async function saveReceipt(
+  ctx: Context,
+  execution: ToolExecution,
+  content: string,
+  suggestedName = 'composio-search-tools.json',
+): Promise<SpillRef | undefined> {
   const sessionId = execution.agent?.session.header.id
   const spillStore = ctx.get('spillStore')
   if (sessionId === undefined || spillStore === undefined) return undefined
   const input: SaveTextSpill = {
     owner: { sessionId },
     source: { kind: 'tool', toolName: execution.name, callId: execution.callId, label: 'result' },
-    suggestedName: 'composio-search-tools.json',
+    suggestedName,
     content,
   }
   try {
@@ -953,6 +959,9 @@ export function apply(ctx: Context, config: Config = {}): void {
         const selected = disconnected[0]
         if (selected === undefined) throw new Error('Disconnected toolkit selection unexpectedly became empty')
         const managed = await session.execute('COMPOSIO_MANAGE_CONNECTIONS', { toolkits: [selected.slug] })
+        const sourceReceipt = await saveReceipt(
+          ctx, execution, JSON.stringify(managed), 'composio-manage-connections.json',
+        )
         const redirectUrl = safeHttpsUrl(firstString(managed, ['redirect_url', 'redirectUrl', 'connection_url', 'url']))
         const logoUrl = selected.logo ?? `https://logos.composio.dev/api/${encodeURIComponent(selected.slug)}`
         const conversationId = execution.agent === undefined ? undefined : execution.agent.session?.header.id
@@ -968,6 +977,7 @@ export function apply(ctx: Context, config: Config = {}): void {
           ).connected)
           execution.concludeTurn()
           return {
+            ...compactComposioExecutionReceipt(managed, sourceReceipt) as Record<string, JsonValue>,
             status: 'ready',
             toolkit: selected.slug,
             app_label: selected.name,
@@ -981,6 +991,7 @@ export function apply(ctx: Context, config: Config = {}): void {
         }
         execution.concludeTurn()
         return {
+          ...compactComposioExecutionReceipt(managed, sourceReceipt) as Record<string, JsonValue>,
           status: 'connection_required',
           toolkit: selected.slug,
           app_label: selected.name,
@@ -1044,6 +1055,9 @@ export function apply(ctx: Context, config: Config = {}): void {
           ...(model === undefined ? {} : { model }),
           ...(searchStrategy === undefined ? {} : { search_strategy: searchStrategy }),
         })
+        const sourceReceipt = await saveReceipt(
+          ctx, execution, JSON.stringify(result), 'composio-search-tools.json',
+        )
         const scoped = scopeSearchResult(result, requestedApps(args.queries))
         const scopedResult = scoped.value
         const container: unknown = record(scopedResult) && record(scopedResult['data']) ? scopedResult['data'] : scopedResult
@@ -1093,7 +1107,9 @@ export function apply(ctx: Context, config: Config = {}): void {
             { tool: 'COMPOSIO_SEARCH_TOOLS', status: 'completed' },
             { tool: 'COMPOSIO_MANAGE_CONNECTIONS', status: redirectUrl === undefined ? 'failed' : 'completed' },
           ]
-          const projected = compactComposioSearchReceipt({ status: 'connection_required', operations, result: scopedResult })
+          const projected = compactComposioSearchReceipt(
+            { status: 'connection_required', operations, result: scopedResult }, sourceReceipt,
+          )
           if (redirectUrl !== undefined && workflowSessionId !== undefined && execution.agent !== undefined) {
             await awaitConnection(execution, {
               toolkit,
@@ -1146,7 +1162,7 @@ export function apply(ctx: Context, config: Config = {}): void {
           status: discovered.size === 0 ? 'no_matching_tool' : 'ready',
           operations,
           result: scopedResult,
-        })
+        }, sourceReceipt)
         if (record(projected)) {
           projected['discovery'] = { version: 1, router_id: session.sessionId, scope, query_key: queryKey, recorded_at: Date.now(), cache_hit: false }
         }
@@ -1194,6 +1210,9 @@ export function apply(ctx: Context, config: Config = {}): void {
           throw new Error('Schema request contains a tool not selected by the current search')
         }
         const result = await session.execute('COMPOSIO_GET_TOOL_SCHEMAS', { ...metaArguments, tool_slugs: slugs })
+        const sourceReceipt = await saveReceipt(
+          ctx, execution, JSON.stringify(result), 'composio-tool-schemas.json',
+        )
         const loaded = executionContracts(result, new Set(slugs))
         const workflowContracts = contractsForWorkflow ?? new Map<string, ExecutionContract>()
         for (const contract of loaded) workflowContracts.set(contract.tool_slug, contract)
@@ -1203,6 +1222,13 @@ export function apply(ctx: Context, config: Config = {}): void {
           status: 'ready',
           operations: [{ tool: 'COMPOSIO_GET_TOOL_SCHEMAS', status: 'completed' }],
           execution_contracts: loaded as unknown as JsonValue,
+          ...(sourceReceipt === undefined ? {} : {
+            source_receipt: {
+              locator: sourceReceipt.locator,
+              bytes: sourceReceipt.bytes,
+              retrieval_hint: sourceReceipt.retrievalHint,
+            },
+          }),
         }
       }
       if (args.action === 'manage_connection' || args.action === 'wait_connection') {
@@ -1213,6 +1239,10 @@ export function apply(ctx: Context, config: Config = {}): void {
         }
         const metaTool = args.action === 'manage_connection' ? 'COMPOSIO_MANAGE_CONNECTIONS' : 'COMPOSIO_WAIT_FOR_CONNECTIONS'
         const managed = await session.execute(metaTool, { ...metaArguments, toolkits })
+        const sourceReceipt = await saveReceipt(
+          ctx, execution, JSON.stringify(managed),
+          args.action === 'manage_connection' ? 'composio-manage-connections.json' : 'composio-wait-for-connections.json',
+        )
         const statuses = connectionStatuses(managed)
         // A successful meta-tool invocation is not proof of OAuth completion.
         // Require affirmative evidence for every requested toolkit; unknown or
@@ -1224,7 +1254,7 @@ export function apply(ctx: Context, config: Config = {}): void {
         const redirectUrl = safeHttpsUrl(firstString(managed, ['redirect_url', 'redirectUrl', 'connection_url', 'url']))
         if (pending.length > 0) execution.concludeTurn()
         return {
-          ...compactComposioExecutionReceipt(managed) as Record<string, JsonValue>,
+          ...compactComposioExecutionReceipt(managed, sourceReceipt) as Record<string, JsonValue>,
           status: pending.length === 0 ? 'ready' : redirectUrl === undefined ? 'connection_pending' : 'connection_required',
           ...metaArguments as Record<string, JsonValue>,
           pending_toolkits: pending,
@@ -1249,8 +1279,11 @@ export function apply(ctx: Context, config: Config = {}): void {
         return { status: 'approval_required', mode: 'prepare', tool_slug: slug, arguments: executionArguments as JsonValue }
       }
       const providerResult = await session.execute(slug, executionArguments)
+      const sourceReceipt = await saveReceipt(
+        ctx, execution, JSON.stringify(providerResult), `composio-${slug.toLowerCase()}.json`,
+      )
       return {
-        ...compactComposioExecutionReceipt(providerResult) as Record<string, JsonValue>,
+        ...compactComposioExecutionReceipt(providerResult, sourceReceipt) as Record<string, JsonValue>,
         status: 'ready',
         operations: [{ tool: slug, status: 'completed' }],
       }
@@ -1289,6 +1322,7 @@ export function apply(ctx: Context, config: Config = {}): void {
     let parsed: unknown
     try { parsed = JSON.parse(raw) } catch { return decision }
     if (isBridgeSearch && record(parsed) && parsed['status'] === 'connection_required' && !Object.hasOwn(parsed, 'result')) return decision
+    if (record(parsed) && record(parsed['source_receipt'])) return decision
     const receipt = await saveReceipt(ctx, execution, raw)
     const compact = isSearch
       ? compactComposioSearchReceipt(parsed, receipt)
