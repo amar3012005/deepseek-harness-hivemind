@@ -1067,6 +1067,21 @@ export function apply(ctx: Context, config: Config = {}): void {
           operations,
           result: scopedResult,
         })
+        if (record(projected) && scoped.rejected && discovered.size === 0) {
+          // Provider guidance describes the unscoped semantic candidates. Once
+          // those candidates have been rejected, preserving instructions such
+          // as "manage connections" would send the model into an unrelated
+          // authorization flow. Keep the native model loop in control, but give
+          // it one truthful bounded continuation based on the scoped evidence.
+          delete projected['next_steps_guidance']
+          delete projected['recommended_plan_steps']
+          delete projected['known_pitfalls']
+          const searches = turnState?.searchFingerprints.size ?? 1
+          projected['next_action'] = searches > 1 ? 'report_unsupported' : 'refine_search'
+          projected['next_action_guidance'] = searches > 1
+            ? 'No executable tool exists in the explicitly requested app after a refined search. Report that the requested operation is unsupported; do not check or connect another app.'
+            : 'Refine search once in this same workflow session for the missing provider-owned prerequisite or listing operation. Do not check connection status or connect another app.'
+        }
         return record(projected) ? projected : { status: 'ready', operations }
       }
       const key = workflowStateKey(identity, execution, workflowSessionId(args))

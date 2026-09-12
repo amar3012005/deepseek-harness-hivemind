@@ -704,8 +704,39 @@ describe('progressive Composio bridge', () => {
       queries: [{ app: 'LinkedIn', use_case: 'List the newest LinkedIn post and return its identifier.' }],
       session: { id: 'workflow-linkedin' },
       search_strategy: 'tool_search',
-    }, execution as never)).resolves.toMatchObject({ status: 'no_matching_tool', results: [] })
+    }, execution as never)).resolves.toMatchObject({
+      status: 'no_matching_tool',
+      results: [],
+      next_action: 'report_unsupported',
+      next_action_guidance: expect.stringContaining('do not check or connect another app'),
+    })
     expect(execute).toHaveBeenCalledTimes(2)
+    expect(app.concludeTurn).not.toHaveBeenCalled()
+  })
+
+  it('replaces unscoped provider connection guidance with one bounded refinement', async () => {
+    execute.mockResolvedValueOnce({ data: {
+      session: { id: 'workflow-linkedin' },
+      results: [{ primary_tool_slugs: ['SALESROBOT_FIND_POSTS'], toolkits: ['linkedin', 'salesrobot'] }],
+      toolkit_connection_statuses: [{ toolkit: 'salesrobot', has_active_connection: false }],
+      next_steps_guidance: ['CALL COMPOSIO_MANAGE_CONNECTIONS for salesrobot'],
+    } })
+    const app = harness()
+    const agent = { session: { header: { id: 'conversation-1' }, snapshotEvents: () => [], append: vi.fn() } }
+    const next = vi.fn(async () => undefined)
+    await app.listeners.get('agent/pre-step')?.({ agent, turn: 1 } as never, next as never)
+
+    await expect(app.tool().execute({
+      action: 'search',
+      queries: [{ app: 'LinkedIn', use_case: 'List the newest LinkedIn post and return its identifier.' }],
+      session: { generate_id: true },
+    }, { signal: AbortSignal.abort(), agent } as never)).resolves.toMatchObject({
+      status: 'no_matching_tool',
+      results: [],
+      next_action: 'refine_search',
+      next_action_guidance: expect.stringContaining('Do not check connection status or connect another app'),
+    })
+    expect(execute).toHaveBeenCalledTimes(1)
     expect(app.concludeTurn).not.toHaveBeenCalled()
   })
 })
