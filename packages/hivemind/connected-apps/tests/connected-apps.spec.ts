@@ -16,7 +16,7 @@ function harness(
   enabled: boolean | undefined = true,
   identity = { orgId: 'org-a', userId: 'user-a' },
   enabledByDefault = false,
-  config: { connectionCallbackBaseUrl?: string } = {},
+  config: { connectionCallbackBaseUrl?: string; maxDiscoverySearches?: number } = {},
 ) {
   const concludeTurn = vi.fn()
   const ask = vi.fn()
@@ -761,7 +761,7 @@ describe('progressive Composio bridge', () => {
     const first = await run(harness(), request('Find the latest item'))
     expect(first).toMatchObject({ status: 'no_matching_tool', next_action: 'refine_search' })
     use.mockResolvedValueOnce({ execute, toolkits, sessionId: 'router-created' })
-    const restarted = harness()
+    const restarted = harness(true, undefined, false, { maxDiscoverySearches: 10 })
     const duplicate = await run(restarted, request('Find the latest item'))
     expect(duplicate).toMatchObject({ discovery: { cache_hit: true }, operations: [], next_action: 'report_discovery_limit' })
     expect(execute).toHaveBeenCalledTimes(1)
@@ -785,5 +785,40 @@ describe('progressive Composio bridge', () => {
     execute.mockResolvedValue({ successful: false, data: { results: [] } })
     await expect(harness().tool().execute({ action: 'search', queries: [{ use_case: 'Find items' }], session: { generate_id: true } },
       { signal: new AbortController().signal })).rejects.toThrow('no capability conclusion')
+  })
+
+  it('rejects mixed primary ownership rather than authorizing an unrelated app', async () => {
+    execute.mockResolvedValue({ data: { session: { id: 'mixed' }, results: [{
+      primary_tool_slugs: ['EXAMPLE_GET_ITEM', 'OTHER_LIST_ITEMS'], toolkits: ['example', 'other'],
+    }], toolkit_connection_statuses: [
+      { toolkit: 'example', has_active_connection: true }, { toolkit: 'other', has_active_connection: false },
+    ] } })
+    const app = harness()
+    await expect(app.tool().execute({ action: 'search', queries: [{ app: 'Example', use_case: 'Get my latest item' }],
+      session: { generate_id: true } }, { signal: new AbortController().signal })).resolves.toMatchObject({
+      status: 'no_matching_tool', results: [], next_action: 'refine_search',
+    })
+    expect(execute).toHaveBeenCalledTimes(1)
+    expect(app.ask).not.toHaveBeenCalled()
+  })
+
+  it('bounds ready searches that never advance to provider execution after replay', async () => {
+    const events = [1, 2].flatMap(id => [
+      { type: 'tool/call', data: { name: 'hivemind_connected_task', callId: String(id),
+        arguments: JSON.stringify({ action: 'search', session: { id: 'work' } }) } },
+      { type: 'tool/result', data: { message: { source: { callId: String(id) }, content: [
+        { type: 'tool-result', content: [{ type: 'text', text: JSON.stringify({ status: 'ready', session: { id: 'work' },
+          discovery: { version: 1, router_id: 'router-created', recorded_at: Date.now(), cache_hit: false } }) }] },
+      ] } } },
+    ])
+    const agent = { session: { header: { id: 'bounded' }, snapshotEvents: () => events, append: vi.fn() } }
+    const app = harness()
+    const result = await app.tool().execute({ action: 'search', queries: [{ app: 'Example', use_case: 'Rephrase the same listing request' }],
+      session: { id: 'work' } }, { signal: new AbortController().signal, agent } as never)
+    expect(compactComposioSearchReceipt(result)).toMatchObject({ status: 'discovery_exhausted',
+      next_action: 'use_existing_evidence', operations: [], results: [],
+    })
+    expect(execute).not.toHaveBeenCalled()
+    expect(app.ask).not.toHaveBeenCalled()
   })
 })

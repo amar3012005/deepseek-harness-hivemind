@@ -59,6 +59,8 @@ export interface Config {
   discoveryCacheTtlMs?: number
   /** Consecutive unsuccessful searches allowed before returning existing evidence. */
   maxUnmatchedSearches?: number
+  /** Discovery-only calls per workflow before provider execution must advance it. */
+  maxDiscoverySearches?: number
 }
 
 export const Config: z<Config> = z.object({
@@ -67,6 +69,7 @@ export const Config: z<Config> = z.object({
   connectionCallbackBaseUrl: z.string(),
   discoveryCacheTtlMs: z.number().min(1).default(300_000),
   maxUnmatchedSearches: z.number().min(1).default(2),
+  maxDiscoverySearches: z.number().min(1).default(2),
 })
 
 function record(value: unknown): value is Record<string, unknown> {
@@ -216,7 +219,7 @@ function searchResultMatchesApps(value: unknown, apps: ReadonlySet<string>): boo
   const toolkits = new Set(primaryToolkits.length > 0
     ? primaryToolkits
     : stringArray(value['toolkits']).map(normalizedToolkitName))
-  return [...toolkits].some(toolkit => apps.has(toolkit))
+  return toolkits.size > 0 && [...toolkits].every(toolkit => apps.has(toolkit))
 }
 
 /**
@@ -481,7 +484,7 @@ function previousUnmatchedDiscovery(
   execution: Pick<ToolExecution, 'agent'>,
   workflowId: string | undefined,
   routerId: string,
-  scope: string,
+  scope: string | undefined,
   ttlMs: number,
 ): Record<string, unknown>[] {
   if (workflowId === undefined) return []
@@ -500,11 +503,13 @@ function previousUnmatchedDiscovery(
     }
     if (args?.['action'] !== 'search') continue
     const metadata = result.value['discovery']
-    if (!record(metadata) || metadata['version'] !== 1 || metadata['router_id'] !== routerId || metadata['scope'] !== scope) continue
+    if (!record(metadata) || metadata['version'] !== 1 || metadata['router_id'] !== routerId
+      || (scope !== undefined && metadata['scope'] !== scope)) continue
     const at = metadata['recorded_at']
     if (typeof at !== 'number' || Date.now() < at || Date.now() - at >= ttlMs) continue
-    if (result.value['status'] === 'ready') found.length = 0
-    if (result.value['status'] === 'no_matching_tool' && metadata['cache_hit'] !== true) found.push(result.value)
+    if (result.value['status'] === 'ready' && scope !== undefined) found.length = 0
+    if ((result.value['status'] === 'no_matching_tool' || (scope === undefined && result.value['status'] === 'ready'))
+      && metadata['cache_hit'] !== true) found.push(result.value)
   }
   return found
 }
@@ -1007,6 +1012,19 @@ export function apply(ctx: Context, config: Config = {}): void {
         }
         const scope = discoveryKey({ apps: [...requestedApps(args.queries)].sort(), known: queries.map(query => query.known_fields ?? '').sort() })
         const queryKey = discoveryKey({ queries, searchStrategy: searchStrategy ?? 'auto' })
+        const discoveryOnly = previousUnmatchedDiscovery(
+          execution, requestedWorkflowId, session.sessionId, undefined, config.discoveryCacheTtlMs ?? 300_000,
+        )
+        if (requestedWorkflowId !== undefined && discoveryOnly.length >= (config.maxDiscoverySearches ?? 2)) {
+          return {
+            status: 'discovery_exhausted',
+            session: { id: requestedWorkflowId },
+            results: [],
+            operations: [],
+            next_action: 'use_existing_evidence',
+            next_action_guidance: 'Discovery has not advanced to provider execution. Use the selected tools and exact contracts already returned if they can resolve the task. Otherwise explain the missing capability or identifier using existing evidence. These searches do not prove the provider cannot support the operation. Do not repeat discovery or connect an unrelated app.',
+          }
+        }
         const prior = previousUnmatchedDiscovery(
           execution, requestedWorkflowId, session.sessionId, scope, config.discoveryCacheTtlMs ?? 300_000,
         )

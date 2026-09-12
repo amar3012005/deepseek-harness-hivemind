@@ -8,6 +8,8 @@ Unsuccessful searches carry versioned discovery metadata through native tool-res
 
 ## Model Experience
 
+`maxDiscoverySearches` (default 2) additionally bounds consecutive discovery-only calls, including nonempty but insufficient candidate lists. Provider execution or connection work advances the workflow and resets this budget. Exhaustion returns existing-evidence guidance, not an unsupported-provider claim. Mixed primary-tool ownership is rejected for explicitly scoped app requests rather than authorizing an unrelated toolkit.
+
 The model still selects skills, searches, and executes tools. A cached negative result preserves its next-action guidance and distinguishes unsuccessful discovery from proof of unsupported provider functionality. It does not report a provider operation as executed. Existing native model history and KV-cache behavior are unchanged; saved provider requests do not eliminate the model step that requested them.
 
 ## Known Limitations and Deferred Work

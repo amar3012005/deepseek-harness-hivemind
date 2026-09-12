@@ -20,4 +20,6 @@ The connected-app bridge preserves discovery metadata and continuation guidance 
 
 ## Consequences
 
+Nonempty search results can also fail to resolve an outstanding prerequisite. A separate configurable discovery-only budget counts committed searches until provider execution or connection work advances the workflow. An explicitly scoped search rejects mixed primary ownership: one matching toolkit does not authorize the other selected toolkits.
+
 Native replay restores the same bounded discovery evidence without a new event type or database migration. New identifiers and changed workflow/session state permit fresh discovery. The bridge does not infer semantic equivalence between tasks or claim that unsuccessful searches prove provider incapability. Focused tests cover projected receipt replay across plugin restart, expiry, fresh identifiers, and provider failures.
