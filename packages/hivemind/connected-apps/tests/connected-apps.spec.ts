@@ -2,7 +2,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { SpillLocator, type SpillRef } from '@deepseek-ai/dsh-spill'
 
 const execute = vi.fn()
-const create = vi.fn(async () => ({ execute }))
+const toolkits = vi.fn(async () => ({ items: [] }))
+const create = vi.fn(async () => ({ execute, toolkits }))
 const list = vi.fn(async (): Promise<{ items: Array<{ id?: string; status: string; toolkit?: { slug: string } }> }> => ({ items: [] }))
 vi.mock('@composio/core', () => ({ Composio: class { sessions = { create }; connectedAccounts = { list } } }))
 
@@ -14,6 +15,7 @@ function harness(
   enabled: boolean | undefined = true,
   identity = { orgId: 'org-a', userId: 'user-a' },
   enabledByDefault = false,
+  config: { connectionCallbackBaseUrl?: string } = {},
 ) {
   const concludeTurn = vi.fn()
   const ask = vi.fn()
@@ -32,7 +34,7 @@ function harness(
     get(name: string) { return name === 'settings' ? { get: () => enabled === undefined ? undefined : ({ pluginsEnabled: enabled }) } : undefined },
     logger: { warn: vi.fn() },
   }
-  apply(ctx as never, { apiKey: 'server-secret', enabledByDefault })
+  apply(ctx as never, { apiKey: 'server-secret', enabledByDefault, ...config })
   return {
     tool: () => ({
       execute: (args: Record<string, unknown>, execution: { signal: AbortSignal }) =>
@@ -45,7 +47,10 @@ function harness(
 }
 
 describe('progressive Composio bridge', () => {
-  beforeEach(() => { execute.mockReset(); create.mockClear(); list.mockReset(); list.mockResolvedValue({ items: [] }) })
+  beforeEach(() => {
+    execute.mockReset(); toolkits.mockReset(); toolkits.mockResolvedValue({ items: [] })
+    create.mockClear(); list.mockReset(); list.mockResolvedValue({ items: [] })
+  })
 
   it('preserves planning and projects selected schemas into compact execution contracts', () => {
     expect(compactComposioSearchReceipt({ operations: [{ tool: 'COMPOSIO_SEARCH_TOOLS', status: 'completed' }], data: {
@@ -245,6 +250,57 @@ describe('progressive Composio bridge', () => {
     await tool().execute({ action: 'wait_connection', toolkits: ['slack'], session_id: 'session-1' }, { signal: AbortSignal.abort() })
     expect(execute).toHaveBeenNthCalledWith(1, 'COMPOSIO_MANAGE_CONNECTIONS', { session_id: 'session-1', toolkits: ['slack'] })
     expect(execute).toHaveBeenNthCalledWith(2, 'COMPOSIO_WAIT_FOR_CONNECTIONS', { session_id: 'session-1', toolkits: ['slack'] })
+  })
+
+  it('checks an explicitly named toolkit without semantic tool search', async () => {
+    toolkits.mockResolvedValueOnce({ items: [{
+      slug: 'instagram', name: 'Instagram', logo: 'https://logos.example/instagram.svg',
+      connection: { isActive: true },
+    }] })
+    const app = harness()
+    await expect(app.tool().execute({ action: 'connection_status', apps: ['Instagram'] }, { signal: AbortSignal.abort() }))
+      .resolves.toMatchObject({
+        status: 'ready', connected_toolkits: ['instagram'],
+        toolkit_connection_statuses: [{ toolkit: 'instagram', app_label: 'Instagram', has_active_connection: true }],
+      })
+    expect(toolkits).toHaveBeenCalledWith({ search: 'Instagram', limit: 8 })
+    expect(execute).not.toHaveBeenCalled()
+  })
+
+  it('returns the exact named toolkit connection card instead of a semantic substitute', async () => {
+    toolkits.mockResolvedValueOnce({ items: [{
+      slug: 'instagram', name: 'Instagram', logo: 'https://logos.example/instagram.svg',
+      connection: { isActive: false },
+    }] })
+    execute.mockResolvedValueOnce({ data: { redirect_url: 'https://connect.example/instagram' } })
+    const app = harness()
+    await expect(app.tool().execute({ action: 'connection_status', apps: ['Instagram'] }, { signal: AbortSignal.abort() }))
+      .resolves.toMatchObject({
+        status: 'connection_required', toolkit: 'instagram', app_label: 'Instagram',
+        redirect_url: 'https://connect.example/instagram',
+      })
+    expect(execute).toHaveBeenCalledOnce()
+    expect(execute).toHaveBeenCalledWith('COMPOSIO_MANAGE_CONNECTIONS', { toolkits: ['instagram'] })
+    expect(app.concludeTurn).toHaveBeenCalledOnce()
+  })
+
+  it('configures a conversation callback URL on the authenticated Composio session', async () => {
+    toolkits.mockResolvedValueOnce({ items: [{
+      slug: 'instagram', name: 'Instagram', connection: { isActive: true },
+    }] })
+    const app = harness(true, { orgId: 'org-a', userId: 'user-a' }, false, {
+      connectionCallbackBaseUrl: 'https://next.preview.singulancelabs.com/hivemind/app/overview',
+    })
+    const agent = { session: { header: { id: 'session-123' } } }
+    await app.tool().execute({ action: 'connection_status', apps: ['Instagram'] }, { signal: AbortSignal.abort(), agent } as never)
+    expect(create).toHaveBeenCalledWith('hivemind:user-a', {
+      mcp: true,
+      connectedAccounts: {},
+      manageConnections: {
+        enable: true,
+        callbackUrl: 'https://next.preview.singulancelabs.com/hivemind/app/overview/session/session-123?hivemind_connection=complete&hivemind_session=session-123',
+      },
+    })
   })
 
   it.each([

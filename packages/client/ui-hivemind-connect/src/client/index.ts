@@ -16,6 +16,7 @@ import {
 } from './connection-question.ts'
 import { setupSingulanceHeadline, SingulanceMark } from './SingulanceMark.tsx'
 import { setupHivemindSessionRouting } from './session-route.ts'
+import { setupConnectionCallbackReturn } from './connection-callback.ts'
 import type {} from '@deepseek-ai/dsh-client-ui-tool/client'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
@@ -73,6 +74,7 @@ async function answerConnectionQuestion(
 
 /** Register the localized HIVE-MIND connection control above sidebar Settings. */
 export function apply(ctx: ClientContext): void {
+  ctx.effect(setupConnectionCallbackReturn, 'ui-hivemind-connect: connected-app authorization return')
   ctx.effect(setupEmbedMessaging, 'ui-hivemind-connect: embedded authentication')
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-hivemind-connect: dictionaries')
   const publishConnection = ctx.uiSession.registerPendingInteraction<PendingConnectionAuthorization>(() => 2)

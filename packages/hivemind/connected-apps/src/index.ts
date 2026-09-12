@@ -34,11 +34,14 @@ export interface Config {
   apiKey?: string
   /** Default capability latch when the host UI has not published a setting. */
   enabledByDefault?: boolean
+  /** Public HIVE chat URL used as the post-authorization return location. */
+  connectionCallbackBaseUrl?: string
 }
 
 export const Config: z<Config> = z.object({
   apiKey: z.string(),
   enabledByDefault: z.boolean().default(false),
+  connectionCallbackBaseUrl: z.string(),
 })
 
 function record(value: unknown): value is Record<string, unknown> {
@@ -114,6 +117,52 @@ function operationReceipts(value: unknown): JsonValue[] {
 
 function titleCaseToolkit(toolkit: string): string {
   return toolkit.split(/[-_\s]+/).filter(Boolean).map(part => `${part[0]?.toUpperCase() ?? ''}${part.slice(1)}`).join(' ')
+}
+
+function normalizedToolkitName(value: string): string {
+  return value.toLocaleLowerCase().replaceAll(/[^a-z0-9]/g, '')
+}
+
+interface ToolkitConnection {
+  readonly slug: string
+  readonly name: string
+  readonly logo?: string
+  readonly connected: boolean
+}
+
+function exactToolkit(value: unknown, requestedApp: string): ToolkitConnection {
+  if (!record(value) || !Array.isArray(value['items'])) throw new Error(`Composio did not return toolkit metadata for ${requestedApp}`)
+  const expected = normalizedToolkitName(requestedApp)
+  const matches = value['items'].flatMap((item): ToolkitConnection[] => {
+    if (!record(item)) return []
+    const slug = stringValue(item['slug'])
+    const name = stringValue(item['name'])
+    if (slug === undefined || name === undefined
+      || (normalizedToolkitName(slug) !== expected && normalizedToolkitName(name) !== expected)) return []
+    const connection = record(item['connection']) ? item['connection'] : undefined
+    const logo = safeHttpsUrl(item['logo'])
+    return [{
+      slug,
+      name,
+      ...(logo === undefined ? {} : { logo }),
+      connected: connection?.['isActive'] === true,
+    }]
+  })
+  const [match] = matches
+  if (match === undefined || matches.length !== 1) throw new Error(`Composio could not resolve one exact toolkit for ${requestedApp}`)
+  return match
+}
+
+function connectionCallbackUrl(baseUrl: string | undefined, execution: Pick<ToolExecution, 'agent'>): string | undefined {
+  const sessionId = execution.agent?.session?.header.id
+  if (baseUrl === undefined || sessionId === undefined) return undefined
+  const base = safeHttpsUrl(baseUrl)
+  if (base === undefined) throw new TypeError('Connected-app callback base URL must use HTTPS')
+  const url = new URL(base)
+  url.pathname = `${url.pathname.replace(/\/$/, '')}/session/${encodeURIComponent(String(sessionId))}`
+  url.searchParams.set('hivemind_connection', 'complete')
+  url.searchParams.set('hivemind_session', String(sessionId))
+  return url.href
 }
 
 interface SearchQuery {
@@ -591,7 +640,7 @@ export function apply(ctx: Context, config: Config = {}): void {
   const selectedTools = new Map<string, Set<string>>()
   const contracts = new Map<string, Map<string, ExecutionContract>>()
 
-  async function getSession(identity: { userId: string; orgId: string }): Promise<ComposioSession> {
+  async function getSession(identity: { userId: string; orgId: string }, execution: Pick<ToolExecution, 'agent'>): Promise<ComposioSession> {
     if (composio === undefined) throw new Error('Connected tools are not configured on this runtime')
     const client = await composio
     const canonicalKey = sessionKey(identity)
@@ -615,17 +664,23 @@ export function apply(ctx: Context, config: Config = {}): void {
     } catch (error: unknown) {
       ctx.logger.warn(`hivemind-connected-apps: could not inspect legacy connection scope: ${String(error)}`)
     }
-    let pending = sessions.get(key)
+    const conversationId = execution.agent?.session?.header.id
+    const cacheKey = `${key}:${conversationId === undefined ? 'detached' : String(conversationId)}`
+    let pending = sessions.get(cacheKey)
     if (pending === undefined) {
-      pending = client.sessions.create(key, { mcp: true, connectedAccounts })
-      sessions.set(key, pending)
-      pending.catch(() => sessions.delete(key))
+      const callbackUrl = connectionCallbackUrl(config.connectionCallbackBaseUrl, execution)
+      pending = client.sessions.create(key, {
+        mcp: true,
+        connectedAccounts,
+        ...(callbackUrl === undefined ? {} : { manageConnections: { enable: true, callbackUrl } }),
+      })
+      sessions.set(cacheKey, pending)
+      pending.catch(() => sessions.delete(cacheKey))
     }
     return pending
   }
 
   async function awaitConnection(
-    session: ComposioSession,
     execution: ToolExecution,
     input: {
       toolkit: string
@@ -634,6 +689,7 @@ export function apply(ctx: Context, config: Config = {}): void {
       logoUrl: string
       workflowSessionId: string
     },
+    verifyConnection: () => Promise<boolean>,
   ): Promise<void> {
     const questionId = `hivemind-connected-app-authorization:${input.workflowSessionId}:${input.toolkit}`
     const connect = `Connect ${input.appLabel}`
@@ -665,13 +721,7 @@ export function apply(ctx: Context, config: Config = {}): void {
       // Capable clients keep Connect non-settling. A generic client may return
       // it as an answer; keep the same tool call paused in that fallback.
       if (!selected.includes(continueLabel)) continue
-      const waited = await session.execute('COMPOSIO_WAIT_FOR_CONNECTIONS', {
-        session_id: input.workflowSessionId,
-        toolkits: [input.toolkit],
-      })
-      const statuses = connectionStatuses(waited)
-      const matching = statuses.filter(item => item.toolkit.toLowerCase() === input.toolkit.toLowerCase())
-      if (matching.length > 0 && matching.every(item => item.connected)) return
+      if (await verifyConnection()) return
     }
   }
 
@@ -679,7 +729,8 @@ export function apply(ctx: Context, config: Config = {}): void {
     name: BRIDGE_TOOL,
     description: 'Tenant-scoped connected-app gateway. For a new external-app task, call search once with atomic queries, explicit outcomes, exact result limits, and session.generate_id=true. Then follow the returned plan and selected slugs. External writes require HIVE approval.',
     parameters: {
-      action: { type: 'string', required: true, enum: ['search', 'schemas', 'manage_connection', 'wait_connection', 'execute'], description: 'Progressive Composio operation.' },
+      action: { type: 'string', required: true, enum: ['connection_status', 'search', 'schemas', 'manage_connection', 'wait_connection', 'execute'], description: 'Use connection_status only for a pure status check of explicitly named apps. Use search for real app work.' },
+      apps: { type: 'array', items: { type: 'string' }, description: 'One to four explicit app names for connection_status. Resolved against authenticated toolkit metadata, never semantic tool search.' },
       queries: {
         type: 'array',
         items: {
@@ -714,7 +765,57 @@ export function apply(ctx: Context, config: Config = {}): void {
     async execute(args, execution) {
       if (!connectedAppsEnabled(ctx, config.enabledByDefault === true)) throw new Error('Connected tools are disabled for this turn. Enable Tools and retry.')
       const identity = await ctx.hivemindIdentity.resolve(execution.signal)
-      const session = await getSession(identity)
+      const session = await getSession(identity, execution)
+      if (args.action === 'connection_status') {
+        const apps = stringArray(args.apps)
+        if (apps.length === 0 || apps.length > 4) throw new TypeError('Connection status requires between 1 and 4 explicit app names')
+        const resolved = await Promise.all(apps.map(async app => exactToolkit(
+          await session.toolkits({ search: app, limit: 8 }), app,
+        )))
+        const disconnected = resolved.filter(item => !item.connected)
+        if (disconnected.length === 0) return {
+          status: 'ready',
+          connected_toolkits: resolved.map(item => item.slug),
+          toolkit_connection_statuses: resolved.map(item => ({
+            toolkit: item.slug, app_label: item.name, has_active_connection: true, status_message: 'ACTIVE',
+          })),
+        }
+        const selected = disconnected[0]
+        if (selected === undefined) throw new Error('Disconnected toolkit selection unexpectedly became empty')
+        const managed = await session.execute('COMPOSIO_MANAGE_CONNECTIONS', { toolkits: [selected.slug] })
+        const redirectUrl = safeHttpsUrl(firstString(managed, ['redirect_url', 'redirectUrl', 'connection_url', 'url']))
+        const logoUrl = selected.logo ?? `https://logos.composio.dev/api/${encodeURIComponent(selected.slug)}`
+        const conversationId = execution.agent === undefined ? undefined : execution.agent.session?.header.id
+        if (redirectUrl !== undefined && conversationId !== undefined && execution.agent !== undefined) {
+          await awaitConnection(execution, {
+            toolkit: selected.slug,
+            appLabel: selected.name,
+            redirectUrl,
+            logoUrl,
+            workflowSessionId: `connection:${String(conversationId)}`,
+          }, async () => exactToolkit(
+            await session.toolkits({ toolkits: [selected.slug], limit: 1 }), selected.name,
+          ).connected)
+          return {
+            status: 'ready',
+            connected_toolkits: [selected.slug],
+            toolkit_connection_statuses: [{
+              toolkit: selected.slug, app_label: selected.name, has_active_connection: true, status_message: 'ACTIVE',
+            }],
+            operations: [{ tool: 'COMPOSIO_MANAGE_CONNECTIONS', status: 'completed' }],
+          }
+        }
+        execution.concludeTurn()
+        return {
+          status: 'connection_required',
+          toolkit: selected.slug,
+          app_label: selected.name,
+          logo_url: logoUrl,
+          prompt: `Connect ${selected.name} to continue, then return here.`,
+          ...(redirectUrl === undefined ? {} : { redirect_url: redirectUrl }),
+          operations: [{ tool: 'COMPOSIO_MANAGE_CONNECTIONS', status: redirectUrl === undefined ? 'failed' : 'completed' }],
+        }
+      }
       if (args.action === 'search') {
         const turnState = execution.agent === undefined ? undefined : turns.get(execution.agent)
         if (turnState !== undefined) {
@@ -770,12 +871,20 @@ export function apply(ctx: Context, config: Config = {}): void {
           ]
           const projected = compactComposioSearchReceipt({ status: 'connection_required', operations, result })
           if (redirectUrl !== undefined && workflowSessionId !== undefined && execution.agent !== undefined) {
-            await awaitConnection(session, execution, {
+            await awaitConnection(execution, {
               toolkit,
               appLabel: label,
               redirectUrl,
               logoUrl,
               workflowSessionId,
+            }, async () => {
+              const waited = await session.execute('COMPOSIO_WAIT_FOR_CONNECTIONS', {
+                session_id: workflowSessionId,
+                toolkits: [toolkit],
+              })
+              const matching = connectionStatuses(waited)
+                .filter(item => item.toolkit.toLowerCase() === toolkit.toLowerCase())
+              return matching.length > 0 && matching.every(item => item.connected)
             })
             const activeStatuses = Array.isArray(projected?.['toolkit_connection_statuses'])
               ? projected['toolkit_connection_statuses'].map((status) => {

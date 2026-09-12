@@ -6,6 +6,7 @@ export type HivemindConnectKey =
   | 'composio.connect' | 'composio.connectDetail' | 'composio.authorize' | 'composio.draftDetail' | 'composio.inspect'
   | 'composio.connectionPrompt' | 'composio.connectionActionDetail'
   | 'composio.inputRequired' | 'composio.verifying'
+  | 'composio.connected'
 
 export const en: Record<HivemindConnectKey, string> = {
   connect: 'Connect HIVE-MIND',
@@ -29,6 +30,7 @@ export const en: Record<HivemindConnectKey, string> = {
   'composio.connectionActionDetail': 'Authorize in a new tab, then continue this request.',
   'composio.inputRequired': 'I need your input to continue',
   'composio.verifying': 'Verifying connection…',
+  'composio.connected': '{app} connected',
 }
 
 export const zh: Record<HivemindConnectKey, string> = {
@@ -53,4 +55,5 @@ export const zh: Record<HivemindConnectKey, string> = {
   'composio.connectionActionDetail': '请在新标签页中授权，然后继续此请求。',
   'composio.inputRequired': '需要你的输入才能继续',
   'composio.verifying': '正在验证连接…',
+  'composio.connected': '{app} 已连接',
 }
