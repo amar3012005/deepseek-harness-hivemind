@@ -13,6 +13,24 @@ import { defineTool } from '@deepseek-ai/dsh-tools'
 import type {} from '@deepseek-ai/dsh-user-questions'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 
+interface ComposioRouterSessionEventData {
+  readonly version: 1
+  readonly userKey: string
+  readonly subject: string
+  readonly routerSessionId: string
+}
+
+declare module '@deepseek-ai/dsh-session/types' {
+  interface SessionEventMap {
+    /**
+     * Authenticated Composio router session bound to one HIVE conversation.
+     * Log-only: it restores provider state after runner restart and never
+     * enters derived model history.
+     */
+    'hivemind/composio-session': ComposioRouterSessionEventData
+  }
+}
+
 export const name = 'hivemind-connected-apps'
 export const inject = ['tools', 'hivemindIdentity', 'userQuestions']
 
@@ -251,6 +269,20 @@ function workflowStateKey(
   return `${sessionKey(identity)}:${conversation}:${workflowId ?? 'current'}`
 }
 
+function restoredRouterSession(
+  execution: Pick<ToolExecution, 'agent'>,
+  userKey: string,
+): Pick<ComposioRouterSessionEventData, 'subject' | 'routerSessionId'> | undefined {
+  const events = execution.agent?.session?.snapshotEvents()
+  if (events === undefined) return undefined
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const event = events[index]
+    if (event?.type !== 'hivemind/composio-session' || event.data.userKey !== userKey) continue
+    return { subject: event.data.subject, routerSessionId: event.data.routerSessionId }
+  }
+  return undefined
+}
+
 function legacySessionKey(identity: { userId: string; orgId: string }): string {
   return identity.orgId
 }
@@ -451,39 +483,44 @@ function restoreWorkflowState(execution: Pick<ToolExecution, 'agent'>, requested
     const call = bridgeCall(event)
     if (call !== undefined) calls.set(call.callId, call.args)
   }
-  let searchIndex = -1
-  let searchReceipt: Record<string, unknown> | undefined
+  let workflowId = requestedId
   for (let index = events.length - 1; index >= 0; index -= 1) {
     const result = bridgeResult(events[index])
     if (result === undefined) continue
     const args = calls.get(result.callId)
     if (args?.['action'] !== 'search') continue
     const candidateId = returnedWorkflowSessionId(result.value) ?? workflowSessionId(args)
-    if (requestedId !== undefined && candidateId !== requestedId) continue
-    searchIndex = index
-    searchReceipt = result.value
+    if (workflowId !== undefined && candidateId !== workflowId) continue
+    workflowId = candidateId
     break
   }
-  if (searchReceipt === undefined) return undefined
+  if (workflowId === undefined) return undefined
   const selected = new Set<string>()
-  const unwrapped = record(searchReceipt['result']) ? searchReceipt['result'] : searchReceipt
-  const data = record(unwrapped['data']) ? unwrapped['data'] : unwrapped
-  if (Array.isArray(data['results'])) {
-    for (const item of data['results']) {
-      if (!record(item)) continue
-      for (const slug of [...stringArray(item['primary_tool_slugs']), ...stringArray(item['related_tool_slugs'])]) selected.add(slug)
-    }
-  }
-  const restoredContracts = new Map(executionContracts(searchReceipt, selected).map(contract => [contract.tool_slug, contract]))
-  for (let index = searchIndex + 1; index < events.length; index += 1) {
+  const restoredContracts = new Map<string, ExecutionContract>()
+  let foundSearch = false
+  for (let index = 0; index < events.length; index += 1) {
     const result = bridgeResult(events[index])
     if (result === undefined) continue
     const args = calls.get(result.callId)
-    if (args?.['action'] === 'search') break
-    if (args?.['action'] !== 'schemas') continue
+    if (args?.['action'] === 'search') {
+      const candidateId = returnedWorkflowSessionId(result.value) ?? workflowSessionId(args)
+      if (candidateId !== workflowId) continue
+      foundSearch = true
+      const unwrapped = record(result.value['result']) ? result.value['result'] : result.value
+      const data = record(unwrapped['data']) ? unwrapped['data'] : unwrapped
+      if (Array.isArray(data['results'])) {
+        for (const item of data['results']) {
+          if (!record(item)) continue
+          for (const slug of [...stringArray(item['primary_tool_slugs']), ...stringArray(item['related_tool_slugs'])]) selected.add(slug)
+        }
+      }
+      for (const contract of executionContracts(result.value, selected)) restoredContracts.set(contract.tool_slug, contract)
+      continue
+    }
+    if (args?.['action'] !== 'schemas' || workflowSessionId(args) !== workflowId) continue
     for (const contract of executionContracts(result.value, selected)) restoredContracts.set(contract.tool_slug, contract)
   }
-  return { selected, contracts: restoredContracts }
+  return foundSearch ? { selected, contracts: restoredContracts } : undefined
 }
 
 function validateArguments(contract: ExecutionContract, args: Record<string, unknown>): void {
@@ -630,7 +667,7 @@ async function saveReceipt(ctx: Context, execution: ToolExecution, content: stri
 
 /** Register the compact progressive Composio router and its policy guards. */
 export function apply(ctx: Context, config: Config = {}): void {
-  const turns = new WeakMap<object, { turn: number; enabled: boolean; searches: number }>()
+  const turns = new WeakMap<object, { turn: number; enabled: boolean; searchFingerprints: Set<string>; workflowId?: string }>()
   const apiKey = config.apiKey?.trim()
   const composio = apiKey
     ? import('@composio/core').then(({ Composio }) => new Composio({ apiKey, allowTracking: false, disableVersionCheck: true }))
@@ -644,36 +681,54 @@ export function apply(ctx: Context, config: Config = {}): void {
     if (composio === undefined) throw new Error('Connected tools are not configured on this runtime')
     const client = await composio
     const canonicalKey = sessionKey(identity)
-    let key = canonicalKey
-    let connectedAccounts: Record<string, string[]> = {}
-    try {
-      const accounts = await client.connectedAccounts.list({ userIds: [canonicalKey], statuses: ['ACTIVE'] })
-      connectedAccounts = activeConnectedAccounts(accounts)
-      // Existing local HIVE connections were historically created under the
-      // organization id. Reuse that tenant-bounded subject only when the
-      // authenticated user has no active canonical account. New connections
-      // remain user-owned and automatically take precedence once present.
-      if (!hasActiveAccount(accounts)) {
-        const legacyKey = legacySessionKey(identity)
-        const legacyAccounts = await client.connectedAccounts.list({ userIds: [legacyKey], statuses: ['ACTIVE'] })
-        if (hasActiveAccount(legacyAccounts)) {
-          key = legacyKey
-          connectedAccounts = activeConnectedAccounts(legacyAccounts)
-        }
-      }
-    } catch (error: unknown) {
-      ctx.logger.warn(`hivemind-connected-apps: could not inspect legacy connection scope: ${String(error)}`)
-    }
     const conversationId = execution.agent?.session?.header.id
-    const cacheKey = `${key}:${conversationId === undefined ? 'detached' : String(conversationId)}`
+    const cacheKey = `${canonicalKey}:${conversationId === undefined ? 'detached' : String(conversationId)}`
     let pending = sessions.get(cacheKey)
     if (pending === undefined) {
-      const callbackUrl = connectionCallbackUrl(config.connectionCallbackBaseUrl, execution)
-      pending = client.sessions.create(key, {
-        mcp: true,
-        connectedAccounts,
-        ...(callbackUrl === undefined ? {} : { manageConnections: { enable: true, callbackUrl } }),
-      })
+      pending = (async () => {
+        const restored = restoredRouterSession(execution, canonicalKey)
+        if (restored !== undefined) {
+          try {
+            return await client.sessions.use(restored.routerSessionId, { mcp: true })
+          } catch (error: unknown) {
+            ctx.logger.warn(`hivemind-connected-apps: could not restore Composio session; creating a successor: ${String(error)}`)
+          }
+        }
+        let subject = restored?.subject ?? canonicalKey
+        let connectedAccounts: Record<string, string[]> = {}
+        try {
+          const accounts = await client.connectedAccounts.list({ userIds: [subject], statuses: ['ACTIVE'] })
+          connectedAccounts = activeConnectedAccounts(accounts)
+          // Existing HIVE connections were historically created under the
+          // organization id. Use that bounded subject only for a first session
+          // whose canonical user has no active account.
+          if (restored === undefined && !hasActiveAccount(accounts)) {
+            const legacyKey = legacySessionKey(identity)
+            const legacyAccounts = await client.connectedAccounts.list({ userIds: [legacyKey], statuses: ['ACTIVE'] })
+            if (hasActiveAccount(legacyAccounts)) {
+              subject = legacyKey
+              connectedAccounts = activeConnectedAccounts(legacyAccounts)
+            }
+          }
+        } catch (error: unknown) {
+          ctx.logger.warn(`hivemind-connected-apps: could not inspect connection scope: ${String(error)}`)
+        }
+        const callbackUrl = connectionCallbackUrl(config.connectionCallbackBaseUrl, execution)
+        const created = await client.sessions.create(subject, {
+          mcp: true,
+          connectedAccounts,
+          ...(callbackUrl === undefined ? {} : { manageConnections: { enable: true, callbackUrl } }),
+        })
+        if (execution.agent !== undefined) {
+          execution.agent.session.append('hivemind/composio-session', {
+            version: 1,
+            userKey: canonicalKey,
+            subject,
+            routerSessionId: created.sessionId,
+          })
+        }
+        return created
+      })()
       sessions.set(cacheKey, pending)
       pending.catch(() => sessions.delete(cacheKey))
     }
@@ -727,7 +782,7 @@ export function apply(ctx: Context, config: Config = {}): void {
 
   ctx.tools.register(defineTool({
     name: BRIDGE_TOOL,
-    description: 'Tenant-scoped connected-app gateway. For a new external-app task, call search once with atomic queries, explicit outcomes, exact result limits, and session.generate_id=true. Then follow the returned plan and selected slugs. External writes require HIVE approval.',
+    description: 'Tenant-scoped connected-app gateway. Start external-app work with atomic search queries, explicit outcomes, exact result limits, and session.generate_id=true. Continue the returned session when further provider-owned discovery is needed; never guess tools. External writes require HIVE approval.',
     parameters: {
       action: { type: 'string', required: true, enum: ['connection_status', 'search', 'schemas', 'manage_connection', 'wait_connection', 'execute'], description: 'Use connection_status only for a pure status check of explicitly named apps. Use search for real app work.' },
       apps: { type: 'array', items: { type: 'string' }, description: 'One to four explicit app names for connection_status. Resolved against authenticated toolkit metadata, never semantic tool search.' },
@@ -830,14 +885,22 @@ export function apply(ctx: Context, config: Config = {}): void {
       }
       if (args.action === 'search') {
         const turnState = execution.agent === undefined ? undefined : turns.get(execution.agent)
-        if (turnState !== undefined) {
-          if (turnState.searches > 0) throw new Error('Connected-app search already completed for this turn. Follow its result or wait for the user to continue.')
-          turnState.searches += 1
-        }
         const queries = searchQueries(args.queries)
         const workflowSession = searchSession(args.session)
         const searchStrategy = stringValue(args.search_strategy)
         if (searchStrategy !== undefined && searchStrategy !== 'auto' && searchStrategy !== 'tool_search') throw new TypeError('Unsupported Composio search strategy')
+        const requestedWorkflowId = workflowSessionId(args)
+        if (turnState?.workflowId !== undefined && requestedWorkflowId === undefined) {
+          throw new Error('Continue progressive connected-app discovery with the returned session id')
+        }
+        if (turnState?.workflowId !== undefined && requestedWorkflowId !== turnState.workflowId) {
+          throw new Error('Connected-app search session does not match the active workflow')
+        }
+        const fingerprint = JSON.stringify({ queries, workflowSession, searchStrategy: searchStrategy ?? 'auto' })
+        if (turnState?.searchFingerprints.has(fingerprint)) {
+          throw new Error('Connected-app search repeated without new evidence; refine the query or follow the current plan')
+        }
+        turnState?.searchFingerprints.add(fingerprint)
         const model = stringValue(args.model)
         const result = await session.execute('COMPOSIO_SEARCH_TOOLS', {
           queries,
@@ -854,15 +917,22 @@ export function apply(ctx: Context, config: Config = {}): void {
           }
         }
         const returnedWorkflowId = returnedWorkflowSessionId(result)
-        const requestedWorkflowId = workflowSessionId(args)
+        const activeWorkflowId = returnedWorkflowId ?? requestedWorkflowId
+        if (turnState !== undefined && turnState.workflowId === undefined && activeWorkflowId !== undefined) {
+          turnState.workflowId = activeWorkflowId
+        }
         const stateKeys = new Set([
           workflowStateKey(identity, execution),
           workflowStateKey(identity, execution, returnedWorkflowId ?? requestedWorkflowId),
         ])
         const discoveredContracts = new Map(executionContracts(result, discovered).map(contract => [contract.tool_slug, contract]))
         for (const stateKey of stateKeys) {
-          selectedTools.set(stateKey, new Set(discovered))
-          contracts.set(stateKey, new Map(discoveredContracts))
+          const selected = selectedTools.get(stateKey) ?? new Set<string>()
+          for (const slug of discovered) selected.add(slug)
+          selectedTools.set(stateKey, selected)
+          const available = contracts.get(stateKey) ?? new Map<string, ExecutionContract>()
+          for (const [slug, contract] of discoveredContracts) available.set(slug, contract)
+          contracts.set(stateKey, available)
         }
         const statuses = connectionStatuses(result)
         const missing = requiredMissingToolkits(result, statuses)
@@ -1028,7 +1098,7 @@ export function apply(ctx: Context, config: Config = {}): void {
       turns.set(agent, {
         turn,
         enabled: connectedAppsEnabled(ctx, config.enabledByDefault === true),
-        searches: 0,
+        searchFingerprints: new Set(),
       })
     }
     return next()

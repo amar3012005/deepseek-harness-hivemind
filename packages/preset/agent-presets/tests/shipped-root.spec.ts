@@ -185,6 +185,12 @@ describe('the shipped preset root', () => {
     expect(persona.config).toMatchObject({
       prefix: expect.stringContaining('profiles only for the HyperAgent directory'),
     })
+    expect(persona.config).toMatchObject({
+      prefix: expect.stringContaining('no more than two short sentences'),
+    })
+    expect(persona.config).toMatchObject({
+      prefix: expect.stringContaining('continue the same returned session with one materially refined search using tool_search'),
+    })
   })
 
   it('limits the Composio catalog entry to complex workflows', async () => {
@@ -192,6 +198,7 @@ describe('the shipped preset root', () => {
     expect(skill).toContain('Simple single-app reads and writes use hivemind_connected_task search directly without this skill')
     expect(skill).toContain('routine destination discovery is part of the same task')
     expect(skill).toContain('whose contracts are absent')
+    expect(skill).toMatch(/continue the same\s+session with one materially refined `tool_search`/)
   })
 
   it('keeps the complete Standard tool composition while adding scoped company-brain access to HyperAgents', async () => {

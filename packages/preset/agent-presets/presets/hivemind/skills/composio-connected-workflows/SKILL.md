@@ -30,6 +30,11 @@ evidence sources.
    statuses, and selected tool slugs. Never invent a slug or load a broad catalog.
 3. Use the exact `execution_contracts` returned by search. Call `schemas` only
    for selected tools needed by the next bounded step whose contracts are absent.
+   If the next selected contract needs a provider-owned prerequisite and the
+   current plan selected no tool that can discover it, continue the same
+   session with one materially refined `tool_search`. Keep every earlier
+   selected contract and receipt; never restart the workflow or guess a slug,
+   schema, destination, or argument field.
 4. Search automatically returns `status: "connection_required"` with a
    session-bound authorization banner when a selected app is disconnected. Stop
    planning immediately. The native connection receipt ends the turn and owns

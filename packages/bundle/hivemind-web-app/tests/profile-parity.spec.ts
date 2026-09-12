@@ -40,4 +40,5 @@ describe('hivemind-web native renderer parity', () => {
     expect(patch).toContain('sessionMaxAgeSeconds: 86400')
     expect(patch).not.toContain('sessionMaxAgeSeconds: 900')
   })
+
 })

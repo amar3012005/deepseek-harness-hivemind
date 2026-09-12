@@ -3,9 +3,10 @@ import { SpillLocator, type SpillRef } from '@deepseek-ai/dsh-spill'
 
 const execute = vi.fn()
 const toolkits = vi.fn(async () => ({ items: [] }))
-const create = vi.fn(async () => ({ execute, toolkits }))
+const create = vi.fn(async () => ({ execute, toolkits, sessionId: 'router-created' }))
+const use = vi.fn(async () => ({ execute, toolkits, sessionId: 'router-restored' }))
 const list = vi.fn(async (): Promise<{ items: Array<{ id?: string; status: string; toolkit?: { slug: string } }> }> => ({ items: [] }))
-vi.mock('@composio/core', () => ({ Composio: class { sessions = { create }; connectedAccounts = { list } } }))
+vi.mock('@composio/core', () => ({ Composio: class { sessions = { create, use }; connectedAccounts = { list } } }))
 
 const { apply, compactComposioSearchReceipt, compactComposioExecutionReceipt } = await import('../src/index.ts')
 
@@ -49,7 +50,7 @@ function harness(
 describe('progressive Composio bridge', () => {
   beforeEach(() => {
     execute.mockReset(); toolkits.mockReset(); toolkits.mockResolvedValue({ items: [] })
-    create.mockClear(); list.mockReset(); list.mockResolvedValue({ items: [] })
+    create.mockClear(); use.mockClear(); list.mockReset(); list.mockResolvedValue({ items: [] })
   })
 
   it('preserves planning and projects selected schemas into compact execution contracts', () => {
@@ -167,8 +168,8 @@ describe('progressive Composio bridge', () => {
       }] } })
       .mockResolvedValueOnce({ data: { channels: [] } })
     const app = harness(true, { orgId: 'org-a', userId: 'same-user' })
-    const slackAgent = { session: { header: { id: 'conversation-slack' } } }
-    const gmailAgent = { session: { header: { id: 'conversation-gmail' } } }
+    const slackAgent = { session: { header: { id: 'conversation-slack' }, snapshotEvents: () => [], append: vi.fn() } }
+    const gmailAgent = { session: { header: { id: 'conversation-gmail' }, snapshotEvents: () => [], append: vi.fn() } }
 
     await app.tool().execute({ action: 'search', queries: [{ app: 'Slack', use_case: 'Find a Slack channel.' }], session: { generate_id: true } }, { signal: AbortSignal.abort(), agent: slackAgent } as never)
     await app.tool().execute({ action: 'search', queries: [{ app: 'Gmail', use_case: 'Fetch recent Gmail messages.' }], session: { generate_id: true } }, { signal: AbortSignal.abort(), agent: gmailAgent } as never)
@@ -188,11 +189,29 @@ describe('progressive Composio bridge', () => {
       }] } })
       .mockResolvedValueOnce({ data: { messages: [] } })
     const app = harness()
-    const agent = { session: { header: { id: 'conversation-1' } } }
+    const agent = { session: { header: { id: 'conversation-1' }, snapshotEvents: () => [], append: vi.fn() } }
     await app.tool().execute({ action: 'search', queries: [{ app: 'Gmail', use_case: 'Fetch one Gmail message.' }], session: { generate_id: true } }, { signal: AbortSignal.abort(), agent } as never)
     await expect(app.tool().execute({
       action: 'execute', tool_slug: 'GMAIL_FETCH_EMAILS', arguments: { max_results: 1 }, session: { id: 'workflow-1' },
     }, { signal: AbortSignal.abort(), agent } as never)).resolves.toMatchObject({ status: 'ready' })
+  })
+
+  it('restores the durable Composio router session without relisting accounts', async () => {
+    execute.mockResolvedValueOnce({ data: { results: [] } })
+    const events = [{
+      type: 'hivemind/composio-session',
+      data: { version: 1, userKey: 'hivemind:user-a', subject: 'hivemind:user-a', routerSessionId: 'router-existing' },
+    }]
+    const agent = { session: { header: { id: 'conversation-1' }, snapshotEvents: () => events, append: vi.fn() } }
+    const app = harness()
+
+    await app.tool().execute({
+      action: 'search', queries: [{ use_case: 'Email service: list the newest message.' }], session: { generate_id: true },
+    }, { signal: AbortSignal.abort(), agent } as never)
+
+    expect(use).toHaveBeenCalledWith('router-existing', { mcp: true })
+    expect(create).not.toHaveBeenCalled()
+    expect(list).not.toHaveBeenCalled()
   })
 
   it('restores selected contracts from durable conversation events after a runner restart', async () => {
@@ -216,7 +235,7 @@ describe('progressive Composio bridge', () => {
         content: [{ type: 'tool-result', content: [{ type: 'text', text: JSON.stringify(projectedSearch) }] }],
       } } },
     ]
-    const agent = { session: { header: { id: 'conversation-restored' }, snapshotEvents: () => events } }
+    const agent = { session: { header: { id: 'conversation-restored' }, snapshotEvents: () => events, append: vi.fn() } }
     const restarted = harness()
 
     await expect(restarted.tool().execute({
@@ -293,7 +312,7 @@ describe('progressive Composio bridge', () => {
     const app = harness(true, { orgId: 'org-a', userId: 'user-a' }, false, {
       connectionCallbackBaseUrl: 'https://next.preview.singulancelabs.com/hivemind/app/overview',
     })
-    const agent = { session: { header: { id: 'session-123' } } }
+    const agent = { session: { header: { id: 'session-123' }, snapshotEvents: () => [], append: vi.fn() } }
     await app.tool().execute({ action: 'connection_status', apps: ['Instagram'] }, { signal: AbortSignal.abort(), agent } as never)
     expect(create).toHaveBeenCalledWith('hivemind:user-a', {
       mcp: true,
@@ -393,7 +412,7 @@ describe('progressive Composio bridge', () => {
       id: 'hivemind-connected-app-authorization:workflow-asana:asana',
       selected: ["I've connected Asana — continue"],
     }] })
-    const agent = { id: 'agent-1', session: { header: { id: 'conversation-1' } } }
+    const agent = { id: 'agent-1', session: { header: { id: 'conversation-1' }, snapshotEvents: () => [], append: vi.fn() } }
     const result = await app.tool().execute({
       action: 'search',
       queries: [{ app: 'Asana', use_case: 'List current Asana tasks.' }],
@@ -445,7 +464,7 @@ describe('progressive Composio bridge', () => {
       id: 'hivemind-connected-app-authorization:workflow-slack:slack',
       selected: ["I've connected Slack — continue"],
     }] })
-    const agent = { id: 'agent-1', session: { header: { id: 'conversation-1' } } }
+    const agent = { id: 'agent-1', session: { header: { id: 'conversation-1' }, snapshotEvents: () => [], append: vi.fn() } }
 
     await expect(app.tool().execute({
       action: 'search', queries: [{ app: 'Slack', use_case: 'Read Slack workspace information.' }], session: { generate_id: true },
@@ -633,10 +652,12 @@ describe('progressive Composio bridge', () => {
     })
   })
 
-  it('allows only one connected-app search per agent turn', async () => {
-    execute.mockResolvedValue({ data: { results: [] } })
+  it('permits refined discovery in the same workflow but rejects repeated searches', async () => {
+    execute
+      .mockResolvedValueOnce({ data: { session: { id: 'workflow-1' }, results: [] } })
+      .mockResolvedValueOnce({ data: { session: { id: 'workflow-1' }, results: [] } })
     const app = harness()
-    const agent = {}
+    const agent = { session: { header: { id: 'conversation-1' }, snapshotEvents: () => [], append: vi.fn() } }
     const next = vi.fn(async () => undefined)
     await app.listeners.get('agent/pre-step')?.({ agent, turn: 1 } as never, next as never)
     const execution = { signal: AbortSignal.abort(), agent }
@@ -646,7 +667,13 @@ describe('progressive Composio bridge', () => {
       session: { generate_id: true },
     }
     await expect(app.tool().execute(request, execution as never)).resolves.toMatchObject({ status: 'ready' })
-    await expect(app.tool().execute(request, execution as never)).rejects.toThrow('already completed for this turn')
-    expect(execute).toHaveBeenCalledTimes(1)
+    await expect(app.tool().execute({
+      action: 'search',
+      queries: [{ app: 'Gmail', use_case: 'Find the Gmail message identifier needed by the selected detail tool.' }],
+      session: { id: 'workflow-1' },
+      search_strategy: 'tool_search',
+    }, execution as never)).resolves.toMatchObject({ status: 'ready' })
+    await expect(app.tool().execute(request, execution as never)).rejects.toThrow('returned session id')
+    expect(execute).toHaveBeenCalledTimes(2)
   })
 })
