@@ -65,6 +65,24 @@ describe('HIVE progressive context', () => {
     expect(harness.snapshotFor).toHaveBeenCalledOnce()
   })
 
+  it('suppresses the skill catalog when authoritative identity context is sufficient', async () => {
+    const harness = mount()
+    const catalog = createUserMessage({
+      content: [{ type: 'text', text: 'skill catalog' }],
+      source: { kind: 'skill-catalog', form: 'catalog', entries: [{ name: 'unused', description: 'unused' }] },
+    })
+    const request = user('What do you know about me?')
+    const decision = await harness.preStep({ agent: harness.agent, turn: 1, signal: new AbortController().signal } as never, async () => ({
+      kind: 'enter' as const,
+      messages: [request, catalog],
+    })) as { messages: ReturnType<typeof user>[] }
+
+    expect(decision.messages).toHaveLength(2)
+    expect(decision.messages[0]?.source).toMatchObject({ kind: 'plugin', plugin: 'dsh-hivemind-runtime/identity-context' })
+    expect(decision.messages[1]).toBe(request)
+    expect(JSON.stringify(decision.messages)).not.toContain('skill-catalog')
+  })
+
   it.each([
     'Read my emails from a contact, then retrieve my profile bio from a connected service and save both in HIVE-MIND.',
     'Get my profile from a connected application.',
