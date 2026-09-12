@@ -773,12 +773,20 @@ export function apply(ctx: Context, config: Config = {}): void {
           await session.toolkits({ search: app, limit: 8 }), app,
         )))
         const disconnected = resolved.filter(item => !item.connected)
-        if (disconnected.length === 0) return {
-          status: 'ready',
-          connected_toolkits: resolved.map(item => item.slug),
-          toolkit_connection_statuses: resolved.map(item => ({
-            toolkit: item.slug, app_label: item.name, has_active_connection: true, status_message: 'ACTIVE',
-          })),
+        if (disconnected.length === 0) {
+          const selected = resolved[0]
+          if (selected === undefined) throw new Error('Connected toolkit selection unexpectedly became empty')
+          execution.concludeTurn()
+          return {
+            status: 'ready',
+            toolkit: selected.slug,
+            app_label: selected.name,
+            logo_url: selected.logo ?? `https://logos.composio.dev/api/${encodeURIComponent(selected.slug)}`,
+            connected_toolkits: resolved.map(item => item.slug),
+            toolkit_connection_statuses: resolved.map(item => ({
+              toolkit: item.slug, app_label: item.name, has_active_connection: true, status_message: 'ACTIVE',
+            })),
+          }
         }
         const selected = disconnected[0]
         if (selected === undefined) throw new Error('Disconnected toolkit selection unexpectedly became empty')
@@ -796,8 +804,12 @@ export function apply(ctx: Context, config: Config = {}): void {
           }, async () => exactToolkit(
             await session.toolkits({ toolkits: [selected.slug], limit: 1 }), selected.name,
           ).connected)
+          execution.concludeTurn()
           return {
             status: 'ready',
+            toolkit: selected.slug,
+            app_label: selected.name,
+            logo_url: logoUrl,
             connected_toolkits: [selected.slug],
             toolkit_connection_statuses: [{
               toolkit: selected.slug, app_label: selected.name, has_active_connection: true, status_message: 'ACTIVE',
@@ -896,6 +908,9 @@ export function apply(ctx: Context, config: Config = {}): void {
               ...(record(projected) ? projected : {}),
               status: 'ready',
               session_id: workflowSessionId,
+              toolkit,
+              app_label: label,
+              logo_url: logoUrl,
               connected_toolkits: [toolkit],
               toolkit_connection_statuses: activeStatuses,
               operations: [...operations, { tool: 'COMPOSIO_WAIT_FOR_CONNECTIONS', status: 'completed' }],

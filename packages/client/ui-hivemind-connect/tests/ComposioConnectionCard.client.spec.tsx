@@ -62,9 +62,15 @@ describe('ComposioConnectionCard', () => {
   })
 
   it('does not show an old authorization URL after active connection verification', () => {
-    const active = { ...block(), content: [{ type: 'text' as const, text: JSON.stringify({ status: 'ready', toolkit: 'slack', redirect_url: 'https://connect.example/old' }) }] }
+    const active = { ...block(), content: [{ type: 'text' as const, text: JSON.stringify({
+      status: 'ready', toolkit: 'slack', app_label: 'Slack', logo_url: 'https://logos.example/slack.svg',
+      connected_toolkits: ['slack'], redirect_url: 'https://connect.example/old',
+    }) }] }
     const view = render(<ComposioConnectionCard {...({ ...props(), block: active, inspect: vi.fn(), t } as unknown as CardProps)} />)
     expect(view.container.textContent).toContain('连接应用任务已完成')
+    expect(view.container.textContent).toContain('Slack 已连接')
+    expect(view.container.textContent).toContain('连接已验证。正在继续此请求。')
+    expect(view.container.querySelector('img')?.getAttribute('src')).toBe('https://logos.example/slack.svg')
     expect(view.container.querySelector('a')).toBeNull()
   })
 

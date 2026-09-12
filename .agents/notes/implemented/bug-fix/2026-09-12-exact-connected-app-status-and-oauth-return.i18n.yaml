@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-09-12-exact-connected-app-status-and-oauth-return.md
-2026-09-12-exact-connected-app-status-and-oauth-return.md: a5491891f1ea28ee1136006f7537f400e41ab3db
-2026-09-12-exact-connected-app-status-and-oauth-return.zh.md: b3dc61e87059aede1a0ae380f4f1ebd7dcfebdf3
+2026-09-12-exact-connected-app-status-and-oauth-return.md: 9e24d1ecf81fa14441fd429389a760bef8995f8f
+2026-09-12-exact-connected-app-status-and-oauth-return.zh.md: 8e402d8ce06461d3d181df9232bcbae54b266063

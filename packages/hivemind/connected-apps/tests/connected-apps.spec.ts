@@ -260,11 +260,13 @@ describe('progressive Composio bridge', () => {
     const app = harness()
     await expect(app.tool().execute({ action: 'connection_status', apps: ['Instagram'] }, { signal: AbortSignal.abort() }))
       .resolves.toMatchObject({
-        status: 'ready', connected_toolkits: ['instagram'],
+        status: 'ready', toolkit: 'instagram', app_label: 'Instagram',
+        logo_url: 'https://logos.example/instagram.svg', connected_toolkits: ['instagram'],
         toolkit_connection_statuses: [{ toolkit: 'instagram', app_label: 'Instagram', has_active_connection: true }],
       })
     expect(toolkits).toHaveBeenCalledWith({ search: 'Instagram', limit: 8 })
     expect(execute).not.toHaveBeenCalled()
+    expect(app.concludeTurn).toHaveBeenCalledOnce()
   })
 
   it('returns the exact named toolkit connection card instead of a semantic substitute', async () => {
@@ -418,6 +420,8 @@ describe('progressive Composio bridge', () => {
     expect(result).toMatchObject({
       status: 'ready',
       session_id: 'workflow-asana',
+      toolkit: 'asana',
+      app_label: 'Asana',
       connected_toolkits: ['asana'],
       toolkit_connection_statuses: [{ toolkit: 'asana', has_active_connection: true, status_message: 'ACTIVE' }],
       results: [{ primary_tool_slugs: ['ASANA_LIST_TASKS'], recommended_plan_steps: ['List the requested tasks.'] }],

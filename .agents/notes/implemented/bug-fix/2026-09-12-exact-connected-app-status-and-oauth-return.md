@@ -14,7 +14,7 @@ The HIVE connected-app bridge now has an app-neutral `connection_status` action.
 
 Composio sessions are isolated per HIVE conversation while retaining the stable authenticated user as connection owner. When configured, their authorization callback returns to that conversation's canonical session URL. The callback tab signals the original tab through `BroadcastChannel`; the original suspended native question then verifies the connection and continues the same tool call. A manual continue action remains as a fallback. This avoids local storage and preserves the native Harness question, receipt, and replay lifecycle.
 
-The native connection card uses smaller toolkit marks. The HIVE persona asks for no narrated reasoning on obvious direct answers or single-tool dispatches, and limits materially useful visible reasoning to four short sentences.
+The native connection card uses smaller toolkit marks and remains a durable inline conversation event. After verified authorization, the settled tool result renders a compact persistent connected receipt in the same session; real app workflows then continue from their preserved Composio plan. Pure status checks conclude from that receipt without another model step. The HIVE persona asks for no narrated reasoning on obvious direct answers or single-tool dispatches, and limits materially useful visible reasoning to four short sentences.
 
 ## Consequences
 

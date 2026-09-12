@@ -18,6 +18,7 @@ interface Receipt {
   readonly draft_id?: string
   readonly summary?: string
   readonly error?: string
+  readonly connected_toolkits?: readonly string[]
   readonly operations?: readonly OperationReceipt[]
 }
 
@@ -91,6 +92,8 @@ export function ComposioConnectionCard({
   const logo = safeHttpsUrl(receipt?.logo_url)
     || `https://logos.composio.dev/api/${encodeURIComponent(toolkit)}`
   const draft = receipt?.draft_id !== undefined || receipt?.status === 'draft_created'
+  const connected = receipt?.status === 'ready'
+    && receipt.connected_toolkits?.some(value => value.toLowerCase() === toolkit.toLowerCase()) === true
   const title = running ? t('composio.checking')
     : receipt?.status === 'connection_pending' ? t('composio.connectionPending')
       : receipt?.status === 'connection_required' || redirect ? t('composio.connectionRequired')
@@ -99,6 +102,7 @@ export function ComposioConnectionCard({
   return <section className={css.root} aria-live="polite"><button className={css.summary} type="button" onClick={inspect} disabled={inspect===undefined} aria-label={t('composio.inspect')}><span className={css.symbol} aria-hidden="true">✦</span><span>{title}</span>{receipt?.status?<span className={css.status}>{receipt.status.replaceAll('_',' ')}</span>:null}</button>
     {receipt?.operations?.map((operation, index) => operation.tool?<div className={css.operation} key={`${operation.tool}:${index}`}><span className={css.symbol} aria-hidden="true">✦</span><code>{operation.tool}</code>{operation.status?<span className={css.operationStatus}>→ {operation.status}</span>:null}</div>:null)}
     {pending === undefined && receipt?.status==='connection_required'?<><p className={css.prompt}>{receipt.prompt||t('composio.connectionPrompt',{ app })}</p>{redirect?<a className={css.connection} href={redirect} target="_blank" rel="noreferrer"><img src={logo} alt=""/><span><strong>{t('composio.connect',{ app })}</strong><small>{t('composio.connectionActionDetail')}</small></span></a>:null}</>:null}
+    {pending === undefined && connected?<div className={`${css.connection} ${css.connected}`}><img src={logo} alt=""/><span><strong>{t('composio.connected',{ app })}</strong><small>{t('composio.connectionVerified')}</small></span></div>:null}
     {redirect&&receipt?.status!=='connection_required'?<div className={css.connection}><div><strong>{t('composio.connect',{ app })}</strong><p>{t('composio.connectDetail')}</p></div><a href={redirect} target="_blank" rel="noreferrer">{t('composio.authorize')}</a></div>:null}
     {draft?<p className={css.detail}>{t('composio.draftDetail')}</p>:null}{!redirect&&!draft&&receipt?.summary?<p className={css.detail}>{receipt.summary}</p>:null}{receipt?.error?<p className={css.error}>{receipt.error}</p>:null}
     {pending === undefined ? null : <ConnectionAuthorizationPanel matched={pending} t={t} />}
