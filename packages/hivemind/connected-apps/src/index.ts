@@ -52,6 +52,10 @@ function stringArray(value: unknown): string[] {
   return Array.isArray(value) ? value.flatMap(item => typeof item === 'string' ? [item] : []) : []
 }
 
+function boundedStrings(value: unknown, limit: number, length: number): string[] {
+  return stringArray(value).slice(0, limit).map(item => item.length > length ? `${item.slice(0, length)}…` : item)
+}
+
 function firstString(value: unknown, keys: readonly string[], depth = 0): string | undefined {
   if (depth > 8) return undefined
   if (Array.isArray(value)) {
@@ -109,10 +113,14 @@ function searchQueries(value: unknown): SearchQuery[] {
   if (!Array.isArray(value)) throw new TypeError('Search requires queries with one atomic use_case per external-app action')
   const queries = value.map((item) => {
     if (!record(item)) throw new TypeError('Each search query must be an object')
+    const app = stringValue(item['app'])
     const useCase = stringValue(item['use_case'])
     if (useCase === undefined) throw new TypeError('Each search query requires a non-empty use_case')
     const knownFields = stringValue(item['known_fields'])
-    return knownFields === undefined ? { use_case: useCase } : { use_case: useCase, known_fields: knownFields }
+    const scopedUseCase = app === undefined || useCase.toLocaleLowerCase().includes(app.toLocaleLowerCase())
+      ? useCase
+      : `${app}: ${useCase}`
+    return knownFields === undefined ? { use_case: scopedUseCase } : { use_case: scopedUseCase, known_fields: knownFields }
   })
   if (queries.length === 0 || queries.length > 8) throw new TypeError('Search requires between 1 and 8 atomic queries')
   return queries
@@ -124,6 +132,17 @@ function searchSession(value: unknown): { generate_id: true } | { id: string } {
   if (id !== undefined) return { id }
   if (value['generate_id'] === true) return { generate_id: true }
   throw new TypeError('Search session must generate a new id or continue an existing id')
+}
+
+function returnedWorkflowSessionId(value: unknown): string | undefined {
+  if (!record(value)) return undefined
+  const unwrapped = record(value['result']) ? value['result'] : value
+  const data = record(unwrapped['data']) ? unwrapped['data'] : unwrapped
+  if (record(data['session'])) {
+    const sessionId = stringValue(data['session']['id']) ?? stringValue(data['session']['session_id'])
+    if (sessionId !== undefined) return sessionId
+  }
+  return stringValue(data['session_id']) ?? stringValue(unwrapped['session_id'])
 }
 
 function jsonScalar(value: unknown): JsonValue | undefined {
@@ -155,6 +174,22 @@ function sessionKey(identity: { userId: string; orgId: string }): string {
   return `hivemind:${identity.userId}`
 }
 
+function workflowSessionId(args: Record<string, unknown>): string | undefined {
+  const explicit = stringValue(args['session_id'])
+  if (explicit !== undefined) return explicit
+  return record(args['session']) ? stringValue(args['session']['id']) : undefined
+}
+
+function workflowStateKey(
+  identity: { userId: string; orgId: string },
+  execution: Pick<ToolExecution, 'agent'>,
+  workflowId?: string,
+): string {
+  const conversationId = execution.agent?.session?.header.id
+  const conversation = conversationId === undefined ? 'detached' : String(conversationId)
+  return `${sessionKey(identity)}:${conversation}:${workflowId ?? 'current'}`
+}
+
 function legacySessionKey(identity: { userId: string; orgId: string }): string {
   return identity.orgId
 }
@@ -165,51 +200,296 @@ function hasActiveAccount(value: unknown): boolean {
   return items.some(item => record(item) && /^(?:active|connected)$/i.test(stringValue(item['status']) ?? ''))
 }
 
+function activeConnectedAccounts(value: unknown): Record<string, string[]> {
+  if (!record(value)) return {}
+  const items = Array.isArray(value['items']) ? value['items'] : []
+  const connected: Record<string, string[]> = {}
+  for (const item of items) {
+    if (!record(item) || !/^(?:active|connected)$/i.test(stringValue(item['status']) ?? '')) continue
+    const id = stringValue(item['id'])
+    const toolkit = record(item['toolkit'])
+      ? stringValue(item['toolkit']['slug'])
+      : stringValue(item['toolkit']) ?? stringValue(item['toolkit_slug'])
+    if (id === undefined || toolkit === undefined) continue
+    ;(connected[toolkit] ??= []).push(id)
+  }
+  return connected
+}
+
 function toolkitFromToolSlug(slug: string): string | undefined {
   const separator = slug.indexOf('_')
   return separator > 0 ? slug.slice(0, separator).toLowerCase() : undefined
 }
 
-function preferredMissingToolkit(value: unknown, statuses: Array<{ toolkit: string; connected: boolean }>): string | undefined {
+function requiredMissingToolkits(value: unknown, statuses: Array<{ toolkit: string; connected: boolean }>): string[] {
   const missing = new Set(statuses.filter(item => !item.connected).map(item => item.toolkit.toLowerCase()))
-  if (missing.size === 0) return undefined
+  if (missing.size === 0) return []
+  const required = new Set<string>()
   if (record(value)) {
     const unwrapped = record(value['data']) ? value['data'] : value
     const results = Array.isArray(unwrapped['results']) ? unwrapped['results'] : []
     for (const result of results) {
       if (!record(result)) continue
-      for (const toolkit of stringArray(result['toolkits']).map(item => item.toLowerCase())) {
-        if (missing.has(toolkit)) return toolkit
-      }
-      for (const slug of [...stringArray(result['primary_tool_slugs']), ...stringArray(result['related_tool_slugs'])]) {
+      // Related slugs are discovery candidates, not declared dependencies.
+      // Requiring their connections here can block a valid primary workflow
+      // on an unrelated optional integration suggested by Composio.
+      for (const slug of stringArray(result['primary_tool_slugs'])) {
         const toolkit = toolkitFromToolSlug(slug)
-        if (toolkit !== undefined && missing.has(toolkit)) return toolkit
+        if (toolkit !== undefined) required.add(toolkit)
+      }
+    }
+    // A search result may advertise toolkits for optional fallbacks whose
+    // tools were not selected. Connection gating follows selected tool slugs,
+    // the executable contract, instead of every advertised integration.
+    if (required.size === 0) {
+      for (const result of results) {
+        if (!record(result)) continue
+        for (const toolkit of stringArray(result['toolkits']).map(item => item.toLowerCase())) required.add(toolkit)
       }
     }
   }
-  return missing.values().next().value
+  return [...required].filter(toolkit => missing.has(toolkit))
 }
 
 function copyPlanningFields(source: Record<string, unknown>, target: Record<string, JsonValue>): void {
-  const steps = stringArray(source['recommended_plan_steps'])
-  const pitfalls = stringArray(source['known_pitfalls'])
+  // The original discovery receipt is stored before this projection. The
+  // active model needs the bounded next plan, not every optional/fallback
+  // paragraph Composio generated for future branches.
+  const steps = boundedStrings(source['recommended_plan_steps'], 3, 280)
+  const pitfalls = boundedStrings(source['known_pitfalls'], 2, 240)
   const difficulty = jsonScalar(source['difficulty'])
   if (steps.length > 0) target['recommended_plan_steps'] = steps
   if (pitfalls.length > 0) target['known_pitfalls'] = pitfalls
   if (difficulty !== undefined) target['difficulty'] = difficulty
 }
 
+type ExecutionContract = {
+  readonly tool_slug: string
+  readonly required_fields: readonly string[]
+  readonly properties: Record<string, JsonValue>
+}
+
+type RestoredWorkflowState = {
+  selected: Set<string>
+  contracts: Map<string, ExecutionContract>
+}
+
+function bridgeCall(event: unknown): { callId: string; args: Record<string, unknown> } | undefined {
+  if (!record(event) || event['type'] !== 'tool/call' || !record(event['data'])
+    || event['data']['name'] !== BRIDGE_TOOL) return undefined
+  const callId = stringValue(event['data']['callId'])
+  const raw = stringValue(event['data']['arguments'])
+  if (callId === undefined || raw === undefined) return undefined
+  try {
+    const parsed: unknown = JSON.parse(raw)
+    return record(parsed) ? { callId, args: parsed } : undefined
+  } catch {
+    return undefined
+  }
+}
+
+function bridgeResult(event: unknown): { callId: string; value: Record<string, unknown> } | undefined {
+  if (!record(event) || event['type'] !== 'tool/result' || !record(event['data']) || !record(event['data']['message'])) return undefined
+  const message = event['data']['message']
+  const source = record(message['source']) ? message['source'] : undefined
+  const callId = stringValue(source?.['callId'])
+  if (callId === undefined || !Array.isArray(message['content'])) return undefined
+  for (const outer of message['content']) {
+    if (!record(outer) || outer['type'] !== 'tool-result' || !Array.isArray(outer['content'])) continue
+    for (const inner of outer['content']) {
+      if (!record(inner) || inner['type'] !== 'text') continue
+      const text = stringValue(inner['text'])
+      if (text === undefined) continue
+      try {
+        const parsed: unknown = JSON.parse(text)
+        if (record(parsed)) return { callId, value: parsed }
+      } catch {
+        continue
+      }
+    }
+  }
+  return undefined
+}
+
+function compactProperty(value: unknown): JsonValue | undefined {
+  if (!record(value)) return undefined
+  const compact: Record<string, JsonValue> = {}
+  for (const key of ['type', 'format', 'description'] as const) {
+    const entry = stringValue(value[key])
+    if (entry !== undefined) compact[key] = key === 'description' && entry.length > 240
+      ? `${entry.slice(0, 240)}…`
+      : entry
+  }
+  if (Array.isArray(value['enum'])) compact['enum'] = value['enum'].filter(jsonScalar) as JsonValue[]
+  if (record(value['items'])) {
+    const items = compactProperty(value['items'])
+    if (items !== undefined) compact['items'] = items
+  }
+  return Object.keys(compact).length === 0 ? undefined : compact
+}
+
+function schemaRecord(value: unknown): Record<string, unknown> | undefined {
+  if (!record(value)) return undefined
+  for (const key of ['input_schema', 'inputSchema', 'parameters', 'schema'] as const) {
+    if (record(value[key])) return value[key]
+  }
+  return record(value['properties']) ? value : undefined
+}
+
+function executionContracts(value: unknown, selected?: ReadonlySet<string>): ExecutionContract[] {
+  if (!record(value)) return []
+  const unwrapped = record(value['result']) ? value['result'] : value
+  const data = record(unwrapped['data']) ? unwrapped['data'] : unwrapped
+  const containers: unknown[] = [data['tool_schemas']]
+  if (Array.isArray(data['results'])) {
+    for (const result of data['results']) if (record(result)) containers.push(result['tool_schemas'])
+  }
+  const contracts = new Map<string, ExecutionContract>()
+  const add = (slug: string, raw: unknown): void => {
+    if (selected !== undefined && !selected.has(slug)) return
+    const schema = schemaRecord(raw)
+    if (schema === undefined || !record(schema['properties'])) return
+    const properties: Record<string, JsonValue> = {}
+    for (const [name, property] of Object.entries(schema['properties'])) {
+      const compact = compactProperty(property)
+      if (compact !== undefined) properties[name] = compact
+    }
+    contracts.set(slug, {
+      tool_slug: slug,
+      required_fields: stringArray(schema['required']),
+      properties,
+    })
+  }
+  // A post-execute projection may receive an already projected search receipt.
+  if (Array.isArray(data['execution_contracts'])) {
+    for (const item of data['execution_contracts']) {
+      if (!record(item)) continue
+      const slug = stringValue(item['tool_slug'])
+      if (slug !== undefined) add(slug, { properties: item['properties'], required: item['required_fields'] })
+    }
+  }
+  for (const container of containers) {
+    if (Array.isArray(container)) {
+      for (const item of container) {
+        if (!record(item)) continue
+        const slug = stringValue(item['tool_slug']) ?? stringValue(item['name']) ?? stringValue(item['slug'])
+        if (slug !== undefined) add(slug, item)
+      }
+    } else if (record(container)) {
+      for (const [slug, raw] of Object.entries(container)) add(slug, raw)
+    }
+  }
+  return [...contracts.values()]
+}
+
+function restoreWorkflowState(execution: Pick<ToolExecution, 'agent'>, requestedId?: string): RestoredWorkflowState | undefined {
+  const events = execution.agent?.session?.snapshotEvents()
+  if (events === undefined) return undefined
+  const calls = new Map<string, Record<string, unknown>>()
+  for (const event of events) {
+    const call = bridgeCall(event)
+    if (call !== undefined) calls.set(call.callId, call.args)
+  }
+  let searchIndex = -1
+  let searchReceipt: Record<string, unknown> | undefined
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const result = bridgeResult(events[index])
+    if (result === undefined) continue
+    const args = calls.get(result.callId)
+    if (args?.['action'] !== 'search') continue
+    const candidateId = returnedWorkflowSessionId(result.value) ?? workflowSessionId(args)
+    if (requestedId !== undefined && candidateId !== requestedId) continue
+    searchIndex = index
+    searchReceipt = result.value
+    break
+  }
+  if (searchReceipt === undefined) return undefined
+  const selected = new Set<string>()
+  const unwrapped = record(searchReceipt['result']) ? searchReceipt['result'] : searchReceipt
+  const data = record(unwrapped['data']) ? unwrapped['data'] : unwrapped
+  if (Array.isArray(data['results'])) {
+    for (const item of data['results']) {
+      if (!record(item)) continue
+      for (const slug of [...stringArray(item['primary_tool_slugs']), ...stringArray(item['related_tool_slugs'])]) selected.add(slug)
+    }
+  }
+  const restoredContracts = new Map(executionContracts(searchReceipt, selected).map(contract => [contract.tool_slug, contract]))
+  for (let index = searchIndex + 1; index < events.length; index += 1) {
+    const result = bridgeResult(events[index])
+    if (result === undefined) continue
+    const args = calls.get(result.callId)
+    if (args?.['action'] === 'search') break
+    if (args?.['action'] !== 'schemas') continue
+    for (const contract of executionContracts(result.value, selected)) restoredContracts.set(contract.tool_slug, contract)
+  }
+  return { selected, contracts: restoredContracts }
+}
+
+function validateArguments(contract: ExecutionContract, args: Record<string, unknown>): void {
+  for (const field of contract.required_fields) {
+    if (!(field in args)) throw new TypeError(`Connected-app arguments missing required field: ${field}`)
+  }
+  for (const [field, value] of Object.entries(args)) {
+    const property = contract.properties[field]
+    if (!record(property)) throw new TypeError(`Connected-app argument is not in the authoritative schema: ${field}`)
+    const type = stringValue(property['type'])
+    const valid = type === undefined
+      || (type === 'string' && typeof value === 'string')
+      || (type === 'boolean' && typeof value === 'boolean')
+      || (type === 'number' && typeof value === 'number')
+      || (type === 'integer' && Number.isInteger(value))
+      || (type === 'array' && Array.isArray(value))
+      || (type === 'object' && record(value))
+      || (type === 'null' && value === null)
+    if (!valid) throw new TypeError(`Connected-app argument has invalid type for field: ${field}`)
+  }
+}
+
+const PROVIDER_NOISE = new Set([
+  'headers', 'raw', 'mimeType', 'mime_type', 'content_bytes', 'tool_schemas',
+  'avatar_hash', 'image_original', 'image_24', 'image_32', 'image_48', 'image_72',
+  'image_192', 'image_512', 'image_1024', 'status_emoji_display_info', 'cache_ts',
+])
+
+function compactProviderValue(value: unknown): JsonValue {
+  if (typeof value === 'string') return value.length > 800 ? `${value.slice(0, 800)}…` : value
+  if (typeof value === 'number' || typeof value === 'boolean' || value === null) return value
+  if (Array.isArray(value)) return value.slice(0, 20).map(item => compactProviderValue(item))
+  if (!record(value)) return String(value)
+  const compact: Record<string, JsonValue> = {}
+  let count = 0
+  for (const [key, item] of Object.entries(value)) {
+    if (PROVIDER_NOISE.has(key) || item === '' || item === undefined
+      || (Array.isArray(item) && item.length === 0)
+      || (record(item) && Object.keys(item).length === 0)) continue
+    if (count++ >= 40) break
+    compact[key] = compactProviderValue(item)
+  }
+  return compact
+}
+
+/** Bound a provider execution so MIME payloads and transport noise stay out of the transcript. */
+export function compactComposioExecutionReceipt(value: unknown, receipt?: SpillRef): JsonValue {
+  return {
+    ...(record(value) ? compactProviderValue(value) as Record<string, JsonValue> : { result: compactProviderValue(value) }),
+    ...(receipt === undefined ? {} : {
+      source_receipt: { locator: receipt.locator, bytes: receipt.bytes, retrieval_hint: receipt.retrievalHint },
+    }),
+    projection_policy: 'Provider MIME payloads and transport headers omitted; long text and collections bounded.',
+  }
+}
+
 /** Create a bounded model-visible projection while retaining the full receipt privately. */
-export function compactComposioSearchReceipt(value: unknown, receipt: SpillRef): JsonValue | undefined {
+export function compactComposioSearchReceipt(value: unknown, receipt?: SpillRef): Record<string, JsonValue> | undefined {
   if (!record(value)) return undefined
   const unwrapped = record(value['result']) ? value['result'] : value
   const data = record(unwrapped['data']) ? unwrapped['data'] : unwrapped
   const results = Array.isArray(data['results']) ? data['results'].flatMap((item) => {
     if (!record(item)) return []
     const result: Record<string, JsonValue> = {
-      primary_tool_slugs: stringArray(item['primary_tool_slugs']),
-      related_tool_slugs: stringArray(item['related_tool_slugs']),
-      toolkits: stringArray(item['toolkits']),
+      primary_tool_slugs: boundedStrings(item['primary_tool_slugs'], 4, 120),
+      related_tool_slugs: boundedStrings(item['related_tool_slugs'], 4, 120),
+      toolkits: boundedStrings(item['toolkits'], 4, 80),
     }
     const useCase = stringValue(item['use_case'])
     if (useCase !== undefined) result['use_case'] = useCase
@@ -239,10 +519,22 @@ export function compactComposioSearchReceipt(value: unknown, receipt: SpillRef):
     results,
     toolkit_connection_statuses: statuses,
     ...(session === undefined ? {} : { session }),
-    next_steps_guidance: stringArray(data['next_steps_guidance']),
-    source_receipt: { locator: receipt.locator, bytes: receipt.bytes, retrieval_hint: receipt.retrievalHint },
-    schema_policy: 'Load schemas only for selected tool slugs. Execute only slugs returned by this search.',
+    next_steps_guidance: boundedStrings(data['next_steps_guidance'], 2, 240),
+    ...(receipt === undefined ? {} : {
+      source_receipt: { locator: receipt.locator, bytes: receipt.bytes, retrieval_hint: receipt.retrievalHint },
+    }),
+    schema_policy: 'Use the exact execution_contracts below. If a selected slug has no contract, load its schema before execution. Never infer argument names.',
   }
+  // Composio ranks primary slugs. Expose the exact contract for the first
+  // bounded action of each atomic query; the remaining selected slugs stay
+  // available for an explicit schemas call if the model justifiably chooses
+  // another branch.
+  const primary = new Set(results.flatMap((item) => {
+    const slug = Array.isArray(item['primary_tool_slugs']) ? item['primary_tool_slugs'][0] : undefined
+    return typeof slug === 'string' ? [slug] : []
+  }))
+  const contracts = executionContracts(value, primary)
+  if (contracts.length > 0) compact['execution_contracts'] = contracts as unknown as JsonValue
   const operations = operationReceipts(value['operations'])
   if (operations.length > 0) compact['operations'] = operations
   const outerStatus = stringValue(value['status'])
@@ -285,14 +577,17 @@ export function apply(ctx: Context, config: Config = {}): void {
   type ComposioSession = Awaited<ReturnType<Composio['sessions']['create']>>
   const sessions = new Map<string, Promise<ComposioSession>>()
   const selectedTools = new Map<string, Set<string>>()
+  const contracts = new Map<string, Map<string, ExecutionContract>>()
 
   async function getSession(identity: { userId: string; orgId: string }): Promise<ComposioSession> {
     if (composio === undefined) throw new Error('Connected tools are not configured on this runtime')
     const client = await composio
     const canonicalKey = sessionKey(identity)
     let key = canonicalKey
+    let connectedAccounts: Record<string, string[]> = {}
     try {
       const accounts = await client.connectedAccounts.list({ userIds: [canonicalKey], statuses: ['ACTIVE'] })
+      connectedAccounts = activeConnectedAccounts(accounts)
       // Existing local HIVE connections were historically created under the
       // organization id. Reuse that tenant-bounded subject only when the
       // authenticated user has no active canonical account. New connections
@@ -300,14 +595,17 @@ export function apply(ctx: Context, config: Config = {}): void {
       if (!hasActiveAccount(accounts)) {
         const legacyKey = legacySessionKey(identity)
         const legacyAccounts = await client.connectedAccounts.list({ userIds: [legacyKey], statuses: ['ACTIVE'] })
-        if (hasActiveAccount(legacyAccounts)) key = legacyKey
+        if (hasActiveAccount(legacyAccounts)) {
+          key = legacyKey
+          connectedAccounts = activeConnectedAccounts(legacyAccounts)
+        }
       }
     } catch (error: unknown) {
       ctx.logger.warn(`hivemind-connected-apps: could not inspect legacy connection scope: ${String(error)}`)
     }
     let pending = sessions.get(key)
     if (pending === undefined) {
-      pending = client.sessions.create(key, { mcp: true })
+      pending = client.sessions.create(key, { mcp: true, connectedAccounts })
       sessions.set(key, pending)
       pending.catch(() => sessions.delete(key))
     }
@@ -316,7 +614,7 @@ export function apply(ctx: Context, config: Config = {}): void {
 
   ctx.tools.register(defineTool({
     name: BRIDGE_TOOL,
-    description: 'Tenant-scoped connected-app gateway. For a new external-app task, call search once with atomic queries, explicit outcomes and constraints, and session.generate_id=true. Then follow the returned plan and selected slugs. External writes require HIVE approval.',
+    description: 'Tenant-scoped connected-app gateway. For a new external-app task, call search once with atomic queries, explicit outcomes, exact result limits, and session.generate_id=true. Then follow the returned plan and selected slugs. External writes require HIVE approval.',
     parameters: {
       action: { type: 'string', required: true, enum: ['search', 'schemas', 'manage_connection', 'wait_connection', 'execute'], description: 'Progressive Composio operation.' },
       queries: {
@@ -324,6 +622,7 @@ export function apply(ctx: Context, config: Config = {}): void {
         items: {
           type: 'object',
           properties: {
+            app: { type: 'string', description: 'External app only when explicitly named or already established. Omit it when the user named only a service category so authenticated discovery can select an active provider.' },
             use_case: { type: 'string', required: true, description: 'Normalized complete use case for one atomic app action. Name the app; include operation, filters, ordering, limit, and required output fields. Do not include personal identifiers.' },
             known_fields: { type: 'string', description: 'Optional comma-separated key:value identifiers or settings. Keep to 1-2 short items.' },
           },
@@ -338,21 +637,20 @@ export function apply(ctx: Context, config: Config = {}): void {
           generate_id: { type: 'boolean', description: 'True for the first search of a new workflow or after a user pivots.' },
         },
         additionalProperties: false,
-        description: 'Required for search. Generate a new id or continue the current workflow id.',
+        description: 'Required for search. Generate a new id or continue the current workflow id. Later actions may reuse the returned id here or in session_id.',
       },
       model: { type: 'string', description: 'Current client LLM model name, when known.' },
       search_strategy: { type: 'string', enum: ['auto', 'tool_search'], description: 'Use auto normally; retry with tool_search only when the returned plan or tools do not match.' },
       tool_slug: { type: 'string', description: 'Exact selected tool slug.' },
       tool_slugs: { type: 'array', items: { type: 'string' }, description: 'Selected tool slugs for schema loading.' },
       toolkits: { type: 'array', items: { type: 'string' }, description: 'Exact toolkits returned by search.' },
-      session_id: { type: 'string', description: 'Search session id used by connection meta tools.' },
+      session_id: { type: 'string', description: 'Search session id reused by later schema, connection, and execution operations.' },
       arguments: { type: 'object', additionalProperties: true, description: 'Selected tool arguments.' },
     },
     output: { schema: { type: 'object', additionalProperties: true, properties: {} }, render: (_args, value: JsonValue) => [{ type: 'text', text: JSON.stringify(value) }] },
     async execute(args, execution) {
       if (!connectedAppsEnabled(ctx, config.enabledByDefault === true)) throw new Error('Connected tools are disabled for this turn. Enable Tools and retry.')
       const identity = await ctx.hivemindIdentity.resolve(execution.signal)
-      const key = sessionKey(identity)
       const session = await getSession(identity)
       if (args.action === 'search') {
         const turnState = execution.agent === undefined ? undefined : turns.get(execution.agent)
@@ -379,75 +677,137 @@ export function apply(ctx: Context, config: Config = {}): void {
             for (const slug of [...stringArray(item['primary_tool_slugs']), ...stringArray(item['related_tool_slugs'])]) discovered.add(slug)
           }
         }
-        selectedTools.set(key, discovered)
+        const returnedWorkflowId = returnedWorkflowSessionId(result)
+        const requestedWorkflowId = workflowSessionId(args)
+        const stateKeys = new Set([
+          workflowStateKey(identity, execution),
+          workflowStateKey(identity, execution, returnedWorkflowId ?? requestedWorkflowId),
+        ])
+        const discoveredContracts = new Map(executionContracts(result, discovered).map(contract => [contract.tool_slug, contract]))
+        for (const stateKey of stateKeys) {
+          selectedTools.set(stateKey, new Set(discovered))
+          contracts.set(stateKey, new Map(discoveredContracts))
+        }
         const statuses = connectionStatuses(result)
-        const missing = [...new Set(statuses.filter(item => !item.connected).map(item => item.toolkit.toLowerCase()))]
+        const missing = requiredMissingToolkits(result, statuses)
         if (missing.length > 0) {
-          const workflowSessionId = firstString(result, ['id', 'session_id'])
+          const workflowSessionId = returnedWorkflowId
           const managed = await session.execute('COMPOSIO_MANAGE_CONNECTIONS', {
             toolkits: missing,
             ...(workflowSessionId === undefined ? {} : { session_id: workflowSessionId }),
           })
           const redirectUrl = firstString(managed, ['redirect_url', 'redirectUrl', 'connection_url', 'url'])
-          const toolkit = preferredMissingToolkit(result, statuses)
+          const toolkit = missing[0]
           if (toolkit === undefined) throw new Error('Connection search returned no missing toolkit')
           const label = titleCaseToolkit(toolkit)
+          const operations = [
+            { tool: 'COMPOSIO_SEARCH_TOOLS', status: 'completed' },
+            { tool: 'COMPOSIO_MANAGE_CONNECTIONS', status: redirectUrl === undefined ? 'failed' : 'completed' },
+          ]
+          const projected = compactComposioSearchReceipt({ status: 'connection_required', operations, result })
+          execution.concludeTurn()
           return {
+            ...(record(projected) ? projected : {}),
             status: 'connection_required',
-            operations: [
-              { tool: 'COMPOSIO_SEARCH_TOOLS', status: 'completed' },
-              { tool: 'COMPOSIO_MANAGE_CONNECTIONS', status: redirectUrl === undefined ? 'failed' : 'completed' },
-            ],
+            operations,
             toolkit,
             app_label: label,
             logo_url: `https://logos.composio.dev/api/${encodeURIComponent(toolkit)}`,
             prompt: `Connect ${label} to continue, then return here.`,
             ...(redirectUrl === undefined ? {} : { redirect_url: redirectUrl }),
             ...(workflowSessionId === undefined ? {} : { session_id: workflowSessionId }),
-            result: result as unknown as JsonValue,
           }
         }
-        return {
-          status: 'ready',
-          operations: [{ tool: 'COMPOSIO_SEARCH_TOOLS', status: 'completed' }],
-          result: result as unknown as JsonValue,
+        const operations = [{ tool: 'COMPOSIO_SEARCH_TOOLS', status: 'completed' }]
+        const projected = compactComposioSearchReceipt({ status: 'ready', operations, result })
+        return record(projected) ? projected : { status: 'ready', operations }
+      }
+      const key = workflowStateKey(identity, execution, workflowSessionId(args))
+      const fallbackKey = workflowStateKey(identity, execution)
+      let selectedForWorkflow = selectedTools.get(key) ?? selectedTools.get(fallbackKey)
+      let contractsForWorkflow = contracts.get(key) ?? contracts.get(fallbackKey)
+      if (selectedForWorkflow === undefined || contractsForWorkflow === undefined) {
+        const restored = restoreWorkflowState(execution, workflowSessionId(args))
+        if (restored !== undefined) {
+          selectedForWorkflow = restored.selected
+          contractsForWorkflow = restored.contracts
+          selectedTools.set(key, restored.selected)
+          contracts.set(key, restored.contracts)
+          selectedTools.set(fallbackKey, restored.selected)
+          contracts.set(fallbackKey, restored.contracts)
         }
       }
       const metaArguments: Record<string, unknown> = {}
-      if (stringValue(args.session_id) !== undefined) metaArguments['session_id'] = args.session_id
+      const continuationId = workflowSessionId(args)
+      if (continuationId !== undefined) metaArguments['session_id'] = continuationId
       if (args.action === 'schemas') {
-        const slugs = stringArray(args.tool_slugs)
-        if (slugs.length === 0 || slugs.some(slug => !selectedTools.get(key)?.has(slug))) {
+        const listed = stringArray(args.tool_slugs)
+        const singular = stringValue(args.tool_slug)
+        const slugs = listed.length > 0 ? listed : singular === undefined ? [] : [singular]
+        if (slugs.length === 0) throw new TypeError('Schema request requires tool_slugs or one tool_slug')
+        if (slugs.some(slug => !selectedForWorkflow?.has(slug))) {
           throw new Error('Schema request contains a tool not selected by the current search')
         }
+        const result = await session.execute('COMPOSIO_GET_TOOL_SCHEMAS', { ...metaArguments, tool_slugs: slugs })
+        const loaded = executionContracts(result, new Set(slugs))
+        const workflowContracts = contractsForWorkflow ?? new Map<string, ExecutionContract>()
+        for (const contract of loaded) workflowContracts.set(contract.tool_slug, contract)
+        contracts.set(key, workflowContracts)
+        contracts.set(fallbackKey, workflowContracts)
         return {
           status: 'ready',
           operations: [{ tool: 'COMPOSIO_GET_TOOL_SCHEMAS', status: 'completed' }],
-          result: await session.execute('COMPOSIO_GET_TOOL_SCHEMAS', { ...metaArguments, tool_slugs: slugs }) as unknown as JsonValue,
+          execution_contracts: loaded as unknown as JsonValue,
         }
       }
       if (args.action === 'manage_connection' || args.action === 'wait_connection') {
         const toolkits = stringArray(args.toolkits)
         if (toolkits.length === 0) throw new TypeError('Connection operation requires at least one toolkit')
+        if (args.action === 'wait_connection' && continuationId === undefined) {
+          throw new TypeError('Connection continuation requires the original search session_id')
+        }
         const metaTool = args.action === 'manage_connection' ? 'COMPOSIO_MANAGE_CONNECTIONS' : 'COMPOSIO_WAIT_FOR_CONNECTIONS'
+        const managed = await session.execute(metaTool, { ...metaArguments, toolkits })
+        const statuses = connectionStatuses(managed)
+        // A successful meta-tool invocation is not proof of OAuth completion.
+        // Require affirmative evidence for every requested toolkit; unknown or
+        // contradictory provider status must leave the workflow paused.
+        const pending = toolkits.filter((toolkit) => {
+          const matching = statuses.filter(item => item.toolkit.toLowerCase() === toolkit.toLowerCase())
+          return matching.length === 0 || matching.some(item => !item.connected)
+        })
+        const redirectUrl = firstString(managed, ['redirect_url', 'redirectUrl', 'connection_url', 'url'])
+        if (pending.length > 0) execution.concludeTurn()
         return {
-          status: 'ready',
+          ...compactComposioExecutionReceipt(managed) as Record<string, JsonValue>,
+          status: pending.length === 0 ? 'ready' : redirectUrl === undefined ? 'connection_pending' : 'connection_required',
+          ...metaArguments as Record<string, JsonValue>,
+          pending_toolkits: pending,
+          ...(pending[0] === undefined ? {} : { toolkit: pending[0], app_label: titleCaseToolkit(pending[0]) }),
+          ...(redirectUrl === undefined ? {} : { redirect_url: redirectUrl }),
           operations: [{ tool: metaTool, status: 'completed' }],
-          result: await session.execute(metaTool, { ...metaArguments, toolkits }) as unknown as JsonValue,
         }
       }
       if (args.action !== 'execute') throw new TypeError('Unsupported connected-app action')
       const slug = stringValue(args.tool_slug)
-      if (slug === undefined || !record(args.arguments)) throw new TypeError('Execute requires tool_slug and arguments')
+      if (slug === undefined) throw new TypeError('Execute requires tool_slug')
       if (META_TOOLS.has(slug)) throw new Error('Use the dedicated progressive action for Composio meta tools')
-      if (!selectedTools.get(key)?.has(slug)) throw new Error('Tool was not selected by the current tenant-scoped search')
+      if (!selectedForWorkflow?.has(slug)) throw new Error('Tool was not selected by the current conversation-scoped search')
+      const contract = contractsForWorkflow?.get(slug)
+      if (contract === undefined) throw new Error('Authoritative schema unavailable for selected tool; call schemas before execute')
+      const executionArguments = args.arguments === undefined && contract.required_fields.length === 0
+        ? {}
+        : args.arguments
+      if (!record(executionArguments)) throw new TypeError('Execute requires arguments matching the authoritative schema')
+      validateArguments(contract, executionArguments)
       if (MUTATING_TOOL.test(slug)) {
-        return { status: 'approval_required', mode: 'prepare', tool_slug: slug, arguments: args.arguments as JsonValue }
+        return { status: 'approval_required', mode: 'prepare', tool_slug: slug, arguments: executionArguments as JsonValue }
       }
+      const providerResult = await session.execute(slug, executionArguments)
       return {
+        ...compactComposioExecutionReceipt(providerResult) as Record<string, JsonValue>,
         status: 'ready',
         operations: [{ tool: slug, status: 'completed' }],
-        result: await session.execute(slug, args.arguments) as unknown as JsonValue,
       }
     },
   }))
@@ -474,15 +834,20 @@ export function apply(ctx: Context, config: Config = {}): void {
     const isBridgeSearch = execution.name === BRIDGE_TOOL
       && record(execution.arguments)
       && execution.arguments['action'] === 'search'
+    const isBridgeExecution = execution.name === BRIDGE_TOOL
+      && record(execution.arguments)
+      && execution.arguments['action'] === 'execute'
     const isSearch = execution.name === SEARCH_TOOL || isBridgeSearch
-    if (!isSearch || result.isError || decision.kind !== 'accept' || Object.hasOwn(decision, 'value')) return decision
+    if ((!isSearch && !isBridgeExecution) || result.isError || decision.kind !== 'accept' || Object.hasOwn(decision, 'value')) return decision
     const raw = plainText(decision.content ?? result.content)
     if (raw === undefined) return decision
     let parsed: unknown
     try { parsed = JSON.parse(raw) } catch { return decision }
+    if (isBridgeSearch && record(parsed) && parsed['status'] === 'connection_required' && !Object.hasOwn(parsed, 'result')) return decision
     const receipt = await saveReceipt(ctx, execution, raw)
-    if (receipt === undefined) return decision
-    const compact = compactComposioSearchReceipt(parsed, receipt)
+    const compact = isSearch
+      ? compactComposioSearchReceipt(parsed, receipt)
+      : compactComposioExecutionReceipt(parsed, receipt)
     return compact === undefined ? decision : { kind: 'accept', content: [{ type: 'text', text: JSON.stringify(compact) }] }
   })
 }

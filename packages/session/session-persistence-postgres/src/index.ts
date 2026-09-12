@@ -4,7 +4,7 @@ import { Service, type Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { Pool, type PoolClient, type QueryResult, type QueryResultRow } from 'pg'
 import { SessionLogOffset } from '@deepseek-ai/dsh-session'
-import type { SessionEvent, SessionHeader, SessionId, SessionLogOffset as SessionLogOffsetType } from '@deepseek-ai/dsh-session'
+import type { Session, SessionEvent, SessionHeader, SessionId, SessionLogOffset as SessionLogOffsetType } from '@deepseek-ai/dsh-session'
 import type HivemindExecutionScope from '@deepseek-ai/dsh-hivemind-execution-scope'
 import type { HivemindPrincipal } from '@deepseek-ai/dsh-hivemind-execution-scope'
 import {
@@ -33,6 +33,7 @@ interface SessionRow extends QueryResultRow {
   revision: string | number
 }
 interface Owner { holder: string; hash: string; fence: number }
+const LIVE_WRITE_BATCH_MAX_DELAY_MS = 200
 function connectionString(name: string): string {
   const value = process.env[name]
   if (value === undefined || value.length === 0) throw new Error(`session-persistence-postgres: ${name} is required`)
@@ -54,7 +55,12 @@ function scopeParams(scope: HivemindPrincipal, id?: SessionId): unknown[] {
 
 class PostgresHandle implements SessionHandle {
   private closedState = false
+  private closing?: Promise<void>
   private chain: Promise<unknown> = Promise.resolve()
+  private buffered: SessionEvent[] = []
+  private batchTimer: ReturnType<typeof setTimeout> | undefined
+  private draining: Promise<void> | undefined
+  private drainPaused = false
   constructor(private readonly store: PostgresSessionPersistence, private readonly scope: HivemindPrincipal,
     readonly id: SessionId, readonly header: SessionHeader, readonly inheritedEventCount: SessionLogOffsetType,
     readonly access: SessionAccess, private readonly ownerState?: Owner) {}
@@ -80,21 +86,63 @@ class PostgresHandle implements SessionHandle {
       await this.store.append(this.scope, this.id, this.ownerState, batch)
     })
   }
+  enqueueLive(event: SessionEvent, reportFailure: (error: unknown) => void): void {
+    if (this.closedState) return
+    this.buffered.push(structuredClone(event))
+    if (this.batchTimer !== undefined || this.drainPaused) return
+    this.batchTimer = setTimeout(() => {
+      this.batchTimer = undefined
+      this.drainLive().catch(reportFailure)
+    }, LIVE_WRITE_BATCH_MAX_DELAY_MS)
+  }
+  drainLive(): Promise<void> {
+    return this.draining ??= this.drainBuffered().finally(() => { this.draining = undefined })
+  }
+  private async drainBuffered(): Promise<void> {
+    if (this.batchTimer !== undefined) {
+      clearTimeout(this.batchTimer)
+      this.batchTimer = undefined
+    }
+    this.drainPaused = false
+    while (this.buffered.length > 0) {
+      const result = this.chain.then(async () => {
+        const batch = this.buffered.splice(0)
+        try {
+          if (this.ownerState === undefined) throw new SessionOwnershipLostError(this.id)
+          await this.store.append(this.scope, this.id, this.ownerState, materializeAppendBatch(batch))
+        } catch (error: unknown) {
+          this.buffered = batch.concat(this.buffered)
+          this.drainPaused = true
+          throw error
+        }
+      })
+      this.chain = result.catch(() => undefined)
+      await result
+    }
+  }
   flush(options?: SessionHandleFlushOptions): Promise<void> {
     if (this.access !== 'write') return Promise.reject(new SessionReadOnlyError(this.id, 'flush'))
-    return this.run('flush', async () => {
+    if (this.closedState) return Promise.reject(new SessionHandleClosedError(this.id, 'flush'))
+    return this.drainLive().then(() => this.run('flush', async () => {
       checkAbort(options?.signal)
       if (this.ownerState === undefined) throw new SessionOwnershipLostError(this.id)
       await this.store.renew(this.scope, this.id, this.ownerState)
-    })
+    }))
   }
   close(): Promise<void> {
-    if (this.closedState) return Promise.resolve()
+    if (this.closing !== undefined) return this.closing
     this.closedState = true
-    return this.chain.then(async () => {
-      if (this.ownerState !== undefined) await this.store.release(this.scope, this.id, this.ownerState)
-      this.store.closed(this)
-    })
+    this.closing = (async () => {
+      try {
+        await this.drainLive()
+        await this.chain
+      } finally {
+        try {
+          if (this.ownerState !== undefined) await this.store.release(this.scope, this.id, this.ownerState)
+        } finally { this.store.closed(this) }
+      }
+    })()
+    return this.closing
   }
   async [Symbol.asyncDispose](): Promise<void> { await this.close() }
 }
@@ -107,6 +155,7 @@ export class PostgresSessionPersistence extends SessionPersistence {
   override readonly authoritativeVisibility: boolean = true
   private readonly pool: Pool
   private readonly handles = new Set<PostgresHandle>()
+  private readonly writers = new Map<SessionId, PostgresHandle>()
   private readonly executionScope: HivemindExecutionScope
   constructor(ctx: Context, readonly config: Config, testPool?: Pool) {
     super(ctx)
@@ -119,6 +168,17 @@ export class PostgresSessionPersistence extends SessionPersistence {
   }
   protected async* [Service.init](): AsyncGenerator<() => Promise<void>, void, void> {
     await this.pool.query('SELECT 1 FROM harness_sessions LIMIT 0')
+    this.ctx.on('session/event', (session: Session, event) => {
+      this.writers.get(session.id)?.enqueueLive(event, (error) => {
+        this.ctx.logger.warn(`session-persistence-postgres: background write for session "${session.id}" failed (buffered events retained): ${String(error)}`)
+      })
+    })
+    this.ctx.on('session/flush', (session: Session) => this.writers.get(session.id)?.flush())
+    this.ctx.on('session/disposed', (session: Session) => {
+      this.writers.get(session.id)?.close().catch((error: unknown) => {
+        this.ctx.logger.warn(`session-persistence-postgres: final drain for session "${session.id}" failed: ${String(error)}`)
+      })
+    })
     yield async () => {
       await Promise.allSettled([...this.handles].map(handle => handle.close()))
       await this.pool.end()
@@ -279,7 +339,14 @@ export class PostgresSessionPersistence extends SessionPersistence {
         WHERE org_id=$1 AND user_id=$2 AND session_id=$3 AND token_hash=$4 AND fencing_token=$5`,
       [...scopeParams(scope, id), claim.hash, claim.fence])
   }
-  closed(handle: PostgresHandle): void { this.handles.delete(handle) }
-  private track(handle: PostgresHandle): PostgresHandle { this.handles.add(handle); return handle }
+  closed(handle: PostgresHandle): void {
+    this.handles.delete(handle)
+    if (this.writers.get(handle.id) === handle) this.writers.delete(handle.id)
+  }
+  private track(handle: PostgresHandle): PostgresHandle {
+    this.handles.add(handle)
+    if (handle.access === 'write') this.writers.set(handle.id, handle)
+    return handle
+  }
 }
 export default PostgresSessionPersistence

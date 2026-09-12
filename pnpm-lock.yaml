@@ -6643,6 +6643,9 @@ importers:
       '@deepseek-ai/dsh-skill':
         specifier: workspace:^
         version: link:../../skill/skill
+      '@deepseek-ai/dsh-spill':
+        specifier: workspace:^
+        version: link:../../spill/spill
       '@deepseek-ai/dsh-tools':
         specifier: workspace:^
         version: link:../../core/tools

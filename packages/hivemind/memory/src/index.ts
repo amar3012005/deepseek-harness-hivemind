@@ -1,7 +1,7 @@
 /** Progressive model-facing HIVE-MIND memory capability. @module @deepseek-ai/dsh-hivemind-memory */
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
-import { defineTool } from '@deepseek-ai/dsh-tools'
+import { defineTool, type ToolExecution } from '@deepseek-ai/dsh-tools'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 
 export interface RecallRequest {
@@ -30,8 +30,8 @@ export interface SaveRequest {
 
 export interface MemoryProvider {
   context(agent: Agent, signal: AbortSignal): Promise<Record<string, JsonValue>>
-  recall(request: RecallRequest, signal: AbortSignal): Promise<Record<string, JsonValue>>
-  save(agent: Agent, request: SaveRequest, signal: AbortSignal): Promise<Record<string, JsonValue>>
+  recall(request: RecallRequest, signal: AbortSignal, execution: ToolExecution): Promise<Record<string, JsonValue>>
+  save(agent: Agent, request: SaveRequest, signal: AbortSignal, execution: ToolExecution): Promise<Record<string, JsonValue>>
   profiles(signal: AbortSignal): Promise<Record<string, JsonValue>>
 }
 
@@ -139,7 +139,7 @@ export function memoryPlugin(config: MemoryPluginConfig, provider: MemoryProvide
           if (operation === 'save') {
             if (execution.agent === undefined) throw new TypeError('hivemind-memory: active agent required')
             const input = object(args.save, 'save')
-            const sourceType = text(input['source_type'] ?? 'text', 'source_type')
+            const sourceType = text(input['source_type'] ?? 'conversation', 'source_type')
             if (!['text', 'conversation', 'documentation', 'decision'].includes(sourceType)) throw new TypeError('hivemind-memory: source_type is unsupported')
             const relationship = input['relationship'] === undefined ? undefined : text(input['relationship'], 'relationship')
             if (relationship !== undefined && !['update', 'extend', 'derive'].includes(relationship)) throw new TypeError('hivemind-memory: relationship is unsupported')
@@ -160,7 +160,7 @@ export function memoryPlugin(config: MemoryPluginConfig, provider: MemoryProvide
             if (containsCredentialMaterial(`${request.title}\n${request.content}`)) {
               throw new TypeError('hivemind-memory: save refuses credential material')
             }
-            return provider.save(execution.agent, request, execution.signal)
+            return provider.save(execution.agent, request, execution.signal, execution)
           }
           if (operation !== 'recall') throw new TypeError('hivemind-memory: unsupported operation')
           const input = object(args.recall, 'recall')
@@ -181,7 +181,7 @@ export function memoryPlugin(config: MemoryPluginConfig, provider: MemoryProvide
           if (project !== undefined && !['all', 'any', '*'].includes(text(project, 'project').toLowerCase())) request.project = text(project, 'project')
           if (input['sort'] !== undefined) request.sort = text(input['sort'], 'sort') as NonNullable<RecallRequest['sort']>
           if (input['include_superseded'] !== undefined) request.includeSuperseded = input['include_superseded'] === true
-          return provider.recall(request, execution.signal)
+          return provider.recall(request, execution.signal, execution)
         },
       }))
     },

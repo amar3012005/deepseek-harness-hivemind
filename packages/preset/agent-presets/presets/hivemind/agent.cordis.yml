@@ -70,7 +70,7 @@
         profileBriefMaxChars: 1200
         recallResultLimit: 5
         recallItemMaxChars: 16000
-        historyTurns: 5
+        historyTurns: 3
         historyMaxChars: 8000
 
     - id: hivemind-connected-apps

@@ -19,6 +19,7 @@ interface HarnessMock {
   turnStopping?: (payload: { agent: Agent }) => void
   toolPreExecute?: (execution: { agent?: Agent; name: string }, next: () => Promise<unknown>) => Promise<unknown>
   skills: Map<string, { description: string; content: string }>
+  spills: Array<{ suggestedName: string; content: string }>
 }
 
 const roots: string[] = []
@@ -63,10 +64,11 @@ function config(icarusConfigPath: string): Config {
   }
 }
 
-function mount(pluginConfig: Config): HarnessMock {
+function mount(pluginConfig: Config, withSpill = false): HarnessMock {
   const tools = new Map<string, ToolDefinition>()
   const skills = new Map<string, { description: string; content: string }>()
-  const harness: HarnessMock = { tools, skills }
+  const spills: Array<{ suggestedName: string; content: string }> = []
+  const harness: HarnessMock = { tools, skills, spills }
   const ctx = {
     on(event: string, listener: (payload: unknown, next: () => Promise<unknown>) => Promise<unknown>) {
       if (event === 'agent/pre-step') harness.preStep = listener
@@ -108,6 +110,16 @@ function mount(pluginConfig: Config): HarnessMock {
         profile: 'hivemind-chat', variation: 'preview',
       }),
     },
+    get(name: string) {
+      if (name !== 'spillStore' || !withSpill) return undefined
+      return {
+        async saveText(input: { suggestedName: string; content: string }) {
+          spills.push(input)
+          return { locator: 'private:hive-receipt', bytes: Buffer.byteLength(input.content), retrievalHint: 'Inspect the private receipt.' }
+        },
+      }
+    },
+    logger: { warn: vi.fn() },
   }
   apply(ctx as never, pluginConfig)
   return harness
@@ -241,9 +253,8 @@ describe('HIVE-MIND runtime', () => {
     expect(JSON.stringify(error)).not.toContain('test-secret-token')
   })
 
-  it('injects compact profile context before the first step and keeps tenant fields out of model-visible output', async () => {
+  it('answers a greeting from the native system and history without profile I/O or context injection', async () => {
     const path = await authorityFile()
-    profileResponses()
     const harness = mount(config(path))
     const scopedAgent = {
       session: {
@@ -261,26 +272,28 @@ describe('HIVE-MIND runtime', () => {
       messages: Array<{ content: Array<{ type: string; text?: string }>; source: { kind: string; plugin?: string } }>
       startsRequestSeries?: true
     }
-    const value = await tool(harness, 'hivemind_profile_context').execute({}, execContext(scopedAgent))
-
     expect(next).toHaveBeenCalledOnce()
-    expect(decision.startsRequestSeries).toBe(true)
-    expect(decision.messages).toHaveLength(2)
-    expect(decision.messages[0]?.source).toMatchObject({ kind: 'plugin', plugin: 'dsh-hivemind-runtime/profile' })
-    expect(decision.messages[0]?.content[0]?.text).toContain('Location: Hannover, Germany')
-    expect(decision.messages[0]?.content[0]?.text).toContain('Mission: Give organizations a trustworthy company brain.')
-    expect(decision.messages[0]?.content[0]?.text).toContain('HIVE-MIND is the authenticated company brain')
-    expect(decision.messages[0]?.content[0]?.text).toContain('Before a substantive response')
-    expect(decision.messages[0]?.content[0]?.text).toContain('what do you know about me?')
-    expect(decision.messages[0]?.content[0]?.text).toContain('Do not recall for greetings, general knowledge, transformations')
-    expect(decision.messages[0]?.content[0]?.text).toContain('valid_at')
-    expect(decision.messages[0]?.content[0]?.text).toContain('Use `save` only for a stable preference')
-    expect(value).toEqual({
-      status: 'ready',
-      context: expect.stringContaining('Company: Singulance'),
-    })
-    expect(JSON.stringify(value)).not.toContain('user-1')
-    expect(JSON.stringify(value)).not.toContain('org-1')
+    expect(decision.startsRequestSeries).toBeUndefined()
+    expect(decision.messages).toHaveLength(1)
+  })
+
+  it('does not duplicate the system routing contract before a current mailbox request', async () => {
+    const harness = mount(config(await authorityFile()))
+    const scopedAgent = {
+      session: {
+        surface: { nodes: [] },
+        eventAt: () => undefined,
+        snapshotEvents: () => [],
+      },
+    } as unknown as Agent
+    const decision = await harness.preStep?.({ agent: scopedAgent, turn: 1, step: 0, signal }, async () => ({
+      kind: 'enter' as const,
+      messages: [user('When was the last email from Uwe?')],
+    })) as { messages: UserMessage[]; startsRequestSeries?: true }
+
+    expect(decision.startsRequestSeries).toBeUndefined()
+    expect(decision.messages).toHaveLength(1)
+    expect(textOfForTest(decision.messages[0] as UserMessage)).toBe('When was the last email from Uwe?')
   })
 
   it('supplies authenticated full profile context for an identity request without a model skill load', async () => {
@@ -307,13 +320,13 @@ describe('HIVE-MIND runtime', () => {
       messages: UserMessage[]
     }
 
-    expect(decision.messages).toHaveLength(3)
-    expect(decision.messages[1]?.source).toMatchObject({
+    expect(decision.messages).toHaveLength(2)
+    expect(decision.messages[0]?.source).toMatchObject({
       kind: 'plugin',
       plugin: 'dsh-hivemind-runtime/identity-context',
     })
-    expect(textOfForTest(decision.messages[1] as UserMessage)).toContain('Singulance builds governed AI systems.')
-    expect(textOfForTest(decision.messages[1] as UserMessage)).not.toContain('user-1')
+    expect(textOfForTest(decision.messages[0] as UserMessage)).toContain('Singulance builds governed AI systems.')
+    expect(textOfForTest(decision.messages[0] as UserMessage)).not.toContain('user-1')
     expect(harness.skills.get('hivemind-company-brain')).toMatchObject({
       invocation: { modelInvocable: true, userInvocable: true },
     })
@@ -323,8 +336,8 @@ describe('HIVE-MIND runtime', () => {
     expect(hiveTurnCapabilities([user('hello')])).toEqual({ memory: false, connectedApps: false })
     expect(hiveTurnCapabilities([user('what do u know about me?')])).toEqual({ memory: false, connectedApps: false })
     expect(hiveTurnCapabilities([user('Find my last five decisions')])).toEqual({ memory: true, connectedApps: false })
-    expect(hiveTurnCapabilities([user('Check my last five Gmail messages')])).toEqual({ memory: true, connectedApps: true })
-    expect(hiveTurnCapabilities([user('Find my last five decisions and send them to Rama in Slack')])).toEqual({ memory: true, connectedApps: true })
+    expect(hiveTurnCapabilities([user('Check my last five Gmail messages')])).toEqual({ memory: false, connectedApps: true })
+    expect(hiveTurnCapabilities([user('Find my last five decisions and send them to Rama in Slack')])).toEqual({ memory: false, connectedApps: true })
   })
 
   it('exhausts the HIVE memory budget after one focused call in the current turn', () => {
@@ -346,7 +359,7 @@ describe('HIVE-MIND runtime', () => {
     harness.inboxInserted?.({ agent: scopedAgent, message: user('hello') })
     harness.inboxInserted?.({ agent: scopedAgent, message: user('Find my last five decisions and send them in Slack') })
     expect(restrict).not.toHaveBeenCalled()
-    expect(harness.skills.get('hivemind-company-brain')?.invocation.modelInvocable).toBe(true)
+    expect(harness.skills.get('hivemind-company-brain')).toMatchObject({ invocation: { modelInvocable: true } })
   })
 
   it('exposes only the progressive meta-tool when compatibility tools are disabled', async () => {
@@ -356,11 +369,12 @@ describe('HIVE-MIND runtime', () => {
 
     expect([...harness.tools.keys()]).toEqual(['hivemind_meta'])
     expect(harness.skills.get('hivemind-company-brain')).toMatchObject({
-      description: expect.stringContaining('Load only for a company-memory task'),
+      description: expect.stringContaining('multi-source'),
       content: expect.stringContaining('not a workspace path'),
       invocation: { modelInvocable: true, userInvocable: true },
     })
     expect(harness.skills.get('hivemind-company-brain')?.content).toContain('Never save secrets')
+    expect(harness.skills.get('hivemind-company-brain')?.description).toContain('call hivemind_meta directly')
   })
 
   it('mounts connection routes without contributing model features when globally disabled', async () => {
@@ -572,6 +586,20 @@ describe('HIVE-MIND runtime', () => {
     expect(JSON.stringify(value)).not.toContain('org-1')
   })
 
+  it('defaults an omitted memory source type to conversation', async () => {
+    const path = await authorityFile()
+    profileResponses([jsonResponse({ id: 'memory-1' })])
+    const harness = mount(config(path))
+
+    await tool(harness, 'hivemind_meta').execute({
+      operation: 'save',
+      save: { title: 'Confirmed preference', content: 'Use compact answers by default.' },
+    }, execContext())
+    const saveBody = JSON.parse(String(vi.mocked(fetch).mock.calls[3]?.[1]?.body))
+
+    expect(saveBody.metadata).toEqual({ source_type: 'conversation', governed: true })
+  })
+
   it('rejects a correction without the exact prior-memory reference', async () => {
     const harness = mount(config(await authorityFile()))
     await expect(tool(harness, 'hivemind_meta').execute({
@@ -646,6 +674,28 @@ describe('HIVE-MIND runtime', () => {
       score: 0.97,
     })
     expect(String(results[0]?.content)).toHaveLength(2_000)
+  })
+
+  it('persists the full recall response before returning its compact evidence projection', async () => {
+    const path = await authorityFile()
+    const full = {
+      raw: [{ id: 'private-transport', content: 'complete internal transport evidence' }],
+      results: [{ id: 'memory-1', content: 'bounded evidence', citation_id: 'memory:memory-1' }],
+    }
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(full)))
+    const harness = mount(config(path), true)
+    const scopedAgent = { session: { header: { id: 'session-1' } } } as unknown as Agent
+
+    const value = await tool(harness, 'hivemind_meta').execute({
+      operation: 'recall', recall: { query: 'bounded evidence' },
+    }, execContext(scopedAgent)) as { result: Record<string, unknown> }
+
+    expect(harness.spills).toHaveLength(1)
+    expect(harness.spills[0]).toMatchObject({ suggestedName: 'hivemind-recall.json', content: JSON.stringify(full) })
+    expect(value.result).not.toHaveProperty('raw')
+    expect(value.result.source_receipt).toEqual({
+      locator: 'private:hive-receipt', bytes: Buffer.byteLength(JSON.stringify(full)), retrieval_hint: 'Inspect the private receipt.',
+    })
   })
 
   it('fetches server-scoped HyperAgent profiles without model-provided tenant input', async () => {

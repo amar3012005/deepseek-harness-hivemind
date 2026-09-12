@@ -18,6 +18,7 @@
     { "path": "../../core/tools" },
     { "path": "../../host/webserver" },
     { "path": "../../skill/skill" },
+    { "path": "../../spill/spill" },
     { "path": "../../util/values" }
   ]
 }

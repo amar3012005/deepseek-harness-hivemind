@@ -167,6 +167,33 @@ describe('the shipped preset root', () => {
     expect(findEntry(hivemind, 'tool-skill')?.disabled).not.toBe(true)
   })
 
+  it('keeps HIVE chat additive to native prompt guidance and renderer-safe', async () => {
+    const hivemindChat = await shippedEntries('hivemind-chat')
+    const persona = findEntry(hivemindChat, 'persona')
+    if (typeof persona?.config !== 'object' || persona.config === null) {
+      throw new TypeError('hivemind-chat preset must configure its persona')
+    }
+
+    expect(persona.config).not.toHaveProperty('complete')
+    expect(persona.config).toMatchObject({ includeRuntimeContext: false })
+    expect(persona.config).toMatchObject({
+      prefix: expect.stringContaining('clean, valid Markdown for the native Harness renderer'),
+    })
+    expect(persona.config).toMatchObject({
+      prefix: expect.stringContaining('call hivemind_connected_task search directly without loading a skill'),
+    })
+    expect(persona.config).toMatchObject({
+      prefix: expect.stringContaining('profiles only for the HyperAgent directory'),
+    })
+  })
+
+  it('limits the Composio catalog entry to complex workflows', async () => {
+    const skill = await readFile(join(SHIPPED_PRESET_ROOT, 'hivemind/skills/composio-connected-workflows/SKILL.md'), 'utf8')
+    expect(skill).toContain('Simple single-app reads and writes use hivemind_connected_task search directly without this skill')
+    expect(skill).toContain('routine destination discovery is part of the same task')
+    expect(skill).toContain('whose contracts are absent')
+  })
+
   it('keeps the complete Standard tool composition while adding scoped company-brain access to HyperAgents', async () => {
     const hyperagents = await shippedEntries('hyperagents')
     expect(findEntry(hyperagents, 'tool-subagent')?.disabled).not.toBe(true)

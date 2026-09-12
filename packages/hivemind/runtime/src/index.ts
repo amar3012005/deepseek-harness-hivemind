@@ -10,6 +10,8 @@ import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { UserMessage } from '@deepseek-ai/dsh-llm'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
+import type { SaveTextSpill, SpillRef } from '@deepseek-ai/dsh-spill'
+import type { ToolExecution } from '@deepseek-ai/dsh-tools'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import type {} from '@deepseek-ai/dsh-host-webserver'
 import type {} from '@deepseek-ai/dsh-skill'
@@ -70,7 +72,11 @@ const CONNECTED_APP_REQUEST = new RegExp([
 export function hiveTurnCapabilities(messages: readonly UserMessage[]): HiveTurnCapabilities {
   const request = messages.filter(message => message.source.kind === 'user').map(textOfUserMessage).join('\n').trim()
   if (DIRECT_REQUEST.test(request)) return { memory: false, connectedApps: false }
-  return { memory: true, connectedApps: CONNECTED_APP_REQUEST.test(request) }
+  // This helper is observability-only: native Harness retains the full compact
+  // catalogue and the model selects the relevant skill.  Keep its report
+  // faithful so diagnostics never describe current provider data as memory.
+  const connectedApps = CONNECTED_APP_REQUEST.test(request)
+  return { memory: !connectedApps, connectedApps }
 }
 
 /**
@@ -483,7 +489,7 @@ function hyperagentProfilesFromResponse(value: unknown): JsonRecord {
   return projectHyperagentProfiles(value) as JsonRecord
 }
 
-function compactRecallResponse(value: JsonRecord, limit: number, itemMaxChars: number): Record<string, JsonValue> {
+function compactRecallResponse(value: JsonRecord, limit: number, itemMaxChars: number, receipt?: SpillRef): Record<string, JsonValue> {
   const preferred = Array.isArray(value['results']) && value['results'].length > 0
     ? value['results']
     : Array.isArray(value['memories']) ? value['memories'] : []
@@ -510,6 +516,9 @@ function compactRecallResponse(value: JsonRecord, limit: number, itemMaxChars: n
   return {
     results,
     count: results.length,
+    ...receipt === undefined ? {} : {
+      source_receipt: { locator: receipt.locator, bytes: receipt.bytes, retrieval_hint: receipt.retrievalHint },
+    },
     ...typeof value['mode_used'] === 'string' ? { mode_used: value['mode_used'] } : {},
     ...typeof value['search_method'] === 'string' ? { search_method: value['search_method'] } : {},
     ...typeof value['timing_ms'] === 'number' && Number.isFinite(value['timing_ms']) ? { timing_ms: value['timing_ms'] } : {},
@@ -517,13 +526,44 @@ function compactRecallResponse(value: JsonRecord, limit: number, itemMaxChars: n
 }
 
 /** Expose only a receipt from a successful memory write; tenant fields remain transport-private. */
-function compactSaveReceipt(value: JsonRecord): Record<string, JsonValue> {
+function compactSaveReceipt(value: JsonRecord, sourceReceipt?: SpillRef): Record<string, JsonValue> {
   const receipt: Record<string, JsonValue> = { status: 'saved' }
   for (const field of ['id', 'title', 'memory_type', 'citation_id', 'created_at', 'updated_at']) {
     if (typeof value[field] === 'string') receipt[field] = value[field]
   }
   if (typeof value['id'] !== 'string') throw new HiveMindRuntimeError('memory save response is missing its receipt id')
+  if (sourceReceipt !== undefined) {
+    receipt['source_receipt'] = {
+      locator: sourceReceipt.locator,
+      bytes: sourceReceipt.bytes,
+      retrieval_hint: sourceReceipt.retrievalHint,
+    }
+  }
   return receipt
+}
+
+/** Persist the complete HIVE response before projecting it into model context. */
+async function saveMemoryReceipt(
+  ctx: Context,
+  execution: ToolExecution,
+  suggestedName: string,
+  value: unknown,
+): Promise<SpillRef | undefined> {
+  const sessionId = execution.agent?.session?.header.id
+  const spillStore = ctx.get('spillStore')
+  if (sessionId === undefined || spillStore === undefined) return undefined
+  const input: SaveTextSpill = {
+    owner: { sessionId },
+    source: { kind: 'tool', toolName: execution.name, callId: execution.callId, label: 'result' },
+    suggestedName,
+    content: JSON.stringify(value),
+  }
+  try {
+    return await spillStore.saveText(input)
+  } catch (error: unknown) {
+    ctx.logger.warn(`hivemind-runtime: could not persist HIVE receipt: ${String(error)}`)
+    return undefined
+  }
 }
 
 async function loadProfileSnapshot(ctx: Context, config: Config, signal: AbortSignal): Promise<ProfileSnapshot> {
@@ -681,7 +721,7 @@ export function apply(ctx: Context, config: Config): void {
   if (!config.agentFeaturesEnabled) return
   ctx.skills.register({
     name: 'hivemind-company-brain',
-    description: 'Load only for a company-memory task that needs focused HIVE-MIND retrieval, evidence filters, or exact employee records.',
+    description: 'Load only for multi-source, temporal, conflict-reconciliation, or memory-write work. Simple profile, recall, and directory lookups call hivemind_meta directly.',
     // Keep routing knowledge in the native skill catalogue. The model chooses
     // between this HIVE memory skill and the Composio workflow skill; runtime
     // classifiers must not hide either capability based on prompt keywords.
@@ -689,14 +729,14 @@ export function apply(ctx: Context, config: Config): void {
     source: 'runtime',
     content: `Use this skill only for a question about the authenticated user's organization, internal memories, files, documents, evidence, decisions, people, projects, or HyperAgents. HIVE-MIND should be considered automatically for such work, but do not load this skill or call recall for greetings, general knowledge, simple transformations, or a fact already established by a recent completed answer.
 
-1. First decide whether company history is actually needed. For “what do you know about me?”, “tell me about myself”, “my profile”, or a company-profile question, call \`hivemind_meta\` with \`operation: "context"\` before answering; if the request also asks for stored preferences, decisions, projects, or past activity, make one focused \`recall\` call after context. For other requests, use a sufficient compact organization brief or recent completed answer directly. Otherwise call \`hivemind_meta\` with exactly one operation:
+1. First decide whether company history is actually needed. Simple profile, one-shot recall, and exact HyperAgent-directory requests do not need this skill: call \`hivemind_meta\` directly from its registered schema. Use this playbook only when the request requires multi-source retrieval, temporal reconstruction, conflict reconciliation, or a durable memory write. For “what do you know about me?”, “tell me about myself”, “my profile”, or a company-profile question, call \`hivemind_meta\` with \`operation: "context"\` before answering; if the request also asks for stored preferences, decisions, projects, or past activity, make one focused \`recall\` call after context. For other requests, use a sufficient compact organization brief or recent completed answer directly. Otherwise call \`hivemind_meta\` with exactly one operation:
    - \`context\`: load the full onboarding-derived user and organization profile.
    - \`recall\`: search internal company memory and evidence.
    - \`profiles\`: fetch the authenticated organization's exact HyperAgent directory. Never invent employees.
 2. For recall, preserve the user's exact named entity or filename in \`query\`. Add only filters supported by the request: \`source_platforms\`, \`project\`, \`valid_at\`, \`transaction_at\`, \`sort\`, and explicit \`tags\`.
 3. For internal media, use \`media_kind: "image"\`, the exact \`filename\` when known, object names in \`entities\`, and \`source_platforms: ["knowledge-upload"]\` when the image came from an upload. For example, an uploaded image with a glass uses a focused query plus \`media_kind: "image"\` and \`entities: ["glass"]\`.
 4. A returned title, filename, citation ID, or memory ID is an internal evidence reference, not a workspace path and not proof that a downloadable artifact is available. Do not use shell, filesystem, Glob, Grep, or web tools to locate it unless the user explicitly asks about a local workspace or supplies a local path.
-5. For temporal questions, preserve the user's date or timeframe and use \`valid_at\` for what was true then or \`transaction_at\` for what the system knew then.\n6. Use \`save\` only for a stable user preference, explicit or confirmed decision, correction, or completed outcome that will matter in a future session. Save a concise factual statement with a descriptive title. Never save secrets, credentials, private authentication material, ephemeral chat, speculation, or unverified claims. For a correction, first recall the old memory and use \`relationship: "update"\` with its exact \`related_to\` ID. Report a save only after its receipt returns.\n7. Read returned evidence and citations completely enough to answer. Identify conflicts or gaps, and do not claim that a file, image, or fact is available beyond the receipt. Recall again only when the first focused result set is insufficient or the user explicitly asks for deeper coverage.\n8. HIVE-MIND supplies internal company knowledge. Use native Harness tools for independent web evidence, coding, artifacts, workflows, and subagents when those tasks are actually requested.`,
+5. For temporal questions, preserve the user's date or timeframe and use \`valid_at\` for what was true then or \`transaction_at\` for what the system knew then.\n6. Use \`save\` only for a stable user preference, explicit or confirmed decision, correction, or completed outcome that will matter in a future session. Save a concise factual statement with a descriptive title. Never save secrets, credentials, private authentication material, ephemeral chat, speculation, or unverified claims. For a correction, first recall the old memory and use \`relationship: "update"\` with its exact \`related_to\` ID. Report a save only after its receipt returns.\n7. Read returned evidence and citations completely enough to answer. Identify conflicts or gaps, and do not claim that a file, image, or fact is available beyond the receipt. A bounded lookup gets one focused recall: synthesize or report no relevant match after it. A second recall is permitted only for an explicitly exhaustive or genuinely multi-source request, and must use materially new evidence constraints rather than a paraphrase.\n8. HIVE-MIND supplies internal company knowledge. Use native Harness tools for independent web evidence, coding, artifacts, workflows, and subagents when those tasks are actually requested.`,
   })
   ctx.plugin(contextPlugin({
     historyTurns: config.historyTurns,
@@ -715,7 +755,7 @@ export function apply(ctx: Context, config: Config): void {
         : await hiveRequest(authority, HYPERAGENT_PROFILES_URL, { method: 'GET' }, signal, config, 'https://api.singulancelabs.com')
       return { operation: 'profiles', ...hyperagentProfilesFromResponse(result) }
     },
-    async recall(request: RecallRequest, signal) {
+    async recall(request: RecallRequest, signal, execution) {
       const authority = await resolveAuthority(ctx, config)
       const result = await hiveRequest(authority, RECALL_PATH, {
         method: 'POST',
@@ -732,13 +772,15 @@ export function apply(ctx: Context, config: Config): void {
           ...request.includeSuperseded === undefined ? {} : { include_superseded: request.includeSuperseded },
         }),
       }, signal, config)
+      const record = apiRecord(result, 'meta recall response')
+      const receipt = await saveMemoryReceipt(ctx, execution, 'hivemind-recall.json', record)
       return {
         status: 'ready',
         operation: 'recall',
-        result: compactRecallResponse(apiRecord(result, 'meta recall response'), request.limit, config.recallItemMaxChars),
+        result: compactRecallResponse(record, request.limit, config.recallItemMaxChars, receipt),
       }
     },
-    async save(agent, request: SaveRequest, signal) {
+    async save(agent, request: SaveRequest, signal, execution) {
       const snapshot = await snapshotFor(agent, signal)
       const authority = await resolveAuthority(ctx, config)
       const result = await hiveRequest(authority, '/api/memories?sync=true', {
@@ -763,7 +805,9 @@ export function apply(ctx: Context, config: Config): void {
           sync: true,
         }),
       }, signal, config)
-      return compactSaveReceipt(apiRecord(result, 'meta save response'))
+      const record = apiRecord(result, 'meta save response')
+      const receipt = await saveMemoryReceipt(ctx, execution, 'hivemind-save.json', record)
+      return compactSaveReceipt(record, receipt)
     },
   }))
 

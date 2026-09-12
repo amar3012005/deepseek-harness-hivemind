@@ -1,6 +1,6 @@
 ---
 name: composio-connected-workflows
-description: Discover and execute tenant-scoped connected-app workflows progressively through Composio Meta Tools.
+description: Load for complex multi-app dependencies, partial-failure recovery, or durable connection/approval resumption. Simple single-app reads and writes use hivemind_connected_task search directly without this skill; routine destination discovery is part of the same task.
 ---
 
 # Composio connected workflows
@@ -19,15 +19,22 @@ evidence sources.
    has reported connection status and the available discovery tools.
    Put each independent
    action or hidden prerequisite in its own `queries` item. Each `use_case` must
-   name the app and state the operation, filters, ordering, result limit, and
+   name the app when supplied or established; otherwise describe the service
+   and let discovery resolve it from authenticated active connections. Never
+   invent a provider to populate an optional search field. State the
+   operation, filters, ordering, result limit, and
    required fields. Put only 1-2 short identifiers in `known_fields`.
+   Use the exact requested result limit: latest means one, and an explicit count
+   means that count. Do not over-fetch merely to inspect alternatives.
 2. Follow the returned `recommended_plan_steps`, `known_pitfalls`, connection
    statuses, and selected tool slugs. Never invent a slug or load a broad catalog.
-3. Call `schemas` only for the selected tools needed by the next bounded step.
+3. Use the exact `execution_contracts` returned by search. Call `schemas` only
+   for selected tools needed by the next bounded step whose contracts are absent.
 4. Search automatically returns `status: "connection_required"` with a
    session-bound authorization banner when a selected app is disconnected. Stop
-   planning immediately. Call `ask_user_question` with the returned prompt and
-   exactly two choices: `Connect <App>` and `I've connected <App> — continue`.
+   planning immediately. The native connection receipt ends the turn and owns
+   the authorization UI; do not duplicate it with `ask_user_question` or a final
+   explanation.
    Do not search again or inspect unrelated tools while connection is pending.
    After the user continues, call `wait_connection` once with the same session
    id and toolkit and proceed only when the server verifies an active connection.
