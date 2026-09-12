@@ -39,11 +39,11 @@ const runtime = {} as GlobalStandardProps
 const actions = {
   renameSession: vi.fn(async () => {}),
   forkSession: vi.fn(),
-  archiveSession: vi.fn(async () => {}),
+  deleteSession: vi.fn(async () => {}),
 }
 
 describe('HIVE native session projection', () => {
-  it('shows the five newest non-empty root sessions and opens a persisted row', () => {
+  it('keeps every non-empty root session in a five-row scrollport and opens a persisted row', () => {
     const sessions = list(
       summary('one', 1), summary('two', 2), summary('three', 3),
       summary('four', 4), summary('five', 5), summary('six', 6),
@@ -65,11 +65,11 @@ describe('HIVE native session projection', () => {
     expect(screen.getAllByRole('treeitem').map(row => row.textContent)).toEqual([
       expect.stringContaining('six'), expect.stringContaining('five'),
       expect.stringContaining('four'), expect.stringContaining('three'),
-      expect.stringContaining('two'),
+      expect.stringContaining('two'), expect.stringContaining('one'),
     ])
-    expect(screen.queryByText('one')).toBeNull()
     expect(screen.queryByText('blank')).toBeNull()
     expect(screen.queryByText('child')).toBeNull()
+    expect(screen.getByRole('navigation', { name: 'Sessions' }).className).toContain('list')
     fireEvent.click(screen.getByText('four'))
     expect(openSession).toHaveBeenCalledWith(sid('four'))
   })
@@ -111,7 +111,7 @@ describe('HIVE native session projection', () => {
     expect(screen.getByText('Rename')).toBeTruthy()
     expect(screen.getByText('Fork session')).toBeTruthy()
     expect(screen.getByText('Share session')).toBeTruthy()
-    expect(screen.getByText('Archive session')).toBeTruthy()
+    expect(screen.getByText('Delete session permanently')).toBeTruthy()
     fireEvent.click(screen.getByText('Share session'))
     expect(share).toHaveBeenCalledWith(expect.objectContaining({
       title: 'share-me', url: expect.stringContaining('/hivemind/app/overview/session/share-me'),

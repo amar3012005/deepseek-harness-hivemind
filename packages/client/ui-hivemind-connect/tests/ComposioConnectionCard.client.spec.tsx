@@ -76,12 +76,14 @@ describe('ComposioConnectionCard', () => {
 
   it('replays the underlying Composio progress before the connection action', () => {
     const inspect = vi.fn()
+    const inputActions = { setDraft: vi.fn(), submit: vi.fn() }
     const view = render(<ComposioConnectionCard {...({
       ...props(), block: block(),
       callId: 'call-connected-task',
       toolName: 'hivemind_connected_task',
       openFile: vi.fn(),
       inspect,
+      inputActions,
       t,
     } as unknown as CardProps)} />)
 
@@ -91,7 +93,9 @@ describe('ComposioConnectionCard', () => {
     expect(view.container.querySelector('a')?.getAttribute('href')).toBe('https://connect.example/gmail')
     fireEvent.click(view.getByRole('button', { name: '查看连接应用工具的输入和输出' }))
     expect(inspect).toHaveBeenCalledOnce()
-    expect(view.queryByRole('button', { name: '我已连接 Gmail — 继续' })).toBeNull()
+    fireEvent.click(view.getByRole('button', { name: '我已连接 Gmail — 继续' }))
+    expect(inputActions.setDraft).toHaveBeenCalledWith('我已连接 Gmail — 继续')
+    return Promise.resolve().then(() => { expect(inputActions.submit).toHaveBeenCalledOnce() })
   })
 
   it('renders the live authorization inline in the running tool row', () => {

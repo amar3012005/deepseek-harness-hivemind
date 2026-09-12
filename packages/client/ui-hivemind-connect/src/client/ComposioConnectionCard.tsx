@@ -1,5 +1,6 @@
 import { useMemo } from 'react'
 import type { ToolCallViewProps } from '@deepseek-ai/dsh-client-ui-tool/client'
+import { Button } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import { ConnectionAuthorizationPanel } from './ConnectionAuthorizationPanel.tsx'
 import { PendingConnectionAuthorization } from './connection-question.ts'
@@ -74,7 +75,7 @@ function safeHttpsUrl(value: unknown): string | undefined {
 
 /** Replay-stable projection of the durable Composio tool receipt. */
 export function ComposioConnectionCard({
-  block, inspect, sessionId, useSessionPendingInteraction, t,
+  block, inspect, sessionId, useSessionPendingInteraction, inputActions, t,
 }: Props) {
   const receipt = useMemo(() => findReceipt(settledPayload(block)), [block])
   const pending = useSessionPendingInteraction((snapshot) => {
@@ -99,9 +100,14 @@ export function ComposioConnectionCard({
       : receipt?.status === 'connection_required' || redirect ? t('composio.connectionRequired')
         : draft ? t('composio.approvalRequired')
           : failed ? t('composio.failed') : t('composio.completed')
+  const resumeSettled = (): void => {
+    if (inputActions === undefined) return
+    inputActions.setDraft(t('composio.continue', { app }))
+    queueMicrotask(() => { inputActions.submit() })
+  }
   return <section className={css.root} aria-live="polite"><button className={css.summary} type="button" onClick={inspect} disabled={inspect===undefined} aria-label={t('composio.inspect')}><span className={css.symbol} aria-hidden="true">✦</span><span>{title}</span>{receipt?.status?<span className={css.status}>{receipt.status.replaceAll('_',' ')}</span>:null}</button>
     {receipt?.operations?.map((operation, index) => operation.tool?<div className={css.operation} key={`${operation.tool}:${index}`}><span className={css.symbol} aria-hidden="true">✦</span><code>{operation.tool}</code>{operation.status?<span className={css.operationStatus}>→ {operation.status}</span>:null}</div>:null)}
-    {pending === undefined && receipt?.status==='connection_required'?<><p className={css.prompt}>{receipt.prompt||t('composio.connectionPrompt',{ app })}</p>{redirect?<a className={css.connection} href={redirect} target="_blank" rel="noreferrer"><img src={logo} alt=""/><span><strong>{t('composio.connect',{ app })}</strong><small>{t('composio.connectionActionDetail')}</small></span></a>:null}</>:null}
+    {pending === undefined && receipt?.status==='connection_required'?<><p className={css.prompt}>{receipt.prompt||t('composio.connectionPrompt',{ app })}</p>{redirect?<a className={css.connection} href={redirect} target="_blank" rel="noreferrer"><img src={logo} alt=""/><span><strong>{t('composio.connect',{ app })}</strong><small>{t('composio.connectionActionDetail')}</small></span></a>:null}<div className={css.resume}><Button variant="outline" onClick={resumeSettled} disabled={inputActions===undefined}>{t('composio.continue',{ app })}</Button></div></>:null}
     {pending === undefined && connected?<div className={`${css.connection} ${css.connected}`}><img src={logo} alt=""/><span><strong>{t('composio.connected',{ app })}</strong><small>{t('composio.connectionVerified')}</small></span></div>:null}
     {redirect&&receipt?.status!=='connection_required'?<div className={css.connection}><div><strong>{t('composio.connect',{ app })}</strong><p>{t('composio.connectDetail')}</p></div><a href={redirect} target="_blank" rel="noreferrer">{t('composio.authorize')}</a></div>:null}
     {draft?<p className={css.detail}>{t('composio.draftDetail')}</p>:null}{!redirect&&!draft&&receipt?.summary?<p className={css.detail}>{receipt.summary}</p>:null}{receipt?.error?<p className={css.error}>{receipt.error}</p>:null}

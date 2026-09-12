@@ -11,7 +11,7 @@ export interface HiveSessionProjectionInjected {
   openSession: (id: SessionId) => void
   renameSession: (id: SessionId, title: string) => Promise<void>
   forkSession: (id: SessionId) => void
-  archiveSession: (id: SessionId) => Promise<void>
+  deleteSession: (id: SessionId) => Promise<void>
 }
 
 type Props = PropsRuntime<'shell.sessionRail'>
@@ -21,7 +21,7 @@ type Props = PropsRuntime<'shell.sessionRail'>
 /** Native session rows projected into the host-owned HIVE canvas. */
 export function HiveSessionProjection({
   useSessions, useSessionPendingInteraction, createSession, openSession,
-  renameSession, forkSession, archiveSession, t,
+  renameSession, forkSession, deleteSession, t,
 }: Props) {
   const [creating, setCreating] = useState(false)
   const [renameTarget, setRenameTarget] = useState<{ id: SessionId; title: string }>()
@@ -32,7 +32,7 @@ export function HiveSessionProjection({
   const list = useSessions(value => value)
   const pending = useSessionPendingInteraction(value => value)
   const rows = useMemo(
-    () => deriveFlat(list, [], pending).filter(row => !row.blank).slice(0, 5),
+    () => deriveFlat(list, [], pending).filter(row => !row.blank),
     [list, pending],
   )
   const start = () => {
@@ -85,7 +85,8 @@ export function HiveSessionProjection({
         onOpen={openSession}
         onRename={requestRename}
         onFork={forkSession}
-        onArchive={(id) => { void archiveSession(id) }}
+        onArchive={() => {}}
+        onDelete={(id) => { void deleteSession(id) }}
         onShare={shareSession}
         flat
         actionsPersistent

@@ -858,7 +858,7 @@ export function apply(ctx: Context, config: Config = {}): void {
       workflowSessionId: string
     },
     verifyConnection: () => Promise<boolean>,
-  ): Promise<void> {
+  ): Promise<boolean> {
     const questionId = `hivemind-connected-app-authorization:${input.workflowSessionId}:${input.toolkit}`
     const connect = `Connect ${input.appLabel}`
     const continueLabel = `I've connected ${input.appLabel} — continue`
@@ -872,24 +872,34 @@ export function apply(ctx: Context, config: Config = {}): void {
       continueLabel,
     }))
     for (;;) {
-      const answer = await ctx.userQuestions.ask({
-        questions: [{
-          id: questionId,
-          question: `Connect ${input.appLabel} to continue, then return here.`,
-          detail: `Authorize in a new tab, then continue this request.\n\n<!-- hivemind-connected-app-authorization:${presentation} -->`,
-          options: [
-            { label: connect, description: `Authorize ${input.appLabel} in a new tab.` },
-            { label: continueLabel, description: 'Verify the connection and continue this request.' },
-          ],
-        }],
-        ...(execution.agent === undefined ? {} : { agent: execution.agent }),
-        signal: execution.signal,
-      })
+      let answer
+      try {
+        answer = await ctx.userQuestions.ask({
+          questions: [{
+            id: questionId,
+            question: `Connect ${input.appLabel} to continue, then return here.`,
+            detail: `Authorize in a new tab, then continue this request.\n\n<!-- hivemind-connected-app-authorization:${presentation} -->`,
+            options: [
+              { label: connect, description: `Authorize ${input.appLabel} in a new tab.` },
+              { label: continueLabel, description: 'Verify the connection and continue this request.' },
+            ],
+          }],
+          ...(execution.agent === undefined ? {} : { agent: execution.agent }),
+          signal: execution.signal,
+        })
+      } catch (error: unknown) {
+        const code = record(error) ? stringValue(error['code']) : undefined
+        // Stopping or navigating away from an awaiting-input run is a clean
+        // pause. The caller settles a durable connection_required receipt so
+        // replay shows the actionable card instead of a failed tool row.
+        if (execution.signal.aborted || code === 'ASK_ABORTED') return false
+        throw error
+      }
       const selected = answer.answers.find(item => item.id === questionId)?.selected ?? []
       // Capable clients keep Connect non-settling. A generic client may return
       // it as an answer; keep the same tool call paused in that fallback.
       if (!selected.includes(continueLabel)) continue
-      if (await verifyConnection()) return
+      if (await verifyConnection()) return true
     }
   }
 
@@ -966,7 +976,7 @@ export function apply(ctx: Context, config: Config = {}): void {
         const logoUrl = selected.logo ?? `https://logos.composio.dev/api/${encodeURIComponent(selected.slug)}`
         const conversationId = execution.agent === undefined ? undefined : execution.agent.session?.header.id
         if (redirectUrl !== undefined && conversationId !== undefined && execution.agent !== undefined) {
-          await awaitConnection(execution, {
+          const connected = await awaitConnection(execution, {
             toolkit: selected.slug,
             appLabel: selected.name,
             redirectUrl,
@@ -975,18 +985,20 @@ export function apply(ctx: Context, config: Config = {}): void {
           }, async () => exactToolkit(
             await session.toolkits({ toolkits: [selected.slug], limit: 1 }), selected.name,
           ).connected)
-          execution.concludeTurn()
-          return {
-            ...compactComposioExecutionReceipt(managed, sourceReceipt) as Record<string, JsonValue>,
-            status: 'ready',
-            toolkit: selected.slug,
-            app_label: selected.name,
-            logo_url: logoUrl,
-            connected_toolkits: [selected.slug],
-            toolkit_connection_statuses: [{
-              toolkit: selected.slug, app_label: selected.name, has_active_connection: true, status_message: 'ACTIVE',
-            }],
-            operations: [{ tool: 'COMPOSIO_MANAGE_CONNECTIONS', status: 'completed' }],
+          if (connected) {
+            execution.concludeTurn()
+            return {
+              ...compactComposioExecutionReceipt(managed, sourceReceipt) as Record<string, JsonValue>,
+              status: 'ready',
+              toolkit: selected.slug,
+              app_label: selected.name,
+              logo_url: logoUrl,
+              connected_toolkits: [selected.slug],
+              toolkit_connection_statuses: [{
+                toolkit: selected.slug, app_label: selected.name, has_active_connection: true, status_message: 'ACTIVE',
+              }],
+              operations: [{ tool: 'COMPOSIO_MANAGE_CONNECTIONS', status: 'completed' }],
+            }
           }
         }
         execution.concludeTurn()
@@ -1111,7 +1123,7 @@ export function apply(ctx: Context, config: Config = {}): void {
             { status: 'connection_required', operations, result: scopedResult }, sourceReceipt,
           )
           if (redirectUrl !== undefined && workflowSessionId !== undefined && execution.agent !== undefined) {
-            await awaitConnection(execution, {
+            const connected = await awaitConnection(execution, {
               toolkit,
               appLabel: label,
               redirectUrl,
@@ -1126,22 +1138,24 @@ export function apply(ctx: Context, config: Config = {}): void {
                 .filter(item => item.toolkit.toLowerCase() === toolkit.toLowerCase())
               return matching.length > 0 && matching.every(item => item.connected)
             })
-            const activeStatuses = Array.isArray(projected?.['toolkit_connection_statuses'])
-              ? projected['toolkit_connection_statuses'].map((status) => {
-                if (!record(status) || stringValue(status['toolkit'])?.toLowerCase() !== toolkit.toLowerCase()) return status
-                return { ...status, has_active_connection: true, status_message: 'ACTIVE' }
-              })
-              : [{ toolkit, has_active_connection: true, status_message: 'ACTIVE' }]
-            return {
-              ...(record(projected) ? projected : {}),
-              status: 'ready',
-              session_id: workflowSessionId,
-              toolkit,
-              app_label: label,
-              logo_url: logoUrl,
-              connected_toolkits: [toolkit],
-              toolkit_connection_statuses: activeStatuses,
-              operations: [...operations, { tool: 'COMPOSIO_WAIT_FOR_CONNECTIONS', status: 'completed' }],
+            if (connected) {
+              const activeStatuses = Array.isArray(projected?.['toolkit_connection_statuses'])
+                ? projected['toolkit_connection_statuses'].map((status) => {
+                  if (!record(status) || stringValue(status['toolkit'])?.toLowerCase() !== toolkit.toLowerCase()) return status
+                  return { ...status, has_active_connection: true, status_message: 'ACTIVE' }
+                })
+                : [{ toolkit, has_active_connection: true, status_message: 'ACTIVE' }]
+              return {
+                ...(record(projected) ? projected : {}),
+                status: 'ready',
+                session_id: workflowSessionId,
+                toolkit,
+                app_label: label,
+                logo_url: logoUrl,
+                connected_toolkits: [toolkit],
+                toolkit_connection_statuses: activeStatuses,
+                operations: [...operations, { tool: 'COMPOSIO_WAIT_FOR_CONNECTIONS', status: 'completed' }],
+              }
             }
           }
           execution.concludeTurn()

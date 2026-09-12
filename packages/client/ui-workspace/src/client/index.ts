@@ -29,6 +29,7 @@ import { createWorkspaceViewStore } from './stores.ts'
 import { WorkspaceBrowser } from './rows/WorkspaceBrowser.tsx'
 import { WorkspacePicker } from './WorkspacePicker.tsx'
 import { HiveSessionProjection, type HiveSessionProjectionInjected } from './HiveSessionProjection.tsx'
+import { HiveDictationButton } from './HiveDictationButton.tsx'
 import { en, zh, type WorkspaceKey } from './locales.ts'
 
 export type { UiWorkspace } from './navigation.ts'
@@ -52,6 +53,12 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 
 /** Dictionary namespace owned by this plugin. */
 const NS = 'workspace'
+
+declare global {
+  interface Window {
+    __HIVEMIND_DELETE_SESSION__?: (sessionId: string) => Promise<void>
+  }
+}
 
 /**
  * Required services (cordis fiber inject). The target slots are declared by
@@ -158,6 +165,12 @@ export function apply(ctx: Context): void {
     },
     WorkspacePicker,
   ))
+  ctx.slots.inject('conversation.input.left', () => ctx.slots.register({
+    name: 'conversation.input.left',
+    id: 'hivemind-dictation',
+    order: -20,
+    locale: NS,
+  }, HiveDictationButton))
   ctx.slots.inject('shell.sessionRail', () => ctx.slots.register({
     name: 'shell.sessionRail',
     locale: NS,
@@ -173,7 +186,15 @@ export function apply(ctx: Context): void {
       forkSession: (sessionId) => {
         void uiWorkspace.forkSession(sessionId).catch(() => {})
       },
-      archiveSession: async (sessionId) => { await uiWorkspace.archiveSession(sessionId) },
+      deleteSession: async (sessionId) => {
+        const remove = window.__HIVEMIND_DELETE_SESSION__
+        if (remove === undefined) throw new Error('Permanent session deletion is unavailable')
+        const wasCurrent = sessions.list.getSnapshot().current === sessionId
+        await remove(sessionId)
+        if (wasCurrent) sessions.clear()
+        await uiWorkspace.archiveSession(sessionId)
+        await sessions.refresh()
+      },
     }),
   }, HiveSessionProjection))
 }

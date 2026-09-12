@@ -46,8 +46,15 @@
   min-height: 0;
   flex-direction: column;
   gap: 2px;
-  overflow: hidden;
+  max-height: 178px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-color: var(--dsw-alias-border-l4) transparent;
+  scrollbar-width: thin;
 }
+
+.list::-webkit-scrollbar { width: 4px; }
+.list::-webkit-scrollbar-thumb { border-radius: 999px; background: var(--dsw-alias-border-l4); }
 
 .renameInput {
   width: 100%;

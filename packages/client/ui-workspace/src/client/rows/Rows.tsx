@@ -377,7 +377,7 @@ export function SearchResultItem({ result, currentId, onOpen, t }: {
  * @returns the session row.
  */
 export function SessionNodeItem({
-  node, currentId, now, onOpen, onRename, onFork, onArchive, onShare, onReveal, drag, flat = false,
+  node, currentId, now, onOpen, onRename, onFork, onArchive, onDelete, onShare, onReveal, drag, flat = false,
   showActions = true, actionsPersistent = false, t,
 }: {
   node: SessionNode
@@ -390,6 +390,8 @@ export function SessionNodeItem({
   onFork: (id: SessionNode['id']) => void
   /** Archive this session (row menu action; commits without a dialog). */
   onArchive: (id: SessionNode['id']) => void
+  /** HIVE composition may provide permanent deletion instead of archive. */
+  onDelete?: ((id: SessionNode['id']) => void) | undefined
   /** Share this session when the owning surface exposes a stable address. */
   onShare?: ((id: SessionNode['id'], title: string) => void) | undefined
   /** Scroll this row into view after search navigation, then acknowledge it. */
@@ -425,7 +427,9 @@ export function SessionNodeItem({
     { id: 'fork', label: t('menu.fork'), icon: <IconBranchOutline16 /> },
     ...(onShare === undefined ? [] : [{ id: 'share', label: t('menu.shareSession'), icon: <IconShareOutline16 /> }]),
     // 20-native glyph in the menu's 16px icon slot (Menu.module.css .itemIcon).
-    { id: 'archive', label: t('menu.archiveSession'), icon: <IconArchiveOutline20 size={16} /> },
+    onDelete === undefined
+      ? { id: 'archive', label: t('menu.archiveSession'), icon: <IconArchiveOutline20 size={16} /> }
+      : { id: 'delete', label: t('delete.session'), icon: <IconTrashOutline16 />, danger: true },
   ]
   // Figma session cell: pad 8, status slot 16, then a 4px title gap.
   const ownRow = (
@@ -492,6 +496,7 @@ export function SessionNodeItem({
               if (id === 'fork') onFork(node.id)
               if (id === 'share') onShare?.(node.id, row.title)
               if (id === 'archive') onArchive(node.id)
+              if (id === 'delete') onDelete?.(node.id)
             }}
             portal
             closeOnPointerLeave

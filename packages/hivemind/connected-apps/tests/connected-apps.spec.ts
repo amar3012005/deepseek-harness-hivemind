@@ -441,6 +441,33 @@ describe('progressive Composio bridge', () => {
     expect(concludeTurn).toHaveBeenCalledOnce()
   })
 
+  it('settles an aborted connection question as a durable resumable receipt', async () => {
+    execute
+      .mockResolvedValueOnce({ data: {
+        results: [{ primary_tool_slugs: ['ASANA_LIST_TASKS'], toolkits: ['asana'] }],
+        toolkit_connection_statuses: [{ toolkit: 'asana', has_active_connection: false }],
+        session: { id: 'workflow-asana' },
+      } })
+      .mockResolvedValueOnce({ data: { redirect_url: 'https://connect.example/asana' } })
+    const app = harness()
+    app.ask.mockRejectedValue(Object.assign(
+      new Error('ask_user_question was aborted before the user answered'),
+      { code: 'ASK_ABORTED' },
+    ))
+    const agent = { id: 'agent-1', session: { header: { id: 'conversation-1' }, snapshotEvents: () => [], append: vi.fn() } }
+
+    await expect(app.tool().execute({
+      action: 'search', queries: [{ app: 'Asana', use_case: 'List current Asana tasks.' }], session: { generate_id: true },
+    }, { signal: new AbortController().signal, agent } as never)).resolves.toMatchObject({
+      status: 'connection_required',
+      toolkit: 'asana',
+      redirect_url: 'https://connect.example/asana',
+      session_id: 'workflow-asana',
+    })
+    expect(execute).toHaveBeenCalledTimes(2)
+    expect(app.concludeTurn).toHaveBeenCalledOnce()
+  })
+
   it('pauses natively and resumes the original search contract after verified connection', async () => {
     execute
       .mockResolvedValueOnce({ data: {

@@ -18,6 +18,7 @@
 .connection>span { display:flex; min-width:0; flex-direction:column; gap:2px; }
 .connection small { color:var(--dsw-color-text-secondary); font-size:13px; line-height:19px; }
 .connection strong { font-size:15px; }
+.resume { display:flex; margin-top:10px; }
 .connection p,.detail,.error { margin:4px 0 0; color:var(--dsw-color-text-secondary); font-size:13px; line-height:19px; }
 .connection a { flex:none; border-radius:var(--dsw-radius-md,8px); background:var(--dsw-color-accent-primary); padding:8px 12px; color:var(--dsw-color-text-on-accent,white); font-size:13px; font-weight:600; text-decoration:none; }
 .connection a:focus-visible { outline:2px solid var(--dsw-color-border-focus); outline-offset:2px; }
