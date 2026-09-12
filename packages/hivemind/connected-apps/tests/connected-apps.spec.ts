@@ -95,6 +95,20 @@ describe('progressive Composio bridge', () => {
     expect(compactComposioSearchReceipt(first)?.execution_contracts).toEqual(first.execution_contracts)
   })
 
+  it('retains complete plans and nested schema keywords through repeated projection', () => {
+    const steps = Array.from({ length: 7 }, (_, index) => `${index}: ${'prerequisite '.repeat(40)}`)
+    const schema = { type: 'object', additionalProperties: false, required: ['target'], properties: {
+      target: { oneOf: [{ type: 'string', minLength: 3 }, { type: 'object', required: ['id'], properties: { id: { type: 'integer' } } }] },
+    } }
+    const first = compactComposioSearchReceipt({ data: { results: [{ primary_tool_slugs: ['EXAMPLE_READ'],
+      recommended_plan_steps: steps, known_pitfalls: steps, tool_schemas: { EXAMPLE_READ: { input_schema: schema } },
+    }] } })!
+    const second = compactComposioSearchReceipt(first)
+    expect(second).toMatchObject({ results: [{ recommended_plan_steps: steps, known_pitfalls: steps }],
+      execution_contracts: [{ properties: schema.properties, schema_keywords: { type: 'object', additionalProperties: false } }],
+    })
+  })
+
   it('bounds provider executions so MIME and long payloads stay out of the transcript', () => {
     const compact = compactComposioExecutionReceipt({
       data: { text: 'x'.repeat(2000), mime_type: 'text/html', headers: { authorization: 'secret' } },

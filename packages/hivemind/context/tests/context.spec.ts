@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { createUserMessage } from '@deepseek-ai/dsh-llm'
+import { createUserMessage, createAssistantMessage, createToolResultMessage } from '@deepseek-ai/dsh-llm'
 import { contextPlugin, type ProfileSnapshot } from '../src/index.ts'
 
 function user(text: string) {
@@ -26,6 +26,38 @@ function mount(snapshotFor = vi.fn(async (): Promise<ProfileSnapshot> => ({
 }
 
 describe('HIVE progressive context', () => {
+  it('replaces completed tool history without requiring a profile anchor and leaves current work intact', async () => {
+    const harness = mount()
+    const events = [
+      { type: 'system/message', seq: 0 },
+      { type: 'turn/start', seq: 1, data: { turn: 1 } },
+      { type: 'user/message', seq: 2, surfaceOp: 'append', data: user('Find the latest item') },
+      { type: 'tool/result', seq: 3, surfaceOp: 'append', data: { turn: 1, message: createToolResultMessage({
+        callId: 'one' as never, content: [{ type: 'text', text: 'LARGE_OLD_TOOL_RECEIPT' }], isError: false,
+      }) } },
+      { type: 'assistant/message', seq: 4, surfaceOp: 'append', data: { turn: 1, message: createAssistantMessage({
+        source: { provider: 'test', model: 'test' }, content: [{ type: 'text', text: 'The latest item is ready.' }],
+      }) } },
+      { type: 'turn/end', seq: 5, data: { turn: 1, reason: { kind: 'completed' } } },
+      { type: 'turn/start', seq: 6, data: { turn: 2 } },
+      { type: 'user/message', seq: 7, surfaceOp: 'append', data: user('Current work already admitted') },
+    ]
+    const append = vi.fn()
+    const agent = { session: { surface: { nodes: [0, 2, 3, 4, 7] }, snapshotEvents: () => events,
+      eventAt: (seq: number) => events.find(event => event.seq === seq), append,
+    } }
+    const decision = await harness.preStep({ agent, turn: 2, signal: new AbortController().signal } as never,
+      async () => ({ kind: 'enter', messages: [user('Next question')] })) as { startsRequestSeries?: boolean }
+    expect(decision.startsRequestSeries).toBe(true)
+    expect(append.mock.calls[0]?.[2]).toEqual({ surfaceOp: { op: 'replace', startSeq: 2, endSeq: 4 }, sourceEventSeqs: [2, 3, 4] })
+    const text = JSON.stringify(append.mock.calls[0]?.[1])
+    expect(text).toContain('Find the latest item')
+    expect(text).toContain('The latest item is ready.')
+    expect(text).not.toContain('LARGE_OLD_TOOL_RECEIPT')
+    expect(text).not.toContain('Current work already admitted')
+    expect(events).toHaveLength(8)
+    expect(harness.snapshotFor).not.toHaveBeenCalled()
+  })
   it('does not inject profile context or fetch identity for a greeting', async () => {
     const harness = mount()
     const decision = await harness.preStep({ agent: harness.agent, turn: 1, signal: new AbortController().signal } as never, async () => ({

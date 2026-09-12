@@ -415,11 +415,8 @@ function requiredMissingToolkits(value: unknown, statuses: Array<{ toolkit: stri
 }
 
 function copyPlanningFields(source: Record<string, unknown>, target: Record<string, JsonValue>): void {
-  // The original discovery receipt is stored before this projection. The
-  // active model needs the bounded next plan, not every optional/fallback
-  // paragraph Composio generated for future branches.
-  const steps = boundedStrings(source['recommended_plan_steps'], 3, 280)
-  const pitfalls = boundedStrings(source['known_pitfalls'], 2, 240)
+  const steps = stringArray(source['recommended_plan_steps'])
+  const pitfalls = stringArray(source['known_pitfalls'])
   const difficulty = jsonScalar(source['difficulty'])
   if (steps.length > 0) target['recommended_plan_steps'] = steps
   if (pitfalls.length > 0) target['known_pitfalls'] = pitfalls
@@ -430,6 +427,7 @@ type ExecutionContract = {
   readonly tool_slug: string
   readonly required_fields: readonly string[]
   readonly properties: Record<string, JsonValue>
+  readonly schema_keywords?: Record<string, JsonValue>
 }
 
 type RestoredWorkflowState = {
@@ -516,19 +514,8 @@ function previousUnmatchedDiscovery(
 
 function compactProperty(value: unknown): JsonValue | undefined {
   if (!record(value)) return undefined
-  const compact: Record<string, JsonValue> = {}
-  for (const key of ['type', 'format', 'description'] as const) {
-    const entry = stringValue(value[key])
-    if (entry !== undefined) compact[key] = key === 'description' && entry.length > 240
-      ? `${entry.slice(0, 240)}…`
-      : entry
-  }
-  if (Array.isArray(value['enum'])) compact['enum'] = value['enum'].filter(jsonScalar) as JsonValue[]
-  if (record(value['items'])) {
-    const items = compactProperty(value['items'])
-    if (items !== undefined) compact['items'] = items
-  }
-  return Object.keys(compact).length === 0 ? undefined : compact
+  // Schema keywords are executable instructions, not optional display prose.
+  return JSON.parse(JSON.stringify(value)) as JsonValue
 }
 
 function schemaRecord(value: unknown): Record<string, unknown> | undefined {
@@ -561,6 +548,9 @@ function executionContracts(value: unknown, selected?: ReadonlySet<string>): Exe
       tool_slug: slug,
       required_fields: stringArray(schema['required']),
       properties,
+      schema_keywords: JSON.parse(JSON.stringify(Object.fromEntries(
+        Object.entries(schema).filter(([key]) => key !== 'properties' && key !== 'required'),
+      ))) as Record<string, JsonValue>,
     })
   }
   // A post-execute projection may receive an already projected search receipt.
@@ -568,7 +558,10 @@ function executionContracts(value: unknown, selected?: ReadonlySet<string>): Exe
     for (const item of data['execution_contracts']) {
       if (!record(item)) continue
       const slug = stringValue(item['tool_slug'])
-      if (slug !== undefined) add(slug, { properties: item['properties'], required: item['required_fields'] })
+      if (slug !== undefined) add(slug, {
+        ...(record(item['schema_keywords']) ? item['schema_keywords'] : {}),
+        properties: item['properties'], required: item['required_fields'],
+      })
     }
   }
   for (const container of containers) {

@@ -2,6 +2,8 @@
 
 Projects a compact organization brief and bounded completed user/final-answer exchanges. Internal tool calls and tool outputs are removed from the next request.
 
+Completed history is projected even when no profile was injected. Current-turn nodes remain outside the replacement interval, and an interrupted latest turn is not compacted. Original events remain available for replay and workflow restoration.
+
 ## Model Experience
 
 - **Visible tools:** none.
