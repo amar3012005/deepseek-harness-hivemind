@@ -7,7 +7,7 @@ import type { PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { apply, inject } from '../src/client/index.ts'
 import { PendingConnectionAuthorization } from '../src/client/connection-question.ts'
-import { ConnectionAuthorizationPanel } from '../src/client/ConnectionAuthorizationPanel.tsx'
+import { ComposioConnectionCard } from '../src/client/ComposioConnectionCard.tsx'
 import { HivemindConnect } from '../src/client/HivemindConnect.tsx'
 import { setupEmbedMessaging } from '../src/client/embed.ts'
 
@@ -33,7 +33,6 @@ describe('HIVE-MIND connection UI', () => {
     slots.register({
       name: 'root',
       children: {
-        'conversation.composer': { kind: 'chain', scope: 'session' },
         'conversation.hero.brand.mark': { kind: 'single', scope: 'root' },
         'tool.call.toolview': { kind: 'keyed', scope: 'session' },
       },
@@ -85,9 +84,9 @@ describe('HIVE-MIND connection UI', () => {
 
     const current = [...pending.keys()][0]
     expect(current).toBeInstanceOf(PendingConnectionAuthorization)
-    const entry = slots.entries('conversation.composer').find(item => item.component === ConnectionAuthorizationPanel)
+    expect(slots.entries('conversation.composer')).toHaveLength(0)
+    const entry = slots.entries('tool.call.toolview').find(item => item.component === ComposioConnectionCard)
     expect(entry).toBeDefined()
-    expect((entry?.select as (value: { pendingInteraction: unknown }) => unknown)({ pendingInteraction: current })).toBe(current)
     await current!.continue()
     await expect(result).resolves.toEqual({ answers: [{
       id: request.questions[0]!.id,

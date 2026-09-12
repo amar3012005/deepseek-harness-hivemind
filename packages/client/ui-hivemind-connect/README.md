@@ -27,7 +27,7 @@ The runtime supplies status, start, and disconnect endpoints. Starting a connect
 
 The client contributes one `sidebar.footer.action` slot. It refreshes connection state after browser focus, polls quickly while login is in progress, and otherwise checks at a bounded interval. A connected state displays the authenticated email plus reconnect and disconnect controls.
 
-The package also contributes the keyed `hivemind_connected_task` tool view. Its durable result projects each bounded Composio operation, including search and connection management, before showing a connection, approval, completion, or failure card. Replay derives the same progress rows from the recorded tool result; browser state is not authoritative.
+The package also contributes the keyed `hivemind_connected_task` tool view. Its durable result projects each bounded Composio operation, including search and connection management, before showing a connection, approval, completion, or failure card. While the Host waits for connection authorization, the same tool view renders the pending interaction inline after its progress rows; the resident composer stays mounted below the transcript. Replay derives settled progress rows from the recorded tool result, while the Session pending-interaction service owns the live authorization controls.
 
 ## Model Experience
 

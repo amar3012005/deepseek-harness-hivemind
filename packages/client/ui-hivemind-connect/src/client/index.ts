@@ -1,6 +1,5 @@
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
-import type { ComposerChainProps } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
@@ -12,7 +11,6 @@ import type { TypertClientEventListener } from '@deepseek-ai/dsh-typert-protocol
 import { en, zh, type HivemindConnectKey } from './locales.ts'
 import { setupEmbedMessaging } from './embed.ts'
 import { ComposioConnectionCard } from './ComposioConnectionCard.tsx'
-import { ConnectionAuthorizationPanel } from './ConnectionAuthorizationPanel.tsx'
 import {
   connectionPresentationOf, PendingConnectionAuthorization,
 } from './connection-question.ts'
@@ -78,13 +76,6 @@ export function apply(ctx: ClientContext): void {
   ctx.effect(setupEmbedMessaging, 'ui-hivemind-connect: embedded authentication')
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-hivemind-connect: dictionaries')
   const publishConnection = ctx.uiSession.registerPendingInteraction<PendingConnectionAuthorization>(() => 2)
-  ctx.slots.inject('conversation.composer', () => ctx.slots.register({
-    name: 'conversation.composer',
-    priority: 2,
-    select: ({ pendingInteraction }: ComposerChainProps): PendingConnectionAuthorization | null =>
-      pendingInteraction instanceof PendingConnectionAuthorization ? pendingInteraction : null,
-    locale: NS,
-  }, ConnectionAuthorizationPanel))
   ctx.remote.$on('user-questions/request', function (request, next) {
     return answerConnectionQuestion(ctx, this, request, next, publishConnection)
   })

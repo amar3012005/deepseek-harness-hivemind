@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-09-12-connected-app-native-continuation.md
-2026-09-12-connected-app-native-continuation.md: 7a6ae0b53865f6598416870c91ea2cb057b0d0d5
-2026-09-12-connected-app-native-continuation.zh.md: 544ebc8bd85427bd8551e801cb4e9d6d2c0ca2cc
+2026-09-12-connected-app-native-continuation.md: 95cccae43c5c1100a5d204c0c2ab3e7033ceb6ea
+2026-09-12-connected-app-native-continuation.zh.md: 0728484924318c960db0562c6b622da6f55677b1

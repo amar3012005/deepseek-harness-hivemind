@@ -1,7 +1,6 @@
 .frame {
-  display: flex;
-  justify-content: center;
-  padding: 8px calc(var(--dsh-composer-side-clearance) + 16px) 12px;
+  display: block;
+  margin-top: 24px;
 }
 
 .root {
@@ -100,7 +99,6 @@
 }
 
 @media (max-width: 640px) {
-  .frame { padding-inline: 12px; }
   .title { font-size: 18px; line-height: 25px; }
   .actions { align-items: stretch; flex-direction: column; }
   .connectButton { justify-content: center; }

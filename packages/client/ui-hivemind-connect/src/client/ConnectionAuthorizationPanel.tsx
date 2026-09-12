@@ -4,11 +4,11 @@ import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots
 import type { PendingConnectionAuthorization } from './connection-question.ts'
 import css from './ConnectionAuthorizationPanel.module.css'
 
-type Props = PropsRuntime<'conversation.composer'>
+type Props = PropsRuntime<'tool.call.toolview'>
   & { matched: PendingConnectionAuthorization }
   & PropsLocale<'hivemind-connect'>
 
-/** Native Harness composer takeover for a paused connected-app authorization. */
+/** Native Harness inline continuation for a paused connected-app authorization. */
 export function ConnectionAuthorizationPanel({ matched, t }: Pick<Props, 'matched' | 't'>) {
   const [verifying, setVerifying] = useState(false)
   const { presentation, question } = matched
