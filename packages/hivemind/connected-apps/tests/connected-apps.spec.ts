@@ -16,6 +16,7 @@ function harness(
   enabledByDefault = false,
 ) {
   const concludeTurn = vi.fn()
+  const ask = vi.fn()
   let tool: {
     execute(
       args: Record<string, unknown>,
@@ -26,6 +27,7 @@ function harness(
   const ctx = {
     tools: { register(value: typeof tool) { tool = value } },
     hivemindIdentity: { resolve: vi.fn(async () => identity) },
+    userQuestions: { ask },
     on(name: string, listener: (...args: never[]) => unknown) { listeners.set(name, listener) },
     get(name: string) { return name === 'settings' ? { get: () => enabled === undefined ? undefined : ({ pluginsEnabled: enabled }) } : undefined },
     logger: { warn: vi.fn() },
@@ -38,6 +40,7 @@ function harness(
     }),
     listeners,
     concludeTurn,
+    ask,
   }
 }
 
@@ -309,6 +312,91 @@ describe('progressive Composio bridge', () => {
       toolkits: ['slack'], session_id: 'workflow-1',
     })
     expect(concludeTurn).toHaveBeenCalledOnce()
+  })
+
+  it('pauses natively and resumes the original search contract after verified connection', async () => {
+    execute
+      .mockResolvedValueOnce({ data: {
+        results: [{
+          primary_tool_slugs: ['ASANA_LIST_TASKS'],
+          toolkits: ['asana'],
+          recommended_plan_steps: ['List the requested tasks.'],
+          tool_schemas: { ASANA_LIST_TASKS: { input_schema: {
+            type: 'object', required: ['workspace_id'], properties: { workspace_id: { type: 'string' } },
+          } } },
+        }],
+        toolkit_connection_statuses: [{ toolkit: 'asana', has_active_connection: false }],
+        session: { id: 'workflow-asana' },
+      } })
+      .mockResolvedValueOnce({ data: { redirect_url: 'https://connect.example/asana' } })
+      .mockResolvedValueOnce({ data: { toolkit: 'asana', status: 'ACTIVE' } })
+    const app = harness()
+    app.ask.mockResolvedValue({ answers: [{
+      id: 'hivemind-connected-app-authorization:workflow-asana:asana',
+      selected: ["I've connected Asana — continue"],
+    }] })
+    const agent = { id: 'agent-1', session: { header: { id: 'conversation-1' } } }
+    const result = await app.tool().execute({
+      action: 'search',
+      queries: [{ app: 'Asana', use_case: 'List current Asana tasks.' }],
+      session: { generate_id: true },
+    }, { signal: new AbortController().signal, agent } as never)
+
+    expect(app.ask).toHaveBeenCalledOnce()
+    expect(app.ask.mock.calls[0]?.[0]).toMatchObject({ questions: [{
+      id: 'hivemind-connected-app-authorization:workflow-asana:asana',
+      question: 'Connect Asana to continue, then return here.',
+      options: [
+        { label: 'Connect Asana' },
+        { label: "I've connected Asana — continue" },
+      ],
+    }], agent })
+    const asked = app.ask.mock.calls[0]?.[0] as { questions: Array<{ detail?: string }> }
+    const detail = asked.questions[0]?.detail
+    expect(detail).toContain('Authorize in a new tab, then continue this request.')
+    expect(detail).toContain('<!-- hivemind-connected-app-authorization:')
+    expect(detail).toContain(encodeURIComponent('https://connect.example/asana'))
+    expect(execute).toHaveBeenNthCalledWith(3, 'COMPOSIO_WAIT_FOR_CONNECTIONS', {
+      session_id: 'workflow-asana', toolkits: ['asana'],
+    })
+    expect(result).toMatchObject({
+      status: 'ready',
+      session_id: 'workflow-asana',
+      connected_toolkits: ['asana'],
+      toolkit_connection_statuses: [{ toolkit: 'asana', has_active_connection: true, status_message: 'ACTIVE' }],
+      results: [{ primary_tool_slugs: ['ASANA_LIST_TASKS'], recommended_plan_steps: ['List the requested tasks.'] }],
+      execution_contracts: [{ tool_slug: 'ASANA_LIST_TASKS', required_fields: ['workspace_id'] }],
+    })
+    expect(app.concludeTurn).not.toHaveBeenCalled()
+  })
+
+  it('keeps the same tool call paused when verification is not yet active', async () => {
+    execute
+      .mockResolvedValueOnce({ data: {
+        results: [{ primary_tool_slugs: ['SLACK_FETCH_TEAM_INFO'], toolkits: ['slack'] }],
+        toolkit_connection_statuses: [{ toolkit: 'slack', has_active_connection: false }],
+        session: { id: 'workflow-slack' },
+      } })
+      .mockResolvedValueOnce({ data: { redirect_url: 'https://connect.example/slack' } })
+      .mockResolvedValueOnce({ data: { toolkit: 'slack', status: 'PENDING' } })
+      .mockResolvedValueOnce({ data: { toolkit: 'slack', status: 'ACTIVE' } })
+    const app = harness()
+    app.ask.mockResolvedValue({ answers: [{
+      id: 'hivemind-connected-app-authorization:workflow-slack:slack',
+      selected: ["I've connected Slack — continue"],
+    }] })
+    const agent = { id: 'agent-1', session: { header: { id: 'conversation-1' } } }
+
+    await expect(app.tool().execute({
+      action: 'search', queries: [{ app: 'Slack', use_case: 'Read Slack workspace information.' }], session: { generate_id: true },
+    }, { signal: new AbortController().signal, agent } as never)).resolves.toMatchObject({ status: 'ready' })
+
+    expect(app.ask).toHaveBeenCalledTimes(2)
+    expect(execute).toHaveBeenNthCalledWith(1, 'COMPOSIO_SEARCH_TOOLS', expect.any(Object))
+    expect(execute).toHaveBeenNthCalledWith(2, 'COMPOSIO_MANAGE_CONNECTIONS', expect.any(Object))
+    expect(execute).toHaveBeenNthCalledWith(3, 'COMPOSIO_WAIT_FOR_CONNECTIONS', expect.any(Object))
+    expect(execute).toHaveBeenNthCalledWith(4, 'COMPOSIO_WAIT_FOR_CONNECTIONS', expect.any(Object))
+    expect(app.concludeTurn).not.toHaveBeenCalled()
   })
 
   it('accepts one selected schema slug through the singular bounded-step field', async () => {

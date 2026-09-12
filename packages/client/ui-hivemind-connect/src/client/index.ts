@@ -1,13 +1,21 @@
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
+import type {} from '@deepseek-ai/dsh-api-remotes/client'
+import type { ComposerChainProps } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-ui-session/client'
+import type { PendingInteractionPublisher } from '@deepseek-ai/dsh-client-ui-session/client'
+import type { TypertClientEventListener } from '@deepseek-ai/dsh-typert-protocol'
 import { en, zh, type HivemindConnectKey } from './locales.ts'
 import { setupEmbedMessaging } from './embed.ts'
 import { ComposioConnectionCard } from './ComposioConnectionCard.tsx'
+import { ConnectionAuthorizationPanel } from './ConnectionAuthorizationPanel.tsx'
+import {
+  connectionPresentationOf, PendingConnectionAuthorization,
+} from './connection-question.ts'
 import { setupSingulanceHeadline, SingulanceMark } from './SingulanceMark.tsx'
 import { setupHivemindSessionRouting } from './session-route.ts'
 import type {} from '@deepseek-ai/dsh-client-ui-tool/client'
@@ -19,31 +27,79 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 const NS = 'hivemind-connect'
 
 /** Browser dependencies for the shell-overlay connection control. */
-export const inject = ['slots', 'locale', 'sessions', 'conversation', 'uiConversation']
+// Match the generic question plugin's minimum activation boundary. The HIVE row
+// precedes it in the Web composition, so this listener must not be delayed by
+// optional conversation services or the generic handler will claim the
+// connection question first.
+export const inject = ['sessions', 'remote', 'uiSession', 'slots', 'locale']
 
 export interface ConnectionStatus {
   status: 'connected' | 'connecting' | 'disconnected' | 'unavailable'
   userEmail?: string
 }
 
+type QuestionListener = TypertClientEventListener<'user-questions/request'>
+type ClientQuestionRequest = Parameters<QuestionListener>[0]
+type ClientQuestionNext = Parameters<QuestionListener>[1]
+type ClientQuestionAnswer = Awaited<ReturnType<QuestionListener>>
+
+async function answerConnectionQuestion(
+  ctx: ClientContext,
+  owner: ClientContext,
+  request: ClientQuestionRequest,
+  next: ClientQuestionNext,
+  publish: PendingInteractionPublisher<PendingConnectionAuthorization>,
+): Promise<ClientQuestionAnswer> {
+  const recognized = connectionPresentationOf(request.questions)
+  if (recognized === undefined) return next()
+  const sessionId = ctx.sessions.scopeOf(owner)
+  if (sessionId === undefined) return next()
+  const pending = new PendingConnectionAuthorization(sessionId, recognized, request.signal)
+  const completed = Promise.withResolvers<void>()
+  const remove = publish(pending, async () => {
+    pending.delegate()
+    await completed.promise
+  })
+  try {
+    try {
+      return await pending.result
+    } catch (error) {
+      if (pending.isDelegation(error)) return await next()
+      throw error
+    }
+  } finally {
+    remove()
+    completed.resolve()
+  }
+}
+
 /** Register the localized HIVE-MIND connection control above sidebar Settings. */
 export function apply(ctx: ClientContext): void {
   ctx.effect(setupEmbedMessaging, 'ui-hivemind-connect: embedded authentication')
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-hivemind-connect: dictionaries')
-  ctx.effect(() => ctx.uiConversation.configureWorkspaceRequirement(false), 'ui-hivemind-connect: filesystem-free conversation')
+  const publishConnection = ctx.uiSession.registerPendingInteraction<PendingConnectionAuthorization>(() => 2)
+  ctx.slots.inject('conversation.composer', () => ctx.slots.register({
+    name: 'conversation.composer',
+    priority: 2,
+    select: ({ pendingInteraction }: ComposerChainProps): PendingConnectionAuthorization | null =>
+      pendingInteraction instanceof PendingConnectionAuthorization ? pendingInteraction : null,
+    locale: NS,
+  }, ConnectionAuthorizationPanel))
+  ctx.remote.$on('user-questions/request', function (request, next) {
+    return answerConnectionQuestion(ctx, this, request, next, publishConnection)
+  })
+  ctx.inject(['uiConversation'], (scope: ClientContext) => {
+    scope.effect(
+      () => scope.uiConversation.configureWorkspaceRequirement(false),
+      'ui-hivemind-connect: filesystem-free conversation',
+    )
+  })
   ctx.slots.inject('conversation.hero.brand.mark', () =>
     ctx.slots.register({ name: 'conversation.hero.brand.mark' }, SingulanceMark))
   ctx.effect(setupSingulanceHeadline, 'ui-hivemind-connect: Singulance hero headline')
   ctx.slots.inject('tool.call.toolview', function* () {
     const registration = (key: string) => ctx.slots.register({
       name: 'tool.call.toolview', key, locale: NS,
-      inject: sessionId => ({
-        continueWorkflow: async (app: string): Promise<void> => {
-          const scope = ctx.sessions.scope(sessionId)
-          if (scope === undefined) throw new Error(`ui-hivemind-connect: session "${String(sessionId)}" resolved no scope`)
-          await scope.conversation.send(`I've connected ${app} — continue the pending connected-app workflow.`)
-        },
-      }),
     }, ComposioConnectionCard)
     yield registration('hivemind_connected_task')
     yield registration('mcp__composio__COMPOSIO_MANAGE_CONNECTIONS')

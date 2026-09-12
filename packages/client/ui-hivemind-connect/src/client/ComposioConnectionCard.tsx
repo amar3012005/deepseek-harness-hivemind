@@ -1,13 +1,9 @@
-import { useMemo, useState } from 'react'
+import { useMemo } from 'react'
 import type { ToolCallViewProps } from '@deepseek-ai/dsh-client-ui-tool/client'
-import type { InjectFace, PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
+import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import css from './ComposioConnectionCard.module.css'
 
-interface ConnectionCardInjected {
-  continueWorkflow: (app: string) => Promise<void>
-}
-
-type Props = ToolCallViewProps & PropsLocale<'hivemind-connect'> & InjectFace<ConnectionCardInjected>
+type Props = ToolCallViewProps & PropsLocale<'hivemind-connect'>
 interface Receipt {
   readonly action?: string
   readonly status?: string
@@ -74,8 +70,7 @@ function safeHttpsUrl(value: unknown): string | undefined {
 }
 
 /** Replay-stable projection of the durable Composio tool receipt. */
-export function ComposioConnectionCard({ block, continueWorkflow, inspect, t }: Props) {
-  const [continuing, setContinuing] = useState(false)
+export function ComposioConnectionCard({ block, inspect, t }: Props) {
   const receipt = useMemo(() => findReceipt(settledPayload(block)), [block])
   const redirect = receipt?.status === 'ready' ? undefined : safeHttpsUrl(receipt?.redirect_url ?? receipt?.redirectUrl)
   const toolkit = receipt?.toolkit || t('composio.app')
@@ -93,7 +88,7 @@ export function ComposioConnectionCard({ block, continueWorkflow, inspect, t }: 
           : failed ? t('composio.failed') : t('composio.completed')
   return <section className={css.root} aria-live="polite"><button className={css.summary} type="button" onClick={inspect} disabled={inspect===undefined} aria-label={t('composio.inspect')}><span className={css.symbol} aria-hidden="true">✦</span><span>{title}</span>{receipt?.status?<span className={css.status}>{receipt.status.replaceAll('_',' ')}</span>:null}</button>
     {receipt?.operations?.map((operation, index) => operation.tool?<div className={css.operation} key={`${operation.tool}:${index}`}><span className={css.symbol} aria-hidden="true">✦</span><code>{operation.tool}</code>{operation.status?<span className={css.operationStatus}>→ {operation.status}</span>:null}</div>:null)}
-    {receipt?.status==='connection_required'?<><p className={css.prompt}>{receipt.prompt||t('composio.connectionPrompt',{ app })}</p>{redirect?<a className={css.connection} href={redirect} target="_blank" rel="noreferrer"><img src={logo} alt=""/><span><strong>{t('composio.connect',{ app })}</strong><small>{t('composio.connectionActionDetail')}</small></span></a>:null}<button className={css.continue} type="button" disabled={continuing} onClick={() => { setContinuing(true); void continueWorkflow(app).catch(() => setContinuing(false)) }}>{continuing?t('composio.continuing'):t('composio.connectedContinue',{ app })}</button></>:null}
+    {receipt?.status==='connection_required'?<><p className={css.prompt}>{receipt.prompt||t('composio.connectionPrompt',{ app })}</p>{redirect?<a className={css.connection} href={redirect} target="_blank" rel="noreferrer"><img src={logo} alt=""/><span><strong>{t('composio.connect',{ app })}</strong><small>{t('composio.connectionActionDetail')}</small></span></a>:null}</>:null}
     {redirect&&receipt?.status!=='connection_required'?<div className={css.connection}><div><strong>{t('composio.connect',{ app })}</strong><p>{t('composio.connectDetail')}</p></div><a href={redirect} target="_blank" rel="noreferrer">{t('composio.authorize')}</a></div>:null}
     {draft?<p className={css.detail}>{t('composio.draftDetail')}</p>:null}{!redirect&&!draft&&receipt?.summary?<p className={css.detail}>{receipt.summary}</p>:null}{receipt?.error?<p className={css.error}>{receipt.error}</p>:null}</section>
 }

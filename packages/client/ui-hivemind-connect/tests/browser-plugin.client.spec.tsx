@@ -4,7 +4,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type { PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { apply, inject } from '../src/client/index.ts'
+import { PendingConnectionAuthorization } from '../src/client/connection-question.ts'
+import { ConnectionAuthorizationPanel } from '../src/client/ConnectionAuthorizationPanel.tsx'
 import { HivemindConnect } from '../src/client/HivemindConnect.tsx'
 import { setupEmbedMessaging } from '../src/client/embed.ts'
 
@@ -19,6 +22,82 @@ afterEach(() => {
 })
 
 describe('HIVE-MIND connection UI', () => {
+  it('activates before the generic question fallback without waiting on optional conversation services', () => {
+    expect(inject).toEqual(['sessions', 'remote', 'uiSession', 'slots', 'locale'])
+  })
+
+  it('claims a connection question as a native pending interaction and returns into the same waterfall', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SlotRegistry).await()
+    const slots = ctx.get('slots') as SlotRegistry
+    slots.register({
+      name: 'root',
+      children: {
+        'conversation.composer': { kind: 'chain', scope: 'session' },
+        'conversation.hero.brand.mark': { kind: 'single', scope: 'root' },
+        'tool.call.toolview': { kind: 'keyed', scope: 'session' },
+      },
+    } as never, () => null)
+    ctx.provide('locale', { register: () => () => {} } as never)
+    const SESSION_SCOPE = Symbol('connection-session-scope')
+    const sessionId = 'session-connection' as SessionId
+    const owner = ctx.extend({ [SESSION_SCOPE]: sessionId })
+    ctx.provide('sessions', {
+      scopeOf: (candidate: Context) => (candidate as Context & { [SESSION_SCOPE]?: SessionId })[SESSION_SCOPE],
+      list: { getSnapshot: () => ({ current: sessionId, ids: [sessionId], phase: 'ready' }), subscribe: () => () => {} },
+    } as never)
+    ctx.provide('conversation', {} as never)
+    ctx.provide('uiConversation', { configureWorkspaceRequirement: () => () => {} } as never)
+    const pending = new Map<PendingConnectionAuthorization, () => Promise<void>>()
+    ctx.provide('uiSession', {
+      registerPendingInteraction: () => (
+        value: PendingConnectionAuthorization,
+        delegate: () => Promise<void>,
+      ) => {
+        pending.set(value, delegate)
+        return () => { pending.delete(value) }
+      },
+    } as never)
+    type Listener = (this: Context, request: {
+      questions: Array<{ id: string; question: string; detail: string; options: Array<{ label: string }> }>
+      signal?: AbortSignal
+    }, next: () => Promise<{ answers: never[] }>) => Promise<unknown>
+    let listener: Listener | undefined
+    ctx.provide('remote', { $on: (_event: string, value: Listener) => { listener = value; return () => { listener = undefined } } } as never)
+
+    const fiber = ctx.plugin({ inject: [...inject], apply })
+    await fiber.await()
+    expect(listener).toBeDefined()
+    const payload = encodeURIComponent(JSON.stringify({
+      version: 1, appLabel: 'Asana', toolkit: 'asana',
+      redirectUrl: 'https://connect.example/asana', logoUrl: 'https://logos.example/asana.svg',
+      connectLabel: 'Connect Asana', continueLabel: "I've connected Asana — continue",
+    }))
+    const request = { questions: [{
+      id: 'hivemind-connected-app-authorization:workflow-asana:asana',
+      question: 'Connect Asana to continue, then return here.',
+      detail: `Authorize in a new tab.\n\n<!-- hivemind-connected-app-authorization:${payload} -->`,
+      options: [{ label: 'Connect Asana' }, { label: "I've connected Asana — continue" }],
+    }] }
+    const next = vi.fn(async () => ({ answers: [] as never[] }))
+    const result = listener!.call(owner, request, next)
+    await Promise.resolve()
+
+    const current = [...pending.keys()][0]
+    expect(current).toBeInstanceOf(PendingConnectionAuthorization)
+    const entry = slots.entries('conversation.composer').find(item => item.component === ConnectionAuthorizationPanel)
+    expect(entry).toBeDefined()
+    expect((entry?.select as (value: { pendingInteraction: unknown }) => unknown)({ pendingInteraction: current })).toBe(current)
+    await current!.continue()
+    await expect(result).resolves.toEqual({ answers: [{
+      id: request.questions[0]!.id,
+      selected: ["I've connected Asana — continue"],
+    }] })
+    expect(next).not.toHaveBeenCalled()
+    expect(pending.size).toBe(0)
+    await fiber.dispose()
+  })
+
   it('keeps session projection ownership in the native workspace plugin', async () => {
     const ctx = new Context()
     await ctx.plugin(SlotRegistry).await()

@@ -58,14 +58,12 @@ describe('ComposioConnectionCard', () => {
 
   it('replays the underlying Composio progress before the connection action', () => {
     const inspect = vi.fn()
-    const continueWorkflow = vi.fn().mockResolvedValue(undefined)
     const view = render(<ComposioConnectionCard {...({
       block: block(),
       callId: 'call-connected-task',
       toolName: 'hivemind_connected_task',
       openFile: vi.fn(),
       inspect,
-      continueWorkflow,
       t,
     } as unknown as CardProps)} />)
 
@@ -75,7 +73,6 @@ describe('ComposioConnectionCard', () => {
     expect(view.container.querySelector('a')?.getAttribute('href')).toBe('https://connect.example/gmail')
     fireEvent.click(view.getByRole('button', { name: '查看连接应用工具的输入和输出' }))
     expect(inspect).toHaveBeenCalledOnce()
-    fireEvent.click(view.getByRole('button', { name: '我已连接 Gmail — 继续' }))
-    expect(continueWorkflow).toHaveBeenCalledWith('Gmail')
+    expect(view.queryByRole('button', { name: '我已连接 Gmail — 继续' })).toBeNull()
   })
 })

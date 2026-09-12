@@ -3,6 +3,10 @@ import { describe, expect, it } from 'vitest'
 
 const patch = readFileSync(new URL('../cordis.patch.yml', import.meta.url), 'utf8')
 const webPatch = readFileSync(new URL('../../web-app/cordis.patch.yml', import.meta.url), 'utf8')
+const connectPackage = JSON.parse(readFileSync(
+  new URL('../../../client/ui-hivemind-connect/package.json', import.meta.url),
+  'utf8',
+)) as { dsh: { client: { inject: string[] } } }
 
 describe('hivemind-web native renderer parity', () => {
   it('does not disable native conversation and rendering plugins', () => {
@@ -25,6 +29,11 @@ describe('hivemind-web native renderer parity', () => {
     expect(patch).toContain("name: '@deepseek-ai/dsh-hivemind-execution-scope'")
     expect(patch).toContain("name: '@deepseek-ai/dsh-session-persistence-postgres'")
     expect(patch).toContain("name: '@deepseek-ai/dsh-hivemind-web-runner'")
+  })
+
+  it('loads the HIVE connection answerer before the generic question fallback', () => {
+    expect(connectPackage.dsh.client.inject).not.toContain('@deepseek-ai/dsh-client-ui-conversation')
+    expect(connectPackage.dsh.client.inject).not.toContain('@deepseek-ai/dsh-client-ui-tool')
   })
 
   it('does not strand a native session behind the former fifteen-minute grant', () => {

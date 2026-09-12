@@ -10,10 +10,11 @@ import type {} from '@deepseek-ai/dsh-settings'
 import type { SaveTextSpill, SpillRef } from '@deepseek-ai/dsh-spill'
 import type { PostToolDecision, ToolExecution } from '@deepseek-ai/dsh-tools'
 import { defineTool } from '@deepseek-ai/dsh-tools'
+import type {} from '@deepseek-ai/dsh-user-questions'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 
 export const name = 'hivemind-connected-apps'
-export const inject = ['tools', 'hivemindIdentity']
+export const inject = ['tools', 'hivemindIdentity', 'userQuestions']
 
 const SEARCH_TOOL = 'mcp__composio__COMPOSIO_SEARCH_TOOLS'
 const COMPOSIO_TOOL_PREFIX = 'mcp__composio__'
@@ -50,6 +51,17 @@ function stringValue(value: unknown): string | undefined {
 
 function stringArray(value: unknown): string[] {
   return Array.isArray(value) ? value.flatMap(item => typeof item === 'string' ? [item] : []) : []
+}
+
+function safeHttpsUrl(value: unknown): string | undefined {
+  const candidate = stringValue(value)
+  if (candidate === undefined) return undefined
+  try {
+    const parsed = new URL(candidate)
+    return parsed.protocol === 'https:' ? parsed.href : undefined
+  } catch {
+    return undefined
+  }
 }
 
 function boundedStrings(value: unknown, limit: number, length: number): string[] {
@@ -612,6 +624,57 @@ export function apply(ctx: Context, config: Config = {}): void {
     return pending
   }
 
+  async function awaitConnection(
+    session: ComposioSession,
+    execution: ToolExecution,
+    input: {
+      toolkit: string
+      appLabel: string
+      redirectUrl: string
+      logoUrl: string
+      workflowSessionId: string
+    },
+  ): Promise<void> {
+    const questionId = `hivemind-connected-app-authorization:${input.workflowSessionId}:${input.toolkit}`
+    const connect = `Connect ${input.appLabel}`
+    const continueLabel = `I've connected ${input.appLabel} — continue`
+    const presentation = encodeURIComponent(JSON.stringify({
+      version: 1,
+      appLabel: input.appLabel,
+      toolkit: input.toolkit,
+      redirectUrl: input.redirectUrl,
+      logoUrl: input.logoUrl,
+      connectLabel: connect,
+      continueLabel,
+    }))
+    for (;;) {
+      const answer = await ctx.userQuestions.ask({
+        questions: [{
+          id: questionId,
+          question: `Connect ${input.appLabel} to continue, then return here.`,
+          detail: `Authorize in a new tab, then continue this request.\n\n<!-- hivemind-connected-app-authorization:${presentation} -->`,
+          options: [
+            { label: connect, description: `Authorize ${input.appLabel} in a new tab.` },
+            { label: continueLabel, description: 'Verify the connection and continue this request.' },
+          ],
+        }],
+        ...(execution.agent === undefined ? {} : { agent: execution.agent }),
+        signal: execution.signal,
+      })
+      const selected = answer.answers.find(item => item.id === questionId)?.selected ?? []
+      // Capable clients keep Connect non-settling. A generic client may return
+      // it as an answer; keep the same tool call paused in that fallback.
+      if (!selected.includes(continueLabel)) continue
+      const waited = await session.execute('COMPOSIO_WAIT_FOR_CONNECTIONS', {
+        session_id: input.workflowSessionId,
+        toolkits: [input.toolkit],
+      })
+      const statuses = connectionStatuses(waited)
+      const matching = statuses.filter(item => item.toolkit.toLowerCase() === input.toolkit.toLowerCase())
+      if (matching.length > 0 && matching.every(item => item.connected)) return
+    }
+  }
+
   ctx.tools.register(defineTool({
     name: BRIDGE_TOOL,
     description: 'Tenant-scoped connected-app gateway. For a new external-app task, call search once with atomic queries, explicit outcomes, exact result limits, and session.generate_id=true. Then follow the returned plan and selected slugs. External writes require HIVE approval.',
@@ -696,15 +759,39 @@ export function apply(ctx: Context, config: Config = {}): void {
             toolkits: missing,
             ...(workflowSessionId === undefined ? {} : { session_id: workflowSessionId }),
           })
-          const redirectUrl = firstString(managed, ['redirect_url', 'redirectUrl', 'connection_url', 'url'])
+          const redirectUrl = safeHttpsUrl(firstString(managed, ['redirect_url', 'redirectUrl', 'connection_url', 'url']))
           const toolkit = missing[0]
           if (toolkit === undefined) throw new Error('Connection search returned no missing toolkit')
           const label = titleCaseToolkit(toolkit)
+          const logoUrl = `https://logos.composio.dev/api/${encodeURIComponent(toolkit)}`
           const operations = [
             { tool: 'COMPOSIO_SEARCH_TOOLS', status: 'completed' },
             { tool: 'COMPOSIO_MANAGE_CONNECTIONS', status: redirectUrl === undefined ? 'failed' : 'completed' },
           ]
           const projected = compactComposioSearchReceipt({ status: 'connection_required', operations, result })
+          if (redirectUrl !== undefined && workflowSessionId !== undefined && execution.agent !== undefined) {
+            await awaitConnection(session, execution, {
+              toolkit,
+              appLabel: label,
+              redirectUrl,
+              logoUrl,
+              workflowSessionId,
+            })
+            const activeStatuses = Array.isArray(projected?.['toolkit_connection_statuses'])
+              ? projected['toolkit_connection_statuses'].map((status) => {
+                if (!record(status) || stringValue(status['toolkit'])?.toLowerCase() !== toolkit.toLowerCase()) return status
+                return { ...status, has_active_connection: true, status_message: 'ACTIVE' }
+              })
+              : [{ toolkit, has_active_connection: true, status_message: 'ACTIVE' }]
+            return {
+              ...(record(projected) ? projected : {}),
+              status: 'ready',
+              session_id: workflowSessionId,
+              connected_toolkits: [toolkit],
+              toolkit_connection_statuses: activeStatuses,
+              operations: [...operations, { tool: 'COMPOSIO_WAIT_FOR_CONNECTIONS', status: 'completed' }],
+            }
+          }
           execution.concludeTurn()
           return {
             ...(record(projected) ? projected : {}),
@@ -712,7 +799,7 @@ export function apply(ctx: Context, config: Config = {}): void {
             operations,
             toolkit,
             app_label: label,
-            logo_url: `https://logos.composio.dev/api/${encodeURIComponent(toolkit)}`,
+            logo_url: logoUrl,
             prompt: `Connect ${label} to continue, then return here.`,
             ...(redirectUrl === undefined ? {} : { redirect_url: redirectUrl }),
             ...(workflowSessionId === undefined ? {} : { session_id: workflowSessionId }),
@@ -776,7 +863,7 @@ export function apply(ctx: Context, config: Config = {}): void {
           const matching = statuses.filter(item => item.toolkit.toLowerCase() === toolkit.toLowerCase())
           return matching.length === 0 || matching.some(item => !item.connected)
         })
-        const redirectUrl = firstString(managed, ['redirect_url', 'redirectUrl', 'connection_url', 'url'])
+        const redirectUrl = safeHttpsUrl(firstString(managed, ['redirect_url', 'redirectUrl', 'connection_url', 'url']))
         if (pending.length > 0) execution.concludeTurn()
         return {
           ...compactComposioExecutionReceipt(managed) as Record<string, JsonValue>,

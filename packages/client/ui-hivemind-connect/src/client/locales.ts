@@ -4,7 +4,8 @@ export type HivemindConnectKey =
   | 'session.new' | 'session.recent' | 'session.running' | 'composio.app' | 'composio.checking'
   | 'composio.connectionRequired' | 'composio.connectionPending' | 'composio.approvalRequired' | 'composio.failed' | 'composio.completed'
   | 'composio.connect' | 'composio.connectDetail' | 'composio.authorize' | 'composio.draftDetail' | 'composio.inspect'
-  | 'composio.connectionPrompt' | 'composio.connectionActionDetail' | 'composio.connectedContinue' | 'composio.continuing'
+  | 'composio.connectionPrompt' | 'composio.connectionActionDetail'
+  | 'composio.inputRequired' | 'composio.verifying'
 
 export const en: Record<HivemindConnectKey, string> = {
   connect: 'Connect HIVE-MIND',
@@ -26,7 +27,8 @@ export const en: Record<HivemindConnectKey, string> = {
   'composio.inspect': 'Inspect connected-app tool input and output',
   'composio.connectionPrompt': 'Connect {app} to continue, then return here.',
   'composio.connectionActionDetail': 'Authorize in a new tab, then continue this request.',
-  'composio.connectedContinue': 'I\'ve connected {app} — continue', 'composio.continuing': 'Continuing…',
+  'composio.inputRequired': 'I need your input to continue',
+  'composio.verifying': 'Verifying connection…',
 }
 
 export const zh: Record<HivemindConnectKey, string> = {
@@ -49,5 +51,6 @@ export const zh: Record<HivemindConnectKey, string> = {
   'composio.inspect': '查看连接应用工具的输入和输出',
   'composio.connectionPrompt': '连接 {app} 后返回此处继续。',
   'composio.connectionActionDetail': '请在新标签页中授权，然后继续此请求。',
-  'composio.connectedContinue': '我已连接 {app} — 继续', 'composio.continuing': '正在继续…',
+  'composio.inputRequired': '需要你的输入才能继续',
+  'composio.verifying': '正在验证连接…',
 }

@@ -1,0 +1,107 @@
+.frame {
+  display: flex;
+  justify-content: center;
+  padding: 8px calc(var(--dsh-composer-side-clearance) + 16px) 12px;
+}
+
+.root {
+  width: 100%;
+  max-width: var(--dsh-chat-content-width);
+  box-sizing: border-box;
+  color: var(--dsw-alias-label-primary);
+}
+
+.title {
+  margin: 0 0 22px;
+  font-size: 20px;
+  font-weight: 500;
+  line-height: 28px;
+}
+
+.appCard {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 18px 20px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  color: inherit;
+  text-decoration: none;
+}
+
+.connectButton:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.appCard img {
+  width: 40px;
+  height: 40px;
+  flex: none;
+  object-fit: contain;
+}
+
+.appCard span {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.appCard strong {
+  font-size: 16px;
+  line-height: 22px;
+}
+
+.appCard small,
+.detail {
+  color: var(--dsw-alias-label-secondary);
+  font-size: 14px;
+  line-height: 20px;
+}
+
+.inputTitle {
+  margin: 24px 0 6px;
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 22px;
+}
+
+.detail {
+  margin: 0;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 18px;
+}
+
+.connectButton {
+  display: inline-flex;
+  height: 36px;
+  box-sizing: border-box;
+  align-items: center;
+  gap: 7px;
+  padding: 0 14px;
+  border: .5px solid var(--dsw-alias-border-l3);
+  border-radius: 18px;
+  color: inherit;
+  font-size: 14px;
+  line-height: 22px;
+  text-decoration: none;
+}
+
+.connectButton img {
+  width: 18px;
+  height: 18px;
+  object-fit: contain;
+}
+
+@media (max-width: 640px) {
+  .frame { padding-inline: 12px; }
+  .title { font-size: 18px; line-height: 25px; }
+  .actions { align-items: stretch; flex-direction: column; }
+  .connectButton { justify-content: center; }
+}
