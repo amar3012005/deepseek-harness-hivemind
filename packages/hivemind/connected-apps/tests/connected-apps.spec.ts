@@ -581,7 +581,7 @@ describe('progressive Composio bridge', () => {
   it('uses the scoped profile default only when the UI has no explicit latch', async () => {
     execute.mockResolvedValueOnce({ data: { results: [] } })
     const implicit = harness(undefined, undefined, true)
-    await expect(implicit.tool().execute({ action: 'search', queries: [{ app: 'Gmail', use_case: 'List the five newest Gmail inbox messages, excluding drafts, ordered newest first, returning id, sender, subject, received timestamp, and body snippet.' }], session: { generate_id: true }, search_strategy: 'auto' }, { signal: AbortSignal.abort() })).resolves.toMatchObject({ status: 'ready' })
+    await expect(implicit.tool().execute({ action: 'search', queries: [{ app: 'Gmail', use_case: 'List the five newest Gmail inbox messages, excluding drafts, ordered newest first, returning id, sender, subject, received timestamp, and body snippet.' }], session: { generate_id: true }, search_strategy: 'auto' }, { signal: AbortSignal.abort() })).resolves.toMatchObject({ status: 'no_matching_tool' })
 
     const explicitOff = harness(false, undefined, true)
     await expect(explicitOff.tool().execute({ action: 'search', queries: [{ app: 'Gmail', use_case: 'Read Gmail inbox messages.' }], session: { generate_id: true } }, { signal: AbortSignal.abort() })).rejects.toThrow('disabled')
@@ -645,7 +645,7 @@ describe('progressive Composio bridge', () => {
       action: 'search',
       queries: [{ use_case: 'Email service: get the newest received message from a named sender.' }],
       session: { generate_id: true },
-    }, { signal: AbortSignal.abort() })).resolves.toMatchObject({ status: 'ready' })
+    }, { signal: AbortSignal.abort() })).resolves.toMatchObject({ status: 'no_matching_tool' })
     expect(execute).toHaveBeenCalledWith('COMPOSIO_SEARCH_TOOLS', {
       queries: [{ use_case: 'Email service: get the newest received message from a named sender.' }],
       session: { generate_id: true },
@@ -666,13 +666,13 @@ describe('progressive Composio bridge', () => {
       queries: [{ app: 'Gmail', use_case: 'List the five newest Gmail inbox messages, ordered newest first, returning sender, subject, timestamp, and snippet.' }],
       session: { generate_id: true },
     }
-    await expect(app.tool().execute(request, execution as never)).resolves.toMatchObject({ status: 'ready' })
+    await expect(app.tool().execute(request, execution as never)).resolves.toMatchObject({ status: 'no_matching_tool' })
     await expect(app.tool().execute({
       action: 'search',
       queries: [{ app: 'Gmail', use_case: 'Find the Gmail message identifier needed by the selected detail tool.' }],
       session: { id: 'workflow-1' },
       search_strategy: 'tool_search',
-    }, execution as never)).resolves.toMatchObject({ status: 'ready' })
+    }, execution as never)).resolves.toMatchObject({ status: 'no_matching_tool' })
     await expect(app.tool().execute(request, execution as never)).rejects.toThrow('returned session id')
     expect(execute).toHaveBeenCalledTimes(2)
   })
@@ -707,8 +707,8 @@ describe('progressive Composio bridge', () => {
     }, execution as never)).resolves.toMatchObject({
       status: 'no_matching_tool',
       results: [],
-      next_action: 'report_unsupported',
-      next_action_guidance: expect.stringContaining('do not check or connect another app'),
+      next_action: 'refine_search',
+      next_action_guidance: expect.stringContaining('Do not check connection status or connect another app'),
     })
     expect(execute).toHaveBeenCalledTimes(2)
     expect(app.concludeTurn).not.toHaveBeenCalled()
@@ -738,5 +738,52 @@ describe('progressive Composio bridge', () => {
     })
     expect(execute).toHaveBeenCalledTimes(1)
     expect(app.concludeTurn).not.toHaveBeenCalled()
+  })
+
+  it('replays bounded negative discovery across plugin restart without another provider search', async () => {
+    const events: unknown[] = []
+    const agent = { session: { header: { id: 'durable-discovery' }, snapshotEvents: () => events,
+      append: (type: string, data: unknown) => { events.push({ type, data }) },
+    } }
+    const context = { signal: new AbortController().signal, agent }
+    const request = (use_case: string, known_fields = '') => ({ action: 'search', queries: [{ app: 'Example', use_case, known_fields }], session: { id: 'work' } })
+    async function run(app: ReturnType<typeof harness>, args: Record<string, unknown>) {
+      const callId = `call-${events.length}`
+      events.push({ type: 'tool/call', data: { name: 'hivemind_connected_task', callId, arguments: JSON.stringify(args) } })
+      const value = await app.tool().execute(args, context as never)
+      const projected = compactComposioSearchReceipt(value)!
+      events.push({ type: 'tool/result', data: { message: { source: { callId }, content: [
+        { type: 'tool-result', content: [{ type: 'text', text: JSON.stringify(projected) }] },
+      ] } } })
+      return projected
+    }
+    execute.mockResolvedValue({ data: { session: { id: 'work' }, results: [] } })
+    const first = await run(harness(), request('Find the latest item'))
+    expect(first).toMatchObject({ status: 'no_matching_tool', next_action: 'refine_search' })
+    use.mockResolvedValueOnce({ execute, toolkits, sessionId: 'router-created' })
+    const restarted = harness()
+    const duplicate = await run(restarted, request('Find the latest item'))
+    expect(duplicate).toMatchObject({ discovery: { cache_hit: true }, operations: [], next_action: 'report_discovery_limit' })
+    expect(execute).toHaveBeenCalledTimes(1)
+    const refined = await run(restarted, request('Find an item listing operation'))
+    expect(refined.next_action).toBe('report_discovery_limit')
+    const exhausted = await run(restarted, request('Search another listing description'))
+    expect(exhausted).toMatchObject({ discovery: { cache_hit: true }, next_action: 'report_discovery_limit' })
+    expect(execute).toHaveBeenCalledTimes(2)
+    expect(exhausted.next_action_guidance).toContain('does not prove the provider cannot support it')
+    await run(restarted, request('Find an item listing operation', 'identifier:new-evidence'))
+    expect(execute).toHaveBeenCalledTimes(3)
+    // An expired entry cannot block discovery indefinitely.
+    vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 300_001)
+    try {
+      await run(restarted, request('Find the latest item'))
+      expect(execute).toHaveBeenCalledTimes(4)
+    } finally { vi.restoreAllMocks() }
+  })
+
+  it('does not turn a failed provider search into an unavailable capability', async () => {
+    execute.mockResolvedValue({ successful: false, data: { results: [] } })
+    await expect(harness().tool().execute({ action: 'search', queries: [{ use_case: 'Find items' }], session: { generate_id: true } },
+      { signal: new AbortController().signal })).rejects.toThrow('no capability conclusion')
   })
 })

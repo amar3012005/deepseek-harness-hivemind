@@ -1,6 +1,7 @@
 /** Tenant-scoped progressive Composio capability for HIVE-MIND. */
 
 import type { Context } from '@deepseek-ai/cordis'
+import { createHash } from 'node:crypto'
 import type { Composio } from '@composio/core'
 import z from '@deepseek-ai/schemastery'
 import type {} from '@deepseek-ai/dsh-agent'
@@ -54,12 +55,18 @@ export interface Config {
   enabledByDefault?: boolean
   /** Public HIVE chat URL used as the post-authorization return location. */
   connectionCallbackBaseUrl?: string
+  /** Freshness window for unsuccessful discovery within the same workflow. */
+  discoveryCacheTtlMs?: number
+  /** Consecutive unsuccessful searches allowed before returning existing evidence. */
+  maxUnmatchedSearches?: number
 }
 
 export const Config: z<Config> = z.object({
   apiKey: z.string(),
   enabledByDefault: z.boolean().default(false),
   connectionCallbackBaseUrl: z.string(),
+  discoveryCacheTtlMs: z.number().min(1).default(300_000),
+  maxUnmatchedSearches: z.number().min(1).default(2),
 })
 
 function record(value: unknown): value is Record<string, unknown> {
@@ -464,6 +471,44 @@ function bridgeResult(event: unknown): { callId: string; value: Record<string, u
   return undefined
 }
 
+function discoveryKey(value: unknown): string {
+  return createHash('sha256').update(JSON.stringify(value)).digest('hex')
+}
+
+// Only committed negative results are reusable. Active connection state and
+// provider reads are never authorized from this discovery cache.
+function previousUnmatchedDiscovery(
+  execution: Pick<ToolExecution, 'agent'>,
+  workflowId: string | undefined,
+  routerId: string,
+  scope: string,
+  ttlMs: number,
+): Record<string, unknown>[] {
+  if (workflowId === undefined) return []
+  const calls = new Map<string, Record<string, unknown>>()
+  const found: Record<string, unknown>[] = []
+  for (const event of execution.agent?.session.snapshotEvents() ?? []) {
+    const call = bridgeCall(event)
+    if (call !== undefined) calls.set(call.callId, call.args)
+    const result = bridgeResult(event)
+    if (result === undefined) continue
+    const args = calls.get(result.callId)
+    if ((returnedWorkflowSessionId(result.value) ?? (args === undefined ? undefined : workflowSessionId(args))) !== workflowId) continue
+    if (args?.['action'] === 'execute' || args?.['action'] === 'manage_connection' || args?.['action'] === 'wait_connection') {
+      found.length = 0
+      continue
+    }
+    if (args?.['action'] !== 'search') continue
+    const metadata = result.value['discovery']
+    if (!record(metadata) || metadata['version'] !== 1 || metadata['router_id'] !== routerId || metadata['scope'] !== scope) continue
+    const at = metadata['recorded_at']
+    if (typeof at !== 'number' || Date.now() < at || Date.now() - at >= ttlMs) continue
+    if (result.value['status'] === 'ready') found.length = 0
+    if (result.value['status'] === 'no_matching_tool' && metadata['cache_hit'] !== true) found.push(result.value)
+  }
+  return found
+}
+
 function compactProperty(value: unknown): JsonValue | undefined {
   if (!record(value)) return undefined
   const compact: Record<string, JsonValue> = {}
@@ -671,7 +716,7 @@ export function compactComposioSearchReceipt(value: unknown, receipt?: SpillRef)
     if (id !== undefined) session['id'] = id
     if (instructions !== undefined) session['instructions'] = instructions
   }
-  if (results.length === 0 && statuses.length === 0 && session === undefined) return undefined
+  if (!Array.isArray(data['results']) && statuses.length === 0 && session === undefined) return undefined
   const compact: Record<string, JsonValue> = {
     success: data['success'] !== false,
     results,
@@ -694,7 +739,7 @@ export function compactComposioSearchReceipt(value: unknown, receipt?: SpillRef)
   const contracts = executionContracts(value, primary)
   if (contracts.length > 0) compact['execution_contracts'] = contracts as unknown as JsonValue
   const operations = operationReceipts(value['operations'])
-  if (operations.length > 0) compact['operations'] = operations
+  if (Array.isArray(value['operations'])) compact['operations'] = operations
   const outerStatus = stringValue(value['status'])
   const toolkit = stringValue(value['toolkit'])
   const redirectUrl = stringValue(value['redirect_url']) ?? stringValue(value['redirectUrl'])
@@ -703,6 +748,10 @@ export function compactComposioSearchReceipt(value: unknown, receipt?: SpillRef)
   if (toolkit !== undefined) compact['toolkit'] = toolkit
   if (redirectUrl !== undefined) compact['redirect_url'] = redirectUrl
   if (prompt !== undefined) compact['prompt'] = prompt
+  for (const key of ['next_action', 'next_action_guidance', 'discovery', 'session_id'] as const) {
+    const entry = value[key]
+    if (entry !== undefined) compact[key] = entry as JsonValue
+  }
   copyPlanningFields(data, compact)
   return compact
 }
@@ -956,11 +1005,27 @@ export function apply(ctx: Context, config: Config = {}): void {
         if (turnState?.workflowId !== undefined && requestedWorkflowId !== turnState.workflowId) {
           throw new Error('Connected-app search session does not match the active workflow')
         }
+        const scope = discoveryKey({ apps: [...requestedApps(args.queries)].sort(), known: queries.map(query => query.known_fields ?? '').sort() })
+        const queryKey = discoveryKey({ queries, searchStrategy: searchStrategy ?? 'auto' })
+        const prior = previousUnmatchedDiscovery(
+          execution, requestedWorkflowId, session.sessionId, scope, config.discoveryCacheTtlMs ?? 300_000,
+        )
+        const maxUnmatched = config.maxUnmatchedSearches ?? 2
+        const duplicate = prior.find(value => record(value['discovery']) && value['discovery']['query_key'] === queryKey)
+        const cached = duplicate ?? (prior.length >= maxUnmatched ? prior.at(-1) : undefined)
+        if (cached !== undefined) {
+          return {
+            ...cached,
+            next_action: 'report_discovery_limit',
+            next_action_guidance: 'These searches found no matching tool. Explain this limitation using the existing evidence; this does not prove the provider cannot support it. Retry discovery only after new identifiers, execution evidence, account changes, or a new task. Do not connect an unrelated app.',
+            discovery: { ...(record(cached['discovery']) ? cached['discovery'] : {}), cache_hit: true },
+            operations: [],
+          } as Record<string, JsonValue>
+        }
         const fingerprint = JSON.stringify({ queries, workflowSession, searchStrategy: searchStrategy ?? 'auto' })
         if (turnState?.searchFingerprints.has(fingerprint)) {
           throw new Error('Connected-app search repeated without new evidence; refine the query or follow the current plan')
         }
-        turnState?.searchFingerprints.add(fingerprint)
         const model = stringValue(args.model)
         const result = await session.execute('COMPOSIO_SEARCH_TOOLS', {
           queries,
@@ -971,6 +1036,10 @@ export function apply(ctx: Context, config: Config = {}): void {
         const scoped = scopeSearchResult(result, requestedApps(args.queries))
         const scopedResult = scoped.value
         const container: unknown = record(scopedResult) && record(scopedResult['data']) ? scopedResult['data'] : scopedResult
+        if ([scopedResult, container].some(value => record(value) && (value['successful'] === false || value['success'] === false))) {
+          throw new Error('Composio discovery failed; no capability conclusion was recorded. Retry after the provider error is resolved.')
+        }
+        turnState?.searchFingerprints.add(fingerprint)
         const discovered = new Set<string>()
         if (record(container) && Array.isArray(container['results'])) {
           for (const item of container['results']) {
@@ -1063,11 +1132,14 @@ export function apply(ctx: Context, config: Config = {}): void {
         }
         const operations = [{ tool: 'COMPOSIO_SEARCH_TOOLS', status: 'completed' }]
         const projected = compactComposioSearchReceipt({
-          status: scoped.rejected && discovered.size === 0 ? 'no_matching_tool' : 'ready',
+          status: discovered.size === 0 ? 'no_matching_tool' : 'ready',
           operations,
           result: scopedResult,
         })
-        if (record(projected) && scoped.rejected && discovered.size === 0) {
+        if (record(projected)) {
+          projected['discovery'] = { version: 1, router_id: session.sessionId, scope, query_key: queryKey, recorded_at: Date.now(), cache_hit: false }
+        }
+        if (record(projected) && discovered.size === 0) {
           // Provider guidance describes the unscoped semantic candidates. Once
           // those candidates have been rejected, preserving instructions such
           // as "manage connections" would send the model into an unrelated
@@ -1076,10 +1148,10 @@ export function apply(ctx: Context, config: Config = {}): void {
           delete projected['next_steps_guidance']
           delete projected['recommended_plan_steps']
           delete projected['known_pitfalls']
-          const searches = turnState?.searchFingerprints.size ?? 1
-          projected['next_action'] = searches > 1 ? 'report_unsupported' : 'refine_search'
-          projected['next_action_guidance'] = searches > 1
-            ? 'No executable tool exists in the explicitly requested app after a refined search. Report that the requested operation is unsupported; do not check or connect another app.'
+          const searches = prior.length + 1
+          projected['next_action'] = searches >= maxUnmatched ? 'report_discovery_limit' : 'refine_search'
+          projected['next_action_guidance'] = searches >= maxUnmatched
+            ? 'No matching tool was found in these searches. Report that limitation, not that the provider cannot support the operation; do not check or connect another app.'
             : 'Refine search once in this same workflow session for the missing provider-owned prerequisite or listing operation. Do not check connection status or connect another app.'
         }
         return record(projected) ? projected : { status: 'ready', operations }
