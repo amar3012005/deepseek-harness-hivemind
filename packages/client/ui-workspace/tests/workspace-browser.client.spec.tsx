@@ -11,11 +11,12 @@ import type { SessionPendingInteractionSnapshot } from '@deepseek-ai/dsh-client-
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { MainPanelId } from '@deepseek-ai/dsh-client-ui-layout/client'
 import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts'
+import { en as commonEn } from '@deepseek-ai/dsh-client-locale/src/locales/en.ts'
 import type { WorkspaceBrowserProps } from '../src/client/contract/slots.ts'
 import { createWorkspaceViewStore, FLAT_SESSION_ORDER_KEY } from '../src/client/stores.ts'
 import { UNGROUPED_KEY } from '../src/client/tree.ts'
 import { WorkspaceBrowser } from '../src/client/rows/WorkspaceBrowser.tsx'
-import { zh } from '../src/client/locales.ts'
+import { en, zh } from '../src/client/locales.ts'
 
 // Every fixture carries the resource hook the resources plugin merges into GlobalStandardProps.
 const useResource = (() => ({ status: 'none' as const, value: undefined, failure: undefined, reload: () => {} })) as GlobalStandardProps['useResource']
@@ -113,6 +114,38 @@ function rerender(b: ReturnType<typeof mount>, overrides: Partial<WorkspaceBrows
 }
 
 describe('WorkspaceBrowser', () => {
+  it('projects native workspaces as company rooms only for HyperAgents sessions', () => {
+    const hyperagent = summary('current', 1, {
+      projectionValues: { agentPreset: 'hyperagents' },
+    })
+    mount({
+      t: makeTranslate(en, commonEn),
+      useSessions: hook(sessionState([hyperagent], { current: hyperagent.id })),
+      useWorkspaces: hook(workspaceState([])),
+    })
+
+    expect(screen.getByText('Company Rooms')).toBeTruthy()
+    expect(screen.getByText('General')).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Add company room' })).toBeTruthy()
+    expect(screen.queryByText('Workspaces')).toBeNull()
+  })
+
+  it('keeps native workspace copy for non-HyperAgents sessions', () => {
+    const standard = summary('current', 1, {
+      projectionValues: { agentPreset: 'standard' },
+    })
+    mount({
+      t: makeTranslate(en, commonEn),
+      useSessions: hook(sessionState([standard], { current: standard.id })),
+      useWorkspaces: hook(workspaceState([])),
+    })
+
+    expect(screen.getByText('Workspaces')).toBeTruthy()
+    expect(screen.getByText('Ungrouped')).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Add workspace' })).toBeTruthy()
+    expect(screen.queryByText('Company Rooms')).toBeNull()
+  })
+
   it('moves focus into Workspace controls without selecting a Session while a main panel is active', () => {
     const panelInfo = { activePanelId: 'panel-a' as MainPanelId }
     const b = mount({

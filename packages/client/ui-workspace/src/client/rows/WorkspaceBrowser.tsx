@@ -42,6 +42,42 @@ const SEARCH_QUERY_MAX_CODE_UNITS = 500
 /** Session rows visible per Workspace before the local overflow control. */
 const COLLAPSED_SESSION_LIMIT = 5
 
+/** Presets whose Workspace browser is presented as company rooms. */
+const HYPERAGENT_PRESETS = new Set(['hyperagents', 'hyperagents-compressed'])
+
+/**
+ * HyperAgents reuses the native durable Workspace/Session browser, but presents
+ * its groups as company operating rooms. Keep this as a copy projection: the
+ * underlying Workspace RPCs and Session membership remain completely native.
+ */
+function hyperagentCopy(
+  t: WorkspaceBrowserProps['t'],
+  enabled: boolean,
+): WorkspaceBrowserProps['t'] {
+  if (!enabled) return t
+  const overrides: Partial<Record<string, string>> = {
+    'group.ungrouped': 'General',
+    'section.workspaces': 'Company Rooms',
+    'viewOptions.label': 'Room view options',
+    'groupBy.label': 'Group sessions',
+    'groupBy.workspace': 'By company room',
+    'workspace.add': 'Add company room',
+    'menu.addWorkspace': 'Add company room…',
+    'picker.loading': 'Loading company rooms…',
+    'rename.workspace.title': 'Rename company room',
+    'field.workspaceName': 'Company room name',
+    'delete.workspace': 'Remove company room',
+    'delete.pending': 'Removing company room…',
+    'actions.workspace.aria': 'Company room actions for {name}',
+    'actions.newSession.aria': 'New session in {name}',
+  }
+  return ((key, values) => {
+    const template = overrides[key]
+    if (template === undefined) return t(key, values)
+    return template.replaceAll(/\{([^}]+)\}/g, (_match, name: string) => String(values?.[name] ?? ''))
+  }) as WorkspaceBrowserProps['t']
+}
+
 /** Fold one Workspace without charging its provisional New Session against the ordinary-row limit. */
 function collapsedSessionRows(sessions: readonly SessionNode[]): {
   rows: readonly SessionNode[]
@@ -860,8 +896,16 @@ export function WorkspaceBrowser({
   useDirectoryFlow,
   useHostInfo,
   renderSlot,
-  t,
+  t: baseT,
 }: WorkspaceBrowserProps) {
+  const hyperagents = useSessions((state) => {
+    const current = state.current
+    const preset = current === undefined
+      ? undefined
+      : state.byId[current]?.projectionValues?.agentPreset
+    return typeof preset === 'string' && HYPERAGENT_PRESETS.has(preset)
+  })
+  const t = useMemo(() => hyperagentCopy(baseT, hyperagents), [baseT, hyperagents])
   const home = useHostInfo(info => info.home)
   const workspaces = useWorkspaces(state => state.items)
   const workspacePhase = useWorkspaces(state => state.phase)
