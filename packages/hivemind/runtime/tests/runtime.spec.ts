@@ -8,7 +8,7 @@ import type { ToolDefinition } from '@deepseek-ai/dsh-tools'
 import { createAssistantMessage, createToolResultMessage, createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { UserMessage } from '@deepseek-ai/dsh-llm'
 import {
-  apply, completedExchanges, hiveMemoryBudgetExhausted, hiveTurnCapabilities,
+  apply, completedExchanges, hiveMemoryBudgetExhausted,
   recentConversationText, type Config,
 } from '../src/index.ts'
 
@@ -18,14 +18,17 @@ interface HarnessMock {
   inboxInserted?: (payload: { agent: Agent; message: UserMessage }) => void
   turnStopping?: (payload: { agent: Agent }) => void
   toolPreExecute?: (execution: { agent?: Agent; name: string }, next: () => Promise<unknown>) => Promise<unknown>
-  skills: Map<string, { description: string; content: string }>
+  skills: Map<string, {
+    description: string
+    content: string
+    invocation?: { modelInvocable: boolean; userInvocable: boolean }
+  }>
   spills: Array<{ suggestedName: string; content: string }>
 }
 
 const roots: string[] = []
 const signal = new AbortController().signal
 const agent = {} as Agent
-const CONNECTED_TASK_NAME = 'hivemind_connected_task'
 
 afterEach(async () => {
   delete process.env.TEST_HIVE_RUNNER_SECRET
@@ -66,7 +69,11 @@ function config(icarusConfigPath: string): Config {
 
 function mount(pluginConfig: Config, withSpill = false): HarnessMock {
   const tools = new Map<string, ToolDefinition>()
-  const skills = new Map<string, { description: string; content: string }>()
+  const skills = new Map<string, {
+    description: string
+    content: string
+    invocation?: { modelInvocable: boolean; userInvocable: boolean }
+  }>()
   const spills: Array<{ suggestedName: string; content: string }> = []
   const harness: HarnessMock = { tools, skills, spills }
   const ctx = {
@@ -97,7 +104,12 @@ function mount(pluginConfig: Config, withSpill = false): HarnessMock {
       },
     },
     skills: {
-      register(skill: { name: string; description: string; content: string }) {
+      register(skill: {
+        name: string
+        description: string
+        content: string
+        invocation?: { modelInvocable: boolean; userInvocable: boolean }
+      }) {
         skills.set(skill.name, skill)
         return () => skills.delete(skill.name)
       },
@@ -296,9 +308,8 @@ describe('HIVE-MIND runtime', () => {
     expect(textOfForTest(decision.messages[0] as UserMessage)).toBe('When was the last email from Uwe?')
   })
 
-  it('supplies authenticated full profile context for an identity request without a model skill load', async () => {
+  it('leaves an identity request to the first model step without profile I/O', async () => {
     const path = await authorityFile()
-    profileResponses()
     const harness = mount(config(path))
     const scopedAgent = {
       session: {
@@ -320,24 +331,11 @@ describe('HIVE-MIND runtime', () => {
       messages: UserMessage[]
     }
 
-    expect(decision.messages).toHaveLength(2)
-    expect(decision.messages[0]?.source).toMatchObject({
-      kind: 'plugin',
-      plugin: 'dsh-hivemind-runtime/identity-context',
-    })
-    expect(textOfForTest(decision.messages[0] as UserMessage)).toContain('Singulance builds governed AI systems.')
-    expect(textOfForTest(decision.messages[0] as UserMessage)).not.toContain('user-1')
+    expect(decision.messages).toHaveLength(1)
+    expect(textOfForTest(decision.messages[0] as UserMessage)).toBe('What do u know about me?')
     expect(harness.skills.get('hivemind-company-brain')).toMatchObject({
       invocation: { modelInvocable: true, userInvocable: true },
     })
-  })
-
-  it('selects only the HIVE routers required by the current request', () => {
-    expect(hiveTurnCapabilities([user('hello')])).toEqual({ memory: false, connectedApps: false })
-    expect(hiveTurnCapabilities([user('what do u know about me?')])).toEqual({ memory: false, connectedApps: false })
-    expect(hiveTurnCapabilities([user('Find my last five decisions')])).toEqual({ memory: true, connectedApps: false })
-    expect(hiveTurnCapabilities([user('Check my last five Gmail messages')])).toEqual({ memory: false, connectedApps: true })
-    expect(hiveTurnCapabilities([user('Find my last five decisions and send them to Rama in Slack')])).toEqual({ memory: false, connectedApps: true })
   })
 
   it('exhausts the HIVE memory budget after one focused call in the current turn', () => {
@@ -350,31 +348,29 @@ describe('HIVE-MIND runtime', () => {
     expect(hiveMemoryBudgetExhausted([{ ...events[0], data: { ...events[0]!.data, name: 'hivemind_connected_task' } }] as SessionEvent[], 4)).toBe(false)
   })
 
-  it('leaves HIVE routing to the native skill catalogue without prompt classifiers', async () => {
-    const harness = mount(config(await authorityFile()))
-    harness.tools.set(CONNECTED_TASK_NAME, { ...tool(harness, 'hivemind_meta'), name: CONNECTED_TASK_NAME })
-    const restrict = vi.fn(() => vi.fn())
-    const scopedAgent = { ctx: { tools: { restrict } } } as unknown as Agent
-
-    harness.inboxInserted?.({ agent: scopedAgent, message: user('hello') })
-    harness.inboxInserted?.({ agent: scopedAgent, message: user('Find my last five decisions and send them in Slack') })
-    expect(restrict).not.toHaveBeenCalled()
-    expect(harness.skills.get('hivemind-company-brain')).toMatchObject({ invocation: { modelInvocable: true } })
-  })
-
   it('exposes only the progressive meta-tool when compatibility tools are disabled', async () => {
     const pluginConfig = config(await authorityFile())
     pluginConfig.legacyToolsEnabled = false
     const harness = mount(pluginConfig)
 
-    expect([...harness.tools.keys()]).toEqual(['hivemind_meta'])
-    expect(harness.skills.get('hivemind-company-brain')).toMatchObject({
-      description: expect.stringContaining('multi-source'),
-      content: expect.stringContaining('not a workspace path'),
-      invocation: { modelInvocable: true, userInvocable: true },
+    expect([...harness.tools.keys()]).toEqual(['hivemind_capabilities', 'hivemind_meta'])
+    const skill = harness.skills.get('hivemind-company-brain')
+    expect(skill?.description).toContain('multi-source')
+    expect(skill?.content).toContain('not a workspace path')
+    expect(skill?.invocation).toEqual({ modelInvocable: true, userInvocable: true })
+    expect(skill?.content).toContain('Never save secrets')
+    expect(skill?.description).toContain('call hivemind_meta directly')
+  })
+
+  it('requests the native skill catalog without loading profile data', async () => {
+    const harness = mount(config(await authorityFile()))
+
+    const result: unknown = await tool(harness, 'hivemind_capabilities').execute({}, execContext())
+
+    expect(result).toEqual({
+      status: 'ready',
+      next: 'Select and load only a relevant skill from the compact catalog in the next step.',
     })
-    expect(harness.skills.get('hivemind-company-brain')?.content).toContain('Never save secrets')
-    expect(harness.skills.get('hivemind-company-brain')?.description).toContain('call hivemind_meta directly')
   })
 
   it('mounts connection routes without contributing model features when globally disabled', async () => {

@@ -82,11 +82,17 @@
             contextWindow: 1310720
             maxTokens: 32768
             input: [text]
+            reasoningEfforts:
+              off: none
+              low: low
+              high: high
+              max: max
 
 - id: agent-default-model
   config:
     provider: cloudflare-openrouter
     model: openrouter/deepseek/deepseek-v4-flash-0731
+    reasoningEffort: off
 
 - id: session-persistence-jsonl
   disabled: true

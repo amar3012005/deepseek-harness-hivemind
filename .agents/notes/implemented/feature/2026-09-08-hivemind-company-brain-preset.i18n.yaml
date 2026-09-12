@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-09-08-hivemind-company-brain-preset.md
-2026-09-08-hivemind-company-brain-preset.md: 8e0869066ba8dc911a0a6fd8c92b4fdf197c0943
-2026-09-08-hivemind-company-brain-preset.zh.md: b021c39b30c04aaad6e9b1bb88f1d4767dd1c087
+2026-09-08-hivemind-company-brain-preset.md: 85d47a8188c62f9d2b385c4321d9152435afb8bb
+2026-09-08-hivemind-company-brain-preset.zh.md: 0c1cd9d82ac6fb12f61d789b24adfb8ed31f35b2

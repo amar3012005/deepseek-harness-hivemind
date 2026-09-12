@@ -8,7 +8,6 @@ import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { Agent } from '@deepseek-ai/dsh-agent'
-import type { UserMessage } from '@deepseek-ai/dsh-llm'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import type { SaveTextSpill, SpillRef } from '@deepseek-ai/dsh-spill'
 import type { ToolExecution } from '@deepseek-ai/dsh-tools'
@@ -45,39 +44,7 @@ const CONNECT_STATUS_PATH = '/hivemind/connect/status'
 const CONNECT_START_PATH = '/hivemind/connect/start'
 const CONNECT_DISCONNECT_PATH = '/hivemind/connect'
 const HIVE_META_TOOL = 'hivemind_meta'
-
-/** HIVE-specific capabilities needed by one user request. */
-export interface HiveTurnCapabilities {
-  memory: boolean
-  connectedApps: boolean
-}
-
-const DIRECT_REQUEST = new RegExp([
-  '^(?:(?:hi|hello|hey|hiya|yo|good\\s+(?:morning|afternoon|evening))\\b[!.?\\s]*|',
-  '(?:what\\s+(?:do|can)\\s+(?:you|u)\\s+know\\s+about\\s+me|tell\\s+me\\s+about\\s+(?:me|myself)|',
-  'show\\s+me\\s+my\\s+(?:user\\s+)?profile|what\\s+is\\s+my\\s+(?:user\\s+)?profile|',
-  '(?:tell\\s+me\\s+)?about\\s+(?:my|our)\\s+company|our\\s+company\\s+profile)\\??)$',
-].join(''), 'i')
-const CONNECTED_APP_REQUEST = new RegExp([
-  '\\b(?:connected\\s+apps?|gmail|google\\s+(?:mail|calendar|drive|sheets|docs)|email|inbox|slack|',
-  'microsoft\\s+(?:outlook|teams|365)|outlook|calendar|notion|hubspot|salesforce|jira|linear|asana|',
-  'trello|discord|dropbox|onedrive|github|gitlab|linkedin|twitter|x\\b|whatsapp|telegram|zoom|stripe|shopify)\\b',
-].join(''), 'i')
-
-/**
- * Classify only HIVE-owned routers; native Harness capabilities stay untouched.
- * @param messages - pending direct-user messages for the next turn.
- * @returns the HIVE routers required by those messages.
- */
-export function hiveTurnCapabilities(messages: readonly UserMessage[]): HiveTurnCapabilities {
-  const request = messages.filter(message => message.source.kind === 'user').map(textOfUserMessage).join('\n').trim()
-  if (DIRECT_REQUEST.test(request)) return { memory: false, connectedApps: false }
-  // This helper is observability-only: native Harness retains the full compact
-  // catalogue and the model selects the relevant skill.  Keep its report
-  // faithful so diagnostics never describe current provider data as memory.
-  const connectedApps = CONNECTED_APP_REQUEST.test(request)
-  return { memory: !connectedApps, connectedApps }
-}
+const HIVE_CAPABILITIES_TOOL = 'hivemind_capabilities'
 
 /**
  * Check whether the current turn has already spent its single focused HIVE memory call.
@@ -91,10 +58,6 @@ export function hiveMemoryBudgetExhausted(
 ): boolean {
   return events.some(event =>
     event.type === 'tool/call' && event.data.turn === turn && event.data.name === HIVE_META_TOOL)
-}
-
-function textOfUserMessage(message: UserMessage): string {
-  return message.content.flatMap(block => block.type === 'text' ? [block.text] : []).join('\n')
 }
 
 /** Deployment configuration. Every operational budget is explicit. */
@@ -738,11 +701,24 @@ export function apply(ctx: Context, config: Config): void {
 4. A returned title, filename, citation ID, or memory ID is an internal evidence reference, not a workspace path and not proof that a downloadable artifact is available. Do not use shell, filesystem, Glob, Grep, or web tools to locate it unless the user explicitly asks about a local workspace or supplies a local path.
 5. For temporal questions, preserve the user's date or timeframe and use \`valid_at\` for what was true then or \`transaction_at\` for what the system knew then.\n6. Use \`save\` only for a stable user preference, explicit or confirmed decision, correction, or completed outcome that will matter in a future session. Save a concise factual statement with a descriptive title. Never save secrets, credentials, private authentication material, ephemeral chat, speculation, or unverified claims. For a correction, first recall the old memory and use \`relationship: "update"\` with its exact \`related_to\` ID. Report a save only after its receipt returns.\n7. Read returned evidence and citations completely enough to answer. Identify conflicts or gaps, and do not claim that a file, image, or fact is available beyond the receipt. A bounded lookup gets one focused recall: synthesize or report no relevant match after it. A second recall is permitted only for an explicitly exhaustive or genuinely multi-source request, and must use materially new evidence constraints rather than a paraphrase.\n8. HIVE-MIND supplies internal company knowledge. Use native Harness tools for independent web evidence, coding, artifacts, workflows, and subagents when those tasks are actually requested.`,
   })
+  ctx.tools.register(defineTool({
+    name: HIVE_CAPABILITIES_TOOL,
+    description: 'Reveal the compact skill catalog when this task needs a detailed playbook. Do not call for direct answers, concise clarification, one bounded HIVE lookup, or one bounded connected-app task.',
+    parameters: {},
+    output: jsonOutput,
+    isConcurrencySafe: () => true,
+    execute() {
+      return Promise.resolve({
+        status: 'ready',
+        next: 'Select and load only a relevant skill from the compact catalog in the next step.',
+      })
+    },
+  }))
   ctx.plugin(contextPlugin({
     historyTurns: config.historyTurns,
     historyMaxChars: config.historyMaxChars,
-    profileContextMaxChars: config.profileContextMaxChars,
-  }, snapshotFor))
+    capabilityToolName: HIVE_CAPABILITIES_TOOL,
+  }))
   ctx.plugin(memoryPlugin({ defaultLimit: config.recallResultLimit }, {
     async context(agent, signal) {
       const snapshot = await snapshotFor(agent, signal)

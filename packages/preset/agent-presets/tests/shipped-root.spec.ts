@@ -173,24 +173,21 @@ describe('the shipped preset root', () => {
     if (typeof persona?.config !== 'object' || persona.config === null) {
       throw new TypeError('hivemind-chat preset must configure its persona')
     }
+    const prefix = 'prefix' in persona.config && typeof persona.config.prefix === 'string'
+      ? persona.config.prefix
+      : undefined
+    if (prefix === undefined) throw new TypeError('hivemind-chat persona must provide a string prefix')
 
     expect(persona.config).not.toHaveProperty('complete')
     expect(persona.config).toMatchObject({ includeRuntimeContext: false })
-    expect(persona.config).toMatchObject({
-      prefix: expect.stringContaining('clean, valid Markdown for the native Harness renderer'),
-    })
-    expect(persona.config).toMatchObject({
-      prefix: expect.stringContaining('call hivemind_connected_task search directly without loading a skill'),
-    })
-    expect(persona.config).toMatchObject({
-      prefix: expect.stringContaining('profiles only for the HyperAgent directory'),
-    })
-    expect(persona.config).toMatchObject({
-      prefix: expect.stringContaining('no more than two short sentences'),
-    })
-    expect(persona.config).toMatchObject({
-      prefix: expect.stringContaining('continue the same returned session with one materially refined search using tool_search'),
-    })
+    expect(prefix).toContain('clean, valid Markdown for the native Harness renderer')
+    expect(prefix).toContain('call hivemind_connected_task search directly without loading a skill')
+    expect(prefix).toContain('Begin with only this system contract, recent completed conversation')
+    expect(prefix).toContain('ask one concise clarification')
+    expect(prefix).toContain('call hivemind_capabilities once')
+    expect(prefix).toContain('profiles only for the HyperAgent directory')
+    expect(prefix).toContain('no more than two short sentences')
+    expect(prefix).toContain('continue the same returned session with one materially refined search using tool_search')
   })
 
   it('limits the Composio catalog entry to complex workflows', async () => {

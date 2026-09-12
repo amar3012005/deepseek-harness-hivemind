@@ -14,7 +14,7 @@ The `hivemind` preset mirrors the complete `standard` agent composition and adds
 
 Completed direct-user and final-assistant exchanges remain available within configured turn and character limits. Reasoning, tool calls, and tool results stay in the append-only session log but do not enter later model requests through HIVE-MIND history projection. Current-turn receipts remain available for synthesis.
 
-A server-side turn policy selects HIVE-owned router visibility before prompt assembly. Greetings and direct identity requests hide both `hivemind_meta` and `hivemind_connected_task`; direct identity requests receive bounded authenticated profile context instead. Ordinary company work keeps `hivemind_meta`, external-application work keeps the connected-app router, and combined memory-to-app requests keep both. The policy uses agent-scoped tool restrictions, holds them through multi-step execution, lifts them at turn stop, and never changes native Harness capabilities.
+The later [on-demand capability-catalog decision](../architecture/2026-09-12-hivemind-on-demand-capability-catalog.md) supersedes the earlier server-side request classifier. Direct registered tools remain available, authenticated profile data loads through `hivemind_meta context`, and the native skill catalog appears only after the model calls `hivemind_capabilities` in the current turn.
 
 ## Verification
 
@@ -28,8 +28,8 @@ Focused runtime tests cover owner-controlled credentials, origin and response li
 
 **Inject the complete organization profile on every request.** Rejected because most turns need only a short brief, while detailed tasks can request the full authenticated context explicitly.
 
-**Rely on every model to choose whether to call HIVE and Composio.** Rejected because small and non-native tool-calling models can call irrelevant routers or print tool syntax as text. Server-side visibility is deterministic and provider-independent.
+**Preload capability discovery on every first step.** Superseded by the on-demand catalog because direct registered tools already cover bounded work and the native catalog can be revealed without an intent classifier.
 
 ## Consequences
 
-The HIVE-MIND preset must track additions to the standard preset until composition inheritance becomes available. The initial prompt carries a small company brief, while each turn carries only applicable HIVE router schemas. Intent classification is deliberately conservative: unknown substantive requests retain memory access, and named connected-app requests unlock the progressive Composio router. Native tools, employee execution, and recall pagination remain independent capabilities rather than hidden behavior inside the company-memory plugin.
+The HIVE-MIND preset must track additions to the standard preset until composition inheritance becomes available. The initial prompt no longer carries a company brief or skill catalog; the model loads authenticated profile evidence or detailed playbooks only when needed. Native tools, employee execution, and recall pagination remain independent capabilities rather than hidden behavior inside the company-memory plugin.
