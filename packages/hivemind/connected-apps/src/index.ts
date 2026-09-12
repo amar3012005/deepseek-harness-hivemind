@@ -199,13 +199,16 @@ function requestedApps(value: unknown): Set<string> {
 
 function searchResultMatchesApps(value: unknown, apps: ReadonlySet<string>): boolean {
   if (!record(value) || apps.size === 0) return true
-  const toolkits = new Set([
-    ...stringArray(value['toolkits']).map(normalizedToolkitName),
-    ...stringArray(value['primary_tool_slugs']).flatMap((slug) => {
-      const toolkit = toolkitFromToolSlug(slug)
-      return toolkit === undefined ? [] : [normalizedToolkitName(toolkit)]
-    }),
-  ])
+  const primaryToolkits = stringArray(value['primary_tool_slugs']).flatMap((slug) => {
+    const toolkit = toolkitFromToolSlug(slug)
+    return toolkit === undefined ? [] : [normalizedToolkitName(toolkit)]
+  })
+  // Primary slugs are the executable selection and therefore authoritative.
+  // The broader toolkit list may name the requested app as subject matter even
+  // when Composio selected an implementation owned by another provider.
+  const toolkits = new Set(primaryToolkits.length > 0
+    ? primaryToolkits
+    : stringArray(value['toolkits']).map(normalizedToolkitName))
   return [...toolkits].some(toolkit => apps.has(toolkit))
 }
 

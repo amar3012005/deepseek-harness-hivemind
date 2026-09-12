@@ -686,7 +686,7 @@ describe('progressive Composio bridge', () => {
       } })
       .mockResolvedValueOnce({ data: {
         session: { id: 'workflow-linkedin' },
-        results: [{ primary_tool_slugs: ['SALESROBOT_FIND_POSTS'], toolkits: ['salesrobot'] }],
+        results: [{ primary_tool_slugs: ['SALESROBOT_FIND_POSTS'], toolkits: ['linkedin', 'salesrobot'] }],
         toolkit_connection_statuses: [{ toolkit: 'salesrobot', has_active_connection: false }],
       } })
     const app = harness()
