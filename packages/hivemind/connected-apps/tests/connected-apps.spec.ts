@@ -676,4 +676,36 @@ describe('progressive Composio bridge', () => {
     await expect(app.tool().execute(request, execution as never)).rejects.toThrow('returned session id')
     expect(execute).toHaveBeenCalledTimes(2)
   })
+
+  it('does not authorize an unrelated toolkit returned for an explicitly named app', async () => {
+    execute
+      .mockResolvedValueOnce({ data: {
+        session: { id: 'workflow-linkedin' },
+        results: [{ primary_tool_slugs: ['LINKEDIN_GET_POST_CONTENT'], toolkits: ['linkedin'] }],
+        toolkit_connection_statuses: [{ toolkit: 'linkedin', has_active_connection: true }],
+      } })
+      .mockResolvedValueOnce({ data: {
+        session: { id: 'workflow-linkedin' },
+        results: [{ primary_tool_slugs: ['SALESROBOT_FIND_POSTS'], toolkits: ['salesrobot'] }],
+        toolkit_connection_statuses: [{ toolkit: 'salesrobot', has_active_connection: false }],
+      } })
+    const app = harness()
+    const agent = { session: { header: { id: 'conversation-1' }, snapshotEvents: () => [], append: vi.fn() } }
+    const next = vi.fn(async () => undefined)
+    await app.listeners.get('agent/pre-step')?.({ agent, turn: 1 } as never, next as never)
+    const execution = { signal: AbortSignal.abort(), agent }
+    await app.tool().execute({
+      action: 'search',
+      queries: [{ app: 'LinkedIn', use_case: 'Get one LinkedIn post by identifier.' }],
+      session: { generate_id: true },
+    }, execution as never)
+    await expect(app.tool().execute({
+      action: 'search',
+      queries: [{ app: 'LinkedIn', use_case: 'List the newest LinkedIn post and return its identifier.' }],
+      session: { id: 'workflow-linkedin' },
+      search_strategy: 'tool_search',
+    }, execution as never)).resolves.toMatchObject({ status: 'no_matching_tool', results: [] })
+    expect(execute).toHaveBeenCalledTimes(2)
+    expect(app.concludeTurn).not.toHaveBeenCalled()
+  })
 })

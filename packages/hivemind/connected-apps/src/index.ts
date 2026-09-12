@@ -188,6 +188,63 @@ interface SearchQuery {
   known_fields?: string
 }
 
+function requestedApps(value: unknown): Set<string> {
+  if (!Array.isArray(value)) return new Set()
+  return new Set(value.flatMap((item) => {
+    if (!record(item)) return []
+    const app = stringValue(item['app'])
+    return app === undefined ? [] : [normalizedToolkitName(app)]
+  }))
+}
+
+function searchResultMatchesApps(value: unknown, apps: ReadonlySet<string>): boolean {
+  if (!record(value) || apps.size === 0) return true
+  const toolkits = new Set([
+    ...stringArray(value['toolkits']).map(normalizedToolkitName),
+    ...stringArray(value['primary_tool_slugs']).flatMap((slug) => {
+      const toolkit = toolkitFromToolSlug(slug)
+      return toolkit === undefined ? [] : [normalizedToolkitName(toolkit)]
+    }),
+  ])
+  return [...toolkits].some(toolkit => apps.has(toolkit))
+}
+
+/**
+ * Keep semantic discovery inside an explicitly named app boundary. Composio may
+ * suggest a third-party toolkit with similar capabilities; that is useful for
+ * provider-neutral requests, but must never create an authorization prompt for
+ * a different app than the one the user named.
+ */
+function scopeSearchResult(value: unknown, apps: ReadonlySet<string>): { value: unknown; rejected: boolean } {
+  if (!record(value) || apps.size === 0) return { value, rejected: false }
+  if (record(value['result'])) {
+    const scoped = scopeSearchResult(value['result'], apps)
+    return scoped.rejected ? { value: { ...value, result: scoped.value }, rejected: true } : { value, rejected: false }
+  }
+  if (record(value['data'])) {
+    const scoped = scopeSearchResult(value['data'], apps)
+    return scoped.rejected ? { value: { ...value, data: scoped.value }, rejected: true } : { value, rejected: false }
+  }
+  if (!Array.isArray(value['results'])) return { value, rejected: false }
+  const results = value['results'].filter(item => searchResultMatchesApps(item, apps))
+  if (results.length === value['results'].length) return { value, rejected: false }
+  const statuses = Array.isArray(value['toolkit_connection_statuses'])
+    ? value['toolkit_connection_statuses'].filter((item) => {
+      if (!record(item)) return false
+      const toolkit = stringValue(item['toolkit'])
+      return toolkit !== undefined && apps.has(normalizedToolkitName(toolkit))
+    })
+    : value['toolkit_connection_statuses']
+  return {
+    value: {
+      ...value,
+      results,
+      ...(statuses === undefined ? {} : { toolkit_connection_statuses: statuses }),
+    },
+    rejected: true,
+  }
+}
+
 function searchQueries(value: unknown): SearchQuery[] {
   if (!Array.isArray(value)) throw new TypeError('Search requires queries with one atomic use_case per external-app action')
   const queries = value.map((item) => {
@@ -908,7 +965,9 @@ export function apply(ctx: Context, config: Config = {}): void {
           ...(model === undefined ? {} : { model }),
           ...(searchStrategy === undefined ? {} : { search_strategy: searchStrategy }),
         })
-        const container: unknown = record(result) && record(result['data']) ? result['data'] : result
+        const scoped = scopeSearchResult(result, requestedApps(args.queries))
+        const scopedResult = scoped.value
+        const container: unknown = record(scopedResult) && record(scopedResult['data']) ? scopedResult['data'] : scopedResult
         const discovered = new Set<string>()
         if (record(container) && Array.isArray(container['results'])) {
           for (const item of container['results']) {
@@ -916,7 +975,7 @@ export function apply(ctx: Context, config: Config = {}): void {
             for (const slug of [...stringArray(item['primary_tool_slugs']), ...stringArray(item['related_tool_slugs'])]) discovered.add(slug)
           }
         }
-        const returnedWorkflowId = returnedWorkflowSessionId(result)
+        const returnedWorkflowId = returnedWorkflowSessionId(scopedResult)
         const activeWorkflowId = returnedWorkflowId ?? requestedWorkflowId
         if (turnState !== undefined && turnState.workflowId === undefined && activeWorkflowId !== undefined) {
           turnState.workflowId = activeWorkflowId
@@ -925,7 +984,7 @@ export function apply(ctx: Context, config: Config = {}): void {
           workflowStateKey(identity, execution),
           workflowStateKey(identity, execution, returnedWorkflowId ?? requestedWorkflowId),
         ])
-        const discoveredContracts = new Map(executionContracts(result, discovered).map(contract => [contract.tool_slug, contract]))
+        const discoveredContracts = new Map(executionContracts(scopedResult, discovered).map(contract => [contract.tool_slug, contract]))
         for (const stateKey of stateKeys) {
           const selected = selectedTools.get(stateKey) ?? new Set<string>()
           for (const slug of discovered) selected.add(slug)
@@ -934,8 +993,8 @@ export function apply(ctx: Context, config: Config = {}): void {
           for (const [slug, contract] of discoveredContracts) available.set(slug, contract)
           contracts.set(stateKey, available)
         }
-        const statuses = connectionStatuses(result)
-        const missing = requiredMissingToolkits(result, statuses)
+        const statuses = connectionStatuses(scopedResult)
+        const missing = requiredMissingToolkits(scopedResult, statuses)
         if (missing.length > 0) {
           const workflowSessionId = returnedWorkflowId
           const managed = await session.execute('COMPOSIO_MANAGE_CONNECTIONS', {
@@ -951,7 +1010,7 @@ export function apply(ctx: Context, config: Config = {}): void {
             { tool: 'COMPOSIO_SEARCH_TOOLS', status: 'completed' },
             { tool: 'COMPOSIO_MANAGE_CONNECTIONS', status: redirectUrl === undefined ? 'failed' : 'completed' },
           ]
-          const projected = compactComposioSearchReceipt({ status: 'connection_required', operations, result })
+          const projected = compactComposioSearchReceipt({ status: 'connection_required', operations, result: scopedResult })
           if (redirectUrl !== undefined && workflowSessionId !== undefined && execution.agent !== undefined) {
             await awaitConnection(execution, {
               toolkit,
@@ -1000,7 +1059,11 @@ export function apply(ctx: Context, config: Config = {}): void {
           }
         }
         const operations = [{ tool: 'COMPOSIO_SEARCH_TOOLS', status: 'completed' }]
-        const projected = compactComposioSearchReceipt({ status: 'ready', operations, result })
+        const projected = compactComposioSearchReceipt({
+          status: scoped.rejected && discovered.size === 0 ? 'no_matching_tool' : 'ready',
+          operations,
+          result: scopedResult,
+        })
         return record(projected) ? projected : { status: 'ready', operations }
       }
       const key = workflowStateKey(identity, execution, workflowSessionId(args))
