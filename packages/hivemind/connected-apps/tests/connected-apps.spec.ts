@@ -2,7 +2,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { SpillLocator, type SpillRef } from '@deepseek-ai/dsh-spill'
 
 const execute = vi.fn()
-const toolkits = vi.fn(async () => ({ items: [] }))
+const toolkits = vi.fn(async (): Promise<{ items: Array<{
+  slug: string
+  name?: string
+  logo?: string
+  connection?: { isActive?: boolean }
+}> }> => ({ items: [] }))
 const create = vi.fn(async () => ({ execute, toolkits, sessionId: 'router-created' }))
 const use = vi.fn(async () => ({ execute, toolkits, sessionId: 'router-restored' }))
 const list = vi.fn(async (): Promise<{ items: Array<{ id?: string; status: string; toolkit?: { slug: string } }> }> => ({ items: [] }))
