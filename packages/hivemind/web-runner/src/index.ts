@@ -11,6 +11,7 @@ import { SessionId } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-hivemind-execution-scope'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
+import { publicHost } from './authority.ts'
 
 export const name = 'hivemind-web-runner'
 export const inject = ['webServer', 'connection', 'sessionPersistence', 'hivemindExecutionScope']
@@ -160,14 +161,8 @@ async function body(req: IncomingMessage): Promise<unknown> {
   return JSON.parse(Buffer.concat(chunks).toString('utf8'))
 }
 
-function publicHost(req: IncomingMessage): string | undefined {
-  const forwarded = req.headers['x-forwarded-host']
-  if (typeof forwarded === 'string' && forwarded.trim()) return forwarded.split(',', 1)[0]?.trim()
-  return typeof req.headers.host === 'string' ? req.headers.host : undefined
-}
-
 function sameOrigin(req: IncomingMessage): boolean {
-  const host = publicHost(req)
+  const host = publicHost(req.headers)
   const origin = req.headers.origin
   if (host === undefined || origin === undefined) return false
   try {
@@ -278,7 +273,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
         variation: claims.variation,
         ...claims.project_id === undefined ? {} : { project_id: claims.project_id },
       }
-      const authorityHost = publicHost(req)
+      const authorityHost = publicHost(req.headers)
       const cookie = ctx.connection.authorizePrincipal({
         headers: { host: authorityHost || req.headers.host, cookie: req.headers.cookie },
       }, principal, expiresAt)
@@ -295,7 +290,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
     kind: 'exact',
     path: BOOT_PATH,
     handler: async (req, res) => {
-      const authorityHost = publicHost(req)
+      const authorityHost = publicHost(req.headers)
       const principal = ctx.connection.principal({
         headers: { host: authorityHost || req.headers.host, cookie: req.headers.cookie },
       })
