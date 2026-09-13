@@ -533,6 +533,29 @@ interface UnfinishedWorkflowProjection {
   readonly toolkits: string[]
   readonly selectedToolSlugs: string[]
   readonly contracts: ExecutionContract[]
+  readonly pagination?: JsonValue
+  readonly paginationPages?: number
+}
+
+const MAX_DURABLE_PAGINATION_PAGES = 5
+
+/** Find a provider-declared continuation cursor without interpreting provider-specific payloads. */
+function paginationProjection(value: unknown): Record<string, JsonValue> | undefined {
+  const visit = (candidate: unknown, depth: number): Record<string, JsonValue> | undefined => {
+    if (depth > 4 || !record(candidate)) return undefined
+    for (const [key, entry] of Object.entries(candidate)) {
+      if (/^(?:next_)?(?:cursor|page_token|pageToken|nextPageToken)$/i.test(key)
+        && (typeof entry === 'string' || typeof entry === 'number') && String(entry).length > 0) {
+        return { cursor: String(entry), cursor_field: key }
+      }
+    }
+    for (const entry of Object.values(candidate)) {
+      const nested = visit(entry, depth + 1)
+      if (nested !== undefined) return nested
+    }
+    return undefined
+  }
+  return visit(value, 0)
 }
 
 function workflowToolkits(value: Record<string, unknown>): string[] {
@@ -622,7 +645,13 @@ function unfinishedWorkflow(
       pending = { ...pending, status, toolkits: toolkits.length > 0 ? toolkits : pending.toolkits }
       continue
     }
-    if (action === 'execute' && status === 'ready') pending = undefined
+    if (action === 'execute' && status === 'ready') {
+      const pagination = paginationProjection(result.value['pagination'])
+      const pages = (pending.paginationPages ?? 0) + 1
+      pending = pagination === undefined || pages >= MAX_DURABLE_PAGINATION_PAGES
+        ? undefined
+        : { ...pending, status: 'pagination_pending', pagination, paginationPages: pages }
+    }
   }
   return pending !== undefined && pending.turn < currentTurn ? pending : undefined
 }
@@ -636,7 +665,11 @@ function workflowContextMessage(state: UnfinishedWorkflowProjection) {
     toolkits: state.toolkits,
     selected_tool_slugs: state.selectedToolSlugs,
     execution_contracts: state.contracts,
-    next_action: waiting ? 'wait_connection' : 'execute_selected_tool',
+    ...(state.pagination === undefined ? {} : {
+      pagination: state.pagination,
+      pagination_pages: state.paginationPages,
+    }),
+    next_action: waiting ? 'wait_connection' : state.pagination === undefined ? 'execute_selected_tool' : 'continue_page',
   }
   return createUserMessage({
     content: [{
@@ -921,6 +954,7 @@ export function compactComposioExecutionReceipt(
   const compact = requested.size === 0
     ? compactProviderValue(value)
     : projectRequestedFields(value, requested) ?? compactProviderValue(value)
+  const pagination = paginationProjection(value)
   return {
     ...(record(compact) ? compact : { result: compact }),
     ...(receipt === undefined ? {} : {
@@ -929,6 +963,7 @@ export function compactComposioExecutionReceipt(
     projection_policy: requested.size === 0
       ? 'Duplicated MIME transport trees and transport headers omitted; readable evidence retained, while long text and collections are bounded. The original receipt is preserved separately when source_receipt is present.'
       : 'Only the exact requested result fields are projected when present. The original provider receipt is preserved separately.',
+    ...(pagination === undefined ? {} : { pagination }),
   }
 }
 

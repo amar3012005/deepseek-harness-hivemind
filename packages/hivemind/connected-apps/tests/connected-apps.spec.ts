@@ -219,6 +219,17 @@ describe('progressive Composio bridge', () => {
     expect(projected).toMatchObject({ data: { actual_key: 'provider evidence' } })
   })
 
+  it('preserves only a bounded provider continuation cursor beside compact evidence', () => {
+    const projected = compactComposioExecutionReceipt({ data: {
+      messages: [{ subject: 'first page' }], nextPageToken: 'page-2', body: 'unrelated payload',
+    } }, receipt, ['subject']) as Record<string, unknown>
+    expect(projected).toMatchObject({
+      data: { messages: [{ subject: 'first page' }] },
+      pagination: { cursor: 'page-2', cursor_field: 'nextPageToken' },
+    })
+    expect(JSON.stringify(projected)).not.toContain('unrelated payload')
+  })
+
   it('compacts search post-execute even when spill storage is unavailable', async () => {
     const { listeners } = harness()
     const post = listeners.get('tools/post-execute') as (
@@ -426,6 +437,34 @@ describe('progressive Composio bridge', () => {
     expect(projected).toContain('Read the newest record')
     expect(projected).toContain('wait_connection')
     expect(execute).not.toHaveBeenCalled()
+  })
+
+  it('restores a bounded pagination cursor as an unfinished continuation only', async () => {
+    const events = [
+      { type: 'tool/call', data: { turn: 1, callId: 'call-search', name: 'hivemind_connected_task', arguments: JSON.stringify({
+        action: 'search', session: { generate_id: true }, queries: [{ use_case: 'List records.' }],
+      }) } },
+      { type: 'tool/result', data: { message: { source: { callId: 'call-search' }, content: [{ type: 'tool-result', content: [{ type: 'text', text: JSON.stringify({
+        status: 'ready', session_id: 'workflow-pages', results: [{ primary_tool_slugs: ['EXAMPLE_LIST'] }],
+        execution_contracts: [{ tool_slug: 'EXAMPLE_LIST', required_fields: [], properties: {} }],
+      }) }] }] } } },
+      { type: 'tool/call', data: { turn: 1, callId: 'call-page-1', name: 'hivemind_connected_task', arguments: JSON.stringify({
+        action: 'execute', session_id: 'workflow-pages', tool_slug: 'EXAMPLE_LIST', arguments: {},
+      }) } },
+      { type: 'tool/result', data: { message: { source: { callId: 'call-page-1' }, content: [{ type: 'tool-result', content: [{ type: 'text', text: JSON.stringify({
+        status: 'ready', pagination: { cursor: 'next-2', cursor_field: 'nextPageToken' },
+      }) }] }] } } },
+    ]
+    const agent = { session: { header: { id: 'conversation-pages' }, snapshotEvents: () => events, append: vi.fn() } }
+    const app = harness()
+    const next = vi.fn(async () => ({ kind: 'enter', messages: [] }))
+    const decision = await app.listeners.get('agent/pre-step')?.(
+      { agent, turn: 2 } as never, next as never,
+    ) as { messages: unknown[] }
+    const projected = JSON.stringify(decision.messages)
+    expect(projected).toContain('continue_page')
+    expect(projected).toContain('next-2')
+    expect(projected).toContain('pagination_pages')
   })
 
   it('does not project a workflow after its native approval was rejected', async () => {
