@@ -785,7 +785,8 @@ function restoreWorkflowState(execution: Pick<ToolExecution, 'agent'>, requested
       if (Array.isArray(data['results'])) {
         for (const item of data['results']) {
           if (!record(item)) continue
-          for (const slug of [...stringArray(item['primary_tool_slugs']), ...stringArray(item['related_tool_slugs'])]) selected.add(slug)
+          const primary = stringArray(item['primary_tool_slugs'])[0]
+          if (primary !== undefined) selected.add(primary)
         }
       }
       for (const contract of executionContracts(result.value, selected)) restoredContracts.set(contract.tool_slug, contract)
@@ -903,8 +904,7 @@ export function compactComposioSearchReceipt(value: unknown, receipt?: SpillRef)
   const results = Array.isArray(data['results']) ? data['results'].flatMap((item) => {
     if (!record(item)) return []
     const result: Record<string, JsonValue> = {
-      primary_tool_slugs: boundedStrings(item['primary_tool_slugs'], 4, 120),
-      related_tool_slugs: boundedStrings(item['related_tool_slugs'], 4, 120),
+      primary_tool_slugs: boundedStrings(item['primary_tool_slugs'], 1, 120),
       toolkits: boundedStrings(item['toolkits'], 4, 80),
     }
     const useCase = stringValue(item['use_case'])
@@ -941,10 +941,9 @@ export function compactComposioSearchReceipt(value: unknown, receipt?: SpillRef)
     }),
     schema_policy: 'Use the exact execution_contracts below. If a selected slug has no contract, load its schema before execution. Never infer argument names.',
   }
-  // Composio ranks primary slugs. Expose the exact contract for the first
-  // bounded action of each atomic query; the remaining selected slugs stay
-  // available for an explicit schemas call if the model justifiably chooses
-  // another branch.
+  // Composio ranks primary slugs. Expose and authorize only the first bounded
+  // action of each atomic query. A different branch needs a fresh, justified
+  // discovery result rather than widening the active workflow contract.
   const primary = new Set(results.flatMap((item) => {
     const slug = Array.isArray(item['primary_tool_slugs']) ? item['primary_tool_slugs'][0] : undefined
     return typeof slug === 'string' ? [slug] : []
@@ -1302,7 +1301,8 @@ export function apply(ctx: Context, config: Config = {}): void {
         if (record(container) && Array.isArray(container['results'])) {
           for (const item of container['results']) {
             if (!record(item)) continue
-            for (const slug of [...stringArray(item['primary_tool_slugs']), ...stringArray(item['related_tool_slugs'])]) discovered.add(slug)
+            const primary = stringArray(item['primary_tool_slugs'])[0]
+            if (primary !== undefined) discovered.add(primary)
           }
         }
         const returnedWorkflowId = returnedWorkflowSessionId(scopedResult)

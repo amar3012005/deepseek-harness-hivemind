@@ -732,7 +732,7 @@ describe('progressive Composio bridge', () => {
     expect(app.concludeTurn).not.toHaveBeenCalled()
   })
 
-  it('accepts one selected schema slug through the singular bounded-step field', async () => {
+  it('does not make an unselected related schema executable', async () => {
     execute
       .mockResolvedValueOnce({ data: { results: [{
         primary_tool_slugs: ['GMAIL_FETCH_EMAILS'],
@@ -746,10 +746,8 @@ describe('progressive Composio bridge', () => {
     const app = harness()
     await app.tool().execute({ action: 'search', queries: [{ app: 'Gmail', use_case: 'Read the newest Gmail subject.' }], session: { generate_id: true } }, { signal: AbortSignal.abort() })
     await expect(app.tool().execute({ action: 'schemas', tool_slug: 'GMAIL_FETCH_MESSAGE_BY_MESSAGE_ID' }, { signal: AbortSignal.abort() }))
-      .resolves.toMatchObject({ status: 'ready' })
-    expect(execute).toHaveBeenLastCalledWith('COMPOSIO_GET_TOOL_SCHEMAS', {
-      tool_slugs: ['GMAIL_FETCH_MESSAGE_BY_MESSAGE_ID'],
-    })
+      .rejects.toThrow('Schema request contains a tool not selected by the current search')
+    expect(execute).toHaveBeenCalledTimes(1)
   })
 
   it('asks for the toolkit selected by the search instead of an unrelated missing toolkit', async () => {
