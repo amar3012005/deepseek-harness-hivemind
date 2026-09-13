@@ -2,7 +2,7 @@
 export type HivemindConnectKey =
   | 'connect' | 'connected' | 'connecting' | 'unavailable' | 'disconnect' | 'history' | 'history.empty'
   | 'session.new' | 'session.recent' | 'session.running' | 'composio.app' | 'composio.checking'
-  | 'composio.connectionRequired' | 'composio.connectionPending' | 'composio.approvalRequired' | 'composio.failed' | 'composio.completed'
+  | 'composio.connectionRequired' | 'composio.connectionPending' | 'composio.approvalRequired' | 'composio.failed' | 'composio.completed' | 'composio.cancelled'
   | 'composio.connect' | 'composio.connectDetail' | 'composio.authorize' | 'composio.draftDetail' | 'composio.inspect'
   | 'composio.connectionPrompt' | 'composio.connectionActionDetail'
   | 'composio.inputRequired' | 'composio.verifying'
@@ -25,6 +25,7 @@ export const en: Record<HivemindConnectKey, string> = {
   'composio.connectionRequired': 'Connection required', 'composio.approvalRequired': 'Approval required',
   'composio.connectionPending': 'Waiting for connection',
   'composio.failed': 'Connected-app task failed', 'composio.completed': 'Connected-app task completed',
+  'composio.cancelled': 'Connection request cancelled',
   'composio.connect': 'Connect {app}', 'composio.connectDetail': 'Authorize in a new tab. HIVE-MIND will verify the connection before continuing.',
   'composio.authorize': 'Authorize', 'composio.draftDetail': 'Review the editable draft before approving. Nothing has been sent.',
   'composio.inspect': 'Inspect connected-app tool input and output',
@@ -53,6 +54,7 @@ export const zh: Record<HivemindConnectKey, string> = {
   'composio.connectionRequired': '需要连接', 'composio.approvalRequired': '需要批准',
   'composio.connectionPending': '等待连接',
   'composio.failed': '连接应用任务失败', 'composio.completed': '连接应用任务已完成',
+  'composio.cancelled': '连接请求已取消',
   'composio.connect': '连接 {app}', 'composio.connectDetail': '请在新标签页中授权。HIVE-MIND 会在继续前验证连接。',
   'composio.authorize': '授权', 'composio.draftDetail': '批准前请检查可编辑草稿。尚未发送任何内容。',
   'composio.inspect': '查看连接应用工具的输入和输出',

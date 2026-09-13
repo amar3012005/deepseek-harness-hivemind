@@ -121,7 +121,23 @@ describe('ComposioConnectionCard', () => {
 
     expect(view.getByRole('link', { name: 'Connect Asana' })).toBeTruthy()
     expect(view.getByRole('button', { name: "I've connected Asana — continue" })).toBeTruthy()
+    expect(view.getByRole('button', { name: '关闭并停止本轮' })).toBeTruthy()
     expect(view.getAllByRole('link')).toHaveLength(1)
-    expect(view.getAllByRole('button')).toHaveLength(2)
+    expect(view.getAllByRole('button')).toHaveLength(3)
+  })
+
+  it('renders user cancellation as a neutral durable receipt', () => {
+    const cancelled = {
+      ...block(),
+      isError: true,
+      content: [{ type: 'text' as const, text: 'Error: the user cancelled connected-app authorization' }],
+    }
+    const view = render(<ComposioConnectionCard {...({
+      ...props(), block: cancelled, inspect: vi.fn(), t,
+    } as unknown as CardProps)} />)
+
+    expect(view.container.textContent).toContain('连接请求已取消')
+    expect(view.container.textContent).not.toContain('Error:')
+    expect(view.container.textContent).not.toContain('连接应用任务失败')
   })
 })

@@ -73,6 +73,12 @@ function safeHttpsUrl(value: unknown): string | undefined {
   }
 }
 
+function isAuthorizationCancellation(receipt: Receipt | undefined): boolean {
+  const message = receipt?.error ?? receipt?.summary
+  return typeof message === 'string'
+    && message.toLowerCase().includes('user cancelled connected-app authorization')
+}
+
 /** Replay-stable projection of the durable Composio tool receipt. */
 export function ComposioConnectionCard({
   block, inspect, sessionId, useSessionPendingInteraction, inputActions, t,
@@ -90,6 +96,7 @@ export function ComposioConnectionCard({
     .map(part => `${part[0]?.toUpperCase() ?? ''}${part.slice(1)}`).join(' ')
   const running = !('kind' in block)
   const failed = 'kind' in block && block.isError
+  const cancelled = failed && isAuthorizationCancellation(receipt)
   const logo = safeHttpsUrl(receipt?.logo_url)
     || `https://logos.composio.dev/api/${encodeURIComponent(toolkit)}`
   const draft = receipt?.draft_id !== undefined || receipt?.status === 'draft_created'
@@ -99,18 +106,18 @@ export function ComposioConnectionCard({
     : receipt?.status === 'connection_pending' ? t('composio.connectionPending')
       : receipt?.status === 'connection_required' || redirect ? t('composio.connectionRequired')
         : draft ? t('composio.approvalRequired')
-          : failed ? t('composio.failed') : t('composio.completed')
+          : cancelled ? t('composio.cancelled')
+            : failed ? t('composio.failed') : t('composio.completed')
   const resumeSettled = (): void => {
-    if (inputActions === undefined) return
     inputActions.setDraft(t('composio.continue', { app }))
     queueMicrotask(() => { inputActions.submit() })
   }
   return <section className={css.root} aria-live="polite"><button className={css.summary} type="button" onClick={inspect} disabled={inspect===undefined} aria-label={t('composio.inspect')}><span className={css.symbol} aria-hidden="true">✦</span><span>{title}</span>{receipt?.status?<span className={css.status}>{receipt.status.replaceAll('_',' ')}</span>:null}</button>
     {receipt?.operations?.map((operation, index) => operation.tool?<div className={css.operation} key={`${operation.tool}:${index}`}><span className={css.symbol} aria-hidden="true">✦</span><code>{operation.tool}</code>{operation.status?<span className={css.operationStatus}>→ {operation.status}</span>:null}</div>:null)}
-    {pending === undefined && receipt?.status==='connection_required'?<><p className={css.prompt}>{receipt.prompt||t('composio.connectionPrompt',{ app })}</p>{redirect?<a className={css.connection} href={redirect} target="_blank" rel="noreferrer"><img src={logo} alt=""/><span><strong>{t('composio.connect',{ app })}</strong><small>{t('composio.connectionActionDetail')}</small></span></a>:null}<div className={css.resume}><Button variant="outline" onClick={resumeSettled} disabled={inputActions===undefined}>{t('composio.continue',{ app })}</Button></div></>:null}
+    {pending === undefined && receipt?.status==='connection_required'?<><p className={css.prompt}>{receipt.prompt||t('composio.connectionPrompt',{ app })}</p>{redirect?<a className={css.connection} href={redirect} target="_blank" rel="noreferrer"><img src={logo} alt=""/><span><strong>{t('composio.connect',{ app })}</strong><small>{t('composio.connectionActionDetail')}</small></span></a>:null}<div className={css.resume}><Button variant="outline" onClick={resumeSettled}>{t('composio.continue',{ app })}</Button></div></>:null}
     {pending === undefined && connected?<div className={`${css.connection} ${css.connected}`}><img src={logo} alt=""/><span><strong>{t('composio.connected',{ app })}</strong><small>{t('composio.connectionVerified')}</small></span></div>:null}
     {redirect&&receipt?.status!=='connection_required'?<div className={css.connection}><div><strong>{t('composio.connect',{ app })}</strong><p>{t('composio.connectDetail')}</p></div><a href={redirect} target="_blank" rel="noreferrer">{t('composio.authorize')}</a></div>:null}
-    {draft?<p className={css.detail}>{t('composio.draftDetail')}</p>:null}{!redirect&&!draft&&receipt?.summary?<p className={css.detail}>{receipt.summary}</p>:null}{receipt?.error?<p className={css.error}>{receipt.error}</p>:null}
+    {draft?<p className={css.detail}>{t('composio.draftDetail')}</p>:null}{!cancelled&&!redirect&&!draft&&receipt?.summary?<p className={css.detail}>{receipt.summary}</p>:null}{!cancelled&&receipt?.error?<p className={css.error}>{receipt.error}</p>:null}
     {pending === undefined ? null : <ConnectionAuthorizationPanel matched={pending} t={t} />}
   </section>
 }
