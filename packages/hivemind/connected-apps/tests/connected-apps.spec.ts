@@ -109,6 +109,20 @@ describe('progressive Composio bridge', () => {
     expect(compactComposioSearchReceipt(first)?.execution_contracts).toEqual(first.execution_contracts)
   })
 
+  it('retains provider schema fingerprints and versions through durable projection', () => {
+    const compact = compactComposioSearchReceipt({ data: { results: [{
+      primary_tool_slugs: ['EXAMPLE_READ'], tool_schemas: { EXAMPLE_READ: {
+        schema_hash: 'schema-v2', tool_version: '2', input_schema: {
+          type: 'object', required: ['query'], properties: { query: { type: 'string' } },
+        },
+      } },
+    }] } })
+    expect(compact).toMatchObject({ execution_contracts: [{
+      tool_slug: 'EXAMPLE_READ', schema_hash: 'schema-v2', tool_version: '2',
+    }] })
+    expect(compactComposioSearchReceipt(compact)?.execution_contracts).toEqual(compact?.execution_contracts)
+  })
+
   it('retains complete plans and nested schema keywords through repeated projection', () => {
     const steps = Array.from({ length: 7 }, (_, index) => `${index}: ${'prerequisite '.repeat(40)}`)
     const schema = { type: 'object', additionalProperties: false, required: ['target'], properties: {

@@ -435,6 +435,9 @@ function copyPlanningFields(source: Record<string, unknown>, target: Record<stri
 
 type ExecutionContract = {
   readonly tool_slug: string
+  /** Provider contract fingerprint; a changed value replaces any cached contract. */
+  readonly schema_hash: string
+  readonly tool_version?: string
   readonly required_fields: readonly string[]
   readonly properties: Record<string, JsonValue>
   readonly schema_keywords?: Record<string, JsonValue>
@@ -708,17 +711,27 @@ function executionContracts(value: unknown, selected?: ReadonlySet<string>): Exe
     if (selected !== undefined && !selected.has(slug)) return
     const schema = schemaRecord(raw)
     if (schema === undefined || !record(schema['properties'])) return
+    const rawSchema = record(raw) ? raw : {}
     const properties: Record<string, JsonValue> = {}
     for (const [name, property] of Object.entries(schema['properties'])) {
       const compact = compactProperty(property)
       if (compact !== undefined) properties[name] = compact
     }
+    const toolVersion = stringValue(rawSchema['tool_version'])
+      ?? stringValue(rawSchema['toolVersion'])
+      ?? stringValue(rawSchema['version'])
     contracts.set(slug, {
       tool_slug: slug,
+      schema_hash: stringValue(rawSchema['schema_hash'])
+        ?? stringValue(rawSchema['schemaHash'])
+        ?? createHash('sha256').update(JSON.stringify({ slug, schema })).digest('hex'),
+      ...(toolVersion === undefined ? {} : { tool_version: toolVersion }),
       required_fields: stringArray(schema['required']),
       properties,
       schema_keywords: JSON.parse(JSON.stringify(Object.fromEntries(
-        Object.entries(schema).filter(([key]) => key !== 'properties' && key !== 'required'),
+        Object.entries(schema).filter(([key]) => key !== 'properties' && key !== 'required'
+          && key !== 'schema_hash' && key !== 'schemaHash'
+          && key !== 'tool_version' && key !== 'toolVersion' && key !== 'version'),
       ))) as Record<string, JsonValue>,
     })
   }
@@ -729,6 +742,8 @@ function executionContracts(value: unknown, selected?: ReadonlySet<string>): Exe
       const slug = stringValue(item['tool_slug'])
       if (slug !== undefined) add(slug, {
         ...(record(item['schema_keywords']) ? item['schema_keywords'] : {}),
+        ...(stringValue(item['schema_hash']) === undefined ? {} : { schema_hash: item['schema_hash'] }),
+        ...(stringValue(item['tool_version']) === undefined ? {} : { tool_version: item['tool_version'] }),
         properties: item['properties'], required: item['required_fields'],
       })
     }
