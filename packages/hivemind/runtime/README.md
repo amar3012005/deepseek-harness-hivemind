@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-`dsh-hivemind-runtime` binds a Harness agent to the HIVE-MIND identity saved by ICARUS. It validates the local credential, resolves user and organization scope server-side, and loads authenticated profile evidence only when the model requests it. HIVE mode exposes direct bounded tools plus an on-demand capability-catalog tool, retains recent completed user/final-answer exchanges, and omits prior tool payloads from later model requests. Credentials and tenant identifiers never enter model-visible schemas or results.
+`dsh-hivemind-runtime` binds a Harness agent to the HIVE-MIND identity saved by ICARUS. It validates the local credential, resolves user and organization scope server-side, and injects a bounded authenticated profile brief into the first model step of each turn. HIVE mode exposes direct bounded tools plus an on-demand capability-catalog tool, retains recent completed user/final-answer exchanges, and omits prior tool payloads from later model requests. Credentials and tenant identifiers never enter model-visible schemas or results.
 
 ## Use this package
 
@@ -51,7 +51,7 @@ The source package owns authentication-backed composition and local connection r
 
 #### What the model sees
 
-The model initially sees no skill catalog or eager organization profile. It can answer from the system contract and recent completed conversation, ask one concise clarification, call a bounded registered tool directly, or request the compact catalog through `hivemind_capabilities`. Authenticated profile context is loaded only through `hivemind_meta context`. A current-turn tool result remains available for synthesis and is omitted from later turns by the history projection.
+The model initially sees the HIVE system contract, a bounded authenticated user-and-company profile, recent completed conversation, unfinished workflow state, and gateway tools—but no skill catalog. It can answer a profile question directly, ask one concise clarification, call a bounded registered tool directly, or request the compact catalog through `hivemind_capabilities`. `hivemind_meta context` remains available only when the bounded profile is insufficient. A current-turn tool result remains available for synthesis and is omitted from later turns by the history projection.
 
 #### Token effect
 

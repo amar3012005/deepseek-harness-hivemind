@@ -732,6 +732,7 @@ export function apply(ctx: Context, config: Config): void {
     historyTurns: config.historyTurns,
     historyMaxChars: config.historyMaxChars,
     capabilityToolName: HIVE_CAPABILITIES_TOOL,
+    initialProfileContext: async (agent, signal) => (await snapshotFor(agent, signal)).initialContext,
   }))
   ctx.plugin(memoryPlugin({ defaultLimit: config.recallResultLimit }, {
     async context(agent, signal) {

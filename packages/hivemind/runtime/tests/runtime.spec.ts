@@ -265,7 +265,7 @@ describe('HIVE-MIND runtime', () => {
     expect(JSON.stringify(error)).not.toContain('test-secret-token')
   })
 
-  it('keeps a greeting to the native first-step request only', async () => {
+  it('adds the bounded authenticated profile to a greeting first step', async () => {
     const path = await authorityFile()
     profileResponses()
     const harness = mount(config(path))
@@ -287,8 +287,10 @@ describe('HIVE-MIND runtime', () => {
     }
     expect(next).toHaveBeenCalledOnce()
     expect(decision.startsRequestSeries).toBeUndefined()
-    expect(decision.messages).toHaveLength(1)
-    expect(textOfForTest(decision.messages[0] as UserMessage)).toBe('hello')
+    expect(decision.messages).toHaveLength(2)
+    expect(JSON.stringify(decision.messages[0])).toContain('Authenticated HIVE-MIND profile context')
+    expect(JSON.stringify(decision.messages[0])).toContain('Singulance')
+    expect(textOfForTest(decision.messages[1] as UserMessage)).toBe('hello')
   })
 
   it('does not duplicate the system routing contract before a current mailbox request', async () => {
@@ -307,11 +309,12 @@ describe('HIVE-MIND runtime', () => {
     })) as { messages: UserMessage[]; startsRequestSeries?: true }
 
     expect(decision.startsRequestSeries).toBeUndefined()
-    expect(decision.messages).toHaveLength(1)
-    expect(textOfForTest(decision.messages[0] as UserMessage)).toBe('When was the last email from Uwe?')
+    expect(decision.messages).toHaveLength(2)
+    expect(JSON.stringify(decision.messages[0])).toContain('Authenticated HIVE-MIND profile context')
+    expect(textOfForTest(decision.messages[1] as UserMessage)).toBe('When was the last email from Uwe?')
   })
 
-  it('does not eagerly load a profile before an identity request', async () => {
+  it('provides the authenticated profile before an identity request without loading a skill', async () => {
     const path = await authorityFile()
     profileResponses()
     const harness = mount(config(path))
@@ -335,8 +338,9 @@ describe('HIVE-MIND runtime', () => {
       messages: UserMessage[]
     }
 
-    expect(decision.messages).toHaveLength(1)
-    expect(textOfForTest(decision.messages[0] as UserMessage)).toBe('What do u know about me?')
+    expect(decision.messages).toHaveLength(2)
+    expect(JSON.stringify(decision.messages[0])).toContain('Authenticated HIVE-MIND profile context')
+    expect(textOfForTest(decision.messages[1] as UserMessage)).toBe('What do u know about me?')
     expect(harness.skills.get('hivemind-company-brain')).toMatchObject({
       invocation: { modelInvocable: true, userInvocable: true },
     })
