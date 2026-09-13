@@ -31,6 +31,7 @@ Mount the plugin in an agent preset that provides `tools` and `skills`:
         recallItemMaxChars: 16000
         historyTurns: 5
         historyMaxChars: 8000
+        reasoningPolicyEnabled: true
 ```
 
 The ICARUS credential must be a regular file owned by the current user and not writable by group or others. The runtime accepts only `https://core.singulancelabs.com` or a loopback API origin, refuses redirects, limits response bodies, and applies an explicit request timeout.
@@ -40,6 +41,8 @@ The ICARUS credential must be a regular file owned by the current user and not w
 The runtime composes three independently testable capabilities: `hivemind-context` owns the awaited prompt projection, `hivemind-memory` owns the model-facing tool, and `hivemind-employee-directory` validates exact organization HyperAgent profiles. The first model step receives the system contract, bounded completed conversation, and any current unfinished workflow state. Direct registered tools remain available, but the native skill catalog is withheld. When detailed playbook guidance is needed, the model calls `hivemind_capabilities`; the next native Harness step receives the current catalog and the model may load one relevant skill. This uses no prompt keyword classifier and does not modify the native planner, tool registry, or loop. The history projection retains at most `historyTurns` completed direct-user/final-assistant exchanges within `historyMaxChars`; reasoning, tool calls, and tool outputs remain in the append-only session log but leave later model requests.
 
 `hivemind_meta` supports `context`, `entities`, `recall`, `save`, and `profiles`. `entities` resolves a partial or ambiguous named subject through the authenticated Core inventory; the selected `canonical_name` is then passed to `recall.entities`. It is omitted when the subject is already exact and is never a mandatory preflight for every recall. Recall exposes one deduplicated top-five list, preserves material content and citation metadata, and caps each evidence item at `recallItemMaxChars`. Its focused schema supports source, project, time, explicit tag, media-kind, filename, and entity filters. No operation accepts a user or organization identifier.
+
+When `reasoningPolicyEnabled` is true, the runtime budgets reasoning through the native `agent/request` waterfall. It reads only durable workflow stage: a first decision or contract-mapping step uses `low`, synthesis after a bounded HIVE/provider receipt uses `off`, and a model-selected detailed skill restores `high`. The exact registered adapter validates the proposed effort before prompt admission; unsupported or mandatory-reasoning models retain their native default. Explicit effort selected through native session/model controls is never overwritten. This policy contains no prompt classifier, user rule, provider rule, or app-name branch.
 
 ## Dev Note
 

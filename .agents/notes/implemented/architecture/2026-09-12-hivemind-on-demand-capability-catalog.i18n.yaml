@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-09-12-hivemind-on-demand-capability-catalog.md
-2026-09-12-hivemind-on-demand-capability-catalog.md: 9baac86c8ce28ddb5d9f7bc4fe8d3acba9205ae8
-2026-09-12-hivemind-on-demand-capability-catalog.zh.md: e7c675d17555b4ce8438e81ce76e394cc0ade5d1
+2026-09-12-hivemind-on-demand-capability-catalog.md: be33c04040f198c464cd62c12db7ba6713b0fb2d
+2026-09-12-hivemind-on-demand-capability-catalog.zh.md: d1a7c1d14fe8c5d7c591a7b71d7127a6562e6221

@@ -1,6 +1,13 @@
 # HIVE-only final layer over dsh-base + dsh-web-app. HIVE model and tenant
 # capabilities live here so the shipped Web, Standard, Minimal, PTC, and
 # Creator compositions remain unchanged.
+- id: system-prompt
+  config:
+    includeHarnessIdentity: false
+    includeRuntimeContext: false
+    personaPrefix: ''
+    personaSuffix: ''
+
 - id: llm-pi-ai
   config:
     providers:
@@ -92,7 +99,6 @@
   config:
     provider: cloudflare-openrouter
     model: openrouter/deepseek/deepseek-v4-flash-0731
-    reasoningEffort: off
 
 - id: session-persistence-jsonl
   disabled: true

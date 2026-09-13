@@ -11,6 +11,10 @@ const profileDump = process.argv[2]
 if (profileDump === undefined) throw new Error('usage: profile-smoke.mjs <resolved-profile.yml>')
 
 const dump = await readFile(profileDump, 'utf8')
+const hivePreset = await readFile(
+  '/opt/deepseek-harness/packages/preset/agent-presets/presets/hivemind-chat/agent.cordis.yml',
+  'utf8',
+)
 const presentation = {
   'Markdown, tables, code, and math': ['ui-renderer', 'ui-conversation', 'ui-chat'],
   reasoning: ['ui-conversation', 'ui-chat'],
@@ -37,13 +41,28 @@ for (const [feature, ids] of Object.entries(presentation)) {
 
 const defaultModel = row('agent-default-model')
 if (!defaultModel.includes("model: openrouter/deepseek/deepseek-v4-flash-0731")
-  || !defaultModel.includes("reasoningEffort: 'off'")) {
-  throw new Error('hivemind-web image profile must disable optional reasoning for its default model')
+  || defaultModel.includes('reasoningEffort:')) {
+  throw new Error('hivemind-web image profile must leave reasoning effort to the HIVE stage policy')
 }
 if (!dump.includes("'off': none")) {
   throw new Error('hivemind-web image profile must map Harness reasoning off to OpenRouter none')
 }
-console.log('hivemind-web image profile disables optional default-model reasoning')
+if (!hivePreset.includes('reasoningPolicyEnabled: true')) {
+  throw new Error('hivemind-chat preset must enable capability-checked stage reasoning')
+}
+console.log('hivemind-web image profile budgets optional reasoning by HIVE workflow stage')
+
+const systemPrompt = row('system-prompt')
+if (!systemPrompt.includes('includeHarnessIdentity: false')
+  || !systemPrompt.includes('includeRuntimeContext: false')
+  || !systemPrompt.includes("personaPrefix: ''")
+  || !systemPrompt.includes("personaSuffix: ''")) {
+  throw new Error('hivemind-web image profile must expose only the HIVE production identity')
+}
+if (!hivePreset.includes('You are HIVE-MIND, the authenticated user\'s company memory and action')) {
+  throw new Error('hivemind-chat preset must own the HIVE production persona')
+}
+console.log('hivemind-web image profile exposes the HIVE production persona without developer runtime prose')
 
 const ctx = new Context()
 ctx.baseUrl = pathToFileURL('/opt/deepseek-harness/apps/cli/').href

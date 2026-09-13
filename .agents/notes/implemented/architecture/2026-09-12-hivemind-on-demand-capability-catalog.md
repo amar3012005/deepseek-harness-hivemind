@@ -14,11 +14,11 @@ The initial HIVE model step contains the system contract, bounded completed user
 
 When detailed playbook guidance is genuinely needed, the model calls the no-argument `hivemind_capabilities` tool. Its durable tool-call event is the capability request. On the following model step, the unchanged native skill plugin's current catalog is allowed through, and the model may load one relevant skill. This is generic across future skill registrations: there are no user-specific values, app-name branches, prompt regexes, replacement planners, or changes to the native agent loop.
 
-The HIVE Web profile also sets the default OpenRouter model reasoning effort to Harness `off`, mapped to provider value `none`. Other configured efforts remain available through native model configuration.
+The HIVE Web profile declares Harness `off` as provider value `none`. A later HIVE request-stage policy chooses among supported efforts instead of forcing `off` across every workflow; native model configuration remains authoritative when the user selects an effort.
 
 ## Verification
 
-Focused context tests prove that greetings and ambiguous first steps do not receive a catalog, while a same-turn durable `hivemind_capabilities` call reveals it. Runtime tests prove the tool is registered and executable without loading profile data. Preset tests assert the first-step and concise-clarification contract. Bundle tests assert the OpenRouter reasoning mapping and default effort.
+Focused context tests prove that greetings and ambiguous first steps do not receive a catalog, while a same-turn durable `hivemind_capabilities` call reveals it. Runtime tests prove the tool is registered and executable without loading profile data. Preset tests assert the first-step and concise-clarification contract. Bundle tests assert the OpenRouter reasoning mapping without imposing one default effort across all stages.
 
 ## Alternatives considered
 

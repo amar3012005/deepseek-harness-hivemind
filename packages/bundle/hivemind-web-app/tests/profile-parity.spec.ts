@@ -41,10 +41,17 @@ describe('hivemind-web native renderer parity', () => {
     expect(patch).not.toContain('sessionMaxAgeSeconds: 900')
   })
 
-  it('turns off optional OpenRouter reasoning for the default HIVE model', () => {
+  it('declares the OpenRouter off mapping without forcing one effort for every workflow stage', () => {
     expect(patch).toContain('off: none')
-    expect(patch).toContain('reasoningEffort: off')
+    expect(patch).not.toContain('reasoningEffort: off')
     expect(patch).toContain('model: openrouter/deepseek/deepseek-v4-flash-0731')
+  })
+
+  it('presents HIVE-MIND as the complete production identity without developer runtime prose', () => {
+    expect(patch).toContain('includeHarnessIdentity: false')
+    expect(patch).toContain('includeRuntimeContext: false')
+    expect(patch).toContain("personaPrefix: ''")
+    expect(patch).toContain("personaSuffix: ''")
   })
 
 })

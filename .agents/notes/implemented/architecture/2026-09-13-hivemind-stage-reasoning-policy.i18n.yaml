@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-09-13-hivemind-stage-reasoning-policy.md
+2026-09-13-hivemind-stage-reasoning-policy.md: a57138f316ba80528456c47b40e7cbb283a1ffe6
+2026-09-13-hivemind-stage-reasoning-policy.zh.md: d9c2a8a623090830f1872304eff62055138b0026

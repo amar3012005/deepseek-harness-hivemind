@@ -5,6 +5,8 @@ USER root
 COPY --chown=node:node packages/hivemind/memory/src /opt/deepseek-harness/packages/hivemind/memory/src
 COPY --chown=node:node packages/hivemind/runtime/src /opt/deepseek-harness/packages/hivemind/runtime/src
 COPY --chown=node:node packages/preset/agent-presets/presets/hivemind-chat/agent.cordis.yml /opt/deepseek-harness/packages/preset/agent-presets/presets/hivemind-chat/agent.cordis.yml
+COPY --chown=node:node packages/bundle/hivemind-web-app/cordis.patch.yml /opt/deepseek-harness/packages/bundle/hivemind-web-app/cordis.patch.yml
+COPY --chown=node:node deploy/hivemind-chat/profile-smoke.mjs /opt/deepseek-harness/deploy/hivemind-chat/profile-smoke.mjs
 RUN ./node_modules/.bin/tsc -b packages/hivemind/memory/tsconfig.json packages/hivemind/runtime/tsconfig.json \
   && ./node_modules/.bin/tsdown --filter @deepseek-ai/dsh-hivemind-memory \
   && cd packages/hivemind/runtime \

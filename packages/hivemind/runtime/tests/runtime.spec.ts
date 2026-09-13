@@ -5,16 +5,17 @@ import { tmpdir } from 'node:os'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import type { ToolDefinition } from '@deepseek-ai/dsh-tools'
-import { createAssistantMessage, createToolResultMessage, createUserMessage } from '@deepseek-ai/dsh-llm'
+import { createAssistantMessage, createToolResultMessage, createUserMessage, LlmError } from '@deepseek-ai/dsh-llm'
 import type { UserMessage } from '@deepseek-ai/dsh-llm'
 import {
-  apply, completedExchanges, hiveMemoryBudgetExhausted,
+  apply, completedExchanges, hiveMemoryBudgetExhausted, hiveReasoningStage,
   recentConversationText, type Config,
 } from '../src/index.ts'
 
 interface HarnessMock {
   tools: Map<string, ToolDefinition>
   preStep?: (payload: unknown, next: () => Promise<unknown>) => Promise<unknown>
+  request?: (payload: unknown, next: () => Promise<unknown>) => Promise<unknown>
   inboxInserted?: (payload: { agent: Agent; message: UserMessage }) => void
   turnStopping?: (payload: { agent: Agent }) => void
   toolPreExecute?: (execution: { agent?: Agent; name: string }, next: () => Promise<unknown>) => Promise<unknown>
@@ -24,6 +25,7 @@ interface HarnessMock {
     invocation?: { modelInvocable: boolean; userInvocable: boolean }
   }>
   spills: Array<{ suggestedName: string; content: string }>
+  resolveCallConfig: ReturnType<typeof vi.fn>
 }
 
 const roots: string[] = []
@@ -75,10 +77,12 @@ function mount(pluginConfig: Config, withSpill = false): HarnessMock {
     invocation?: { modelInvocable: boolean; userInvocable: boolean }
   }>()
   const spills: Array<{ suggestedName: string; content: string }> = []
-  const harness: HarnessMock = { tools, skills, spills }
+  const resolveCallConfig = vi.fn(async (value: unknown) => value)
+  const harness: HarnessMock = { tools, skills, spills, resolveCallConfig }
   const ctx = {
     on(event: string, listener: (payload: unknown, next: () => Promise<unknown>) => Promise<unknown>) {
       if (event === 'agent/pre-step') harness.preStep = listener
+      if (event === 'agent/request') harness.request = listener
       if (event === 'agent/inbox/inserted') {
         harness.inboxInserted = listener as unknown as NonNullable<HarnessMock['inboxInserted']>
       }
@@ -115,6 +119,7 @@ function mount(pluginConfig: Config, withSpill = false): HarnessMock {
       },
     },
     hivemindIdentity: { register: () => () => {} },
+    llm: { resolveCallConfig },
     hivemindExecutionScope: {
       require: () => ({
         userId: '54f5568b-4d6a-4ae1-9a33-48cb2909d59b',
@@ -346,6 +351,36 @@ describe('HIVE-MIND runtime', () => {
     expect(hiveMemoryBudgetExhausted(events, 4)).toBe(true)
     expect(hiveMemoryBudgetExhausted(events, 5)).toBe(false)
     expect(hiveMemoryBudgetExhausted([{ ...events[0], data: { ...events[0]!.data, name: 'hivemind_connected_task' } }] as SessionEvent[], 4)).toBe(false)
+  })
+
+  it('budgets reasoning from durable workflow stage without classifying users or apps', () => {
+    const call = (name: string, args = '{}') => ({
+      type: 'tool/call', seq: 1, time: 1,
+      data: { turn: 4, step: 1, callId: 'call-1', name, arguments: args },
+    }) as unknown as SessionEvent
+    expect(hiveReasoningStage([], 4)).toBe('initial')
+    expect(hiveReasoningStage([call('hivemind_connected_task', '{"action":"search"}')], 4)).toBe('initial')
+    expect(hiveReasoningStage([call('hivemind_connected_task', '{"action":"execute"}')], 4)).toBe('bounded-continuation')
+    expect(hiveReasoningStage([call('hivemind_meta')], 4)).toBe('bounded-continuation')
+    expect(hiveReasoningStage([call('skill')], 4)).toBe('complex-playbook')
+  })
+
+  it('checks the selected model capability and preserves explicit native effort', async () => {
+    const pluginConfig = config(await authorityFile())
+    pluginConfig.reasoningPolicyEnabled = true
+    const harness = mount(pluginConfig)
+    const subject = { session: { snapshotEvents: () => [] } } as unknown as Agent
+    const low = await harness.request?.({ agent: subject, turn: 1, signal }, async () => ({ provider: 'p', model: 'm' }))
+    expect(low).toMatchObject({ reasoningEffort: 'low' })
+    const explicit = await harness.request?.({ agent: subject, turn: 1, signal }, async () => ({
+      provider: 'p', model: 'm', reasoningEffort: 'max',
+    }))
+    expect(explicit).toMatchObject({ reasoningEffort: 'max' })
+    harness.resolveCallConfig.mockRejectedValueOnce(new LlmError(
+      'mandatory reasoning', 'UNSUPPORTED_REASONING_EFFORT',
+    ))
+    const fallback = await harness.request?.({ agent: subject, turn: 1, signal }, async () => ({ provider: 'p', model: 'm' }))
+    expect(fallback).toEqual({ provider: 'p', model: 'm' })
   })
 
   it('exposes only the progressive meta-tool when compatibility tools are disabled', async () => {

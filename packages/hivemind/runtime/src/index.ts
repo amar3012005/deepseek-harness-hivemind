@@ -8,6 +8,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { Agent } from '@deepseek-ai/dsh-agent'
+import { LlmError, ReasoningEffortId, type LlmCallConfig } from '@deepseek-ai/dsh-llm'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import type { SaveTextSpill, SpillRef } from '@deepseek-ai/dsh-spill'
 import type { ToolExecution } from '@deepseek-ai/dsh-tools'
@@ -31,7 +32,7 @@ export { completedExchanges, recentConversationText } from '@deepseek-ai/dsh-hiv
 export const name = 'hivemind-runtime'
 
 /** Services required to assemble context and expose progressive tools. */
-export const inject = ['tools', 'skills', 'hivemindIdentity', 'hivemindExecutionScope']
+export const inject = ['tools', 'skills', 'llm', 'hivemindIdentity', 'hivemindExecutionScope']
 
 const MAX_RESPONSE_BYTES = 2 * 1024 * 1024
 const MAX_PROFILE_CONTEXT_CHARS = 12_000
@@ -93,6 +94,8 @@ export interface Config {
   historyTurns: number
   /** Maximum characters retained in the deterministic recent-conversation projection. */
   historyMaxChars: number
+  /** Apply a capability-checked HIVE effort budget at the native request-config seam. */
+  reasoningPolicyEnabled?: boolean
 }
 
 /** Schemastery validation for {@link Config}. */
@@ -112,7 +115,73 @@ export const Config: z<Config> = z.object({
   recallItemMaxChars: z.natural().min(1).required(),
   historyTurns: z.natural().min(1).required(),
   historyMaxChars: z.natural().min(1).required(),
+  reasoningPolicyEnabled: z.boolean().default(false),
 })
+
+type HiveReasoningStage = 'initial' | 'bounded-continuation' | 'complex-playbook'
+
+function toolCallsForTurn(events: readonly SessionEvent[], turn: number): SessionEvent[] {
+  return events.filter(event => event.type === 'tool/call' && event.data.turn === turn)
+}
+
+function parsedToolArguments(event: SessionEvent | undefined): Record<string, unknown> | undefined {
+  if (event?.type !== 'tool/call') return undefined
+  try {
+    const parsed: unknown = JSON.parse(event.data.arguments)
+    return typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)
+      ? parsed as Record<string, unknown>
+      : undefined
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * Classify only durable workflow stage, never user intent, provider, or app.
+ * The first step retains low reasoning for native model choice. Exact receipts
+ * need only bounded synthesis, while a deliberately loaded playbook restores
+ * a larger reasoning budget for the complex work the model selected.
+ */
+export function hiveReasoningStage(events: readonly SessionEvent[], turn: number): HiveReasoningStage {
+  const calls = toolCallsForTurn(events, turn)
+  const last = calls.at(-1)
+  if (last?.type !== 'tool/call') return 'initial'
+  if (last.data.name === 'skill') return 'complex-playbook'
+  if (last.data.name === HIVE_META_TOOL) return 'bounded-continuation'
+  if (last.data.name === 'hivemind_connected_task') {
+    const action = parsedToolArguments(last)?.['action']
+    return action === 'execute' || action === 'connection_status'
+      || action === 'manage_connection' || action === 'wait_connection'
+      ? 'bounded-continuation'
+      : 'initial'
+  }
+  return 'initial'
+}
+
+function stageEffort(stage: HiveReasoningStage): 'off' | 'low' | 'high' {
+  if (stage === 'bounded-continuation') return 'off'
+  if (stage === 'complex-playbook') return 'high'
+  return 'low'
+}
+
+function installReasoningPolicy(ctx: Context): void {
+  ctx.on('agent/request', async ({ agent, turn, signal }, next): Promise<LlmCallConfig> => {
+    const config = await next()
+    // An explicit native UI/session selection remains authoritative.
+    if (config.reasoningEffort !== undefined) return config
+    const effort = stageEffort(hiveReasoningStage(agent.session.snapshotEvents(), turn))
+    const candidate = { ...config, reasoningEffort: ReasoningEffortId(effort) }
+    try {
+      // Ask the registered adapter before admission. Mandatory-reasoning and
+      // non-reasoning models therefore keep their native supported default.
+      return await ctx.llm.resolveCallConfig(candidate, signal)
+    } catch (error: unknown) {
+      if (error instanceof LlmError
+        && (error.code === 'UNSUPPORTED_REASONING_EFFORT' || error.code === 'NO_ADAPTER')) return config
+      throw error
+    }
+  })
+}
 
 interface JsonRecord {
   [key: string]: JsonValue | undefined
@@ -715,6 +784,7 @@ export function apply(ctx: Context, config: Config): void {
 
   if (config.authorityMode !== 'scoped-service') registerWebConnectRoutes(ctx, config)
   if (!config.agentFeaturesEnabled) return
+  if (config.reasoningPolicyEnabled) installReasoningPolicy(ctx)
   ctx.skills.register({
     name: 'hivemind-company-brain',
     description: 'Load only for multi-source, temporal, conflict-reconciliation, or memory-write work. Simple profile, entity, recall, and directory lookups call hivemind_meta directly.',
