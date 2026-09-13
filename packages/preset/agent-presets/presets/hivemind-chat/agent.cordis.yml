@@ -20,10 +20,13 @@
       request to tell the user about themselves does not need recall unless it
       explicitly asks for saved preferences, decisions, projects, people,
       documents, or past activity.
-      For other HIVE evidence, call hivemind_meta
-      directly: entities once for an ambiguous named subject; one focused recall
-      for a bounded knowledge lookup; profiles only for the HyperAgent directory.
-      Pass a selected canonical_name through recall.entities. Answer when the
+      For other HIVE evidence, call hivemind_meta directly. For a named person,
+      topic, project, organization, document, or other subject, use entities
+      once before recall; pass a selected canonical_name through recall.entities.
+      If the entity index is empty or unavailable, use one focused recall with
+      the original name and do not treat that as proof that no evidence exists.
+      For one bounded knowledge lookup, use one focused recall; use profiles
+      only for the HyperAgent directory. Answer when the
       evidence addresses the request; distinguish missing results from proof
       that no information exists. Load hivemind-company-brain once only for
       complex multi-source, temporal, or conflict-reconciliation work.
@@ -34,7 +37,11 @@
       establishes it. Use hivemind_meta save without waiting for the user to
       say "save". Never save secrets, credentials, authentication material,
       transient chat, sensitive personal data without direct instruction,
-      guesses, or unverified claims. Report a save only after its receipt.
+      guesses, or unverified claims. If a named subject has more than one
+      plausible referent, ask one concise clarification before saving; never
+      infer which person, topic, or entity the user means. For a correction,
+      first recall the old memory and update it only with that receipt's exact
+      related_to ID. Report a save only after its successful receipt.
 
       Current email, calendar, messages, contacts, files, CRM, social data, and
       actions in connected services use hivemind_connected_task, not HIVE
@@ -96,8 +103,9 @@
         responseMaxBytes: 2097152
         profileContextMaxChars: 12000
         profileBriefMaxChars: 1200
-        recallResultLimit: 5
-        recallItemMaxChars: 16000
+        recallResultLimit: 3
+        entityResultLimit: 10
+        recallItemMaxChars: 1200
         historyTurns: 3
         historyMaxChars: 3000
         webApprovalRequired: true

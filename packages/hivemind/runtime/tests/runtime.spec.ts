@@ -61,6 +61,7 @@ function config(icarusConfigPath: string): Config {
     profileContextMaxChars: 4_000,
     profileBriefMaxChars: 500,
     recallResultLimit: 7,
+    entityResultLimit: 10,
     recallItemMaxChars: 2_000,
     historyTurns: 5,
     historyMaxChars: 8_000,
@@ -636,11 +637,57 @@ describe('HIVE-MIND runtime', () => {
 
     await tool(harness, 'hivemind_meta').execute({
       operation: 'save',
-      save: { title: 'Correction', content: 'Corrected fact.', relationship: 'update', related_to: 'prior-id' },
+      save: { title: 'Correction', content: 'Corrected fact.', relationship: 'update', related_to: 'e0b4a5e9-6ae3-45e0-8c15-5e0a300d7e23' },
     }, execContext())
     const saveBody = JSON.parse(String(vi.mocked(fetch).mock.calls[3]?.[1]?.body))
 
-    expect(saveBody.relationship).toEqual({ type: 'Updates', target_id: 'prior-id' })
+    expect(saveBody.relationship).toEqual({ type: 'Updates', target_id: 'e0b4a5e9-6ae3-45e0-8c15-5e0a300d7e23' })
+  })
+
+  it('refuses a correction that substitutes text for a recalled memory id', async () => {
+    const harness = mount(config(await authorityFile()))
+    await expect(tool(harness, 'hivemind_meta').execute({
+      operation: 'save',
+      save: { title: 'Correction', content: 'Corrected fact.', relationship: 'update', related_to: 'i love rama' },
+    }, execContext())).rejects.toThrow('related_to must be an exact memory id returned by recall')
+  })
+
+  it('returns only canonical entity fields needed to constrain recall', async () => {
+    const path = await authorityFile()
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({
+      items: [{
+        id: '4bb787fc-9fb9-45dd-a22c-3e4839193024',
+        canonicalName: 'Amar Sai Gadde',
+        entityKind: 'person',
+        aliases: ['Amar', 'amar-sai'],
+        primaryEmail: 'private@example.com',
+      }],
+    })))
+    const harness = mount(config(path))
+
+    const value = await tool(harness, 'hivemind_meta').execute({
+      operation: 'entities', entities: { query: 'Amar', limit: 5 },
+    }, execContext()) as { result: { matches: Array<Record<string, unknown>> } }
+
+    expect(String(vi.mocked(fetch).mock.calls[0]?.[0])).toBe('http://127.0.0.1:3099/api/entities?q=Amar&limit=5')
+    expect(value.result.matches).toEqual([{
+      id: '4bb787fc-9fb9-45dd-a22c-3e4839193024', canonical_name: 'Amar Sai Gadde', kind: 'person', aliases: ['Amar', 'amar-sai'],
+    }])
+    expect(JSON.stringify(value)).not.toContain('private@example.com')
+  })
+
+  it('returns a typed entity-index degradation for an unavailable optional index', async () => {
+    const path = await authorityFile()
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({ error: 'entity index disabled' }, 503)))
+    const harness = mount(config(path))
+
+    await expect(tool(harness, 'hivemind_meta').execute({
+      operation: 'entities', entities: { query: 'Amar' },
+    }, execContext())).resolves.toEqual({
+      status: 'unavailable',
+      operation: 'entities',
+      result: { matches: [], degradation: 'Canonical entity discovery is unavailable; use one focused recall with the original subject.' },
+    })
   })
 
   it('returns one bounded evidence list instead of the verbose recall transport envelope', async () => {

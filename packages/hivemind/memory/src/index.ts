@@ -17,6 +17,12 @@ export interface RecallRequest {
   includeSuperseded?: boolean
 }
 
+/** A bounded lookup against the authenticated organization's canonical entity index. */
+export interface EntitySearchRequest {
+  query: string
+  limit: number
+}
+
 /** A policy-checked durable fact or correction proposed by the HIVE agent. */
 export interface SaveRequest {
   title: string
@@ -30,6 +36,7 @@ export interface SaveRequest {
 
 export interface MemoryProvider {
   context(agent: Agent, signal: AbortSignal): Promise<Record<string, JsonValue>>
+  entities(request: EntitySearchRequest, signal: AbortSignal, execution: ToolExecution): Promise<Record<string, JsonValue>>
   recall(request: RecallRequest, signal: AbortSignal, execution: ToolExecution): Promise<Record<string, JsonValue>>
   save(agent: Agent, request: SaveRequest, signal: AbortSignal, execution: ToolExecution): Promise<Record<string, JsonValue>>
   profiles(signal: AbortSignal): Promise<Record<string, JsonValue>>
@@ -56,6 +63,14 @@ function strings(value: unknown, label: string): string[] | undefined {
 function boundedText(value: unknown, label: string, maxChars: number): string {
   const result = text(value, label)
   if (result.length > maxChars) throw new TypeError(`hivemind-memory: ${label} exceeds ${maxChars} characters`)
+  return result
+}
+
+function memoryId(value: unknown, label: string): string {
+  const result = text(value, label)
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(result)) {
+    throw new TypeError(`hivemind-memory: ${label} must be an exact memory id returned by recall`)
+  }
   return result
 }
 
@@ -91,9 +106,17 @@ export function memoryPlugin(config: MemoryPluginConfig, provider: MemoryProvide
     apply(ctx: Context): void {
       ctx.tools.register(defineTool({
         name: 'hivemind_meta',
-        description: 'HIVE-MIND gateway for authenticated organization context, bounded memory recall, governed durable memory saves, or the exact HyperAgent directory. Use save only for a stable user preference, confirmed decision, correction, or completed outcome that will matter later; never save secrets, credentials, ephemeral chat, guesses, or unverified claims. Tenant scope is derived from the current HIVE-MIND credential.',
+        description: 'HIVE-MIND gateway for authenticated context, canonical entity discovery, bounded memory recall, governed durable memory saves, or the exact HyperAgent directory. Use context for questions about the caller or company profile. Use entities first for a named person, topic, project, organization, document, or other subject when its canonical name could narrow recall. Use save only for a stable user preference, confirmed decision, correction, or completed outcome that will matter later; never save secrets, credentials, ephemeral chat, guesses, or unverified claims. Tenant scope is derived from the current HIVE-MIND credential.',
         parameters: {
-          operation: { type: 'string', required: true, enum: ['context', 'recall', 'save', 'profiles'] },
+          operation: { type: 'string', required: true, enum: ['context', 'entities', 'recall', 'save', 'profiles'] },
+          entities: {
+            type: 'object',
+            additionalProperties: false,
+            properties: {
+              query: { type: 'string', required: true, description: 'Exact named subject to match against canonical names and aliases.' },
+              limit: { type: 'integer', description: 'Maximum canonical matches to return.' },
+            },
+          },
           recall: {
             type: 'object',
             additionalProperties: false,
@@ -136,6 +159,12 @@ export function memoryPlugin(config: MemoryPluginConfig, provider: MemoryProvide
             return provider.context(execution.agent, execution.signal)
           }
           if (operation === 'profiles') return provider.profiles(execution.signal)
+          if (operation === 'entities') {
+            const input = object(args.entities, 'entities')
+            const rawLimit = input['limit'] ?? config.defaultLimit
+            if (!Number.isInteger(rawLimit) || (rawLimit as number) < 1 || (rawLimit as number) > 25) throw new TypeError('hivemind-memory: entity limit must be an integer from 1 to 25')
+            return provider.entities({ query: text(input['query'], 'entities.query'), limit: rawLimit as number }, execution.signal, execution)
+          }
           if (operation === 'save') {
             if (execution.agent === undefined) throw new TypeError('hivemind-memory: active agent required')
             const input = object(args.save, 'save')
@@ -143,7 +172,7 @@ export function memoryPlugin(config: MemoryPluginConfig, provider: MemoryProvide
             if (!['text', 'conversation', 'documentation', 'decision'].includes(sourceType)) throw new TypeError('hivemind-memory: source_type is unsupported')
             const relationship = input['relationship'] === undefined ? undefined : text(input['relationship'], 'relationship')
             if (relationship !== undefined && !['update', 'extend', 'derive'].includes(relationship)) throw new TypeError('hivemind-memory: relationship is unsupported')
-            const relatedTo = input['related_to'] === undefined ? undefined : text(input['related_to'], 'related_to')
+            const relatedTo = input['related_to'] === undefined ? undefined : memoryId(input['related_to'], 'related_to')
             if (relationship !== undefined && relatedTo === undefined) throw new TypeError('hivemind-memory: related_to is required when relationship is set')
             if (relationship === undefined && relatedTo !== undefined) throw new TypeError('hivemind-memory: relationship is required when related_to is set')
             const tags = strings(input['tags'], 'tags')
