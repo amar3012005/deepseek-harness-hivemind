@@ -7,6 +7,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { defineTool } from '@deepseek-ai/dsh-tools'
+import type { PreToolDecision } from '@deepseek-ai/dsh-tools'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import type { SaveTextSpill, SpillRef } from '@deepseek-ai/dsh-spill'
@@ -21,7 +22,7 @@ import { spawn } from 'node:child_process'
 import { createHmac, randomUUID } from 'node:crypto'
 import type {} from '@deepseek-ai/dsh-hivemind-identity'
 import type {} from '@deepseek-ai/dsh-hivemind-execution-scope'
-import { contextPlugin, type ProfileSnapshot } from '@deepseek-ai/dsh-hivemind-context'
+import { contextPlugin } from '@deepseek-ai/dsh-hivemind-context'
 import { memoryPlugin, type RecallRequest, type SaveRequest } from '@deepseek-ai/dsh-hivemind-memory'
 import { projectHyperagentProfiles } from '@deepseek-ai/dsh-hivemind-employee-directory'
 
@@ -92,6 +93,8 @@ export interface Config {
   historyTurns: number
   /** Maximum characters retained in the deterministic recent-conversation projection. */
   historyMaxChars: number
+  /** Whether HIVE requires one native approval before each web read. */
+  webApprovalRequired: boolean
 }
 
 /** Schemastery validation for {@link Config}. */
@@ -111,6 +114,7 @@ export const Config: z<Config> = z.object({
   recallItemMaxChars: z.natural().min(1).required(),
   historyTurns: z.natural().min(1).required(),
   historyMaxChars: z.natural().min(1).required(),
+  webApprovalRequired: z.boolean().default(true),
 })
 
 interface JsonRecord {
@@ -543,6 +547,8 @@ async function saveMemoryReceipt(
   }
 }
 
+interface ProfileSnapshot { identity: { userId: string; orgId: string }; initialContext: string; fullContext: string }
+
 async function loadProfileSnapshot(ctx: Context, config: Config, signal: AbortSignal): Promise<ProfileSnapshot> {
   const authority = await resolveAuthority(ctx, config)
   const profile = await hiveRequest(authority, PROFILE_PATH, { method: 'GET' }, signal, config)
@@ -696,9 +702,13 @@ export function apply(ctx: Context, config: Config): void {
 
   if (config.authorityMode !== 'scoped-service') registerWebConnectRoutes(ctx, config)
   if (!config.agentFeaturesEnabled) return
+  ctx.on('tools/pre-execute', async (execution, next): Promise<PreToolDecision> => {
+    if (!config.webApprovalRequired || (execution.name !== 'web_search' && execution.name !== 'web_fetch')) return next()
+    return { kind: 'ask', reason: 'Web research requires your approval before accessing external sources.' }
+  })
   ctx.skills.register({
     name: 'hivemind-company-brain',
-    description: 'Load only for multi-source, temporal, conflict-reconciliation, or memory-write work. Simple profile, recall, and directory lookups call hivemind_meta directly.',
+    description: 'Load only for multi-source, temporal, or conflict-reconciliation work. Simple profile, recall, directory, and stable single-fact saves call hivemind_meta directly.',
     // Keep routing knowledge in the native skill catalogue. The model chooses
     // between this HIVE memory skill and the Composio workflow skill; runtime
     // classifiers must not hide either capability based on prompt keywords.
@@ -706,14 +716,14 @@ export function apply(ctx: Context, config: Config): void {
     source: 'runtime',
     content: `Use this skill only for a question about the authenticated user's organization, internal memories, files, documents, evidence, decisions, people, projects, or HyperAgents. HIVE-MIND should be considered automatically for such work, but do not load this skill or call recall for greetings, general knowledge, simple transformations, or a fact already established by a recent completed answer.
 
-1. First decide whether company history is actually needed. Simple profile, one-shot recall, and exact HyperAgent-directory requests do not need this skill: call \`hivemind_meta\` directly from its registered schema. Use this playbook only when the request requires multi-source retrieval, temporal reconstruction, conflict reconciliation, or a durable memory write. For “what do you know about me?”, “tell me about myself”, “my profile”, or a company-profile question, call \`hivemind_meta\` with \`operation: "context"\` before answering; if the request also asks for stored preferences, decisions, projects, or past activity, make one focused \`recall\` call after context. For other requests, use a sufficient compact organization brief or recent completed answer directly. Otherwise call \`hivemind_meta\` with exactly one operation:
+1. First decide whether company history is actually needed. Simple profile, one-shot recall, exact HyperAgent-directory requests, and a stable single-fact save do not need this skill: call \`hivemind_meta\` directly from its registered schema. Use this playbook only when the request requires multi-source retrieval, temporal reconstruction, or conflict reconciliation. For “what do you know about me?”, “tell me about myself”, “my profile”, or a company-profile question, call \`hivemind_meta\` with \`operation: "context"\` before answering; if the request also asks for stored preferences, decisions, projects, or past activity, make one focused \`recall\` call after context. For other requests, use a sufficient compact organization brief or recent completed answer directly. Otherwise call \`hivemind_meta\` with exactly one operation:
    - \`context\`: load the full onboarding-derived user and organization profile.
    - \`recall\`: search internal company memory and evidence.
    - \`profiles\`: fetch the authenticated organization's exact HyperAgent directory. Never invent employees.
 2. For recall, preserve the user's exact named entity or filename in \`query\`. Add only filters supported by the request: \`source_platforms\`, \`project\`, \`valid_at\`, \`transaction_at\`, \`sort\`, and explicit \`tags\`.
 3. For internal media, use \`media_kind: "image"\`, the exact \`filename\` when known, object names in \`entities\`, and \`source_platforms: ["knowledge-upload"]\` when the image came from an upload. For example, an uploaded image with a glass uses a focused query plus \`media_kind: "image"\` and \`entities: ["glass"]\`.
 4. A returned title, filename, citation ID, or memory ID is an internal evidence reference, not a workspace path and not proof that a downloadable artifact is available. Do not use shell, filesystem, Glob, Grep, or web tools to locate it unless the user explicitly asks about a local workspace or supplies a local path.
-5. For temporal questions, preserve the user's date or timeframe and use \`valid_at\` for what was true then or \`transaction_at\` for what the system knew then.\n6. Use \`save\` only for a stable user preference, explicit or confirmed decision, correction, or completed outcome that will matter in a future session. Save a concise factual statement with a descriptive title. Never save secrets, credentials, private authentication material, ephemeral chat, speculation, or unverified claims. For a correction, first recall the old memory and use \`relationship: "update"\` with its exact \`related_to\` ID. Report a save only after its receipt returns.\n7. Read returned evidence and citations completely enough to answer. Identify conflicts or gaps, and do not claim that a file, image, or fact is available beyond the receipt. A bounded lookup gets one focused recall: synthesize or report no relevant match after it. A second recall is permitted only for an explicitly exhaustive or genuinely multi-source request, and must use materially new evidence constraints rather than a paraphrase.\n8. HIVE-MIND supplies internal company knowledge. Use native Harness tools for independent web evidence, coding, artifacts, workflows, and subagents when those tasks are actually requested.`,
+5. For temporal questions, preserve the user's date or timeframe and use \`valid_at\` for what was true then or \`transaction_at\` for what the system knew then.\n6. Proactively use \`save\` for a stable, reusable, high-value preference, decision, correction, relationship, or completed outcome that the user explicitly states or confirms, or that a verified HIVE/provider receipt establishes. Do not wait for the word “save.” Save a concise factual statement with a descriptive title. Never save secrets, credentials, private authentication material, transient chat, sensitive personal data without direct instruction, speculation, or unverified claims. For a correction, first recall the old memory and use \`relationship: "update"\` with its exact \`related_to\` ID. Report a save only after its receipt returns.\n7. Read returned evidence and citations completely enough to answer. Identify conflicts or gaps, and do not claim that a file, image, or fact is available beyond the receipt. A bounded lookup gets one focused recall: synthesize or report no relevant match after it. A second recall is permitted only for an explicitly exhaustive or genuinely multi-source request, and must use materially new evidence constraints rather than a paraphrase.\n8. HIVE-MIND supplies internal company knowledge. Use native Harness tools for independent web evidence, coding, artifacts, workflows, and subagents when those tasks are actually requested.`,
   })
   ctx.tools.register(defineTool({
     name: HIVE_CAPABILITIES_TOOL,
@@ -732,7 +742,6 @@ export function apply(ctx: Context, config: Config): void {
     historyTurns: config.historyTurns,
     historyMaxChars: config.historyMaxChars,
     capabilityToolName: HIVE_CAPABILITIES_TOOL,
-    initialProfileContext: async (agent, signal) => (await snapshotFor(agent, signal)).initialContext,
   }))
   ctx.plugin(memoryPlugin({ defaultLimit: config.recallResultLimit }, {
     async context(agent, signal) {

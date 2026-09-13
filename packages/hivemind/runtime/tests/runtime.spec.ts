@@ -64,6 +64,7 @@ function config(icarusConfigPath: string): Config {
     recallItemMaxChars: 2_000,
     historyTurns: 5,
     historyMaxChars: 8_000,
+    webApprovalRequired: true,
   }
 }
 
@@ -265,7 +266,7 @@ describe('HIVE-MIND runtime', () => {
     expect(JSON.stringify(error)).not.toContain('test-secret-token')
   })
 
-  it('adds the bounded authenticated profile to a greeting first step', async () => {
+  it('keeps a greeting first step free of authenticated profile context', async () => {
     const path = await authorityFile()
     profileResponses()
     const harness = mount(config(path))
@@ -287,13 +288,11 @@ describe('HIVE-MIND runtime', () => {
     }
     expect(next).toHaveBeenCalledOnce()
     expect(decision.startsRequestSeries).toBeUndefined()
-    expect(decision.messages).toHaveLength(2)
-    expect(JSON.stringify(decision.messages[0])).toContain('Authenticated HIVE-MIND profile context')
-    expect(JSON.stringify(decision.messages[0])).toContain('Singulance')
-    expect(textOfForTest(decision.messages[1] as UserMessage)).toBe('hello')
+    expect(decision.messages).toHaveLength(1)
+    expect(textOfForTest(decision.messages[0] as UserMessage)).toBe('hello')
   })
 
-  it('does not duplicate the system routing contract before a current mailbox request', async () => {
+  it('does not add authenticated profile context before a current mailbox request', async () => {
     profileResponses()
     const harness = mount(config(await authorityFile()))
     const scopedAgent = {
@@ -309,12 +308,11 @@ describe('HIVE-MIND runtime', () => {
     })) as { messages: UserMessage[]; startsRequestSeries?: true }
 
     expect(decision.startsRequestSeries).toBeUndefined()
-    expect(decision.messages).toHaveLength(2)
-    expect(JSON.stringify(decision.messages[0])).toContain('Authenticated HIVE-MIND profile context')
-    expect(textOfForTest(decision.messages[1] as UserMessage)).toBe('When was the last email from Uwe?')
+    expect(decision.messages).toHaveLength(1)
+    expect(textOfForTest(decision.messages[0] as UserMessage)).toBe('When was the last email from Uwe?')
   })
 
-  it('provides the authenticated profile before an identity request without loading a skill', async () => {
+  it('leaves an identity request to the registered meta tool without loading a skill', async () => {
     const path = await authorityFile()
     profileResponses()
     const harness = mount(config(path))
@@ -338,9 +336,8 @@ describe('HIVE-MIND runtime', () => {
       messages: UserMessage[]
     }
 
-    expect(decision.messages).toHaveLength(2)
-    expect(JSON.stringify(decision.messages[0])).toContain('Authenticated HIVE-MIND profile context')
-    expect(textOfForTest(decision.messages[1] as UserMessage)).toBe('What do u know about me?')
+    expect(decision.messages).toHaveLength(1)
+    expect(textOfForTest(decision.messages[0] as UserMessage)).toBe('What do u know about me?')
     expect(harness.skills.get('hivemind-company-brain')).toMatchObject({
       invocation: { modelInvocable: true, userInvocable: true },
     })
@@ -379,6 +376,18 @@ describe('HIVE-MIND runtime', () => {
       status: 'ready',
       next: 'Select and load only a relevant skill from the compact catalog in the next step.',
     })
+  })
+
+  it('requires native approval for web reads without changing other tools', async () => {
+    const harness = mount(config(await authorityFile()))
+    const allow = vi.fn(async () => ({ kind: 'allow' as const }))
+
+    await expect(harness.toolPreExecute?.({ name: 'web_search' }, allow)).resolves.toEqual({
+      kind: 'ask',
+      reason: 'Web research requires your approval before accessing external sources.',
+    })
+    await expect(harness.toolPreExecute?.({ name: 'hivemind_meta' }, allow)).resolves.toEqual({ kind: 'allow' })
+    expect(allow).toHaveBeenCalledOnce()
   })
 
   it('mounts connection routes without contributing model features when globally disabled', async () => {

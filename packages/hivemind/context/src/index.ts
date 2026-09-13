@@ -2,22 +2,17 @@
 import type { Context, Plugin } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
-import type { ContentBlock, Message, UserMessage } from '@deepseek-ai/dsh-llm'
+import type { ContentBlock, Message } from '@deepseek-ai/dsh-llm'
 import { isAppendSurfaceEvent } from '@deepseek-ai/dsh-session'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
-/** Authenticated profile evidence loaded lazily by the HIVE runtime. */
-export interface ProfileSnapshot { identity: { userId: string; orgId: string }; initialContext: string; fullContext: string }
 /** Prompt-projection budgets and the registered on-demand capability tool. */
 export interface ContextConfig {
   historyTurns: number
   historyMaxChars: number
   capabilityToolName: string
-  /** Server-derived authenticated user and organization brief for the first model step. */
-  initialProfileContext?: (agent: Agent, signal: AbortSignal) => Promise<string | undefined>
 }
 interface ConversationExchange { turn: number; user: string; assistant: string }
 const HISTORY_CONTEXT_SOURCE = 'dsh-hivemind-runtime/history'
-const PROFILE_CONTEXT_SOURCE = 'dsh-hivemind-runtime/identity-context'
 function textOf(message: Message): string { return message.content.filter((block): block is Extract<ContentBlock,{ type:'text' }> => block.type === 'text').map(block => block.text.trim()).filter(Boolean).join('\n') }
 /**
  * Extract completed direct-user/final-assistant exchanges from durable events.
@@ -65,25 +60,8 @@ function isSkillCatalog(message: Message): boolean {
   return (message.source as { readonly kind: string }).kind === 'skill-catalog'
 }
 
-/** Insert authoritative profile evidence in the native prompt-context lane before user work. */
-function withInitialProfileContext(messages: readonly UserMessage[], context: string | undefined): UserMessage[] {
-  if (context === undefined || context.trim() === '') return [...messages]
-  return [
-    createUserMessage({
-      content: [{ type: 'text', text: context }],
-      source: {
-        kind: 'plugin',
-        plugin: PROFILE_CONTEXT_SOURCE,
-        form: 'snapshot',
-        sections: [{ name: 'authenticated-profile', text: context }],
-      },
-    }),
-    ...messages,
-  ]
-}
-
 /**
- * Project compact history and reveal the native skill catalog only after model request.
+ * Project compact history and reveal the native skill catalog only after a model request.
  * @param config - history budgets and the registered capability-request tool name.
  * @returns A Cordis plugin that projects model context without changing the native agent loop.
  */
@@ -92,21 +70,13 @@ export function contextPlugin(config: ContextConfig): Plugin.Object<void> {
     name: 'hivemind-context',
     apply(ctx: Context): void {
       const projected = new WeakMap<Agent, number>()
-      ctx.on('agent/pre-step', async ({ agent, turn, signal }, next) => {
+      ctx.on('agent/pre-step', async ({ agent, turn }, next) => {
         const decision = await next()
         if (decision.kind === 'reject') return decision
 
         const first = projected.get(agent) !== turn
         if (first) projected.set(agent, turn)
         const changed = first && projectHistory(agent, config)
-        let initialProfile: string | undefined
-        if (first && config.initialProfileContext !== undefined) {
-          try {
-            initialProfile = await config.initialProfileContext(agent, signal)
-          } catch (error) {
-            if (signal.aborted) throw error
-          }
-        }
         const showCatalog = capabilityCatalogRequested(
           agent.session.snapshotEvents(),
           turn,
@@ -115,10 +85,9 @@ export function contextPlugin(config: ContextConfig): Plugin.Object<void> {
         const withoutCatalog = showCatalog
           ? decision.messages
           : decision.messages.filter(message => !isSkillCatalog(message))
-        const messages = withInitialProfileContext(withoutCatalog, initialProfile)
         return changed
-          ? { ...decision, messages, startsRequestSeries: true }
-          : { ...decision, messages }
+          ? { ...decision, messages: withoutCatalog, startsRequestSeries: true }
+          : { ...decision, messages: withoutCatalog }
       }, { prepend: true })
     },
   }

@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-`dsh-hivemind-runtime` binds a Harness agent to the HIVE-MIND identity saved by ICARUS. It validates the local credential, resolves user and organization scope server-side, and injects a bounded authenticated profile brief into the first model step of each turn. HIVE mode exposes direct bounded tools plus an on-demand capability-catalog tool, retains recent completed user/final-answer exchanges, and omits prior tool payloads from later model requests. Credentials and tenant identifiers never enter model-visible schemas or results.
+`dsh-hivemind-runtime` binds a Harness agent to the HIVE-MIND identity saved by ICARUS. It validates the local credential and resolves user and organization scope server-side without adding profile data to ordinary model requests. HIVE mode exposes direct bounded tools plus an on-demand capability-catalog tool, retains recent completed user/final-answer exchanges, and omits prior tool payloads from later model requests. Credentials and tenant identifiers never enter model-visible schemas or results.
 
 ## Use this package
 
@@ -41,6 +41,8 @@ The runtime composes three independently testable capabilities: `hivemind-contex
 
 `hivemind_meta` supports `context`, `recall`, and `profiles`. Recall exposes one deduplicated top-five list, preserves material content and citation metadata, and caps each evidence item at `recallItemMaxChars`. Its focused schema supports source, project, time, explicit tag, media-kind, filename, and entity filters. No operation accepts a user or organization identifier.
 
+HIVE can require one native approval before each `web_search` or `web_fetch` call. The `webApprovalRequired` setting defaults to `true`; the scoped pre-execution policy fails closed when no approval channel is available and does not affect HIVE memory or connected-app tools.
+
 ## Dev Note
 
 The source package owns authentication-backed composition and local connection routes. Keep credentials and tenant authority out of browser code, tool arguments, and model-visible results.
@@ -51,11 +53,11 @@ The source package owns authentication-backed composition and local connection r
 
 #### What the model sees
 
-The model initially sees the HIVE system contract, a bounded authenticated user-and-company profile, recent completed conversation, unfinished workflow state, and gateway tools—but no skill catalog. It can answer a profile question directly, ask one concise clarification, call a bounded registered tool directly, or request the compact catalog through `hivemind_capabilities`. `hivemind_meta context` remains available only when the bounded profile is insufficient. A current-turn tool result remains available for synthesis and is omitted from later turns by the history projection.
+The model initially sees the HIVE system contract, recent completed conversation, unfinished workflow state, and gateway tools—but no authenticated profile brief or skill catalog. It can answer directly, ask one concise clarification, call `hivemind_meta context` for an identity or company-profile request, call another bounded registered tool, or request the compact catalog through `hivemind_capabilities`. A current-turn tool result remains available for synthesis and is omitted from later turns by the history projection.
 
 #### Token effect
 
-The initial request pays for the direct tool schemas but not the skill catalog or organization profile. A detailed playbook adds one capability-request receipt and one native catalog only in the active turn.
+The initial request pays for direct gateway schemas but not the skill catalog, organization profile, or previous tool receipts. A detailed playbook adds one capability-request receipt and one native catalog only in the active turn.
 
 #### KV Cache effect
 

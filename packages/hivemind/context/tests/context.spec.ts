@@ -6,7 +6,7 @@ function user(text: string) {
   return createUserMessage({ content: [{ type: 'text', text }], source: { kind: 'user' } })
 }
 
-function mount(events: unknown[] = [], initialProfileContext?: () => Promise<string | undefined>) {
+function mount(events: unknown[] = []) {
   let preStep: ((payload: never, next: () => Promise<unknown>) => Promise<unknown>) | undefined
   const ctx = {
     on(event: string, listener: typeof preStep) {
@@ -18,9 +18,6 @@ function mount(events: unknown[] = [], initialProfileContext?: () => Promise<str
     historyTurns: 3,
     historyMaxChars: 3_000,
     capabilityToolName: 'hivemind_capabilities',
-    ...(initialProfileContext === undefined ? {} : {
-      initialProfileContext: async () => await initialProfileContext(),
-    }),
   }).apply(ctx as never)
   const agent = {
     session: {
@@ -79,21 +76,20 @@ describe('HIVE progressive context', () => {
     expect(decision.startsRequestSeries).toBeUndefined()
   })
 
-  it('injects the compact authenticated profile only for the first model step of a turn', async () => {
-    const harness = mount([], async () => '## Authenticated HIVE-MIND profile context\nName: Amar\nOrganization: SINGULANCELABS')
+  it('does not inject authenticated profile context before the model requests it', async () => {
+    const harness = mount()
     const request = user('What do you know about me?')
     const first = await harness.preStep({ agent: harness.agent, turn: 1, signal: new AbortController().signal } as never, async () => ({
       kind: 'enter' as const,
       messages: [request],
     })) as { messages: ReturnType<typeof user>[] }
-    expect(first.messages.map(message => message.role)).toEqual(['user', 'user'])
-    expect(JSON.stringify(first.messages)).toContain('Authenticated HIVE-MIND profile context')
+    expect(first.messages).toEqual([request])
 
     const second = await harness.preStep({ agent: harness.agent, turn: 1, signal: new AbortController().signal } as never, async () => ({
       kind: 'enter' as const,
       messages: [request],
     })) as { messages: ReturnType<typeof user>[] }
-    expect(JSON.stringify(second.messages)).not.toContain('Authenticated HIVE-MIND profile context')
+    expect(second.messages).toEqual([request])
   })
 
   it('leaves the first model step to answer or request capabilities', async () => {
