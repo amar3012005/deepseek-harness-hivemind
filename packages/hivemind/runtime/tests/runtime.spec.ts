@@ -265,8 +265,9 @@ describe('HIVE-MIND runtime', () => {
     expect(JSON.stringify(error)).not.toContain('test-secret-token')
   })
 
-  it('answers a greeting from the native system and history without profile I/O or context injection', async () => {
+  it('injects one bounded authenticated profile snapshot before a greeting', async () => {
     const path = await authorityFile()
+    profileResponses()
     const harness = mount(config(path))
     const scopedAgent = {
       session: {
@@ -286,10 +287,15 @@ describe('HIVE-MIND runtime', () => {
     }
     expect(next).toHaveBeenCalledOnce()
     expect(decision.startsRequestSeries).toBeUndefined()
-    expect(decision.messages).toHaveLength(1)
+    expect(decision.messages).toHaveLength(2)
+    expect(decision.messages[0]?.source).toMatchObject({ kind: 'plugin', plugin: 'dsh-hivemind-runtime/identity-context' })
+    expect(textOfForTest(decision.messages[0] as UserMessage)).toContain('Authenticated HIVE-MIND profile context')
+    expect(textOfForTest(decision.messages[0] as UserMessage)).toContain('Singulance builds governed AI systems.')
+    expect(textOfForTest(decision.messages[1] as UserMessage)).toBe('hello')
   })
 
   it('does not duplicate the system routing contract before a current mailbox request', async () => {
+    profileResponses()
     const harness = mount(config(await authorityFile()))
     const scopedAgent = {
       session: {
@@ -304,12 +310,14 @@ describe('HIVE-MIND runtime', () => {
     })) as { messages: UserMessage[]; startsRequestSeries?: true }
 
     expect(decision.startsRequestSeries).toBeUndefined()
-    expect(decision.messages).toHaveLength(1)
-    expect(textOfForTest(decision.messages[0] as UserMessage)).toBe('When was the last email from Uwe?')
+    expect(decision.messages).toHaveLength(2)
+    expect(textOfForTest(decision.messages[0] as UserMessage)).toContain('Authenticated HIVE-MIND profile context')
+    expect(textOfForTest(decision.messages[1] as UserMessage)).toBe('When was the last email from Uwe?')
   })
 
-  it('leaves an identity request to the first model step without profile I/O', async () => {
+  it('supplies an authenticated profile snapshot before an identity request', async () => {
     const path = await authorityFile()
+    profileResponses()
     const harness = mount(config(path))
     const scopedAgent = {
       session: {
@@ -331,8 +339,9 @@ describe('HIVE-MIND runtime', () => {
       messages: UserMessage[]
     }
 
-    expect(decision.messages).toHaveLength(1)
-    expect(textOfForTest(decision.messages[0] as UserMessage)).toBe('What do u know about me?')
+    expect(decision.messages).toHaveLength(2)
+    expect(textOfForTest(decision.messages[0] as UserMessage)).toContain('Authenticated HIVE-MIND profile context')
+    expect(textOfForTest(decision.messages[1] as UserMessage)).toBe('What do u know about me?')
     expect(harness.skills.get('hivemind-company-brain')).toMatchObject({
       invocation: { modelInvocable: true, userInvocable: true },
     })

@@ -8,7 +8,13 @@ import type { SessionEvent } from '@deepseek-ai/dsh-session'
 /** Authenticated profile evidence loaded lazily by the HIVE runtime. */
 export interface ProfileSnapshot { identity: { userId: string; orgId: string }; initialContext: string; fullContext: string }
 /** Prompt-projection budgets and the registered on-demand capability tool. */
-export interface ContextConfig { historyTurns: number; historyMaxChars: number; capabilityToolName: string }
+export interface ContextConfig {
+  historyTurns: number
+  historyMaxChars: number
+  capabilityToolName: string
+  /** Server-derived authenticated identity and organization brief for a fresh HIVE session. */
+  initialProfileContext?: (agent: Agent, signal: AbortSignal) => Promise<string>
+}
 interface ConversationExchange { turn: number; user: string; assistant: string }
 const PROFILE_CONTEXT_SOURCE = 'dsh-hivemind-runtime/profile'
 const HISTORY_CONTEXT_SOURCE = 'dsh-hivemind-runtime/history'
@@ -63,6 +69,12 @@ function isSkillCatalog(message: Message): boolean {
   return (message.source as { readonly kind: string }).kind === 'skill-catalog'
 }
 
+function hasProfileContext(events: readonly SessionEvent[]): boolean {
+  return events.some(event => event.type === 'user/message'
+    && event.data.source.kind === 'plugin'
+    && [PROFILE_CONTEXT_SOURCE, IDENTITY_CONTEXT_SOURCE].includes(event.data.source.plugin))
+}
+
 /**
  * Project compact history and reveal the native skill catalog only after model request.
  * @param config - history budgets and the registered capability-request tool name.
@@ -73,7 +85,18 @@ export function contextPlugin(config: ContextConfig): Plugin.Object<void> {
     name: 'hivemind-context',
     apply(ctx: Context): void {
       const projected = new WeakMap<Agent, number>()
-      ctx.on('agent/pre-step', async ({ agent, turn }, next) => {
+      ctx.on('agent/pre-step', async ({ agent, turn, signal }, next) => {
+        // A new HIVE session gets one server-derived caller snapshot before its
+        // first model step. It becomes part of the native request series, so
+        // later turns retain it through the normal durable session projection.
+        // Never derive this from a user message or repeat it after a reload.
+        const profileProvider = config.initialProfileContext
+        const needsProfile = profileProvider !== undefined
+          && turn === 1
+          && !hasProfileContext(agent.session.snapshotEvents())
+        const profile = needsProfile
+          ? await profileProvider(agent, signal)
+          : undefined
         const decision = await next()
         if (decision.kind === 'reject') return decision
 
@@ -88,9 +111,15 @@ export function contextPlugin(config: ContextConfig): Plugin.Object<void> {
         const messages = showCatalog
           ? decision.messages
           : decision.messages.filter(message => !isSkillCatalog(message))
+        const withProfile = profile === undefined || profile.length === 0
+          ? messages
+          : [createUserMessage({
+            content: [{ type: 'text', text: profile }],
+            source: { kind: 'plugin', plugin: IDENTITY_CONTEXT_SOURCE, form: 'recall' },
+          }), ...messages]
         return changed
-          ? { ...decision, messages, startsRequestSeries: true }
-          : { ...decision, messages }
+          ? { ...decision, messages: withProfile, startsRequestSeries: true }
+          : { ...decision, messages: withProfile }
       }, { prepend: true })
     },
   }
