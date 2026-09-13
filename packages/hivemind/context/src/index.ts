@@ -12,11 +12,8 @@ export interface ContextConfig {
   historyTurns: number
   historyMaxChars: number
   capabilityToolName: string
-  /** Server-derived authenticated identity and organization brief for a fresh HIVE session. */
-  initialProfileContext?: (agent: Agent, signal: AbortSignal) => Promise<string>
 }
 interface ConversationExchange { turn: number; user: string; assistant: string }
-const PROFILE_CONTEXT_SOURCE = 'dsh-hivemind-runtime/profile'
 const HISTORY_CONTEXT_SOURCE = 'dsh-hivemind-runtime/history'
 function textOf(message: Message): string { return message.content.filter((block): block is Extract<ContentBlock,{ type:'text' }> => block.type === 'text').map(block => block.text.trim()).filter(Boolean).join('\n') }
 /**
@@ -33,7 +30,6 @@ export function completedExchanges(events: readonly SessionEvent[]): Conversatio
  * @returns model-facing recent conversation text.
  */
 export function recentConversationText(exchanges: readonly ConversationExchange[], maxTurns: number, maxChars: number): string { const heading='## Recent conversation\nOnly completed user requests and final answers are retained; tool calls and tool outputs are omitted. The separate user message after this block is the current request and must be answered.\n'; const selected:string[]=[]; let remaining=maxChars-heading.length; for(const exchange of exchanges.slice(-maxTurns).reverse()){const rendered=`\n### User\n${exchange.user}\n\n### Assistant\n${exchange.assistant}\n`;if(rendered.length<=remaining){selected.unshift(rendered);remaining-=rendered.length;continue}if(selected.length>0||remaining<80)break;const userBudget=Math.max(20,Math.floor(remaining*.35)),assistantBudget=Math.max(20,remaining-userBudget-36);selected.unshift(`\n### User\n${exchange.user.slice(0,userBudget)}\n\n### Assistant\n${exchange.assistant.slice(0,assistantBudget)}\n`);break}return `${heading}${selected.join('')}`.slice(0,maxChars) }
-const IDENTITY_CONTEXT_SOURCE = 'dsh-hivemind-runtime/identity-context'
 function projectHistory(agent: Agent, config: ContextConfig): boolean {
   const session = agent.session
   const events = session.snapshotEvents()
@@ -42,13 +38,10 @@ function projectHistory(agent: Agent, config: ContextConfig): boolean {
   const lastCompleted = events.findLast(event => event.type === 'turn/end')
   if (lastCompleted === undefined || lastCompleted.data.reason.kind !== 'completed') return false
   const nodes = [...session.surface.nodes].filter(seq => seq < lastCompleted.seq)
-  // Keep current system/profile context outside the replacement interval.
-  // A connected-app conversation need not contain any profile injection.
+  // Keep the native system message outside the replacement interval.
   const pinned = nodes.findLastIndex((seq) => {
     const event = session.eventAt(seq)
-    return event?.type === 'system/message' || (event?.type === 'user/message'
-      && event.data.source.kind === 'plugin'
-      && [PROFILE_CONTEXT_SOURCE, IDENTITY_CONTEXT_SOURCE].includes(event.data.source.plugin))
+    return event?.type === 'system/message'
   })
   const shadowed = nodes.slice(pinned + 1)
   const start = shadowed[0], end = shadowed.at(-1)
@@ -69,12 +62,6 @@ function isSkillCatalog(message: Message): boolean {
   return (message.source as { readonly kind: string }).kind === 'skill-catalog'
 }
 
-function hasProfileContext(events: readonly SessionEvent[]): boolean {
-  return events.some(event => event.type === 'user/message'
-    && event.data.source.kind === 'plugin'
-    && [PROFILE_CONTEXT_SOURCE, IDENTITY_CONTEXT_SOURCE].includes(event.data.source.plugin))
-}
-
 /**
  * Project compact history and reveal the native skill catalog only after model request.
  * @param config - history budgets and the registered capability-request tool name.
@@ -85,18 +72,7 @@ export function contextPlugin(config: ContextConfig): Plugin.Object<void> {
     name: 'hivemind-context',
     apply(ctx: Context): void {
       const projected = new WeakMap<Agent, number>()
-      ctx.on('agent/pre-step', async ({ agent, turn, signal }, next) => {
-        // A new HIVE session gets one server-derived caller snapshot before its
-        // first model step. It becomes part of the native request series, so
-        // later turns retain it through the normal durable session projection.
-        // Never derive this from a user message or repeat it after a reload.
-        const profileProvider = config.initialProfileContext
-        const needsProfile = profileProvider !== undefined
-          && turn === 1
-          && !hasProfileContext(agent.session.snapshotEvents())
-        const profile = needsProfile
-          ? await profileProvider(agent, signal)
-          : undefined
+      ctx.on('agent/pre-step', async ({ agent, turn }, next) => {
         const decision = await next()
         if (decision.kind === 'reject') return decision
 
@@ -111,15 +87,9 @@ export function contextPlugin(config: ContextConfig): Plugin.Object<void> {
         const messages = showCatalog
           ? decision.messages
           : decision.messages.filter(message => !isSkillCatalog(message))
-        const withProfile = profile === undefined || profile.length === 0
-          ? messages
-          : [createUserMessage({
-            content: [{ type: 'text', text: profile }],
-            source: { kind: 'plugin', plugin: IDENTITY_CONTEXT_SOURCE, form: 'recall' },
-          }), ...messages]
         return changed
-          ? { ...decision, messages: withProfile, startsRequestSeries: true }
-          : { ...decision, messages: withProfile }
+          ? { ...decision, messages, startsRequestSeries: true }
+          : { ...decision, messages }
       }, { prepend: true })
     },
   }

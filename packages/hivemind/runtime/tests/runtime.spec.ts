@@ -265,7 +265,7 @@ describe('HIVE-MIND runtime', () => {
     expect(JSON.stringify(error)).not.toContain('test-secret-token')
   })
 
-  it('injects one bounded authenticated profile snapshot before a greeting', async () => {
+  it('keeps a greeting to the native first-step request only', async () => {
     const path = await authorityFile()
     profileResponses()
     const harness = mount(config(path))
@@ -287,11 +287,8 @@ describe('HIVE-MIND runtime', () => {
     }
     expect(next).toHaveBeenCalledOnce()
     expect(decision.startsRequestSeries).toBeUndefined()
-    expect(decision.messages).toHaveLength(2)
-    expect(decision.messages[0]?.source).toMatchObject({ kind: 'plugin', plugin: 'dsh-hivemind-runtime/identity-context' })
-    expect(textOfForTest(decision.messages[0] as UserMessage)).toContain('Authenticated HIVE-MIND profile context')
-    expect(textOfForTest(decision.messages[0] as UserMessage)).toContain('Singulance builds governed AI systems.')
-    expect(textOfForTest(decision.messages[1] as UserMessage)).toBe('hello')
+    expect(decision.messages).toHaveLength(1)
+    expect(textOfForTest(decision.messages[0] as UserMessage)).toBe('hello')
   })
 
   it('does not duplicate the system routing contract before a current mailbox request', async () => {
@@ -310,12 +307,11 @@ describe('HIVE-MIND runtime', () => {
     })) as { messages: UserMessage[]; startsRequestSeries?: true }
 
     expect(decision.startsRequestSeries).toBeUndefined()
-    expect(decision.messages).toHaveLength(2)
-    expect(textOfForTest(decision.messages[0] as UserMessage)).toContain('Authenticated HIVE-MIND profile context')
-    expect(textOfForTest(decision.messages[1] as UserMessage)).toBe('When was the last email from Uwe?')
+    expect(decision.messages).toHaveLength(1)
+    expect(textOfForTest(decision.messages[0] as UserMessage)).toBe('When was the last email from Uwe?')
   })
 
-  it('supplies an authenticated profile snapshot before an identity request', async () => {
+  it('does not eagerly load a profile before an identity request', async () => {
     const path = await authorityFile()
     profileResponses()
     const harness = mount(config(path))
@@ -339,9 +335,8 @@ describe('HIVE-MIND runtime', () => {
       messages: UserMessage[]
     }
 
-    expect(decision.messages).toHaveLength(2)
-    expect(textOfForTest(decision.messages[0] as UserMessage)).toContain('Authenticated HIVE-MIND profile context')
-    expect(textOfForTest(decision.messages[1] as UserMessage)).toBe('What do u know about me?')
+    expect(decision.messages).toHaveLength(1)
+    expect(textOfForTest(decision.messages[0] as UserMessage)).toBe('What do u know about me?')
     expect(harness.skills.get('hivemind-company-brain')).toMatchObject({
       invocation: { modelInvocable: true, userInvocable: true },
     })
@@ -431,11 +426,11 @@ describe('HIVE-MIND runtime', () => {
     }
   })
 
-  it('replaces prior tool history before a new turn while preserving the profile context', async () => {
+  it('replaces prior tool history before a new turn while preserving the system boundary', async () => {
     profileResponses()
     const profile = createUserMessage({
-      content: [{ type: 'text', text: 'Organization brief' }],
-      source: { kind: 'plugin', plugin: 'dsh-hivemind-runtime/profile' },
+      content: [{ type: 'text', text: 'System boundary' }],
+      source: { kind: 'user' },
     })
     const user = createUserMessage({ content: [{ type: 'text', text: 'Find the decision' }], source: { kind: 'user' } })
     const result = createToolResultMessage({ callId: 'call-1' as never, content: [{ type: 'text', text: 'large private result' }], isError: false })
@@ -471,7 +466,7 @@ describe('HIVE-MIND runtime', () => {
     expect(append).toHaveBeenCalledOnce()
     const [type, message, options] = append.mock.calls[0] as [string, UserMessage, { surfaceOp: object; sourceEventSeqs: number[] }]
     expect(type).toBe('user/message')
-    expect(options).toEqual({ surfaceOp: { op: 'replace', startSeq: 2, endSeq: 4 }, sourceEventSeqs: [2, 3, 4] })
+    expect(options).toEqual({ surfaceOp: { op: 'replace', startSeq: 0, endSeq: 4 }, sourceEventSeqs: [0, 2, 3, 4] })
     expect(textOfForTest(message)).toContain('The decision was approved.')
     expect(textOfForTest(message)).not.toContain('large private result')
 
