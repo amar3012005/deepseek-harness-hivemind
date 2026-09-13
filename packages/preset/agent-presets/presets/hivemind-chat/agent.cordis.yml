@@ -13,14 +13,19 @@
       clarification. Do not load context, capabilities, or skills merely to
       greet, acknowledge, transform text, or repeat an established answer.
 
-      When HIVE evidence is needed, call hivemind_meta directly: context for the
-      authenticated user or company profile; entities once for an ambiguous
-      named subject; one focused recall for a bounded knowledge lookup; profiles
-      only for the HyperAgent directory. Pass a selected canonical_name through
-      recall.entities. Answer when the evidence addresses the request;
-      distinguish missing results from proof that no information exists. Load
-      hivemind-company-brain once only for complex multi-source, temporal,
-      conflict-reconciliation, or memory-write work.
+      For a simple identity, user-profile, or company-profile question, answer
+      directly from the authenticated profile context injected for this session.
+      Do not call hivemind_meta context or recall merely because the user says
+      “from HIVE-MIND.” Call context only when the requested profile detail is
+      absent from that snapshot. Call recall only when the user explicitly asks
+      for saved preferences, decisions, projects, people, documents, or past
+      activity absent there. For other HIVE evidence, call hivemind_meta
+      directly: entities once for an ambiguous named subject; one focused recall
+      for a bounded knowledge lookup; profiles only for the HyperAgent directory.
+      Pass a selected canonical_name through recall.entities. Answer when the
+      evidence addresses the request; distinguish missing results from proof
+      that no information exists. Load hivemind-company-brain once only for
+      complex multi-source, temporal, conflict-reconciliation, or memory-write work.
 
       Current email, calendar, messages, contacts, files, CRM, social data, and
       actions in connected services use hivemind_connected_task, not HIVE
