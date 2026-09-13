@@ -120,6 +120,7 @@ export class PendingQuestion {
   readonly #reject: (reason: unknown) => void
   readonly #signal: AbortSignal | undefined
   readonly #onAbort: (() => void) | undefined
+  readonly #cancelTurn: (() => Promise<unknown>) | undefined
   readonly #delegated = Symbol('pending question delegated')
   #settled = false
 
@@ -132,6 +133,7 @@ export class PendingQuestion {
     readonly sessionId: SessionId,
     questions: readonly AskUserQuestionItem[],
     signal?: AbortSignal,
+    cancelTurn?: () => Promise<unknown>,
   ) {
     nextQuestionKey += 1
     this.key = `question:${String(nextQuestionKey)}`
@@ -142,6 +144,7 @@ export class PendingQuestion {
     this.#resolve = completion.resolve
     this.#reject = completion.reject
     this.#signal = signal
+    this.#cancelTurn = cancelTurn
     if (signal === undefined) {
       this.#onAbort = undefined
       return
@@ -181,11 +184,14 @@ export class PendingQuestion {
 
   /** Reject the Host waterfall because the user closed the question. */
   cancel(): Promise<void> {
+    const cancellation = this.#cancelTurn?.()
     return settlePendingComposer(() => {
       this.finish(() => {
         this.#reject(questionError('the user cancelled ask_user_question', 'ASK_CANCELLED'))
       })
-    }, 'pending question cancellation failed')
+    }, 'pending question cancellation failed').then(async () => {
+      await cancellation
+    })
   }
 
   /**

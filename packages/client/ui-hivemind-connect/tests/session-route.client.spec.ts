@@ -23,7 +23,9 @@ function fixture(initial: SessionListState): {
     state = { ...state, current: id }
     for (const listener of listeners) listener()
   })
-  const create = vi.fn(async () => sid('session-created'))
+  const create = vi.fn(({ sessionId }: { sessionId?: SessionId } = {}) => (
+    Promise.resolve(sessionId ?? sid('session-created'))
+  ))
   return {
     sessions: {
       list: {
@@ -129,11 +131,12 @@ describe('HIVE native session routes', () => {
     expect(window.location.pathname).toBe(`${HIVE_OVERVIEW_PATH}/session/session-older`)
   })
 
-  it('opens an opaque deep link absent from the bounded recent list', () => {
+  it('adopts and opens an opaque deep link absent from the bounded recent list', async () => {
     window.history.replaceState(null, '', `${HIVE_OVERVIEW_PATH}/session/session-not-recent`)
     const harness = fixture(state())
     install(harness.sessions)
-    expect(harness.open).toHaveBeenLastCalledWith('session-not-recent')
+    await vi.waitFor(() => { expect(harness.open).toHaveBeenLastCalledWith('session-not-recent') })
+    expect(harness.create).toHaveBeenCalledWith({ sessionId: 'session-not-recent' })
     expect(window.location.pathname).toBe(`${HIVE_OVERVIEW_PATH}/session/session-not-recent`)
   })
 

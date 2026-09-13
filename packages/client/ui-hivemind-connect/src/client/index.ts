@@ -53,7 +53,13 @@ async function answerConnectionQuestion(
   if (recognized === undefined) return next()
   const sessionId = ctx.sessions.scopeOf(owner)
   if (sessionId === undefined) return next()
-  const pending = new PendingConnectionAuthorization(sessionId, recognized, request.signal)
+  const session = ctx.sessions.sessionOf(owner)
+  const pending = new PendingConnectionAuthorization(
+    sessionId,
+    recognized,
+    request.signal,
+    session === undefined ? undefined : async () => { await session.cancel() },
+  )
   const completed = Promise.withResolvers<void>()
   const remove = publish(pending, async () => {
     pending.delegate()

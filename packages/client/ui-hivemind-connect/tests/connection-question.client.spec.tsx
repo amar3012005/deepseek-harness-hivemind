@@ -53,7 +53,7 @@ describe('connection question presentation', () => {
     expect(view.getByText('需要你的输入才能继续')).toBeTruthy()
     expect(link.getAttribute('href')).toBe(presentation.redirectUrl)
     expect(view.getAllByRole('link')).toHaveLength(1)
-    expect(view.getAllByRole('button')).toHaveLength(1)
+    expect(view.getAllByRole('button')).toHaveLength(2)
 
     fireEvent.click(link)
     let settled = false

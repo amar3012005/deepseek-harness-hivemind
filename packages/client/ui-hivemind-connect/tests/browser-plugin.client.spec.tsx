@@ -41,8 +41,14 @@ describe('HIVE-MIND connection UI', () => {
     const SESSION_SCOPE = Symbol('connection-session-scope')
     const sessionId = 'session-connection' as SessionId
     const owner = ctx.extend({ [SESSION_SCOPE]: sessionId })
+    const cancel = vi.fn(async () => ({ ok: true, value: { accepted: true } }))
     ctx.provide('sessions', {
       scopeOf: (candidate: Context) => (candidate as Context & { [SESSION_SCOPE]?: SessionId })[SESSION_SCOPE],
+      sessionOf: (candidate: Context) => (
+        (candidate as Context & { [SESSION_SCOPE]?: SessionId })[SESSION_SCOPE] === undefined
+          ? undefined
+          : { cancel }
+      ),
       list: { getSnapshot: () => ({ current: sessionId, ids: [sessionId], phase: 'ready' }), subscribe: () => () => {} },
     } as never)
     ctx.provide('conversation', {} as never)
@@ -93,6 +99,65 @@ describe('HIVE-MIND connection UI', () => {
       selected: ["I've connected Asana — continue"],
     }] })
     expect(next).not.toHaveBeenCalled()
+    expect(pending.size).toBe(0)
+    await fiber.dispose()
+  })
+
+  it('cancels the owning turn when a connection question is dismissed', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SlotRegistry).await()
+    const slots = ctx.get('slots') as SlotRegistry
+    slots.register({
+      name: 'root',
+      children: {
+        'conversation.hero.brand.mark': { kind: 'single', scope: 'root' },
+        'tool.call.toolview': { kind: 'keyed', scope: 'session' },
+      },
+    } as never, () => null)
+    ctx.provide('locale', { register: () => () => {} } as never)
+    const SESSION_SCOPE = Symbol('connection-cancel-session-scope')
+    const sessionId = 'session-cancel-connection' as SessionId
+    const owner = ctx.extend({ [SESSION_SCOPE]: sessionId })
+    const cancel = vi.fn(async () => ({ ok: true, value: { accepted: true } }))
+    ctx.provide('sessions', {
+      scopeOf: (candidate: Context) => (candidate as Context & { [SESSION_SCOPE]?: SessionId })[SESSION_SCOPE],
+      sessionOf: () => ({ cancel }),
+      list: { getSnapshot: () => ({ current: sessionId, ids: [sessionId], phase: 'ready' }), subscribe: () => () => {} },
+    } as never)
+    ctx.provide('conversation', {} as never)
+    ctx.provide('uiConversation', { configureWorkspaceRequirement: () => () => {} } as never)
+    const pending = new Map<PendingConnectionAuthorization, () => Promise<void>>()
+    ctx.provide('uiSession', {
+      registerPendingInteraction: () => (value: PendingConnectionAuthorization, delegate: () => Promise<void>) => {
+        pending.set(value, delegate)
+        return () => { pending.delete(value) }
+      },
+    } as never)
+    type Listener = (this: Context, request: {
+      questions: Array<{ id: string; question: string; detail: string; options: Array<{ label: string }> }>
+    }, next: () => Promise<{ answers: never[] }>) => Promise<unknown>
+    let listener: Listener | undefined
+    ctx.provide('remote', { $on: (_event: string, value: Listener) => { listener = value; return () => { listener = undefined } } } as never)
+    const fiber = ctx.plugin({ inject: [...inject], apply })
+    await fiber.await()
+    const payload = encodeURIComponent(JSON.stringify({
+      version: 1, appLabel: 'Asana', toolkit: 'asana',
+      redirectUrl: 'https://connect.example/asana', logoUrl: 'https://logos.example/asana.svg',
+      connectLabel: 'Connect Asana', continueLabel: "I've connected Asana — continue",
+    }))
+    const request = { questions: [{
+      id: 'hivemind-connected-app-authorization:workflow-asana:asana',
+      question: 'Connect Asana to continue, then return here.',
+      detail: `Authorize in a new tab.\n\n<!-- hivemind-connected-app-authorization:${payload} -->`,
+      options: [{ label: 'Connect Asana' }, { label: "I've connected Asana — continue" }],
+    }] }
+    const result = listener!.call(owner, request, async () => ({ answers: [] as never[] }))
+    await Promise.resolve()
+    const current = [...pending.keys()][0]!
+    const rejection = expect(result).rejects.toMatchObject({ name: 'UserQuestionError', code: 'ASK_CANCELLED' })
+    await current.cancel()
+    await rejection
+    expect(cancel).toHaveBeenCalledOnce()
     expect(pending.size).toBe(0)
     await fiber.dispose()
   })
@@ -151,9 +216,11 @@ describe('HIVE-MIND connection UI', () => {
     vi.stubGlobal('fetch', fetchMock)
     const dispose = setupEmbedMessaging()
 
-    expect(postMessage).toHaveBeenCalledWith({
-      version: 1, type: 'hivemind:harness-ready.v1', request_id: expect.any(String),
-    }, 'https://app.example')
+    expect(postMessage).toHaveBeenCalledOnce()
+    const ready = postMessage.mock.calls[0]?.[0] as Record<string, unknown>
+    expect(ready).toMatchObject({ version: 1, type: 'hivemind:harness-ready.v1' })
+    expect(typeof ready.request_id).toBe('string')
+    expect(postMessage.mock.calls[0]?.[1]).toBe('https://app.example')
     window.dispatchEvent(new MessageEvent('message', {
       source: parent, origin: 'https://evil.example',
       data: { version: 1, type: 'hivemind:harness-bootstrap.v1', request_id: 'bad', ticket: 'ticket' },

@@ -98,6 +98,32 @@ export function setupHivemindSessionRouting(
     }).finally(() => { creating = false })
   }
 
+  const selectExact = (state: SessionListState, sessionId: SessionId): void => {
+    if (creating) return
+    if (rootSession(state, sessionId) !== undefined) {
+      applyingRoute = true
+      initialized = true
+      observedCurrent = sessionId
+      if (state.current !== sessionId) sessions.open(sessionId)
+      replace(hivemindSessionPath(sessionId))
+      applyingRoute = false
+      return
+    }
+    const attempt = ++generation
+    creating = true
+    void sessions.create({ sessionId }).then((adoptedSessionId) => {
+      if (disposed || attempt !== generation) return
+      applyingRoute = true
+      initialized = true
+      observedCurrent = adoptedSessionId
+      sessions.open(adoptedSessionId)
+      replace(hivemindSessionPath(adoptedSessionId))
+      applyingRoute = false
+    }).catch(() => {
+      if (!disposed && attempt === generation) replace(HIVE_OVERVIEW_PATH)
+    }).finally(() => { creating = false })
+  }
+
   const applyLocation = (): void => {
     if (!browser.location.pathname.startsWith(HIVE_OVERVIEW_PATH)
       && browser.location.pathname !== LEGACY_HIVE_OVERVIEW_PATH) return
@@ -107,12 +133,7 @@ export function setupHivemindSessionRouting(
     if (route.kind === 'session') {
       const knownSubagent = state.byId[route.sessionId]?.origin === 'subagent'
       if (!knownSubagent) {
-        applyingRoute = true
-        initialized = true
-        observedCurrent = route.sessionId
-        if (state.current !== route.sessionId) sessions.open(route.sessionId)
-        replace(hivemindSessionPath(route.sessionId))
-        applyingRoute = false
+        selectExact(state, route.sessionId)
         return
       }
       // A known child is never promoted to the root conversation surface.

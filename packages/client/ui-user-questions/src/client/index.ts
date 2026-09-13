@@ -60,7 +60,13 @@ async function answerQuestion(
 ): Promise<ClientQuestionAnswer> {
   const sessionId = (ctx.sessions as ISessions).scopeOf(owner)
   if (sessionId === undefined) return next()
-  const pending = new PendingQuestion(sessionId, request.questions, request.signal)
+  const session = (ctx.sessions as ISessions).sessionOf(owner)
+  const pending = new PendingQuestion(
+    sessionId,
+    request.questions,
+    request.signal,
+    session === undefined ? undefined : async () => { await session.cancel() },
+  )
   const completed = Promise.withResolvers<void>()
   const remove = registerPendingInteraction(pending, async () => {
     pending.delegate()

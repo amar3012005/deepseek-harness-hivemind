@@ -49,7 +49,11 @@ async function bench(declare = true) {
   const scopeOf = vi.fn((candidate: Context) => (
     candidate as Context & { [SESSION_SCOPE]?: SessionId }
   )[SESSION_SCOPE])
-  ctx.provide('sessions', { scopeOf } as never)
+  const cancel = vi.fn(async () => ({ ok: true, value: { accepted: true } }))
+  ctx.provide('sessions', {
+    scopeOf,
+    sessionOf: (candidate: Context) => scopeOf(candidate) === undefined ? undefined : { cancel },
+  } as never)
   const pending = new Map<PendingQuestion, () => Promise<void>>()
   const registerPendingInteraction = vi.fn((_precedence: (value: PendingQuestion) => number) => (
     value: PendingQuestion,
@@ -83,6 +87,7 @@ async function bench(declare = true) {
     locale,
     agent,
     scopeOf,
+    cancel,
     pending: { getSnapshot: () => [...pending.keys()] },
     registerPendingInteraction,
     on,
@@ -155,6 +160,7 @@ describe('apply', () => {
 
     await pending.cancel()
     await rejection
+    expect(b.cancel).toHaveBeenCalledOnce()
     expect(b.pending.getSnapshot()).toEqual([])
     expect(b.slots.entries('conversation.composer')).toHaveLength(1)
   })

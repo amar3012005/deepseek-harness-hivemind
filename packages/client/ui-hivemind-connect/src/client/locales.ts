@@ -7,6 +7,7 @@ export type HivemindConnectKey =
   | 'composio.connectionPrompt' | 'composio.connectionActionDetail'
   | 'composio.inputRequired' | 'composio.verifying'
   | 'composio.continue'
+  | 'composio.dismiss'
   | 'composio.connected' | 'composio.connectionVerified'
 
 export const en: Record<HivemindConnectKey, string> = {
@@ -32,6 +33,7 @@ export const en: Record<HivemindConnectKey, string> = {
   'composio.inputRequired': 'I need your input to continue',
   'composio.verifying': 'Verifying connection…',
   'composio.continue': "I've connected {app} — continue",
+  'composio.dismiss': 'Dismiss and stop this turn',
   'composio.connected': '{app} connected',
   'composio.connectionVerified': 'Connection verified. Continuing this request.',
 }
@@ -59,6 +61,7 @@ export const zh: Record<HivemindConnectKey, string> = {
   'composio.inputRequired': '需要你的输入才能继续',
   'composio.verifying': '正在验证连接…',
   'composio.continue': '我已连接 {app} — 继续',
+  'composio.dismiss': '关闭并停止本轮',
   'composio.connected': '{app} 已连接',
   'composio.connectionVerified': '连接已验证。正在继续此请求。',
 }

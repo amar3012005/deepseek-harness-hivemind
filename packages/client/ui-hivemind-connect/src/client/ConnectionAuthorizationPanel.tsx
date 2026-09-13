@@ -25,6 +25,7 @@ export function ConnectionAuthorizationPanel({ matched, t }: Pick<Props, 'matche
   }), [matched])
   return <div className={css.frame}>
     <section className={css.root} aria-labelledby={`${matched.key}-title`}>
+      <button className={css.dismiss} type="button" aria-label={t('composio.dismiss')} onClick={() => { void matched.cancel() }}>×</button>
       <h2 id={`${matched.key}-title`} className={css.title}>{question.question}</h2>
       <div className={css.appCard}>
         <img src={presentation.logoUrl} alt="" />

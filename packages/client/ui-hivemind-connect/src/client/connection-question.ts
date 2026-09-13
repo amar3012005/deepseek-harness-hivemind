@@ -63,6 +63,13 @@ export function connectionPresentationOf(
 
 let nextConnectionKey = 0
 
+function connectionQuestionError(message: string, code: 'ASK_ABORTED' | 'ASK_CANCELLED'): Error {
+  const error = new Error(message) as Error & { code: string }
+  error.name = 'UserQuestionError'
+  error.code = code
+  return error
+}
+
 function settle(settleResult: () => void): Promise<void> {
   try {
     settleResult()
@@ -87,12 +94,14 @@ export class PendingConnectionAuthorization {
   readonly #delegated = Symbol('pending connection authorization delegated')
   readonly #signal: AbortSignal | undefined
   readonly #onAbort: (() => void) | undefined
+  readonly #cancelTurn: (() => Promise<unknown>) | undefined
   #settled = false
 
   constructor(
     readonly sessionId: SessionId,
     recognized: NonNullable<ReturnType<typeof connectionPresentationOf>>,
     signal?: AbortSignal,
+    cancelTurn?: () => Promise<unknown>,
   ) {
     nextConnectionKey += 1
     this.key = `hivemind-connected-app-authorization:${String(nextConnectionKey)}`
@@ -103,6 +112,7 @@ export class PendingConnectionAuthorization {
     this.#resolve = completion.resolve
     this.#reject = completion.reject
     this.#signal = signal
+    this.#cancelTurn = cancelTurn
     if (signal === undefined) {
       this.#onAbort = undefined
       return
@@ -127,6 +137,15 @@ export class PendingConnectionAuthorization {
   }
 
   isDelegation(reason: unknown): boolean { return reason === this.#delegated }
+
+  cancel(): Promise<void> {
+    const cancellation = this.#cancelTurn?.()
+    return settle(() => {
+      this.finish(() => {
+        this.#reject(connectionQuestionError('the user cancelled connected-app authorization', 'ASK_CANCELLED'))
+      })
+    }).then(async () => { await cancellation })
+  }
 
   abort(reason: unknown): void {
     if (this.#settled) return
