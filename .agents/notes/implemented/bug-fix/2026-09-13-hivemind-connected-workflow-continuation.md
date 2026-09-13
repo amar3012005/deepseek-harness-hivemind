@@ -6,7 +6,7 @@ Status: implemented
 
 An active `connection_status` receipt called the Harness turn-conclusion seam. A broader request such as sending a previously drafted message therefore stopped after reporting that the provider was connected. When the user said “continue” in a later turn, completed-history projection correctly omitted the old tool transcript, but it also left the model without the original connected-app intent and execution contract. The model could repeat connection discovery, ask for details already established, or incorrectly search HIVE memory.
 
-Provider read receipts also repeated MIME transport trees beside already-decoded evidence, and schema examples increased the model projection without contributing executable validation.
+Provider read receipts also repeated MIME transport trees beside already-decoded evidence, and schema examples increased the model projection without contributing executable validation. Email projections could omit requested evidence because provider-specific keys such as `sender`, `messageTimestamp`, and `messageText` did not match canonical requested names. The private spill locator then appeared in model context and could be mistaken for a web-research URL.
 
 ## Decision
 
@@ -14,11 +14,13 @@ The HIVE connected-app bridge treats an active connection as evidence inside the
 
 For later-turn continuation, `agent/pre-step` derives one compact unfinished-workflow projection from durable `hivemind_connected_task` calls and results already committed to the owning conversation. The projection carries the workflow session, original atomic queries, selected tools, exact contracts, connection state, and next action. No process-local cache is authoritative, no replacement planner is added, and no app-specific routing rule is introduced.
 
-Search contracts omit only non-executable schema annotations. Provider result projection omits transport-shaped MIME subtrees while preserving decoded evidence and the private full-receipt reference.
+Search contracts omit only non-executable schema annotations. Provider result projection omits transport-shaped MIME subtrees while preserving decoded evidence. Common mail fields are canonicalized at this adapter boundary, while the full provider receipt remains in session-authorized private spill storage. Only content-free storage metadata is model-visible; private locators and retrieval hints are not.
 
 ## Consequences
 
 The native agent loop, tool rows, connection card, replay, and renderer remain unchanged. Connected work can resume after authorization or a later user message without repeating discovery, and an already-connected provider no longer consumes a turn by itself. Model context is smaller without weakening server-side schema validation or removing user-visible evidence.
+
+One selected non-mutating provider tool executes at most once per native turn unless the model supplies the provider's explicit pagination cursor. Exact Ajv contract validation still rejects unsupported arguments before execution; the bridge does not sanitize, rename, or silently remove them.
 
 An unfinished workflow remains visible to the model until provider execution completes. If the user changes tasks, the projection explicitly leaves the prior workflow pending rather than silently mutating or discarding it.
 
@@ -38,7 +40,7 @@ model confirmation loop while retaining native replay and cancellation.
 
 ## Verification
 
-The connected-app package tests cover active-connection continuation, later-turn workflow reconstruction, exact nested schema preservation without examples, and readable provider evidence without duplicated MIME transport. A targeted TypeScript build and package-only bundle compile the same HIVE plugin mounted by the preview runner.
+The connected-app package tests cover a single-search and single-fetch latest-email request, canonical email field projection, private oversized receipts without web locators or approval, active-connection direct execution, OAuth continuation with the original session and contract, explicit pagination, exact nested schema validation, and readable provider evidence without duplicated MIME transport. A targeted TypeScript build compiles the same HIVE plugin mounted by the preview runner.
 
 The preview browser canary proved a fresh bounded Gmail read completes with one
 search and one provider execution. A fresh Gmail mutation produced one native

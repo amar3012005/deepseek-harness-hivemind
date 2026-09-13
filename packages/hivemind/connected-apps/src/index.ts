@@ -932,6 +932,15 @@ function projectRequestedFields(value: unknown, requested: ReadonlySet<string>):
   }
   if (!record(value)) return undefined
   const projected: Record<string, JsonValue> = {}
+  const aliases: Readonly<Record<string, readonly string[]>> = {
+    sender: ['from'],
+    from: ['sender'],
+    received_at: ['messageTimestamp', 'receivedAt', 'timestamp', 'date'],
+    date: ['messageTimestamp', 'received_at', 'receivedAt', 'timestamp'],
+    timestamp: ['messageTimestamp', 'received_at', 'receivedAt', 'date'],
+    snippet: ['messageText', 'previewText', 'bodyPreview'],
+    body: ['messageText', 'snippet', 'text', 'content'],
+  }
   for (const [key, item] of Object.entries(value)) {
     if (requested.has(key)) {
       projected[key] = compactProviderValue(item)
@@ -941,7 +950,23 @@ function projectRequestedFields(value: unknown, requested: ReadonlySet<string>):
     if (nested !== undefined && (!Array.isArray(nested) || nested.length > 0)
       && (!record(nested) || Object.keys(nested).length > 0)) projected[key] = nested
   }
+  for (const field of requested) {
+    if (Object.hasOwn(projected, field)) continue
+    const alias = aliases[field]?.find(key => Object.hasOwn(value, key))
+    if (alias !== undefined) projected[field] = compactProviderValue(value[alias])
+  }
   return Object.keys(projected).length === 0 ? undefined : projected
+}
+
+function privateReceiptProjection(receipt: SpillRef): Record<string, JsonValue> {
+  return { stored: true, bytes: receipt.bytes }
+}
+
+function hasExplicitPaginationCursor(args: Readonly<Record<string, unknown>>): boolean {
+  return Object.entries(args).some(([key, value]) =>
+    /^(?:next_)?(?:cursor|page_token|pageToken|nextPageToken)$/i.test(key)
+      && typeof value === 'string'
+      && value.trim().length > 0)
 }
 
 /** Bound a provider execution so MIME payloads and transport noise stay out of the transcript. */
@@ -957,11 +982,9 @@ export function compactComposioExecutionReceipt(
   const pagination = paginationProjection(value)
   return {
     ...(record(compact) ? compact : { result: compact }),
-    ...(receipt === undefined ? {} : {
-      source_receipt: { locator: receipt.locator, bytes: receipt.bytes, retrieval_hint: receipt.retrievalHint },
-    }),
+    ...(receipt === undefined ? {} : { private_receipt: privateReceiptProjection(receipt) }),
     projection_policy: requested.size === 0
-      ? 'Duplicated MIME transport trees and transport headers omitted; readable evidence retained, while long text and collections are bounded. The original receipt is preserved separately when source_receipt is present.'
+      ? 'Duplicated MIME transport trees and transport headers omitted; readable evidence retained, while long text and collections are bounded. The original receipt is stored privately when private_receipt is present.'
       : 'Only the exact requested result fields are projected when present. The original provider receipt is preserved separately.',
     ...(pagination === undefined ? {} : { pagination }),
   }
@@ -1007,9 +1030,7 @@ export function compactComposioSearchReceipt(value: unknown, receipt?: SpillRef)
     toolkit_connection_statuses: statuses,
     ...(session === undefined ? {} : { session }),
     next_steps_guidance: boundedStrings(data['next_steps_guidance'], 2, 240),
-    ...(receipt === undefined ? {} : {
-      source_receipt: { locator: receipt.locator, bytes: receipt.bytes, retrieval_hint: receipt.retrievalHint },
-    }),
+    ...(receipt === undefined ? {} : { private_receipt: privateReceiptProjection(receipt) }),
     schema_policy: 'Use the exact execution_contracts below. If a selected slug has no contract, load its schema before execution. Never infer argument names.',
   }
   // Composio ranks primary slugs. Expose and authorize only the first bounded
@@ -1064,7 +1085,13 @@ async function saveReceipt(
 
 /** Register the compact progressive Composio router and its policy guards. */
 export function apply(ctx: Context, config: Config = {}): void {
-  const turns = new WeakMap<object, { turn: number; enabled: boolean; searchFingerprints: Set<string>; workflowId?: string }>()
+  const turns = new WeakMap<object, {
+    turn: number
+    enabled: boolean
+    searchFingerprints: Set<string>
+    executionResults: Map<string, Record<string, JsonValue>>
+    workflowId?: string
+  }>()
   const apiKey = config.apiKey?.trim()
   const composio = apiKey
     ? import('@composio/core').then(({ Composio }) => new Composio({ apiKey, allowTracking: false, disableVersionCheck: true }))
@@ -1533,13 +1560,7 @@ export function apply(ctx: Context, config: Config = {}): void {
           status: 'ready',
           operations: [{ tool: 'COMPOSIO_GET_TOOL_SCHEMAS', status: 'completed' }],
           execution_contracts: loaded as unknown as JsonValue,
-          ...(sourceReceipt === undefined ? {} : {
-            source_receipt: {
-              locator: sourceReceipt.locator,
-              bytes: sourceReceipt.bytes,
-              retrieval_hint: sourceReceipt.retrievalHint,
-            },
-          }),
+          ...(sourceReceipt === undefined ? {} : { private_receipt: privateReceiptProjection(sourceReceipt) }),
         }
       }
       if (args.action === 'manage_connection' || args.action === 'wait_connection') {
@@ -1586,6 +1607,16 @@ export function apply(ctx: Context, config: Config = {}): void {
         : args.arguments
       if (!record(executionArguments)) throw new TypeError('Execute requires arguments matching the authoritative schema')
       validateArguments(contract, executionArguments)
+      const executionFingerprint = discoveryKey({ workflow: key, tool_slug: slug })
+      const turnState = execution.agent === undefined ? undefined : turns.get(execution.agent)
+      const completedRead = turnState?.executionResults.get(executionFingerprint)
+      if (!MUTATING_TOOL.test(slug) && completedRead !== undefined && !hasExplicitPaginationCursor(executionArguments)) {
+        return {
+          ...completedRead,
+          repeated_execution: true,
+          operations: [{ tool: slug, status: 'already_completed' }],
+        }
+      }
       const idempotencyKey = discoveryKey({
         workflow: key,
         tool_slug: slug,
@@ -1598,7 +1629,7 @@ export function apply(ctx: Context, config: Config = {}): void {
           idempotencyKey,
         )
         if (completed !== undefined) {
-          const priorReceipt = completed['source_receipt'] as JsonValue | undefined
+          const priorReceipt = (completed['private_receipt'] ?? completed['source_receipt']) as JsonValue | undefined
           return {
             status: 'duplicate',
             idempotency_key: idempotencyKey,
@@ -1611,7 +1642,7 @@ export function apply(ctx: Context, config: Config = {}): void {
       const sourceReceipt = await saveReceipt(
         ctx, execution, JSON.stringify(providerResult), `composio-${slug.toLowerCase()}.json`,
       )
-      return {
+      const projected = {
         ...compactComposioExecutionReceipt(
           providerResult,
           sourceReceipt,
@@ -1621,6 +1652,8 @@ export function apply(ctx: Context, config: Config = {}): void {
         ...(MUTATING_TOOL.test(slug) ? { idempotency_key: idempotencyKey } : {}),
         operations: [{ tool: slug, status: 'completed' }],
       }
+      if (!MUTATING_TOOL.test(slug)) turnState?.executionResults.set(executionFingerprint, projected)
+      return projected
     },
   }))
 
@@ -1630,6 +1663,7 @@ export function apply(ctx: Context, config: Config = {}): void {
         turn,
         enabled: connectedAppsEnabled(ctx, config.enabledByDefault === true),
         searchFingerprints: new Set(),
+        executionResults: new Map(),
       })
     }
     const decision = await next()
@@ -1669,7 +1703,7 @@ export function apply(ctx: Context, config: Config = {}): void {
     let parsed: unknown
     try { parsed = JSON.parse(raw) } catch { return decision }
     if (isBridgeSearch && record(parsed) && parsed['status'] === 'connection_required' && !Object.hasOwn(parsed, 'result')) return decision
-    if (record(parsed) && record(parsed['source_receipt'])) return decision
+    if (record(parsed) && (record(parsed['private_receipt']) || record(parsed['source_receipt']))) return decision
     const receipt = await saveReceipt(ctx, execution, raw)
     const compact = isSearch
       ? compactComposioSearchReceipt(parsed, receipt)

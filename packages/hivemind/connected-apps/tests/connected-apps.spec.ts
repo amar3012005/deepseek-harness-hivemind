@@ -206,7 +206,7 @@ describe('progressive Composio bridge', () => {
 
     expect(projected).toMatchObject({
       data: { messages: [{ subject: 'Project update', received_at: '2026-09-12T12:00:00Z' }] },
-      source_receipt: { locator: 'private:r1' },
+      private_receipt: { stored: true, bytes: 10 },
     })
     expect(JSON.stringify(projected)).not.toContain('large unrequested body')
     expect(JSON.stringify(projected)).not.toContain('rama@example.com')
@@ -292,10 +292,175 @@ describe('progressive Composio bridge', () => {
       { suggestedName: 'composio-search-tools.json', content: JSON.stringify(search) },
       { suggestedName: 'composio-example_read.json', content: JSON.stringify(provider) },
     ])
-    expect(discovered).toMatchObject({ source_receipt: { locator: 'private:1' } })
-    expect(completed).toMatchObject({ source_receipt: { locator: 'private:2' } })
+    expect(discovered).toMatchObject({ private_receipt: { stored: true } })
+    expect(completed).toMatchObject({ private_receipt: { stored: true } })
+    expect(JSON.stringify([discovered, completed])).not.toContain('private:')
+    expect(JSON.stringify([discovered, completed])).not.toContain('retrieval_hint')
     expect(JSON.stringify(completed)).not.toContain('transport detail')
     expect(JSON.stringify(completed)).not.toContain('not requested')
+  })
+
+  it('performs one search and one Gmail fetch for a latest-email request', async () => {
+    execute
+      .mockResolvedValueOnce({ data: {
+        session: { id: 'workflow-gmail' },
+        results: [{ primary_tool_slugs: ['GMAIL_FETCH_EMAILS'], toolkits: ['gmail'], tool_schemas: {
+          GMAIL_FETCH_EMAILS: { input_schema: { type: 'object', additionalProperties: false, properties: {
+            query: { type: 'string' }, max_results: { type: 'integer' }, include_payload: { type: 'boolean' },
+          } } },
+        } }],
+        toolkit_connection_statuses: [{ toolkit: 'gmail', has_active_connection: true }],
+      } })
+      .mockResolvedValueOnce({ data: { messages: [{
+        sender: 'Rama <rama@example.com>', subject: 'Missing You',
+        messageTimestamp: '2026-09-14T00:20:00Z', messageText: 'The latest message body.',
+      }] } })
+    const app = harness(true, undefined, false, { withSpill: true })
+    const agent = { session: { header: { id: 'latest-email' }, snapshotEvents: () => [], append: vi.fn() } }
+    await app.listeners.get('agent/pre-step')?.(
+      { agent, turn: 1 } as never, vi.fn(async () => ({ kind: 'enter', messages: [] })) as never,
+    )
+    await app.tool().execute({
+      action: 'search', session: { generate_id: true },
+      queries: [{ app: 'Gmail', use_case: 'Find the latest email from Rama.', result_fields: ['sender', 'received_at', 'subject', 'snippet'] }],
+    }, { signal: AbortSignal.abort(), agent } as never)
+    const request = {
+      action: 'execute', session_id: 'workflow-gmail', tool_slug: 'GMAIL_FETCH_EMAILS',
+      arguments: { query: 'from:(rama)', max_results: 1, include_payload: true },
+    }
+    const first = await app.tool().execute(request, { signal: AbortSignal.abort(), agent } as never)
+    const repeated = await app.tool().execute(request, { signal: AbortSignal.abort(), agent } as never)
+
+    expect(first).toMatchObject({ data: { messages: [{
+      sender: 'Rama <rama@example.com>', received_at: '2026-09-14T00:20:00Z',
+      subject: 'Missing You', snippet: 'The latest message body.',
+    }] } })
+    expect(repeated).toMatchObject({ repeated_execution: true, operations: [{ tool: 'GMAIL_FETCH_EMAILS', status: 'already_completed' }] })
+    expect(execute.mock.calls.map(call => call[0])).toEqual(['COMPOSIO_SEARCH_TOOLS', 'GMAIL_FETCH_EMAILS'])
+  })
+
+  it('allows an explicit provider pagination cursor after the first bounded read', async () => {
+    execute
+      .mockResolvedValueOnce({ data: {
+        session: { id: 'workflow-pages' },
+        results: [{ primary_tool_slugs: ['GMAIL_FETCH_EMAILS'], toolkits: ['gmail'], tool_schemas: {
+          GMAIL_FETCH_EMAILS: { input_schema: { type: 'object', additionalProperties: false, properties: {
+            nextPageToken: { type: 'string' },
+          } } },
+        } }],
+        toolkit_connection_statuses: [{ toolkit: 'gmail', has_active_connection: true }],
+      } })
+      .mockResolvedValueOnce({ data: { messages: [{ subject: 'Page one' }], nextPageToken: 'page-2' } })
+      .mockResolvedValueOnce({ data: { messages: [{ subject: 'Page two' }] } })
+    const app = harness()
+    const agent = { session: { header: { id: 'paginated-gmail' }, snapshotEvents: () => [], append: vi.fn() } }
+    await app.listeners.get('agent/pre-step')?.(
+      { agent, turn: 1 } as never, vi.fn(async () => ({ kind: 'enter', messages: [] })) as never,
+    )
+    await app.tool().execute({
+      action: 'search', session: { generate_id: true }, queries: [{ app: 'Gmail', use_case: 'Read Gmail pages.' }],
+    }, { signal: AbortSignal.abort(), agent } as never)
+    await app.tool().execute({
+      action: 'execute', session_id: 'workflow-pages', tool_slug: 'GMAIL_FETCH_EMAILS', arguments: {},
+    }, { signal: AbortSignal.abort(), agent } as never)
+    const second = await app.tool().execute({
+      action: 'execute', session_id: 'workflow-pages', tool_slug: 'GMAIL_FETCH_EMAILS', arguments: { nextPageToken: 'page-2' },
+    }, { signal: AbortSignal.abort(), agent } as never)
+
+    expect(second).toMatchObject({ data: { messages: [{ subject: 'Page two' }] } })
+    expect(execute.mock.calls.map(call => call[0])).toEqual([
+      'COMPOSIO_SEARCH_TOOLS', 'GMAIL_FETCH_EMAILS', 'GMAIL_FETCH_EMAILS',
+    ])
+  })
+
+  it('keeps an oversized Gmail receipt private without a web locator or approval', async () => {
+    execute
+      .mockResolvedValueOnce({ data: {
+        session: { id: 'workflow-large' },
+        results: [{ primary_tool_slugs: ['GMAIL_FETCH_EMAILS'], toolkits: ['gmail'], tool_schemas: {
+          GMAIL_FETCH_EMAILS: { input_schema: { type: 'object', additionalProperties: false, properties: {} } },
+        } }],
+        toolkit_connection_statuses: [{ toolkit: 'gmail', has_active_connection: true }],
+      } })
+      .mockResolvedValueOnce({ data: { messages: [{
+        sender: 'Rama', subject: 'Large', messageTimestamp: '2026-09-14T00:20:00Z', messageText: 'x'.repeat(50_000),
+      }] } })
+    const app = harness(true, undefined, false, { withSpill: true })
+    const agent = { session: { header: { id: 'large-email' }, snapshotEvents: () => [], append: vi.fn() } }
+    await app.tool().execute({
+      action: 'search', session: { generate_id: true },
+      queries: [{ app: 'Gmail', use_case: 'Read one large email.', result_fields: ['sender', 'subject', 'snippet'] }],
+    }, { signal: AbortSignal.abort(), agent } as never)
+    const result = await app.tool().execute({
+      action: 'execute', session_id: 'workflow-large', tool_slug: 'GMAIL_FETCH_EMAILS', arguments: {},
+    }, { signal: AbortSignal.abort(), agent } as never)
+    const modelProjection = JSON.stringify(result)
+
+    expect(app.spills.at(-1)?.content).toContain('x'.repeat(1_000))
+    expect(result).toMatchObject({ private_receipt: { stored: true } })
+    expect(modelProjection).not.toContain('file:')
+    expect(modelProjection).not.toContain('/tmp/')
+    expect(modelProjection).not.toContain('locator')
+    expect(modelProjection).not.toContain('retrieval_hint')
+    expect(app.ask).not.toHaveBeenCalled()
+  })
+
+  it('executes directly when search reports the selected Gmail connection active', async () => {
+    execute
+      .mockResolvedValueOnce({ data: {
+        session: { id: 'workflow-active' },
+        results: [{ primary_tool_slugs: ['GMAIL_FETCH_EMAILS'], toolkits: ['gmail'], tool_schemas: {
+          GMAIL_FETCH_EMAILS: { input_schema: { type: 'object', additionalProperties: false, properties: {} } },
+        } }],
+        toolkit_connection_statuses: [{ toolkit: 'gmail', has_active_connection: true }],
+      } })
+      .mockResolvedValueOnce({ data: { messages: [{ subject: 'Latest' }] } })
+    const app = harness()
+    const agent = { session: { header: { id: 'active-gmail' }, snapshotEvents: () => [], append: vi.fn() } }
+
+    await app.tool().execute({
+      action: 'search', session: { generate_id: true }, queries: [{ app: 'Gmail', use_case: 'Read the latest email.' }],
+    }, { signal: AbortSignal.abort(), agent } as never)
+    await app.tool().execute({
+      action: 'execute', session_id: 'workflow-active', tool_slug: 'GMAIL_FETCH_EMAILS', arguments: {},
+    }, { signal: AbortSignal.abort(), agent } as never)
+
+    expect(execute.mock.calls.map(call => call[0])).toEqual(['COMPOSIO_SEARCH_TOOLS', 'GMAIL_FETCH_EMAILS'])
+    expect(app.ask).not.toHaveBeenCalled()
+  })
+
+  it('resumes OAuth with the original session, selected tool, and execution contract', async () => {
+    const searchArgs = {
+      action: 'search', session: { generate_id: true },
+      queries: [{ app: 'Gmail', use_case: 'Read the latest email.', result_fields: ['subject'] }],
+    }
+    const events = [
+      { type: 'hivemind/composio-session', data: {
+        version: 1, userKey: 'hivemind:user-a', subject: 'hivemind:user-a', routerSessionId: 'router-oauth',
+      } },
+      { type: 'tool/call', data: { turn: 1, callId: 'search-oauth', name: 'hivemind_connected_task', arguments: JSON.stringify(searchArgs) } },
+      { type: 'tool/result', data: { message: { source: { callId: 'search-oauth' }, content: [{ type: 'tool-result', content: [{ type: 'text', text: JSON.stringify({
+        status: 'connection_required', session_id: 'workflow-oauth', toolkit: 'gmail',
+        results: [{ primary_tool_slugs: ['GMAIL_FETCH_EMAILS'], toolkits: ['gmail'] }],
+        execution_contracts: [{ tool_slug: 'GMAIL_FETCH_EMAILS', schema_hash: 'gmail-v1', required_fields: [], properties: {} }],
+      }) }] }] } } },
+    ]
+    execute
+      .mockResolvedValueOnce({ data: { toolkit_connection_statuses: [{ toolkit: 'gmail', status: 'ACTIVE' }] } })
+      .mockResolvedValueOnce({ data: { messages: [{ subject: 'Latest' }] } })
+    const app = harness()
+    const agent = { session: { header: { id: 'oauth-resume' }, snapshotEvents: () => events, append: vi.fn() } }
+    await app.listeners.get('agent/pre-step')?.(
+      { agent, turn: 2 } as never, vi.fn(async () => ({ kind: 'enter', messages: [] })) as never,
+    )
+
+    await app.tool().execute({ action: 'wait_connection', session_id: 'workflow-oauth', toolkits: ['gmail'] }, { signal: AbortSignal.abort(), agent } as never)
+    await app.tool().execute({ action: 'execute', session_id: 'workflow-oauth', tool_slug: 'GMAIL_FETCH_EMAILS', arguments: {} }, { signal: AbortSignal.abort(), agent } as never)
+
+    expect(use).toHaveBeenCalledWith('router-oauth', { mcp: true })
+    expect(execute.mock.calls.map(call => call[0])).toEqual(['COMPOSIO_WAIT_FOR_CONNECTIONS', 'GMAIL_FETCH_EMAILS'])
+    expect(execute).not.toHaveBeenCalledWith('COMPOSIO_SEARCH_TOOLS', expect.anything())
+    expect(execute).not.toHaveBeenCalledWith('COMPOSIO_MANAGE_CONNECTIONS', expect.anything())
   })
 
   it('reuses the stable authenticated user connection while isolating selected tools', async () => {
