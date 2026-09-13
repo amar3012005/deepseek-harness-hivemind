@@ -5,7 +5,8 @@ import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots
 import css from './HiveDictationButton.module.css'
 
 type DictationState = 'idle' | 'recording' | 'transcribing'
-type Props = PropsRuntime<'conversation.input.left'> & PropsLocale<'workspace'>
+type Props = Pick<PropsRuntime<'conversation.input.left'>, 'useInput' | 'inputActions'>
+  & PropsLocale<'workspace'>
 
 declare global {
   interface Window { __HIVEMIND_TRANSCRIBE_AUDIO__?: (blob: Blob) => Promise<string> }
@@ -118,10 +119,9 @@ export function HiveDictationButton({ useInput, inputActions, t }: Props) {
   return <Tooltip label={label} side="top" delayMs={400}>
     <button
       type="button"
-      className={clsx(css.button, state === 'recording' && css.recording)}
+      className={css.button}
       aria-label={label}
-      aria-pressed={state === 'recording'}
-      disabled={state === 'transcribing'}
+      aria-pressed={false}
       onClick={() => { void toggle() }}
     >
       <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden>

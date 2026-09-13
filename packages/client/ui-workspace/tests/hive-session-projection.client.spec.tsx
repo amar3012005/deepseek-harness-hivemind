@@ -95,7 +95,7 @@ describe('HIVE native session projection', () => {
 
   it('exposes native actions for each persisted recent session', () => {
     const sessions = list(summary('share-me', 10))
-    const share = vi.fn(async () => {})
+    const share = vi.fn(async (_data: ShareData) => {})
     Object.defineProperty(navigator, 'share', { configurable: true, value: share })
     render(<HiveSessionProjection
       {...runtime}
