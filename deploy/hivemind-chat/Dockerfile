@@ -31,6 +31,9 @@ RUN set -eu; \
   done
 
 FROM node:24-bookworm-slim AS runtime
+ARG DSH_CLIENT_COMMIT_HASH
+LABEL org.opencontainers.image.revision=${DSH_CLIENT_COMMIT_HASH}
+LABEL com.singulance.service=harness-runner
 ENV NODE_ENV=production DSH_HOME=/var/lib/dsh PORT=3080
 WORKDIR /opt/deepseek-harness
 COPY --from=build /opt/deepseek-harness /opt/deepseek-harness
