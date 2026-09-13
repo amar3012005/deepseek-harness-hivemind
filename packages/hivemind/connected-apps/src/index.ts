@@ -6,7 +6,7 @@ import type { Composio } from '@composio/core'
 import z from '@deepseek-ai/schemastery'
 import type {} from '@deepseek-ai/dsh-agent'
 import type {} from '@deepseek-ai/dsh-hivemind-identity'
-import type { ContentBlock } from '@deepseek-ai/dsh-llm'
+import { createUserMessage, type ContentBlock } from '@deepseek-ai/dsh-llm'
 import type {} from '@deepseek-ai/dsh-settings'
 import type { SaveTextSpill, SpillRef } from '@deepseek-ai/dsh-spill'
 import Ajv, { type ValidateFunction } from 'ajv'
@@ -41,6 +41,7 @@ const COMPOSIO_TOOL_PREFIX = 'mcp__composio__'
 const CONNECTED_WORKFLOWS_SKILL = 'composio-connected-workflows'
 const PLUGINS_SETTINGS_NAMESPACE = 'hivemind-plugins'
 const BRIDGE_TOOL = 'hivemind_connected_task'
+const WORKFLOW_CONTEXT_SOURCE = 'dsh-hivemind-connected-apps/workflow'
 const META_TOOLS = new Set([
   'COMPOSIO_SEARCH_TOOLS',
   'COMPOSIO_GET_TOOL_SCHEMAS',
@@ -436,7 +437,7 @@ type RestoredWorkflowState = {
   contracts: Map<string, ExecutionContract>
 }
 
-function bridgeCall(event: unknown): { callId: string; args: Record<string, unknown> } | undefined {
+function bridgeCall(event: unknown): { callId: string; args: Record<string, unknown>; turn?: number } | undefined {
   if (!record(event) || event['type'] !== 'tool/call' || !record(event['data'])
     || event['data']['name'] !== BRIDGE_TOOL) return undefined
   const callId = stringValue(event['data']['callId'])
@@ -444,7 +445,8 @@ function bridgeCall(event: unknown): { callId: string; args: Record<string, unkn
   if (callId === undefined || raw === undefined) return undefined
   try {
     const parsed: unknown = JSON.parse(raw)
-    return record(parsed) ? { callId, args: parsed } : undefined
+    const turn = typeof event['data']['turn'] === 'number' ? event['data']['turn'] : undefined
+    return record(parsed) ? { callId, args: parsed, ...(turn === undefined ? {} : { turn }) } : undefined
   } catch {
     return undefined
   }
@@ -471,6 +473,120 @@ function bridgeResult(event: unknown): { callId: string; value: Record<string, u
     }
   }
   return undefined
+}
+
+interface UnfinishedWorkflowProjection {
+  readonly turn: number
+  readonly workflowId: string
+  readonly status: string
+  readonly queries: JsonValue[]
+  readonly toolkits: string[]
+  readonly selectedToolSlugs: string[]
+  readonly contracts: ExecutionContract[]
+}
+
+function workflowToolkits(value: Record<string, unknown>): string[] {
+  const found = new Set<string>([
+    ...stringArray(value['pending_toolkits']),
+    ...stringArray(value['connected_toolkits']),
+  ])
+  const toolkit = stringValue(value['toolkit'])
+  if (toolkit !== undefined) found.add(toolkit)
+  const unwrapped = record(value['result']) ? value['result'] : value
+  const data = record(unwrapped['data']) ? unwrapped['data'] : unwrapped
+  for (const item of Array.isArray(data['results']) ? data['results'] : []) {
+    if (!record(item)) continue
+    for (const entry of stringArray(item['toolkits'])) found.add(entry)
+    for (const slug of stringArray(item['primary_tool_slugs'])) {
+      const inferred = toolkitFromToolSlug(slug)
+      if (inferred !== undefined) found.add(inferred)
+    }
+  }
+  return [...found]
+}
+
+function workflowQueries(args: Record<string, unknown>): JsonValue[] {
+  if (!Array.isArray(args['queries'])) return []
+  return args['queries'].flatMap((item): JsonValue[] => {
+    if (!record(item)) return []
+    const app = stringValue(item['app'])
+    const useCase = stringValue(item['use_case'])
+    const knownFields = stringValue(item['known_fields'])
+    if (useCase === undefined) return []
+    return [{
+      ...(app === undefined ? {} : { app }),
+      use_case: useCase,
+      ...(knownFields === undefined ? {} : { known_fields: knownFields }),
+    }]
+  })
+}
+
+/** Reconstruct one unfinished workflow solely from durable tool calls and receipts. */
+function unfinishedWorkflow(
+  events: readonly unknown[],
+  currentTurn: number,
+): UnfinishedWorkflowProjection | undefined {
+  const calls = new Map<string, NonNullable<ReturnType<typeof bridgeCall>>>()
+  let pending: UnfinishedWorkflowProjection | undefined
+  for (const event of events) {
+    const call = bridgeCall(event)
+    if (call !== undefined) {
+      calls.set(call.callId, call)
+      continue
+    }
+    const result = bridgeResult(event)
+    if (result === undefined) continue
+    const owner = calls.get(result.callId)
+    if (owner === undefined) continue
+    const action = stringValue(owner.args['action'])
+    const status = stringValue(result.value['status']) ?? ''
+    const workflowId = returnedWorkflowSessionId(result.value) ?? workflowSessionId(owner.args)
+    if (action === 'search') {
+      if (workflowId === undefined || !['ready', 'connection_required', 'connection_pending'].includes(status)) {
+        if (pending?.workflowId === workflowId) pending = undefined
+        continue
+      }
+      const workflowContracts = executionContracts(result.value)
+      pending = {
+        turn: owner.turn ?? 0,
+        workflowId,
+        status,
+        queries: workflowQueries(owner.args),
+        toolkits: workflowToolkits(result.value),
+        selectedToolSlugs: workflowContracts.map(contract => contract.tool_slug),
+        contracts: workflowContracts,
+      }
+      continue
+    }
+    if (pending === undefined || (workflowId !== undefined && workflowId !== pending.workflowId)) continue
+    if (action === 'wait_connection') {
+      const toolkits = workflowToolkits(result.value)
+      pending = { ...pending, status, toolkits: toolkits.length > 0 ? toolkits : pending.toolkits }
+      continue
+    }
+    if (action === 'execute' && status === 'ready') pending = undefined
+  }
+  return pending !== undefined && pending.turn < currentTurn ? pending : undefined
+}
+
+function workflowContextMessage(state: UnfinishedWorkflowProjection) {
+  const waiting = state.status === 'connection_required' || state.status === 'connection_pending'
+  const projection = {
+    session_id: state.workflowId,
+    status: state.status,
+    queries: state.queries,
+    toolkits: state.toolkits,
+    selected_tool_slugs: state.selectedToolSlugs,
+    execution_contracts: state.contracts,
+    next_action: waiting ? 'wait_connection' : 'execute_selected_tool',
+  }
+  return createUserMessage({
+    content: [{
+      type: 'text',
+      text: `## Unfinished connected-app workflow\nThis state is reconstructed from durable receipts in this conversation. If the current request continues it, resume this session without repeating search, checking status separately, or using HIVE memory for connected-app evidence. If the user changed tasks, leave it pending.\n${JSON.stringify(projection)}`,
+    }],
+    source: { kind: 'plugin', plugin: WORKFLOW_CONTEXT_SOURCE, form: 'recall' },
+  })
 }
 
 function discoveryKey(value: unknown): string {
@@ -513,10 +629,28 @@ function previousUnmatchedDiscovery(
   return found
 }
 
+function compactSchemaValue(value: unknown): JsonValue | undefined {
+  const scalar = jsonScalar(value)
+  if (scalar !== undefined) return scalar
+  if (Array.isArray(value)) return value.flatMap((item): JsonValue[] => {
+    const compact = compactSchemaValue(item)
+    return compact === undefined ? [] : [compact]
+  })
+  if (!record(value)) return undefined
+  const compact: Record<string, JsonValue> = {}
+  for (const [key, item] of Object.entries(value)) {
+    // These are JSON Schema annotations, not executable validation. The full
+    // provider schema remains available in the private source receipt.
+    if (key === 'examples' || key === '$comment') continue
+    const nested = compactSchemaValue(item)
+    if (nested !== undefined) compact[key] = nested
+  }
+  return compact
+}
+
 function compactProperty(value: unknown): JsonValue | undefined {
   if (!record(value)) return undefined
-  // Schema keywords are executable instructions, not optional display prose.
-  return JSON.parse(JSON.stringify(value)) as JsonValue
+  return compactSchemaValue(value)
 }
 
 function schemaRecord(value: unknown): Record<string, unknown> | undefined {
@@ -653,6 +787,17 @@ const PROVIDER_NOISE = new Set([
   'image_192', 'image_512', 'image_1024', 'status_emoji_display_info', 'cache_ts',
 ])
 
+function isMimeTransportTree(value: unknown): boolean {
+  if (!record(value)) return false
+  const mime = stringValue(value['mimeType']) ?? stringValue(value['mime_type'])
+  if (mime === undefined) return false
+  const transportKeys = new Set(['mimeType', 'mime_type', 'headers', 'parts', 'body', 'filename', 'partId', 'part_id'])
+  if (Object.entries(value).some(([key, item]) => !transportKeys.has(key)
+    && item !== '' && item !== undefined && item !== null)) return false
+  return Object.hasOwn(value, 'headers') || Object.hasOwn(value, 'parts')
+    || (record(value['body']) && (Object.hasOwn(value['body'], 'data') || Object.hasOwn(value['body'], 'size')))
+}
+
 function compactProviderValue(value: unknown): JsonValue {
   if (typeof value === 'string') return value.length > 800 ? `${value.slice(0, 800)}…` : value
   if (typeof value === 'number' || typeof value === 'boolean' || value === null) return value
@@ -662,6 +807,7 @@ function compactProviderValue(value: unknown): JsonValue {
   let count = 0
   for (const [key, item] of Object.entries(value)) {
     if (PROVIDER_NOISE.has(key) || item === '' || item === undefined
+      || isMimeTransportTree(item)
       || (Array.isArray(item) && item.length === 0)
       || (record(item) && Object.keys(item).length === 0)) continue
     if (count++ >= 40) break
@@ -672,12 +818,13 @@ function compactProviderValue(value: unknown): JsonValue {
 
 /** Bound a provider execution so MIME payloads and transport noise stay out of the transcript. */
 export function compactComposioExecutionReceipt(value: unknown, receipt?: SpillRef): JsonValue {
+  const compact = compactProviderValue(value)
   return {
-    ...(record(value) ? compactProviderValue(value) as Record<string, JsonValue> : { result: compactProviderValue(value) }),
+    ...(record(compact) ? compact : { result: compact }),
     ...(receipt === undefined ? {} : {
       source_receipt: { locator: receipt.locator, bytes: receipt.bytes, retrieval_hint: receipt.retrievalHint },
     }),
-    projection_policy: 'Provider MIME payloads and transport headers omitted; long text and collections bounded.',
+    projection_policy: 'Duplicated MIME transport trees and transport headers omitted; readable evidence retained, while long text and collections are bounded. The original receipt is preserved separately when source_receipt is present.',
   }
 }
 
@@ -954,7 +1101,6 @@ export function apply(ctx: Context, config: Config = {}): void {
         if (disconnected.length === 0) {
           const selected = resolved[0]
           if (selected === undefined) throw new Error('Connected toolkit selection unexpectedly became empty')
-          execution.concludeTurn()
           return {
             status: 'ready',
             toolkit: selected.slug,
@@ -964,6 +1110,8 @@ export function apply(ctx: Context, config: Config = {}): void {
             toolkit_connection_statuses: resolved.map(item => ({
               toolkit: item.slug, app_label: item.name, has_active_connection: true, status_message: 'ACTIVE',
             })),
+            next_action: 'continue_current_request',
+            next_action_guidance: 'Connection is active. If connection status was the entire user request, answer it now. Otherwise continue the same user request with connected-app search; do not end the turn, ask the user to repeat it, or switch to HIVE memory.',
           }
         }
         const selected = disconnected[0]
@@ -986,7 +1134,6 @@ export function apply(ctx: Context, config: Config = {}): void {
             await session.toolkits({ toolkits: [selected.slug], limit: 1 }), selected.name,
           ).connected)
           if (connected) {
-            execution.concludeTurn()
             return {
               ...compactComposioExecutionReceipt(managed, sourceReceipt) as Record<string, JsonValue>,
               status: 'ready',
@@ -998,6 +1145,8 @@ export function apply(ctx: Context, config: Config = {}): void {
                 toolkit: selected.slug, app_label: selected.name, has_active_connection: true, status_message: 'ACTIVE',
               }],
               operations: [{ tool: 'COMPOSIO_MANAGE_CONNECTIONS', status: 'completed' }],
+              next_action: 'continue_current_request',
+              next_action_guidance: 'Connection is now active. Continue the same user request with connected-app search; do not end the turn, ask the user to repeat it, or switch to HIVE memory.',
             }
           }
         }
@@ -1289,9 +1438,6 @@ export function apply(ctx: Context, config: Config = {}): void {
         : args.arguments
       if (!record(executionArguments)) throw new TypeError('Execute requires arguments matching the authoritative schema')
       validateArguments(contract, executionArguments)
-      if (MUTATING_TOOL.test(slug)) {
-        return { status: 'approval_required', mode: 'prepare', tool_slug: slug, arguments: executionArguments as JsonValue }
-      }
       const providerResult = await session.execute(slug, executionArguments)
       const sourceReceipt = await saveReceipt(
         ctx, execution, JSON.stringify(providerResult), `composio-${slug.toLowerCase()}.json`,
@@ -1312,14 +1458,27 @@ export function apply(ctx: Context, config: Config = {}): void {
         searchFingerprints: new Set(),
       })
     }
-    return next()
+    const decision = await next()
+    // Some test and compatibility middleware terminates the chain without a decision.
+    // oxlint-disable-next-line typescript/no-unnecessary-condition
+    if (decision === undefined || decision.kind === 'reject') return decision
+    const unfinished = unfinishedWorkflow(agent.session.snapshotEvents(), turn)
+    return unfinished === undefined
+      ? decision
+      : { ...decision, messages: [...decision.messages, workflowContextMessage(unfinished)] }
   })
   ctx.on('tools/pre-execute', async (execution, next) => {
     if (!isConnectedAppInvocation(execution.name, execution.arguments)) return next()
     const enabled = execution.agent !== undefined
       && (turns.get(execution.agent)?.enabled
         ?? connectedAppsEnabled(ctx, config.enabledByDefault === true))
-    return enabled ? next() : { kind: 'deny', reason: 'Connected tools are disabled for this turn. Enable Tools and retry.' }
+    if (!enabled) return { kind: 'deny', reason: 'Connected tools are disabled for this turn. Enable Tools and retry.' }
+    const downstream = await next()
+    if (downstream.kind !== 'allow' || execution.name !== BRIDGE_TOOL || !record(execution.arguments)
+      || execution.arguments['action'] !== 'execute') return downstream
+    const slug = stringValue(execution.arguments['tool_slug'])
+    if (slug === undefined || !MUTATING_TOOL.test(slug)) return downstream
+    return { kind: 'ask', reason: `Approve this ${slug} action once. The provider will run only after approval.` }
   })
   ctx.on('tools/post-execute', async (execution, result, next): Promise<PostToolDecision> => {
     const decision = await next()

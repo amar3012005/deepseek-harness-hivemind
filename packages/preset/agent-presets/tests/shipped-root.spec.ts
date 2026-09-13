@@ -190,7 +190,8 @@ describe('the shipped preset root', () => {
     expect(prefix).toContain('avoid narrating routine tool mapping')
     expect(prefix).toContain('Reuse the current workflow\'s plans, contracts, and receipts')
     expect(prefix).toContain('Pass a selected canonical_name through recall.entities')
-    expect(prefix).toContain('External writes require editable approval and an idempotent execution receipt')
+    expect(prefix).toContain('call the exact selected execute tool once')
+    expect(prefix).toContain("native Harness pauses that tool call for the user's single approval")
   })
 
   it('limits the Composio catalog entry to complex workflows', async () => {

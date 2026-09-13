@@ -43,8 +43,11 @@
       uses connection_status once and its typed receipt is the answer.
 
       Connection and approval receipts pause and resume the same durable
-      workflow. External writes require editable approval and an idempotent
-      execution receipt. Keep user-facing progress concise and useful; avoid
+      workflow. For an external write with complete arguments, call the exact
+      selected execute tool once; native Harness pauses that tool call for the
+      user's single approval before provider execution. Do not ask for a second
+      prose confirmation unless a required user-owned value is genuinely
+      missing. Keep user-facing progress concise and useful; avoid
       narrating routine tool mapping. Preserve evidence, citations, and uncertainty. Never
       invent organization facts, identities, memory writes, connections,
       schemas, or external actions. Return clean Markdown for the native Harness

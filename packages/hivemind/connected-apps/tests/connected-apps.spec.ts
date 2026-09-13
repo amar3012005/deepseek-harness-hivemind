@@ -123,6 +123,31 @@ describe('progressive Composio bridge', () => {
     })
   })
 
+  it('omits non-authoritative schema examples while preserving exact validation and guidance', () => {
+    const compact = compactComposioSearchReceipt({ data: { results: [{
+      primary_tool_slugs: ['EXAMPLE_READ'],
+      tool_schemas: { EXAMPLE_READ: { input_schema: {
+        type: 'object', required: ['query'], additionalProperties: false, properties: {
+          query: {
+            type: 'string', minLength: 3, pattern: '^[a-z]+$',
+            description: 'Exact query syntax supplied by the provider.',
+            examples: ['alpha', 'beta'],
+          },
+        },
+      } } },
+    }] } })
+    expect(compact).toMatchObject({ execution_contracts: [{
+      tool_slug: 'EXAMPLE_READ', required_fields: ['query'],
+      properties: { query: {
+        type: 'string', minLength: 3, pattern: '^[a-z]+$',
+        description: 'Exact query syntax supplied by the provider.',
+      } },
+      schema_keywords: { type: 'object', additionalProperties: false },
+    }] })
+    expect(JSON.stringify(compact)).not.toContain('alpha')
+    expect(JSON.stringify(compact)).not.toContain('beta')
+  })
+
   it('bounds provider executions so MIME and long payloads stay out of the transcript', () => {
     const compact = compactComposioExecutionReceipt({
       data: { text: 'x'.repeat(2000), mime_type: 'text/html', headers: { authorization: 'secret' } },
@@ -130,6 +155,20 @@ describe('progressive Composio bridge', () => {
     expect(JSON.stringify(compact)).not.toContain('authorization')
     expect(JSON.stringify(compact)).not.toContain('mime_type')
     expect(String((compact as { data: { text: string } }).data.text).endsWith('…')).toBe(true)
+  })
+
+  it('keeps readable evidence while omitting duplicated MIME transport trees generically', () => {
+    const compact = compactComposioExecutionReceipt({ data: { records: [{
+      id: 'record-1', messageText: 'Readable evidence for the model.',
+      payload: {
+        mimeType: 'multipart/alternative',
+        headers: Array.from({ length: 30 }, (_, index) => ({ name: `X-${index}`, value: 'transport noise' })),
+        parts: [{ mimeType: 'text/plain', body: { data: 'UmVhZGFibGUgZXZpZGVuY2U=', size: 18 } }],
+      },
+    }] } }) as { data: { records: Array<Record<string, unknown>> }; projection_policy: string }
+    expect(compact.data.records[0]).toMatchObject({ id: 'record-1', messageText: 'Readable evidence for the model.' })
+    expect(compact.data.records[0]).not.toHaveProperty('payload')
+    expect(compact.projection_policy).toContain('MIME transport')
   })
 
   it('retains nested email evidence through repeated execution projection', () => {
@@ -299,6 +338,46 @@ describe('progressive Composio bridge', () => {
     expect(execute).toHaveBeenCalledWith('GMAIL_FETCH_EMAILS', { max_results: 1 })
   })
 
+  it('projects an unfinished connected workflow into a later turn without repeating discovery', async () => {
+    const events = [
+      { type: 'tool/call', data: {
+        turn: 1, callId: 'call-search', name: 'hivemind_connected_task',
+        arguments: JSON.stringify({
+          action: 'search',
+          queries: [{ app: 'Example', use_case: 'Read the newest record and return its title.' }],
+          session: { generate_id: true },
+        }),
+      } },
+      { type: 'tool/result', data: { message: {
+        source: { kind: 'tool', callId: 'call-search' },
+        content: [{ type: 'tool-result', content: [{ type: 'text', text: JSON.stringify({
+          status: 'connection_required', session_id: 'workflow-resume', toolkit: 'example',
+          results: [{ primary_tool_slugs: ['EXAMPLE_READ'], toolkits: ['example'] }],
+          execution_contracts: [{
+            tool_slug: 'EXAMPLE_READ', required_fields: ['limit'],
+            properties: { limit: { type: 'integer', minimum: 1, maximum: 5 } },
+          }],
+        }) }] }],
+      } } },
+    ]
+    const agent = { session: {
+      header: { id: 'conversation-resume' }, snapshotEvents: () => events, append: vi.fn(),
+    } }
+    const app = harness()
+    const next = vi.fn(async () => ({ kind: 'enter', messages: [] }))
+    const decision = await app.listeners.get('agent/pre-step')?.(
+      { agent, turn: 2 } as never, next as never,
+    ) as { messages: unknown[] }
+    const projected = JSON.stringify(decision.messages)
+
+    expect(projected).toContain('Unfinished connected-app workflow')
+    expect(projected).toContain('workflow-resume')
+    expect(projected).toContain('EXAMPLE_READ')
+    expect(projected).toContain('Read the newest record')
+    expect(projected).toContain('wait_connection')
+    expect(execute).not.toHaveBeenCalled()
+  })
+
   it('reuses an active legacy organization connection until the user reconnects canonically', async () => {
     list
       .mockResolvedValueOnce({ items: [] })
@@ -340,7 +419,28 @@ describe('progressive Composio bridge', () => {
       })
     expect(toolkits).toHaveBeenCalledWith({ search: 'Instagram', limit: 8 })
     expect(execute).not.toHaveBeenCalled()
-    expect(app.concludeTurn).toHaveBeenCalledOnce()
+    expect(app.concludeTurn).not.toHaveBeenCalled()
+  })
+
+  it('keeps an active connection check in the same turn so the original task can continue', async () => {
+    toolkits.mockResolvedValueOnce({ items: [{
+      slug: 'gmail', name: 'Gmail', connection: { isActive: true },
+    }] })
+    const app = harness()
+    const result = await app.tool().execute(
+      { action: 'connection_status', apps: ['Gmail'] },
+      { signal: AbortSignal.abort() },
+    )
+    expect(result).toMatchObject({
+      status: 'ready', connected_toolkits: ['gmail'],
+      next_action: 'continue_current_request',
+    })
+    const guidance = typeof result === 'object' && result !== null && 'next_action_guidance' in result
+      ? result.next_action_guidance
+      : undefined
+    if (typeof guidance !== 'string') throw new TypeError('expected continuation guidance')
+    expect(guidance).toContain('same user request')
+    expect(app.concludeTurn).not.toHaveBeenCalled()
   })
 
   it('returns the exact named toolkit connection card instead of a semantic substitute', async () => {
@@ -620,14 +720,27 @@ describe('progressive Composio bridge', () => {
     expect(app.concludeTurn).not.toHaveBeenCalled()
   })
 
-  it('always routes a selected mutation to durable approval instead of executing provider side effects', async () => {
+  it('asks once through the native approval seam before a selected mutation executes', async () => {
     execute.mockResolvedValueOnce({ data: { results: [{ primary_tool_slugs: ['SLACK_SEND_MESSAGE'], tool_schemas: {
       SLACK_SEND_MESSAGE: { input_schema: { type: 'object', required: ['text'], properties: { text: { type: 'string' } } } },
-    } }] } })
-    const { tool } = harness()
-    await tool().execute({ action: 'search', queries: [{ app: 'Slack', use_case: 'Send a Slack message to a named channel after resolving its channel id.' }], session: { generate_id: true } }, { signal: AbortSignal.abort() })
-    await expect(tool().execute({ action: 'execute', tool_slug: 'SLACK_SEND_MESSAGE', arguments: { text: 'hello' } }, { signal: AbortSignal.abort() })).resolves.toMatchObject({ status: 'approval_required', mode: 'prepare' })
-    expect(execute).toHaveBeenCalledTimes(1)
+    } }] } }).mockResolvedValueOnce({ data: { ok: true, message_id: 'message-1' } })
+    const app = harness()
+    const agent = { session: { header: { id: 'conversation-write' }, snapshotEvents: () => [], append: vi.fn() } }
+    await app.tool().execute({ action: 'search', queries: [{ app: 'Slack', use_case: 'Send a Slack message to a named channel after resolving its channel id.' }], session: { generate_id: true } }, { signal: AbortSignal.abort(), agent } as never)
+    const pre = app.listeners.get('tools/pre-execute') as (
+      execution: { name: string; arguments: Record<string, unknown>; agent: unknown },
+      next: () => Promise<{ kind: 'allow' }>,
+    ) => Promise<{ kind: string; reason?: string }>
+    await expect(pre({
+      name: 'hivemind_connected_task',
+      arguments: { action: 'execute', tool_slug: 'SLACK_SEND_MESSAGE', arguments: { text: 'hello' } },
+      agent,
+    }, async () => ({ kind: 'allow' }))).resolves.toMatchObject({ kind: 'ask' })
+    await expect(app.tool().execute({
+      action: 'execute', tool_slug: 'SLACK_SEND_MESSAGE', arguments: { text: 'hello' },
+    }, { signal: AbortSignal.abort(), agent } as never)).resolves.toMatchObject({ status: 'ready' })
+    expect(execute).toHaveBeenCalledTimes(2)
+    expect(execute).toHaveBeenLastCalledWith('SLACK_SEND_MESSAGE', { text: 'hello' })
   })
 
   it('refuses guessed fields and requires an authoritative schema before execution', async () => {

@@ -61,10 +61,10 @@ reload and replay show what completed, failed, or still requires action.
 ## External changes
 
 Reads may execute after policy authorization. Sends, posts, edits, deletes,
-publishes, invitations, payments, uploads, and other mutations must first create
-an editable HIVE PendingWrite. The connected-app discovery bridge only prepares
-mutations; the governed-action service executes a current server-approved draft
-with its idempotency key. A draft is not a completed external action.
-Revalidate recipients, destinations, connection state, and approval immediately
-before execution. Report partial success per destination without retrying an
-already completed idempotency key.
+publishes, invitations, payments, uploads, and other mutations use one native
+Harness approval after the selected arguments pass the authoritative schema.
+Only `allowed-once` executes the selected provider tool; rejection,
+cancellation, or an unavailable approval channel performs no external action.
+Revalidate recipients, destinations, and connection state immediately before
+execution. Report partial success per destination without retrying an already
+completed provider receipt.
