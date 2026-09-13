@@ -9,6 +9,12 @@ const connectPackage = JSON.parse(readFileSync(
 )) as { dsh: { client: { inject: string[] } } }
 
 describe('hivemind-web native renderer parity', () => {
+  it('omits developer prompt contributions without replacing native tool guidance', () => {
+    expect(patch).toContain('includeHarnessIdentity: false')
+    expect(patch).toContain('includeRuntimeContext: false')
+    expect(patch).toContain('surfaceContext: false')
+    expect(patch).not.toContain('complete: true')
+  })
   it('does not disable native conversation and rendering plugins', () => {
     const nativeSurfaces = [
       'ui-layout', 'ui-renderer', 'ui-session', 'ui-sidebar', 'ui-conversation',
@@ -43,7 +49,9 @@ describe('hivemind-web native renderer parity', () => {
 
   it('turns off optional OpenRouter reasoning for the default HIVE model', () => {
     expect(patch).toContain('off: none')
-    expect(patch).toContain('reasoningEffort: off')
+    expect(patch).toContain('reasoning: off')
+    expect(patch).toContain('thinkingFormat: openrouter')
+    expect(patch).not.toContain('reasoningEffort: off')
     expect(patch).toContain('model: openrouter/deepseek/deepseek-v4-flash-0731')
   })
 

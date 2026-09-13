@@ -1,6 +1,18 @@
 # HIVE-only final layer over dsh-base + dsh-web-app. HIVE model and tenant
 # capabilities live here so the shipped Web, Standard, Minimal, PTC, and
 # Creator compositions remain unchanged.
+- id: system-prompt
+  config:
+    includeHarnessIdentity: false
+    includeRuntimeContext: false
+
+- id: web-runtime
+  config:
+    openBrowser: !!js ctx.webStartup.openBrowser
+    printUrl: true
+    surfaceContext: false
+    trustedHosts: !!js ctx.webStartup.trustedHosts
+
 - id: llm-pi-ai
   config:
     providers:
@@ -8,6 +20,13 @@
         displayName: Cloudflare AI Gateway / OpenRouter
         apiKeyEnv: CLOUDFLARE_API_KEY
         api: openai-completions
+        reasoning: off
+        # Cloudflare forwards this route to OpenRouter. Declare the protocol
+        # dialect so every reasoning-capable model uses OpenRouter's unified
+        # `reasoning: { effort }` request contract instead of the OpenAI-only
+        # `reasoning_effort` field.
+        compat:
+          thinkingFormat: openrouter
         baseURL: https://gateway.ai.cloudflare.com/v1/0dc6b9186b5a9b8985613b10c1c59f4f/hivemind-prod/compat
         headers:
           cf-aig-byok-alias: first-bundb
@@ -92,7 +111,6 @@
   config:
     provider: cloudflare-openrouter
     model: openrouter/deepseek/deepseek-v4-flash-0731
-    reasoningEffort: off
 
 - id: session-persistence-jsonl
   disabled: true

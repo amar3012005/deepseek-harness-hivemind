@@ -748,6 +748,44 @@ describe('provider profile lifecycle', () => {
     expect(server.requests[0]).toMatchObject({ reasoning_effort: 'none' })
   })
 
+  it('sends declared efforts in the OpenRouter unified reasoning object when configured', async () => {
+    vi.stubEnv('PI_TEST_KEY', 'test-key')
+    const server = await mockServer([{ events: textEvents }, { events: textEvents }])
+    const ctx = new Context()
+    await ctx.plugin(LlmRuntime)
+    await ctx.plugin(LlmPiAi, {
+      providers: {
+        'openrouter-gateway': {
+          apiKeyEnv: 'PI_TEST_KEY',
+          api: 'openai-completions',
+          baseURL: `${server.url}/v1`,
+          compat: { thinkingFormat: 'openrouter' },
+          models: [{
+            id: 'reasoning-model',
+            contextWindow: 65_536,
+            maxTokens: 4096,
+            reasoningEfforts: { off: 'none', high: 'high' },
+          }],
+        },
+      },
+    })
+
+    const prompt = (effort: 'off' | 'high'): Promise<unknown> => assemble(ctx, {
+      provider: 'openrouter-gateway',
+      model: 'reasoning-model',
+      reasoningEffort: ReasoningEffortId(effort),
+      messages: [],
+    })
+
+    await prompt('off')
+    expect(server.requests[0]).toMatchObject({ reasoning: { effort: 'none' } })
+    expect(server.requests[0]).not.toHaveProperty('reasoning_effort')
+
+    await prompt('high')
+    expect(server.requests[1]).toMatchObject({ reasoning: { effort: 'high' } })
+    expect(server.requests[1]).not.toHaveProperty('reasoning_effort')
+  })
+
   it('holds back reasoning_effort when the endpoint cannot take it', async () => {
     vi.stubEnv('PI_TEST_KEY', 'test-key')
     const server = await mockServer([{ events: textEvents }])

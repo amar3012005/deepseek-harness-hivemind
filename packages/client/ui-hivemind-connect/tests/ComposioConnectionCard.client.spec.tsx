@@ -61,6 +61,39 @@ describe('ComposioConnectionCard', () => {
     expect(view.container.querySelector('a')).toBeNull()
   })
 
+  it('shows the requested app logo while a connected-app call is running', () => {
+    const running = {
+      seq: 2, time: 2_000, callId: 'call-running-linkedin',
+      argsRaw: JSON.stringify({
+        action: 'search',
+        queries: [{ app: 'LinkedIn', use_case: 'Get my profile.' }],
+        session: { generate_id: true },
+      }),
+    }
+    const view = render(<ComposioConnectionCard {...({
+      ...props(), block: running, inspect: vi.fn(), t,
+    } as unknown as CardProps)} />)
+
+    expect(view.container.querySelector('img[src="https://logos.composio.dev/api/linkedin"]')).not.toBeNull()
+  })
+
+  it('shows a small app logo beside every provider operation', () => {
+    const completed = { ...block(), content: [{ type: 'text' as const, text: JSON.stringify({
+      status: 'ready',
+      results: [{ toolkits: ['linkedin'], primary_tool_slugs: ['LINKEDIN_GET_MY_INFO'] }],
+      operations: [
+        { tool: 'COMPOSIO_SEARCH_TOOLS', status: 'completed' },
+        { tool: 'LINKEDIN_GET_MY_INFO', status: 'completed' },
+      ],
+    }) }] }
+    const view = render(<ComposioConnectionCard {...({
+      ...props(), block: completed, inspect: vi.fn(), t,
+    } as unknown as CardProps)} />)
+
+    expect(view.container.querySelectorAll('img[src="https://logos.composio.dev/api/linkedin"]')).toHaveLength(3)
+    expect(view.container.textContent).toContain('LINKEDIN_GET_MY_INFO→ completed')
+  })
+
   it('does not show an old authorization URL after active connection verification', () => {
     const active = { ...block(), content: [{ type: 'text' as const, text: JSON.stringify({
       status: 'ready', toolkit: 'slack', app_label: 'Slack', logo_url: 'https://logos.example/slack.svg',

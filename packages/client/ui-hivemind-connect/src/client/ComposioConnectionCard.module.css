@@ -4,8 +4,10 @@
 .summary:focus-visible { outline:2px solid var(--dsw-color-border-focus); outline-offset:3px; }
 .summary:disabled { cursor:default; }
 .symbol { color:var(--dsw-color-accent-primary); }
+.toolLogo { width:16px; height:16px; flex:none; object-fit:contain; }
 .status { color:var(--dsw-color-text-tertiary); text-transform:capitalize; }
 .operation { display:flex; min-width:0; align-items:center; gap:var(--dsw-spacing-2,8px); margin-top:var(--dsw-spacing-2,8px); color:var(--dsw-color-text-secondary); font-size:14px; line-height:20px; }
+.operationLogo { width:14px; height:14px; flex:none; object-fit:contain; }
 .operation code { overflow:hidden; color:var(--dsw-color-accent-primary); text-overflow:ellipsis; white-space:nowrap; }
 .operationStatus { color:var(--dsw-color-text-tertiary); }
 .prompt { margin:16px 0 0; color:var(--dsw-color-text-primary); font-size:17px; line-height:26px; }
