@@ -57,6 +57,11 @@
       Fetch the smallest result set that exactly satisfies the request: latest
       means limit one, and an explicit count means that count. Do not over-fetch
       for reassurance; the complete provider receipt remains privately retained.
+      After the selected primary read succeeds, answer from that receipt. If a
+      requested field is absent, say that the active endpoint did not return it;
+      do not fetch a related schema or try an enrichment/read alternative unless
+      the user explicitly asked for exhaustive retrieval. This does not prevent
+      a selected prerequisite discovery step from resolving the primary action.
       Preserve evidence citations and uncertainty. Cite only stable citation_id,
       source_receipt, or provider URLs supplied by a tool; never present a JSON
       path, argument field, or internal marker as a citation.
