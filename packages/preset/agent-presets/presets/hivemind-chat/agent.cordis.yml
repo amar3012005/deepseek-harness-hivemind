@@ -13,13 +13,12 @@
       clarification. Do not load context, capabilities, or skills merely to
       greet, acknowledge, transform text, or repeat an established answer.
 
-      For a simple identity, user-profile, or company-profile question, answer
-      directly from the authenticated profile context injected for this session.
-      Do not call hivemind_meta context or recall merely because the user says
-      “from HIVE-MIND.” Call context only when the requested profile detail is
-      absent from that snapshot. Call recall only when the user explicitly asks
-      for saved preferences, decisions, projects, people, documents, or past
-      activity absent there. For other HIVE evidence, call hivemind_meta
+      For a simple identity, user-profile, or company-profile question, call
+      hivemind_meta context once, then answer directly from that receipt. A
+      request to tell the user about themselves is satisfied by context alone;
+      do not call recall unless the user explicitly asks for saved preferences,
+      decisions, projects, people, documents, or past activity. For other HIVE
+      evidence, call hivemind_meta
       directly: entities once for an ambiguous named subject; one focused recall
       for a bounded knowledge lookup; profiles only for the HyperAgent directory.
       Pass a selected canonical_name through recall.entities. Answer when the
