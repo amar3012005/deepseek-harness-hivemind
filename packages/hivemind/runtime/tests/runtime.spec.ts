@@ -506,6 +506,44 @@ describe('HIVE-MIND runtime', () => {
     expect(payload).not.toHaveProperty('project')
   })
 
+  it('resolves a partial entity name through the authenticated Core endpoint', async () => {
+    const path = await authorityFile()
+    const result = {
+      matches: [{ entity_id: 'entity-1', canonical_name: 'Uwe Berger', entity_type: 'person', aliases: [] }],
+      degradation: null,
+    }
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(result)))
+    const harness = mount(config(path))
+
+    const value = await tool(harness, 'hivemind_meta').execute({
+      operation: 'entities',
+      entities: { query: 'Uwe', entity_types: ['person'], scope: 'project', limit: 10 },
+    }, execContext())
+    const [request, init] = vi.mocked(fetch).mock.calls[0] ?? []
+    const requestUrl = typeof request === 'string' ? request : request instanceof URL ? request.href : request?.url
+
+    expect(requestUrl).toBe('http://127.0.0.1:3099/api/entity-search?query=Uwe&limit=10&entity_type=person&scope=project')
+    expect(init).toMatchObject({ method: 'GET', redirect: 'manual' })
+    expect(init?.headers).toMatchObject({ accept: 'application/json', authorization: 'Bearer test-secret-token' })
+    expect(requestUrl).not.toContain('user_id')
+    expect(requestUrl).not.toContain('org_id')
+    expect(value).toEqual({ status: 'ready', operation: 'entities', result })
+  })
+
+  it('rejects invalid entity constraints before contacting Core', async () => {
+    const harness = mount(config(await authorityFile()))
+    const fetchMock = vi.mocked(fetch)
+    fetchMock.mockClear()
+
+    await expect(tool(harness, 'hivemind_meta').execute({
+      operation: 'entities', entities: { query: 'Uwe', scope: 'global' },
+    }, execContext())).rejects.toThrow('entities.scope')
+    await expect(tool(harness, 'hivemind_meta').execute({
+      operation: 'entities', entities: { query: 'Uwe', limit: 26 },
+    }, execContext())).rejects.toThrow('entity limit must be an integer from 1 to 25')
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
   it('converts focused media recall inputs into authenticated evidence filters', async () => {
     const path = await authorityFile()
     vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({ memories: [] })))

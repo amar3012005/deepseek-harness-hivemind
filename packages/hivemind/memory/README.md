@@ -1,12 +1,16 @@
 # @deepseek-ai/dsh-hivemind-memory
 
-Owns the single `hivemind_meta` read tool. It progressively selects company context, bounded recall, or the exact HyperAgent directory while tenant scope remains server-derived. Recall supports focused source, project, time, tag, media-kind, filename, and entity filters without accepting a tenant identifier.
+Owns the single `hivemind_meta` tool. It progressively selects company context, lexical entity lookup, bounded recall, governed save, or the exact HyperAgent directory while tenant scope remains server-derived. Entity lookup resolves a partial or ambiguous named subject before recall; the selected `canonical_name` becomes an exact `recall.entities` filter. Recall supports focused source, project, time, tag, media-kind, filename, and entity filters without accepting a tenant identifier.
 
 ## Model Experience
 
 - **Visible tools:** one compact meta-tool.
 - **Prompt cost:** one schema; evidence appears only after invocation.
 - **KV-cache effect:** stable tool schema.
+
+## Entity lookup
+
+`entities` requires a partial or ambiguous `query` and accepts optional `entity_types`, `scope`, and `limit`. The provider derives tenant identity, and `scope` can only narrow the authorized inventory to `personal`, `project`, `team`, or `organization`. Omit entity lookup when the recall subject is already exact or when the request does not name a subject.
 
 ## Recall filters
 

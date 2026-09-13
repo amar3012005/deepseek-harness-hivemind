@@ -22,7 +22,7 @@ import { createHmac, randomUUID } from 'node:crypto'
 import type {} from '@deepseek-ai/dsh-hivemind-identity'
 import type {} from '@deepseek-ai/dsh-hivemind-execution-scope'
 import { contextPlugin, type ProfileSnapshot } from '@deepseek-ai/dsh-hivemind-context'
-import { memoryPlugin, type RecallRequest, type SaveRequest } from '@deepseek-ai/dsh-hivemind-memory'
+import { memoryPlugin, type EntitySearchRequest, type RecallRequest, type SaveRequest } from '@deepseek-ai/dsh-hivemind-memory'
 import { projectHyperagentProfiles } from '@deepseek-ai/dsh-hivemind-employee-directory'
 
 export { completedExchanges, recentConversationText } from '@deepseek-ai/dsh-hivemind-context'
@@ -39,6 +39,7 @@ const PROFILE_PATH = '/api/profile'
 const PROFILE_FACTS_PATH = '/api/profiles'
 const PROFILE_CONTEXT_PATH = '/api/profiles/context'
 const RECALL_PATH = '/api/recall'
+const ENTITY_SEARCH_PATH = '/api/entity-search'
 const HYPERAGENT_PROFILES_URL = 'https://api.singulancelabs.com/v1/hyperagents/profiles'
 const CONNECT_STATUS_PATH = '/hivemind/connect/status'
 const CONNECT_START_PATH = '/hivemind/connect/start'
@@ -382,6 +383,38 @@ function apiRecord(value: unknown, label: string): JsonRecord {
   return outer['data'] === undefined ? outer : record(outer['data'], `${label}.data`)
 }
 
+/** Project the entity chooser response without exposing transport or authority fields. */
+function compactEntityResponse(value: unknown): Record<string, JsonValue> {
+  const response = apiRecord(value, 'meta entity response')
+  const rawMatches = Array.isArray(response['matches']) ? response['matches'] : []
+  const matches: Array<Record<string, JsonValue>> = []
+  for (const [index, rawMatch] of rawMatches.entries()) {
+    const match = record(rawMatch, `meta entity response.matches[${index}]`)
+    const entityId = nonEmptyString(match['entity_id'], 'entity_id')
+    const canonicalName = nonEmptyString(match['canonical_name'], 'canonical_name')
+    const entityType = nonEmptyString(match['entity_type'], 'entity_type')
+    const aliases = Array.isArray(match['aliases'])
+      ? match['aliases'].filter((alias): alias is string => typeof alias === 'string')
+      : []
+    matches.push({
+      entity_id: entityId,
+      canonical_name: canonicalName,
+      entity_type: entityType,
+      aliases,
+      ...typeof match['match'] === 'string' ? { match: match['match'] } : {},
+      ...typeof match['mention_count'] === 'number' ? { mention_count: match['mention_count'] } : {},
+      ...typeof match['last_seen_at'] === 'string' || match['last_seen_at'] === null
+        ? { last_seen_at: match['last_seen_at'] as string | null }
+        : {},
+    })
+  }
+  const degradation = response['degradation']
+  return {
+    matches,
+    degradation: degradation === null ? null : 'DEGRADED',
+  }
+}
+
 function identityFromProfile(value: unknown): TenantIdentity {
   const response = apiRecord(value, 'profile response')
   const profile = record(response['profile'], 'profile response.profile')
@@ -684,7 +717,7 @@ export function apply(ctx: Context, config: Config): void {
   if (!config.agentFeaturesEnabled) return
   ctx.skills.register({
     name: 'hivemind-company-brain',
-    description: 'Load only for multi-source, temporal, conflict-reconciliation, or memory-write work. Simple profile, recall, and directory lookups call hivemind_meta directly.',
+    description: 'Load only for multi-source, temporal, conflict-reconciliation, or memory-write work. Simple profile, entity, recall, and directory lookups call hivemind_meta directly.',
     // Keep routing knowledge in the native skill catalogue. The model chooses
     // between this HIVE memory skill and the Composio workflow skill; runtime
     // classifiers must not hide either capability based on prompt keywords.
@@ -692,8 +725,9 @@ export function apply(ctx: Context, config: Config): void {
     source: 'runtime',
     content: `Use this skill only for a question about the authenticated user's organization, internal memories, files, documents, evidence, decisions, people, projects, or HyperAgents. HIVE-MIND should be considered automatically for such work, but do not load this skill or call recall for greetings, general knowledge, simple transformations, or a fact already established by a recent completed answer.
 
-1. First decide whether company history is actually needed. Simple profile, one-shot recall, and exact HyperAgent-directory requests do not need this skill: call \`hivemind_meta\` directly from its registered schema. Use this playbook only when the request requires multi-source retrieval, temporal reconstruction, conflict reconciliation, or a durable memory write. For “what do you know about me?”, “tell me about myself”, “my profile”, or a company-profile question, call \`hivemind_meta\` with \`operation: "context"\` before answering; if the request also asks for stored preferences, decisions, projects, or past activity, make one focused \`recall\` call after context. For other requests, use a sufficient compact organization brief or recent completed answer directly. Otherwise call \`hivemind_meta\` with exactly one operation:
+1. First decide whether company history is actually needed. Simple profile, entity, one-shot recall, and exact HyperAgent-directory requests do not need this skill: call \`hivemind_meta\` directly from its registered schema. Use this playbook only when the request requires multi-source retrieval, temporal reconstruction, conflict reconciliation, or a durable memory write. For “what do you know about me?”, “tell me about myself”, “my profile”, or a company-profile question, call \`hivemind_meta\` with \`operation: "context"\` before answering; if the request also asks for stored preferences, decisions, projects, or past activity, make one focused \`recall\` call after context. For other requests, use a sufficient compact organization brief or recent completed answer directly. Otherwise call \`hivemind_meta\` with exactly one operation:
    - \`context\`: load the full onboarding-derived user and organization profile.
+   - \`entities\`: resolve a partial or ambiguous named subject once, then pass the selected \`canonical_name\` in \`recall.entities\`. Do not run it before every recall.
    - \`recall\`: search internal company memory and evidence.
    - \`profiles\`: fetch the authenticated organization's exact HyperAgent directory. Never invent employees.
 2. For recall, preserve the user's exact named entity or filename in \`query\`. Add only filters supported by the request: \`source_platforms\`, \`project\`, \`valid_at\`, \`transaction_at\`, \`sort\`, and explicit \`tags\`.
@@ -730,6 +764,14 @@ export function apply(ctx: Context, config: Config): void {
         ? await hiveRequest(authority, '/v1/hyperagents/profiles', { method: 'GET' }, signal, config)
         : await hiveRequest(authority, HYPERAGENT_PROFILES_URL, { method: 'GET' }, signal, config, 'https://api.singulancelabs.com')
       return { operation: 'profiles', ...hyperagentProfilesFromResponse(result) }
+    },
+    async findEntities(request: EntitySearchRequest, signal) {
+      const authority = await resolveAuthority(ctx, config)
+      const params = new URLSearchParams({ query: request.query, limit: String(request.limit) })
+      for (const entityType of request.entityTypes ?? []) params.append('entity_type', entityType)
+      if (request.scope !== undefined) params.set('scope', request.scope)
+      const result = await hiveRequest(authority, `${ENTITY_SEARCH_PATH}?${params.toString()}`, { method: 'GET' }, signal, config)
+      return { status: 'ready', operation: 'entities', result: compactEntityResponse(result) }
     },
     async recall(request: RecallRequest, signal, execution) {
       const authority = await resolveAuthority(ctx, config)

@@ -17,6 +17,14 @@ export interface RecallRequest {
   includeSuperseded?: boolean
 }
 
+/** Authenticated lexical entity lookup used to disambiguate a recall subject. */
+export interface EntitySearchRequest {
+  query: string
+  entityTypes?: string[]
+  scope?: 'personal' | 'project' | 'team' | 'organization'
+  limit: number
+}
+
 /** A policy-checked durable fact or correction proposed by the HIVE agent. */
 export interface SaveRequest {
   title: string
@@ -30,6 +38,7 @@ export interface SaveRequest {
 
 export interface MemoryProvider {
   context(agent: Agent, signal: AbortSignal): Promise<Record<string, JsonValue>>
+  findEntities(request: EntitySearchRequest, signal: AbortSignal): Promise<Record<string, JsonValue>>
   recall(request: RecallRequest, signal: AbortSignal, execution: ToolExecution): Promise<Record<string, JsonValue>>
   save(agent: Agent, request: SaveRequest, signal: AbortSignal, execution: ToolExecution): Promise<Record<string, JsonValue>>
   profiles(signal: AbortSignal): Promise<Record<string, JsonValue>>
@@ -83,7 +92,7 @@ const output = {
   render: (_args: unknown, value: JsonValue) => [{ type: 'text' as const, text: JSON.stringify(value) }],
 }
 
-/** Register the authenticated HIVE-MIND context, recall, governed save, and employee-directory router. */
+/** Register authenticated HIVE-MIND context, entity lookup, recall, governed save, and employee-directory operations. */
 export function memoryPlugin(config: MemoryPluginConfig, provider: MemoryProvider) {
   return {
     name: 'hivemind-memory',
@@ -91,9 +100,19 @@ export function memoryPlugin(config: MemoryPluginConfig, provider: MemoryProvide
     apply(ctx: Context): void {
       ctx.tools.register(defineTool({
         name: 'hivemind_meta',
-        description: 'HIVE-MIND gateway for authenticated organization context, bounded memory recall, governed durable memory saves, or the exact HyperAgent directory. Use save only for a stable user preference, confirmed decision, correction, or completed outcome that will matter later; never save secrets, credentials, ephemeral chat, guesses, or unverified claims. Tenant scope is derived from the current HIVE-MIND credential.',
+        description: 'HIVE-MIND gateway for authenticated organization context, lexical entity lookup, bounded memory recall, governed durable memory saves, or the exact HyperAgent directory. For a partial or ambiguous named subject, call entities once and pass the selected canonical_name in recall.entities. Do not use entities before every recall. Use save only for a stable user preference, confirmed decision, correction, or completed outcome that will matter later; never save secrets, credentials, ephemeral chat, guesses, or unverified claims. Tenant scope is derived from the current HIVE-MIND credential.',
         parameters: {
-          operation: { type: 'string', required: true, enum: ['context', 'recall', 'save', 'profiles'] },
+          operation: { type: 'string', required: true, enum: ['context', 'entities', 'recall', 'save', 'profiles'] },
+          entities: {
+            type: 'object',
+            additionalProperties: false,
+            properties: {
+              query: { type: 'string', required: true },
+              entity_types: { type: 'array', items: { type: 'string' } },
+              scope: { type: 'string', enum: ['personal', 'project', 'team', 'organization'] },
+              limit: { type: 'integer' },
+            },
+          },
           recall: {
             type: 'object',
             additionalProperties: false,
@@ -136,6 +155,21 @@ export function memoryPlugin(config: MemoryPluginConfig, provider: MemoryProvide
             return provider.context(execution.agent, execution.signal)
           }
           if (operation === 'profiles') return provider.profiles(execution.signal)
+          if (operation === 'entities') {
+            const input = object(args.entities, 'entities')
+            const rawLimit = input['limit'] ?? 12
+            if (!Number.isInteger(rawLimit) || (rawLimit as number) < 1 || (rawLimit as number) > 25) throw new TypeError('hivemind-memory: entity limit must be an integer from 1 to 25')
+            const scope = input['scope'] === undefined ? undefined : text(input['scope'], 'scope')
+            if (scope !== undefined && !['personal', 'project', 'team', 'organization'].includes(scope)) throw new TypeError('hivemind-memory: entity scope is unsupported')
+            const entityTypes = strings(input['entity_types'], 'entity_types')
+            const entityScope = scope as NonNullable<EntitySearchRequest['scope']>
+            return provider.findEntities({
+              query: text(input['query'], 'query'),
+              limit: rawLimit as number,
+              ...entityTypes === undefined ? {} : { entityTypes },
+              ...scope === undefined ? {} : { scope: entityScope },
+            }, execution.signal)
+          }
           if (operation === 'save') {
             if (execution.agent === undefined) throw new TypeError('hivemind-memory: active agent required')
             const input = object(args.save, 'save')

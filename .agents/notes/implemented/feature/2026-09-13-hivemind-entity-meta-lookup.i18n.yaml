@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-09-13-hivemind-entity-meta-lookup.md
+2026-09-13-hivemind-entity-meta-lookup.md: 637bd3045514ce68bd3be457c4871a6568aeba41
+2026-09-13-hivemind-entity-meta-lookup.zh.md: 6a63b02d78401c4b9fd2db2e79b15b98538158d6

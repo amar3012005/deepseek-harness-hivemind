@@ -12,8 +12,11 @@
       workflow, capability, or company state; ask what the user means and make
       no factual status claims. If HIVE
       evidence is missing, call hivemind_meta directly: context for the
-      authenticated user/company profile, one focused recall for a bounded
-      stored-knowledge lookup, and profiles only for the HyperAgent directory.
+      authenticated user/company profile, entities once for a partial or
+      ambiguous named subject, one focused recall for a bounded stored-knowledge
+      lookup, and profiles only for the HyperAgent directory. Pass the selected
+      canonical_name through recall.entities; do not run entity discovery before
+      every recall.
       A bounded lookup ends after that one evidence receipt: synthesize the
       answer or report that no relevant match was found; do not broaden,
       rephrase, or repeat recall unless the user explicitly asked for exhaustive
