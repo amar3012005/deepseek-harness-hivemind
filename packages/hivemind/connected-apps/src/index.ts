@@ -487,6 +487,27 @@ function bridgeResult(event: unknown): { callId: string; value: Record<string, u
   return undefined
 }
 
+/** A completed governed write is terminal for the same native retry identity. */
+function completedWriteForIdempotencyKey(
+  events: readonly unknown[],
+  idempotencyKey: string,
+): Record<string, unknown> | undefined {
+  const calls = new Map<string, Record<string, unknown>>()
+  for (const event of events) {
+    const call = bridgeCall(event)
+    if (call !== undefined) {
+      calls.set(call.callId, call.args)
+      continue
+    }
+    const result = bridgeResult(event)
+    if (result === undefined) continue
+    const owner = calls.get(result.callId)
+    if (owner?.['action'] !== 'execute' || stringValue(result.value['status']) !== 'ready') continue
+    if (stringValue(result.value['idempotency_key']) === idempotencyKey) return result.value
+  }
+  return undefined
+}
+
 function terminalBridgeApprovalResult(event: unknown): { callId: string } | undefined {
   if (!record(event) || event['type'] !== 'tool/result' || !record(event['data']) || !record(event['data']['message'])) return undefined
   const message = event['data']['message']
@@ -1530,6 +1551,27 @@ export function apply(ctx: Context, config: Config = {}): void {
         : args.arguments
       if (!record(executionArguments)) throw new TypeError('Execute requires arguments matching the authoritative schema')
       validateArguments(contract, executionArguments)
+      const idempotencyKey = discoveryKey({
+        workflow: key,
+        tool_slug: slug,
+        arguments: executionArguments,
+        call_id: execution.callId,
+      })
+      if (MUTATING_TOOL.test(slug) && execution.agent !== undefined) {
+        const completed = completedWriteForIdempotencyKey(
+          execution.agent.session.snapshotEvents(),
+          idempotencyKey,
+        )
+        if (completed !== undefined) {
+          const priorReceipt = completed['source_receipt'] as JsonValue | undefined
+          return {
+            status: 'duplicate',
+            idempotency_key: idempotencyKey,
+            operations: [{ tool: slug, status: 'already_completed' }],
+            ...(priorReceipt === undefined ? {} : { prior_receipt: priorReceipt }),
+          }
+        }
+      }
       const providerResult = await session.execute(slug, executionArguments)
       const sourceReceipt = await saveReceipt(
         ctx, execution, JSON.stringify(providerResult), `composio-${slug.toLowerCase()}.json`,
@@ -1541,6 +1583,7 @@ export function apply(ctx: Context, config: Config = {}): void {
           resultFields.get(key) ?? resultFields.get(fallbackKey) ?? [],
         ) as Record<string, JsonValue>,
         status: 'ready',
+        ...(MUTATING_TOOL.test(slug) ? { idempotency_key: idempotencyKey } : {}),
         operations: [{ tool: slug, status: 'completed' }],
       }
     },

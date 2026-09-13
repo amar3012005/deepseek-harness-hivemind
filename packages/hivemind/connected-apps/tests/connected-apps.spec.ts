@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { createHash } from 'node:crypto'
 import { SpillLocator, type SpillRef } from '@deepseek-ai/dsh-spill'
 
 const execute = vi.fn()
@@ -825,6 +826,29 @@ describe('progressive Composio bridge', () => {
     }, { signal: AbortSignal.abort(), agent } as never)).resolves.toMatchObject({ status: 'ready' })
     expect(execute).toHaveBeenCalledTimes(2)
     expect(execute).toHaveBeenLastCalledWith('SLACK_SEND_MESSAGE', { text: 'hello' })
+  })
+
+  it('does not repeat a completed mutation when the same native call is retried', async () => {
+    execute.mockResolvedValueOnce({ data: { results: [{ primary_tool_slugs: ['SLACK_SEND_MESSAGE'], tool_schemas: {
+      SLACK_SEND_MESSAGE: { input_schema: { type: 'object', required: ['text'], properties: { text: { type: 'string' } } } },
+    } }] } })
+    const key = createHash('sha256').update(JSON.stringify({
+      workflow: 'hivemind:user-a:conversation-write:current', tool_slug: 'SLACK_SEND_MESSAGE',
+      arguments: { text: 'hello' }, call_id: 'write-call',
+    })).digest('hex')
+    const events = [
+      { type: 'tool/call', data: { name: 'hivemind_connected_task', callId: 'write-call', arguments: JSON.stringify({ action: 'execute' }) } },
+      { type: 'tool/result', data: { message: { source: { callId: 'write-call' }, content: [{ type: 'tool-result', content: [{ type: 'text', text: JSON.stringify({ status: 'ready', idempotency_key: key, source_receipt: { locator: 'private:write' } }) }] }] } } },
+    ]
+    const agent = { session: { header: { id: 'conversation-write' }, snapshotEvents: () => events, append: vi.fn() } }
+    const app = harness()
+    await app.tool().execute({ action: 'search', queries: [{ app: 'Slack', use_case: 'Send one Slack message.' }], session: { generate_id: true } }, { signal: AbortSignal.abort(), agent } as never)
+    await expect(app.tool().execute({
+      action: 'execute', tool_slug: 'SLACK_SEND_MESSAGE', arguments: { text: 'hello' },
+    }, { signal: AbortSignal.abort(), agent, callId: 'write-call' } as never)).resolves.toMatchObject({
+      status: 'duplicate', idempotency_key: key,
+    })
+    expect(execute).toHaveBeenCalledOnce()
   })
 
   it('refuses guessed fields and requires an authoritative schema before execution', async () => {
