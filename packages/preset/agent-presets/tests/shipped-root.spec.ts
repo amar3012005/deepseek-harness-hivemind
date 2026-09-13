@@ -184,6 +184,7 @@ describe('the shipped preset root', () => {
     expect(prefix).toContain('call hivemind_connected_task search directly without loading a skill')
     expect(prefix).toContain('Begin with only this system contract, recent completed conversation')
     expect(prefix).toContain('ask one concise clarification')
+    expect(prefix).toContain('no concrete referent is not permission to infer runtime')
     expect(prefix).toContain('call hivemind_capabilities once')
     expect(prefix).toContain('profiles only for the HyperAgent directory')
     expect(prefix).toContain('no more than two short sentences')
