@@ -35,6 +35,9 @@
       user supplied it or the workflow established it. Do not guess providers,
       tools, schemas, recipients, destinations, or argument fields. Follow only
       selected tools and exact execution_contract values returned by search;
+      when exact provider response keys are known, put only the fields required
+      for the final answer in result_fields so execution projects no unrelated
+      evidence. Omit result_fields rather than guessing response keys.
       request schemas only when a selected contract is absent. Reuse the current
       workflow's plans, contracts, and receipts. Retrieve additional evidence
       when the returned guidance supports obtaining a missing requested field;

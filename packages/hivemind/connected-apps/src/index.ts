@@ -200,6 +200,14 @@ interface SearchQuery {
   known_fields?: string
 }
 
+function requestedResultFields(value: unknown): string[] {
+  if (!Array.isArray(value)) return []
+  return [...new Set(value.flatMap((item) => {
+    if (!record(item)) return []
+    return stringArray(item['result_fields']).map(field => field.trim()).filter(Boolean)
+  }))]
+}
+
 function requestedApps(value: unknown): Set<string> {
   if (!Array.isArray(value)) return new Set()
   return new Set(value.flatMap((item) => {
@@ -435,6 +443,7 @@ type ExecutionContract = {
 type RestoredWorkflowState = {
   selected: Set<string>
   contracts: Map<string, ExecutionContract>
+  resultFields: string[]
 }
 
 function bridgeCall(event: unknown): { callId: string; args: Record<string, unknown>; turn?: number } | undefined {
@@ -470,6 +479,23 @@ function bridgeResult(event: unknown): { callId: string; value: Record<string, u
       } catch {
         continue
       }
+    }
+  }
+  return undefined
+}
+
+function terminalBridgeApprovalResult(event: unknown): { callId: string } | undefined {
+  if (!record(event) || event['type'] !== 'tool/result' || !record(event['data']) || !record(event['data']['message'])) return undefined
+  const message = event['data']['message']
+  const source = record(message['source']) ? message['source'] : undefined
+  const callId = stringValue(source?.['callId'])
+  if (callId === undefined || !Array.isArray(message['content'])) return undefined
+  for (const outer of message['content']) {
+    if (!record(outer) || outer['type'] !== 'tool-result' || outer['isError'] !== true || !Array.isArray(outer['content'])) continue
+    for (const inner of outer['content']) {
+      if (!record(inner) || inner['type'] !== 'text') continue
+      const value = stringValue(inner['text']) ?? ''
+      if (/^Error: (?:the user rejected tool |approval for tool .* was cancelled)/.test(value)) return { callId }
     }
   }
   return undefined
@@ -512,11 +538,13 @@ function workflowQueries(args: Record<string, unknown>): JsonValue[] {
     const app = stringValue(item['app'])
     const useCase = stringValue(item['use_case'])
     const knownFields = stringValue(item['known_fields'])
+    const resultFields = stringArray(item['result_fields'])
     if (useCase === undefined) return []
     return [{
       ...(app === undefined ? {} : { app }),
       use_case: useCase,
       ...(knownFields === undefined ? {} : { known_fields: knownFields }),
+      ...(resultFields.length === 0 ? {} : { result_fields: resultFields }),
     }]
   })
 }
@@ -532,6 +560,12 @@ function unfinishedWorkflow(
     const call = bridgeCall(event)
     if (call !== undefined) {
       calls.set(call.callId, call)
+      continue
+    }
+    const terminalApproval = terminalBridgeApprovalResult(event)
+    if (terminalApproval !== undefined) {
+      const owner = calls.get(terminalApproval.callId)
+      if (owner?.args['action'] === 'execute') pending = undefined
       continue
     }
     const result = bridgeResult(event)
@@ -735,6 +769,7 @@ function restoreWorkflowState(execution: Pick<ToolExecution, 'agent'>, requested
   if (workflowId === undefined) return undefined
   const selected = new Set<string>()
   const restoredContracts = new Map<string, ExecutionContract>()
+  const resultFields = new Set<string>()
   let foundSearch = false
   for (let index = 0; index < events.length; index += 1) {
     const result = bridgeResult(events[index])
@@ -744,6 +779,7 @@ function restoreWorkflowState(execution: Pick<ToolExecution, 'agent'>, requested
       const candidateId = returnedWorkflowSessionId(result.value) ?? workflowSessionId(args)
       if (candidateId !== workflowId) continue
       foundSearch = true
+      for (const field of requestedResultFields(args['queries'])) resultFields.add(field)
       const unwrapped = record(result.value['result']) ? result.value['result'] : result.value
       const data = record(unwrapped['data']) ? unwrapped['data'] : unwrapped
       if (Array.isArray(data['results'])) {
@@ -758,7 +794,7 @@ function restoreWorkflowState(execution: Pick<ToolExecution, 'agent'>, requested
     if (args?.['action'] !== 'schemas' || workflowSessionId(args) !== workflowId) continue
     for (const contract of executionContracts(result.value, selected)) restoredContracts.set(contract.tool_slug, contract)
   }
-  return foundSearch ? { selected, contracts: restoredContracts } : undefined
+  return foundSearch ? { selected, contracts: restoredContracts, resultFields: [...resultFields] } : undefined
 }
 
 const argumentSchemaValidator = new Ajv({ allErrors: true, strict: false, validateFormats: false })
@@ -816,15 +852,46 @@ function compactProviderValue(value: unknown): JsonValue {
   return compact
 }
 
+function projectRequestedFields(value: unknown, requested: ReadonlySet<string>): JsonValue | undefined {
+  if (Array.isArray(value)) {
+    const projected = value.flatMap((item): JsonValue[] => {
+      const nested = projectRequestedFields(item, requested)
+      return nested === undefined ? [] : [nested]
+    })
+    return projected.length === 0 ? undefined : projected
+  }
+  if (!record(value)) return undefined
+  const projected: Record<string, JsonValue> = {}
+  for (const [key, item] of Object.entries(value)) {
+    if (requested.has(key)) {
+      projected[key] = compactProviderValue(item)
+      continue
+    }
+    const nested = projectRequestedFields(item, requested)
+    if (nested !== undefined && (!Array.isArray(nested) || nested.length > 0)
+      && (!record(nested) || Object.keys(nested).length > 0)) projected[key] = nested
+  }
+  return Object.keys(projected).length === 0 ? undefined : projected
+}
+
 /** Bound a provider execution so MIME payloads and transport noise stay out of the transcript. */
-export function compactComposioExecutionReceipt(value: unknown, receipt?: SpillRef): JsonValue {
-  const compact = compactProviderValue(value)
+export function compactComposioExecutionReceipt(
+  value: unknown,
+  receipt?: SpillRef,
+  resultFields: readonly string[] = [],
+): JsonValue {
+  const requested = new Set(resultFields)
+  const compact = requested.size === 0
+    ? compactProviderValue(value)
+    : projectRequestedFields(value, requested) ?? compactProviderValue(value)
   return {
     ...(record(compact) ? compact : { result: compact }),
     ...(receipt === undefined ? {} : {
       source_receipt: { locator: receipt.locator, bytes: receipt.bytes, retrieval_hint: receipt.retrievalHint },
     }),
-    projection_policy: 'Duplicated MIME transport trees and transport headers omitted; readable evidence retained, while long text and collections are bounded. The original receipt is preserved separately when source_receipt is present.',
+    projection_policy: requested.size === 0
+      ? 'Duplicated MIME transport trees and transport headers omitted; readable evidence retained, while long text and collections are bounded. The original receipt is preserved separately when source_receipt is present.'
+      : 'Only the exact requested result fields are projected when present. The original provider receipt is preserved separately.',
   }
 }
 
@@ -936,6 +1003,7 @@ export function apply(ctx: Context, config: Config = {}): void {
   const sessions = new Map<string, Promise<ComposioSession>>()
   const selectedTools = new Map<string, Set<string>>()
   const contracts = new Map<string, Map<string, ExecutionContract>>()
+  const resultFields = new Map<string, string[]>()
 
   async function getSession(identity: { userId: string; orgId: string }, execution: Pick<ToolExecution, 'agent'>): Promise<ComposioSession> {
     if (composio === undefined) throw new Error('Connected tools are not configured on this runtime')
@@ -1064,6 +1132,10 @@ export function apply(ctx: Context, config: Config = {}): void {
             app: { type: 'string', description: 'External app only when explicitly named or already established. Omit it when the user named only a service category so authenticated discovery can select an active provider.' },
             use_case: { type: 'string', required: true, description: 'Normalized complete use case for one atomic app action. Name the app; include operation, filters, ordering, limit, and required output fields. Do not include personal identifiers.' },
             known_fields: { type: 'string', description: 'Optional comma-separated key:value identifiers or settings. Keep to 1-2 short items.' },
+            result_fields: {
+              type: 'array', items: { type: 'string' },
+              description: 'Exact provider response keys required in the final answer. Used only to project execution evidence; omitted from Composio search. Omit when the response keys are unknown.',
+            },
           },
           additionalProperties: false,
         },
@@ -1250,6 +1322,9 @@ export function apply(ctx: Context, config: Config = {}): void {
           const available = contracts.get(stateKey) ?? new Map<string, ExecutionContract>()
           for (const [slug, contract] of discoveredContracts) available.set(slug, contract)
           contracts.set(stateKey, available)
+          const requested = new Set(resultFields.get(stateKey) ?? [])
+          for (const field of requestedResultFields(args.queries)) requested.add(field)
+          resultFields.set(stateKey, [...requested])
         }
         const statuses = connectionStatuses(scopedResult)
         const missing = requiredMissingToolkits(scopedResult, statuses)
@@ -1357,8 +1432,10 @@ export function apply(ctx: Context, config: Config = {}): void {
           contractsForWorkflow = restored.contracts
           selectedTools.set(key, restored.selected)
           contracts.set(key, restored.contracts)
+          resultFields.set(key, restored.resultFields)
           selectedTools.set(fallbackKey, restored.selected)
           contracts.set(fallbackKey, restored.contracts)
+          resultFields.set(fallbackKey, restored.resultFields)
         }
       }
       const metaArguments: Record<string, unknown> = {}
@@ -1443,7 +1520,11 @@ export function apply(ctx: Context, config: Config = {}): void {
         ctx, execution, JSON.stringify(providerResult), `composio-${slug.toLowerCase()}.json`,
       )
       return {
-        ...compactComposioExecutionReceipt(providerResult, sourceReceipt) as Record<string, JsonValue>,
+        ...compactComposioExecutionReceipt(
+          providerResult,
+          sourceReceipt,
+          resultFields.get(key) ?? resultFields.get(fallbackKey) ?? [],
+        ) as Record<string, JsonValue>,
         status: 'ready',
         operations: [{ tool: slug, status: 'completed' }],
       }

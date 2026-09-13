@@ -183,6 +183,27 @@ describe('progressive Composio bridge', () => {
     expect(JSON.stringify(projected)).not.toContain('[truncated]')
   })
 
+  it('projects only requested provider evidence fields while retaining structural containers', () => {
+    const projected = compactComposioExecutionReceipt({ data: { messages: [{
+      id: 'message-1', subject: 'Project update', received_at: '2026-09-12T12:00:00Z',
+      body: 'large unrequested body', sender: { name: 'Rama', address: 'rama@example.com' },
+    }] } }, receipt, ['subject', 'received_at'])
+
+    expect(projected).toMatchObject({
+      data: { messages: [{ subject: 'Project update', received_at: '2026-09-12T12:00:00Z' }] },
+      source_receipt: { locator: 'private:r1' },
+    })
+    expect(JSON.stringify(projected)).not.toContain('large unrequested body')
+    expect(JSON.stringify(projected)).not.toContain('rama@example.com')
+  })
+
+  it('falls back to the bounded provider projection when requested keys are absent', () => {
+    const projected = compactComposioExecutionReceipt(
+      { data: { actual_key: 'provider evidence' } }, undefined, ['unknown_key'],
+    )
+    expect(projected).toMatchObject({ data: { actual_key: 'provider evidence' } })
+  })
+
   it('compacts search post-execute even when spill storage is unavailable', async () => {
     const { listeners } = harness()
     const post = listeners.get('tools/post-execute') as (
@@ -206,9 +227,16 @@ describe('progressive Composio bridge', () => {
     const { tool } = harness()
     const result = await tool().execute({
       action: 'search',
-      queries: [{ app: 'Slack', use_case: 'List Slack channels ordered by name and return channel id and name.' }],
+      queries: [{
+        app: 'Slack', use_case: 'List Slack channels ordered by name and return channel id and name.',
+        result_fields: ['id', 'name'],
+      }],
       session: { generate_id: true },
     }, { signal: AbortSignal.abort() })
+    expect(execute).toHaveBeenCalledWith('COMPOSIO_SEARCH_TOOLS', expect.objectContaining({
+      queries: [{ use_case: 'List Slack channels ordered by name and return channel id and name.' }],
+    }))
+    expect(JSON.stringify(execute.mock.calls[0]?.[1])).not.toContain('result_fields')
     expect(JSON.stringify(result)).not.toContain('tool_schemas')
     expect(result).toMatchObject({ status: 'ready', results: [{ primary_tool_slugs: ['SLACK_LIST_CHANNELS'] }] })
   })
@@ -219,13 +247,16 @@ describe('progressive Composio bridge', () => {
         query: { type: 'string', minLength: 3 },
       } } },
     } }] } }
-    const provider = { data: { value: 'complete provider result', headers: { private: 'transport detail' } } }
+    const provider = { data: {
+      value: 'complete provider result', unrelated: 'not requested', headers: { private: 'transport detail' },
+    } }
     execute.mockResolvedValueOnce(search).mockResolvedValueOnce(provider)
     const app = harness(true, undefined, false, { withSpill: true })
     const agent = { session: { header: { id: 'conversation-receipts' }, snapshotEvents: () => [], append: vi.fn() } }
 
     const discovered = await app.tool().execute({
-      action: 'search', queries: [{ use_case: 'Example: read one value.' }], session: { generate_id: true },
+      action: 'search', queries: [{ use_case: 'Example: read one value.', result_fields: ['value'] }],
+      session: { generate_id: true },
     }, { signal: AbortSignal.abort(), agent, name: 'hivemind_connected_task', callId: 'search-call' } as never)
     const completed = await app.tool().execute({
       action: 'execute', tool_slug: 'EXAMPLE_READ', arguments: { query: 'value' },
@@ -238,6 +269,7 @@ describe('progressive Composio bridge', () => {
     expect(discovered).toMatchObject({ source_receipt: { locator: 'private:1' } })
     expect(completed).toMatchObject({ source_receipt: { locator: 'private:2' } })
     expect(JSON.stringify(completed)).not.toContain('transport detail')
+    expect(JSON.stringify(completed)).not.toContain('not requested')
   })
 
   it('reuses the stable authenticated user connection while isolating selected tools', async () => {
@@ -322,7 +354,10 @@ describe('progressive Composio bridge', () => {
     const events = [
       { type: 'tool/call', data: {
         callId: 'call-search', name: 'hivemind_connected_task',
-        arguments: JSON.stringify({ action: 'search', session: { generate_id: true } }),
+        arguments: JSON.stringify({
+          action: 'search', session: { generate_id: true },
+          queries: [{ use_case: 'Read the newest email.', result_fields: ['subject'] }],
+        }),
       } },
       { type: 'tool/result', data: { message: {
         source: { kind: 'tool', callId: 'call-search' },
@@ -376,6 +411,43 @@ describe('progressive Composio bridge', () => {
     expect(projected).toContain('Read the newest record')
     expect(projected).toContain('wait_connection')
     expect(execute).not.toHaveBeenCalled()
+  })
+
+  it('does not project a workflow after its native approval was rejected', async () => {
+    const events = [
+      { type: 'tool/call', data: {
+        turn: 1, callId: 'call-search', name: 'hivemind_connected_task',
+        arguments: JSON.stringify({ action: 'search', session: { generate_id: true } }),
+      } },
+      { type: 'tool/result', data: { message: {
+        source: { kind: 'tool', callId: 'call-search' },
+        content: [{ type: 'tool-result', isError: false, content: [{ type: 'text', text: JSON.stringify({
+          status: 'ready', session_id: 'workflow-send',
+          results: [{ primary_tool_slugs: ['EXAMPLE_SEND'], toolkits: ['example'] }],
+          execution_contracts: [{ tool_slug: 'EXAMPLE_SEND', required_fields: ['text'], properties: { text: { type: 'string' } } }],
+        }) }] }],
+      } } },
+      { type: 'tool/call', data: {
+        turn: 1, callId: 'call-execute', name: 'hivemind_connected_task',
+        arguments: JSON.stringify({ action: 'execute', session_id: 'workflow-send', tool_slug: 'EXAMPLE_SEND', arguments: { text: 'hello' } }),
+      } },
+      { type: 'tool/result', data: { message: {
+        source: { kind: 'tool', callId: 'call-execute' },
+        content: [{ type: 'tool-result', isError: true, content: [{
+          type: 'text', text: 'Error: the user rejected tool "hivemind_connected_task"',
+        }] }],
+      } } },
+    ]
+    const agent = { session: {
+      header: { id: 'conversation-rejected' }, snapshotEvents: () => events, append: vi.fn(),
+    } }
+    const app = harness()
+    const next = vi.fn(async () => ({ kind: 'enter', messages: [] }))
+    const decision = await app.listeners.get('agent/pre-step')?.(
+      { agent, turn: 2 } as never, next as never,
+    ) as { messages: unknown[] }
+
+    expect(decision.messages).toEqual([])
   })
 
   it('reuses an active legacy organization connection until the user reconnects canonically', async () => {
