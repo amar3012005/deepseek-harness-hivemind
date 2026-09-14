@@ -9,7 +9,7 @@
     { "path": "../../llm/llm" },
     { "path": "../../core/session" },
     { "path": "../../settings/settings" },
-    { "path": "../../spill/spill" },
+    { "path": "../execution-scope" },
     { "path": "../../core/tools" },
     { "path": "../../interaction/user-questions" },
     { "path": "../../util/values" }

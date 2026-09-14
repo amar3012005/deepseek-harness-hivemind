@@ -6558,6 +6558,9 @@ importers:
       '@deepseek-ai/dsh-agent':
         specifier: workspace:^
         version: link:../../core/agent
+      '@deepseek-ai/dsh-hivemind-execution-scope':
+        specifier: workspace:^
+        version: link:../execution-scope
       '@deepseek-ai/dsh-hivemind-identity':
         specifier: workspace:^
         version: link:../identity
@@ -6570,9 +6573,6 @@ importers:
       '@deepseek-ai/dsh-settings':
         specifier: workspace:^
         version: link:../../settings/settings
-      '@deepseek-ai/dsh-spill':
-        specifier: workspace:^
-        version: link:../../spill/spill
       '@deepseek-ai/dsh-tools':
         specifier: workspace:^
         version: link:../../core/tools

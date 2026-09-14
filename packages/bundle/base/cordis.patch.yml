@@ -420,6 +420,7 @@
       name: '@deepseek-ai/dsh-repeat-tool-reminder'
       config:
         thresholds: [3, 5, 8]
+        exclude: [hivemind_connected_task, hivemind_connected_receipt_read]
         argumentsPreviewChars: 500
 
     # The shared base enables the stable model-facing web_search and web_fetch

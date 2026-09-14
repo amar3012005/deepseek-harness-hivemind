@@ -2,7 +2,7 @@
 
 ## Summary
 
-The HIVE bridge registers authenticated Composio discovery and execution tools without replacing the Harness agent loop or conversation renderer.
+The HIVE bridge registers authenticated Composio discovery and execution tools without replacing the Harness agent loop or conversation renderer. Full provider responses are encrypted in the HIVE Control Plane; only a bounded contract-driven projection enters model history.
 
 ## Discovery reuse
 
@@ -16,20 +16,20 @@ Unsuccessful searches carry versioned discovery metadata through native tool-res
 
 The model selects skills, searches, and provider tools through `hivemind_connected_task`. Search results contain bounded plans and exact selected execution contracts. An atomic query may declare exact `result_fields`; these names are retained with the workflow but are not sent to Composio search. Provider execution then projects only matching fields and their structural containers. Common mail evidence names are canonicalized at this boundary: `sender`/`from`, `received_at`/provider timestamps, and `snippet`/decoded message text. If none match, the existing bounded evidence projection is returned so a mistaken field name cannot silently discard the receipt. An active connection executes the selected provider tool directly without connection-management or wait calls. A connection-required receipt carries `next_action: "continue_current_request"`; after OAuth, the original router session, selected tool, and exact contract are reconstructed from committed events instead of rediscovery.
 
-##### Unfinished workflow preamble
+##### Connection resume preamble
 
 ```markdown
-## Unfinished connected-app workflow
-This state is reconstructed from durable receipts in this conversation. If the current request continues it, resume this session without repeating search, checking status separately, or using HIVE memory for connected-app evidence. If the user changed tasks, leave it pending.
+## Connected-app resume required
+A user-visible connection flow for this conversation requires an explicit resume. Reuse this session without repeating discovery. Do not infer schemas or provider data from this compact notice.
 ```
 
 #### Token effect
 
-The registered bridge tool schema is present while connected tools are enabled. Each search or provider call adds one bounded receipt. Non-executable schema annotations and duplicated MIME transport trees are excluded from the model projection, while plans, validation constraints, requested evidence, and only content-free private-storage metadata remain. The private spill locator and retrieval hint are never model-visible, so a local `file://` locator cannot become a web-research input. Exact `result_fields` reduce execution evidence without changing provider discovery or execution arguments. One selected non-mutating provider tool executes at most once per turn unless the arguments contain an explicit pagination cursor. `maxDiscoverySearches` (default 2) bounds consecutive discovery-only calls. The unfinished projection is absent from the originating turn and appears only while a prior workflow remains incomplete.
+The registered bridge tool schema is present while connected tools are enabled. Each search or provider call adds one bounded receipt. Non-executable schema annotations and duplicated MIME transport trees are excluded from the model projection, while plans, validation constraints, requested evidence, and only an opaque receipt id remain. No spill locator or retrieval hint is model-visible, so a local `file://` locator cannot become a web-research input. Semantic `result_fields` reduce execution evidence without changing provider discovery or execution arguments. One selected non-mutating provider tool executes at most once per turn unless the user explicitly asks for another page and the model supplies that provider cursor. A cursor by itself never creates unfinished workflow state. Only unresolved connection state is projected into a later turn.
 
 #### KV Cache effect
 
-Append-only within a turn and when an unfinished projection is added on a later turn. Stable system and tool-schema prefixes remain reusable. The bridge does not rewrite native completed history; provider execution or completion removes the need for future workflow projection.
+Append-only within a turn and when a connection-resume projection is added on a later turn. Stable system and tool-schema prefixes remain reusable. The bridge does not rewrite native completed history; successful execution is terminal even when the provider response contains a pagination cursor.
 
 ### External actions
 
@@ -37,6 +37,6 @@ Selected mutating tools use the native Harness approval seam after search and ar
 
 ## Known Limitations and Deferred Work
 
-- Selected execution contracts preserve complete property schemas and root schema keywords through repeated projection. Non-executable JSON Schema annotations such as `examples` and `$comment` are omitted, while descriptions, nested constraints, and validation keywords remain. Returned planning steps and pitfalls are not character-truncated. Ajv validates the complete selected contract locally before any provider execution; unsupported arguments produce a typed validation error and are neither renamed nor removed. The original search, schema, and provider responses are written to session-authorized private spill storage before the bounded model projection is returned. Provider projections keep readable evidence and requested identifiers but omit duplicated MIME transport trees, headers, encoded parts, and every private spill location.
+- Selected execution contracts preserve complete property schemas and root schema keywords in their originating search receipt. Non-executable JSON Schema annotations such as `examples` and `$comment` are omitted, while descriptions, nested constraints, and validation keywords remain. Ajv validates the complete selected contract locally before any provider execution; unsupported arguments produce a typed validation error and are neither renamed nor removed. Search, schema, and provider responses are encrypted at rest in tenant/user/session/call-scoped Control Plane receipts before the bounded model projection is returned. `hivemind_connected_receipt_read` can return only fields approved by the original contract and never returns the raw receipt.
 
 - This cache does not reuse live app reads or connection authorization. Successful search/schema caching requires authoritative versioned schemas and connection invalidation. Durable negative lookup currently scans the owning session log. The bridge has no separate invariant companion because its cache is derived directly from committed tool receipts rather than an independent persistent store.

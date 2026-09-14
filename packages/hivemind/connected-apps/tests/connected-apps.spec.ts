@@ -1,6 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createHash } from 'node:crypto'
-import { SpillLocator, type SpillRef } from '@deepseek-ai/dsh-spill'
 
 const execute = vi.fn()
 const toolkits = vi.fn(async (): Promise<{ items: Array<{
@@ -16,7 +15,7 @@ vi.mock('@composio/core', () => ({ Composio: class { sessions = { create, use };
 
 const { apply, compactComposioSearchReceipt, compactComposioExecutionReceipt } = await import('../src/index.ts')
 
-const receipt: SpillRef = { locator: SpillLocator('private:r1'), bytes: 10, retrievalHint: 'read privately' }
+const receipt = { receipt_id: '11111111-1111-4111-8111-111111111111', stored: true as const, bytes: 10, expires_at: '2026-09-21T00:00:00.000Z', allowed_fields: [] }
 
 function harness(
   enabled: boolean | undefined = true,
@@ -26,25 +25,27 @@ function harness(
 ) {
   const concludeTurn = vi.fn()
   const ask = vi.fn()
-  const spills: Array<{ suggestedName: string; content: string }> = []
-  let tool: {
+  const spills: Array<Record<string, unknown>> = []
+  type RegisteredTool = {
+    name: string
     execute(
       args: Record<string, unknown>,
       execution: { signal: AbortSignal; concludeTurn: () => void },
     ): Promise<unknown>
-  } | undefined
+  }
+  const tools = new Map<string, RegisteredTool>()
   const listeners = new Map<string, (...args: never[]) => unknown>()
   const ctx = {
-    tools: { register(value: typeof tool) { tool = value } },
+    tools: { register(value: RegisteredTool) { tools.set(value.name, value) } },
     hivemindIdentity: { resolve: vi.fn(async () => identity) },
     userQuestions: { ask },
     on(name: string, listener: (...args: never[]) => unknown) { listeners.set(name, listener) },
     get(name: string) {
       if (name === 'settings') return { get: () => enabled === undefined ? undefined : ({ pluginsEnabled: enabled }) }
-      if (name === 'spillStore' && config.withSpill === true) return { saveText: async (input: { suggestedName: string; content: string }) => {
+      if (name === 'connectedAppReceiptStore' && config.withSpill === true) return { save: async (_execution: unknown, input: Record<string, unknown>) => {
         spills.push(input)
-        return { locator: SpillLocator(`private:${spills.length}`), bytes: input.content.length, retrievalHint: 'Inspect privately.' }
-      } }
+        return { receipt_id: `11111111-1111-4111-8111-${String(spills.length).padStart(12, '0')}`, stored: true, bytes: JSON.stringify(input.rawReceipt).length, expires_at: '2026-09-21T00:00:00.000Z', allowed_fields: input.allowedFields }
+      }, read: async () => ({ body: 'approved body' }) }
       return undefined
     },
     logger: { warn: vi.fn() },
@@ -53,8 +54,9 @@ function harness(
   return {
     tool: () => ({
       execute: (args: Record<string, unknown>, execution: { signal: AbortSignal }) =>
-        tool!.execute(args, { ...execution, concludeTurn }),
+        tools.get('hivemind_connected_task')!.execute(args, { ...execution, concludeTurn }),
     }),
+    receiptTool: () => tools.get('hivemind_connected_receipt_read')!,
     listeners,
     concludeTurn,
     ask,
@@ -289,8 +291,8 @@ describe('progressive Composio bridge', () => {
     }, { signal: AbortSignal.abort(), agent, name: 'hivemind_connected_task', callId: 'execute-call' } as never)
 
     expect(app.spills).toMatchObject([
-      { suggestedName: 'composio-search-tools.json', content: JSON.stringify(search) },
-      { suggestedName: 'composio-example_read.json', content: JSON.stringify(provider) },
+      { tool: 'COMPOSIO_SEARCH_TOOLS', rawReceipt: search, allowedFields: [] },
+      { tool: 'EXAMPLE_READ', rawReceipt: provider, allowedFields: ['value'], approvedProjection: { value: 'complete provider result' } },
     ])
     expect(discovered).toMatchObject({ private_receipt: { stored: true } })
     expect(completed).toMatchObject({ private_receipt: { stored: true } })
@@ -298,6 +300,19 @@ describe('progressive Composio bridge', () => {
     expect(JSON.stringify([discovered, completed])).not.toContain('retrieval_hint')
     expect(JSON.stringify(completed)).not.toContain('transport detail')
     expect(JSON.stringify(completed)).not.toContain('not requested')
+  })
+
+  it('reads only approved fields through the scoped durable receipt tool', async () => {
+    const app = harness(true, undefined, false, { withSpill: true })
+    const result = await app.receiptTool().execute({
+      receipt_id: '11111111-1111-4111-8111-000000000001', fields: ['body'],
+    }, { signal: AbortSignal.abort(), agent: { session: { header: { id: 'receipt-owner' } } } } as never)
+
+    expect(result).toEqual({
+      status: 'ready', receipt_id: '11111111-1111-4111-8111-000000000001',
+      fields: { body: 'approved body' },
+      operations: [{ tool: 'hivemind_connected_receipt_read', status: 'completed' }],
+    })
   })
 
   it('performs one search and one Gmail fetch for a latest-email request', async () => {
@@ -396,7 +411,7 @@ describe('progressive Composio bridge', () => {
     }, { signal: AbortSignal.abort(), agent } as never)
     const modelProjection = JSON.stringify(result)
 
-    expect(app.spills.at(-1)?.content).toContain('x'.repeat(1_000))
+    expect(JSON.stringify(app.spills.at(-1)?.rawReceipt)).toContain('x'.repeat(1_000))
     expect(result).toMatchObject({ private_receipt: { stored: true } })
     expect(modelProjection).not.toContain('file:')
     expect(modelProjection).not.toContain('/tmp/')
@@ -596,15 +611,16 @@ describe('progressive Composio bridge', () => {
     ) as { messages: unknown[] }
     const projected = JSON.stringify(decision.messages)
 
-    expect(projected).toContain('Unfinished connected-app workflow')
+    expect(projected).toContain('Connected-app resume required')
     expect(projected).toContain('workflow-resume')
     expect(projected).toContain('EXAMPLE_READ')
-    expect(projected).toContain('Read the newest record')
+    expect(projected).not.toContain('Read the newest record')
+    expect(projected).not.toContain('execution_contracts')
     expect(projected).toContain('wait_connection')
     expect(execute).not.toHaveBeenCalled()
   })
 
-  it('restores a bounded pagination cursor as an unfinished continuation only', async () => {
+  it('treats a completed bounded read as terminal even when the provider returns a cursor', async () => {
     const events = [
       { type: 'tool/call', data: { turn: 1, callId: 'call-search', name: 'hivemind_connected_task', arguments: JSON.stringify({
         action: 'search', session: { generate_id: true }, queries: [{ use_case: 'List records.' }],
@@ -626,10 +642,7 @@ describe('progressive Composio bridge', () => {
     const decision = await app.listeners.get('agent/pre-step')?.(
       { agent, turn: 2 } as never, next as never,
     ) as { messages: unknown[] }
-    const projected = JSON.stringify(decision.messages)
-    expect(projected).toContain('continue_page')
-    expect(projected).toContain('next-2')
-    expect(projected).toContain('pagination_pages')
+    expect(decision.messages).toEqual([])
   })
 
   it('does not project a workflow after its native approval was rejected', async () => {

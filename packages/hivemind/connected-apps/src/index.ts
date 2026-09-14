@@ -1,14 +1,14 @@
 /** Tenant-scoped progressive Composio capability for HIVE-MIND. */
 
 import type { Context } from '@deepseek-ai/cordis'
-import { createHash } from 'node:crypto'
+import { createHash, createHmac, randomUUID } from 'node:crypto'
 import type { Composio } from '@composio/core'
 import z from '@deepseek-ai/schemastery'
 import type {} from '@deepseek-ai/dsh-agent'
 import type {} from '@deepseek-ai/dsh-hivemind-identity'
+import type {} from '@deepseek-ai/dsh-hivemind-execution-scope'
 import { createUserMessage, type ContentBlock } from '@deepseek-ai/dsh-llm'
 import type {} from '@deepseek-ai/dsh-settings'
-import type { SaveTextSpill, SpillRef } from '@deepseek-ai/dsh-spill'
 import Ajv, { type ValidateFunction } from 'ajv'
 import type { PostToolDecision, ToolExecution } from '@deepseek-ai/dsh-tools'
 import { defineTool } from '@deepseek-ai/dsh-tools'
@@ -34,13 +34,14 @@ declare module '@deepseek-ai/dsh-session/types' {
 }
 
 export const name = 'hivemind-connected-apps'
-export const inject = ['tools', 'hivemindIdentity', 'userQuestions']
+export const inject = ['tools', 'hivemindIdentity', 'hivemindExecutionScope', 'userQuestions']
 
 const SEARCH_TOOL = 'mcp__composio__COMPOSIO_SEARCH_TOOLS'
 const COMPOSIO_TOOL_PREFIX = 'mcp__composio__'
 const CONNECTED_WORKFLOWS_SKILL = 'composio-connected-workflows'
 const PLUGINS_SETTINGS_NAMESPACE = 'hivemind-plugins'
 const BRIDGE_TOOL = 'hivemind_connected_task'
+const RECEIPT_READ_TOOL = 'hivemind_connected_receipt_read'
 const WORKFLOW_CONTEXT_SOURCE = 'dsh-hivemind-connected-apps/workflow'
 const META_TOOLS = new Set([
   'COMPOSIO_SEARCH_TOOLS',
@@ -63,6 +64,14 @@ export interface Config {
   maxUnmatchedSearches?: number
   /** Discovery-only calls per workflow before provider execution must advance it. */
   maxDiscoverySearches?: number
+  /** HIVE control-plane origin used for encrypted provider receipts. */
+  receiptApiBase?: string
+  /** Extra HTTP origins allowed for runner-to-control-plane receipt calls. */
+  receiptHttpOrigins?: string[]
+  /** Environment variable holding the runner service signing secret. */
+  receiptServiceSecretEnv?: string
+  /** Complete durable receipt request deadline. */
+  receiptRequestTimeoutMs?: number
 }
 
 export const Config: z<Config> = z.object({
@@ -72,7 +81,36 @@ export const Config: z<Config> = z.object({
   discoveryCacheTtlMs: z.number().min(1).default(300_000),
   maxUnmatchedSearches: z.number().min(1).default(2),
   maxDiscoverySearches: z.number().min(1).default(2),
+  receiptApiBase: z.string(),
+  receiptHttpOrigins: z.array(String).default([]),
+  receiptServiceSecretEnv: z.string().default('HIVE_HARNESS_RUNNER_SERVICE_SECRET'),
+  receiptRequestTimeoutMs: z.number().min(1).default(10_000),
 })
+
+interface DurableReceiptRef {
+  readonly receipt_id: string
+  readonly stored: true
+  readonly bytes: number
+  readonly expires_at: string
+  readonly allowed_fields: readonly string[]
+}
+
+interface DurableReceiptStore {
+  save(execution: ToolExecution, input: {
+    provider: string
+    tool: string
+    contractVersion?: string
+    rawReceipt: unknown
+    allowedFields: readonly string[]
+    approvedProjection: Record<string, JsonValue>
+    projectionPolicy: string
+  }): Promise<DurableReceiptRef>
+  read(execution: ToolExecution, receiptId: string, fields: readonly string[]): Promise<Record<string, JsonValue>>
+}
+
+declare module '@deepseek-ai/cordis' {
+  interface Context { connectedAppReceiptStore: DurableReceiptStore }
+}
 
 function record(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -529,15 +567,9 @@ interface UnfinishedWorkflowProjection {
   readonly turn: number
   readonly workflowId: string
   readonly status: string
-  readonly queries: JsonValue[]
   readonly toolkits: string[]
   readonly selectedToolSlugs: string[]
-  readonly contracts: ExecutionContract[]
-  readonly pagination?: JsonValue
-  readonly paginationPages?: number
 }
-
-const MAX_DURABLE_PAGINATION_PAGES = 5
 
 /** Find a provider-declared continuation cursor without interpreting provider-specific payloads. */
 function paginationProjection(value: unknown): Record<string, JsonValue> | undefined {
@@ -578,25 +610,7 @@ function workflowToolkits(value: Record<string, unknown>): string[] {
   return [...found]
 }
 
-function workflowQueries(args: Record<string, unknown>): JsonValue[] {
-  if (!Array.isArray(args['queries'])) return []
-  return args['queries'].flatMap((item): JsonValue[] => {
-    if (!record(item)) return []
-    const app = stringValue(item['app'])
-    const useCase = stringValue(item['use_case'])
-    const knownFields = stringValue(item['known_fields'])
-    const resultFields = stringArray(item['result_fields'])
-    if (useCase === undefined) return []
-    return [{
-      ...(app === undefined ? {} : { app }),
-      use_case: useCase,
-      ...(knownFields === undefined ? {} : { known_fields: knownFields }),
-      ...(resultFields.length === 0 ? {} : { result_fields: resultFields }),
-    }]
-  })
-}
-
-/** Reconstruct one unfinished workflow solely from durable tool calls and receipts. */
+/** Reconstruct only a connection workflow that still requires an explicit resume. */
 function unfinishedWorkflow(
   events: readonly unknown[],
   currentTurn: number,
@@ -623,7 +637,7 @@ function unfinishedWorkflow(
     const status = stringValue(result.value['status']) ?? ''
     const workflowId = returnedWorkflowSessionId(result.value) ?? workflowSessionId(owner.args)
     if (action === 'search') {
-      if (workflowId === undefined || !['ready', 'connection_required', 'connection_pending'].includes(status)) {
+      if (workflowId === undefined || !['connection_required', 'connection_pending'].includes(status)) {
         if (pending?.workflowId === workflowId) pending = undefined
         continue
       }
@@ -632,26 +646,22 @@ function unfinishedWorkflow(
         turn: owner.turn ?? 0,
         workflowId,
         status,
-        queries: workflowQueries(owner.args),
         toolkits: workflowToolkits(result.value),
         selectedToolSlugs: workflowContracts.map(contract => contract.tool_slug),
-        contracts: workflowContracts,
       }
       continue
     }
     if (pending === undefined || (workflowId !== undefined && workflowId !== pending.workflowId)) continue
     if (action === 'wait_connection') {
       const toolkits = workflowToolkits(result.value)
-      pending = { ...pending, status, toolkits: toolkits.length > 0 ? toolkits : pending.toolkits }
+      pending = status === 'ready'
+        ? { ...pending, turn: owner.turn ?? pending.turn, status: 'resume_ready', toolkits: toolkits.length > 0 ? toolkits : pending.toolkits }
+        : ['connection_required', 'connection_pending'].includes(status)
+          ? { ...pending, turn: owner.turn ?? pending.turn, status, toolkits: toolkits.length > 0 ? toolkits : pending.toolkits }
+          : undefined
       continue
     }
-    if (action === 'execute' && status === 'ready') {
-      const pagination = paginationProjection(result.value['pagination'])
-      const pages = (pending.paginationPages ?? 0) + 1
-      pending = pagination === undefined || pages >= MAX_DURABLE_PAGINATION_PAGES
-        ? undefined
-        : { ...pending, status: 'pagination_pending', pagination, paginationPages: pages }
-    }
+    if (action === 'execute') pending = undefined
   }
   return pending !== undefined && pending.turn < currentTurn ? pending : undefined
 }
@@ -661,20 +671,14 @@ function workflowContextMessage(state: UnfinishedWorkflowProjection) {
   const projection = {
     session_id: state.workflowId,
     status: state.status,
-    queries: state.queries,
     toolkits: state.toolkits,
     selected_tool_slugs: state.selectedToolSlugs,
-    execution_contracts: state.contracts,
-    ...(state.pagination === undefined ? {} : {
-      pagination: state.pagination,
-      pagination_pages: state.paginationPages,
-    }),
-    next_action: waiting ? 'wait_connection' : state.pagination === undefined ? 'execute_selected_tool' : 'continue_page',
+    next_action: waiting ? 'wait_connection' : 'execute_selected_tool',
   }
   return createUserMessage({
     content: [{
       type: 'text',
-      text: `## Unfinished connected-app workflow\nThis state is reconstructed from durable receipts in this conversation. If the current request continues it, resume this session without repeating search, checking status separately, or using HIVE memory for connected-app evidence. If the user changed tasks, leave it pending.\n${JSON.stringify(projection)}`,
+      text: `## Connected-app resume required\nA user-visible connection flow for this conversation requires an explicit resume. Reuse this session without repeating discovery. Do not infer schemas or provider data from this compact notice.\n${JSON.stringify(projection)}`,
     }],
     source: { kind: 'plugin', plugin: WORKFLOW_CONTEXT_SOURCE, form: 'recall' },
   })
@@ -922,6 +926,16 @@ function compactProviderValue(value: unknown): JsonValue {
   return compact
 }
 
+const RESULT_FIELD_ALIASES: Readonly<Record<string, readonly string[]>> = {
+  sender: ['sender', 'from'],
+  from: ['from', 'sender'],
+  received_at: ['received_at', 'messageTimestamp', 'receivedAt', 'timestamp', 'date'],
+  date: ['date', 'messageTimestamp', 'received_at', 'receivedAt', 'timestamp'],
+  timestamp: ['timestamp', 'messageTimestamp', 'received_at', 'receivedAt', 'date'],
+  snippet: ['snippet', 'messageText', 'previewText', 'bodyPreview'],
+  body: ['body', 'messageText', 'snippet', 'text', 'content'],
+}
+
 function projectRequestedFields(value: unknown, requested: ReadonlySet<string>): JsonValue | undefined {
   if (Array.isArray(value)) {
     const projected = value.flatMap((item): JsonValue[] => {
@@ -932,15 +946,6 @@ function projectRequestedFields(value: unknown, requested: ReadonlySet<string>):
   }
   if (!record(value)) return undefined
   const projected: Record<string, JsonValue> = {}
-  const aliases: Readonly<Record<string, readonly string[]>> = {
-    sender: ['from'],
-    from: ['sender'],
-    received_at: ['messageTimestamp', 'receivedAt', 'timestamp', 'date'],
-    date: ['messageTimestamp', 'received_at', 'receivedAt', 'timestamp'],
-    timestamp: ['messageTimestamp', 'received_at', 'receivedAt', 'date'],
-    snippet: ['messageText', 'previewText', 'bodyPreview'],
-    body: ['messageText', 'snippet', 'text', 'content'],
-  }
   for (const [key, item] of Object.entries(value)) {
     if (requested.has(key)) {
       projected[key] = compactProviderValue(item)
@@ -952,14 +957,40 @@ function projectRequestedFields(value: unknown, requested: ReadonlySet<string>):
   }
   for (const field of requested) {
     if (Object.hasOwn(projected, field)) continue
-    const alias = aliases[field]?.find(key => Object.hasOwn(value, key))
+    const alias = RESULT_FIELD_ALIASES[field]?.find(key => key !== field && Object.hasOwn(value, key))
     if (alias !== undefined) projected[field] = compactProviderValue(value[alias])
   }
   return Object.keys(projected).length === 0 ? undefined : projected
 }
 
-function privateReceiptProjection(receipt: SpillRef): Record<string, JsonValue> {
-  return { stored: true, bytes: receipt.bytes }
+function approvedFieldProjection(value: unknown, requestedFields: readonly string[]): Record<string, JsonValue> {
+  const output: Record<string, JsonValue> = {}
+  const visit = (candidate: unknown, field: string, depth: number): JsonValue[] => {
+    if (depth > 8) return []
+    if (Array.isArray(candidate)) return candidate.flatMap(item => visit(item, field, depth + 1))
+    if (!record(candidate)) return []
+    const keys = RESULT_FIELD_ALIASES[field] ?? [field]
+    for (const key of keys) {
+      if (Object.hasOwn(candidate, key)) return [candidate[key] as JsonValue]
+    }
+    return Object.values(candidate).flatMap(item => visit(item, field, depth + 1))
+  }
+  for (const field of requestedFields) {
+    const values = visit(value, field, 0)
+    if (values.length === 1 && values[0] !== undefined) output[field] = values[0]
+    else if (values.length > 1) output[field] = values
+  }
+  return output
+}
+
+function privateReceiptProjection(receipt: DurableReceiptRef): Record<string, JsonValue> {
+  return {
+    stored: true,
+    receipt_id: receipt.receipt_id,
+    bytes: receipt.bytes,
+    expires_at: receipt.expires_at,
+    allowed_fields: [...receipt.allowed_fields],
+  }
 }
 
 function hasExplicitPaginationCursor(args: Readonly<Record<string, unknown>>): boolean {
@@ -972,7 +1003,7 @@ function hasExplicitPaginationCursor(args: Readonly<Record<string, unknown>>): b
 /** Bound a provider execution so MIME payloads and transport noise stay out of the transcript. */
 export function compactComposioExecutionReceipt(
   value: unknown,
-  receipt?: SpillRef,
+  receipt?: DurableReceiptRef,
   resultFields: readonly string[] = [],
 ): JsonValue {
   const requested = new Set(resultFields)
@@ -991,7 +1022,7 @@ export function compactComposioExecutionReceipt(
 }
 
 /** Create a bounded model-visible projection while retaining the full receipt privately. */
-export function compactComposioSearchReceipt(value: unknown, receipt?: SpillRef): Record<string, JsonValue> | undefined {
+export function compactComposioSearchReceipt(value: unknown, receipt?: DurableReceiptRef): Record<string, JsonValue> | undefined {
   if (!record(value)) return undefined
   const unwrapped = record(value['result']) ? value['result'] : value
   const data = record(unwrapped['data']) ? unwrapped['data'] : unwrapped
@@ -1060,31 +1091,120 @@ export function compactComposioSearchReceipt(value: unknown, receipt?: SpillRef)
   return compact
 }
 
+function receiptServiceBase(value: string, allowedOrigins: readonly string[]): URL {
+  const url = new URL(value)
+  const local = url.protocol === 'http:' && ['control-plane', 'hivemind-control-plane', 'localhost', '127.0.0.1'].includes(url.hostname)
+  const explicitlyAllowed = allowedOrigins.some((origin) => {
+    try { return new URL(origin).origin === url.origin } catch { return false }
+  })
+  if (url.protocol !== 'https:' && !local && !explicitlyAllowed) throw new TypeError('Connected receipt API must use HTTPS or an allowed local origin')
+  if (url.username || url.password || url.search || url.hash || (url.pathname !== '/' && url.pathname !== '')) {
+    throw new TypeError('Connected receipt API base must contain only an origin')
+  }
+  return new URL(url.origin)
+}
+
+function runnerToken(ctx: Context, config: Config): string {
+  const principal = ctx.hivemindExecutionScope.require()
+  const envName = config.receiptServiceSecretEnv?.trim() || 'HIVE_HARNESS_RUNNER_SERVICE_SECRET'
+  const secret = process.env[envName]
+  if (typeof secret !== 'string' || Buffer.byteLength(secret, 'utf8') < 32) throw new Error('Connected receipt service secret is unavailable')
+  const now = Math.floor(Date.now() / 1000)
+  const encode = (value: unknown): string => Buffer.from(JSON.stringify(value)).toString('base64url')
+  const claims = {
+    iss: 'hivemind-harness-runner', aud: 'hivemind-control-plane-harness-proxy',
+    sub: principal.userId, org_id: principal.orgId, profile: principal.profile,
+    ...(principal.projectId === undefined ? {} : { project_id: principal.projectId }),
+    iat: now, exp: now + 30, jti: randomUUID(),
+  }
+  const signed = `${encode({ alg: 'HS256', typ: 'JWT' })}.${encode(claims)}`
+  return `${signed}.${createHmac('sha256', secret).update(signed).digest('base64url')}`
+}
+
+function callTurn(execution: ToolExecution): number | undefined {
+  const events = execution.agent?.session.snapshotEvents() ?? []
+  return events.map(bridgeCall).find(call => call?.callId === String(execution.callId))?.turn
+}
+
+function createDurableReceiptStore(ctx: Context, config: Config): DurableReceiptStore {
+  if (config.receiptApiBase === undefined) throw new TypeError('Connected receipt API is required')
+  const base = receiptServiceBase(config.receiptApiBase, config.receiptHttpOrigins ?? [])
+  const request = async (execution: ToolExecution, path: string, body: unknown): Promise<Record<string, unknown>> => {
+    const controller = new AbortController()
+    const timer = setTimeout(() => { controller.abort() }, config.receiptRequestTimeoutMs ?? 10_000)
+    try {
+      const response = await fetch(new URL(path, base), {
+        method: 'POST', redirect: 'manual', signal: AbortSignal.any([execution.signal, controller.signal]),
+        headers: { accept: 'application/json', 'content-type': 'application/json', authorization: `Bearer ${runnerToken(ctx, config)}` },
+        body: JSON.stringify(body),
+      })
+      const raw = await response.text()
+      if (Buffer.byteLength(raw, 'utf8') > 1024 * 1024) throw new Error('Connected receipt response exceeds its byte limit')
+      let parsed: unknown
+      try { parsed = JSON.parse(raw) } catch { throw new Error('Connected receipt service returned invalid JSON') }
+      if (!response.ok) throw new Error(`Connected receipt service rejected the operation: ${record(parsed) ? stringValue(parsed['error']) ?? response.status : response.status}`)
+      if (!record(parsed)) throw new Error('Connected receipt service returned an invalid response')
+      return parsed
+    } finally { clearTimeout(timer) }
+  }
+  return {
+    async save(execution, input) {
+      const sessionId = execution.agent?.session.header.id
+      if (sessionId === undefined) throw new Error('Connected receipt storage requires an owning session')
+      const value = await request(execution, '/internal/v1/harness-chat/receipts', {
+        session_id: String(sessionId), turn_id: callTurn(execution), call_id: String(execution.callId),
+        provider: input.provider, tool: input.tool, contract_version: input.contractVersion,
+        raw_receipt: input.rawReceipt, allowed_fields: input.allowedFields,
+        approved_projection: input.approvedProjection, projection_policy: input.projectionPolicy,
+      })
+      const receiptId = stringValue(value['receipt_id'])
+      const expiresAt = stringValue(value['expires_at'])
+      if (receiptId === undefined || expiresAt === undefined || value['stored'] !== true || typeof value['bytes'] !== 'number') {
+        throw new Error('Connected receipt service returned an invalid storage receipt')
+      }
+      return { receipt_id: receiptId, stored: true, bytes: value['bytes'], expires_at: expiresAt, allowed_fields: stringArray(value['allowed_fields']) }
+    },
+    async read(execution, receiptId, fields) {
+      const sessionId = execution.agent?.session.header.id
+      if (sessionId === undefined) throw new Error('Connected receipt read requires an owning session')
+      const value = await request(execution, `/internal/v1/harness-chat/receipts/${encodeURIComponent(receiptId)}/read`, {
+        session_id: String(sessionId), fields,
+      })
+      if (!record(value['fields'])) throw new Error('Connected receipt service returned invalid fields')
+      return value['fields'] as Record<string, JsonValue>
+    },
+  }
+}
+
 async function saveReceipt(
   ctx: Context,
   execution: ToolExecution,
-  content: string,
-  suggestedName = 'composio-search-tools.json',
-): Promise<SpillRef | undefined> {
+  value: unknown,
+  options: { tool?: string; contractVersion?: string; resultFields?: readonly string[] } = {},
+): Promise<DurableReceiptRef | undefined> {
   const sessionId = execution.agent?.session.header.id
-  const spillStore = ctx.get('spillStore')
-  if (sessionId === undefined || spillStore === undefined) return undefined
-  const input: SaveTextSpill = {
-    owner: { sessionId },
-    source: { kind: 'tool', toolName: execution.name, callId: execution.callId, label: 'result' },
-    suggestedName,
-    content,
-  }
+  const store = ctx.get('connectedAppReceiptStore')
+  if (sessionId === undefined || store === undefined) return undefined
+  const resultFields = options.resultFields ?? []
   try {
-    return await spillStore.saveText(input)
+    return await store.save(execution, {
+      provider: 'composio', tool: options.tool ?? execution.name,
+      ...(options.contractVersion === undefined ? {} : { contractVersion: options.contractVersion }),
+      rawReceipt: value, allowedFields: resultFields,
+      approvedProjection: approvedFieldProjection(value, resultFields),
+      projectionPolicy: resultFields.length === 0 ? 'private-source-v1' : 'selected-contract-v1',
+    })
   } catch (error: unknown) {
-    ctx.logger.warn(`hivemind-connected-apps: could not persist discovery receipt: ${String(error)}`)
-    return undefined
+    ctx.logger.warn(`hivemind-connected-apps: could not persist durable provider receipt: ${String(error)}`)
+    throw new Error('Connected app result could not be stored durably')
   }
 }
 
 /** Register the compact progressive Composio router and its policy guards. */
 export function apply(ctx: Context, config: Config = {}): void {
+  if (ctx.get('connectedAppReceiptStore') === undefined && config.receiptApiBase !== undefined) {
+    ctx.provide('connectedAppReceiptStore', createDurableReceiptStore(ctx, config))
+  }
   const turns = new WeakMap<object, {
     turn: number
     enabled: boolean
@@ -1216,6 +1336,29 @@ export function apply(ctx: Context, config: Config = {}): void {
   }
 
   ctx.tools.register(defineTool({
+    name: RECEIPT_READ_TOOL,
+    description: 'Read only explicitly approved fields from one encrypted connected-app receipt created in this same authenticated conversation. Use only when the initial bounded result lacks a field that the selected execution contract already approved.',
+    parameters: {
+      receipt_id: { type: 'string', required: true, description: 'Opaque receipt id returned by a completed connected-app execution.' },
+      fields: { type: 'array', required: true, items: { type: 'string' }, description: 'One or more fields already approved by the original selected execution contract.' },
+    },
+    output: { schema: { type: 'object', additionalProperties: true, properties: {} }, render: (_args, value: JsonValue) => [{ type: 'text', text: JSON.stringify(value) }] },
+    async execute(args, execution) {
+      if (!connectedAppsEnabled(ctx, config.enabledByDefault === true)) throw new Error('Connected tools are disabled for this turn. Enable Tools and retry.')
+      const receiptId = stringValue(args.receipt_id)
+      const requested = stringArray(args.fields)
+      if (receiptId === undefined || requested.length === 0 || requested.length > 32) throw new TypeError('Receipt read requires an opaque receipt_id and between 1 and 32 approved fields')
+      const store = ctx.get('connectedAppReceiptStore')
+      if (store === undefined) throw new Error('Durable connected-app receipts are not configured on this runtime')
+      return {
+        status: 'ready', receipt_id: receiptId,
+        fields: await store.read(execution, receiptId, requested),
+        operations: [{ tool: RECEIPT_READ_TOOL, status: 'completed' }],
+      }
+    },
+  }))
+
+  ctx.tools.register(defineTool({
     name: BRIDGE_TOOL,
     description: 'Tenant-scoped connected-app gateway. Start external-app work with atomic search queries, explicit outcomes, exact result limits, and session.generate_id=true. Continue the returned session when further provider-owned discovery is needed; never guess tools. External writes require HIVE approval.',
     parameters: {
@@ -1231,7 +1374,7 @@ export function apply(ctx: Context, config: Config = {}): void {
             known_fields: { type: 'string', description: 'Optional comma-separated key:value identifiers or settings. Keep to 1-2 short items.' },
             result_fields: {
               type: 'array', items: { type: 'string' },
-              description: 'Exact provider response keys required in the final answer. Used only to project execution evidence; omitted from Composio search. Omit when the response keys are unknown.',
+              description: 'Semantic fields required in the final answer, such as sender, received_at, subject, and snippet. Registered provider aliases normalize these fields after execution; this list is omitted from Composio search.',
             },
           },
           additionalProperties: false,
@@ -1286,9 +1429,7 @@ export function apply(ctx: Context, config: Config = {}): void {
         const selected = disconnected[0]
         if (selected === undefined) throw new Error('Disconnected toolkit selection unexpectedly became empty')
         const managed = await session.execute('COMPOSIO_MANAGE_CONNECTIONS', { toolkits: [selected.slug] })
-        const sourceReceipt = await saveReceipt(
-          ctx, execution, JSON.stringify(managed), 'composio-manage-connections.json',
-        )
+        const sourceReceipt = await saveReceipt(ctx, execution, managed, { tool: 'COMPOSIO_MANAGE_CONNECTIONS' })
         const redirectUrl = safeHttpsUrl(firstString(managed, ['redirect_url', 'redirectUrl', 'connection_url', 'url']))
         const logoUrl = selected.logo ?? `https://logos.composio.dev/api/${encodeURIComponent(selected.slug)}`
         const conversationId = execution.agent === undefined ? undefined : execution.agent.session?.header.id
@@ -1385,9 +1526,7 @@ export function apply(ctx: Context, config: Config = {}): void {
           ...(model === undefined ? {} : { model }),
           ...(searchStrategy === undefined ? {} : { search_strategy: searchStrategy }),
         })
-        const sourceReceipt = await saveReceipt(
-          ctx, execution, JSON.stringify(result), 'composio-search-tools.json',
-        )
+        const sourceReceipt = await saveReceipt(ctx, execution, result, { tool: 'COMPOSIO_SEARCH_TOOLS' })
         const scoped = scopeSearchResult(result, requestedApps(args.queries))
         const scopedResult = scoped.value
         const container: unknown = record(scopedResult) && record(scopedResult['data']) ? scopedResult['data'] : scopedResult
@@ -1548,9 +1687,7 @@ export function apply(ctx: Context, config: Config = {}): void {
           throw new Error('Schema request contains a tool not selected by the current search')
         }
         const result = await session.execute('COMPOSIO_GET_TOOL_SCHEMAS', { ...metaArguments, tool_slugs: slugs })
-        const sourceReceipt = await saveReceipt(
-          ctx, execution, JSON.stringify(result), 'composio-tool-schemas.json',
-        )
+        const sourceReceipt = await saveReceipt(ctx, execution, result, { tool: 'COMPOSIO_GET_TOOL_SCHEMAS' })
         const loaded = executionContracts(result, new Set(slugs))
         const workflowContracts = contractsForWorkflow ?? new Map<string, ExecutionContract>()
         for (const contract of loaded) workflowContracts.set(contract.tool_slug, contract)
@@ -1571,10 +1708,7 @@ export function apply(ctx: Context, config: Config = {}): void {
         }
         const metaTool = args.action === 'manage_connection' ? 'COMPOSIO_MANAGE_CONNECTIONS' : 'COMPOSIO_WAIT_FOR_CONNECTIONS'
         const managed = await session.execute(metaTool, { ...metaArguments, toolkits })
-        const sourceReceipt = await saveReceipt(
-          ctx, execution, JSON.stringify(managed),
-          args.action === 'manage_connection' ? 'composio-manage-connections.json' : 'composio-wait-for-connections.json',
-        )
+        const sourceReceipt = await saveReceipt(ctx, execution, managed, { tool: metaTool })
         const statuses = connectionStatuses(managed)
         // A successful meta-tool invocation is not proof of OAuth completion.
         // Require affirmative evidence for every requested toolkit; unknown or
@@ -1639,14 +1773,19 @@ export function apply(ctx: Context, config: Config = {}): void {
         }
       }
       const providerResult = await session.execute(slug, executionArguments)
+      const selectedResultFields = resultFields.get(key) ?? resultFields.get(fallbackKey) ?? []
       const sourceReceipt = await saveReceipt(
-        ctx, execution, JSON.stringify(providerResult), `composio-${slug.toLowerCase()}.json`,
+        ctx, execution, providerResult, {
+          tool: slug,
+          contractVersion: contract.tool_version ?? contract.schema_hash,
+          resultFields: selectedResultFields,
+        },
       )
       const projected = {
         ...compactComposioExecutionReceipt(
           providerResult,
           sourceReceipt,
-          resultFields.get(key) ?? resultFields.get(fallbackKey) ?? [],
+          selectedResultFields,
         ) as Record<string, JsonValue>,
         status: 'ready',
         ...(MUTATING_TOOL.test(slug) ? { idempotency_key: idempotencyKey } : {}),
@@ -1704,7 +1843,7 @@ export function apply(ctx: Context, config: Config = {}): void {
     try { parsed = JSON.parse(raw) } catch { return decision }
     if (isBridgeSearch && record(parsed) && parsed['status'] === 'connection_required' && !Object.hasOwn(parsed, 'result')) return decision
     if (record(parsed) && (record(parsed['private_receipt']) || record(parsed['source_receipt']))) return decision
-    const receipt = await saveReceipt(ctx, execution, raw)
+    const receipt = await saveReceipt(ctx, execution, parsed, { tool: execution.name })
     const compact = isSearch
       ? compactComposioSearchReceipt(parsed, receipt)
       : compactComposioExecutionReceipt(parsed, receipt)

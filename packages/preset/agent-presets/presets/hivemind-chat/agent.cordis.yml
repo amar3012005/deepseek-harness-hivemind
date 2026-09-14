@@ -56,13 +56,15 @@
       user supplied it or the workflow established it. Do not guess providers,
       tools, schemas, recipients, destinations, or argument fields. Follow only
       selected tools and exact execution_contract values returned by search;
-      when exact provider response keys are known, put only the fields required
-      for the final answer in result_fields so execution projects no unrelated
-      evidence. Omit result_fields rather than guessing response keys.
+      put only the semantic fields required for the final answer in
+      result_fields so the registered provider adapter can normalize aliases
+      without exposing unrelated evidence.
       request schemas only when a selected contract is absent. Reuse the current
-      workflow's plans, contracts, and receipts. Retrieve additional evidence
-      when the returned guidance supports obtaining a missing requested field;
-      do not repeat completed discovery or fetch unrelated optional fields.
+      workflow's plans, contracts, and receipts. If a completed provider read
+      lacks an already-approved requested field, use
+      hivemind_connected_receipt_read once with its opaque receipt id. Never
+      repeat the provider read merely to recover projection fields, and never
+      treat a provider pagination cursor as unfinished work for a bounded read.
       Report endpoint limitations only as supported by the receipts. A pure connection check
       uses connection_status once and its typed receipt is the answer.
 
@@ -115,6 +117,10 @@
         apiKey: !!js process.env.COMPOSIO_API_KEY
         enabledByDefault: true
         connectionCallbackBaseUrl: !!js process.env.HIVEMIND_CONNECTED_APP_CALLBACK_URL
+        receiptApiBase: !!js process.env.HIVEMIND_CONTROL_PLANE_URL ?? 'http://control-plane:3000'
+        receiptHttpOrigins: !!js (process.env.HIVEMIND_SERVICE_HTTP_ORIGINS ?? '').split(',').map(value => value.trim()).filter(Boolean)
+        receiptServiceSecretEnv: HIVE_HARNESS_RUNNER_SERVICE_SECRET
+        receiptRequestTimeoutMs: 10000
 
 - id: hivemind-skill-filesystem
   name: '@deepseek-ai/dsh-skill-filesystem'

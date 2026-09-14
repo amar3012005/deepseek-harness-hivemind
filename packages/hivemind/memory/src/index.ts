@@ -108,7 +108,7 @@ export function memoryPlugin(config: MemoryPluginConfig, provider: MemoryProvide
         name: 'hivemind_meta',
         description: 'HIVE-MIND gateway for authenticated context, canonical entity discovery, bounded memory recall, governed durable memory saves, or the exact HyperAgent directory. Use context for questions about the caller or company profile. Use entities first for a named person, topic, project, organization, document, or other subject when its canonical name could narrow recall. Use save only for a stable user preference, confirmed decision, correction, or completed outcome that will matter later; never save secrets, credentials, ephemeral chat, guesses, or unverified claims. Tenant scope is derived from the current HIVE-MIND credential.',
         parameters: {
-          operation: { type: 'string', required: true, enum: ['context', 'entities', 'recall', 'save', 'profiles'] },
+          operation: { type: 'string', required: true, enum: ['context', 'entities', 'recall', 'save', 'profiles'], description: 'Select exactly one operation. recall requires the nested recall object; entities requires entities; save requires save.' },
           entities: {
             type: 'object',
             additionalProperties: false,
