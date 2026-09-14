@@ -18,6 +18,13 @@ import './base.css'
 /** Module transport hook replaced by jsdom tests. */
 export type BootSeams = Pick<ClientModuleCreateOptions, 'loadBundle'>
 
+/** Read the revision before parsing so a stale SPA cache cannot cross a host release. */
+function bootRevision(value: unknown): string | undefined {
+  if (typeof value !== 'object' || value === null) return undefined
+  const revision = (value as { rev?: unknown }).rev
+  return typeof revision === 'string' ? revision : undefined
+}
+
 /** Browser boot entry consumed by `apps/web`. */
 export class AppWebEntry {
   private readonly container: HTMLElement
@@ -57,6 +64,11 @@ export class AppWebEntry {
       if (moduleLoader === undefined) {
         throw new Error('web boot: window.__ModuleLoader__ bootstrap facade is missing')
       }
+      const revision = bootRevision(win.__DSH_BOOT__)
+      const cached = win.__DSH_MODULE_SYSTEM_CACHE__
+      if (cached !== undefined && cached.revision !== revision) {
+        throw new Error('web boot: host boot revision changed during SPA lifetime; reload the page')
+      }
       // A pre-injected transport (the worker preview page) owns bundle bytes;
       // its loadBundle is the default and explicit seams still win. The global
       // is `ClientTransportHooks`, owned by @deepseek-ai/dsh-client-connection;
@@ -65,13 +77,16 @@ export class AppWebEntry {
       const transport = (globalThis as {
         __DSH_TRANSPORT__?: { loadBundle?: ClientModuleCreateOptions['loadBundle'] }
       }).__DSH_TRANSPORT__
-      this.modules = moduleLoader.create({
+      this.modules = cached?.modules ?? moduleLoader.create({
         boot: win.__DSH_BOOT__,
         staticModules: getStaticModules(),
         ...transport?.loadBundle === undefined ? {} : { loadBundle: transport.loadBundle },
         ...this.seams,
       })
       this.manifest = this.modules.manifest
+      if (cached === undefined) {
+        win.__DSH_MODULE_SYSTEM_CACHE__ = { revision: this.manifest.rev, modules: this.modules }
+      }
 
       const prefetching = this.prefetchImmediateTier()
       const ctx = new Context()

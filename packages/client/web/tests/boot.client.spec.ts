@@ -6,7 +6,7 @@ import type {
   WebBootEntry,
 } from '@deepseek-ai/dsh-client-modules/client'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { AppWebEntry } from '../src/boot.ts'
+import { AppWebEntry, type BootSeams } from '../src/boot.ts'
 
 const MODULES_ID = '@deepseek-ai/dsh-client-modules'
 const PROVIDER_CLIENT_ID = 'provider/client'
@@ -21,6 +21,7 @@ afterEach(() => {
   vi.restoreAllMocks()
   delete win.__DSH_BOOT__
   delete win.__ModuleLoader__
+  delete win.__DSH_MODULE_SYSTEM_CACHE__
   delete transportGlobal.__DSH_TRANSPORT__
   document.body.innerHTML = ''
 })
@@ -216,5 +217,43 @@ describe('plugin activation', () => {
     expect(events).toEqual(['consumer', 'mount'])
     expect(container.textContent).toBe('mounted')
     await entry.dispose()
+  })
+
+  it('reuses one parsed module system across same-revision embedded remounts', async () => {
+    const firstContainer = document.createElement('div')
+    const secondContainer = document.createElement('div')
+    document.body.append(firstContainer, secondContainer)
+    const target = installFacade()
+    const create = vi.spyOn(target, 'create')
+    const entries: WebBootEntry[] = [
+      { id: 'renderer', url: '/renderer.js', rev: '1' },
+    ]
+    win.__DSH_BOOT__ = {
+      rev: 'same-release', entries,
+      batches: [{ phase: 'application', url: '/application.js', rev: 'batch', entries: ['renderer'] }],
+    }
+    const renderer: ClientBundleRegistration = {
+      id: 'renderer',
+      factory: () => ({ apply: (ctx: Context) => {
+        ctx.reflect.provide('uiRenderer', { mount: (element: HTMLElement) => {
+          element.textContent = 'mounted'
+          return () => {}
+        } })
+      } }),
+    }
+    const seams: BootSeams = {
+      loadBundle: async (url) => {
+        expect(url).toBe('/application.js')
+        target.load(renderer)
+      },
+    }
+    const first = new AppWebEntry(firstContainer, seams)
+    await first.run()
+    await first.dispose()
+    const second = new AppWebEntry(secondContainer, seams)
+    await second.run()
+    expect(create).toHaveBeenCalledTimes(1)
+    expect(secondContainer.textContent).toBe('mounted')
+    await second.dispose()
   })
 })

@@ -38,11 +38,14 @@ integration('PostgreSQL HIVE SessionPersistence contract', () => {
       DROP TABLE IF EXISTS harness_session_events, harness_session_leases, harness_sessions CASCADE;
       CREATE TABLE harness_sessions (
         id varchar(180) PRIMARY KEY, org_id uuid NOT NULL, user_id uuid NOT NULL, project_id uuid,
+        scope_kind varchar(24) NOT NULL DEFAULT 'organization',
         profile varchar(64) NOT NULL, variation varchar(16) NOT NULL, status varchar(24) NOT NULL DEFAULT 'active',
         header jsonb NOT NULL, inherited_event_count bigint NOT NULL DEFAULT 0, event_count bigint NOT NULL DEFAULT 0,
         revision bigint NOT NULL DEFAULT 0, title varchar(500), created_at timestamptz NOT NULL DEFAULT now(),
         updated_at timestamptz NOT NULL DEFAULT now(), closed_at timestamptz,
-        UNIQUE (id, org_id, user_id)
+        UNIQUE (id, org_id, user_id),
+        CHECK ((scope_kind IN ('organization', 'personal') AND project_id IS NULL)
+          OR (scope_kind = 'project' AND project_id IS NOT NULL))
       );
       CREATE TABLE harness_session_events (
         id bigserial PRIMARY KEY, session_id varchar(180) NOT NULL, org_id uuid NOT NULL, user_id uuid NOT NULL,
@@ -71,6 +74,9 @@ integration('PostgreSQL HIVE SessionPersistence contract', () => {
     await expect(persistence.list()).rejects.toThrow(/scope is unavailable/u)
     const mine = await scope.run(principal, () => persistence.create(header('tenant-session')))
     await mine.close()
+    const session = await pool.query<{ project_id: string; scope_kind: string }>(
+      'SELECT project_id,scope_kind FROM harness_sessions WHERE id=$1', ['tenant-session'])
+    expect(session.rows[0]).toEqual({ project_id: principal.projectId, scope_kind: 'project' })
     expect(await scope.run(principal, () => persistence.list())).toHaveLength(1)
     expect(await scope.run(other, () => persistence.list())).toEqual([])
     expect(await scope.run(other, () => persistence.stat(SessionId('tenant-session')))).toBeUndefined()

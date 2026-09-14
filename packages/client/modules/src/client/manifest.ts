@@ -303,6 +303,8 @@ export interface DshWindow {
   __DSH_BOOT__?: unknown
   /** HTML-installed facade: a pending registration queue, then the live module-system target. */
   __ModuleLoader__?: ClientModuleLoaderTarget
+  /** One module system retained for SPA remounts while its host boot revision is unchanged. */
+  __DSH_MODULE_SYSTEM_CACHE__?: { revision: string; modules: ClientModuleSystem }
 }
 
 /** Per-module bookkeeping in {@link ClientModuleLoader.loadCache} (flat module-graph boundary). */

@@ -212,8 +212,12 @@ export class PostgresSessionPersistence extends SessionPersistence {
     const claim = newOwner()
     try {
       await this.transaction(scope, async (client) => {
-        await client.query(`INSERT INTO harness_sessions (id,org_id,user_id,project_id,profile,variation,status,header,inherited_event_count,event_count,revision)
-          VALUES ($1,$2,$3,$4,$5,$6,'active',$7::jsonb,$8,0,0)`, [meta.id,scope.orgId,scope.userId,scope.projectId??null,scope.profile,scope.variation,JSON.stringify(meta),cut])
+        await client.query(`INSERT INTO harness_sessions (id,org_id,user_id,project_id,scope_kind,profile,variation,status,header,inherited_event_count,event_count,revision)
+          VALUES ($1,$2,$3,$4,$5,$6,$7,'active',$8::jsonb,$9,0,0)`, [
+          meta.id, scope.orgId, scope.userId, scope.projectId ?? null,
+          scope.projectId == null ? 'organization' : 'project',
+          scope.profile, scope.variation, JSON.stringify(meta), cut,
+        ])
         await client.query(`INSERT INTO harness_session_leases (id,session_id,org_id,user_id,holder_id,token_hash,fencing_token,acquired_at,heartbeat_at,expires_at,released_at)
           VALUES ($1,$2,$3,$4,$5,$6,1,now(),now(),$7,NULL)`, [randomUUID(),meta.id,scope.orgId,scope.userId,claim.holder,claim.hash,this.expiry()])
       })
