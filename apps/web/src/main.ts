@@ -16,7 +16,8 @@ declare global {
   }
 }
 
-async function mount(): Promise<void> {
+/** Mount or remount the complete browser application into the active host seat. */
+export async function mount(): Promise<void> {
   const request = window.__DSH_EMBED_REQUEST__
   if (request?.cancelled === true) return
   const mode: DshMode = request?.mode ?? (request === undefined ? 'native' : 'hivemind-chat')
@@ -32,4 +33,5 @@ async function mount(): Promise<void> {
   await app.run()
 }
 
-void mount()
+/** First document mount. Embedded SPA hosts reuse `mount()` from this cached module. */
+export const initialMount = mount()

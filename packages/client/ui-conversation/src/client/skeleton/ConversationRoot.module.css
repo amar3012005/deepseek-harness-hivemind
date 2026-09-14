@@ -385,10 +385,51 @@
   );
 }
 
-/* Da-vinci owns all application chrome in the embedded HIVE composition.
-   Keep the native header available in standalone Harness, but do not render a
-   second title/actions or Chat/Trajectory navigation inside the HIVE canvas. */
-:global(html[data-dsh-mode='hivemind-chat']) .root .header {
+/* Da-vinci owns the title and application chrome in the embedded HIVE
+   composition. Preserve the native view switcher as a compact floating
+   control at the canvas' lower-left: Chat and Trajectory remain reachable
+   without recreating a second navbar. */
+:global(html[data-dsh-mode='hivemind-chat']) .root .header:not(.headerHidden) {
+  position: absolute;
+  z-index: 8;
+  bottom: 18px;
+  left: 18px;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  pointer-events: none;
+}
+
+:global(html[data-dsh-mode='hivemind-chat']) .root .header .titleRow {
+  display: none;
+}
+
+:global(html[data-dsh-mode='hivemind-chat']) .root .header .tabs {
+  gap: 2px;
+  margin: 0;
+  padding: 3px;
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--dsw-alias-bg-base) 94%, transparent);
+  box-shadow: 0 4px 16px color-mix(in srgb, var(--dsw-alias-label-primary) 10%, transparent);
+  pointer-events: auto;
+  backdrop-filter: blur(12px);
+}
+
+:global(html[data-dsh-mode='hivemind-chat']) .root .header .tab {
+  min-width: 68px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  line-height: 16px;
+}
+
+:global(html[data-dsh-mode='hivemind-chat']) .root .header .tab:hover,
+:global(html[data-dsh-mode='hivemind-chat']) .root .header .tabActive {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+:global(html[data-dsh-mode='hivemind-chat']) .root .header .tab::after {
   display: none;
 }
 
