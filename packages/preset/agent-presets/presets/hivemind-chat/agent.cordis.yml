@@ -60,7 +60,9 @@
       result_fields so the registered provider adapter can normalize aliases
       without exposing unrelated evidence.
       request schemas only when a selected contract is absent. Reuse the current
-      workflow's plans, contracts, and receipts. If a completed provider read
+      workflow's plans, contracts, and receipts. A follow-up that needs the same
+      selected provider tool with different validated arguments reuses that
+      workflow session and contract; it does not repeat discovery. If a completed provider read
       lacks an already-approved requested field, use
       hivemind_connected_receipt_read once with its opaque receipt id. Never
       repeat the provider read merely to recover projection fields, and never

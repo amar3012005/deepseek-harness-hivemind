@@ -190,6 +190,7 @@ describe('the shipped preset root', () => {
     expect(prefix).toContain('profiles only for the HyperAgent directory')
     expect(prefix).toContain('avoid narrating routine tool mapping')
     expect(prefix).toContain('Reuse the current workflow\'s plans, contracts, and receipts')
+    expect(prefix).toContain('same selected provider tool with different validated arguments')
     expect(prefix).toContain('use entities once before recall')
     expect(prefix).toContain('call the exact selected execute tool once')
     expect(prefix).toContain("native Harness pauses that tool call for the user's single approval")

@@ -684,8 +684,23 @@ function workflowContextMessage(state: UnfinishedWorkflowProjection) {
   })
 }
 
+function canonicalJsonValue(value: unknown): JsonValue {
+  if (value === null || typeof value === 'string' || typeof value === 'boolean') return value
+  if (typeof value === 'number' && Number.isFinite(value)) return value
+  if (Array.isArray(value)) return value.map(canonicalJsonValue)
+  if (record(value)) {
+    const output: Record<string, JsonValue> = {}
+    for (const key of Object.keys(value).sort()) {
+      const entry = value[key]
+      if (entry !== undefined) output[key] = canonicalJsonValue(entry)
+    }
+    return output
+  }
+  throw new TypeError('Connected-app execution identity accepts JSON values only')
+}
+
 function discoveryKey(value: unknown): string {
-  return createHash('sha256').update(JSON.stringify(value)).digest('hex')
+  return createHash('sha256').update(JSON.stringify(canonicalJsonValue(value))).digest('hex')
 }
 
 // Only committed negative results are reusable. Active connection state and
@@ -993,11 +1008,47 @@ function privateReceiptProjection(receipt: DurableReceiptRef): Record<string, Js
   }
 }
 
-function hasExplicitPaginationCursor(args: Readonly<Record<string, unknown>>): boolean {
-  return Object.entries(args).some(([key, value]) =>
-    /^(?:next_)?(?:cursor|page_token|pageToken|nextPageToken)$/i.test(key)
-      && typeof value === 'string'
-      && value.trim().length > 0)
+interface ConnectedAppInspection {
+  readonly version: 1
+  readonly workflow_session_id: string
+  readonly contract_cache_hit: boolean
+  readonly schema_hash: string
+  readonly arguments_hash: string
+  readonly execution_key: string
+  readonly receipt_reused: boolean
+  readonly reused_receipt_id?: string
+}
+
+const INSPECTION_KEY = '_hivemind_connected_app_inspection'
+
+function withInspection(
+  value: Record<string, JsonValue>,
+  inspection: ConnectedAppInspection,
+): Record<string, JsonValue> {
+  return { ...value, [INSPECTION_KEY]: inspection as unknown as JsonValue }
+}
+
+function modelVisibleConnectedAppResult(value: JsonValue): JsonValue {
+  if (!record(value) || !Object.hasOwn(value, INSPECTION_KEY)) return value
+  const { [INSPECTION_KEY]: _inspection, ...visible } = value
+  return visible as JsonValue
+}
+
+function connectedAppPresentationMeta(value: JsonValue): JsonValue {
+  if (!record(value) || !record(value[INSPECTION_KEY])) return {}
+  return { connected_app: value[INSPECTION_KEY] as JsonValue }
+}
+
+function receiptId(value: unknown): string | undefined {
+  if (!record(value)) return undefined
+  const receipt = record(value['private_receipt'])
+    ? value['private_receipt']
+    : record(value['source_receipt'])
+      ? value['source_receipt']
+      : record(value['prior_receipt'])
+        ? value['prior_receipt']
+        : undefined
+  return stringValue(receipt?.['receipt_id'])
 }
 
 /** Bound a provider execution so MIME payloads and transport noise stay out of the transcript. */
@@ -1360,7 +1411,7 @@ export function apply(ctx: Context, config: Config = {}): void {
 
   ctx.tools.register(defineTool({
     name: BRIDGE_TOOL,
-    description: 'Tenant-scoped connected-app gateway. Start external-app work with atomic search queries, explicit outcomes, exact result limits, and session.generate_id=true. Continue the returned session when further provider-owned discovery is needed; never guess tools. External writes require HIVE approval.',
+    description: 'Tenant-scoped connected-app gateway. Reuse the returned session and selected contract when continuing the same connected-app task or executing a dependent step. Start a new search only for a genuinely new provider operation or when the contract is missing or stale. Search uses atomic queries, explicit outcomes, and exact result limits; never guess tools. External writes require HIVE approval.',
     parameters: {
       action: { type: 'string', required: true, enum: ['connection_status', 'search', 'schemas', 'manage_connection', 'wait_connection', 'execute'], description: 'Use connection_status only for a pure status check of explicitly named apps. Use search for real app work.' },
       apps: { type: 'array', items: { type: 'string' }, description: 'One to four explicit app names for connection_status. Resolved against authenticated toolkit metadata, never semantic tool search.' },
@@ -1396,9 +1447,14 @@ export function apply(ctx: Context, config: Config = {}): void {
       tool_slugs: { type: 'array', items: { type: 'string' }, description: 'Selected tool slugs for schema loading.' },
       toolkits: { type: 'array', items: { type: 'string' }, description: 'Exact toolkits returned by search.' },
       session_id: { type: 'string', description: 'Search session id reused by later schema, connection, and execution operations.' },
+      planned_step_id: { type: 'string', description: 'Stable identifier for one planned provider step. Reuse it only when retrying that same logical step.' },
       arguments: { type: 'object', additionalProperties: true, description: 'Selected tool arguments.' },
     },
-    output: { schema: { type: 'object', additionalProperties: true, properties: {} }, render: (_args, value: JsonValue) => [{ type: 'text', text: JSON.stringify(value) }] },
+    output: {
+      schema: { type: 'object', additionalProperties: true, properties: {} },
+      render: (_args, value: JsonValue) => [{ type: 'text', text: JSON.stringify(modelVisibleConnectedAppResult(value)) }],
+      presentationMeta: (_args, value: JsonValue) => connectedAppPresentationMeta(value),
+    },
     async execute(args, execution) {
       if (!connectedAppsEnabled(ctx, config.enabledByDefault === true)) throw new Error('Connected tools are disabled for this turn. Enable Tools and retry.')
       const identity = await ctx.hivemindIdentity.resolve(execution.signal)
@@ -1741,22 +1797,36 @@ export function apply(ctx: Context, config: Config = {}): void {
         : args.arguments
       if (!record(executionArguments)) throw new TypeError('Execute requires arguments matching the authoritative schema')
       validateArguments(contract, executionArguments)
-      const executionFingerprint = discoveryKey({ workflow: key, tool_slug: slug })
+      const workflowId = workflowSessionId(args) ?? 'current'
+      const plannedStepId = stringValue(args.planned_step_id) ?? 'execute'
+      const argumentsHash = discoveryKey(executionArguments)
+      const executionFingerprint = discoveryKey({
+        workflow_id: workflowId,
+        planned_step_id: plannedStepId,
+        tool_slug: slug,
+        schema_hash: contract.schema_hash,
+        arguments_hash: argumentsHash,
+      })
+      const inspection = (receiptReused: boolean, reusedReceiptId?: string): ConnectedAppInspection => ({
+        version: 1,
+        workflow_session_id: workflowId,
+        contract_cache_hit: true,
+        schema_hash: contract.schema_hash,
+        arguments_hash: argumentsHash,
+        execution_key: executionFingerprint,
+        receipt_reused: receiptReused,
+        ...(reusedReceiptId === undefined ? {} : { reused_receipt_id: reusedReceiptId }),
+      })
       const turnState = execution.agent === undefined ? undefined : turns.get(execution.agent)
       const completedRead = turnState?.executionResults.get(executionFingerprint)
-      if (!MUTATING_TOOL.test(slug) && completedRead !== undefined && !hasExplicitPaginationCursor(executionArguments)) {
-        return {
+      if (!MUTATING_TOOL.test(slug) && completedRead !== undefined) {
+        return withInspection({
           ...completedRead,
           repeated_execution: true,
           operations: [{ tool: slug, status: 'already_completed' }],
-        }
+        }, inspection(true, receiptId(completedRead)))
       }
-      const idempotencyKey = discoveryKey({
-        workflow: key,
-        tool_slug: slug,
-        arguments: executionArguments,
-        call_id: execution.callId,
-      })
+      const idempotencyKey = executionFingerprint
       if (MUTATING_TOOL.test(slug) && execution.agent !== undefined) {
         const completed = completedWriteForIdempotencyKey(
           execution.agent.session.snapshotEvents(),
@@ -1764,12 +1834,12 @@ export function apply(ctx: Context, config: Config = {}): void {
         )
         if (completed !== undefined) {
           const priorReceipt = (completed['private_receipt'] ?? completed['source_receipt']) as JsonValue | undefined
-          return {
+          return withInspection({
             status: 'duplicate',
             idempotency_key: idempotencyKey,
             operations: [{ tool: slug, status: 'already_completed' }],
             ...(priorReceipt === undefined ? {} : { prior_receipt: priorReceipt }),
-          }
+          }, inspection(true, receiptId(completed)))
         }
       }
       const providerResult = await session.execute(slug, executionArguments)
@@ -1792,7 +1862,7 @@ export function apply(ctx: Context, config: Config = {}): void {
         operations: [{ tool: slug, status: 'completed' }],
       }
       if (!MUTATING_TOOL.test(slug)) turnState?.executionResults.set(executionFingerprint, projected)
-      return projected
+      return withInspection(projected, inspection(false))
     },
   }))
 
@@ -1807,7 +1877,6 @@ export function apply(ctx: Context, config: Config = {}): void {
     }
     const decision = await next()
     // Some test and compatibility middleware terminates the chain without a decision.
-    // oxlint-disable-next-line typescript/no-unnecessary-condition
     if (decision === undefined || decision.kind === 'reject') return decision
     const unfinished = unfinishedWorkflow(agent.session.snapshotEvents(), turn)
     return unfinished === undefined

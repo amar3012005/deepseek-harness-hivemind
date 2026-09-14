@@ -28,6 +28,10 @@ function harness(
   const spills: Array<Record<string, unknown>> = []
   type RegisteredTool = {
     name: string
+    output: {
+      render(args: unknown, value: never): Array<{ type: string; text?: string }>
+      presentationMeta?(args: unknown, value: never): unknown
+    }
     execute(
       args: Record<string, unknown>,
       execution: { signal: AbortSignal; concludeTurn: () => void },
@@ -52,16 +56,34 @@ function harness(
   }
   apply(ctx as never, { apiKey: 'server-secret', enabledByDefault, ...config })
   return {
-    tool: () => ({
-      execute: (args: Record<string, unknown>, execution: { signal: AbortSignal }) =>
-        tools.get('hivemind_connected_task')!.execute(args, { ...execution, concludeTurn }),
-    }),
+    tool: () => {
+      const registered = tools.get('hivemind_connected_task')!
+      return {
+        output: registered.output,
+        execute: (args: Record<string, unknown>, execution: { signal: AbortSignal }) =>
+          registered.execute(args, { ...execution, concludeTurn }),
+      }
+    },
     receiptTool: () => tools.get('hivemind_connected_receipt_read')!,
     listeners,
     concludeTurn,
     ask,
     spills,
   }
+}
+
+function canonicalHash(value: unknown): string {
+  const normalize = (candidate: unknown): unknown => {
+    if (Array.isArray(candidate)) return candidate.map(normalize)
+    if (candidate !== null && typeof candidate === 'object') {
+      return Object.fromEntries(Object.entries(candidate as Record<string, unknown>)
+        .filter(([, entry]) => entry !== undefined)
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([key, entry]) => [key, normalize(entry)]))
+    }
+    return candidate
+  }
+  return createHash('sha256').update(JSON.stringify(normalize(value))).digest('hex')
 }
 
 describe('progressive Composio bridge', () => {
@@ -352,6 +374,81 @@ describe('progressive Composio bridge', () => {
     }] } })
     expect(repeated).toMatchObject({ repeated_execution: true, operations: [{ tool: 'GMAIL_FETCH_EMAILS', status: 'already_completed' }] })
     expect(execute.mock.calls.map(call => call[0])).toEqual(['COMPOSIO_SEARCH_TOOLS', 'GMAIL_FETCH_EMAILS'])
+  })
+
+  it('executes a broader Gmail query instead of reusing a narrower read', async () => {
+    execute
+      .mockResolvedValueOnce({ data: {
+        session: { id: 'workflow-broaden' },
+        results: [{ primary_tool_slugs: ['GMAIL_FETCH_EMAILS'], toolkits: ['gmail'], tool_schemas: {
+          GMAIL_FETCH_EMAILS: { schema_hash: 'gmail-fetch-v1', input_schema: {
+            type: 'object', additionalProperties: false, properties: {
+              query: { type: 'string' }, max_results: { type: 'integer' },
+            },
+          } },
+        } }],
+        toolkit_connection_statuses: [{ toolkit: 'gmail', has_active_connection: true }],
+      } })
+      .mockResolvedValueOnce({ data: { messages: [] } })
+      .mockResolvedValueOnce({ data: { messages: [{ subject: 'A Poem for You, Rama' }] } })
+    const app = harness()
+    const agent = { session: { header: { id: 'broader-gmail' }, snapshotEvents: () => [], append: vi.fn() } }
+    await app.listeners.get('agent/pre-step')?.(
+      { agent, turn: 1 } as never, vi.fn(async () => ({ kind: 'enter', messages: [] })) as never,
+    )
+    await app.tool().execute({
+      action: 'search', session: { generate_id: true },
+      queries: [{ app: 'Gmail', use_case: 'Find sent messages to Rama.' }],
+    }, { signal: AbortSignal.abort(), agent } as never)
+    await app.tool().execute({
+      action: 'execute', session_id: 'workflow-broaden', planned_step_id: 'find-style',
+      tool_slug: 'GMAIL_FETCH_EMAILS', arguments: { query: 'in:sent to:ramasantoshi1206@gmail.com', max_results: 5 },
+    }, { signal: AbortSignal.abort(), agent } as never)
+    const broader = await app.tool().execute({
+      action: 'execute', session_id: 'workflow-broaden', planned_step_id: 'find-style',
+      tool_slug: 'GMAIL_FETCH_EMAILS', arguments: { query: 'in:sent (to:ramasantoshi1206@gmail.com OR to:ramasantoshi2004@gmail.com)', max_results: 5 },
+    }, { signal: AbortSignal.abort(), agent } as never)
+
+    expect(broader).toMatchObject({ status: 'ready', data: { messages: [{ subject: 'A Poem for You, Rama' }] } })
+    expect(execute.mock.calls.map(call => String(call[0]))).toEqual([
+      'COMPOSIO_SEARCH_TOOLS', 'GMAIL_FETCH_EMAILS', 'GMAIL_FETCH_EMAILS',
+    ])
+    expect(create).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps execution diagnostics in presentation metadata and out of model content', async () => {
+    execute
+      .mockResolvedValueOnce({ data: {
+        session: { id: 'workflow-inspect' },
+        results: [{ primary_tool_slugs: ['GMAIL_FETCH_EMAILS'], toolkits: ['gmail'], tool_schemas: {
+          GMAIL_FETCH_EMAILS: { schema_hash: 'gmail-fetch-v1', input_schema: {
+            type: 'object', additionalProperties: false, properties: { query: { type: 'string' } },
+          } },
+        } }],
+        toolkit_connection_statuses: [{ toolkit: 'gmail', has_active_connection: true }],
+      } })
+      .mockResolvedValueOnce({ data: { messages: [{ subject: 'Missing You' }] } })
+    const app = harness(true, undefined, false, { withSpill: true })
+    const agent = { session: { header: { id: 'inspect-gmail' }, snapshotEvents: () => [], append: vi.fn() } }
+    await app.listeners.get('agent/pre-step')?.(
+      { agent, turn: 1 } as never, vi.fn(async () => ({ kind: 'enter', messages: [] })) as never,
+    )
+    await app.tool().execute({
+      action: 'search', session: { generate_id: true }, queries: [{ app: 'Gmail', use_case: 'Read Gmail.' }],
+    }, { signal: AbortSignal.abort(), agent } as never)
+    const result = await app.tool().execute({
+      action: 'execute', session_id: 'workflow-inspect', planned_step_id: 'read-latest',
+      tool_slug: 'GMAIL_FETCH_EMAILS', arguments: { query: 'from:rama' },
+    }, { signal: AbortSignal.abort(), agent } as never) as never
+    const rendered = app.tool().output.render({}, result)
+    const presentation = app.tool().output.presentationMeta?.({}, result)
+
+    expect(JSON.stringify(rendered)).not.toContain('_hivemind_connected_app_inspection')
+    expect(JSON.stringify(rendered)).not.toContain('arguments_hash')
+    expect(presentation).toMatchObject({ connected_app: {
+      workflow_session_id: 'workflow-inspect', contract_cache_hit: true,
+      schema_hash: 'gmail-fetch-v1', receipt_reused: false,
+    } })
   })
 
   it('allows an explicit provider pagination cursor after the first bounded read', async () => {
@@ -1046,13 +1143,15 @@ describe('progressive Composio bridge', () => {
   })
 
   it('does not repeat a completed mutation when the same native call is retried', async () => {
+    const schema = { type: 'object', required: ['text'], properties: { text: { type: 'string' } } }
     execute.mockResolvedValueOnce({ data: { results: [{ primary_tool_slugs: ['SLACK_SEND_MESSAGE'], tool_schemas: {
-      SLACK_SEND_MESSAGE: { input_schema: { type: 'object', required: ['text'], properties: { text: { type: 'string' } } } },
+      SLACK_SEND_MESSAGE: { input_schema: schema },
     } }] } })
-    const key = createHash('sha256').update(JSON.stringify({
-      workflow: 'hivemind:user-a:conversation-write:current', tool_slug: 'SLACK_SEND_MESSAGE',
-      arguments: { text: 'hello' }, call_id: 'write-call',
-    })).digest('hex')
+    const schemaHash = createHash('sha256').update(JSON.stringify({ slug: 'SLACK_SEND_MESSAGE', schema })).digest('hex')
+    const key = canonicalHash({
+      workflow_id: 'current', planned_step_id: 'send-message', tool_slug: 'SLACK_SEND_MESSAGE',
+      schema_hash: schemaHash, arguments_hash: canonicalHash({ text: 'hello' }),
+    })
     const events = [
       { type: 'tool/call', data: { name: 'hivemind_connected_task', callId: 'write-call', arguments: JSON.stringify({ action: 'execute' }) } },
       { type: 'tool/result', data: { message: { source: { callId: 'write-call' }, content: [{ type: 'tool-result', content: [{ type: 'text', text: JSON.stringify({ status: 'ready', idempotency_key: key, source_receipt: { locator: 'private:write' } }) }] }] } } },
@@ -1061,8 +1160,8 @@ describe('progressive Composio bridge', () => {
     const app = harness()
     await app.tool().execute({ action: 'search', queries: [{ app: 'Slack', use_case: 'Send one Slack message.' }], session: { generate_id: true } }, { signal: AbortSignal.abort(), agent } as never)
     await expect(app.tool().execute({
-      action: 'execute', tool_slug: 'SLACK_SEND_MESSAGE', arguments: { text: 'hello' },
-    }, { signal: AbortSignal.abort(), agent, callId: 'write-call' } as never)).resolves.toMatchObject({
+      action: 'execute', planned_step_id: 'send-message', tool_slug: 'SLACK_SEND_MESSAGE', arguments: { text: 'hello' },
+    }, { signal: AbortSignal.abort(), agent, callId: 'different-native-retry-call' } as never)).resolves.toMatchObject({
       status: 'duplicate', idempotency_key: key,
     })
     expect(execute).toHaveBeenCalledOnce()
