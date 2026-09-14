@@ -236,6 +236,40 @@ describe('progressive Composio bridge', () => {
     expect(JSON.stringify(projected)).not.toContain('rama@example.com')
   })
 
+  it('normalizes sender and date from provider MIME headers before omitting transport data', () => {
+    const provider = { data: { threads: [{ id: 'thread-1', messages: [{
+      id: 'message-1', snippet: 'Hi Amar, I miss you.',
+      payload: {
+        mimeType: 'multipart/alternative',
+        headers: [
+          { name: 'From', value: 'Rama Santhoshi <ramasantoshi1206@gmail.com>' },
+          { name: 'Date', value: 'Thu, 3 Sep 2026 10:15:00 +0200' },
+          { name: 'Subject', value: 'Missing You' },
+          { name: 'X-Internal-Token', value: 'must-not-leak' },
+        ],
+        parts: [{ mimeType: 'text/plain', body: { data: 'cHJpdmF0ZQ==', size: 7 } }],
+      },
+    }] }] } }
+
+    const compact = compactComposioExecutionReceipt(provider) as Record<string, unknown>
+    expect(compact).toMatchObject({ data: { threads: [{ messages: [{
+      sender: 'Rama Santhoshi <ramasantoshi1206@gmail.com>',
+      received_at: 'Thu, 3 Sep 2026 10:15:00 +0200',
+      subject: 'Missing You', snippet: 'Hi Amar, I miss you.',
+    }] }] } })
+    expect(JSON.stringify(compact)).not.toContain('X-Internal-Token')
+    expect(JSON.stringify(compact)).not.toContain('cHJpdmF0ZQ==')
+
+    const selected = compactComposioExecutionReceipt(
+      provider, receipt, ['sender', 'received_at', 'subject', 'snippet'],
+    )
+    expect(selected).toMatchObject({ data: { threads: [{ messages: [{
+      sender: 'Rama Santhoshi <ramasantoshi1206@gmail.com>',
+      received_at: 'Thu, 3 Sep 2026 10:15:00 +0200',
+      subject: 'Missing You', snippet: 'Hi Amar, I miss you.',
+    }] }] } })
+  })
+
   it('falls back to the bounded provider projection when requested keys are absent', () => {
     const projected = compactComposioExecutionReceipt(
       { data: { actual_key: 'provider evidence' } }, undefined, ['unknown_key'],

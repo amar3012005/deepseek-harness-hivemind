@@ -56,10 +56,14 @@
       user supplied it or the workflow established it. Do not guess providers,
       tools, schemas, recipients, destinations, or argument fields. Follow only
       selected tools and exact execution_contract values returned by search;
-      put only the semantic fields required for the final answer in
-      result_fields so the registered provider adapter can normalize aliases
-      without exposing unrelated evidence.
-      request schemas only when a selected contract is absent. Reuse the current
+      preserve the user's requested item granularity: individual messages are
+      not threads, events are not calendars, and files are not folders. For a
+      read, always declare the semantic fields needed to answer in result_fields,
+      including stable identity/address and time fields needed by an immediate
+      dependent action. Put only the semantic fields required for the final
+      answer in result_fields so the registered provider adapter can normalize
+      aliases without exposing unrelated evidence. Request schemas only when a
+      selected contract is absent. Reuse the current
       workflow's plans, contracts, and receipts. A follow-up that needs the same
       selected provider tool with different validated arguments reuses that
       workflow session and contract; it does not repeat discovery. If a completed provider read

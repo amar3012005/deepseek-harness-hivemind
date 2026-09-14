@@ -912,6 +912,32 @@ const PROVIDER_NOISE = new Set([
   'image_192', 'image_512', 'image_1024', 'status_emoji_display_info', 'cache_ts',
 ])
 
+const MAIL_HEADER_FIELDS: Readonly<Record<string, string>> = {
+  from: 'sender',
+  date: 'received_at',
+  subject: 'subject',
+  to: 'recipient',
+}
+
+function mailHeaderProjection(value: Record<string, unknown>): Record<string, JsonValue> {
+  const payload = record(value['payload']) ? value['payload'] : undefined
+  const candidates = [value['headers'], payload?.['headers']]
+  const projected: Record<string, JsonValue> = {}
+  for (const candidate of candidates) {
+    if (!Array.isArray(candidate)) continue
+    for (const item of candidate) {
+      if (!record(item)) continue
+      const name = stringValue(item['name'])?.trim().toLowerCase()
+      const headerValue = stringValue(item['value'])?.trim()
+      const semantic = name === undefined ? undefined : MAIL_HEADER_FIELDS[name]
+      if (semantic !== undefined && headerValue !== undefined && headerValue !== '') {
+        projected[semantic] = headerValue.length > 800 ? `${headerValue.slice(0, 800)}…` : headerValue
+      }
+    }
+  }
+  return projected
+}
+
 function isMimeTransportTree(value: unknown): boolean {
   if (!record(value)) return false
   const mime = stringValue(value['mimeType']) ?? stringValue(value['mime_type'])
@@ -928,8 +954,11 @@ function compactProviderValue(value: unknown): JsonValue {
   if (typeof value === 'number' || typeof value === 'boolean' || value === null) return value
   if (Array.isArray(value)) return value.slice(0, 20).map(item => compactProviderValue(item))
   if (!record(value)) return String(value)
-  const compact: Record<string, JsonValue> = {}
-  let count = 0
+  // Provider message APIs often keep the only trustworthy sender and date in
+  // MIME headers. Project those semantic values before omitting the transport
+  // tree so a normal read never needs a second provider call or raw receipt.
+  const compact: Record<string, JsonValue> = mailHeaderProjection(value)
+  let count = Object.keys(compact).length
   for (const [key, item] of Object.entries(value)) {
     if (PROVIDER_NOISE.has(key) || item === '' || item === undefined
       || isMimeTransportTree(item)
@@ -944,11 +973,25 @@ function compactProviderValue(value: unknown): JsonValue {
 const RESULT_FIELD_ALIASES: Readonly<Record<string, readonly string[]>> = {
   sender: ['sender', 'from'],
   from: ['from', 'sender'],
-  received_at: ['received_at', 'messageTimestamp', 'receivedAt', 'timestamp', 'date'],
-  date: ['date', 'messageTimestamp', 'received_at', 'receivedAt', 'timestamp'],
-  timestamp: ['timestamp', 'messageTimestamp', 'received_at', 'receivedAt', 'date'],
+  recipient: ['recipient', 'to'],
+  to: ['to', 'recipient'],
+  received_at: ['received_at', 'messageTimestamp', 'receivedAt', 'internalDate', 'internal_date', 'timestamp', 'date'],
+  date: ['date', 'messageTimestamp', 'received_at', 'receivedAt', 'internalDate', 'internal_date', 'timestamp'],
+  timestamp: ['timestamp', 'messageTimestamp', 'received_at', 'receivedAt', 'internalDate', 'internal_date', 'date'],
   snippet: ['snippet', 'messageText', 'previewText', 'bodyPreview'],
   body: ['body', 'messageText', 'snippet', 'text', 'content'],
+}
+
+function semanticProviderField(value: Record<string, unknown>, field: string): JsonValue | undefined {
+  const aliases = RESULT_FIELD_ALIASES[field] ?? [field]
+  const direct = aliases.find(key => Object.hasOwn(value, key) && value[key] !== undefined)
+  if (direct !== undefined) return value[direct] as JsonValue
+  const headers = mailHeaderProjection(value)
+  const canonical = field === 'from' ? 'sender'
+    : field === 'date' || field === 'timestamp' ? 'received_at'
+      : field === 'to' ? 'recipient'
+        : field
+  return headers[canonical]
 }
 
 function projectRequestedFields(value: unknown, requested: ReadonlySet<string>): JsonValue | undefined {
@@ -972,8 +1015,8 @@ function projectRequestedFields(value: unknown, requested: ReadonlySet<string>):
   }
   for (const field of requested) {
     if (Object.hasOwn(projected, field)) continue
-    const alias = RESULT_FIELD_ALIASES[field]?.find(key => key !== field && Object.hasOwn(value, key))
-    if (alias !== undefined) projected[field] = compactProviderValue(value[alias])
+    const semantic = semanticProviderField(value, field)
+    if (semantic !== undefined) projected[field] = compactProviderValue(semantic)
   }
   return Object.keys(projected).length === 0 ? undefined : projected
 }
@@ -984,10 +1027,8 @@ function approvedFieldProjection(value: unknown, requestedFields: readonly strin
     if (depth > 8) return []
     if (Array.isArray(candidate)) return candidate.flatMap(item => visit(item, field, depth + 1))
     if (!record(candidate)) return []
-    const keys = RESULT_FIELD_ALIASES[field] ?? [field]
-    for (const key of keys) {
-      if (Object.hasOwn(candidate, key)) return [candidate[key] as JsonValue]
-    }
+    const semantic = semanticProviderField(candidate, field)
+    if (semantic !== undefined) return [semantic]
     return Object.values(candidate).flatMap(item => visit(item, field, depth + 1))
   }
   for (const field of requestedFields) {
