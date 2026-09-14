@@ -49,7 +49,13 @@ const HIVE_META_TOOL = 'hivemind_meta'
 const HIVE_CAPABILITIES_TOOL = 'hivemind_capabilities'
 
 /** Keep spill implementation details out of model-visible HIVE receipts. */
-function privateReceiptReference(receipt: SpillRef): Record<string, JsonValue> {
+interface PrivateReceiptReference {
+  readonly receipt_id: string
+  readonly bytes: number
+}
+
+function privateReceiptReference(receipt: SpillRef | PrivateReceiptReference): Record<string, JsonValue> {
+  if ('receipt_id' in receipt) return { receipt_id: receipt.receipt_id, bytes: receipt.bytes }
   return {
     receipt_id: createHash('sha256').update(String(receipt.locator)).digest('hex'),
     bytes: receipt.bytes,
@@ -485,7 +491,12 @@ function hyperagentProfilesFromResponse(value: unknown): JsonRecord {
   return projectHyperagentProfiles(value) as JsonRecord
 }
 
-function compactRecallResponse(value: JsonRecord, limit: number, itemMaxChars: number, receipt?: SpillRef): Record<string, JsonValue> {
+function compactRecallResponse(
+  value: JsonRecord,
+  limit: number,
+  itemMaxChars: number,
+  receipt?: SpillRef | PrivateReceiptReference,
+): Record<string, JsonValue> {
   const preferred = Array.isArray(value['results']) && value['results'].length > 0
     ? value['results']
     : Array.isArray(value['memories']) ? value['memories'] : []
@@ -520,7 +531,11 @@ function compactRecallResponse(value: JsonRecord, limit: number, itemMaxChars: n
 }
 
 /** Project canonical entity records into the small set of fields useful for recall filtering. */
-function compactEntityResponse(value: JsonRecord, limit: number, receipt?: SpillRef): Record<string, JsonValue> {
+function compactEntityResponse(
+  value: JsonRecord,
+  limit: number,
+  receipt?: SpillRef | PrivateReceiptReference,
+): Record<string, JsonValue> {
   const items = Array.isArray(value['items']) ? value['items'] : []
   const matches: Array<Record<string, JsonValue>> = []
   for (const item of items) {
@@ -548,7 +563,10 @@ function compactEntityResponse(value: JsonRecord, limit: number, receipt?: Spill
 }
 
 /** Expose only a receipt from a successful memory write; tenant fields remain transport-private. */
-function compactSaveReceipt(value: JsonRecord, sourceReceipt?: SpillRef): Record<string, JsonValue> {
+function compactSaveReceipt(
+  value: JsonRecord,
+  sourceReceipt?: SpillRef | PrivateReceiptReference,
+): Record<string, JsonValue> {
   const receipt: Record<string, JsonValue> = { status: 'saved' }
   for (const field of ['id', 'title', 'memory_type', 'citation_id', 'created_at', 'updated_at']) {
     if (typeof value[field] === 'string') receipt[field] = value[field]
@@ -563,13 +581,37 @@ function compactSaveReceipt(value: JsonRecord, sourceReceipt?: SpillRef): Record
 /** Persist the complete HIVE response before projecting it into model context. */
 async function saveMemoryReceipt(
   ctx: Context,
+  config: Config,
   execution: ToolExecution,
   suggestedName: string,
   value: unknown,
-): Promise<SpillRef | undefined> {
+): Promise<SpillRef | PrivateReceiptReference | undefined> {
   const sessionId = execution.agent?.session?.header.id
+  if (sessionId === undefined) return undefined
+  const authority = await resolveAuthority(ctx, config)
+  if (authority.pathPrefix === '/internal/v1/harness-chat/core') {
+    const operation = requestSignal(execution.signal, config.requestTimeoutMs)
+    try {
+      const response = await fetch(new URL('/internal/v1/harness-chat/receipts', authority.apiBase), {
+        method: 'POST', redirect: 'manual', signal: operation.signal,
+        headers: { accept: 'application/json', authorization: `Bearer ${authority.token}`, 'content-type': 'application/json' },
+        body: JSON.stringify({
+          session_id: String(sessionId), call_id: execution.callId,
+          provider: 'hivemind', tool: execution.name ?? HIVE_META_TOOL, raw_receipt: value,
+          allowed_fields: [], approved_projection: {}, projection_policy: 'bounded-hivemind-meta-v1',
+        }),
+      })
+      const body = await readResponseJson(response, config.responseMaxBytes) as JsonRecord
+      if (!response.ok || typeof body['receipt_id'] !== 'string' || typeof body['bytes'] !== 'number') {
+        throw new HiveMindRuntimeError('HIVE receipt store failed', { status: response.status })
+      }
+      return { receipt_id: body['receipt_id'], bytes: body['bytes'] }
+    } finally {
+      operation.dispose()
+    }
+  }
   const spillStore = ctx.get('spillStore')
-  if (sessionId === undefined || spillStore === undefined) return undefined
+  if (spillStore === undefined) return undefined
   const input: SaveTextSpill = {
     owner: { sessionId },
     source: { kind: 'tool', toolName: execution.name, callId: execution.callId, label: 'result' },
@@ -805,7 +847,7 @@ export function apply(ctx: Context, config: Config): void {
         throw error
       }
       const record = apiRecord(result, 'entity search response')
-      const receipt = await saveMemoryReceipt(ctx, execution, 'hivemind-entities.json', record)
+      const receipt = await saveMemoryReceipt(ctx, config, execution, 'hivemind-entities.json', record)
       return compactEntityResponse(record, request.limit, receipt)
     },
     async profiles(signal) {
@@ -833,7 +875,7 @@ export function apply(ctx: Context, config: Config): void {
         }),
       }, signal, config)
       const record = apiRecord(result, 'meta recall response')
-      const receipt = await saveMemoryReceipt(ctx, execution, 'hivemind-recall.json', record)
+      const receipt = await saveMemoryReceipt(ctx, config, execution, 'hivemind-recall.json', record)
       return {
         status: 'ready',
         operation: 'recall',
@@ -866,7 +908,7 @@ export function apply(ctx: Context, config: Config): void {
         }),
       }, signal, config)
       const record = apiRecord(result, 'meta save response')
-      const receipt = await saveMemoryReceipt(ctx, execution, 'hivemind-save.json', record)
+      const receipt = await saveMemoryReceipt(ctx, config, execution, 'hivemind-save.json', record)
       return compactSaveReceipt(record, receipt)
     },
   }))

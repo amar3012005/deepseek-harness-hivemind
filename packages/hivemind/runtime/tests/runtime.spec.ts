@@ -762,6 +762,43 @@ describe('HIVE-MIND runtime', () => {
     expect(JSON.stringify(value.result.source_receipt)).not.toContain('private:hive-receipt')
   })
 
+  it('uses the scoped Core receipt service for HIVE evidence when available', async () => {
+    const pluginConfig = config('/does/not/exist')
+    pluginConfig.authorityMode = 'scoped-service'
+    pluginConfig.serviceApiBase = 'http://control-plane:3000'
+    pluginConfig.serviceHttpOrigins = ['http://control-plane:3000']
+    pluginConfig.serviceSecretEnv = 'TEST_HIVE_RUNNER_SECRET'
+    process.env.TEST_HIVE_RUNNER_SECRET = 'runner-service-secret-that-is-at-least-32-bytes'
+    const full = { raw: 'private full evidence', results: [{ id: 'memory-1', content: 'bounded evidence' }] }
+    const requests: Array<{ url: string; body?: Record<string, unknown>; authorization: string }> = []
+    vi.stubGlobal('fetch', vi.fn(async (url: URL, init: RequestInit) => {
+      requests.push({
+        url: String(url),
+        ...(typeof init.body === 'string' ? { body: JSON.parse(init.body) } : {}),
+        authorization: String((init.headers as Record<string, string>).authorization),
+      })
+      if (String(url).endsWith('/api/recall')) return jsonResponse(full)
+      return jsonResponse({ receipt_id: '62f448d1-8c82-4e41-a44d-f380384e0b49', bytes: 123 }, 201)
+    }))
+    const harness = mount(pluginConfig, true)
+    const scopedAgent = { session: { header: { id: 'session-12345678' } } } as unknown as Agent
+
+    const value = await tool(harness, 'hivemind_meta').execute({
+      operation: 'recall', recall: { query: 'bounded evidence' },
+    }, execContext(scopedAgent)) as { result: Record<string, unknown> }
+
+    expect(harness.spills).toEqual([])
+    expect(requests.map(request => request.url)).toEqual([
+      'http://control-plane:3000/internal/v1/harness-chat/core/api/recall',
+      'http://control-plane:3000/internal/v1/harness-chat/receipts',
+    ])
+    expect(requests.every(request => request.authorization.split('.').length === 3)).toBe(true)
+    expect(requests[1]?.body).toMatchObject({
+      session_id: 'session-12345678', provider: 'hivemind', tool: 'hivemind_meta', allowed_fields: [], approved_projection: {},
+    })
+    expect(value.result.source_receipt).toEqual({ receipt_id: '62f448d1-8c82-4e41-a44d-f380384e0b49', bytes: 123 })
+  })
+
   it('fetches server-scoped HyperAgent profiles without model-provided tenant input', async () => {
     const path = await authorityFile()
     vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({
