@@ -307,13 +307,29 @@ function scopeSearchResult(value: unknown, apps: ReadonlySet<string>): { value: 
 }
 
 function searchQueries(value: unknown): SearchQuery[] {
-  if (!Array.isArray(value)) throw new TypeError('Search requires queries with one atomic use_case per external-app action')
+  if (!Array.isArray(value)) throw new TypeError('Search requires a non-empty task or queries with one atomic use_case per external-app action')
   const queries = value.map((item) => {
     if (!record(item)) throw new TypeError('Each search query must be an object')
     const app = stringValue(item['app'])
-    const useCase = stringValue(item['use_case'])
-    if (useCase === undefined) throw new TypeError('Each search query requires a non-empty use_case')
+    const explicitUseCase = stringValue(item['use_case'])
+    const conventionalQuery = stringValue(item['query'])
+    const baseUseCase = explicitUseCase ?? conventionalQuery
+    if (baseUseCase === undefined) throw new TypeError('Each search query requires a non-empty use_case or query')
     const knownFields = stringValue(item['known_fields'])
+    const orderBy = stringValue(item['order_by'])
+    const limit = item['limit']
+    if (limit !== undefined && (!Number.isInteger(limit) || Number(limit) < 1 || Number(limit) > 100)) {
+      throw new TypeError('Search query limit must be an integer between 1 and 100')
+    }
+    const fields = stringArray(item['result_fields']).map(field => field.trim()).filter(Boolean)
+    const useCase = explicitUseCase === undefined
+      ? [
+        baseUseCase.replace(/[.\s]+$/, ''),
+        ...(orderBy === undefined ? [] : [`Order by ${orderBy.replace(/[.\s]+$/, '')}`]),
+        ...(limit === undefined ? [] : [`Limit ${String(limit)}`]),
+        ...(fields.length === 0 ? [] : [`Return ${fields.join(', ')}`]),
+      ].join('. ') + '.'
+      : baseUseCase
     const scopedUseCase = app === undefined || useCase.toLocaleLowerCase().includes(app.toLocaleLowerCase())
       ? useCase
       : `${app}: ${useCase}`
@@ -324,6 +340,7 @@ function searchQueries(value: unknown): SearchQuery[] {
 }
 
 function searchSession(value: unknown): { generate_id: true } | { id: string } {
+  if (value === undefined) return { generate_id: true }
   if (!record(value)) throw new TypeError('Search requires session: { generate_id: true } or session: { id }')
   const id = stringValue(value['id'])
   if (id !== undefined) return { id }
@@ -1455,6 +1472,7 @@ export function apply(ctx: Context, config: Config = {}): void {
     description: 'Tenant-scoped connected-app gateway. Reuse the returned session and selected contract when continuing the same connected-app task or executing a dependent step. Start a new search only for a genuinely new provider operation or when the contract is missing or stale. Search uses atomic queries, explicit outcomes, and exact result limits; never guess tools. External writes require HIVE approval.',
     parameters: {
       action: { type: 'string', required: true, enum: ['connection_status', 'search', 'schemas', 'manage_connection', 'wait_connection', 'execute'], description: 'Use connection_status only for a pure status check of explicitly named apps. Use search for real app work.' },
+      task: { type: 'string', description: 'Simple single-action search shorthand. State the service category, operation, filters, ordering, limit, and output fields. Use queries for multiple actions.' },
       apps: { type: 'array', items: { type: 'string' }, description: 'One to four explicit app names for connection_status. Resolved against authenticated toolkit metadata, never semantic tool search.' },
       queries: {
         type: 'array',
@@ -1462,7 +1480,10 @@ export function apply(ctx: Context, config: Config = {}): void {
           type: 'object',
           properties: {
             app: { type: 'string', description: 'External app only when explicitly named or already established. Omit it when the user named only a service category so authenticated discovery can select an active provider.' },
-            use_case: { type: 'string', required: true, description: 'Normalized complete use case for one atomic app action. Name the app; include operation, filters, ordering, limit, and required output fields. Do not include personal identifiers.' },
+            use_case: { type: 'string', description: 'Normalized complete use case for one atomic app action. Name the app; include operation, filters, ordering, limit, and required output fields. Do not include personal identifiers.' },
+            query: { type: 'string', description: 'Conventional alias for use_case. Prefer use_case; filters, ordering, limit, and output fields are normalized into the atomic request.' },
+            limit: { type: 'integer', description: 'Requested maximum result count from 1 to 100 when query is used.' },
+            order_by: { type: 'string', description: 'Requested ordering when query is used, for example received_at descending.' },
             known_fields: { type: 'string', description: 'Optional comma-separated key:value identifiers or settings. Keep to 1-2 short items.' },
             result_fields: {
               type: 'array', items: { type: 'string' },
@@ -1571,7 +1592,11 @@ export function apply(ctx: Context, config: Config = {}): void {
       }
       if (args.action === 'search') {
         const turnState = execution.agent === undefined ? undefined : turns.get(execution.agent)
-        const queries = searchQueries(args.queries)
+        const task = stringValue(args.task)
+        const queryInput = Array.isArray(args.queries)
+          ? args.queries
+          : task === undefined ? args.queries : [{ use_case: task }]
+        const queries = searchQueries(queryInput)
         const workflowSession = searchSession(args.session)
         const searchStrategy = stringValue(args.search_strategy)
         if (searchStrategy !== undefined && searchStrategy !== 'auto' && searchStrategy !== 'tool_search') throw new TypeError('Unsupported Composio search strategy')
@@ -1582,7 +1607,7 @@ export function apply(ctx: Context, config: Config = {}): void {
         if (turnState?.workflowId !== undefined && requestedWorkflowId !== turnState.workflowId) {
           throw new Error('Connected-app search session does not match the active workflow')
         }
-        const scope = discoveryKey({ apps: [...requestedApps(args.queries)].sort(), known: queries.map(query => query.known_fields ?? '').sort() })
+        const scope = discoveryKey({ apps: [...requestedApps(queryInput)].sort(), known: queries.map(query => query.known_fields ?? '').sort() })
         const queryKey = discoveryKey({ queries, searchStrategy: searchStrategy ?? 'auto' })
         const discoveryOnly = previousUnmatchedDiscovery(
           execution, requestedWorkflowId, session.sessionId, undefined, config.discoveryCacheTtlMs ?? 300_000,
@@ -1624,7 +1649,7 @@ export function apply(ctx: Context, config: Config = {}): void {
           ...(searchStrategy === undefined ? {} : { search_strategy: searchStrategy }),
         })
         const sourceReceipt = await saveReceipt(ctx, execution, result, { tool: 'COMPOSIO_SEARCH_TOOLS' })
-        const scoped = scopeSearchResult(result, requestedApps(args.queries))
+        const scoped = scopeSearchResult(result, requestedApps(queryInput))
         const scopedResult = scoped.value
         const container: unknown = record(scopedResult) && record(scopedResult['data']) ? scopedResult['data'] : scopedResult
         if ([scopedResult, container].some(value => record(value) && (value['successful'] === false || value['success'] === false))) {
@@ -1657,7 +1682,7 @@ export function apply(ctx: Context, config: Config = {}): void {
           for (const [slug, contract] of discoveredContracts) available.set(slug, contract)
           contracts.set(stateKey, available)
           const requested = new Set(resultFields.get(stateKey) ?? [])
-          for (const field of requestedResultFields(args.queries)) requested.add(field)
+          for (const field of requestedResultFields(queryInput)) requested.add(field)
           resultFields.set(stateKey, [...requested])
         }
         const statuses = connectionStatuses(scopedResult)

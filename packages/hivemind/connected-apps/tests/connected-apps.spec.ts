@@ -1301,10 +1301,40 @@ describe('progressive Composio bridge', () => {
     })
   })
 
-  it('rejects vague legacy search calls before spending a provider request', async () => {
+  it('normalizes a simple task search and starts a new discovery session', async () => {
+    execute.mockResolvedValueOnce({ data: { results: [] } })
     const { tool } = harness()
-    await expect(tool().execute({ action: 'search', task: 'read inbox' }, { signal: AbortSignal.abort() })).rejects.toThrow('Search requires queries')
-    expect(execute).not.toHaveBeenCalled()
+    await expect(tool().execute({
+      action: 'search',
+      task: 'Email service: find the five latest individual emails about Rama, newest first, returning sender, received_at, subject, and snippet.',
+    }, { signal: AbortSignal.abort() })).resolves.toMatchObject({ status: 'no_matching_tool' })
+    expect(execute).toHaveBeenCalledWith('COMPOSIO_SEARCH_TOOLS', {
+      queries: [{
+        use_case: 'Email service: find the five latest individual emails about Rama, newest first, returning sender, received_at, subject, and snippet.',
+      }],
+      session: { generate_id: true },
+    })
+  })
+
+  it('normalizes conventional query, limit, and ordering fields into one atomic use case', async () => {
+    execute.mockResolvedValueOnce({ data: { results: [] } })
+    const { tool } = harness()
+    await tool().execute({
+      action: 'search',
+      queries: [{
+        query: 'Email service: find individual emails about Rama',
+        limit: 5,
+        order_by: 'received_at descending',
+        result_fields: ['sender', 'received_at', 'subject', 'snippet'],
+      }],
+    }, { signal: AbortSignal.abort() })
+
+    expect(execute).toHaveBeenCalledWith('COMPOSIO_SEARCH_TOOLS', {
+      queries: [{
+        use_case: 'Email service: find individual emails about Rama. Order by received_at descending. Limit 5. Return sender, received_at, subject, snippet.',
+      }],
+      session: { generate_id: true },
+    })
   })
 
   it('does not invent a provider for a provider-neutral service search', async () => {

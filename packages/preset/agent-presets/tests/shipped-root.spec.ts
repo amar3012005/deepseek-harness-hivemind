@@ -191,6 +191,8 @@ describe('the shipped preset root', () => {
     expect(prefix).toContain('avoid narrating routine tool mapping')
     expect(prefix).toContain('Reuse the current workflow\'s plans, contracts, and receipts')
     expect(prefix).toContain('same selected provider tool with different validated arguments')
+    expect(prefix).toContain('A simple connected read may use the task shorthand')
+    expect(prefix).toContain('do not request schemas until search has selected a tool')
     expect(prefix).toContain('use entities once before recall')
     expect(prefix).toContain('call the exact selected execute tool once')
     expect(prefix).toContain("native Harness pauses that tool call for the user's single approval")

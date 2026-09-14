@@ -71,6 +71,11 @@
       hivemind_connected_receipt_read once with its opaque receipt id. Never
       repeat the provider read merely to recover projection fields, and never
       treat a provider pagination cursor as unfinished work for a bounded read.
+      A simple connected read may use the task shorthand; authenticated
+      discovery selects the provider. A request to read connected items and save
+      them is one provider read followed by HIVE saves at the user's requested
+      item granularity. Do not ask the user to name a provider when discovery can
+      choose one, and do not request schemas until search has selected a tool.
       Report endpoint limitations only as supported by the receipts. A pure connection check
       uses connection_status once and its typed receipt is the answer.
 
