@@ -96,9 +96,10 @@
         legacyToolsEnabled: false
         authorityMode: scoped-service
         icarusConfigPath: !!js process.env.HIVEMIND_ICARUS_CONFIG_PATH ?? `${process.env.HOME}/.icarus/config.json`
-        serviceApiBase: !!js process.env.HIVEMIND_CONTROL_PLANE_URL ?? 'http://control-plane:3000'
+        serviceApiBase: !!js process.env.HIVEMIND_CONNECTED_RECEIPT_SERVICE_URL
         serviceHttpOrigins: !!js (process.env.HIVEMIND_SERVICE_HTTP_ORIGINS ?? '').split(',').map(value => value.trim()).filter(Boolean)
         serviceSecretEnv: HIVE_HARNESS_RUNNER_SERVICE_SECRET
+        durableReceiptsRequired: !!js process.env.HIVEMIND_CONNECTED_RECEIPTS_REQUIRED === 'true'
         requestTimeoutMs: 20000
         responseMaxBytes: 2097152
         profileContextMaxChars: 12000
@@ -115,6 +116,9 @@
         apiKey: !!js process.env.COMPOSIO_API_KEY
         enabledByDefault: true
         connectionCallbackBaseUrl: !!js process.env.HIVEMIND_CONNECTED_APP_CALLBACK_URL
+        serviceApiBase: !!js process.env.HIVEMIND_CONTROL_PLANE_URL ?? 'http://control-plane:3000'
+        serviceHttpOrigins: !!js (process.env.HIVEMIND_SERVICE_HTTP_ORIGINS ?? '').split(',').map(value => value.trim()).filter(Boolean)
+        serviceSecretEnv: HIVE_HARNESS_RUNNER_SERVICE_SECRET
 
 - id: hivemind-skill-filesystem
   name: '@deepseek-ai/dsh-skill-filesystem'

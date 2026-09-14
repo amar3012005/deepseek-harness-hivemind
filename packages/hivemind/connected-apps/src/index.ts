@@ -1,7 +1,7 @@
 /** Tenant-scoped progressive Composio capability for HIVE-MIND. */
 
 import type { Context } from '@deepseek-ai/cordis'
-import { createHash } from 'node:crypto'
+import { createHash, createHmac, randomUUID } from 'node:crypto'
 import type { Composio } from '@composio/core'
 import z from '@deepseek-ai/schemastery'
 import type {} from '@deepseek-ai/dsh-agent'
@@ -63,6 +63,14 @@ export interface Config {
   maxUnmatchedSearches?: number
   /** Discovery-only calls per workflow before provider execution must advance it. */
   maxDiscoverySearches?: number
+  /** Authenticated Core origin used for durable private provider receipts. */
+  serviceApiBase?: string
+  /** Extra http origins allowed only for the local Compose runner. */
+  serviceHttpOrigins?: string[]
+  /** Environment variable holding the runner-to-Core HMAC secret. */
+  serviceSecretEnv?: string
+  /** Refuse provider execution when the durable receipt service is not configured. */
+  durableReceiptsRequired?: boolean
 }
 
 export const Config: z<Config> = z.object({
@@ -72,6 +80,10 @@ export const Config: z<Config> = z.object({
   discoveryCacheTtlMs: z.number().min(1).default(300_000),
   maxUnmatchedSearches: z.number().min(1).default(2),
   maxDiscoverySearches: z.number().min(1).default(2),
+  serviceApiBase: z.string(),
+  serviceHttpOrigins: z.array(String).default([]),
+  serviceSecretEnv: z.string(),
+  durableReceiptsRequired: z.boolean().default(false),
 })
 
 function record(value: unknown): value is Record<string, unknown> {
@@ -154,11 +166,81 @@ function titleCaseToolkit(toolkit: string): string {
  * instruction or a browser-fetch target; callers can retain the opaque id for
  * a future authorized receipt-reader service without learning where it lives.
  */
-function privateReceiptReference(receipt: SpillRef): Record<string, JsonValue> {
+interface PrivateReceiptReference {
+  readonly receipt_id: string
+  readonly bytes: number
+}
+
+function privateReceiptReference(receipt: SpillRef | PrivateReceiptReference): Record<string, JsonValue> {
+  if ('receipt_id' in receipt) return { receipt_id: receipt.receipt_id, bytes: receipt.bytes }
   return {
     receipt_id: createHash('sha256').update(String(receipt.locator)).digest('hex'),
     bytes: receipt.bytes,
   }
+}
+
+function allowedServiceBase(value: unknown, allowedOrigins: string[] = []): URL | undefined {
+  if (typeof value !== 'string' || value.trim() === '') return undefined
+  let url: URL
+  try { url = new URL(value) } catch { throw new TypeError('Connected receipt service API base is invalid') }
+  const loopback = (url.protocol === 'http:' || url.protocol === 'https:')
+    && (url.hostname === 'localhost' || url.hostname === '127.0.0.1' || url.hostname === '[::1]')
+  const compose = url.protocol === 'http:' && (url.hostname === 'control-plane' || url.hostname === 'hivemind-control-plane')
+  const allowlisted = allowedOrigins.some((origin) => {
+    try { return new URL(origin).origin === url.origin } catch { return false }
+  })
+  if (url.protocol !== 'https:' && !loopback && !compose && !allowlisted) {
+    throw new TypeError('Connected receipt service API base must use HTTPS, loopback, or an allowlisted Compose origin')
+  }
+  if (url.username || url.password || url.search || url.hash || (url.pathname !== '/' && url.pathname !== '')) {
+    throw new TypeError('Connected receipt service API base must contain only an origin')
+  }
+  return new URL(url.origin)
+}
+
+function base64url(value: unknown): string {
+  return Buffer.from(JSON.stringify(value)).toString('base64url')
+}
+
+async function scopedServiceToken(
+  ctx: Context,
+  config: Config,
+  execution: Pick<ToolExecution, 'signal'>,
+): Promise<{ token: string; base: URL } | undefined> {
+  const base = allowedServiceBase(config.serviceApiBase, config.serviceHttpOrigins)
+  if (base === undefined) return undefined
+  const envName = config.serviceSecretEnv?.trim() || 'HIVE_HARNESS_RUNNER_SERVICE_SECRET'
+  const secret = process.env[envName]
+  if (typeof secret !== 'string' || Buffer.byteLength(secret, 'utf8') < 32) {
+    throw new Error(`Connected receipt service secret ${envName} is unavailable or too short`)
+  }
+  const principal = await ctx.hivemindIdentity.resolve(execution.signal)
+  const now = Math.floor(Date.now() / 1000)
+  const claims = {
+    iss: 'hivemind-harness-runner', aud: 'hivemind-control-plane-harness-proxy',
+    sub: principal.userId, org_id: principal.orgId, profile: 'hivemind-chat',
+    iat: now, exp: now + 30, jti: randomUUID(),
+  }
+  const input = `${base64url({ alg: 'HS256', typ: 'JWT' })}.${base64url(claims)}`
+  return { token: `${input}.${createHmac('sha256', secret).update(input).digest('base64url')}`, base }
+}
+
+function flattenedRequestedProjection(value: unknown, requested: ReadonlySet<string>): Record<string, JsonValue> {
+  const collected = new Map<string, JsonValue[]>()
+  const visit = (candidate: unknown): void => {
+    if (Array.isArray(candidate)) { for (const item of candidate) visit(item); return }
+    if (!record(candidate)) return
+    for (const [key, item] of Object.entries(candidate)) {
+      if (requested.has(key)) {
+        const values = collected.get(key) ?? []
+        values.push(compactProviderValue(item))
+        collected.set(key, values)
+      }
+      visit(item)
+    }
+  }
+  visit(value)
+  return Object.fromEntries([...collected].map(([key, values]) => [key, values.length === 1 ? (values.at(0) ?? null) : values]))
 }
 
 function normalizedToolkitName(value: string): string {
@@ -972,7 +1054,7 @@ function presentRequestedFields(value: unknown, requested: ReadonlySet<string>, 
 /** Bound a provider execution so MIME payloads and transport noise stay out of the transcript. */
 export function compactComposioExecutionReceipt(
   value: unknown,
-  receipt?: SpillRef,
+  receipt?: SpillRef | PrivateReceiptReference,
   resultFields: readonly string[] = [],
 ): JsonValue {
   const requested = new Set(resultFields)
@@ -996,7 +1078,10 @@ export function compactComposioExecutionReceipt(
 }
 
 /** Create a bounded model-visible projection while retaining the full receipt privately. */
-export function compactComposioSearchReceipt(value: unknown, receipt?: SpillRef): Record<string, JsonValue> | undefined {
+export function compactComposioSearchReceipt(
+  value: unknown,
+  receipt?: SpillRef | PrivateReceiptReference,
+): Record<string, JsonValue> | undefined {
   if (!record(value)) return undefined
   const unwrapped = record(value['result']) ? value['result'] : value
   const data = record(unwrapped['data']) ? unwrapped['data'] : unwrapped
@@ -1069,13 +1154,49 @@ export function compactComposioSearchReceipt(value: unknown, receipt?: SpillRef)
 
 async function saveReceipt(
   ctx: Context,
+  config: Config,
   execution: ToolExecution,
   content: string,
   suggestedName = 'composio-search-tools.json',
-): Promise<SpillRef | undefined> {
+  options: {
+    readonly provider?: string
+    readonly tool?: string
+    readonly contractVersion?: string
+    readonly allowedFields?: readonly string[]
+    readonly approvedProjection?: Record<string, JsonValue>
+  } = {},
+): Promise<PrivateReceiptReference | SpillRef | undefined> {
   const sessionId = execution.agent?.session.header.id
+  if (sessionId === undefined) return undefined
+  const service = await scopedServiceToken(ctx, config, execution)
+  if (service !== undefined) {
+    let rawReceipt: JsonValue
+    try { rawReceipt = JSON.parse(content) as JsonValue } catch { rawReceipt = content }
+    const response = await fetch(new URL('/internal/v1/harness-chat/receipts', service.base), {
+      method: 'POST',
+      headers: { authorization: `Bearer ${service.token}`, 'content-type': 'application/json', accept: 'application/json' },
+      body: JSON.stringify({
+        session_id: String(sessionId), call_id: execution.callId,
+        provider: options.provider ?? 'composio', tool: options.tool ?? execution.name,
+        ...(options.contractVersion === undefined ? {} : { contract_version: options.contractVersion }),
+        raw_receipt: rawReceipt,
+        allowed_fields: options.allowedFields ?? [],
+        approved_projection: options.approvedProjection ?? {},
+        projection_policy: 'selected-contract-v1',
+      }),
+      signal: execution.signal,
+    })
+    const body = await response.json().catch(() => ({})) as Record<string, unknown>
+    if (!response.ok || typeof body['receipt_id'] !== 'string' || typeof body['bytes'] !== 'number') {
+      throw new Error(`Connected receipt store failed: ${typeof body['error'] === 'string' ? body['error'] : response.status}`)
+    }
+    return { receipt_id: body['receipt_id'], bytes: body['bytes'] }
+  }
+  if (config.durableReceiptsRequired === true) {
+    throw new Error('Connected receipt service is required but not configured')
+  }
   const spillStore = ctx.get('spillStore')
-  if (sessionId === undefined || spillStore === undefined) return undefined
+  if (spillStore === undefined) return undefined
   const input: SaveTextSpill = {
     owner: { sessionId },
     source: { kind: 'tool', toolName: execution.name, callId: execution.callId, label: 'result' },
@@ -1288,7 +1409,8 @@ export function apply(ctx: Context, config: Config = {}): void {
         if (selected === undefined) throw new Error('Disconnected toolkit selection unexpectedly became empty')
         const managed = await session.execute('COMPOSIO_MANAGE_CONNECTIONS', { toolkits: [selected.slug] })
         const sourceReceipt = await saveReceipt(
-          ctx, execution, JSON.stringify(managed), 'composio-manage-connections.json',
+          ctx, config, execution, JSON.stringify(managed), 'composio-manage-connections.json',
+          { tool: 'COMPOSIO_MANAGE_CONNECTIONS' },
         )
         const redirectUrl = safeHttpsUrl(firstString(managed, ['redirect_url', 'redirectUrl', 'connection_url', 'url']))
         const logoUrl = selected.logo ?? `https://logos.composio.dev/api/${encodeURIComponent(selected.slug)}`
@@ -1387,7 +1509,8 @@ export function apply(ctx: Context, config: Config = {}): void {
           ...(searchStrategy === undefined ? {} : { search_strategy: searchStrategy }),
         })
         const sourceReceipt = await saveReceipt(
-          ctx, execution, JSON.stringify(result), 'composio-search-tools.json',
+          ctx, config, execution, JSON.stringify(result), 'composio-search-tools.json',
+          { tool: 'COMPOSIO_SEARCH_TOOLS' },
         )
         const scoped = scopeSearchResult(result, requestedApps(args.queries))
         const scopedResult = scoped.value
@@ -1550,7 +1673,8 @@ export function apply(ctx: Context, config: Config = {}): void {
         }
         const result = await session.execute('COMPOSIO_GET_TOOL_SCHEMAS', { ...metaArguments, tool_slugs: slugs })
         const sourceReceipt = await saveReceipt(
-          ctx, execution, JSON.stringify(result), 'composio-tool-schemas.json',
+          ctx, config, execution, JSON.stringify(result), 'composio-tool-schemas.json',
+          { tool: 'COMPOSIO_GET_TOOL_SCHEMAS' },
         )
         const loaded = executionContracts(result, new Set(slugs))
         const workflowContracts = contractsForWorkflow ?? new Map<string, ExecutionContract>()
@@ -1575,8 +1699,9 @@ export function apply(ctx: Context, config: Config = {}): void {
         const metaTool = args.action === 'manage_connection' ? 'COMPOSIO_MANAGE_CONNECTIONS' : 'COMPOSIO_WAIT_FOR_CONNECTIONS'
         const managed = await session.execute(metaTool, { ...metaArguments, toolkits })
         const sourceReceipt = await saveReceipt(
-          ctx, execution, JSON.stringify(managed),
+          ctx, config, execution, JSON.stringify(managed),
           args.action === 'manage_connection' ? 'composio-manage-connections.json' : 'composio-wait-for-connections.json',
+          { tool: metaTool },
         )
         const statuses = connectionStatuses(managed)
         // A successful meta-tool invocation is not proof of OAuth completion.
@@ -1632,14 +1757,20 @@ export function apply(ctx: Context, config: Config = {}): void {
         }
       }
       const providerResult = await session.execute(slug, executionArguments)
+      const fields = resultFields.get(key) ?? resultFields.get(fallbackKey) ?? []
       const sourceReceipt = await saveReceipt(
-        ctx, execution, JSON.stringify(providerResult), `composio-${slug.toLowerCase()}.json`,
+        ctx, config, execution, JSON.stringify(providerResult), `composio-${slug.toLowerCase()}.json`, {
+          tool: slug,
+          contractVersion: contract.schema_hash,
+          allowedFields: fields,
+          approvedProjection: flattenedRequestedProjection(providerResult, new Set(fields)),
+        },
       )
       return {
         ...compactComposioExecutionReceipt(
           providerResult,
           sourceReceipt,
-          resultFields.get(key) ?? resultFields.get(fallbackKey) ?? [],
+          fields,
         ) as Record<string, JsonValue>,
         status: 'ready',
         ...(MUTATING_TOOL.test(slug) ? { idempotency_key: idempotencyKey } : {}),
@@ -1693,7 +1824,7 @@ export function apply(ctx: Context, config: Config = {}): void {
     try { parsed = JSON.parse(raw) } catch { return decision }
     if (isBridgeSearch && record(parsed) && parsed['status'] === 'connection_required' && !Object.hasOwn(parsed, 'result')) return decision
     if (record(parsed) && record(parsed['source_receipt'])) return decision
-    const receipt = await saveReceipt(ctx, execution, raw)
+    const receipt = await saveReceipt(ctx, config, execution, raw)
     const compact = isSearch
       ? compactComposioSearchReceipt(parsed, receipt)
       : compactComposioExecutionReceipt(parsed, receipt)

@@ -22,7 +22,13 @@ function harness(
   enabled: boolean | undefined = true,
   identity = { orgId: 'org-a', userId: 'user-a' },
   enabledByDefault = false,
-  config: { connectionCallbackBaseUrl?: string; maxDiscoverySearches?: number; withSpill?: boolean } = {},
+  config: {
+    connectionCallbackBaseUrl?: string
+    maxDiscoverySearches?: number
+    withSpill?: boolean
+    serviceApiBase?: string
+    serviceSecretEnv?: string
+  } = {},
 ) {
   const concludeTurn = vi.fn()
   const ask = vi.fn()
@@ -300,6 +306,56 @@ describe('progressive Composio bridge', () => {
     expect(JSON.stringify(completed)).not.toContain('private:2')
     expect(JSON.stringify(completed)).not.toContain('transport detail')
     expect(JSON.stringify(completed)).not.toContain('not requested')
+  })
+
+  it('uses the authenticated Core receipt service when configured, never a spill path', async () => {
+    const identity = {
+      orgId: '67503d34-97e9-49a8-8c52-8ee30cc7603e',
+      userId: '54f5568b-4d6a-4ae1-9a33-48cb2909d59b',
+    }
+    const search = { data: { results: [{ primary_tool_slugs: ['EXAMPLE_READ'], tool_schemas: {
+      EXAMPLE_READ: { schema_hash: 'v1', input_schema: { type: 'object', required: ['query'], properties: {
+        query: { type: 'string' },
+      } } },
+    } }] } }
+    const provider = { data: { value: 'selected evidence', unrelated: 'must stay private' } }
+    execute.mockResolvedValueOnce(search).mockResolvedValueOnce(provider)
+    const requests: Array<{ url: string; body: Record<string, unknown>; authorization: string }> = []
+    process.env.TEST_CONNECTED_RECEIPT_SECRET = 'runner-service-secret-that-is-at-least-32-bytes'
+    vi.stubGlobal('fetch', vi.fn(async (url: URL, init: RequestInit) => {
+      requests.push({
+        url: String(url), body: JSON.parse(String(init.body)),
+        authorization: String((init.headers as Record<string, string>).authorization),
+      })
+      return new Response(JSON.stringify({ receipt_id: '62f448d1-8c82-4e41-a44d-f380384e0b49', bytes: 123 }), { status: 201 })
+    }))
+    try {
+      const app = harness(true, identity, false, {
+        serviceApiBase: 'http://127.0.0.1:3000', serviceSecretEnv: 'TEST_CONNECTED_RECEIPT_SECRET', withSpill: true,
+      })
+      const agent = { session: { header: { id: 'session-12345678' }, snapshotEvents: () => [], append: vi.fn() } }
+      await app.tool().execute({
+        action: 'search', queries: [{ use_case: 'Example: read one value.', result_fields: ['value'] }],
+        session: { generate_id: true },
+      }, { signal: AbortSignal.abort(), agent, name: 'hivemind_connected_task', callId: 'search-call' } as never)
+      const completed = await app.tool().execute({
+        action: 'execute', tool_slug: 'EXAMPLE_READ', arguments: { query: 'value' },
+      }, { signal: AbortSignal.abort(), agent, name: 'hivemind_connected_task', callId: 'execute-call' } as never)
+
+      expect(app.spills).toEqual([])
+      expect(requests).toHaveLength(2)
+      expect(requests.every(request => request.url === 'http://127.0.0.1:3000/internal/v1/harness-chat/receipts')).toBe(true)
+      expect(requests.every(request => request.authorization.split('.').length === 3)).toBe(true)
+      expect(requests[1]?.body).toMatchObject({
+        session_id: 'session-12345678', call_id: 'execute-call', tool: 'EXAMPLE_READ',
+        allowed_fields: ['value'], approved_projection: { value: 'selected evidence' },
+      })
+      expect(JSON.stringify(requests[1]?.body.approved_projection)).not.toContain('must stay private')
+      expect(completed).toMatchObject({ source_receipt: { receipt_id: '62f448d1-8c82-4e41-a44d-f380384e0b49', bytes: 123 } })
+    } finally {
+      delete process.env.TEST_CONNECTED_RECEIPT_SECRET
+      vi.unstubAllGlobals()
+    }
   })
 
   it('reuses the stable authenticated user connection while isolating selected tools', async () => {
