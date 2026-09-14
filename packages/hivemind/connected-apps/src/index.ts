@@ -22,6 +22,16 @@ interface ComposioRouterSessionEventData {
   readonly routerSessionId: string
 }
 
+interface ConnectedWriteIntentEventData {
+  readonly version: 1
+  readonly idempotencyKey: string
+  readonly workflowSessionId: string
+  readonly plannedStepId: string
+  readonly toolSlug: string
+  readonly schemaHash: string
+  readonly argumentsHash: string
+}
+
 declare module '@deepseek-ai/dsh-session/types' {
   interface SessionEventMap {
     /**
@@ -30,6 +40,12 @@ declare module '@deepseek-ai/dsh-session/types' {
      * enters derived model history.
      */
     'hivemind/composio-session': ComposioRouterSessionEventData
+    /**
+     * Durable pre-dispatch fence for one connected-app write. If execution is
+     * interrupted before a terminal tool result is committed, replay treats
+     * the outcome as unknown and never dispatches the write automatically.
+     */
+    'hivemind/connected-write-intent': ConnectedWriteIntentEventData
   }
 }
 
@@ -49,7 +65,29 @@ const META_TOOLS = new Set([
   'COMPOSIO_MANAGE_CONNECTIONS',
   'COMPOSIO_WAIT_FOR_CONNECTIONS',
 ])
-const MUTATING_TOOL = /(?:SEND|CREATE|POST|PUBLISH|UPDATE|EDIT|DELETE|REMOVE|INVITE|PAY|TRANSFER|UPLOAD|WRITE|ADD|CANCEL|SCHEDULE)/i
+// Provider catalogs evolve faster than this bridge. External actions are
+// approval-gated unless their leading operation is explicitly read-only;
+// unknown verbs therefore fail closed instead of silently becoming writes.
+const READ_ONLY_ACTIONS = new Set([
+  'GET', 'LIST', 'SEARCH', 'FIND', 'FETCH', 'READ', 'LOOKUP', 'RETRIEVE',
+  'QUERY', 'CHECK', 'DESCRIBE', 'INSPECT', 'PREVIEW', 'DOWNLOAD', 'EXPORT', 'COUNT',
+])
+const WRITE_ACTIONS = new Set([
+  'SEND', 'CREATE', 'POST', 'PUBLISH', 'UPDATE', 'EDIT', 'PATCH', 'PUT',
+  'DELETE', 'REMOVE', 'INVITE', 'PAY', 'TRANSFER', 'UPLOAD', 'WRITE', 'ADD',
+  'CANCEL', 'SCHEDULE', 'MODIFY', 'SET', 'MOVE', 'RENAME', 'ARCHIVE',
+  'RESTORE', 'UPSERT', 'REPLY', 'FORWARD',
+])
+const WRITE_REFERENCE_FIELDS = [
+  'id', 'event_id', 'calendar_id', 'series_master_id', 'recurring_event_id',
+  'resource_id', 'message_id', 'thread_id', 'url', 'attendees', 'organizer',
+] as const
+
+function requiresApproval(toolSlug: string): boolean {
+  const tokens = toolSlug.toUpperCase().split('_')
+  return tokens.some(token => WRITE_ACTIONS.has(token))
+    || !tokens.some(token => READ_ONLY_ACTIONS.has(token))
+}
 
 export interface Config {
   /** Server-side Composio project credential. */
@@ -563,6 +601,13 @@ function completedWriteForIdempotencyKey(
   return undefined
 }
 
+function hasWriteIntentForIdempotencyKey(events: readonly unknown[], idempotencyKey: string): boolean {
+  return events.some(event => record(event)
+    && event['type'] === 'hivemind/connected-write-intent'
+    && record(event['data'])
+    && event['data']['idempotencyKey'] === idempotencyKey)
+}
+
 function terminalBridgeApprovalResult(event: unknown): { callId: string } | undefined {
   if (!record(event) || event['type'] !== 'tool/result' || !record(event['data']) || !record(event['data']['message'])) return undefined
   const message = event['data']['message']
@@ -769,6 +814,10 @@ function compactSchemaValue(value: unknown): JsonValue | undefined {
     // These are JSON Schema annotations, not executable validation. The full
     // provider schema remains available in the private source receipt.
     if (key === 'examples' || key === '$comment') continue
+    if ((key === 'description' || key === 'title') && typeof item === 'string') {
+      compact[key] = item.length > 240 ? `${item.slice(0, 240)}…` : item
+      continue
+    }
     const nested = compactSchemaValue(item)
     if (nested !== undefined) compact[key] = nested
   }
@@ -1319,7 +1368,6 @@ export function apply(ctx: Context, config: Config = {}): void {
     enabled: boolean
     searchFingerprints: Set<string>
     executionResults: Map<string, Record<string, JsonValue>>
-    workflowId?: string
   }>()
   const apiKey = config.apiKey?.trim()
   const composio = apiKey
@@ -1509,7 +1557,7 @@ export function apply(ctx: Context, config: Config = {}): void {
       tool_slugs: { type: 'array', items: { type: 'string' }, description: 'Selected tool slugs for schema loading.' },
       toolkits: { type: 'array', items: { type: 'string' }, description: 'Exact toolkits returned by search.' },
       session_id: { type: 'string', description: 'Search session id reused by later schema, connection, and execution operations.' },
-      planned_step_id: { type: 'string', description: 'Stable identifier for one planned provider step. Reuse it only when retrying that same logical step.' },
+      planned_step_id: { type: 'string', description: 'Stable identifier for one planned provider step. Use a different id for a different dependent operation; reuse it only when retrying the same logical step.' },
       arguments: { type: 'object', additionalProperties: true, description: 'Selected tool arguments.' },
     },
     output: {
@@ -1601,12 +1649,6 @@ export function apply(ctx: Context, config: Config = {}): void {
         const searchStrategy = stringValue(args.search_strategy)
         if (searchStrategy !== undefined && searchStrategy !== 'auto' && searchStrategy !== 'tool_search') throw new TypeError('Unsupported Composio search strategy')
         const requestedWorkflowId = workflowSessionId(args)
-        if (turnState?.workflowId !== undefined && requestedWorkflowId === undefined) {
-          throw new Error('Continue progressive connected-app discovery with the returned session id')
-        }
-        if (turnState?.workflowId !== undefined && requestedWorkflowId !== turnState.workflowId) {
-          throw new Error('Connected-app search session does not match the active workflow')
-        }
         const scope = discoveryKey({ apps: [...requestedApps(queryInput)].sort(), known: queries.map(query => query.known_fields ?? '').sort() })
         const queryKey = discoveryKey({ queries, searchStrategy: searchStrategy ?? 'auto' })
         const discoveryOnly = previousUnmatchedDiscovery(
@@ -1637,23 +1679,45 @@ export function apply(ctx: Context, config: Config = {}): void {
             operations: [],
           } as Record<string, JsonValue>
         }
-        const fingerprint = JSON.stringify({ queries, workflowSession, searchStrategy: searchStrategy ?? 'auto' })
+        const plannedStepId = stringValue(args.planned_step_id) ?? 'discovery'
+        const fingerprint = JSON.stringify({ plannedStepId, queries, workflowSession, searchStrategy: searchStrategy ?? 'auto' })
         if (turnState?.searchFingerprints.has(fingerprint)) {
           throw new Error('Connected-app search repeated without new evidence; refine the query or follow the current plan')
         }
         const model = stringValue(args.model)
-        const result = await session.execute('COMPOSIO_SEARCH_TOOLS', {
-          queries,
-          session: workflowSession,
-          ...(model === undefined ? {} : { model }),
-          ...(searchStrategy === undefined ? {} : { search_strategy: searchStrategy }),
-        })
+        let result: unknown
+        try {
+          result = await session.execute('COMPOSIO_SEARCH_TOOLS', {
+            queries,
+            session: workflowSession,
+            ...(model === undefined ? {} : { model }),
+            ...(searchStrategy === undefined ? {} : { search_strategy: searchStrategy }),
+          })
+        } catch (error: unknown) {
+          if (execution.signal.aborted || (record(error) && error['name'] === 'AbortError')) throw error
+          ctx.logger.warn(`hivemind-connected-apps: provider discovery failed: ${String(error)}`)
+          return {
+            status: 'provider_unavailable',
+            retryable: false,
+            evidence_complete: false,
+            operations: [{ tool: 'COMPOSIO_SEARCH_TOOLS', status: 'failed' }],
+            next_action: 'report_provider_failure',
+            next_action_guidance: 'Provider discovery failed for this turn before any capability or data conclusion could be established. Do not retry in this turn and do not report that an app, contact, event, or record does not exist.',
+          }
+        }
         const sourceReceipt = await saveReceipt(ctx, execution, result, { tool: 'COMPOSIO_SEARCH_TOOLS' })
         const scoped = scopeSearchResult(result, requestedApps(queryInput))
         const scopedResult = scoped.value
         const container: unknown = record(scopedResult) && record(scopedResult['data']) ? scopedResult['data'] : scopedResult
         if ([scopedResult, container].some(value => record(value) && (value['successful'] === false || value['success'] === false))) {
-          throw new Error('Composio discovery failed; no capability conclusion was recorded. Retry after the provider error is resolved.')
+          return {
+            status: 'provider_unavailable',
+            retryable: false,
+            evidence_complete: false,
+            operations: [{ tool: 'COMPOSIO_SEARCH_TOOLS', status: 'failed' }],
+            next_action: 'report_provider_failure',
+            next_action_guidance: 'Provider discovery failed for this turn before any capability or data conclusion could be established. Do not retry in this turn and do not report that an app, contact, event, or record does not exist.',
+          }
         }
         turnState?.searchFingerprints.add(fingerprint)
         const discovered = new Set<string>()
@@ -1666,12 +1730,23 @@ export function apply(ctx: Context, config: Config = {}): void {
         }
         const returnedWorkflowId = returnedWorkflowSessionId(scopedResult)
         const activeWorkflowId = returnedWorkflowId ?? requestedWorkflowId
-        if (turnState !== undefined && turnState.workflowId === undefined && activeWorkflowId !== undefined) {
-          turnState.workflowId = activeWorkflowId
+        if (discovered.size > 0 && activeWorkflowId === undefined) {
+          ctx.logger.warn('hivemind-connected-apps: provider returned selected tools without a workflow session id')
+          return {
+            status: 'provider_unavailable',
+            retryable: false,
+            evidence_complete: false,
+            operations: [{ tool: 'COMPOSIO_SEARCH_TOOLS', status: 'failed' }],
+            next_action: 'report_provider_failure',
+            next_action_guidance: 'Provider discovery returned no scoped workflow identity, so no tool was authorized. Do not retry in this turn, execute, or infer availability from this result.',
+          }
         }
+        // A conversation can execute several independent provider steps in one
+        // native turn (for example find an event, then patch it). Keep each
+        // search contract behind its own provider workflow id. The unqualified
+        // fallback is used only when the provider returned no workflow id.
         const stateKeys = new Set([
-          workflowStateKey(identity, execution),
-          workflowStateKey(identity, execution, returnedWorkflowId ?? requestedWorkflowId),
+          workflowStateKey(identity, execution, activeWorkflowId),
         ])
         const discoveredContracts = new Map(executionContracts(scopedResult, discovered).map(contract => [contract.tool_slug, contract]))
         for (const stateKey of stateKeys) {
@@ -1780,10 +1855,15 @@ export function apply(ctx: Context, config: Config = {}): void {
         }
         return record(projected) ? projected : { status: 'ready', operations }
       }
-      const key = workflowStateKey(identity, execution, workflowSessionId(args))
+      const continuationId = workflowSessionId(args)
+      const key = workflowStateKey(identity, execution, continuationId)
       const fallbackKey = workflowStateKey(identity, execution)
-      let selectedForWorkflow = selectedTools.get(key) ?? selectedTools.get(fallbackKey)
-      let contractsForWorkflow = contracts.get(key) ?? contracts.get(fallbackKey)
+      let selectedForWorkflow = selectedTools.get(key)
+      let contractsForWorkflow = contracts.get(key)
+      if (continuationId === undefined) {
+        selectedForWorkflow ??= selectedTools.get(fallbackKey)
+        contractsForWorkflow ??= contracts.get(fallbackKey)
+      }
       if (selectedForWorkflow === undefined || contractsForWorkflow === undefined) {
         const restored = restoreWorkflowState(execution, workflowSessionId(args))
         if (restored !== undefined) {
@@ -1792,13 +1872,14 @@ export function apply(ctx: Context, config: Config = {}): void {
           selectedTools.set(key, restored.selected)
           contracts.set(key, restored.contracts)
           resultFields.set(key, restored.resultFields)
-          selectedTools.set(fallbackKey, restored.selected)
-          contracts.set(fallbackKey, restored.contracts)
-          resultFields.set(fallbackKey, restored.resultFields)
+          if (continuationId === undefined) {
+            selectedTools.set(fallbackKey, restored.selected)
+            contracts.set(fallbackKey, restored.contracts)
+            resultFields.set(fallbackKey, restored.resultFields)
+          }
         }
       }
       const metaArguments: Record<string, unknown> = {}
-      const continuationId = workflowSessionId(args)
       if (continuationId !== undefined) metaArguments['session_id'] = continuationId
       if (args.action === 'schemas') {
         const listed = stringArray(args.tool_slugs)
@@ -1814,7 +1895,7 @@ export function apply(ctx: Context, config: Config = {}): void {
         const workflowContracts = contractsForWorkflow ?? new Map<string, ExecutionContract>()
         for (const contract of loaded) workflowContracts.set(contract.tool_slug, contract)
         contracts.set(key, workflowContracts)
-        contracts.set(fallbackKey, workflowContracts)
+        if (continuationId === undefined) contracts.set(fallbackKey, workflowContracts)
         return {
           status: 'ready',
           operations: [{ tool: 'COMPOSIO_GET_TOOL_SCHEMAS', status: 'completed' }],
@@ -1885,7 +1966,7 @@ export function apply(ctx: Context, config: Config = {}): void {
       })
       const turnState = execution.agent === undefined ? undefined : turns.get(execution.agent)
       const completedRead = turnState?.executionResults.get(executionFingerprint)
-      if (!MUTATING_TOOL.test(slug) && completedRead !== undefined) {
+      if (!requiresApproval(slug) && completedRead !== undefined) {
         return withInspection({
           ...completedRead,
           repeated_execution: true,
@@ -1893,9 +1974,10 @@ export function apply(ctx: Context, config: Config = {}): void {
         }, inspection(true, receiptId(completedRead)))
       }
       const idempotencyKey = executionFingerprint
-      if (MUTATING_TOOL.test(slug) && execution.agent !== undefined) {
+      if (requiresApproval(slug) && execution.agent !== undefined) {
+        const events = execution.agent.session.snapshotEvents()
         const completed = completedWriteForIdempotencyKey(
-          execution.agent.session.snapshotEvents(),
+          events,
           idempotencyKey,
         )
         if (completed !== undefined) {
@@ -1907,27 +1989,49 @@ export function apply(ctx: Context, config: Config = {}): void {
             ...(priorReceipt === undefined ? {} : { prior_receipt: priorReceipt }),
           }, inspection(true, receiptId(completed)))
         }
+        if (hasWriteIntentForIdempotencyKey(events, idempotencyKey)) {
+          return withInspection({
+            status: 'unknown_outcome',
+            retryable: false,
+            idempotency_key: idempotencyKey,
+            operations: [{ tool: slug, status: 'not_retried' }],
+            next_action: 'reconcile_write_status',
+            next_action_guidance: 'A prior dispatch of this exact write did not commit a terminal receipt. Do not execute it again automatically. Reconcile provider state using an authorized read or ask the user before any replacement action.',
+          }, inspection(false))
+        }
+        execution.agent.session.append('hivemind/connected-write-intent', {
+          version: 1,
+          idempotencyKey,
+          workflowSessionId: workflowId,
+          plannedStepId,
+          toolSlug: slug,
+          schemaHash: contract.schema_hash,
+          argumentsHash,
+        })
       }
       const providerResult = await session.execute(slug, executionArguments)
       const selectedResultFields = resultFields.get(key) ?? resultFields.get(fallbackKey) ?? []
+      const durableResultFields = requiresApproval(slug)
+        ? [...new Set([...selectedResultFields, ...WRITE_REFERENCE_FIELDS])]
+        : selectedResultFields
       const sourceReceipt = await saveReceipt(
         ctx, execution, providerResult, {
           tool: slug,
           contractVersion: contract.tool_version ?? contract.schema_hash,
-          resultFields: selectedResultFields,
+          resultFields: durableResultFields,
         },
       )
       const projected = {
         ...compactComposioExecutionReceipt(
           providerResult,
           sourceReceipt,
-          selectedResultFields,
+          durableResultFields,
         ) as Record<string, JsonValue>,
         status: 'ready',
-        ...(MUTATING_TOOL.test(slug) ? { idempotency_key: idempotencyKey } : {}),
+        ...(requiresApproval(slug) ? { idempotency_key: idempotencyKey } : {}),
         operations: [{ tool: slug, status: 'completed' }],
       }
-      if (!MUTATING_TOOL.test(slug)) turnState?.executionResults.set(executionFingerprint, projected)
+      if (!requiresApproval(slug)) turnState?.executionResults.set(executionFingerprint, projected)
       return withInspection(projected, inspection(false))
     },
   }))
@@ -1959,7 +2063,7 @@ export function apply(ctx: Context, config: Config = {}): void {
     if (downstream.kind !== 'allow' || execution.name !== BRIDGE_TOOL || !record(execution.arguments)
       || execution.arguments['action'] !== 'execute') return downstream
     const slug = stringValue(execution.arguments['tool_slug'])
-    if (slug === undefined || !MUTATING_TOOL.test(slug)) return downstream
+    if (slug === undefined || !requiresApproval(slug)) return downstream
     return { kind: 'ask', reason: `Approve this ${slug} action once. The provider will run only after approval.` }
   })
   ctx.on('tools/post-execute', async (execution, result, next): Promise<PostToolDecision> => {

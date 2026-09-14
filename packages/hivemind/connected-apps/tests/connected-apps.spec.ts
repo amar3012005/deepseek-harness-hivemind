@@ -307,7 +307,7 @@ describe('progressive Composio bridge', () => {
   })
 
   it('does not flush the raw COMPOSIO_SEARCH_TOOLS payload into the tool result', async () => {
-    execute.mockResolvedValueOnce({ data: { results: [{ primary_tool_slugs: ['SLACK_LIST_CHANNELS'], tool_schemas: { huge: true } }] } })
+    execute.mockResolvedValueOnce({ data: { session: { id: 'workflow-slack-list' }, results: [{ primary_tool_slugs: ['SLACK_LIST_CHANNELS'], tool_schemas: { huge: true } }] } })
     const { tool } = harness()
     const result = await tool().execute({
       action: 'search',
@@ -326,7 +326,7 @@ describe('progressive Composio bridge', () => {
   })
 
   it('persists the original provider response before projecting search and execution', async () => {
-    const search = { data: { results: [{ primary_tool_slugs: ['EXAMPLE_READ'], tool_schemas: {
+    const search = { data: { session: { id: 'workflow-example-read' }, results: [{ primary_tool_slugs: ['EXAMPLE_READ'], tool_schemas: {
       EXAMPLE_READ: { input_schema: { type: 'object', required: ['query'], properties: {
         query: { type: 'string', minLength: 3 },
       } } },
@@ -343,7 +343,7 @@ describe('progressive Composio bridge', () => {
       session: { generate_id: true },
     }, { signal: AbortSignal.abort(), agent, name: 'hivemind_connected_task', callId: 'search-call' } as never)
     const completed = await app.tool().execute({
-      action: 'execute', tool_slug: 'EXAMPLE_READ', arguments: { query: 'value' },
+      action: 'execute', session_id: 'workflow-example-read', tool_slug: 'EXAMPLE_READ', arguments: { query: 'value' },
     }, { signal: AbortSignal.abort(), agent, name: 'hivemind_connected_task', callId: 'execute-call' } as never)
 
     expect(app.spills).toMatchObject([
@@ -448,6 +448,162 @@ describe('progressive Composio bridge', () => {
       'COMPOSIO_SEARCH_TOOLS', 'GMAIL_FETCH_EMAILS', 'GMAIL_FETCH_EMAILS',
     ])
     expect(create).toHaveBeenCalledTimes(1)
+  })
+
+  it('isolates step-scoped Calendar contracts while completing find then patch in one turn', async () => {
+    execute
+      .mockResolvedValueOnce({ data: {
+        session: { id: 'workflow-calendar-find' },
+        results: [{ primary_tool_slugs: ['GOOGLECALENDAR_FIND_EVENT'], toolkits: ['googlecalendar'], tool_schemas: {
+          GOOGLECALENDAR_FIND_EVENT: { schema_hash: 'calendar-find-v1', input_schema: {
+            type: 'object', additionalProperties: false, required: ['query'], properties: {
+              query: { type: 'string' },
+            },
+          } },
+        } }],
+        toolkit_connection_statuses: [{ toolkit: 'googlecalendar', has_active_connection: true }],
+      } })
+      .mockResolvedValueOnce({ data: { items: [{ id: 'event-series-1', summary: 'Prague anniversary' }] } })
+      .mockResolvedValueOnce({ data: {
+        session: { id: 'workflow-calendar-patch' },
+        results: [{ primary_tool_slugs: ['GOOGLECALENDAR_PATCH_EVENT'], toolkits: ['googlecalendar'], tool_schemas: {
+          GOOGLECALENDAR_PATCH_EVENT: { schema_hash: 'calendar-patch-v1', input_schema: {
+            type: 'object', additionalProperties: false, required: ['calendar_id', 'event_id', 'attendees'], properties: {
+              calendar_id: { type: 'string' }, event_id: { type: 'string' },
+              attendees: { type: 'array', items: { type: 'string' } }, send_updates: { type: 'string' },
+            },
+          } },
+        } }],
+        toolkit_connection_statuses: [{ toolkit: 'googlecalendar', has_active_connection: true }],
+      } })
+      .mockResolvedValueOnce({ data: { id: 'event-series-1', attendees: ['ramasantoshi1206@gmail.com'] } })
+    const app = harness()
+    const agent = { session: { header: { id: 'calendar-continuation' }, snapshotEvents: () => [], append: vi.fn() } }
+    await app.listeners.get('agent/pre-step')?.(
+      { agent, turn: 1 } as never, vi.fn(async () => ({ kind: 'enter', messages: [] })) as never,
+    )
+
+    await app.tool().execute({
+      action: 'search', planned_step_id: 'find-event', session: { generate_id: true },
+      queries: [{ app: 'Google Calendar', use_case: 'Find the Prague anniversary event.' }],
+    }, { signal: AbortSignal.abort(), agent } as never)
+    await app.tool().execute({
+      action: 'execute', planned_step_id: 'find-event', session_id: 'workflow-calendar-find',
+      tool_slug: 'GOOGLECALENDAR_FIND_EVENT', arguments: { query: 'Prague anniversary' },
+    }, { signal: AbortSignal.abort(), agent } as never)
+    await app.tool().execute({
+      action: 'search', planned_step_id: 'patch-event', session: { generate_id: true },
+      queries: [{
+        app: 'Google Calendar', use_case: 'Add the supplied attendee to the existing recurring event.',
+        known_fields: 'event_id:event-series-1, attendee_email:ramasantoshi1206@gmail.com',
+      }],
+    }, { signal: AbortSignal.abort(), agent } as never)
+
+    const pre = app.listeners.get('tools/pre-execute') as (
+      execution: { name: string; arguments: Record<string, unknown>; agent: unknown },
+      next: () => Promise<{ kind: 'allow' } | { kind: 'deny'; reason: string }>,
+    ) => Promise<{ kind: string; reason?: string }>
+    const patchInvocation = {
+      name: 'hivemind_connected_task', agent,
+      arguments: {
+        action: 'execute', planned_step_id: 'patch-event', session_id: 'workflow-calendar-patch',
+        tool_slug: 'GOOGLECALENDAR_PATCH_EVENT', arguments: {
+          calendar_id: 'primary', event_id: 'event-series-1',
+          attendees: ['ramasantoshi1206@gmail.com'], send_updates: 'all',
+        },
+      },
+    }
+    await expect(pre(patchInvocation, async () => ({ kind: 'allow' }))).resolves.toMatchObject({
+      kind: 'ask', reason: expect.stringContaining('GOOGLECALENDAR_PATCH_EVENT'),
+    })
+    await expect(pre(patchInvocation, async () => ({ kind: 'deny', reason: 'User rejected the attendee update.' })))
+      .resolves.toEqual({ kind: 'deny', reason: 'User rejected the attendee update.' })
+    expect(execute.mock.calls.map(call => call[0])).toEqual([
+      'COMPOSIO_SEARCH_TOOLS', 'GOOGLECALENDAR_FIND_EVENT', 'COMPOSIO_SEARCH_TOOLS',
+    ])
+
+    await expect(app.tool().execute({
+      action: 'execute', planned_step_id: 'patch-event', session_id: 'workflow-calendar-patch',
+      tool_slug: 'GOOGLECALENDAR_PATCH_EVENT', arguments: {
+        calendar_id: 'primary', event_id: 'event-series-1',
+        attendees: ['ramasantoshi1206@gmail.com'], send_updates: 'all',
+      },
+    }, { signal: AbortSignal.abort(), agent } as never)).resolves.toMatchObject({
+      status: 'ready', data: { id: 'event-series-1', attendees: ['ramasantoshi1206@gmail.com'] },
+    })
+
+    expect(execute.mock.calls.map(call => call[0])).toEqual([
+      'COMPOSIO_SEARCH_TOOLS', 'GOOGLECALENDAR_FIND_EVENT',
+      'COMPOSIO_SEARCH_TOOLS', 'GOOGLECALENDAR_PATCH_EVENT',
+    ])
+    expect(execute.mock.calls[2]?.[1]).toEqual({
+      queries: [{
+        use_case: 'Google Calendar: Add the supplied attendee to the existing recurring event.',
+        known_fields: 'event_id:event-series-1, attendee_email:ramasantoshi1206@gmail.com',
+      }],
+      session: { generate_id: true },
+    })
+    await expect(app.tool().execute({
+      action: 'execute', planned_step_id: 'patch-event', session_id: 'workflow-calendar-find',
+      tool_slug: 'GOOGLECALENDAR_PATCH_EVENT', arguments: {
+        calendar_id: 'primary', event_id: 'event-series-1', attendees: ['ramasantoshi1206@gmail.com'],
+      },
+    }, { signal: AbortSignal.abort(), agent } as never)).rejects.toThrow('not selected')
+    await expect(app.tool().execute({
+      action: 'execute', planned_step_id: 'find-event', session_id: 'workflow-calendar-patch',
+      tool_slug: 'GOOGLECALENDAR_FIND_EVENT', arguments: { query: 'Prague anniversary' },
+    }, { signal: AbortSignal.abort(), agent } as never)).rejects.toThrow('not selected')
+    const otherAgent = { session: { header: { id: 'other-calendar-conversation' }, snapshotEvents: () => [], append: vi.fn() } }
+    await expect(app.tool().execute({
+      action: 'execute', planned_step_id: 'patch-event', session_id: 'workflow-calendar-patch',
+      tool_slug: 'GOOGLECALENDAR_PATCH_EVENT', arguments: {
+        calendar_id: 'primary', event_id: 'event-series-1', attendees: ['ramasantoshi1206@gmail.com'],
+      },
+    }, { signal: AbortSignal.abort(), agent: otherAgent } as never)).rejects.toThrow('current conversation-scoped search')
+  })
+
+  it('executes changed Calendar patch arguments instead of deduplicating the planned step', async () => {
+    execute
+      .mockResolvedValueOnce({ data: {
+        session: { id: 'workflow-calendar-patch' },
+        results: [{ primary_tool_slugs: ['GOOGLECALENDAR_PATCH_EVENT'], toolkits: ['googlecalendar'], tool_schemas: {
+          GOOGLECALENDAR_PATCH_EVENT: { schema_hash: 'calendar-patch-v1', input_schema: {
+            type: 'object', additionalProperties: false, required: ['event_id', 'attendees'], properties: {
+              event_id: { type: 'string' }, attendees: { type: 'array', items: { type: 'string' } },
+            },
+          } },
+        } }],
+      } })
+      .mockResolvedValueOnce({ data: { attendees: ['rama-one@example.com'] } })
+      .mockResolvedValueOnce({ data: { attendees: ['rama-one@example.com', 'rama-two@example.com'] } })
+    const app = harness()
+    const agent = { session: { header: { id: 'calendar-arguments' }, snapshotEvents: () => [], append: vi.fn() } }
+    await app.listeners.get('agent/pre-step')?.(
+      { agent, turn: 1 } as never, vi.fn(async () => ({ kind: 'enter', messages: [] })) as never,
+    )
+    await app.tool().execute({
+      action: 'search', planned_step_id: 'patch-event', session: { generate_id: true },
+      queries: [{ app: 'Google Calendar', use_case: 'Update attendees for an existing event.' }],
+    }, { signal: AbortSignal.abort(), agent } as never)
+    await app.tool().execute({
+      action: 'execute', planned_step_id: 'patch-event', session_id: 'workflow-calendar-patch',
+      tool_slug: 'GOOGLECALENDAR_PATCH_EVENT', arguments: {
+        event_id: 'event-series-1', attendees: ['rama-one@example.com'],
+      },
+    }, { signal: AbortSignal.abort(), agent } as never)
+    const changed = await app.tool().execute({
+      action: 'execute', planned_step_id: 'patch-event', session_id: 'workflow-calendar-patch',
+      tool_slug: 'GOOGLECALENDAR_PATCH_EVENT', arguments: {
+        event_id: 'event-series-1', attendees: ['rama-one@example.com', 'rama-two@example.com'],
+      },
+    }, { signal: AbortSignal.abort(), agent } as never)
+
+    expect(changed).toMatchObject({
+      status: 'ready', data: { attendees: ['rama-one@example.com', 'rama-two@example.com'] },
+    })
+    expect(execute.mock.calls.map(call => call[0])).toEqual([
+      'COMPOSIO_SEARCH_TOOLS', 'GOOGLECALENDAR_PATCH_EVENT', 'GOOGLECALENDAR_PATCH_EVENT',
+    ])
   })
 
   it('keeps execution diagnostics in presentation metadata and out of model content', async () => {
@@ -1154,7 +1310,7 @@ describe('progressive Composio bridge', () => {
   })
 
   it('asks once through the native approval seam before a selected mutation executes', async () => {
-    execute.mockResolvedValueOnce({ data: { results: [{ primary_tool_slugs: ['SLACK_SEND_MESSAGE'], tool_schemas: {
+    execute.mockResolvedValueOnce({ data: { session: { id: 'workflow-slack-send' }, results: [{ primary_tool_slugs: ['SLACK_SEND_MESSAGE'], tool_schemas: {
       SLACK_SEND_MESSAGE: { input_schema: { type: 'object', required: ['text'], properties: { text: { type: 'string' } } } },
     } }] } }).mockResolvedValueOnce({ data: { ok: true, message_id: 'message-1' } })
     const app = harness()
@@ -1166,11 +1322,11 @@ describe('progressive Composio bridge', () => {
     ) => Promise<{ kind: string; reason?: string }>
     await expect(pre({
       name: 'hivemind_connected_task',
-      arguments: { action: 'execute', tool_slug: 'SLACK_SEND_MESSAGE', arguments: { text: 'hello' } },
+      arguments: { action: 'execute', session_id: 'workflow-slack-send', tool_slug: 'SLACK_SEND_MESSAGE', arguments: { text: 'hello' } },
       agent,
     }, async () => ({ kind: 'allow' }))).resolves.toMatchObject({ kind: 'ask' })
     await expect(app.tool().execute({
-      action: 'execute', tool_slug: 'SLACK_SEND_MESSAGE', arguments: { text: 'hello' },
+      action: 'execute', session_id: 'workflow-slack-send', tool_slug: 'SLACK_SEND_MESSAGE', arguments: { text: 'hello' },
     }, { signal: AbortSignal.abort(), agent } as never)).resolves.toMatchObject({ status: 'ready' })
     expect(execute).toHaveBeenCalledTimes(2)
     expect(execute).toHaveBeenLastCalledWith('SLACK_SEND_MESSAGE', { text: 'hello' })
@@ -1178,12 +1334,12 @@ describe('progressive Composio bridge', () => {
 
   it('does not repeat a completed mutation when the same native call is retried', async () => {
     const schema = { type: 'object', required: ['text'], properties: { text: { type: 'string' } } }
-    execute.mockResolvedValueOnce({ data: { results: [{ primary_tool_slugs: ['SLACK_SEND_MESSAGE'], tool_schemas: {
+    execute.mockResolvedValueOnce({ data: { session: { id: 'workflow-slack-send' }, results: [{ primary_tool_slugs: ['SLACK_SEND_MESSAGE'], tool_schemas: {
       SLACK_SEND_MESSAGE: { input_schema: schema },
     } }] } })
     const schemaHash = createHash('sha256').update(JSON.stringify({ slug: 'SLACK_SEND_MESSAGE', schema })).digest('hex')
     const key = canonicalHash({
-      workflow_id: 'current', planned_step_id: 'send-message', tool_slug: 'SLACK_SEND_MESSAGE',
+      workflow_id: 'workflow-slack-send', planned_step_id: 'send-message', tool_slug: 'SLACK_SEND_MESSAGE',
       schema_hash: schemaHash, arguments_hash: canonicalHash({ text: 'hello' }),
     })
     const events = [
@@ -1194,25 +1350,63 @@ describe('progressive Composio bridge', () => {
     const app = harness()
     await app.tool().execute({ action: 'search', queries: [{ app: 'Slack', use_case: 'Send one Slack message.' }], session: { generate_id: true } }, { signal: AbortSignal.abort(), agent } as never)
     await expect(app.tool().execute({
-      action: 'execute', planned_step_id: 'send-message', tool_slug: 'SLACK_SEND_MESSAGE', arguments: { text: 'hello' },
+      action: 'execute', session_id: 'workflow-slack-send', planned_step_id: 'send-message', tool_slug: 'SLACK_SEND_MESSAGE', arguments: { text: 'hello' },
     }, { signal: AbortSignal.abort(), agent, callId: 'different-native-retry-call' } as never)).resolves.toMatchObject({
       status: 'duplicate', idempotency_key: key,
     })
     expect(execute).toHaveBeenCalledOnce()
   })
 
+  it('does not retry a write whose durable intent has no terminal result', async () => {
+    const schema = { type: 'object', required: ['text'], properties: { text: { type: 'string' } } }
+    execute.mockResolvedValueOnce({ data: { session: { id: 'workflow-slack-send' }, results: [{
+      primary_tool_slugs: ['SLACK_SEND_MESSAGE'], tool_schemas: {
+        SLACK_SEND_MESSAGE: { input_schema: schema },
+      },
+    }] } })
+    const schemaHash = createHash('sha256').update(JSON.stringify({ slug: 'SLACK_SEND_MESSAGE', schema })).digest('hex')
+    const argumentsHash = canonicalHash({ text: 'hello' })
+    const key = canonicalHash({
+      workflow_id: 'workflow-slack-send', planned_step_id: 'send-message', tool_slug: 'SLACK_SEND_MESSAGE',
+      schema_hash: schemaHash, arguments_hash: argumentsHash,
+    })
+    const events = [{ type: 'hivemind/connected-write-intent', data: {
+      version: 1, idempotencyKey: key, workflowSessionId: 'workflow-slack-send',
+      plannedStepId: 'send-message', toolSlug: 'SLACK_SEND_MESSAGE',
+      schemaHash, argumentsHash,
+    } }]
+    const agent = { session: {
+      header: { id: 'conversation-unknown-write' }, snapshotEvents: () => events, append: vi.fn(),
+    } }
+    const app = harness()
+    await app.tool().execute({
+      action: 'search', queries: [{ app: 'Slack', use_case: 'Send one Slack message.' }], session: { generate_id: true },
+    }, { signal: AbortSignal.abort(), agent } as never)
+
+    await expect(app.tool().execute({
+      action: 'execute', session_id: 'workflow-slack-send', planned_step_id: 'send-message',
+      tool_slug: 'SLACK_SEND_MESSAGE', arguments: { text: 'hello' },
+    }, { signal: AbortSignal.abort(), agent } as never)).resolves.toMatchObject({
+      status: 'unknown_outcome', retryable: false, idempotency_key: key,
+      operations: [{ tool: 'SLACK_SEND_MESSAGE', status: 'not_retried' }],
+      next_action: 'reconcile_write_status',
+    })
+    expect(execute).toHaveBeenCalledOnce()
+    expect(agent.session.append).not.toHaveBeenCalledWith('hivemind/connected-write-intent', expect.anything())
+  })
+
   it('refuses guessed fields and requires an authoritative schema before execution', async () => {
-    execute.mockResolvedValueOnce({ data: { results: [{ primary_tool_slugs: ['SLACK_FIND_CHANNELS'], tool_schemas: {
+    execute.mockResolvedValueOnce({ data: { session: { id: 'workflow-slack-find' }, results: [{ primary_tool_slugs: ['SLACK_FIND_CHANNELS'], tool_schemas: {
       SLACK_FIND_CHANNELS: { input_schema: { type: 'object', required: ['query'], properties: { query: { type: 'string' } } } },
     } }] } })
     const app = harness()
     await app.tool().execute({ action: 'search', queries: [{ app: 'Slack', use_case: 'Find the exact Slack channel named davinci and return its id.' }], session: { generate_id: true } }, { signal: AbortSignal.abort() })
-    await expect(app.tool().execute({ action: 'execute', tool_slug: 'SLACK_FIND_CHANNELS', arguments: { channel_name: 'davinci' } }, { signal: AbortSignal.abort() })).rejects.toThrow("required property 'query'")
+    await expect(app.tool().execute({ action: 'execute', session_id: 'workflow-slack-find', tool_slug: 'SLACK_FIND_CHANNELS', arguments: { channel_name: 'davinci' } }, { signal: AbortSignal.abort() })).rejects.toThrow("required property 'query'")
     expect(execute).toHaveBeenCalledTimes(1)
   })
 
   it('validates nested constraints from the authoritative schema before provider execution', async () => {
-    execute.mockResolvedValueOnce({ data: { results: [{ primary_tool_slugs: ['EXAMPLE_READ'], tool_schemas: {
+    execute.mockResolvedValueOnce({ data: { session: { id: 'workflow-example-read' }, results: [{ primary_tool_slugs: ['EXAMPLE_READ'], tool_schemas: {
       EXAMPLE_READ: { input_schema: { type: 'object', additionalProperties: false, required: ['filter'], properties: {
         filter: { type: 'object', additionalProperties: false, required: ['ids'], properties: {
           ids: { type: 'array', minItems: 1, items: { type: 'string', minLength: 3 } },
@@ -1222,14 +1416,14 @@ describe('progressive Composio bridge', () => {
     const app = harness()
     await app.tool().execute({ action: 'search', queries: [{ use_case: 'Example: read selected values.' }], session: { generate_id: true } }, { signal: AbortSignal.abort() })
     await expect(app.tool().execute({
-      action: 'execute', tool_slug: 'EXAMPLE_READ', arguments: { filter: { ids: ['x'], guessed: true } },
+      action: 'execute', session_id: 'workflow-example-read', tool_slug: 'EXAMPLE_READ', arguments: { filter: { ids: ['x'], guessed: true } },
     }, { signal: AbortSignal.abort() })).rejects.toThrow('authoritative schema')
     expect(execute).toHaveBeenCalledTimes(1)
   })
 
   it('normalizes omitted arguments to an empty object only for a zero-required-field contract', async () => {
     execute
-      .mockResolvedValueOnce({ data: { results: [{ primary_tool_slugs: ['SLACK_FETCH_TEAM_INFO'], tool_schemas: {
+      .mockResolvedValueOnce({ data: { session: { id: 'workflow-slack-team' }, results: [{ primary_tool_slugs: ['SLACK_FETCH_TEAM_INFO'], tool_schemas: {
         SLACK_FETCH_TEAM_INFO: { input_schema: { type: 'object', required: [], properties: {
           team: { type: 'string' },
         } } },
@@ -1237,7 +1431,7 @@ describe('progressive Composio bridge', () => {
       .mockResolvedValueOnce({ data: { team: { name: 'Davinci AI' } } })
     const app = harness()
     await app.tool().execute({ action: 'search', queries: [{ app: 'Slack', use_case: 'Get the Slack workspace name.' }], session: { generate_id: true } }, { signal: AbortSignal.abort() })
-    await expect(app.tool().execute({ action: 'execute', tool_slug: 'SLACK_FETCH_TEAM_INFO' }, { signal: AbortSignal.abort() }))
+    await expect(app.tool().execute({ action: 'execute', session_id: 'workflow-slack-team', tool_slug: 'SLACK_FETCH_TEAM_INFO' }, { signal: AbortSignal.abort() }))
       .resolves.toMatchObject({ status: 'ready' })
     expect(execute).toHaveBeenLastCalledWith('SLACK_FETCH_TEAM_INFO', {})
   })
@@ -1372,7 +1566,7 @@ describe('progressive Composio bridge', () => {
       session: { id: 'workflow-1' },
       search_strategy: 'tool_search',
     }, execution as never)).resolves.toMatchObject({ status: 'no_matching_tool' })
-    await expect(app.tool().execute(request, execution as never)).rejects.toThrow('returned session id')
+    await expect(app.tool().execute(request, execution as never)).rejects.toThrow('repeated without new evidence')
     expect(execute).toHaveBeenCalledTimes(2)
   })
 
@@ -1483,7 +1677,12 @@ describe('progressive Composio bridge', () => {
   it('does not turn a failed provider search into an unavailable capability', async () => {
     execute.mockResolvedValue({ successful: false, data: { results: [] } })
     await expect(harness().tool().execute({ action: 'search', queries: [{ use_case: 'Find items' }], session: { generate_id: true } },
-      { signal: new AbortController().signal })).rejects.toThrow('no capability conclusion')
+      { signal: new AbortController().signal })).resolves.toMatchObject({
+      status: 'provider_unavailable', retryable: false, evidence_complete: false,
+      operations: [{ tool: 'COMPOSIO_SEARCH_TOOLS', status: 'failed' }],
+      next_action: 'report_provider_failure',
+      next_action_guidance: expect.stringContaining('do not report that an app, contact, event, or record does not exist'),
+    })
   })
 
   it('rejects mixed primary ownership rather than authorizing an unrelated app', async () => {
