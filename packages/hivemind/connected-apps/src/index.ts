@@ -1062,7 +1062,42 @@ const RESULT_FIELD_ALIASES: Readonly<Record<string, readonly string[]>> = {
   body: ['body', 'messageText', 'snippet', 'text', 'content'],
 }
 
-function semanticProviderField(value: Record<string, unknown>, field: string): JsonValue | undefined {
+function calendarEventRecord(value: Record<string, unknown>): boolean {
+  return Object.hasOwn(value, 'start') || Object.hasOwn(value, 'end')
+    || Object.hasOwn(value, 'eventType') || Object.hasOwn(value, 'event_type')
+}
+
+function calendarTemporalField(value: unknown): string | undefined {
+  if (typeof value === 'string') return value
+  if (!record(value)) return undefined
+  return stringValue(value['dateTime']) ?? stringValue(value['date_time']) ?? stringValue(value['date'])
+}
+
+function calendarProviderField(value: Record<string, unknown>, field: string): JsonValue | undefined {
+  if (!calendarEventRecord(value)) return undefined
+  if (field === 'title') return stringValue(value['title']) ?? stringValue(value['summary'])
+  if (field === 'start_time' || field === 'start_at') {
+    return calendarTemporalField(value['start_time'] ?? value['startTime'] ?? value['start'])
+  }
+  if (field === 'end_time' || field === 'end_at') {
+    return calendarTemporalField(value['end_time'] ?? value['endTime'] ?? value['end'])
+  }
+  if (field === 'timezone' || field === 'time_zone') {
+    const start = record(value['start']) ? value['start'] : undefined
+    const end = record(value['end']) ? value['end'] : undefined
+    return stringValue(value['timezone']) ?? stringValue(value['timeZone'])
+      ?? stringValue(start?.['timeZone']) ?? stringValue(start?.['time_zone'])
+      ?? stringValue(end?.['timeZone']) ?? stringValue(end?.['time_zone'])
+  }
+  if (field === 'location') return stringValue(value['location'])
+  return undefined
+}
+
+function semanticProviderField(value: Record<string, unknown>, field: string, tool?: string): JsonValue | undefined {
+  if (tool?.startsWith('GOOGLECALENDAR_')) {
+    const calendar = calendarProviderField(value, field)
+    if (calendar !== undefined) return calendar
+  }
   const aliases = RESULT_FIELD_ALIASES[field] ?? [field]
   const direct = aliases.find(key => Object.hasOwn(value, key) && value[key] !== undefined)
   if (direct !== undefined) return value[direct] as JsonValue
@@ -1074,10 +1109,10 @@ function semanticProviderField(value: Record<string, unknown>, field: string): J
   return headers[canonical]
 }
 
-function projectRequestedFields(value: unknown, requested: ReadonlySet<string>): JsonValue | undefined {
+function projectRequestedFields(value: unknown, requested: ReadonlySet<string>, tool?: string): JsonValue | undefined {
   if (Array.isArray(value)) {
     const projected = value.flatMap((item): JsonValue[] => {
-      const nested = projectRequestedFields(item, requested)
+      const nested = projectRequestedFields(item, requested, tool)
       return nested === undefined ? [] : [nested]
     })
     return projected.length === 0 ? undefined : projected
@@ -1089,25 +1124,25 @@ function projectRequestedFields(value: unknown, requested: ReadonlySet<string>):
       projected[key] = compactProviderValue(item)
       continue
     }
-    const nested = projectRequestedFields(item, requested)
+    const nested = projectRequestedFields(item, requested, tool)
     if (nested !== undefined && (!Array.isArray(nested) || nested.length > 0)
       && (!record(nested) || Object.keys(nested).length > 0)) projected[key] = nested
   }
   for (const field of requested) {
     if (Object.hasOwn(projected, field)) continue
-    const semantic = semanticProviderField(value, field)
+    const semantic = semanticProviderField(value, field, tool)
     if (semantic !== undefined) projected[field] = compactProviderValue(semantic)
   }
   return Object.keys(projected).length === 0 ? undefined : projected
 }
 
-function approvedFieldProjection(value: unknown, requestedFields: readonly string[]): Record<string, JsonValue> {
+function approvedFieldProjection(value: unknown, requestedFields: readonly string[], tool?: string): Record<string, JsonValue> {
   const output: Record<string, JsonValue> = {}
   const visit = (candidate: unknown, field: string, depth: number): JsonValue[] => {
     if (depth > 8) return []
     if (Array.isArray(candidate)) return candidate.flatMap(item => visit(item, field, depth + 1))
     if (!record(candidate)) return []
-    const semantic = semanticProviderField(candidate, field)
+    const semantic = semanticProviderField(candidate, field, tool)
     if (semantic !== undefined) return [semantic]
     return Object.values(candidate).flatMap(item => visit(item, field, depth + 1))
   }
@@ -1177,11 +1212,12 @@ export function compactComposioExecutionReceipt(
   value: unknown,
   receipt?: DurableReceiptRef,
   resultFields: readonly string[] = [],
+  tool?: string,
 ): JsonValue {
   const requested = new Set(resultFields)
   const compact = requested.size === 0
     ? compactProviderValue(value)
-    : projectRequestedFields(value, requested) ?? compactProviderValue(value)
+    : projectRequestedFields(value, requested, tool) ?? compactProviderValue(value)
   const pagination = paginationProjection(value)
   return {
     ...(record(compact) ? compact : { result: compact }),
@@ -1194,7 +1230,7 @@ export function compactComposioExecutionReceipt(
 }
 
 /** Create a bounded model-visible projection while retaining the full receipt privately. */
-export function compactComposioSearchReceipt(value: unknown, receipt?: DurableReceiptRef): Record<string, JsonValue> | undefined {
+export function compactComposioSearchReceipt(value: unknown, _receipt?: DurableReceiptRef): Record<string, JsonValue> | undefined {
   if (!record(value)) return undefined
   const unwrapped = record(value['result']) ? value['result'] : value
   const data = record(unwrapped['data']) ? unwrapped['data'] : unwrapped
@@ -1233,7 +1269,6 @@ export function compactComposioSearchReceipt(value: unknown, receipt?: DurableRe
     toolkit_connection_statuses: statuses,
     ...(session === undefined ? {} : { session }),
     next_steps_guidance: boundedStrings(data['next_steps_guidance'], 2, 240),
-    ...(receipt === undefined ? {} : { private_receipt: privateReceiptProjection(receipt) }),
     schema_policy: 'Use the exact execution_contracts below. If a selected slug has no contract, load its schema before execution. Never infer argument names.',
   }
   // Composio ranks primary slugs. Expose and authorize only the first bounded
@@ -1363,7 +1398,7 @@ async function saveReceipt(
       provider: 'composio', tool: options.tool ?? execution.name,
       ...(options.contractVersion === undefined ? {} : { contractVersion: options.contractVersion }),
       rawReceipt: value, allowedFields: resultFields,
-      approvedProjection: approvedFieldProjection(value, resultFields),
+      approvedProjection: approvedFieldProjection(value, resultFields, options.tool ?? execution.name),
       projectionPolicy: resultFields.length === 0 ? 'private-source-v1' : 'selected-contract-v1',
     })
   } catch (error: unknown) {
@@ -2054,6 +2089,7 @@ export function apply(ctx: Context, config: Config = {}): void {
           providerResult,
           sourceReceipt,
           durableResultFields,
+          slug,
         ) as Record<string, JsonValue>,
         status: 'ready',
         ...(requiresApproval(slug) ? { idempotency_key: idempotencyKey } : {}),

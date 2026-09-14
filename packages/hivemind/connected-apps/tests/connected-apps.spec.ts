@@ -270,6 +270,21 @@ describe('progressive Composio bridge', () => {
     }] }] } })
   })
 
+  it('normalizes the all-calendars summary view used by bounded agenda reads', () => {
+    const projected = compactComposioExecutionReceipt({ data: { summary_view: [{
+      calendar: 'Primary', event_id: 'event-1', title: 'Bus to Hanover',
+      start: '2026-09-15T02:55:00+02:00', end: '2026-09-15T06:50:00+02:00',
+      is_all_day: false,
+    }] } }, receipt, ['title', 'start_time', 'end_time', 'location'], 'GOOGLECALENDAR_EVENTS_LIST_ALL_CALENDARS')
+
+    expect(projected).toMatchObject({ data: { summary_view: [{
+      title: 'Bus to Hanover',
+      start_time: '2026-09-15T02:55:00+02:00',
+      end_time: '2026-09-15T06:50:00+02:00',
+    }] } })
+    expect(JSON.stringify(projected)).not.toContain('event-1')
+  })
+
   it('falls back to the bounded provider projection when requested keys are absent', () => {
     const projected = compactComposioExecutionReceipt(
       { data: { actual_key: 'provider evidence' } }, undefined, ['unknown_key'],
@@ -350,7 +365,7 @@ describe('progressive Composio bridge', () => {
       { tool: 'COMPOSIO_SEARCH_TOOLS', rawReceipt: search, allowedFields: [] },
       { tool: 'EXAMPLE_READ', rawReceipt: provider, allowedFields: ['value'], approvedProjection: { value: 'complete provider result' } },
     ])
-    expect(discovered).toMatchObject({ private_receipt: { stored: true } })
+    expect(discovered).not.toHaveProperty('private_receipt')
     expect(completed).toMatchObject({ private_receipt: { stored: true } })
     expect(JSON.stringify([discovered, completed])).not.toContain('private:')
     expect(JSON.stringify([discovered, completed])).not.toContain('retrieval_hint')
@@ -408,6 +423,68 @@ describe('progressive Composio bridge', () => {
     }] } })
     expect(repeated).toMatchObject({ repeated_execution: true, operations: [{ tool: 'GMAIL_FETCH_EMAILS', status: 'already_completed' }] })
     expect(execute.mock.calls.map(call => call[0])).toEqual(['COMPOSIO_SEARCH_TOOLS', 'GMAIL_FETCH_EMAILS'])
+  })
+
+  it('projects answer-ready fields from nested all-calendar results on the first execution', async () => {
+    execute
+      .mockResolvedValueOnce({ data: {
+        session: { id: 'workflow-calendar-all' },
+        results: [{ primary_tool_slugs: ['GOOGLECALENDAR_EVENTS_LIST_ALL_CALENDARS'], toolkits: ['googlecalendar'], tool_schemas: {
+          GOOGLECALENDAR_EVENTS_LIST_ALL_CALENDARS: { input_schema: {
+            type: 'object', additionalProperties: false, required: ['time_min', 'time_max'], properties: {
+              time_min: { type: 'string' }, time_max: { type: 'string' },
+            },
+          } },
+        } }],
+        toolkit_connection_statuses: [{ toolkit: 'googlecalendar', has_active_connection: true }],
+      } })
+      .mockResolvedValueOnce({ data: { calendars: [{
+        calendar: { id: 'primary', summary: 'Amar' },
+        items: [{
+          id: 'timed-event', summary: 'Prague anniversary',
+          start: { dateTime: '2026-09-14T09:00:00+02:00', timeZone: 'Europe/Berlin' },
+          end: { dateTime: '2026-09-14T10:00:00+02:00', timeZone: 'Europe/Berlin' },
+          location: 'Prague, Czech Republic',
+        }, {
+          id: 'all-day-event', summary: 'Arrival day',
+          start: { date: '2026-09-15' }, end: { date: '2026-09-16' },
+          location: 'Prague',
+        }],
+      }] } })
+    const app = harness(true, undefined, false, { withSpill: true })
+    const receiptRead = vi.spyOn(app.receiptTool(), 'execute')
+    const agent = { session: { header: { id: 'calendar-all-fields' }, snapshotEvents: () => [], append: vi.fn() } }
+    await app.listeners.get('agent/pre-step')?.(
+      { agent, turn: 1 } as never, vi.fn(async () => ({ kind: 'enter', messages: [] })) as never,
+    )
+    await app.tool().execute({
+      action: 'search', session: { generate_id: true },
+      queries: [{
+        app: 'Google Calendar', use_case: 'Find events across all calendars.',
+        result_fields: ['title', 'start_time', 'end_time', 'timezone', 'location'],
+      }],
+    }, { signal: AbortSignal.abort(), agent } as never)
+    const result = await app.tool().execute({
+      action: 'execute', session_id: 'workflow-calendar-all', planned_step_id: 'find-all-events',
+      tool_slug: 'GOOGLECALENDAR_EVENTS_LIST_ALL_CALENDARS',
+      arguments: { time_min: '2026-09-14T00:00:00+02:00', time_max: '2026-09-15T00:00:00+02:00' },
+    }, { signal: AbortSignal.abort(), agent } as never)
+
+    expect(result).toMatchObject({ status: 'ready', data: { calendars: [{ items: [{
+      title: 'Prague anniversary',
+      start_time: '2026-09-14T09:00:00+02:00', end_time: '2026-09-14T10:00:00+02:00',
+      timezone: 'Europe/Berlin',
+      location: 'Prague, Czech Republic',
+    }, {
+      title: 'Arrival day',
+      start_time: '2026-09-15', end_time: '2026-09-16', location: 'Prague',
+    }],
+    }] } })
+    expect(execute.mock.calls.map(call => call[0])).toEqual([
+      'COMPOSIO_SEARCH_TOOLS', 'GOOGLECALENDAR_EVENTS_LIST_ALL_CALENDARS',
+    ])
+    expect(receiptRead).not.toHaveBeenCalled()
+    expect(app.spills).toHaveLength(2)
   })
 
   it('executes a broader Gmail query instead of reusing a narrower read', async () => {
