@@ -141,6 +141,7 @@ export function memoryPlugin(config: MemoryPluginConfig, provider: MemoryProvide
           },
           save: {
             type: 'object',
+            description: 'For a new standalone memory, omit both relationship and related_to. A relationship is only for a confirmed link to an existing recalled memory and requires related_to.',
             additionalProperties: false,
             properties: {
               title: { type: 'string', required: true },
@@ -148,8 +149,8 @@ export function memoryPlugin(config: MemoryPluginConfig, provider: MemoryProvide
               source_type: { type: 'string', enum: ['text', 'conversation', 'documentation', 'decision'] },
               tags: { type: 'array', items: { type: 'string' } },
               project: { type: 'string' },
-              relationship: { type: 'string', enum: ['update', 'extend', 'derive'] },
-              related_to: { type: 'string' },
+              relationship: { type: 'string', enum: ['update', 'extend', 'derive'], description: 'Optional relation to an existing memory. Omit for a new standalone memory. When set, related_to is required.' },
+              related_to: { type: 'string', description: 'The exact recalled memory UUID that the relationship targets. Never use a person, project, topic, or label.' },
             },
           },
           save_status: {

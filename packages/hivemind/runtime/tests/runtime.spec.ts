@@ -897,4 +897,13 @@ describe('HIVE-MIND runtime', () => {
     }
   })
 
+  it('distinguishes a standalone save from a relationship save in the model-facing schema', async () => {
+    const harness = mount(config(await authorityFile()))
+    const serialized = JSON.stringify(tool(harness, 'hivemind_meta').parameters)
+
+    expect(serialized).toContain('For a new standalone memory, omit both relationship and related_to')
+    expect(serialized).toContain('requires related_to')
+    expect(serialized).toContain('exact recalled memory UUID')
+  })
+
 })

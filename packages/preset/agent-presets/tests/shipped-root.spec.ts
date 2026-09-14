@@ -185,6 +185,7 @@ describe('the shipped preset root', () => {
     expect(prefix).toContain('For one bounded task, call search directly without loading a skill')
     expect(prefix).toContain('Begin with only this contract, recent completed conversation')
     expect(prefix).toContain('ask one concise clarification')
+    expect(prefix).toContain('For a new standalone memory, omit both relationship and')
     expect(prefix).toContain('use hivemind_connected_receipt_read once with its opaque receipt id')
     expect(prefix).toContain('Request hivemind_capabilities only when a detailed playbook is genuinely needed')
     expect(prefix).toContain('profiles only for the HyperAgent directory')

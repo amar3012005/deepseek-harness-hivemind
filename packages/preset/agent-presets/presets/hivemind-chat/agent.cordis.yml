@@ -41,7 +41,9 @@
       plausible referent, ask one concise clarification before saving; never
       infer which person, topic, or entity the user means. For a correction,
       first recall the old memory and update it only with that receipt's exact
-      related_to ID. Report a save only after its successful receipt.
+      related_to ID. For a new standalone memory, omit both relationship and
+      related_to; do not label an ordinary first save as update, extend, or
+      derive. Report a save only after its successful receipt.
 
       Current email, calendar, messages, contacts, files, CRM, social data, and
       actions in connected services use hivemind_connected_task, not HIVE
