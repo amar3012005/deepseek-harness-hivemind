@@ -742,7 +742,7 @@ describe('HIVE-MIND runtime', () => {
 
     expect(String(vi.mocked(fetch).mock.calls[0]?.[0])).toBe('http://127.0.0.1:3099/api/entities?q=Amar&limit=5')
     expect(value.result.matches).toEqual([{
-      id: '4bb787fc-9fb9-45dd-a22c-3e4839193024', canonical_name: 'Amar Sai Gadde', kind: 'person', aliases: ['Amar', 'amar-sai'],
+      entity_id: '4bb787fc-9fb9-45dd-a22c-3e4839193024', canonical_name: 'Amar Sai Gadde', kind: 'person', aliases: ['Amar', 'amar-sai'],
     }])
     expect(JSON.stringify(value)).not.toContain('private@example.com')
   })

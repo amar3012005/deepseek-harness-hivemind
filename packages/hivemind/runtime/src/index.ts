@@ -524,7 +524,7 @@ function compactEntityResponse(value: JsonRecord, limit: number, receipt?: Spill
     const entity = item as JsonRecord
     if (typeof entity['id'] !== 'string' || typeof entity['canonicalName'] !== 'string') continue
     const match: Record<string, JsonValue> = {
-      id: entity['id'],
+      entity_id: entity['id'],
       canonical_name: entity['canonicalName'],
     }
     if (typeof entity['entityKind'] === 'string') match['kind'] = entity['entityKind']
