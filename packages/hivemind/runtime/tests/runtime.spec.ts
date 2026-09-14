@@ -667,6 +667,21 @@ describe('HIVE-MIND runtime', () => {
     expect(postBodies[0].idempotency_key).toBe(postBodies[1].idempotency_key)
   })
 
+  it('exposes scoped save status using only the returned idempotency key', async () => {
+    const path = await authorityFile()
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({
+      status: 'saved', receipt_id: 'receipt-1', memory_id: 'memory-1', idempotency_key: 'hive-save:key-1',
+    })))
+    const harness = mount(config(path))
+
+    const value = await tool(harness, 'hivemind_meta').execute({
+      operation: 'save_status', save_status: { idempotency_key: 'hive-save:key-1' },
+    }, execContext())
+
+    expect(String(vi.mocked(fetch).mock.calls[0]?.[0])).toContain('/api/memories/save-status?idempotency_key=hive-save%3Akey-1')
+    expect(value).toMatchObject({ operation: 'save_status', status: 'saved', receipt_id: 'receipt-1', memory_id: 'memory-1' })
+  })
+
   it('rejects a correction without the exact prior-memory reference', async () => {
     const harness = mount(config(await authorityFile()))
     await expect(tool(harness, 'hivemind_meta').execute({
