@@ -79,6 +79,9 @@ function mount(pluginConfig: Config, withSpill = false): HarnessMock {
   const spills: Array<{ suggestedName: string; content: string }> = []
   const harness: HarnessMock = { tools, skills, spills }
   const ctx = {
+    effect(callback: () => (() => void) | undefined) {
+      return callback()
+    },
     on(event: string, listener: (payload: unknown, next: () => Promise<unknown>) => Promise<unknown>) {
       if (event === 'agent/pre-step') harness.preStep = listener
       if (event === 'agent/inbox/inserted') {

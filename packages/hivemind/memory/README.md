@@ -2,6 +2,8 @@
 
 Owns the single `hivemind_meta` read tool. It progressively selects company context, bounded recall, or the exact HyperAgent directory while tenant scope remains server-derived. Recall supports focused source, project, time, tag, media-kind, filename, and entity filters without accepting a tenant identifier.
 
+The tool registration is owned by the plugin fiber through a Cordis effect. Reloading or disposing the HIVE plugin therefore removes its tool instead of leaving a duplicate or stale registration in another profile.
+
 ## Model Experience
 
 - **Visible tools:** one compact meta-tool.

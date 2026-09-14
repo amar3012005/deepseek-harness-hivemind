@@ -9,6 +9,9 @@ function user(text: string) {
 function mount(events: unknown[] = []) {
   let preStep: ((payload: never, next: () => Promise<unknown>) => Promise<unknown>) | undefined
   const ctx = {
+    effect(callback: () => (() => void) | undefined) {
+      return callback()
+    },
     on(event: string, listener: typeof preStep) {
       if (event === 'agent/pre-step') preStep = listener
       return () => {}

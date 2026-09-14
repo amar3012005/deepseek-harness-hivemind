@@ -721,12 +721,12 @@ function registerWebConnectRoutes(ctx: Context, config: Config): void {
  * @returns Nothing; Cordis owns the registered effects.
  */
 export function apply(ctx: Context, config: Config): void {
-  ctx.hivemindIdentity.register({
+  ctx.effect(() => ctx.hivemindIdentity.register({
     async identity(signal) {
       const authority = await resolveAuthority(ctx, config)
       return identityFromProfile(await hiveRequest(authority, PROFILE_PATH, { method: 'GET' }, signal, config))
     },
-  })
+  }))
   const snapshots = new WeakMap<Agent, Promise<ProfileSnapshot>>()
   const snapshotFor = (agent: Agent, signal: AbortSignal): Promise<ProfileSnapshot> => {
     const current = snapshots.get(agent)
@@ -739,11 +739,11 @@ export function apply(ctx: Context, config: Config): void {
 
   if (config.authorityMode !== 'scoped-service') registerWebConnectRoutes(ctx, config)
   if (!config.agentFeaturesEnabled) return
-  ctx.on('tools/pre-execute', async (execution, next): Promise<PreToolDecision> => {
+  ctx.effect(() => ctx.on('tools/pre-execute', async (execution, next): Promise<PreToolDecision> => {
     if (!config.webApprovalRequired || (execution.name !== 'web_search' && execution.name !== 'web_fetch')) return next()
     return { kind: 'ask', reason: 'Web research requires your approval before accessing external sources.' }
-  })
-  ctx.skills.register({
+  }))
+  ctx.effect(() => ctx.skills.register({
     name: 'hivemind-company-brain',
     description: 'Load only for multi-source, temporal reconstruction, or conflict-reconciliation work. Simple profile, entity lookup, recall, directory, and stable single-fact saves call hivemind_meta directly.',
     // Keep routing knowledge in the native skill catalogue. The model chooses
@@ -762,8 +762,8 @@ export function apply(ctx: Context, config: Config): void {
 3. For internal media, use \`media_kind: "image"\`, the exact \`filename\` when known, object names in \`entities\`, and \`source_platforms: ["knowledge-upload"]\` when the image came from an upload. For example, an uploaded image with a glass uses a focused query plus \`media_kind: "image"\` and \`entities: ["glass"]\`.
 4. A returned title, filename, citation ID, or memory ID is an internal evidence reference, not a workspace path and not proof that a downloadable artifact is available. Do not use shell, filesystem, Glob, Grep, or web tools to locate it unless the user explicitly asks about a local workspace or supplies a local path.
 5. For temporal questions, preserve the user's date or timeframe verbatim in the recall query. Use \`valid_at\` only for a specific “what was true as of” timestamp and \`transaction_at\` only for a specific “what did the system know as of” timestamp. Use an explicit \`decision\` tag only when the user asks for decisions.\n6. Proactively use \`save\` for a stable, reusable, high-value preference, decision, correction, relationship, or completed outcome that the user explicitly states or confirms, or that a verified HIVE/provider receipt establishes. Do not wait for the word “save.” Before saving a fact about a named subject with more than one plausible referent, ask one concise clarification; do not infer the referent. Save a concise factual statement with a descriptive title. Never save secrets, credentials, private authentication material, transient chat, sensitive personal data without direct instruction, speculation, or unverified claims. For a correction, first recall the old memory and use \`relationship: "update"\` with the exact UUID \`related_to\` ID returned by that receipt. Do not retry an invalid update or report a save without a successful receipt.\n7. Read returned evidence and citations completely enough to answer. Identify conflicts or gaps, and do not claim that a file, image, or fact is available beyond the receipt. A bounded lookup gets one focused recall: synthesize or report no relevant match after it. A second recall is permitted only for an explicitly exhaustive or genuinely multi-source request, and must use materially new evidence constraints rather than a paraphrase.\n8. HIVE-MIND supplies internal company knowledge. Use native Harness tools for independent web evidence, coding, artifacts, workflows, and subagents when those tasks are actually requested.`,
-  })
-  ctx.tools.register(defineTool({
+  }))
+  ctx.effect(() => ctx.tools.register(defineTool({
     name: HIVE_CAPABILITIES_TOOL,
     description: 'Reveal the compact skill catalog when this task needs a detailed playbook. Do not call for direct answers, concise clarification, one bounded HIVE lookup, or one bounded connected-app task.',
     parameters: {},
@@ -775,7 +775,7 @@ export function apply(ctx: Context, config: Config): void {
         next: 'Select and load only a relevant skill from the compact catalog in the next step.',
       })
     },
-  }))
+  })))
   ctx.plugin(contextPlugin({
     historyTurns: config.historyTurns,
     historyMaxChars: config.historyMaxChars,
@@ -873,7 +873,7 @@ export function apply(ctx: Context, config: Config): void {
 
   if (!config.legacyToolsEnabled) return
 
-  ctx.tools.register(defineTool({
+  ctx.effect(() => ctx.tools.register(defineTool({
     name: 'hivemind_profile_context',
     description: 'Read the authenticated user and organization context already governing this session.',
     parameters: {},
@@ -883,9 +883,9 @@ export function apply(ctx: Context, config: Config): void {
       const snapshot = await snapshotFor(requireAgent(exec.agent), exec.signal)
       return { status: 'ready', context: snapshot.initialContext }
     },
-  }))
+  })))
 
-  ctx.tools.register(defineTool({
+  ctx.effect(() => ctx.tools.register(defineTool({
     name: 'hivemind_recall',
     description: 'Recall organization memory for a focused query. Use only when current context is insufficient.',
     parameters: {
@@ -917,9 +917,9 @@ export function apply(ctx: Context, config: Config): void {
       }
       return { status: 'ready', result: compactRecallResponse(response, config.recallResultLimit, config.recallItemMaxChars) }
     },
-  }))
+  })))
 
-  ctx.tools.register(defineTool({
+  ctx.effect(() => ctx.tools.register(defineTool({
     name: 'hivemind_hyperagent_profiles',
     description: 'Fetch the authenticated organization\'s exact HyperAgent profiles for identification, selection, assignment, review, or sub-agent coordination. User and organization scope are derived from the API key. Never invent employees.',
     parameters: {},
@@ -933,6 +933,6 @@ export function apply(ctx: Context, config: Config): void {
         : await hiveRequest(authority, HYPERAGENT_PROFILES_URL, { method: 'GET' }, exec.signal, config, 'https://api.singulancelabs.com')
       return hyperagentProfilesFromResponse(result)
     },
-  }))
+  })))
 
 }

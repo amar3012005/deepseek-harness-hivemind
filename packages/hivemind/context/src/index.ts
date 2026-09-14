@@ -70,7 +70,7 @@ export function contextPlugin(config: ContextConfig): Plugin.Object<void> {
     name: 'hivemind-context',
     apply(ctx: Context): void {
       const projected = new WeakMap<Agent, number>()
-      ctx.on('agent/pre-step', async ({ agent, turn }, next) => {
+      ctx.effect(() => ctx.on('agent/pre-step', async ({ agent, turn }, next) => {
         const decision = await next()
         if (decision.kind === 'reject') return decision
 
@@ -88,7 +88,7 @@ export function contextPlugin(config: ContextConfig): Plugin.Object<void> {
         return changed
           ? { ...decision, messages: withoutCatalog, startsRequestSeries: true }
           : { ...decision, messages: withoutCatalog }
-      }, { prepend: true })
+      }, { prepend: true }))
     },
   }
 }

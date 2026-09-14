@@ -104,7 +104,7 @@ export function memoryPlugin(config: MemoryPluginConfig, provider: MemoryProvide
     name: 'hivemind-memory',
     inject: ['tools'],
     apply(ctx: Context): void {
-      ctx.tools.register(defineTool({
+      ctx.effect(() => ctx.tools.register(defineTool({
         name: 'hivemind_meta',
         description: 'HIVE-MIND gateway for authenticated context, canonical entity discovery, bounded memory recall, governed durable memory saves, or the exact HyperAgent directory. Use context for questions about the caller or company profile. Use entities first for a named person, topic, project, organization, document, or other subject when its canonical name could narrow recall. Use save only for a stable user preference, confirmed decision, correction, or completed outcome that will matter later; never save secrets, credentials, ephemeral chat, guesses, or unverified claims. Tenant scope is derived from the current HIVE-MIND credential.',
         parameters: {
@@ -212,7 +212,7 @@ export function memoryPlugin(config: MemoryPluginConfig, provider: MemoryProvide
           if (input['include_superseded'] !== undefined) request.includeSuperseded = input['include_superseded'] === true
           return provider.recall(request, execution.signal, execution)
         },
-      }))
+      })))
     },
   }
 }
