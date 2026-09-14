@@ -385,20 +385,52 @@
   );
 }
 
-/* Da-vinci owns the page title and global navigation. In the embedded HIVE
-   composition the native Session title/action row is redundant, while the
-   native Chat/Trajectory switch remains useful. Seat that switch beside the
-   bottom composer rather than spending a full header row above the transcript. */
-:global(html[data-dsh-mode='hivemind-chat']) .root[data-phase='active'] .header {
+/* Da-vinci owns the title and application chrome in the embedded HIVE
+   composition. Preserve the native view switcher as a compact floating
+   control at the canvas' lower-left: Chat and Trajectory remain reachable
+   without recreating a second navbar. */
+:global(html[data-dsh-mode='hivemind-chat']) .root .header:not(.headerHidden) {
   position: absolute;
   z-index: 8;
-  left: max(16px, calc(50% - var(--dsh-composer-card-max-width) / 2 - 176px));
-  bottom: 45px;
-  width: 160px;
+  bottom: 18px;
+  left: 18px;
   min-height: 0;
   padding: 0;
   border: 0;
-  background: transparent;
+  pointer-events: none;
+}
+
+:global(html[data-dsh-mode='hivemind-chat']) .root .header .titleRow {
+  display: none;
+}
+
+:global(html[data-dsh-mode='hivemind-chat']) .root .header .tabs {
+  gap: 2px;
+  margin: 0;
+  padding: 3px;
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--dsw-alias-bg-base) 94%, transparent);
+  box-shadow: 0 4px 16px color-mix(in srgb, var(--dsw-alias-label-primary) 10%, transparent);
+  pointer-events: auto;
+  backdrop-filter: blur(12px);
+}
+
+:global(html[data-dsh-mode='hivemind-chat']) .root .header .tab {
+  min-width: 68px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  line-height: 16px;
+}
+
+:global(html[data-dsh-mode='hivemind-chat']) .root .header .tab:hover,
+:global(html[data-dsh-mode='hivemind-chat']) .root .header .tabActive {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+:global(html[data-dsh-mode='hivemind-chat']) .root .header .tab::after {
+  display: none;
 }
 
 /* Da-vinci's application header is 56px high. Its generic Overview wrapper

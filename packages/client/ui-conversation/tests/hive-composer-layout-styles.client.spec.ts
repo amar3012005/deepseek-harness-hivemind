@@ -19,6 +19,22 @@ describe('HIVE composer layout', () => {
     expect(css).toMatch(/main:has\(\[data-conversation-scroll\]\)[\s\S]*height:\s*calc\(100vh - 56px\)/s)
   })
 
+  it('keeps Chat and Trajectory as lower-left HIVE overlay controls', () => {
+    const lowerLeft = new RegExp(
+      String.raw`data-dsh-mode='hivemind-chat'[\s\S]*\.header:not\(\.headerHidden\)[^{]*\{`
+      + String.raw`[^}]*position:\s*absolute[^}]*bottom:\s*18px[^}]*left:\s*18px`,
+      's',
+    )
+    expect(css).toMatch(lowerLeft)
+    expect(css).toMatch(
+      /data-dsh-mode='hivemind-chat'[\s\S]*\.header \.titleRow\s*\{[^}]*display:\s*none/s,
+    )
+    expect(css).toMatch(
+      /data-dsh-mode='hivemind-chat'[\s\S]*\.header \.tabs\s*\{[^}]*pointer-events:\s*auto/s,
+    )
+    expect(css).not.toMatch(/data-dsh-mode='hivemind-chat'[^}]*\.root \.header\s*\{[^}]*display:\s*none/s)
+  })
+
   it('keeps runtime disclosure icons and titles on the native inline row', () => {
     expect(css).toMatch(
       /data-dsh-mode='hivemind-chat'[\s\S]*\[data-disclosure-row\][^{}]*\{[^}]*display:\s*flex[^}]*align-items:\s*center/s,
