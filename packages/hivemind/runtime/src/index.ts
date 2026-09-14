@@ -19,11 +19,11 @@ import { homedir } from 'node:os'
 import { isAbsolute, dirname, join } from 'node:path'
 import { lstat, readFile, rename, writeFile } from 'node:fs/promises'
 import { spawn } from 'node:child_process'
-import { createHmac, randomUUID } from 'node:crypto'
+import { createHash, createHmac, randomUUID } from 'node:crypto'
 import type {} from '@deepseek-ai/dsh-hivemind-identity'
 import type {} from '@deepseek-ai/dsh-hivemind-execution-scope'
 import { contextPlugin } from '@deepseek-ai/dsh-hivemind-context'
-import { memoryPlugin, type EntitySearchRequest, type RecallRequest, type SaveRequest } from '@deepseek-ai/dsh-hivemind-memory'
+import { memoryPlugin, type EntitySearchRequest, type RecallRequest, type SaveRequest, type SaveStatusRequest } from '@deepseek-ai/dsh-hivemind-memory'
 import { projectHyperagentProfiles } from '@deepseek-ai/dsh-hivemind-employee-directory'
 
 export { completedExchanges, recentConversationText } from '@deepseek-ai/dsh-hivemind-context'
@@ -41,6 +41,8 @@ const PROFILE_FACTS_PATH = '/api/profiles'
 const PROFILE_CONTEXT_PATH = '/api/profiles/context'
 const RECALL_PATH = '/api/recall'
 const ENTITY_SEARCH_PATH = '/api/entities'
+const SAVE_PATH = '/api/memories?sync=true'
+const SAVE_STATUS_PATH = '/api/memories/save-status'
 const HYPERAGENT_PROFILES_URL = 'https://api.singulancelabs.com/v1/hyperagents/profiles'
 const CONNECT_STATUS_PATH = '/hivemind/connect/status'
 const CONNECT_START_PATH = '/hivemind/connect/start'
@@ -363,15 +365,15 @@ async function hiveRequest(
   try {
     let response: Response
     try {
+      const headers = Object.fromEntries(new Headers(init.headers).entries())
+      headers['accept'] = 'application/json'
+      headers['authorization'] = `Bearer ${authority.token}`
+      if (init.body !== undefined) headers['content-type'] = 'application/json'
       response = await fetch(target, {
         ...init,
         redirect: 'manual',
         signal: operation.signal,
-        headers: {
-          accept: 'application/json',
-          authorization: `Bearer ${authority.token}`,
-          ...init.body === undefined ? {} : { 'content-type': 'application/json' },
-        },
+        headers,
       })
     } catch {
       if (callerSignal.aborted) throw new HiveMindRuntimeError('request cancelled')
@@ -544,12 +546,39 @@ function compactEntityResponse(value: JsonRecord, limit: number, receipt?: Spill
 }
 
 /** Expose only a receipt from a successful memory write; tenant fields remain transport-private. */
-function compactSaveReceipt(value: JsonRecord, sourceReceipt?: SpillRef): Record<string, JsonValue> {
-  const receipt: Record<string, JsonValue> = { status: 'saved' }
-  for (const field of ['id', 'title', 'memory_type', 'citation_id', 'created_at', 'updated_at']) {
-    if (typeof value[field] === 'string') receipt[field] = value[field]
+function compactSaveReceipt(value: JsonRecord, idempotencyKey: string, sourceReceipt?: SpillRef): Record<string, JsonValue> {
+  const memory = typeof value['memory'] === 'object' && value['memory'] !== null && !Array.isArray(value['memory'])
+    ? value['memory'] as JsonRecord
+    : value
+  const durable = typeof value['receipt'] === 'object' && value['receipt'] !== null && !Array.isArray(value['receipt'])
+    ? value['receipt'] as JsonRecord
+    : undefined
+  const memoryId = typeof durable?.['memory_id'] === 'string'
+    ? durable['memory_id']
+    : typeof memory['id'] === 'string' ? memory['id'] : undefined
+  const receiptId = typeof durable?.['receipt_id'] === 'string' ? durable['receipt_id'] : undefined
+  if (value['skipped'] === true) {
+    return { status: 'unchanged', operation: 'save', idempotency_key: idempotencyKey, reason: 'canonical_duplicate' }
   }
-  if (typeof value['id'] !== 'string') throw new HiveMindRuntimeError('memory save response is missing its receipt id')
+  if (durable?.['status'] === 'processing' || durable?.['status'] === 'failed' || durable?.['status'] === 'not_found') {
+    return {
+      status: durable['status'], operation: 'save', idempotency_key: idempotencyKey,
+      ...(typeof durable['error_code'] === 'string' ? { error_code: durable['error_code'] } : {}),
+    }
+  }
+  if (memoryId === undefined || receiptId === undefined) {
+    return {
+      status: 'indeterminate', operation: 'save', idempotency_key: idempotencyKey,
+      error_code: 'MEMORY_SAVE_RECEIPT_INCOMPLETE', retry_safe: false,
+    }
+  }
+  const receipt: Record<string, JsonValue> = {
+    status: 'saved', operation: 'save', memory_id: memoryId, receipt_id: receiptId,
+    idempotency_key: idempotencyKey, replayed: value['replayed'] === true,
+  }
+  for (const field of ['title', 'memory_type', 'citation_id', 'created_at', 'updated_at']) {
+    if (typeof memory[field] === 'string') receipt[field] = memory[field]
+  }
   if (sourceReceipt !== undefined) {
     receipt['source_receipt'] = {
       locator: sourceReceipt.locator,
@@ -558,6 +587,17 @@ function compactSaveReceipt(value: JsonRecord, sourceReceipt?: SpillRef): Record
     }
   }
   return receipt
+}
+
+function saveIdempotencyKey(snapshot: ProfileSnapshot, execution: ToolExecution, request: SaveRequest): string {
+  const sessionId = execution.agent?.session?.header.id || 'session-unavailable'
+  const canonical = JSON.stringify({
+    org_id: snapshot.identity.orgId, user_id: snapshot.identity.userId, session_id: sessionId,
+    title: request.title, content: request.content, source_type: request.sourceType,
+    tags: [...(request.tags ?? [])].sort(), project: request.project ?? null,
+    relationship: request.relationship ?? null, related_to: request.relatedTo ?? null,
+  })
+  return `hive-save:${createHash('sha256').update(canonical).digest('hex')}`
 }
 
 /** Persist the complete HIVE response before projecting it into model context. */
@@ -761,7 +801,7 @@ export function apply(ctx: Context, config: Config): void {
 2. For recall, use the registered nested shape exactly: \`{"operation":"recall","recall":{"query":"..."}}\`. Never put \`query\` beside \`operation\`. Preserve the user's exact named entity or filename in \`recall.query\`. Add only filters supported by the request: \`source_platforms\`, \`project\`, \`valid_at\`, \`transaction_at\`, \`sort\`, and explicit \`tags\`.
 3. For internal media, use \`media_kind: "image"\`, the exact \`filename\` when known, object names in \`entities\`, and \`source_platforms: ["knowledge-upload"]\` when the image came from an upload. For example, an uploaded image with a glass uses a focused query plus \`media_kind: "image"\` and \`entities: ["glass"]\`.
 4. A returned title, filename, citation ID, or memory ID is an internal evidence reference, not a workspace path and not proof that a downloadable artifact is available. Do not use shell, filesystem, Glob, Grep, or web tools to locate it unless the user explicitly asks about a local workspace or supplies a local path.
-5. For temporal questions, preserve the user's date or timeframe verbatim in the recall query. Use \`valid_at\` only for a specific “what was true as of” timestamp and \`transaction_at\` only for a specific “what did the system know as of” timestamp. Use an explicit \`decision\` tag only when the user asks for decisions.\n6. Proactively use \`save\` for a stable, reusable, high-value preference, decision, correction, relationship, or completed outcome that the user explicitly states or confirms, or that a verified HIVE/provider receipt establishes. Do not wait for the word “save.” Before saving a fact about a named subject with more than one plausible referent, ask one concise clarification; do not infer the referent. Save a concise factual statement with a descriptive title. Never save secrets, credentials, private authentication material, transient chat, sensitive personal data without direct instruction, speculation, or unverified claims. For a correction, first recall the old memory and use \`relationship: "update"\` with the exact UUID \`related_to\` ID returned by that receipt. Do not retry an invalid update or report a save without a successful receipt.\n7. Read returned evidence and citations completely enough to answer. Identify conflicts or gaps, and do not claim that a file, image, or fact is available beyond the receipt. A bounded lookup gets one focused recall: synthesize or report no relevant match after it. A second recall is permitted only for an explicitly exhaustive or genuinely multi-source request, and must use materially new evidence constraints rather than a paraphrase.\n8. HIVE-MIND supplies internal company knowledge. Use native Harness tools for independent web evidence, coding, artifacts, workflows, and subagents when those tasks are actually requested.`,
+5. For temporal questions, preserve the user's date or timeframe verbatim in the recall query. Use \`valid_at\` only for a specific “what was true as of” timestamp and \`transaction_at\` only for a specific “what did the system know as of” timestamp. Use an explicit \`decision\` tag only when the user asks for decisions.\n6. Proactively use \`save\` for a stable, reusable, high-value preference, decision, correction, relationship, or completed outcome that the user explicitly states or confirms, or that a verified HIVE/provider receipt establishes. Do not wait for the word “save.” Treat “save this to <person>” as ambiguous between saving a HIVE memory and sending a message: ask that one distinction before acting. Save only the smallest confirmed fact, never a synthesized biography or profile assembled from unrelated context. Before saving a fact about a named subject with more than one plausible referent, ask one concise clarification; do not infer the referent. Never save secrets, credentials, private authentication material, transient chat, sensitive personal data without direct instruction, speculation, or unverified claims. For a correction, first recall the old memory and use \`relationship: "update"\` with the exact UUID \`related_to\` ID returned by that receipt. A person/entity name is never a \`related_to\` memory ID. A typed unavailable, failed, unchanged, or indeterminate result is terminal for this turn: never retry the save POST, and never report a save without \`memory_id\`, \`receipt_id\`, and \`idempotency_key\`.\n7. Read returned evidence and citations completely enough to answer. Identify conflicts or gaps, and do not claim that a file, image, or fact is available beyond the receipt. A bounded lookup gets one focused recall: synthesize or report no relevant match after it. A second recall is permitted only for an explicitly exhaustive or genuinely multi-source request, and must use materially new evidence constraints rather than a paraphrase.\n8. HIVE-MIND supplies internal company knowledge. Use native Harness tools for independent web evidence, coding, artifacts, workflows, and subagents when those tasks are actually requested.`,
   })
   ctx.tools.register(defineTool({
     name: HIVE_CAPABILITIES_TOOL,
@@ -795,9 +835,9 @@ export function apply(ctx: Context, config: Config): void {
       try {
         result = await hiveRequest(authority, `${ENTITY_SEARCH_PATH}${target.search}`, { method: 'GET' }, signal, config)
       } catch (error: unknown) {
-        if (error instanceof HiveMindRuntimeError && (error.status === 501 || error.status === 503)) {
+        if (error instanceof HiveMindRuntimeError && (error.status === 404 || error.status === 501 || error.status === 503)) {
           return {
-            status: 'unavailable',
+            status: 'capability_unavailable',
             operation: 'entities',
             result: { matches: [], degradation: 'Canonical entity discovery is unavailable; use one focused recall with the original subject.' },
           }
@@ -843,31 +883,67 @@ export function apply(ctx: Context, config: Config): void {
     async save(agent, request: SaveRequest, signal, execution) {
       const snapshot = await snapshotFor(agent, signal)
       const authority = await resolveAuthority(ctx, config)
-      const result = await hiveRequest(authority, '/api/memories?sync=true', {
-        method: 'POST',
-        body: JSON.stringify({
-          title: request.title,
-          content: request.content,
-          memory_type: request.sourceType === 'decision' ? 'decision' : 'fact',
-          source_platform: 'deepseek-harness',
-          tags: request.tags ?? [],
-          ...request.project === undefined ? {} : { project: request.project },
-          ...request.relationship === undefined ? {} : {
-            relationship: {
-              type: { update: 'Updates', extend: 'Extends', derive: 'Derives' }[request.relationship],
-              target_id: request.relatedTo,
-            },
+      const idempotencyKey = saveIdempotencyKey(snapshot, execution, request)
+      const payload = {
+        title: request.title,
+        content: request.content,
+        memory_type: request.sourceType === 'decision' ? 'decision' : 'fact',
+        source_platform: 'deepseek-harness',
+        tags: request.tags ?? [],
+        ...request.project === undefined ? {} : { project: request.project },
+        ...request.relationship === undefined ? {} : {
+          relationship: {
+            type: { update: 'Updates', extend: 'Extends', derive: 'Derives' }[request.relationship],
+            target_id: request.relatedTo,
           },
-          metadata: { source_type: request.sourceType, governed: true },
-          user_id: snapshot.identity.userId,
-          org_id: snapshot.identity.orgId,
-          smartIngest: true,
-          sync: true,
-        }),
-      }, signal, config)
-      const record = apiRecord(result, 'meta save response')
+        },
+        metadata: { source_type: request.sourceType, governed: true },
+        idempotency_key: idempotencyKey,
+        user_id: snapshot.identity.userId,
+        org_id: snapshot.identity.orgId,
+        smartIngest: true,
+        sync: true,
+      }
+      let record: JsonRecord
+      try {
+        const result = await hiveRequest(authority, SAVE_PATH, {
+          method: 'POST', headers: { 'x-idempotency-key': idempotencyKey }, body: JSON.stringify(payload),
+        }, signal, config)
+        record = apiRecord(result, 'meta save response')
+      } catch (error: unknown) {
+        if (signal.aborted) throw error
+        try {
+          const status = await hiveRequest(authority, `${SAVE_STATUS_PATH}?idempotency_key=${encodeURIComponent(idempotencyKey)}`, {
+            method: 'GET', headers: { 'x-idempotency-key': idempotencyKey },
+          }, signal, config)
+          const durable = apiRecord(status, 'meta save status response')
+          record = durable['response'] && typeof durable['response'] === 'object' && !Array.isArray(durable['response'])
+            ? { ...(durable['response'] as JsonRecord), receipt: durable as unknown as JsonValue }
+            : { receipt: durable as unknown as JsonValue }
+        } catch {
+          return {
+            status: 'indeterminate', operation: 'save', idempotency_key: idempotencyKey,
+            error_code: 'MEMORY_SAVE_STATUS_UNAVAILABLE', retry_safe: false,
+          }
+        }
+      }
       const receipt = await saveMemoryReceipt(ctx, execution, 'hivemind-save.json', record)
-      return compactSaveReceipt(record, receipt)
+      return compactSaveReceipt(record, idempotencyKey, receipt)
+    },
+    async saveStatus(request: SaveStatusRequest, signal) {
+      const authority = await resolveAuthority(ctx, config)
+      try {
+        const result = await hiveRequest(authority, `${SAVE_STATUS_PATH}?idempotency_key=${encodeURIComponent(request.idempotencyKey)}`, {
+          method: 'GET', headers: { 'x-idempotency-key': request.idempotencyKey },
+        }, signal, config)
+        const receipt = apiRecord(result, 'meta save status response')
+        return { operation: 'save_status', ...(receipt as Record<string, JsonValue>) }
+      } catch (error: unknown) {
+        if (error instanceof HiveMindRuntimeError && error.status === 404) {
+          return { operation: 'save_status', status: 'not_found', idempotency_key: request.idempotencyKey }
+        }
+        return { operation: 'save_status', status: 'capability_unavailable', idempotency_key: request.idempotencyKey }
+      }
     },
   }))
 

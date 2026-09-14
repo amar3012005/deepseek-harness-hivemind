@@ -34,11 +34,14 @@ export interface SaveRequest {
   relatedTo?: string
 }
 
+export interface SaveStatusRequest { idempotencyKey: string }
+
 export interface MemoryProvider {
   context(agent: Agent, signal: AbortSignal): Promise<Record<string, JsonValue>>
   entities(request: EntitySearchRequest, signal: AbortSignal, execution: ToolExecution): Promise<Record<string, JsonValue>>
   recall(request: RecallRequest, signal: AbortSignal, execution: ToolExecution): Promise<Record<string, JsonValue>>
   save(agent: Agent, request: SaveRequest, signal: AbortSignal, execution: ToolExecution): Promise<Record<string, JsonValue>>
+  saveStatus(request: SaveStatusRequest, signal: AbortSignal): Promise<Record<string, JsonValue>>
   profiles(signal: AbortSignal): Promise<Record<string, JsonValue>>
 }
 
@@ -108,7 +111,7 @@ export function memoryPlugin(config: MemoryPluginConfig, provider: MemoryProvide
         name: 'hivemind_meta',
         description: 'HIVE-MIND gateway for authenticated context, canonical entity discovery, bounded memory recall, governed durable memory saves, or the exact HyperAgent directory. Use context for questions about the caller or company profile. Use entities first for a named person, topic, project, organization, document, or other subject when its canonical name could narrow recall. Use save only for a stable user preference, confirmed decision, correction, or completed outcome that will matter later; never save secrets, credentials, ephemeral chat, guesses, or unverified claims. Tenant scope is derived from the current HIVE-MIND credential.',
         parameters: {
-          operation: { type: 'string', required: true, enum: ['context', 'entities', 'recall', 'save', 'profiles'], description: 'Select exactly one operation. recall requires the nested recall object; entities requires entities; save requires save.' },
+          operation: { type: 'string', required: true, enum: ['context', 'entities', 'recall', 'save', 'save_status', 'profiles'], description: 'Select exactly one operation. recall requires the nested recall object; entities requires entities; save requires save; save_status requires save_status.' },
           entities: {
             type: 'object',
             additionalProperties: false,
@@ -149,6 +152,13 @@ export function memoryPlugin(config: MemoryPluginConfig, provider: MemoryProvide
               related_to: { type: 'string' },
             },
           },
+          save_status: {
+            type: 'object',
+            additionalProperties: false,
+            properties: {
+              idempotency_key: { type: 'string', required: true, description: 'Exact idempotency key returned by a prior save result.' },
+            },
+          },
         },
         output,
         isConcurrencySafe: () => true,
@@ -159,6 +169,10 @@ export function memoryPlugin(config: MemoryPluginConfig, provider: MemoryProvide
             return provider.context(execution.agent, execution.signal)
           }
           if (operation === 'profiles') return provider.profiles(execution.signal)
+          if (operation === 'save_status') {
+            const input = object(args.save_status, 'save_status')
+            return provider.saveStatus({ idempotencyKey: boundedText(input['idempotency_key'], 'save_status.idempotency_key', 180) }, execution.signal)
+          }
           if (operation === 'entities') {
             const input = object(args.entities, 'entities')
             const rawLimit = input['limit'] ?? config.defaultLimit
@@ -176,10 +190,10 @@ export function memoryPlugin(config: MemoryPluginConfig, provider: MemoryProvide
             if (relationship !== undefined && relatedTo === undefined) throw new TypeError('hivemind-memory: related_to is required when relationship is set')
             if (relationship === undefined && relatedTo !== undefined) throw new TypeError('hivemind-memory: relationship is required when related_to is set')
             const tags = strings(input['tags'], 'tags')
-            if (tags !== undefined && tags.length > 50) throw new TypeError('hivemind-memory: tags may contain at most 50 items')
+            if (tags !== undefined && tags.length > 20) throw new TypeError('hivemind-memory: tags may contain at most 20 items')
             const request: SaveRequest = {
-              title: boundedText(input['title'], 'save.title', 500),
-              content: boundedText(input['content'], 'save.content', 20_000),
+              title: boundedText(input['title'], 'save.title', 240),
+              content: boundedText(input['content'], 'save.content', 2_000),
               sourceType: sourceType as SaveRequest['sourceType'],
               ...tags === undefined ? {} : { tags },
               ...input['project'] === undefined ? {} : { project: boundedText(input['project'], 'project', 255) },

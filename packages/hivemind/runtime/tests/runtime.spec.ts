@@ -558,12 +558,14 @@ describe('HIVE-MIND runtime', () => {
   it('saves only a bounded, profile-scoped memory and returns a compact receipt', async () => {
     const path = await authorityFile()
     profileResponses([jsonResponse({
-      id: 'memory-1',
-      title: 'Approved positioning',
-      memory_type: 'decision',
-      citation_id: 'memory:memory-1',
-      user_id: 'user-1',
-      org_id: 'org-1',
+      memory: {
+        id: 'memory-1', title: 'Approved positioning', memory_type: 'decision',
+        citation_id: 'memory:memory-1', user_id: 'user-1', org_id: 'org-1',
+      },
+      receipt: {
+        status: 'saved', receipt_id: 'receipt-1', memory_id: 'memory-1',
+        idempotency_key: 'server-copy',
+      },
     })])
     const harness = mount(config(path))
 
@@ -589,9 +591,14 @@ describe('HIVE-MIND runtime', () => {
       smartIngest: true,
       sync: true,
     })
+    expect(String((saveInit?.headers as Record<string, string>)['x-idempotency-key'])).toBe(saveBody.idempotency_key)
     expect(value).toEqual({
       status: 'saved',
-      id: 'memory-1',
+      operation: 'save',
+      memory_id: 'memory-1',
+      receipt_id: 'receipt-1',
+      idempotency_key: saveBody.idempotency_key,
+      replayed: false,
       title: 'Approved positioning',
       memory_type: 'decision',
       citation_id: 'memory:memory-1',
@@ -602,7 +609,10 @@ describe('HIVE-MIND runtime', () => {
 
   it('defaults an omitted memory source type to conversation', async () => {
     const path = await authorityFile()
-    profileResponses([jsonResponse({ id: 'memory-1' })])
+    profileResponses([jsonResponse({
+      memory: { id: 'memory-1' },
+      receipt: { status: 'saved', receipt_id: 'receipt-2', memory_id: 'memory-1' },
+    })])
     const harness = mount(config(path))
 
     await tool(harness, 'hivemind_meta').execute({
@@ -612,6 +622,49 @@ describe('HIVE-MIND runtime', () => {
     const saveBody = JSON.parse(String(vi.mocked(fetch).mock.calls[3]?.[1]?.body))
 
     expect(saveBody.metadata).toEqual({ source_type: 'conversation', governed: true })
+  })
+
+  it('reconciles an unknown save outcome by status without issuing a second POST', async () => {
+    const path = await authorityFile()
+    profileResponses([
+      jsonResponse({ error: 'response lost' }, 500),
+      jsonResponse({
+        status: 'saved', receipt_id: 'receipt-recovered', memory_id: 'memory-recovered',
+        response: { success: true, memory: { id: 'memory-recovered', title: 'Recovered fact' } },
+      }),
+    ])
+    const harness = mount(config(path))
+
+    const value = await tool(harness, 'hivemind_meta').execute({
+      operation: 'save', save: { title: 'Recovered fact', content: 'This stable fact was confirmed.' },
+    }, execContext()) as Record<string, unknown>
+
+    const calls = vi.mocked(fetch).mock.calls.slice(3)
+    expect(calls.map(([, init]) => init?.method)).toEqual(['POST', 'GET'])
+    expect(String(calls[1]?.[0])).toContain('/api/memories/save-status?idempotency_key=')
+    expect(value).toMatchObject({
+      status: 'saved', memory_id: 'memory-recovered', receipt_id: 'receipt-recovered', replayed: false,
+    })
+  })
+
+  it('uses the same idempotency key for the same logical save', async () => {
+    const path = await authorityFile()
+    const response = () => jsonResponse({
+      memory: { id: 'memory-1' },
+      receipt: { status: 'saved', receipt_id: 'receipt-1', memory_id: 'memory-1' },
+    })
+    profileResponses([response(), response()])
+    const harness = mount(config(path))
+    const request = { operation: 'save', save: { title: 'One fact', content: 'One confirmed fact.' } }
+
+    await tool(harness, 'hivemind_meta').execute(request, execContext())
+    await tool(harness, 'hivemind_meta').execute(request, execContext())
+
+    const postBodies = vi.mocked(fetch).mock.calls
+      .filter(([, init]) => init?.method === 'POST')
+      .map(([, init]) => JSON.parse(String(init?.body)))
+    expect(postBodies).toHaveLength(2)
+    expect(postBodies[0].idempotency_key).toBe(postBodies[1].idempotency_key)
   })
 
   it('rejects a correction without the exact prior-memory reference', async () => {
@@ -632,7 +685,10 @@ describe('HIVE-MIND runtime', () => {
 
   it('maps a correction to the canonical version relationship after validating its prior id', async () => {
     const path = await authorityFile()
-    profileResponses([jsonResponse({ id: 'replacement-id' })])
+    profileResponses([jsonResponse({
+      memory: { id: 'replacement-id' },
+      receipt: { status: 'saved', receipt_id: 'receipt-3', memory_id: 'replacement-id' },
+    })])
     const harness = mount(config(path))
 
     await tool(harness, 'hivemind_meta').execute({
@@ -684,10 +740,29 @@ describe('HIVE-MIND runtime', () => {
     await expect(tool(harness, 'hivemind_meta').execute({
       operation: 'entities', entities: { query: 'Amar' },
     }, execContext())).resolves.toEqual({
-      status: 'unavailable',
+      status: 'capability_unavailable',
       operation: 'entities',
       result: { matches: [], degradation: 'Canonical entity discovery is unavailable; use one focused recall with the original subject.' },
     })
+  })
+
+  it('maps a missing deployed entity route to capability_unavailable rather than no matches', async () => {
+    const path = await authorityFile()
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({ error: 'not found' }, 404)))
+    const harness = mount(config(path))
+
+    await expect(tool(harness, 'hivemind_meta').execute({
+      operation: 'entities', entities: { query: 'Rama' },
+    }, execContext())).resolves.toMatchObject({
+      status: 'capability_unavailable', operation: 'entities', result: { matches: [] },
+    })
+  })
+
+  it('rejects oversized profile-style memory synthesis', async () => {
+    const harness = mount(config(await authorityFile()))
+    await expect(tool(harness, 'hivemind_meta').execute({
+      operation: 'save', save: { title: 'Speculative profile', content: 'x'.repeat(2_001) },
+    }, execContext())).rejects.toThrow('save.content exceeds 2000 characters')
   })
 
   it('returns one bounded evidence list instead of the verbose recall transport envelope', async () => {
