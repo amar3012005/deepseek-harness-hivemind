@@ -149,6 +149,18 @@ function titleCaseToolkit(toolkit: string): string {
   return toolkit.split(/[-_\s]+/).filter(Boolean).map(part => `${part[0]?.toUpperCase() ?? ''}${part.slice(1)}`).join(' ')
 }
 
+/**
+ * A spill location is implementation-private.  It must never become a model
+ * instruction or a browser-fetch target; callers can retain the opaque id for
+ * a future authorized receipt-reader service without learning where it lives.
+ */
+function privateReceiptReference(receipt: SpillRef): Record<string, JsonValue> {
+  return {
+    receipt_id: createHash('sha256').update(String(receipt.locator)).digest('hex'),
+    bytes: receipt.bytes,
+  }
+}
+
 function normalizedToolkitName(value: string): string {
   return value.toLocaleLowerCase().replaceAll(/[^a-z0-9]/g, '')
 }
@@ -958,7 +970,7 @@ export function compactComposioExecutionReceipt(
   return {
     ...(record(compact) ? compact : { result: compact }),
     ...(receipt === undefined ? {} : {
-      source_receipt: { locator: receipt.locator, bytes: receipt.bytes, retrieval_hint: receipt.retrievalHint },
+      source_receipt: privateReceiptReference(receipt),
     }),
     projection_policy: requested.size === 0
       ? 'Duplicated MIME transport trees and transport headers omitted; readable evidence retained, while long text and collections are bounded. The original receipt is preserved separately when source_receipt is present.'
@@ -1008,7 +1020,7 @@ export function compactComposioSearchReceipt(value: unknown, receipt?: SpillRef)
     ...(session === undefined ? {} : { session }),
     next_steps_guidance: boundedStrings(data['next_steps_guidance'], 2, 240),
     ...(receipt === undefined ? {} : {
-      source_receipt: { locator: receipt.locator, bytes: receipt.bytes, retrieval_hint: receipt.retrievalHint },
+      source_receipt: privateReceiptReference(receipt),
     }),
     schema_policy: 'Use the exact execution_contracts below. If a selected slug has no contract, load its schema before execution. Never infer argument names.',
   }
@@ -1188,7 +1200,7 @@ export function apply(ctx: Context, config: Config = {}): void {
     }
   }
 
-  ctx.tools.register(defineTool({
+  ctx.effect(() => ctx.tools.register(defineTool({
     name: BRIDGE_TOOL,
     description: 'Tenant-scoped connected-app gateway. Start external-app work with atomic search queries, explicit outcomes, exact result limits, and session.generate_id=true. Continue the returned session when further provider-owned discovery is needed; never guess tools. External writes require HIVE approval.',
     parameters: {
@@ -1534,11 +1546,7 @@ export function apply(ctx: Context, config: Config = {}): void {
           operations: [{ tool: 'COMPOSIO_GET_TOOL_SCHEMAS', status: 'completed' }],
           execution_contracts: loaded as unknown as JsonValue,
           ...(sourceReceipt === undefined ? {} : {
-            source_receipt: {
-              locator: sourceReceipt.locator,
-              bytes: sourceReceipt.bytes,
-              retrieval_hint: sourceReceipt.retrievalHint,
-            },
+            source_receipt: privateReceiptReference(sourceReceipt),
           }),
         }
       }
@@ -1622,9 +1630,9 @@ export function apply(ctx: Context, config: Config = {}): void {
         operations: [{ tool: slug, status: 'completed' }],
       }
     },
-  }))
+  })))
 
-  ctx.on('agent/pre-step', async ({ agent, turn }, next) => {
+  ctx.effect(() => ctx.on('agent/pre-step', async ({ agent, turn }, next) => {
     if (turns.get(agent)?.turn !== turn) {
       turns.set(agent, {
         turn,
@@ -1634,14 +1642,13 @@ export function apply(ctx: Context, config: Config = {}): void {
     }
     const decision = await next()
     // Some test and compatibility middleware terminates the chain without a decision.
-    // oxlint-disable-next-line typescript/no-unnecessary-condition
     if (decision === undefined || decision.kind === 'reject') return decision
     const unfinished = unfinishedWorkflow(agent.session.snapshotEvents(), turn)
     return unfinished === undefined
       ? decision
       : { ...decision, messages: [...decision.messages, workflowContextMessage(unfinished)] }
-  })
-  ctx.on('tools/pre-execute', async (execution, next) => {
+  }))
+  ctx.effect(() => ctx.on('tools/pre-execute', async (execution, next) => {
     if (!isConnectedAppInvocation(execution.name, execution.arguments)) return next()
     const enabled = execution.agent !== undefined
       && (turns.get(execution.agent)?.enabled
@@ -1653,8 +1660,8 @@ export function apply(ctx: Context, config: Config = {}): void {
     const slug = stringValue(execution.arguments['tool_slug'])
     if (slug === undefined || !MUTATING_TOOL.test(slug)) return downstream
     return { kind: 'ask', reason: `Approve this ${slug} action once. The provider will run only after approval.` }
-  })
-  ctx.on('tools/post-execute', async (execution, result, next): Promise<PostToolDecision> => {
+  }))
+  ctx.effect(() => ctx.on('tools/post-execute', async (execution, result, next): Promise<PostToolDecision> => {
     const decision = await next()
     const isBridgeSearch = execution.name === BRIDGE_TOOL
       && record(execution.arguments)
@@ -1675,5 +1682,5 @@ export function apply(ctx: Context, config: Config = {}): void {
       ? compactComposioSearchReceipt(parsed, receipt)
       : compactComposioExecutionReceipt(parsed, receipt)
     return compact === undefined ? decision : { kind: 'accept', content: [{ type: 'text', text: JSON.stringify(compact) }] }
-  })
+  }))
 }

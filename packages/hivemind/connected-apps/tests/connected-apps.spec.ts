@@ -36,6 +36,7 @@ function harness(
   const listeners = new Map<string, (...args: never[]) => unknown>()
   const ctx = {
     tools: { register(value: typeof tool) { tool = value } },
+    effect<T>(callback: () => T) { return callback() },
     hivemindIdentity: { resolve: vi.fn(async () => identity) },
     userQuestions: { ask },
     on(name: string, listener: (...args: never[]) => unknown) { listeners.set(name, listener) },
@@ -206,7 +207,7 @@ describe('progressive Composio bridge', () => {
 
     expect(projected).toMatchObject({
       data: { messages: [{ subject: 'Project update', received_at: '2026-09-12T12:00:00Z' }] },
-      source_receipt: { locator: 'private:r1' },
+      source_receipt: { receipt_id: expect.any(String), bytes: 10 },
     })
     expect(JSON.stringify(projected)).not.toContain('large unrequested body')
     expect(JSON.stringify(projected)).not.toContain('rama@example.com')
@@ -292,8 +293,10 @@ describe('progressive Composio bridge', () => {
       { suggestedName: 'composio-search-tools.json', content: JSON.stringify(search) },
       { suggestedName: 'composio-example_read.json', content: JSON.stringify(provider) },
     ])
-    expect(discovered).toMatchObject({ source_receipt: { locator: 'private:1' } })
-    expect(completed).toMatchObject({ source_receipt: { locator: 'private:2' } })
+    expect(discovered).toMatchObject({ source_receipt: { bytes: expect.any(Number), receipt_id: expect.any(String) } })
+    expect(completed).toMatchObject({ source_receipt: { bytes: expect.any(Number), receipt_id: expect.any(String) } })
+    expect(JSON.stringify(discovered)).not.toContain('private:1')
+    expect(JSON.stringify(completed)).not.toContain('private:2')
     expect(JSON.stringify(completed)).not.toContain('transport detail')
     expect(JSON.stringify(completed)).not.toContain('not requested')
   })

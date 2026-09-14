@@ -19,7 +19,7 @@ import { homedir } from 'node:os'
 import { isAbsolute, dirname, join } from 'node:path'
 import { lstat, readFile, rename, writeFile } from 'node:fs/promises'
 import { spawn } from 'node:child_process'
-import { createHmac, randomUUID } from 'node:crypto'
+import { createHash, createHmac, randomUUID } from 'node:crypto'
 import type {} from '@deepseek-ai/dsh-hivemind-identity'
 import type {} from '@deepseek-ai/dsh-hivemind-execution-scope'
 import { contextPlugin } from '@deepseek-ai/dsh-hivemind-context'
@@ -47,6 +47,14 @@ const CONNECT_START_PATH = '/hivemind/connect/start'
 const CONNECT_DISCONNECT_PATH = '/hivemind/connect'
 const HIVE_META_TOOL = 'hivemind_meta'
 const HIVE_CAPABILITIES_TOOL = 'hivemind_capabilities'
+
+/** Keep spill implementation details out of model-visible HIVE receipts. */
+function privateReceiptReference(receipt: SpillRef): Record<string, JsonValue> {
+  return {
+    receipt_id: createHash('sha256').update(String(receipt.locator)).digest('hex'),
+    bytes: receipt.bytes,
+  }
+}
 
 /**
  * Check whether the current turn has already spent its single focused HIVE memory call.
@@ -504,9 +512,7 @@ function compactRecallResponse(value: JsonRecord, limit: number, itemMaxChars: n
   return {
     results,
     count: results.length,
-    ...receipt === undefined ? {} : {
-      source_receipt: { locator: receipt.locator, bytes: receipt.bytes, retrieval_hint: receipt.retrievalHint },
-    },
+    ...receipt === undefined ? {} : { source_receipt: privateReceiptReference(receipt) },
     ...typeof value['mode_used'] === 'string' ? { mode_used: value['mode_used'] } : {},
     ...typeof value['search_method'] === 'string' ? { search_method: value['search_method'] } : {},
     ...typeof value['timing_ms'] === 'number' && Number.isFinite(value['timing_ms']) ? { timing_ms: value['timing_ms'] } : {},
@@ -536,9 +542,7 @@ function compactEntityResponse(value: JsonRecord, limit: number, receipt?: Spill
     operation: 'entities',
     result: {
       matches,
-      ...receipt === undefined ? {} : {
-        source_receipt: { locator: receipt.locator, bytes: receipt.bytes, retrieval_hint: receipt.retrievalHint },
-      },
+      ...receipt === undefined ? {} : { source_receipt: privateReceiptReference(receipt) },
     },
   }
 }
@@ -551,11 +555,7 @@ function compactSaveReceipt(value: JsonRecord, sourceReceipt?: SpillRef): Record
   }
   if (typeof value['id'] !== 'string') throw new HiveMindRuntimeError('memory save response is missing its receipt id')
   if (sourceReceipt !== undefined) {
-    receipt['source_receipt'] = {
-      locator: sourceReceipt.locator,
-      bytes: sourceReceipt.bytes,
-      retrieval_hint: sourceReceipt.retrievalHint,
-    }
+    receipt['source_receipt'] = privateReceiptReference(sourceReceipt)
   }
   return receipt
 }

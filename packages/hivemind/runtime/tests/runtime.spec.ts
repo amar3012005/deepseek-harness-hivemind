@@ -757,8 +757,9 @@ describe('HIVE-MIND runtime', () => {
     expect(harness.spills[0]).toMatchObject({ suggestedName: 'hivemind-recall.json', content: JSON.stringify(full) })
     expect(value.result).not.toHaveProperty('raw')
     expect(value.result.source_receipt).toEqual({
-      locator: 'private:hive-receipt', bytes: Buffer.byteLength(JSON.stringify(full)), retrieval_hint: 'Inspect the private receipt.',
+      receipt_id: expect.any(String), bytes: Buffer.byteLength(JSON.stringify(full)),
     })
+    expect(JSON.stringify(value.result.source_receipt)).not.toContain('private:hive-receipt')
   })
 
   it('fetches server-scoped HyperAgent profiles without model-provided tenant input', async () => {
