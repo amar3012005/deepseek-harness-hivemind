@@ -956,6 +956,19 @@ function projectRequestedFields(value: unknown, requested: ReadonlySet<string>):
   return Object.keys(projected).length === 0 ? undefined : projected
 }
 
+function presentRequestedFields(value: unknown, requested: ReadonlySet<string>, found = new Set<string>()): Set<string> {
+  if (Array.isArray(value)) {
+    for (const item of value) presentRequestedFields(item, requested, found)
+    return found
+  }
+  if (!record(value)) return found
+  for (const [key, item] of Object.entries(value)) {
+    if (requested.has(key)) found.add(key)
+    presentRequestedFields(item, requested, found)
+  }
+  return found
+}
+
 /** Bound a provider execution so MIME payloads and transport noise stay out of the transcript. */
 export function compactComposioExecutionReceipt(
   value: unknown,
@@ -963,9 +976,11 @@ export function compactComposioExecutionReceipt(
   resultFields: readonly string[] = [],
 ): JsonValue {
   const requested = new Set(resultFields)
+  const present = requested.size === 0 ? new Set<string>() : presentRequestedFields(value, requested)
   const compact = requested.size === 0
     ? compactProviderValue(value)
-    : projectRequestedFields(value, requested) ?? compactProviderValue(value)
+    : projectRequestedFields(value, requested) ?? {}
+  const missing = [...requested].filter(field => !present.has(field))
   const pagination = paginationProjection(value)
   return {
     ...(record(compact) ? compact : { result: compact }),
@@ -974,7 +989,8 @@ export function compactComposioExecutionReceipt(
     }),
     projection_policy: requested.size === 0
       ? 'Duplicated MIME transport trees and transport headers omitted; readable evidence retained, while long text and collections are bounded. The original receipt is preserved separately when source_receipt is present.'
-      : 'Only the exact requested result fields are projected when present. The original provider receipt is preserved separately.',
+      : 'Only the exact requested result fields are projected. Missing requested fields are reported explicitly; unrelated provider payload is never substituted.',
+    ...(missing.length === 0 ? {} : { missing_result_fields: missing }),
     ...(pagination === undefined ? {} : { pagination }),
   }
 }

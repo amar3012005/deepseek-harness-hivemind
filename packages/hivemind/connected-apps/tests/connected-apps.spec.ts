@@ -213,11 +213,12 @@ describe('progressive Composio bridge', () => {
     expect(JSON.stringify(projected)).not.toContain('rama@example.com')
   })
 
-  it('falls back to the bounded provider projection when requested keys are absent', () => {
+  it('reports absent requested keys without substituting unrelated provider evidence', () => {
     const projected = compactComposioExecutionReceipt(
       { data: { actual_key: 'provider evidence' } }, undefined, ['unknown_key'],
     )
-    expect(projected).toMatchObject({ data: { actual_key: 'provider evidence' } })
+    expect(projected).toMatchObject({ missing_result_fields: ['unknown_key'] })
+    expect(JSON.stringify(projected)).not.toContain('provider evidence')
   })
 
   it('preserves only a bounded provider continuation cursor beside compact evidence', () => {
