@@ -439,7 +439,15 @@ function workflowStateKey(
 ): string {
   const conversationId = execution.agent?.session?.header.id
   const conversation = conversationId === undefined ? 'detached' : String(conversationId)
-  return `${sessionKey(identity)}:${conversation}:${workflowId ?? 'current'}`
+  return `${sessionKey(identity)}:${identity.orgId}:${conversation}:${workflowId ?? 'current'}`
+}
+
+function workflowStepKey(
+  identity: { userId: string; orgId: string },
+  execution: Pick<ToolExecution, 'agent'>,
+  plannedStepId: string,
+): string {
+  return `${workflowStateKey(identity, execution)}:step:${plannedStepId}`
 }
 
 function restoredRouterSession(
@@ -537,6 +545,7 @@ type ExecutionContract = {
 }
 
 type RestoredWorkflowState = {
+  workflowId: string
   selected: Set<string>
   contracts: Map<string, ExecutionContract>
   resultFields: string[]
@@ -901,7 +910,11 @@ function executionContracts(value: unknown, selected?: ReadonlySet<string>): Exe
   return [...contracts.values()]
 }
 
-function restoreWorkflowState(execution: Pick<ToolExecution, 'agent'>, requestedId?: string): RestoredWorkflowState | undefined {
+function restoreWorkflowState(
+  execution: Pick<ToolExecution, 'agent'>,
+  requestedId?: string,
+  requestedStepId?: string,
+): RestoredWorkflowState | undefined {
   const events = execution.agent?.session?.snapshotEvents()
   if (events === undefined) return undefined
   const calls = new Map<string, Record<string, unknown>>()
@@ -915,6 +928,7 @@ function restoreWorkflowState(execution: Pick<ToolExecution, 'agent'>, requested
     if (result === undefined) continue
     const args = calls.get(result.callId)
     if (args?.['action'] !== 'search') continue
+    if (requestedStepId !== undefined && stringValue(args['planned_step_id']) !== requestedStepId) continue
     const candidateId = returnedWorkflowSessionId(result.value) ?? workflowSessionId(args)
     if (workflowId !== undefined && candidateId !== workflowId) continue
     workflowId = candidateId
@@ -949,7 +963,7 @@ function restoreWorkflowState(execution: Pick<ToolExecution, 'agent'>, requested
     if (args?.['action'] !== 'schemas' || workflowSessionId(args) !== workflowId) continue
     for (const contract of executionContracts(result.value, selected)) restoredContracts.set(contract.tool_slug, contract)
   }
-  return foundSearch ? { selected, contracts: restoredContracts, resultFields: [...resultFields] } : undefined
+  return foundSearch ? { workflowId, selected, contracts: restoredContracts, resultFields: [...resultFields] } : undefined
 }
 
 const argumentSchemaValidator = new Ajv({ allErrors: true, strict: false, validateFormats: false })
@@ -1378,6 +1392,7 @@ export function apply(ctx: Context, config: Config = {}): void {
   const selectedTools = new Map<string, Set<string>>()
   const contracts = new Map<string, Map<string, ExecutionContract>>()
   const resultFields = new Map<string, string[]>()
+  const workflowSteps = new Map<string, string>()
 
   async function getSession(identity: { userId: string; orgId: string }, execution: Pick<ToolExecution, 'agent'>): Promise<ComposioSession> {
     if (composio === undefined) throw new Error('Connected tools are not configured on this runtime')
@@ -1760,6 +1775,9 @@ export function apply(ctx: Context, config: Config = {}): void {
           for (const field of requestedResultFields(queryInput)) requested.add(field)
           resultFields.set(stateKey, [...requested])
         }
+        if (activeWorkflowId !== undefined) {
+          workflowSteps.set(workflowStepKey(identity, execution, plannedStepId), activeWorkflowId)
+        }
         const statuses = connectionStatuses(scopedResult)
         const missing = requiredMissingToolkits(scopedResult, statuses)
         if (missing.length > 0) {
@@ -1855,28 +1873,39 @@ export function apply(ctx: Context, config: Config = {}): void {
         }
         return record(projected) ? projected : { status: 'ready', operations }
       }
-      const continuationId = workflowSessionId(args)
-      const key = workflowStateKey(identity, execution, continuationId)
-      const fallbackKey = workflowStateKey(identity, execution)
+      let continuationId = workflowSessionId(args)
+      const plannedStepId = stringValue(args.planned_step_id)
+      const requestedSlugs = args.action === 'execute'
+        ? stringArray([args.tool_slug])
+        : args.action === 'schemas'
+          ? (stringArray(args.tool_slugs).length > 0 ? stringArray(args.tool_slugs) : stringArray([args.tool_slug]))
+          : []
+      if (continuationId === undefined && plannedStepId !== undefined) {
+        continuationId = workflowSteps.get(workflowStepKey(identity, execution, plannedStepId))
+      }
+      if (continuationId === undefined && requestedSlugs.length > 0) {
+        const scopePrefix = `${workflowStateKey(identity, execution).slice(0, -'current'.length)}`
+        const candidates = [...selectedTools.entries()]
+          .filter(([stateKey, selected]) => stateKey.startsWith(scopePrefix)
+            && !stateKey.endsWith(':current')
+            && requestedSlugs.every(slug => selected.has(slug)))
+          .map(([stateKey]) => stateKey.slice(scopePrefix.length))
+        if (candidates.length === 1) continuationId = candidates[0]
+      }
+      let key = workflowStateKey(identity, execution, continuationId)
       let selectedForWorkflow = selectedTools.get(key)
       let contractsForWorkflow = contracts.get(key)
-      if (continuationId === undefined) {
-        selectedForWorkflow ??= selectedTools.get(fallbackKey)
-        contractsForWorkflow ??= contracts.get(fallbackKey)
-      }
       if (selectedForWorkflow === undefined || contractsForWorkflow === undefined) {
-        const restored = restoreWorkflowState(execution, workflowSessionId(args))
+        const restored = restoreWorkflowState(execution, continuationId, plannedStepId)
         if (restored !== undefined) {
+          continuationId = restored.workflowId
+          key = workflowStateKey(identity, execution, continuationId)
           selectedForWorkflow = restored.selected
           contractsForWorkflow = restored.contracts
           selectedTools.set(key, restored.selected)
           contracts.set(key, restored.contracts)
           resultFields.set(key, restored.resultFields)
-          if (continuationId === undefined) {
-            selectedTools.set(fallbackKey, restored.selected)
-            contracts.set(fallbackKey, restored.contracts)
-            resultFields.set(fallbackKey, restored.resultFields)
-          }
+          if (plannedStepId !== undefined) workflowSteps.set(workflowStepKey(identity, execution, plannedStepId), continuationId)
         }
       }
       const metaArguments: Record<string, unknown> = {}
@@ -1895,7 +1924,6 @@ export function apply(ctx: Context, config: Config = {}): void {
         const workflowContracts = contractsForWorkflow ?? new Map<string, ExecutionContract>()
         for (const contract of loaded) workflowContracts.set(contract.tool_slug, contract)
         contracts.set(key, workflowContracts)
-        if (continuationId === undefined) contracts.set(fallbackKey, workflowContracts)
         return {
           status: 'ready',
           operations: [{ tool: 'COMPOSIO_GET_TOOL_SCHEMAS', status: 'completed' }],
@@ -1944,12 +1972,12 @@ export function apply(ctx: Context, config: Config = {}): void {
         : args.arguments
       if (!record(executionArguments)) throw new TypeError('Execute requires arguments matching the authoritative schema')
       validateArguments(contract, executionArguments)
-      const workflowId = workflowSessionId(args) ?? 'current'
-      const plannedStepId = stringValue(args.planned_step_id) ?? 'execute'
+      const workflowId = continuationId ?? 'current'
+      const resolvedStepId = plannedStepId ?? 'execute'
       const argumentsHash = discoveryKey(executionArguments)
       const executionFingerprint = discoveryKey({
         workflow_id: workflowId,
-        planned_step_id: plannedStepId,
+        planned_step_id: resolvedStepId,
         tool_slug: slug,
         schema_hash: contract.schema_hash,
         arguments_hash: argumentsHash,
@@ -2003,14 +2031,14 @@ export function apply(ctx: Context, config: Config = {}): void {
           version: 1,
           idempotencyKey,
           workflowSessionId: workflowId,
-          plannedStepId,
+          plannedStepId: resolvedStepId,
           toolSlug: slug,
           schemaHash: contract.schema_hash,
           argumentsHash,
         })
       }
       const providerResult = await session.execute(slug, executionArguments)
-      const selectedResultFields = resultFields.get(key) ?? resultFields.get(fallbackKey) ?? []
+      const selectedResultFields = resultFields.get(key) ?? []
       const durableResultFields = requiresApproval(slug)
         ? [...new Set([...selectedResultFields, ...WRITE_REFERENCE_FIELDS])]
         : selectedResultFields

@@ -562,6 +562,64 @@ describe('progressive Composio bridge', () => {
     }, { signal: AbortSignal.abort(), agent: otherAgent } as never)).rejects.toThrow('current conversation-scoped search')
   })
 
+  it('resolves a session-less execution to its planned step after two later searches', async () => {
+    execute
+      .mockResolvedValueOnce({ data: {
+        session: { id: 'workflow-calendar-find' },
+        results: [{ primary_tool_slugs: ['GOOGLECALENDAR_FIND_EVENT'], tool_schemas: {
+          GOOGLECALENDAR_FIND_EVENT: { input_schema: {
+            type: 'object', additionalProperties: false, required: ['query'], properties: { query: { type: 'string' } },
+          } },
+        } }],
+      } })
+      .mockResolvedValueOnce({ data: {
+        session: { id: 'workflow-gmail-read' },
+        results: [{ primary_tool_slugs: ['GMAIL_FETCH_EMAILS'], tool_schemas: {
+          GMAIL_FETCH_EMAILS: { input_schema: {
+            type: 'object', additionalProperties: false, properties: { query: { type: 'string' } },
+          } },
+        } }],
+      } })
+      .mockResolvedValueOnce({ data: {
+        session: { id: 'workflow-calendar-patch' },
+        results: [{ primary_tool_slugs: ['GOOGLECALENDAR_PATCH_EVENT'], tool_schemas: {
+          GOOGLECALENDAR_PATCH_EVENT: { input_schema: {
+            type: 'object', additionalProperties: false, required: ['event_id'], properties: { event_id: { type: 'string' } },
+          } },
+        } }],
+      } })
+      .mockResolvedValueOnce({ data: { items: [{ id: 'event-series-1' }] } })
+    const app = harness()
+    const agent = { session: { header: { id: 'multi-search-retention' }, snapshotEvents: () => [], append: vi.fn() } }
+    await app.listeners.get('agent/pre-step')?.(
+      { agent, turn: 1 } as never, vi.fn(async () => ({ kind: 'enter', messages: [] })) as never,
+    )
+
+    await app.tool().execute({
+      action: 'search', planned_step_id: 'find-event', session: { generate_id: true },
+      queries: [{ app: 'Google Calendar', use_case: 'Find the Prague anniversary event.' }],
+    }, { signal: AbortSignal.abort(), agent } as never)
+    await app.tool().execute({
+      action: 'search', planned_step_id: 'read-email', session: { generate_id: true },
+      queries: [{ app: 'Gmail', use_case: 'Read one recent email.' }],
+    }, { signal: AbortSignal.abort(), agent } as never)
+    await app.tool().execute({
+      action: 'search', planned_step_id: 'patch-event', session: { generate_id: true },
+      queries: [{ app: 'Google Calendar', use_case: 'Patch an existing event.' }],
+    }, { signal: AbortSignal.abort(), agent } as never)
+
+    await expect(app.tool().execute({
+      action: 'execute', planned_step_id: 'find-event',
+      tool_slug: 'GOOGLECALENDAR_FIND_EVENT', arguments: { query: 'Prague anniversary' },
+    }, { signal: AbortSignal.abort(), agent } as never)).resolves.toMatchObject({
+      status: 'ready', data: { items: [{ id: 'event-series-1' }] },
+    })
+    expect(execute.mock.calls.map(call => call[0])).toEqual([
+      'COMPOSIO_SEARCH_TOOLS', 'COMPOSIO_SEARCH_TOOLS', 'COMPOSIO_SEARCH_TOOLS',
+      'GOOGLECALENDAR_FIND_EVENT',
+    ])
+  })
+
   it('executes changed Calendar patch arguments instead of deduplicating the planned step', async () => {
     execute
       .mockResolvedValueOnce({ data: {
