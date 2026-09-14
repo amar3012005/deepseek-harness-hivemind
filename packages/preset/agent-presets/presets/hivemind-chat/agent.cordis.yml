@@ -88,6 +88,7 @@
   group: true
   isolate:
     hivemindIdentity: true
+    connectedAppReceiptStore: true
   config:
     - id: hivemind-identity
       name: '@deepseek-ai/dsh-hivemind-identity'

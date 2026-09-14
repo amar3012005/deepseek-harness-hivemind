@@ -60,6 +60,7 @@ interface ShippedEntry {
   id?: unknown
   disabled?: unknown
   config?: unknown
+  isolate?: unknown
 }
 
 /** Find one entry through the shipped composition's nested groups. */
@@ -184,7 +185,7 @@ describe('the shipped preset root', () => {
     expect(prefix).toContain('For one bounded task, call search directly without loading a skill')
     expect(prefix).toContain('Begin with only this contract, recent completed conversation')
     expect(prefix).toContain('ask one concise clarification')
-    expect(prefix).toContain('when the returned guidance supports obtaining a missing requested field')
+    expect(prefix).toContain('use hivemind_connected_receipt_read once with its opaque receipt id')
     expect(prefix).toContain('Request hivemind_capabilities only when a detailed playbook is genuinely needed')
     expect(prefix).toContain('profiles only for the HyperAgent directory')
     expect(prefix).toContain('avoid narrating routine tool mapping')
@@ -192,6 +193,9 @@ describe('the shipped preset root', () => {
     expect(prefix).toContain('use entities once before recall')
     expect(prefix).toContain('call the exact selected execute tool once')
     expect(prefix).toContain("native Harness pauses that tool call for the user's single approval")
+    expect(findEntry(hivemindChat, 'hivemind-capabilities')?.isolate).toMatchObject({
+      connectedAppReceiptStore: true,
+    })
   })
 
   it('limits the Composio catalog entry to complex workflows', async () => {
