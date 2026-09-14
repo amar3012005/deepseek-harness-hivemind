@@ -13,6 +13,10 @@ declare global {
     }
     /** Active embedded client retained so its host can dispose it on route exit. */
     __DSH_EMBED_APP__?: AppWebEntry
+    /** Stable remount capability retained when an SPA reuses this module. */
+    __DSH_EMBED_MOUNT__?: () => Promise<void>
+    /** First mount completion barrier for the embedding host. */
+    __DSH_EMBED_INITIAL_MOUNT__?: Promise<void>
   }
 }
 
@@ -34,4 +38,5 @@ export async function mount(): Promise<void> {
 }
 
 /** First document mount. Embedded SPA hosts reuse `mount()` from this cached module. */
-export const initialMount = mount()
+window.__DSH_EMBED_MOUNT__ = mount
+window.__DSH_EMBED_INITIAL_MOUNT__ = mount()
