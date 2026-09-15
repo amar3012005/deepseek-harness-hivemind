@@ -1,7 +1,7 @@
 /** HIVE-MIND embedded Web authentication and production health routes. */
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
-import { createHash, createHmac, timingSafeEqual } from 'node:crypto'
+import { createHash, createHmac, randomUUID, timingSafeEqual } from 'node:crypto'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { createClient, type RedisClientType } from 'redis'
 import type {} from '@deepseek-ai/dsh-client-connection'
@@ -19,6 +19,7 @@ export const inject = ['webServer', 'connection', 'sessionPersistence', 'hivemin
 const EXCHANGE_PATH = '/api/hivemind/embed/exchange'
 const ESTABLISH_PATH = '/api/hivemind/session/establish'
 const BOOT_PATH = '/api/hivemind/boot'
+const PROJECTS_PATH = '/api/hivemind/projects'
 const HEALTH_PATH = '/health'
 const TICKET_NONCE_PREFIX = 'hive:harness-ticket:'
 const MAX_BODY_BYTES = 8192
@@ -45,6 +46,12 @@ export interface Config {
   redisUrlEnv: string
   redisJtiPrefix: string
   sessionMaxAgeSeconds: number
+  /** Control-plane origin for the scoped project catalog. */
+  serviceApiBase: string
+  /** Additional HTTP origins allowed only for local/Compose development. */
+  serviceHttpOrigins: string[]
+  /** Environment variable holding the runner-to-control-plane signing secret. */
+  serviceSecretEnv: string
 }
 
 export const Config: z<Config> = z.object({
@@ -53,6 +60,9 @@ export const Config: z<Config> = z.object({
   redisUrlEnv: z.string().required(),
   redisJtiPrefix: z.string().required(),
   sessionMaxAgeSeconds: z.natural().min(60).max(86400).required(),
+  serviceApiBase: z.string().required(),
+  serviceHttpOrigins: z.array(String).default([]),
+  serviceSecretEnv: z.string().required(),
 })
 
 export interface TicketClaims {
@@ -196,6 +206,49 @@ function env(name: string): string {
   return value
 }
 
+function serviceBase(value: string, allowedOrigins: string[]): URL {
+  const target = new URL(value)
+  const loopback = (target.protocol === 'http:' || target.protocol === 'https:')
+    && (target.hostname === 'localhost' || target.hostname === '127.0.0.1' || target.hostname === '[::1]')
+  const compose = target.protocol === 'http:' && (target.hostname === 'control-plane' || target.hostname === 'hivemind-control-plane')
+  const allowlisted = allowedOrigins.some((origin) => {
+    try { return new URL(origin).origin === target.origin } catch { return false }
+  })
+  if (target.protocol !== 'https:' && !loopback && !compose && !allowlisted) {
+    throw new Error('hivemind-web-runner: project catalog service must use HTTPS or an allowed local origin')
+  }
+  if (target.username || target.password || target.search || target.hash || (target.pathname !== '/' && target.pathname !== '')) {
+    throw new Error('hivemind-web-runner: project catalog service must contain only an origin')
+  }
+  return new URL(target.origin)
+}
+
+function serviceToken(principal: Record<string, string>, secret: string): string {
+  const now = Math.floor(Date.now() / 1000)
+  const encode = (value: unknown): string => Buffer.from(JSON.stringify(value)).toString('base64url')
+  const claims = {
+    iss: 'hivemind-harness-runner', aud: 'hivemind-control-plane-harness-proxy',
+    sub: principal.user_id, org_id: principal.org_id, profile: 'hivemind-chat',
+    ...(principal.project_id === undefined ? {} : { project_id: principal.project_id }),
+    iat: now, exp: now + 30, jti: randomUUID(),
+  }
+  const input = `${encode({ alg: 'HS256', typ: 'JWT' })}.${encode(claims)}`
+  return `${input}.${createHmac('sha256', secret).update(input).digest('base64url')}`
+}
+
+function compactProjects(value: unknown): Array<{ id: string; name: string; slug: string }> {
+  if (typeof value !== 'object' || value === null || !Array.isArray((value as { projects?: unknown }).projects)) {
+    throw new Error('invalid project catalog response')
+  }
+  return (value as { projects: unknown[] }).projects.flatMap((project) => {
+    if (typeof project !== 'object' || project === null) return []
+    const row = project as Record<string, unknown>
+    return typeof row.id === 'string' && typeof row.name === 'string' && typeof row.slug === 'string'
+      ? [{ id: row.id, name: row.name, slug: row.slug }]
+      : []
+  }).slice(0, 100)
+}
+
 /** Mount the one-time ticket exchange and health routes. */
 export async function apply(ctx: Context, config: Config): Promise<void> {
   const secret = env(config.ticketSecretEnv)
@@ -208,6 +261,11 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
     return origin.origin
   })
   if (parentOrigins.length === 0) throw new Error('hivemind-web-runner: at least one parent origin is required')
+  const projectCatalogBase = serviceBase(config.serviceApiBase, config.serviceHttpOrigins)
+  const projectCatalogSecret = env(config.serviceSecretEnv)
+  if (Buffer.byteLength(projectCatalogSecret, 'utf8') < 32) {
+    throw new Error('hivemind-web-runner: project catalog service secret must be at least 32 bytes')
+  }
   const redis = createClient({ url: env(config.redisUrlEnv) }) as RedisClientType
   redis.on('error', (error) => { ctx.logger.warn('hivemind-web-runner: Redis error', error) })
   await redis.connect()
@@ -303,6 +361,39 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
       json(res, 200, { ok: true, profile: 'hivemind-chat', injections, styles: await nativeStyles() })
     },
   }), 'hivemind-web-runner: authenticated browser boot graph')
+  ctx.effect(() => ctx.webServer.register({
+    kind: 'exact',
+    path: PROJECTS_PATH,
+    handler: async (req, res) => {
+      if (req.method !== 'GET') {
+        json(res, 405, { ok: false, diagnostic: 'method_not_allowed' }, { allow: 'GET' })
+        return
+      }
+      const authorityHost = publicHost(req)
+      const principal = ctx.connection.principal({
+        headers: { host: authorityHost || req.headers.host, cookie: req.headers.cookie },
+      })
+      if (principal?.profile !== 'hivemind-chat' || !nonEmpty(principal.user_id) || !nonEmpty(principal.org_id)) {
+        json(res, 401, { ok: false, diagnostic: 'authentication_required' })
+        return
+      }
+      try {
+        const response = await fetch(new URL('/internal/v1/harness-chat/core/projects', projectCatalogBase), {
+          method: 'GET',
+          headers: {
+            accept: 'application/json',
+            authorization: `Bearer ${serviceToken(principal, projectCatalogSecret)}`,
+          },
+          redirect: 'manual',
+          signal: AbortSignal.timeout(10_000),
+        })
+        if (!response.ok) throw new Error(`project catalog status ${response.status}`)
+        json(res, 200, { ok: true, projects: compactProjects(await response.json()) })
+      } catch {
+        json(res, 503, { ok: false, diagnostic: 'project_catalog_unavailable' })
+      }
+    },
+  }), 'hivemind-web-runner: authenticated project catalog')
   ctx.effect(() => ctx.webServer.register({ kind: 'exact', path: HEALTH_PATH, handler: async (_req, res) => {
     try {
       const persistence = ctx.sessionPersistence as typeof ctx.sessionPersistence & { health?: () => Promise<void> }

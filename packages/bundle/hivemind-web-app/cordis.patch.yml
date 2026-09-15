@@ -191,4 +191,7 @@
         # the plugin's one-day maximum; Core/Control Plane still exclusively
         # mint the one-time admission ticket and tenant principal.
         sessionMaxAgeSeconds: 86400
+        serviceApiBase: !!js process.env.HIVEMIND_CONNECTED_RECEIPT_SERVICE_URL
+        serviceHttpOrigins: !!js (process.env.HIVEMIND_SERVICE_HTTP_ORIGINS ?? '').split(',').map(value => value.trim()).filter(Boolean)
+        serviceSecretEnv: HIVE_HARNESS_RUNNER_SERVICE_SECRET
         databaseUrlEnv: DATABASE_URL

@@ -114,19 +114,36 @@ export function apply(ctx: ClientContext): void {
   }, ({ sessionId, locked }: { sessionId: SessionId; locked: boolean }) => {
     const key = `hivemind:read-scope:${sessionId}`
     let initialScope: HivemindReadScope = 'full'
+    let initialProject: string | undefined
     try {
       const stored = sessionStorage.getItem(key)
-      if (stored === 'personal' || stored === 'organization' || stored === 'project' || stored === 'full') initialScope = stored
+      if (stored === 'personal' || stored === 'organization' || stored === 'project' || stored === 'full') {
+        initialScope = stored
+      } else if (stored !== null) {
+        const state = JSON.parse(stored) as { scope?: unknown; project?: unknown }
+        if (state.scope === 'personal' || state.scope === 'organization' || state.scope === 'project' || state.scope === 'full') {
+          initialScope = state.scope
+          if (state.scope === 'project' && typeof state.project === 'string' && state.project !== '') initialProject = state.project
+        }
+      }
     } catch { /* storage can be unavailable in embedded contexts; full is safe */ }
     const onSelect = (id: SessionId, readScope: HivemindReadScope, project?: string): void => {
-      try { sessionStorage.setItem(key, readScope) } catch { /* durable session event remains authoritative */ }
+      try {
+        sessionStorage.setItem(key, JSON.stringify({
+          scope: readScope,
+          ...(project === undefined ? {} : { project }),
+        }))
+      } catch { /* durable session event remains authoritative */ }
       const scoped = ctx.sessions.scope(id)
       const session = scoped === undefined ? undefined : ctx.sessions.sessionOf(scoped)
       if (session === undefined) return
       const argument = project === undefined ? readScope : `${readScope} ${project}`
       void session.command(`/hivemind-scope ${argument}`)
     }
-    return createElement(ScopeSelect, { sessionId, locked, initialScope, onSelect })
+    return createElement(ScopeSelect, {
+      sessionId, locked, initialScope, onSelect,
+      ...(initialProject === undefined ? {} : { initialProject }),
+    })
   }))
   ctx.slots.inject('conversation.input.model', () => ctx.slots.register({
     name: 'conversation.input.model',

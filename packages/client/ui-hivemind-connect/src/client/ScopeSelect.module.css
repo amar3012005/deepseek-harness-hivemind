@@ -20,3 +20,4 @@
 .select { cursor: pointer; max-width: 128px; }
 .project { width: 88px; border-bottom: 1px solid currentColor; }
 .select:disabled, .project:disabled { cursor: default; opacity: .65; }
+.error { color: var(--dsh-color-danger, #b45309); font-size: 11px; }

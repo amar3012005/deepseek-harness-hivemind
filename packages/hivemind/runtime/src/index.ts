@@ -41,6 +41,7 @@ export const name = 'hivemind-runtime'
 export const inject = ['tools', 'skills', 'hivemindIdentity', 'hivemindExecutionScope']
 
 type HivemindReadScope = 'full' | 'personal' | 'organization' | 'project'
+const PROJECT_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu
 
 interface ScopeCommandContext {
   commands: {
@@ -886,6 +887,9 @@ export function apply(ctx: Context, config: Config): void {
           }
           const project = rest.join(' ').trim()
           if (scope === 'project' && project === '') return { kind: 'error', text: 'project scope requires an authorized project' }
+          if (scope === 'project' && !PROJECT_ID_PATTERN.test(project)) {
+            return { kind: 'error', text: 'project scope requires an authorized project id' }
+          }
           agent.session.append('hivemind/read-scope', {
             scope: scope as HivemindReadScope,
             ...(scope === 'project' ? { project } : {}),
@@ -968,6 +972,18 @@ export function apply(ctx: Context, config: Config): void {
         status: 'ready',
         operation: 'recall',
         result: compactRecallResponse(record, effectiveRequest.limit, config.recallItemMaxChars, receipt),
+      }
+    },
+    prepareSave(agent, request) {
+      // A saved session lens is a useful default, but never replaces the
+      // concrete native destination approval that follows this preparation.
+      if (request.scope !== undefined) return request
+      const scope = sessionReadScope(agent)
+      if (scope.scope === undefined) return request
+      return {
+        ...request,
+        scope: scope.scope,
+        ...(request.project === undefined && scope.project !== undefined ? { project: scope.project } : {}),
       }
     },
     async save(agent, request: SaveRequest, signal, execution) {

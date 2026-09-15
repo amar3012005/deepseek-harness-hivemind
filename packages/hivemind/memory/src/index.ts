@@ -50,6 +50,8 @@ export interface MemoryProvider {
   context(agent: Agent, signal: AbortSignal): Promise<Record<string, JsonValue>>
   entities(request: EntitySearchRequest, signal: AbortSignal, execution: ToolExecution): Promise<Record<string, JsonValue>>
   recall(request: RecallRequest, signal: AbortSignal, execution: ToolExecution): Promise<Record<string, JsonValue>>
+  /** Apply a durable session-derived default before the one native approval. */
+  prepareSave?(agent: Agent, request: SaveRequest): SaveRequest
   save(agent: Agent, request: SaveRequest, signal: AbortSignal, execution: ToolExecution): Promise<Record<string, JsonValue>>
   saveStatus(request: SaveStatusRequest, signal: AbortSignal): Promise<Record<string, JsonValue>>
   profiles(signal: AbortSignal): Promise<Record<string, JsonValue>>
@@ -228,7 +230,8 @@ export function memoryPlugin(config: MemoryPluginConfig, provider: MemoryProvide
         isConcurrencySafe: () => true,
         async execute(args, execution) {
           if (execution.agent === undefined) throw new TypeError('hivemind-memory: active agent required')
-          const approved = await approveSaveDestination(ctx, execution, saveRequest(args))
+          const prepared = provider.prepareSave?.(execution.agent, saveRequest(args)) ?? saveRequest(args)
+          const approved = await approveSaveDestination(ctx, execution, prepared)
           return approved === undefined
             ? { operation: 'save', status: 'cancelled' }
             : provider.save(execution.agent, approved, execution.signal, execution)
@@ -324,7 +327,8 @@ export function memoryPlugin(config: MemoryPluginConfig, provider: MemoryProvide
             const rawSave = args.save === undefined
               ? args
               : object(args.save, 'save')
-            const approved = await approveSaveDestination(ctx, execution, saveRequest(rawSave))
+            const prepared = provider.prepareSave?.(execution.agent, saveRequest(rawSave)) ?? saveRequest(rawSave)
+            const approved = await approveSaveDestination(ctx, execution, prepared)
             return approved === undefined
               ? { operation: 'save', status: 'cancelled' }
               : provider.save(execution.agent, approved, execution.signal, execution)
