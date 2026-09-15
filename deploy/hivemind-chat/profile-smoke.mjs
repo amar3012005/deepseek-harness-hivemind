@@ -37,7 +37,7 @@ for (const [feature, ids] of Object.entries(presentation)) {
 
 const defaultModel = row('agent-default-model')
 if (!defaultModel.includes("model: openrouter/deepseek/deepseek-v4-flash-0731")
-  || !defaultModel.includes("reasoningEffort: 'off'")) {
+  || !/reasoning:\s*['"]?off['"]?/.test(defaultModel)) {
   throw new Error('hivemind-web image profile must disable optional reasoning for its default model')
 }
 if (!dump.includes("'off': none")) {
