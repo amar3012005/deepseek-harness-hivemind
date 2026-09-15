@@ -292,6 +292,7 @@ export function ConversationRoot({
 
   const heroWorkspaceRow = (
     <div className={css.heroWorkspaceRow}>
+      {renderSlot('conversation.hero.scope', { sessionId, locked: sessionId === undefined })}
       {requiresWorkspace && <WorkspaceChip
         buttonRef={pickerAnchor}
         label={chipTitle}
@@ -346,7 +347,7 @@ export function ConversationRoot({
   const composerBar = (
     <div className={clsx(css.composerStack, hero && css.composerHero)}>
       {hero && <HeroShell t={t} renderSlot={renderSlot} />}
-      {hero && heroWorkspaceRow}
+      {(hero || !requiresWorkspace) && heroWorkspaceRow}
       {zone !== undefined && renderSlot('conversation.input.dock', zone)}
       {inputBar}
     </div>

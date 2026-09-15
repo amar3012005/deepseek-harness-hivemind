@@ -23,8 +23,14 @@ import { createHash, createHmac, randomUUID } from 'node:crypto'
 import type {} from '@deepseek-ai/dsh-hivemind-identity'
 import type {} from '@deepseek-ai/dsh-hivemind-execution-scope'
 import { contextPlugin } from '@deepseek-ai/dsh-hivemind-context'
-import { memoryPlugin, type EntitySearchRequest, type RecallRequest, type SaveRequest } from '@deepseek-ai/dsh-hivemind-memory'
+import { memoryPlugin, type EntitySearchRequest, type RecallRequest, type SaveRequest, type SaveStatusRequest } from '@deepseek-ai/dsh-hivemind-memory'
 import { projectHyperagentProfiles } from '@deepseek-ai/dsh-hivemind-employee-directory'
+
+declare module '@deepseek-ai/dsh-session/types' {
+  interface SessionEventMap {
+    'hivemind/read-scope': { scope: 'full' | 'personal' | 'organization' | 'project'; project?: string }
+  }
+}
 
 export { completedExchanges, recentConversationText } from '@deepseek-ai/dsh-hivemind-context'
 
@@ -34,12 +40,43 @@ export const name = 'hivemind-runtime'
 /** Services required to assemble context and expose progressive tools. */
 export const inject = ['tools', 'skills', 'hivemindIdentity', 'hivemindExecutionScope']
 
+type HivemindReadScope = 'full' | 'personal' | 'organization' | 'project'
+
+interface ScopeCommandContext {
+  commands: {
+    register(spec: {
+      name: string
+      description: string
+      input: { hint: string }
+      handler(input: { agent: Agent; rawInput: string }): { kind: 'success' | 'error'; text: string }
+    }): () => void
+  }
+}
+
+/** Read the latest durable scope event; full is represented by omission in API calls. */
+function sessionReadScope(agent: Agent): { scope?: 'personal' | 'organization' | 'project'; project?: string } {
+  const events = agent.session?.snapshotEvents?.() ?? []
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const event = events[index]
+    if (event?.type !== 'hivemind/read-scope') continue
+    const data = event.data as { scope?: HivemindReadScope; project?: string }
+    if (data.scope === 'personal' || data.scope === 'organization') return { scope: data.scope }
+    if (data.scope === 'project' && typeof data.project === 'string' && data.project.trim() !== '') {
+      return { scope: 'project', project: data.project.trim() }
+    }
+    return {}
+  }
+  return {}
+}
+
 const MAX_RESPONSE_BYTES = 2 * 1024 * 1024
 const MAX_PROFILE_CONTEXT_CHARS = 12_000
 const PROFILE_PATH = '/api/profile'
 const PROFILE_FACTS_PATH = '/api/profiles'
 const PROFILE_CONTEXT_PATH = '/api/profiles/context'
 const RECALL_PATH = '/api/recall'
+const SAVE_PATH = '/api/memories?sync=true'
+const SAVE_STATUS_PATH = '/api/memories/save-status'
 const ENTITY_SEARCH_PATH = '/api/entities'
 const HYPERAGENT_PROFILES_URL = 'https://api.singulancelabs.com/v1/hyperagents/profiles'
 const CONNECT_STATUS_PATH = '/hivemind/connect/status'
@@ -374,6 +411,10 @@ async function hiveRequest(
   const target = new URL(targetPath, authority.apiBase)
   if (target.origin !== allowedTargetOrigin) throw new HiveMindRuntimeError('HIVE-MIND request escaped its allowed origin')
   const operation = requestSignal(callerSignal, config.requestTimeoutMs)
+  const headers = new Headers(init.headers)
+  headers.set('accept', 'application/json')
+  headers.set('authorization', `Bearer ${authority.token}`)
+  if (init.body !== undefined) headers.set('content-type', 'application/json')
   try {
     let response: Response
     try {
@@ -381,11 +422,7 @@ async function hiveRequest(
         ...init,
         redirect: 'manual',
         signal: operation.signal,
-        headers: {
-          accept: 'application/json',
-          authorization: `Bearer ${authority.token}`,
-          ...init.body === undefined ? {} : { 'content-type': 'application/json' },
-        },
+        headers: Object.fromEntries(headers),
       })
     } catch {
       if (callerSignal.aborted) throw new HiveMindRuntimeError('request cancelled')
@@ -563,21 +600,72 @@ function compactEntityResponse(
 }
 
 /** Expose only a receipt from a successful memory write; tenant fields remain transport-private. */
-function compactSaveReceipt(
-  value: JsonRecord,
-  sourceReceipt?: SpillRef | PrivateReceiptReference,
-): Record<string, JsonValue> {
-  const receipt: Record<string, JsonValue> = { status: 'saved' }
-  for (const field of ['id', 'title', 'memory_type', 'citation_id', 'created_at', 'updated_at']) {
-    if (typeof value[field] === 'string') receipt[field] = value[field]
+function compactSaveReceipt(value: JsonRecord, idempotencyKey: string, sourceReceipt?: SpillRef | PrivateReceiptReference): Record<string, JsonValue> {
+  const memory = typeof value['memory'] === 'object' && value['memory'] !== null && !Array.isArray(value['memory'])
+    ? value['memory'] as JsonRecord
+    : value
+  const durable = typeof value['receipt'] === 'object' && value['receipt'] !== null && !Array.isArray(value['receipt'])
+    ? value['receipt'] as JsonRecord
+    // Core may return the terminal receipt at the top level. Treat that shape
+    // as authoritative too; requiring a nested `receipt` here caused valid
+    // saves to be reported as indeterminate and invited duplicate attempts.
+    : (typeof value['receipt_id'] === 'string' || typeof value['memory_id'] === 'string')
+      ? value
+      : undefined
+  const memoryId = typeof durable?.['memory_id'] === 'string'
+    ? durable['memory_id']
+    : typeof memory['id'] === 'string' ? memory['id'] : undefined
+  const receiptId = typeof durable?.['receipt_id'] === 'string'
+    ? durable['receipt_id']
+    : typeof value['receipt_id'] === 'string' ? value['receipt_id']
+      // The canonical synchronous Core memory endpoint predates the explicit
+      // receipt envelope and returns the persisted memory object instead. Its
+      // UUID is still a durable, tenant-authorized read handle; make that
+      // compatibility shape explicit so a successful save is not reported as
+      // indeterminate (which used to trigger duplicate retries).
+      : memoryId === undefined ? undefined : `memory:${memoryId}`
+  if (value['skipped'] === true) {
+    return { status: 'unchanged', operation: 'save', idempotency_key: idempotencyKey, reason: 'canonical_duplicate' }
   }
-  if (typeof value['id'] !== 'string') throw new HiveMindRuntimeError('memory save response is missing its receipt id')
+  if (durable?.['status'] === 'processing' || durable?.['status'] === 'failed' || durable?.['status'] === 'not_found') {
+    return {
+      status: durable['status'], operation: 'save', idempotency_key: idempotencyKey,
+      ...(typeof durable['error_code'] === 'string' ? { error_code: durable['error_code'] } : {}),
+    }
+  }
+  if (memoryId === undefined || receiptId === undefined) {
+    return {
+      status: 'indeterminate', operation: 'save', idempotency_key: idempotencyKey,
+      error_code: 'MEMORY_SAVE_RECEIPT_INCOMPLETE', retry_safe: false,
+    }
+  }
+  const receipt: Record<string, JsonValue> = {
+    status: 'saved', operation: 'save', memory_id: memoryId, receipt_id: receiptId,
+    idempotency_key: idempotencyKey, replayed: value['replayed'] === true,
+  }
+  if (typeof durable?.['receipt_id'] !== 'string' && typeof value['receipt_id'] !== 'string') {
+    receipt['receipt_source'] = 'core_memory_id'
+  }
+  for (const field of ['title', 'memory_type', 'citation_id', 'created_at', 'updated_at']) {
+    if (typeof memory[field] === 'string') receipt[field] = memory[field]
+  }
   if (sourceReceipt !== undefined) {
     receipt['source_receipt'] = privateReceiptReference(sourceReceipt)
   }
   return receipt
 }
 
+function saveIdempotencyKey(snapshot: ProfileSnapshot, execution: ToolExecution, request: SaveRequest): string {
+  const sessionId = execution.agent?.session?.header.id || 'session-unavailable'
+  const canonical = JSON.stringify({
+    org_id: snapshot.identity.orgId, user_id: snapshot.identity.userId, session_id: sessionId,
+    title: request.title, content: request.content, source_type: request.sourceType,
+    tags: [...(request.tags ?? [])].sort(), project: request.project ?? null,
+    relationship: request.relationship ?? null, related_to: request.relatedTo ?? null,
+    scope: request.scope ?? null,
+  })
+  return `hive-save:${createHash('sha256').update(canonical).digest('hex')}`
+}
 /** Persist the complete HIVE response before projecting it into model context. */
 async function saveMemoryReceipt(
   ctx: Context,
@@ -818,6 +906,33 @@ export function apply(ctx: Context, config: Config): void {
       })
     },
   })))
+  // The browser scope control uses this one native command to append a
+  // durable session event. It is a session command, not prompt text or
+  // client-only state, so reload/replay keeps the selected read lens.
+  const inject = (ctx as unknown as { inject?: unknown }).inject
+  if (typeof inject === 'function') {
+    (inject as (services: readonly string[], callback: (value: unknown) => void) => void).call(ctx, ['commands'], (commandCtx) => {
+      const commands = commandCtx as unknown as ScopeCommandContext
+      ctx.effect(() => commands.commands.register({
+        name: 'hivemind-scope',
+        description: 'Set the HIVE-MIND read scope for this session.',
+        input: { hint: '<full|personal|organization|project> [authorized-project]' },
+        handler: ({ agent, rawInput }) => {
+          const [scope, ...rest] = rawInput.trim().split(/\s+/)
+          if (!['full', 'personal', 'organization', 'project'].includes(scope ?? '')) {
+            return { kind: 'error', text: 'scope must be full, personal, organization, or project' }
+          }
+          const project = rest.join(' ').trim()
+          if (scope === 'project' && project === '') return { kind: 'error', text: 'project scope requires an authorized project' }
+          agent.session.append('hivemind/read-scope', {
+            scope: scope as HivemindReadScope,
+            ...(scope === 'project' ? { project } : {}),
+          })
+          return { kind: 'success', text: `read scope ${scope}${project === '' ? '' : `: ${project}`}` }
+        },
+      }))
+    })
+  }
   ctx.plugin(contextPlugin({
     historyTurns: config.historyTurns,
     historyMaxChars: config.historyMaxChars,
@@ -829,10 +944,16 @@ export function apply(ctx: Context, config: Config): void {
       return { status: 'ready', operation: 'context', context: snapshot.fullContext }
     },
     async entities(request: EntitySearchRequest, signal, execution) {
+      const durableScope = execution.agent === undefined ? {} : sessionReadScope(execution.agent)
+      const effectiveRequest = request.scopeFilter === undefined && durableScope.scope !== undefined
+        ? { ...request, scopeFilter: durableScope.scope, ...(request.project === undefined ? { project: durableScope.project } : {}) }
+        : request
       const authority = await resolveAuthority(ctx, config)
       const target = new URL(ENTITY_SEARCH_PATH, authority.apiBase)
-      target.searchParams.set('q', request.query)
-      target.searchParams.set('limit', String(Math.min(request.limit, config.entityResultLimit)))
+      target.searchParams.set('q', effectiveRequest.query)
+      target.searchParams.set('limit', String(Math.min(effectiveRequest.limit, config.entityResultLimit)))
+      if (effectiveRequest.scopeFilter !== undefined) target.searchParams.set('scope', effectiveRequest.scopeFilter)
+      if (effectiveRequest.project !== undefined) target.searchParams.set('project', effectiveRequest.project)
       let result: unknown
       try {
         result = await hiveRequest(authority, `${ENTITY_SEARCH_PATH}${target.search}`, { method: 'GET' }, signal, config)
@@ -848,7 +969,7 @@ export function apply(ctx: Context, config: Config): void {
       }
       const record = apiRecord(result, 'entity search response')
       const receipt = await saveMemoryReceipt(ctx, config, execution, 'hivemind-entities.json', record)
-      return compactEntityResponse(record, request.limit, receipt)
+      return compactEntityResponse(record, effectiveRequest.limit, receipt)
     },
     async profiles(signal) {
       const authority = await resolveAuthority(ctx, config)
@@ -858,20 +979,25 @@ export function apply(ctx: Context, config: Config): void {
       return { operation: 'profiles', ...hyperagentProfilesFromResponse(result) }
     },
     async recall(request: RecallRequest, signal, execution) {
+      const durableScope = execution.agent === undefined ? {} : sessionReadScope(execution.agent)
+      const effectiveRequest = request.scopeFilter === undefined && durableScope.scope !== undefined
+        ? { ...request, scopeFilter: durableScope.scope, ...(request.project === undefined ? { project: durableScope.project } : {}) }
+        : request
       const authority = await resolveAuthority(ctx, config)
       const result = await hiveRequest(authority, RECALL_PATH, {
         method: 'POST',
         body: JSON.stringify({
-          query_context: request.query,
-          max_memories: request.limit,
-          mode: request.mode,
-          ...request.tags === undefined ? {} : { tags: request.tags },
-          ...request.sourcePlatforms === undefined ? {} : { source_platforms: request.sourcePlatforms },
-          ...request.project === undefined ? {} : { project: request.project },
-          ...request.validAt === undefined ? {} : { valid_at: request.validAt },
-          ...request.transactionAt === undefined ? {} : { transaction_at: request.transactionAt },
-          ...request.sort === undefined ? {} : { sort: request.sort },
-          ...request.includeSuperseded === undefined ? {} : { include_superseded: request.includeSuperseded },
+          query_context: effectiveRequest.query,
+          max_memories: effectiveRequest.limit,
+          mode: effectiveRequest.mode,
+          ...effectiveRequest.tags === undefined ? {} : { tags: effectiveRequest.tags },
+          ...effectiveRequest.sourcePlatforms === undefined ? {} : { source_platforms: effectiveRequest.sourcePlatforms },
+          ...effectiveRequest.project === undefined ? {} : { project: effectiveRequest.project },
+          ...effectiveRequest.validAt === undefined ? {} : { valid_at: effectiveRequest.validAt },
+          ...effectiveRequest.transactionAt === undefined ? {} : { transaction_at: effectiveRequest.transactionAt },
+          ...effectiveRequest.sort === undefined ? {} : { sort: effectiveRequest.sort },
+          ...effectiveRequest.includeSuperseded === undefined ? {} : { include_superseded: effectiveRequest.includeSuperseded },
+          ...effectiveRequest.scopeFilter === undefined ? {} : { scope_filter: effectiveRequest.scopeFilter },
         }),
       }, signal, config)
       const record = apiRecord(result, 'meta recall response')
@@ -879,37 +1005,74 @@ export function apply(ctx: Context, config: Config): void {
       return {
         status: 'ready',
         operation: 'recall',
-        result: compactRecallResponse(record, request.limit, config.recallItemMaxChars, receipt),
+        result: compactRecallResponse(record, effectiveRequest.limit, config.recallItemMaxChars, receipt),
       }
     },
     async save(agent, request: SaveRequest, signal, execution) {
       const snapshot = await snapshotFor(agent, signal)
       const authority = await resolveAuthority(ctx, config)
-      const result = await hiveRequest(authority, '/api/memories?sync=true', {
-        method: 'POST',
-        body: JSON.stringify({
-          title: request.title,
-          content: request.content,
-          memory_type: request.sourceType === 'decision' ? 'decision' : 'fact',
-          source_platform: 'deepseek-harness',
-          tags: request.tags ?? [],
-          ...request.project === undefined ? {} : { project: request.project },
-          ...request.relationship === undefined ? {} : {
-            relationship: {
-              type: { update: 'Updates', extend: 'Extends', derive: 'Derives' }[request.relationship],
-              target_id: request.relatedTo,
-            },
+      const idempotencyKey = saveIdempotencyKey(snapshot, execution, request)
+      const payload = {
+        title: request.title,
+        content: request.content,
+        memory_type: request.sourceType === 'decision' ? 'decision' : 'fact',
+        source_platform: 'deepseek-harness',
+        tags: request.tags ?? [],
+        ...request.project === undefined ? {} : { project: request.project },
+        ...request.scope === undefined ? {} : { scope: request.scope },
+        ...request.relationship === undefined ? {} : {
+          relationship: {
+            type: { update: 'Updates', extend: 'Extends', derive: 'Derives' }[request.relationship],
+            target_id: request.relatedTo,
           },
-          metadata: { source_type: request.sourceType, governed: true },
-          user_id: snapshot.identity.userId,
-          org_id: snapshot.identity.orgId,
-          smartIngest: true,
-          sync: true,
-        }),
-      }, signal, config)
-      const record = apiRecord(result, 'meta save response')
+        },
+        metadata: { source_type: request.sourceType, governed: true, ...(request.scope === undefined ? {} : { scope: request.scope }) },
+        idempotency_key: idempotencyKey,
+        user_id: snapshot.identity.userId,
+        org_id: snapshot.identity.orgId,
+        smartIngest: true,
+        sync: true,
+      }
+      let record: JsonRecord
+      try {
+        const result = await hiveRequest(authority, SAVE_PATH, {
+          method: 'POST', headers: { 'x-idempotency-key': idempotencyKey }, body: JSON.stringify(payload),
+        }, signal, config)
+        record = apiRecord(result, 'meta save response')
+      } catch (error: unknown) {
+        if (signal.aborted) throw error
+        try {
+          const status = await hiveRequest(authority, `${SAVE_STATUS_PATH}?idempotency_key=${encodeURIComponent(idempotencyKey)}`, {
+            method: 'GET', headers: { 'x-idempotency-key': idempotencyKey },
+          }, signal, config)
+          const durable = apiRecord(status, 'meta save status response')
+          record = durable['response'] && typeof durable['response'] === 'object' && !Array.isArray(durable['response'])
+            ? { ...(durable['response'] as JsonRecord), receipt: durable as unknown as JsonValue }
+            : { receipt: durable as unknown as JsonValue }
+        } catch {
+          return {
+            status: 'indeterminate', operation: 'save', idempotency_key: idempotencyKey,
+            error_code: 'MEMORY_SAVE_STATUS_UNAVAILABLE', retry_safe: false,
+          }
+        }
+      }
       const receipt = await saveMemoryReceipt(ctx, config, execution, 'hivemind-save.json', record)
-      return compactSaveReceipt(record, receipt)
+      return compactSaveReceipt(record, idempotencyKey, receipt)
+    },
+    async saveStatus(request: SaveStatusRequest, signal) {
+      const authority = await resolveAuthority(ctx, config)
+      try {
+        const result = await hiveRequest(authority, `${SAVE_STATUS_PATH}?idempotency_key=${encodeURIComponent(request.idempotencyKey)}`, {
+          method: 'GET', headers: { 'x-idempotency-key': request.idempotencyKey },
+        }, signal, config)
+        const receipt = apiRecord(result, 'meta save status response')
+        return { operation: 'save_status', ...(receipt as Record<string, JsonValue>) }
+      } catch (error: unknown) {
+        if (error instanceof HiveMindRuntimeError && error.status === 404) {
+          return { operation: 'save_status', status: 'not_found', idempotency_key: request.idempotencyKey }
+        }
+        return { operation: 'save_status', status: 'capability_unavailable', idempotency_key: request.idempotencyKey }
+      }
     },
   }))
 
