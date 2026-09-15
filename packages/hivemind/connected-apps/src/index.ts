@@ -226,6 +226,28 @@ async function scopedServiceToken(
   return { token: `${input}.${createHmac('sha256', secret).update(input).digest('base64url')}`, base }
 }
 
+/** Admit a billable Harness operation before the provider dispatches. */
+async function admitHarnessCredit(
+  ctx: Context,
+  config: Config,
+  execution: Pick<ToolExecution, 'signal'> & { readonly callId: string },
+  input: { readonly sessionId: string; readonly kind: 'composio_execution' | 'no_tool_turn'; readonly tool?: string },
+): Promise<void> {
+  const service = await scopedServiceToken(ctx, config, execution)
+  if (service === undefined) return
+  const response = await fetch(new URL('/internal/v1/harness-chat/credit-operations', service.base), {
+    method: 'POST', headers: { authorization: `Bearer ${service.token}`, 'content-type': 'application/json', accept: 'application/json' },
+    body: JSON.stringify({
+      session_id: input.sessionId, call_id: execution.callId, kind: input.kind,
+      ...(input.tool === undefined ? {} : { tool: input.tool }),
+    }),
+    signal: execution.signal,
+  })
+  const body = await response.json().catch(() => ({})) as Record<string, unknown>
+  if (response.status === 402 || body['code'] === 'credits_exhausted') throw new Error('HIVE-MIND credits are exhausted for this tool call')
+  if (!response.ok || body['admitted'] !== true) throw new Error(`Harness credit admission failed: ${typeof body['error'] === 'string' ? body['error'] : response.status}`)
+}
+
 function flattenedRequestedProjection(value: unknown, requested: ReadonlySet<string>): Record<string, JsonValue> {
   const collected = new Map<string, JsonValue[]>()
   const visit = (candidate: unknown): void => {
@@ -1234,7 +1256,13 @@ async function saveReceipt(
 
 /** Register the compact progressive Composio router and its policy guards. */
 export function apply(ctx: Context, config: Config = {}): void {
-  const turns = new WeakMap<object, { turn: number; enabled: boolean; searchFingerprints: Set<string>; workflowId?: string }>()
+  const turns = new WeakMap<object, {
+    turn: number
+    enabled: boolean
+    searchFingerprints: Set<string>
+    billableCalls: number
+    workflowId?: string
+  }>()
   const apiKey = config.apiKey?.trim()
   const composio = apiKey
     ? import('@composio/core').then(({ Composio }) => new Composio({ apiKey, allowTracking: false, disableVersionCheck: true }))
@@ -1831,6 +1859,11 @@ export function apply(ctx: Context, config: Config = {}): void {
           }
         }
       }
+      await admitHarnessCredit(ctx, config, execution, {
+        sessionId: String(execution.agent?.session.header.id ?? ''), kind: 'composio_execution', tool: slug,
+      })
+      const turnState = execution.agent === undefined ? undefined : turns.get(execution.agent)
+      if (turnState !== undefined) turnState.billableCalls += 1
       const providerResult = await session.execute(slug, executionArguments)
       const fields = resultFields.get(key) ?? resultFields.get(fallbackKey) ?? []
       const sourceReceipt = await saveReceipt(
@@ -1860,6 +1893,7 @@ export function apply(ctx: Context, config: Config = {}): void {
         turn,
         enabled: connectedAppsEnabled(ctx, config.enabledByDefault === true),
         searchFingerprints: new Set(),
+        billableCalls: 0,
       })
     }
     const decision = await next()
@@ -1904,5 +1938,12 @@ export function apply(ctx: Context, config: Config = {}): void {
       ? compactComposioSearchReceipt(parsed, receipt)
       : compactComposioExecutionReceipt(parsed, receipt)
     return compact === undefined ? decision : { kind: 'accept', content: [{ type: 'text', text: JSON.stringify(compact) }] }
+  }))
+  ctx.effect(() => ctx.on('agent/turn-stopping', async ({ agent, turn, signal }) => {
+    const state = turns.get(agent)
+    if (state === undefined || state.turn !== turn || state.billableCalls > 0 || signal.aborted) return
+    await admitHarnessCredit(ctx, config, { signal, callId: `turn-${turn}` }, {
+      sessionId: String(agent.session.header.id), kind: 'no_tool_turn',
+    })
   }))
 }

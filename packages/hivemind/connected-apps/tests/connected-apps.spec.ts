@@ -327,6 +327,9 @@ describe('progressive Composio bridge', () => {
         url: String(url), body: JSON.parse(String(init.body)),
         authorization: String((init.headers as Record<string, string>).authorization),
       })
+      if (String(url).endsWith('/credit-operations')) {
+        return new Response(JSON.stringify({ admitted: true, service: 'composio_tool_call' }), { status: 200 })
+      }
       return new Response(JSON.stringify({ receipt_id: '62f448d1-8c82-4e41-a44d-f380384e0b49', bytes: 123 }), { status: 201 })
     }))
     try {
@@ -343,14 +346,16 @@ describe('progressive Composio bridge', () => {
       }, { signal: AbortSignal.abort(), agent, name: 'hivemind_connected_task', callId: 'execute-call' } as never)
 
       expect(app.spills).toEqual([])
-      expect(requests).toHaveLength(2)
-      expect(requests.every(request => request.url === 'http://127.0.0.1:3000/internal/v1/harness-chat/receipts')).toBe(true)
+      expect(requests).toHaveLength(3)
+      expect(requests.filter(request => request.url.endsWith('/receipts'))).toHaveLength(2)
+      expect(requests[1]?.url).toBe('http://127.0.0.1:3000/internal/v1/harness-chat/credit-operations')
       expect(requests.every(request => request.authorization.split('.').length === 3)).toBe(true)
-      expect(requests[1]?.body).toMatchObject({
+      expect(requests[2]?.body).toMatchObject({
         session_id: 'session-12345678', call_id: 'execute-call', tool: 'EXAMPLE_READ',
         allowed_fields: ['value'], approved_projection: { value: 'selected evidence' },
       })
-      expect(JSON.stringify(requests[1]?.body.approved_projection)).not.toContain('must stay private')
+      expect(requests[1]?.body).toMatchObject({ kind: 'composio_execution', tool: 'EXAMPLE_READ' })
+      expect(JSON.stringify(requests[2]?.body.approved_projection)).not.toContain('must stay private')
       expect(completed).toMatchObject({ source_receipt: { receipt_id: '62f448d1-8c82-4e41-a44d-f380384e0b49', bytes: 123 } })
     } finally {
       delete process.env.TEST_CONNECTED_RECEIPT_SECRET
