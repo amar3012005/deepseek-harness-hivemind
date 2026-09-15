@@ -8,6 +8,8 @@ resolved Cordis profiles, scoped plugins, native runner UI, and immutable runner
 artifacts. It does not own Core data authorization, identity, or Cloudflare
 feature-flag policy. Follow the pinned contract in addition to this repository's
 native Harness rules; the more specific Cordis rule governs a runner change.
+Read `.agents/hivemind/EveryAgent.md` next; it points to the pinned universal
+contract for capability discovery, model-tier, security, and cleanup boundaries.
 
 DeepSeek Harness is an all-plugin Cordis agent harness. Read [docs/architecture.md](docs/architecture.md) before changing `packages/`; follow [docs/AGENTS.md](docs/AGENTS.md) for documentation.
 
