@@ -125,6 +125,14 @@ function mount(pluginConfig: Config, withSpill = false): HarnessMock {
       }),
     },
     get(name: string) {
+      if (name === 'userQuestions') {
+        return {
+          async ask(input: { questions: readonly { id: string }[] }) {
+            const question = input.questions[0]
+            return { answers: question === undefined ? [] : [{ id: question.id, selected: ['Personal'] }] }
+          },
+        }
+      }
       if (name !== 'spillStore' || !withSpill) return undefined
       return {
         async saveText(input: { suggestedName: string; content: string }) {
@@ -675,7 +683,7 @@ describe('HIVE-MIND runtime', () => {
     }, execContext())
     const saveBody = JSON.parse(String(vi.mocked(fetch).mock.calls[3]?.[1]?.body))
 
-    expect(saveBody.metadata).toEqual({ source_type: 'conversation', governed: true })
+    expect(saveBody.metadata).toEqual({ source_type: 'conversation', governed: true, scope: 'personal' })
   })
 
   it('reconciles an unknown save outcome by status without issuing a second POST', async () => {
