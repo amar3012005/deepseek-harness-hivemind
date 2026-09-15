@@ -231,14 +231,14 @@ async function admitHarnessCredit(
   ctx: Context,
   config: Config,
   execution: Pick<ToolExecution, 'signal'> & { readonly callId: string },
-  input: { readonly sessionId: string; readonly kind: 'composio_execution' | 'no_tool_turn'; readonly tool?: string },
+  input: { readonly sessionId: string; readonly turnId: number; readonly kind: 'composio_execution' | 'no_tool_turn'; readonly tool?: string },
 ): Promise<void> {
   const service = await scopedServiceToken(ctx, config, execution)
   if (service === undefined) return
   const response = await fetch(new URL('/internal/v1/harness-chat/credit-operations', service.base), {
     method: 'POST', headers: { authorization: `Bearer ${service.token}`, 'content-type': 'application/json', accept: 'application/json' },
     body: JSON.stringify({
-      session_id: input.sessionId, call_id: execution.callId, kind: input.kind,
+      session_id: input.sessionId, turn_id: input.turnId, call_id: execution.callId, kind: input.kind,
       ...(input.tool === undefined ? {} : { tool: input.tool }),
     }),
     signal: execution.signal,
@@ -1860,7 +1860,8 @@ export function apply(ctx: Context, config: Config = {}): void {
         }
       }
       await admitHarnessCredit(ctx, config, execution, {
-        sessionId: String(execution.agent?.session.header.id ?? ''), kind: 'composio_execution', tool: slug,
+        sessionId: String(execution.agent?.session.header.id ?? ''), turnId: turns.get(execution.agent ?? {})?.turn ?? -1,
+        kind: 'composio_execution', tool: slug,
       })
       const turnState = execution.agent === undefined ? undefined : turns.get(execution.agent)
       if (turnState !== undefined) turnState.billableCalls += 1
@@ -1939,11 +1940,11 @@ export function apply(ctx: Context, config: Config = {}): void {
       : compactComposioExecutionReceipt(parsed, receipt)
     return compact === undefined ? decision : { kind: 'accept', content: [{ type: 'text', text: JSON.stringify(compact) }] }
   }))
-  ctx.effect(() => ctx.on('agent/turn-stopping', async ({ agent, turn, signal }) => {
+  ctx.effect(() => ctx.on('agent/turn-ended', async ({ agent, turn, signal, reason }) => {
     const state = turns.get(agent)
-    if (state === undefined || state.turn !== turn || state.billableCalls > 0 || signal.aborted) return
+    if (reason.kind !== 'completed' || state === undefined || state.turn !== turn || signal.aborted) return
     await admitHarnessCredit(ctx, config, { signal, callId: `turn-${turn}` }, {
-      sessionId: String(agent.session.header.id), kind: 'no_tool_turn',
+      sessionId: String(agent.session.header.id), turnId: turn, kind: 'no_tool_turn',
     })
   }))
 }
