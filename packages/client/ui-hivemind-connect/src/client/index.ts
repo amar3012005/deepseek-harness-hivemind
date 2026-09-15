@@ -22,6 +22,7 @@ import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { createElement } from 'react'
 import { ScopeSelect, type HivemindReadScope } from './ScopeSelect.tsx'
 import { DefaultModelLabel } from './DefaultModelLabel.tsx'
+import { ConnectorChips, type ConnectorChipsProps } from './ConnectorChips.tsx'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap { 'hivemind-connect': HivemindConnectKey }
@@ -131,6 +132,27 @@ export function apply(ctx: ClientContext): void {
     name: 'conversation.input.model',
     locale: NS,
   }, DefaultModelLabel))
+  ctx.inject(['conversation'], () => {
+    ctx.slots.inject('conversation.composer.dock', () => ctx.slots.register({
+      name: 'conversation.composer.dock',
+      id: 'hivemind-connector-suggestions',
+      order: -20,
+      inject: (sessionId: SessionId): ConnectorChipsProps => {
+        const scope = ctx.sessions.scope(sessionId)
+        if (scope === undefined) throw new Error(`HIVE-MIND connector chips: session "${sessionId}" resolved no scope`)
+        const conversation = scope.get('conversation')
+        if (conversation === undefined) throw new Error('HIVE-MIND connector chips: conversation service unavailable')
+        const input = conversation.input.for(scope)
+        return {
+          insertMention: (app) => {
+            const draft = input.state.getSnapshot().draft
+            const prefix = draft.trimEnd() === '' ? '' : `${draft.endsWith(' ') ? '' : ' '}`
+            input.setDraft(`${draft}${prefix}@${app} `)
+          },
+        }
+      },
+    }, ConnectorChips))
+  })
   ctx.slots.inject('sidebar.brand.name', () => ctx.slots.register({
     name: 'sidebar.brand.name',
     locale: NS,
