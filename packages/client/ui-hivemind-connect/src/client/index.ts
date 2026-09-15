@@ -109,10 +109,7 @@ export function apply(ctx: ClientContext): void {
       'ui-hivemind-connect: session-rail view navigation',
     )
   })
-  ctx.slots.inject('conversation.input.scope', () => ctx.slots.register({
-    name: 'conversation.input.scope',
-    locale: NS,
-  }, ({ sessionId, locked }: { sessionId: SessionId; locked: boolean }) => {
+  const renderScopeSelect = (sessionId: SessionId, locked: boolean) => {
     const key = `hivemind:read-scope:${sessionId}`
     let initialScope: HivemindReadScope = 'full'
     let initialProject: string | undefined
@@ -145,17 +142,27 @@ export function apply(ctx: ClientContext): void {
       sessionId, locked, initialScope, onSelect,
       ...(initialProject === undefined ? {} : { initialProject }),
     })
+  }
+  // The native Hero owns scope placement. This deliberately leaves the
+  // composer permission, attachment, microphone, and send controls untouched.
+  ctx.slots.inject('conversation.hero.scope', () => ctx.slots.register({
+    name: 'conversation.hero.scope',
+    locale: NS,
+  }, ({ sessionId, locked }: { sessionId?: SessionId | undefined; locked: boolean }) => {
+    return sessionId === undefined ? null : renderScopeSelect(sessionId, locked)
   }))
   ctx.slots.inject('conversation.input.model', () => ctx.slots.register({
     name: 'conversation.input.model',
     locale: NS,
   }, DefaultModelLabel))
   ctx.inject(['conversation'], () => {
-    ctx.slots.inject('conversation.composer.dock', () => ctx.slots.register({
-      name: 'conversation.composer.dock',
+    ctx.slots.inject('conversation.hero.dock', () => ctx.slots.register({
+      name: 'conversation.hero.dock',
       id: 'hivemind-connector-suggestions',
       order: -20,
-      inject: (sessionId: SessionId): ConnectorChipsProps => {
+      inject: (): ConnectorChipsProps => {
+        const sessionId = ctx.sessions.list.getSnapshot().current
+        if (sessionId === undefined) return { insertMention: () => {}, visible: false }
         const scope = ctx.sessions.scope(sessionId)
         if (scope === undefined) throw new Error(`HIVE-MIND connector chips: session "${sessionId}" resolved no scope`)
         const conversation = scope.get('conversation')

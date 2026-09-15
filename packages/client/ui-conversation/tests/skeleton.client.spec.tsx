@@ -606,6 +606,9 @@ describe('ConversationRoot resident composer', () => {
     const chip = b.view.getByRole('button', { name: '选择工作区' })
     expect((chip as HTMLButtonElement).disabled).toBe(false)
     expect(b.slotCalls).toContain('conversation.hero.workspace')
+    // Empty-session-only additions (such as HIVE connector suggestions) are
+    // attached here, never to the active-session composer dock.
+    expect(b.slotCalls).toContain('conversation.hero.dock')
     // The agent-preset chip sits in the same row, for the same reason: both
     // choices are only open before the first message.
     expect(b.slotCalls).toContain('conversation.hero.agentPreset')
