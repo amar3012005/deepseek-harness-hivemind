@@ -1,8 +1,9 @@
 {
   "contractVersion": 1,
   "canonicalRepository": "amar3012005/HIVEMIND",
-  "canonicalTag": "platform-contract-v1.1",
+  "canonicalTag": "platform-contract-v1.2",
   "canonicalPath": "platform/ground-truth",
-  "canonicalUrl": "https://github.com/amar3012005/HIVEMIND/tree/platform-contract-v1.1/platform/ground-truth",
+  "canonicalUrl": "https://github.com/amar3012005/HIVEMIND/tree/platform-contract-v1.2/platform/ground-truth",
+  "everyAgent": "https://github.com/amar3012005/HIVEMIND/blob/platform-contract-v1.2/.agents/hivemind/EveryAgent.md",
   "intent": "Thin consumer entrypoint. Specific native Cordis rules in this repository remain in force."
 }
