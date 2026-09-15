@@ -23,6 +23,7 @@ import { createElement } from 'react'
 import { ScopeSelect, type HivemindReadScope } from './ScopeSelect.tsx'
 import { DefaultModelLabel } from './DefaultModelLabel.tsx'
 import { ConnectorChips, type ConnectorChipsProps } from './ConnectorChips.tsx'
+import { createConnectorMentionSource } from './ConnectorMentions.ts'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap { 'hivemind-connect': HivemindConnectKey }
@@ -169,6 +170,13 @@ export function apply(ctx: ClientContext): void {
         }
       },
     }, ConnectorChips))
+  })
+  ctx.inject(['inputTriggers'], (scope: ClientContext) => {
+    const inputTriggers = scope.get('inputTriggers') as {
+      registerSource(source: ReturnType<typeof createConnectorMentionSource>): () => void
+    } | undefined
+    if (inputTriggers === undefined) return
+    ctx.effect(() => inputTriggers.registerSource(createConnectorMentionSource()), 'ui-hivemind-connect: lazy connector @ source')
   })
   ctx.slots.inject('sidebar.brand.name', () => ctx.slots.register({
     name: 'sidebar.brand.name',

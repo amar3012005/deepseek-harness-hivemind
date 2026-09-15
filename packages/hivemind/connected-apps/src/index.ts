@@ -2,6 +2,7 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import { createHash, createHmac, randomUUID } from 'node:crypto'
+import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { Composio } from '@composio/core'
 import z from '@deepseek-ai/schemastery'
 import type {} from '@deepseek-ai/dsh-agent'
@@ -257,6 +258,26 @@ function exactToolkit(value: unknown, requestedApp: string): ToolkitConnection {
   const [match] = matches
   if (match === undefined || matches.length !== 1) throw new Error(`Composio could not resolve one exact toolkit for ${requestedApp}`)
   return match
+}
+
+function catalogToolkits(value: unknown): ToolkitConnection[] {
+  if (!record(value) || !Array.isArray(value['items'])) return []
+  const seen = new Set<string>()
+  return value['items'].flatMap((item): ToolkitConnection[] => {
+    if (!record(item)) return []
+    const slug = stringValue(item['slug'])
+    const name = stringValue(item['name'])
+    if (slug === undefined || name === undefined || seen.has(slug)) return []
+    seen.add(slug)
+    const connection = record(item['connection']) ? item['connection'] : undefined
+    const logo = safeHttpsUrl(item['logo'])
+    return [{ slug, name, ...(logo === undefined ? {} : { logo }), connected: connection?.['isActive'] === true }]
+  })
+}
+
+function connectorCatalogResponse(res: ServerResponse, status: number, value: unknown): void {
+  res.writeHead(status, { 'cache-control': 'no-store', 'content-type': 'application/json; charset=utf-8' })
+  res.end(JSON.stringify(value))
 }
 
 function connectionCallbackUrl(baseUrl: string | undefined, execution: Pick<ToolExecution, 'agent'>): string | undefined {
@@ -1485,6 +1506,60 @@ export function apply(ctx: Context, config: Config = {}): void {
       pending.catch(() => sessions.delete(cacheKey))
     }
     return pending
+  }
+
+  // Browser connector discovery is an authenticated, bounded catalog query.
+  // It intentionally shares the user-level Composio session cache but returns
+  // neither tool schemas nor provider logs, and it is never model context.
+  const inject = (ctx as unknown as { inject?: unknown }).inject
+  if (typeof inject === 'function') {
+    (inject as (services: readonly string[], callback: (value: unknown) => void) => void).call(ctx, ['webServer', 'connection'], (services) => {
+      const runtime = services as {
+        webServer: { register(input: { kind: 'exact'; path: string; handler(req: IncomingMessage, res: ServerResponse): Promise<void> }): () => void }
+        connection: { principal(input: { headers: { host?: string; cookie?: string } }): Record<string, string> | undefined }
+      }
+      ctx.effect(() => runtime.webServer.register({
+        kind: 'exact',
+        path: '/api/hivemind/connectors',
+        handler: async (req, res) => {
+          if (req.method !== 'GET') {
+            connectorCatalogResponse(res, 405, { ok: false, diagnostic: 'method_not_allowed' })
+            return
+          }
+          const host = typeof req.headers['x-forwarded-host'] === 'string'
+            ? req.headers['x-forwarded-host'].split(',', 1)[0]?.trim()
+            : req.headers.host
+          const principal = runtime.connection.principal({ headers: {
+            ...(host === undefined ? {} : { host }),
+            ...(req.headers.cookie === undefined ? {} : { cookie: req.headers.cookie }),
+          } })
+          const userId = principal === undefined ? undefined : stringValue(principal.user_id)
+          const orgId = principal === undefined ? undefined : stringValue(principal.org_id)
+          if (principal?.profile !== 'hivemind-chat' || userId === undefined || orgId === undefined) {
+            connectorCatalogResponse(res, 401, { ok: false, diagnostic: 'authentication_required' })
+            return
+          }
+          const query = new URL(req.url ?? '/', 'http://hivemind.local').searchParams.get('q')?.trim().slice(0, 64) ?? ''
+          if (query === '') {
+            connectorCatalogResponse(res, 400, { ok: false, diagnostic: 'query_required' })
+            return
+          }
+          try {
+            const session = await getSession({ userId, orgId }, {})
+            const catalog = await session.toolkits({ search: query, limit: 8 })
+            connectorCatalogResponse(res, 200, {
+              ok: true,
+              connectors: catalogToolkits(catalog).map(item => ({
+                slug: item.slug, name: item.name, connected: item.connected,
+                ...(item.logo === undefined ? {} : { logo: item.logo }),
+              })),
+            })
+          } catch {
+            connectorCatalogResponse(res, 503, { ok: false, diagnostic: 'connector_catalog_unavailable' })
+          }
+        },
+      }), 'hivemind-connected-apps: authenticated connector catalog')
+    })
   }
 
   async function awaitConnection(
