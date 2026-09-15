@@ -154,6 +154,7 @@
 - id: connection
   config:
     trustedHosts: !!js ctx.webRuntime.trustedHosts.concat((process.env.HIVEMIND_HARNESS_TRUSTED_HOSTS ?? '').split(',').map(value => value.trim()).filter(Boolean))
+    trustedProxyHosts: !!js (process.env.HIVEMIND_HARNESS_TRUSTED_PROXY_HOSTS ?? '').split(',').map(value => value.trim()).filter(Boolean)
 
 - id: agent-presets
   config:

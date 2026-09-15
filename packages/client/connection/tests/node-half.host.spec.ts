@@ -264,6 +264,37 @@ describe('connection node half', () => {
     await dispose()
   })
 
+  it('uses a forwarded public authority only from an explicitly trusted proxy', async () => {
+    const { routes, connection, dispose } = await mounted({
+      trustedHosts: ['chat.example'],
+      trustedProxyHosts: ['runner.example'],
+    })
+    const cookie = connection.authorizePrincipal(
+      fakeRequest({ host: 'runner.example', 'x-forwarded-host': 'chat.example' }),
+      { user_id: 'user-1' },
+      Date.now() + 60_000,
+    ).split(';', 1)[0]!
+    const allowed = fakeResponse()
+    await routes[0]!.handler(fakeRequest({
+      host: 'runner.example',
+      'x-forwarded-host': 'chat.example',
+      origin: 'https://chat.example',
+      'sec-fetch-site': 'same-origin',
+      cookie,
+    }), allowed.response)
+    expect(allowed.state.status).toBe(404)
+
+    for (const headers of [
+      { host: 'attacker.example', 'x-forwarded-host': 'chat.example', cookie },
+      { host: 'runner.example', 'x-forwarded-host': 'chat.example, attacker.example', cookie },
+    ]) {
+      const rejected = fakeResponse()
+      await routes[0]!.handler(fakeRequest(headers), rejected.response)
+      expect(rejected.state.status).toBe(403)
+    }
+    await dispose()
+  })
+
   it('shares its configured trust and authentication policy with sibling routes', async () => {
     const { connection, dispose } = await mounted({ trustedHosts: ['harness.example'] })
     const loopback = fakeRequest({ host: '127.0.0.1:3080' })
