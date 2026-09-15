@@ -1,5 +1,14 @@
 # AGENTS.md
 
+## SINGULANCE platform contract
+
+For HIVE-MIND or HyperAgents profile work, read the pinned contract in
+`platform-contract.json` before changing any package. This repository owns
+resolved Cordis profiles, scoped plugins, native runner UI, and immutable runner
+artifacts. It does not own Core data authorization, identity, or Cloudflare
+feature-flag policy. Follow the pinned contract in addition to this repository's
+native Harness rules; the more specific Cordis rule governs a runner change.
+
 DeepSeek Harness is an all-plugin Cordis agent harness. Read [docs/architecture.md](docs/architecture.md) before changing `packages/`; follow [docs/AGENTS.md](docs/AGENTS.md) for documentation.
 
 ## Pre-stable APIs and released Session data
