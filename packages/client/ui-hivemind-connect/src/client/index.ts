@@ -160,23 +160,23 @@ export function apply(ctx: ClientContext): void {
       name: 'conversation.hero.dock',
       id: 'hivemind-connector-suggestions',
       order: -20,
-      inject: (): ConnectorChipsProps => {
-        const sessionId = ctx.sessions.list.getSnapshot().current
-        if (sessionId === undefined) return { insertMention: () => {}, visible: false }
-        const scope = ctx.sessions.scope(sessionId)
-        if (scope === undefined) throw new Error(`HIVE-MIND connector chips: session "${sessionId}" resolved no scope`)
-        const conversation = scope.get('conversation')
-        if (conversation === undefined) throw new Error('HIVE-MIND connector chips: conversation service unavailable')
-        const input = conversation.input.for(scope)
-        return {
-          insertMention: (app) => {
-            const draft = input.state.getSnapshot().draft
-            const prefix = draft.trimEnd() === '' ? '' : `${draft.endsWith(' ') ? '' : ' '}`
-            input.setDraft(`${draft}${prefix}@${app} `)
-          },
-        }
-      },
-    }, ConnectorChips))
+    }, ({ sessionId }: { sessionId?: SessionId | undefined }) => {
+      if (sessionId === undefined) return null
+      const scope = ctx.sessions.scope(sessionId)
+      if (scope === undefined) throw new Error(`HIVE-MIND connector chips: session "${sessionId}" resolved no scope`)
+      const conversation = scope.get('conversation')
+      if (conversation === undefined) throw new Error('HIVE-MIND connector chips: conversation service unavailable')
+      const input = conversation.input.for(scope)
+      const props: ConnectorChipsProps = {
+        insertMention: (app) => {
+          const draft = input.state.getSnapshot().draft
+          const prefix = draft.trimEnd() === '' ? '' : `${draft.endsWith(' ') ? '' : ' '}`
+          input.setDraft(`${draft}${prefix}@${app} `)
+        },
+      }
+      return createElement(ConnectorChips, props)
+    },
+    ))
   })
   ctx.inject(['inputTriggers'], (scope: ClientContext) => {
     const inputTriggers = scope.get('inputTriggers') as {
