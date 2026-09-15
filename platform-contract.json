@@ -1,8 +1,9 @@
 {
   "contractVersion": 1,
   "canonicalRepository": "amar3012005/HIVEMIND",
-  "canonicalCommit": "8996aaa07617d2a94dea737d4315959c1839575b",
+  "canonicalCommit": "cb11a252392efd6b1efb2e45e1a0fde16bafb619",
+  "canonicalTag": "platform-contract-v1.1",
   "canonicalPath": "platform/ground-truth",
   "repositoryRole": "native-cordis-runner",
-  "canonicalUrl": "https://github.com/amar3012005/HIVEMIND/tree/8996aaa07617d2a94dea737d4315959c1839575b/platform/ground-truth"
+  "canonicalUrl": "https://github.com/amar3012005/HIVEMIND/tree/platform-contract-v1.1/platform/ground-truth"
 }
