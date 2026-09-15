@@ -83,6 +83,17 @@ function isTrustedAuthority(hostUrl: URL, trustedHosts: readonly string[]): bool
 }
 
 /**
+ * Whether one authority header matches an explicitly configured deployment
+ * authority. Unlike {@link isTrustedApiRequest}, this is intentionally only
+ * an authority comparison: it is used to decide whether an immediate peer is
+ * a trusted reverse proxy before its forwarding header is considered.
+ */
+export function isDeclaredTrustedAuthority(authority: string, trustedHosts: readonly string[]): boolean {
+  const authorityUrl = parseAuthority(authority)
+  return authorityUrl !== undefined && isTrustedAuthority(authorityUrl, trustedHosts)
+}
+
+/**
  * Decide whether one /api request may reach the RPC bridge.
  * @param request - Node HTTP or Fetch request facts (headers).
  * @param trustedHosts - non-loopback authorities this deployment serves: exact `host:port`, or port-less `host` matching any port.

@@ -9,7 +9,7 @@ import {
 } from './rpc.ts'
 import { clientRequestSchema } from './rpc-schema.ts'
 import { bridge } from './http-bridge.ts'
-import { isTrustedApiRequest } from './api-request-trust.ts'
+import { isDeclaredTrustedAuthority, isTrustedApiRequest } from './api-request-trust.ts'
 import { API_PATH } from './api-path.ts'
 import type { BrowserAuth } from './browser-auth.ts'
 import type {
@@ -74,6 +74,7 @@ export class HostConnectionService extends Service implements HostConnectionHand
     ctx: Context,
     private readonly trustedHosts: readonly string[],
     private readonly browserAuth: BrowserAuth,
+    private readonly trustedProxyHosts: readonly string[] = [],
   ) {
     super(ctx, 'connection')
   }
@@ -98,13 +99,14 @@ export class HostConnectionService extends Service implements HostConnectionHand
 
   /** Apply the configured Host/Origin fence, then browser authentication. */
   requestRejection(request: ConnectionTrustRequest): ConnectionRequestRejection {
-    if (!isTrustedApiRequest(request, this.trustedHosts)) return 403
-    return this.browserAuth.isAuthenticated(request) ? undefined : 401
+    const effectiveRequest = this.effectiveAuthorityRequest(request)
+    if (!isTrustedApiRequest(effectiveRequest, this.trustedHosts)) return 403
+    return this.browserAuth.isAuthenticated(effectiveRequest) ? undefined : 401
   }
 
   /** Authenticate an index request through the process-token exchange or cookie. */
   authorizeIndex(request: ConnectionIndexRequest, response: ConnectionIndexResponse): boolean {
-    return this.browserAuth.authorizeIndex(request, response)
+    return this.browserAuth.authorizeIndex(this.effectiveAuthorityRequest(request), response)
   }
 
   /** Add this process's launch token to the clean application URL. */
@@ -118,12 +120,12 @@ export class HostConnectionService extends Service implements HostConnectionHand
     principal: Readonly<Record<string, string>>,
     expiresAt: number,
   ): string {
-    return this.browserAuth.authorizePrincipal(request, principal, expiresAt)
+    return this.browserAuth.authorizePrincipal(this.effectiveAuthorityRequest(request), principal, expiresAt)
   }
 
   /** Read the verified principal attached to the current browser session. */
   principal(request: ConnectionTrustRequest): Readonly<Record<string, string>> | undefined {
-    return this.browserAuth.principal(request)
+    return this.browserAuth.principal(this.effectiveAuthorityRequest(request))
   }
 
   /** Register one optional profile-specific principal propagation owner. */
@@ -142,7 +144,7 @@ export class HostConnectionService extends Service implements HostConnectionHand
 
   /** Run a dispatch under its signed external principal when one exists. */
   runInPrincipalScope<T>(request: ConnectionTrustRequest, action: () => T): T {
-    const principal = this.browserAuth.principal(request)
+    const principal = this.browserAuth.principal(this.effectiveAuthorityRequest(request))
     return principal === undefined || this.principalScope === undefined ? action() : this.principalScope(principal, action)
   }
   /**
@@ -250,10 +252,48 @@ export class HostConnectionService extends Service implements HostConnectionHand
     args: Readonly<Record<string, unknown>>,
     signal: AbortSignal,
   ): Promise<ConnectionRpcFailure | undefined> | ConnectionRpcFailure | undefined {
-    const principal = this.browserAuth.principal(request)
+    const principal = this.browserAuth.principal(this.effectiveAuthorityRequest(request))
     if (principal === undefined || this.principalRpcGuard === undefined) return
     return this.principalRpcGuard(principal, endpoint, args, signal)
   }
+
+  /**
+   * Convert a proxy-carried public authority only when the direct Host is an
+   * explicitly configured trusted reverse proxy. Untrusted clients cannot
+   * influence this decision with X-Forwarded-Host; malformed or repeated
+   * forwarding values leave the original Host intact and therefore fail the
+   * ordinary trust fence.
+   */
+  private effectiveAuthorityRequest<T extends ConnectionTrustRequest>(request: T): T {
+    const directHost = requestHeader(request.headers, 'host')
+    const forwardedHost = requestHeader(request.headers, 'x-forwarded-host')
+    if (directHost === undefined || forwardedHost === undefined
+      || !isDeclaredTrustedAuthority(directHost, this.trustedProxyHosts)
+      || forwardedHost.includes(',')) return request
+    if (forwardedHost.trim() !== forwardedHost || !isDeclaredTrustedAuthority(forwardedHost, this.trustedHosts)) {
+      return request
+    }
+    return { ...request, headers: replaceHeader(request.headers, 'host', forwardedHost) }
+  }
+}
+
+function requestHeader(headers: ConnectionTrustRequest['headers'], name: string): string | undefined {
+  if (headers instanceof Headers) return headers.get(name) ?? undefined
+  const value = headers[name]
+  return typeof value === 'string' ? value : undefined
+}
+
+function replaceHeader(
+  headers: ConnectionTrustRequest['headers'],
+  name: string,
+  value: string,
+): ConnectionTrustRequest['headers'] {
+  if (headers instanceof Headers) {
+    const copy = new Headers(headers)
+    copy.set(name, value)
+    return copy
+  }
+  return { ...headers, [name]: value }
 }
 
 function rpcFetchHandler(
