@@ -3139,6 +3139,14 @@ export const EVENT_API: readonly EventApiEntry[] = [
     parameters: [{ name: 'payload', description: '.signal - the current turn\'s explicit abort signal. Scope-filtered dispatch (`@deepseek-ai/dsh-scope`): agent-scoped listeners receive only that agent.' }],
   },
   {
+    name: 'agent/turn-ended',
+    mode: 'serial',
+    signature: '\'agent/turn-ended\'(this: Scoped<Agent>, payload: { agent: Agent; turn: number; reason: TurnEndReason; signal: AbortSignal }): Promise<void> | void',
+    summary: 'A turn end was durably appended.',
+    description: 'Runs only after the durable turn/end event commits. Listeners must not steer or start new work for this turn.',
+    parameters: [{ name: 'payload', description: '.turn identifies the committed turn; .reason is its terminal result.' }],
+  },
+  {
     name: 'api-session/activity',
     mode: 'emit',
     signature: '\'api-session/activity\'(sessionId: SessionId, updatedAt: number): void',
