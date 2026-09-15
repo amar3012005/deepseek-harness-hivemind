@@ -40,17 +40,15 @@ export function ScopeSelect({ sessionId, locked, initialScope, onSelect }: Scope
       <option value="organization">Organization</option>
       <option value="project">Project</option>
     </select>
+    <span className={css.agent} aria-hidden>HIVE-MIND Chat</span>
     {scope === 'project' && <input
       className={css.project}
       aria-label="Authorized project"
       placeholder="Project"
       value={project}
       disabled={locked}
-      onChange={(event) => {
-        const value = event.target.value
-        setProject(value)
-        if (value.trim() !== '') onSelect(sessionId, 'project', value.trim())
-      }}
+      onChange={event => setProject(event.target.value)}
+      onBlur={() => { if (project.trim() !== '') onSelect(sessionId, 'project', project.trim()) }}
     />}
   </label>
 }

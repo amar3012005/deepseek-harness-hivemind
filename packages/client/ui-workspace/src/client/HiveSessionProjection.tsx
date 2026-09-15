@@ -1,7 +1,7 @@
 import { useMemo, useRef, useState } from 'react'
 import { Button, IconClockOutline16, IconNewChatOutline16, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
-import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
+import type { PropsLocale, PropsRenderSlots, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import { deriveFlat } from './tree.ts'
 import { SessionNodeItem } from './rows/Rows.tsx'
 import css from './HiveSessionProjection.module.css'
@@ -16,12 +16,13 @@ export interface HiveSessionProjectionInjected {
 
 type Props = PropsRuntime<'shell.sessionRail'>
   & PropsLocale<'workspace'>
+  & PropsRenderSlots<'conversation.sidebar.viewTabs'>
   & HiveSessionProjectionInjected
 
 /** Native session rows projected into the host-owned HIVE canvas. */
 export function HiveSessionProjection({
   useSessions, useSessionPendingInteraction, createSession, openSession,
-  renameSession, forkSession, deleteSession, t,
+  renameSession, forkSession, deleteSession, renderSlot, t,
 }: Props) {
   const [creating, setCreating] = useState(false)
   const [renameTarget, setRenameTarget] = useState<{ id: SessionId; title: string }>()
@@ -93,6 +94,7 @@ export function HiveSessionProjection({
         t={t}
       />)}
     </nav>
+    {list.current !== undefined && renderSlot('conversation.sidebar.viewTabs', {}, { fallback: null })}
     <Modal
       open={renameTarget !== undefined}
       onClose={closeRename}

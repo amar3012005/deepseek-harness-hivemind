@@ -6,6 +6,7 @@ import type { SessionListState, SessionSummary } from '@deepseek-ai/dsh-api-sess
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type {
   ConversationSessionHeaderSlotProps, ConversationSessionSlotProps,
+  ConversationSidebarViewTabsSlotProps,
 } from '../contract/slots.ts'
 import { conversationPhase } from '../contract/snapshot.ts'
 import { resolveActiveView } from '../view-selection.ts'
@@ -16,6 +17,24 @@ export type ConversationSessionProps = ConversationSessionSlotProps
 
 /** Full props composed from the strict session header contract. */
 export type ConversationSessionHeaderProps = ConversationSessionHeaderSlotProps
+export type ConversationSidebarViewTabsProps = ConversationSidebarViewTabsSlotProps
+
+/** Native view selector, reusable without changing the owning session store. */
+export function ConversationSidebarViewTabs({ useConversationViews, useStore, selectView }: ConversationSidebarViewTabsProps) {
+  const tabs = useConversationViews(value => value)
+  const active = resolveActiveView(tabs, useStore(s => s.view))
+  if (tabs.length < 2) return null
+  return <div className={css.sidebarTabs} role="tablist" aria-label="Conversation view">
+    {tabs.map(viewTab => <button
+      key={viewTab.id}
+      type="button"
+      role="tab"
+      aria-selected={viewTab.id === active?.id}
+      className={clsx(css.sidebarTab, viewTab.id === active?.id && css.sidebarTabActive)}
+      onClick={() => { selectView(viewTab.id) }}
+    >{viewTab.label}</button>)}
+  </div>
+}
 
 interface Breadcrumb {
   readonly id: SessionId
@@ -58,7 +77,7 @@ function equalBreadcrumbs(left: readonly Breadcrumb[], right: readonly Breadcrum
  */
 export function ConversationSessionHeader({
   sessionId, useSession, useSessions, useConversation, useConversationViews, useStore,
-  renderSlot, open, selectView, t,
+  renderSlot, open, selectView, showViewTabs = true, t,
 }: ConversationSessionHeaderProps) {
   const tabs = useConversationViews(value => value)
   const selectedId = useStore(s => s.view)
@@ -137,7 +156,7 @@ export function ConversationSessionHeader({
               {renderSlot('conversation.session.header.corner', {})}
             </div>
           </div>
-          {tabs.length > 1 && (
+          {showViewTabs && tabs.length > 1 && (
             <div className={css.tabs} role="tablist">
               {tabs.map(viewTab => (
                 <button

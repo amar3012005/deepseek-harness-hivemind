@@ -173,6 +173,7 @@ export function apply(ctx: Context): void {
   }, HiveDictationButton))
   ctx.slots.inject('shell.sessionRail', () => ctx.slots.register({
     name: 'shell.sessionRail',
+    children: { 'conversation.sidebar.viewTabs': { kind: 'single', scope: 'session' } },
     locale: NS,
     inject: (): HiveSessionProjectionInjected => ({
       createSession: () => sessions.create(),

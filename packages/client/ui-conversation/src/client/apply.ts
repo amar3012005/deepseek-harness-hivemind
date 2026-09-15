@@ -14,7 +14,7 @@ import { UiConversation } from './conversation/assembly.ts'
 import type { ViewTab } from './contract/views.ts'
 import type {
   ComposerBarInjected, ConversationInjected, ConversationSessionHeaderInjected,
-  ConversationSessionInjected, DraftFileUploads,
+  ConversationSessionInjected, ConversationSidebarViewTabsInjected, DraftFileUploads,
 } from './contract/slots.ts'
 import type { InputNotice } from './contract/input.ts'
 import { createConversationStore, readConversationViewPreference } from './stores.ts'
@@ -29,7 +29,9 @@ import { EnterBehaviorRow } from './settings/EnterBehaviorRow.tsx'
 import type { EnterBehaviorRowInjected } from './settings/EnterBehaviorRow.tsx'
 import { ConversationRoot } from './skeleton/ConversationRoot.tsx'
 import { ConversationPanel } from './skeleton/ConversationPanel.tsx'
-import { ConversationSession, ConversationSessionHeader } from './skeleton/ConversationSession.tsx'
+import {
+  ConversationSession, ConversationSessionHeader, ConversationSidebarViewTabs,
+} from './skeleton/ConversationSession.tsx'
 import { InputBar } from './skeleton/InputBar.tsx'
 import { todoDockEntry } from './skeleton/TodoPanel.tsx'
 import { resolveActiveView } from './view-selection.ts'
@@ -327,8 +329,21 @@ export function apply(ctx: Context, config: Config = Config({})): void {
         activateView(sessionId, view)
         actions.setView(view)
       },
+      showViewTabs: !uiConversation.sidebarViewNavigation,
     }),
   }, ConversationSessionHeader)
+
+  const registerConversationSidebarViewTabs = () => slots.register({
+    name: 'conversation.sidebar.viewTabs',
+    store: conversationStore,
+    inject: (sessionId: SessionId, actions: BoundActions<typeof conversationStore>): ConversationSidebarViewTabsInjected => ({
+      hooks: { conversationViews },
+      selectView: (view) => {
+        activateView(sessionId, view)
+        actions.setView(view)
+      },
+    }),
+  }, ConversationSidebarViewTabs)
 
   const registerComposerBar = () => slots.register({
     name: 'conversation.composer.bar',
@@ -434,6 +449,10 @@ export function apply(ctx: Context, config: Config = Config({})): void {
     yield registerConversationHeader()
     yield registerComposerBar()
   })
+
+  // The HIVE rail owns the child declaration. Waiting on that root slot keeps
+  // standard Harness profiles free of a HIVE-only sidebar dependency.
+  slots.inject('shell.sessionRail', () => registerConversationSidebarViewTabs())
 
   ctx.plugin(ConversationController, {
     input: inputHub,

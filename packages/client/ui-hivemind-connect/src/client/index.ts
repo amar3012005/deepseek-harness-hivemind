@@ -102,6 +102,10 @@ export function apply(ctx: ClientContext): void {
       () => scope.uiConversation.configureWorkspaceRequirement(false),
       'ui-hivemind-connect: filesystem-free conversation',
     )
+    scope.effect(
+      () => scope.uiConversation.configureSidebarViewNavigation(true),
+      'ui-hivemind-connect: session-rail view navigation',
+    )
   })
   ctx.slots.inject('conversation.input.scope', () => ctx.slots.register({
     name: 'conversation.input.scope',
