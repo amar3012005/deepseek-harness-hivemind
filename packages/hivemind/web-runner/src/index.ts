@@ -369,7 +369,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
         json(res, 405, { ok: false, diagnostic: 'method_not_allowed' }, { allow: 'GET' })
         return
       }
-      const authorityHost = publicHost(req)
+      const authorityHost = publicHost(req.headers)
       const principal = ctx.connection.principal({
         headers: { host: authorityHost || req.headers.host, cookie: req.headers.cookie },
       })

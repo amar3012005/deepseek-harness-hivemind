@@ -109,10 +109,7 @@ export function apply(ctx: ClientContext): void {
       'ui-hivemind-connect: session-rail view navigation',
     )
   })
-  ctx.slots.inject('conversation.input.scope', () => ctx.slots.register({
-    name: 'conversation.input.scope',
-    locale: NS,
-  }, ({ sessionId, locked }: { sessionId: SessionId; locked: boolean }) => {
+  const renderScopeSelect = (sessionId: SessionId) => {
     const key = `hivemind:read-scope:${sessionId}`
     let initialScope: HivemindReadScope = 'full'
     let initialProject: string | undefined
@@ -142,20 +139,31 @@ export function apply(ctx: ClientContext): void {
       void session.command(`/hivemind-scope ${argument}`)
     }
     return createElement(ScopeSelect, {
-      sessionId, locked, initialScope, onSelect,
+      sessionId, initialScope, onSelect,
       ...(initialProject === undefined ? {} : { initialProject }),
     })
+  }
+  // This replaces the blank-session workspace seat only. The composer keeps
+  // its native access, attachment, microphone, and send controls unchanged.
+  ctx.slots.inject('conversation.hero.workspace', () => ctx.slots.register({
+    name: 'conversation.hero.workspace',
+    locale: NS,
+  }, () => {
+    const sessionId = ctx.sessions.list.getSnapshot().current
+    return sessionId === undefined ? null : renderScopeSelect(sessionId)
   }))
   ctx.slots.inject('conversation.input.model', () => ctx.slots.register({
     name: 'conversation.input.model',
     locale: NS,
   }, DefaultModelLabel))
   ctx.inject(['conversation'], () => {
-    ctx.slots.inject('conversation.composer.dock', () => ctx.slots.register({
-      name: 'conversation.composer.dock',
+    ctx.slots.inject('conversation.hero.dock', () => ctx.slots.register({
+      name: 'conversation.hero.dock',
       id: 'hivemind-connector-suggestions',
       order: -20,
-      inject: (sessionId: SessionId): ConnectorChipsProps => {
+      inject: (): ConnectorChipsProps => {
+        const sessionId = ctx.sessions.list.getSnapshot().current
+        if (sessionId === undefined) return { insertMention: () => {}, visible: false }
         const scope = ctx.sessions.scope(sessionId)
         if (scope === undefined) throw new Error(`HIVE-MIND connector chips: session "${sessionId}" resolved no scope`)
         const conversation = scope.get('conversation')

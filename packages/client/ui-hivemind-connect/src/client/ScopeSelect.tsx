@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
-import type { InputScopeOwnerProps } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import css from './ScopeSelect.module.css'
 
 export type HivemindReadScope = 'full' | 'personal' | 'organization' | 'project'
@@ -11,15 +10,17 @@ interface ProjectOption {
   slug: string
 }
 
-export interface ScopeSelectProps extends InputScopeOwnerProps {
+export interface ScopeSelectProps {
+  sessionId: SessionId
+  locked?: boolean
   initialScope: HivemindReadScope
   initialProject?: string
   onSelect: (sessionId: SessionId, scope: HivemindReadScope, project?: string) => void
 }
 
-/** The HIVE read lens in the native permission/access seat. Full scope is a
- * read union; writes still require a concrete approval destination. */
-export function ScopeSelect({ sessionId, locked, initialScope, initialProject, onSelect }: ScopeSelectProps) {
+/** The HIVE read lens in the blank-session hero. Full scope is a read union;
+ * writes still require a concrete approval destination. */
+export function ScopeSelect({ sessionId, locked = false, initialScope, initialProject, onSelect }: ScopeSelectProps) {
   const [scope, setScope] = useState<HivemindReadScope>(initialScope)
   const [project, setProject] = useState(initialProject ?? '')
   const [projects, setProjects] = useState<ProjectOption[]>()
@@ -50,7 +51,6 @@ export function ScopeSelect({ sessionId, locked, initialScope, initialProject, o
   }
 
   return <label className={css.root}>
-    <span className={css.brand}>HIVE-MIND Chat</span>
     <span className={css.icon} aria-hidden>▱</span>
     <select
       className={css.select}
@@ -73,7 +73,6 @@ export function ScopeSelect({ sessionId, locked, initialScope, initialProject, o
       <option value="organization">Organization</option>
       <option value="project">Project</option>
     </select>
-    <span className={css.agent} aria-hidden>HIVE-MIND Chat</span>
     {scope === 'project' && <select
       className={css.project}
       aria-label="Authorized project"

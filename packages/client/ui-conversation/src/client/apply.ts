@@ -265,6 +265,7 @@ export function apply(ctx: Context, config: Config = Config({})): void {
       'conversation.input.dock': { kind: 'list', scope: 'session' },
       'conversation.hero.brand.mark': { kind: 'single', scope: 'root' },
       'conversation.hero.workspace': { kind: 'single', scope: 'root' },
+      'conversation.hero.dock': { kind: 'list', scope: 'root' },
       'conversation.hero.agentPreset': { kind: 'single', scope: 'root' },
     },
     inject: (sessionId: SessionId | undefined): ConversationInjected => ({
