@@ -6,10 +6,12 @@ const POPULAR_CONNECTORS = ['Gmail', 'Google Calendar', 'Google Drive', 'LinkedI
 
 export interface ConnectorChipsProps {
   insertMention: (app: string) => void
+  visible?: boolean
 }
 
 /** Insert a connector mention into the native composer without executing it. */
-export function ConnectorChips({ insertMention }: ConnectorChipsProps) {
+export function ConnectorChips({ insertMention, visible = true }: ConnectorChipsProps) {
+  if (!visible) return null
   return <div className={css.root} aria-label="Suggested connectors">
     {POPULAR_CONNECTORS.map(app => <button
       key={app}

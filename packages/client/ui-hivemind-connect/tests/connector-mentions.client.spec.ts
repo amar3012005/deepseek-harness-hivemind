@@ -1,7 +1,16 @@
+// @vitest-environment jsdom
 import { describe, expect, it, vi } from 'vitest'
+import { render, screen } from '@testing-library/react'
+import { createElement } from 'react'
+import { ConnectorChips } from '../src/client/ConnectorChips.tsx'
 import { createConnectorMentionSource } from '../src/client/ConnectorMentions.ts'
 
 describe('HIVE-MIND connector mentions', () => {
+  it('does not render suggestions when the native shell has no blank session yet', () => {
+    render(createElement(ConnectorChips, { visible: false, insertMention: () => {} }))
+    expect(screen.queryByLabelText('Suggested connectors')).toBeNull()
+  })
+
   it('does not load a catalog until the user types an @ query', async () => {
     const fetchMock = vi.fn(async () => new Response(JSON.stringify({ connectors: [{
       slug: 'gmail', name: 'Gmail', connected: true,

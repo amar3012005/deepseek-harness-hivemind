@@ -162,6 +162,8 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
     'conversation.hero.workspace': { kind: 'single'; scope: 'root'; owner: EmptyWorkspaceOwnerProps }
     /** Optional knowledge read lens beside the native preset control. */
     'conversation.hero.scope': { kind: 'single'; scope: 'root'; owner: { sessionId?: SessionId | undefined; locked: boolean } }
+    /** Optional, empty-session-only content below the Hero composer. */
+    'conversation.hero.dock': { kind: 'list'; scope: 'root'; owner: HeroDockOwnerProps }
     /** Brand mark shown before the blank-session headline. */
     'conversation.hero.brand.mark': { kind: 'single'; scope: 'root'; owner: HeroBrandMarkOwnerProps }
     /** Agent-preset control staged for a New Session. */
@@ -220,6 +222,12 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 export interface HeroAgentPresetOwnerProps {
   /** Marker field: the occupant owns its roster and staged selection. */
   children?: never
+}
+
+/** Empty-session identity supplied to below-composer Hero additions. */
+export interface HeroDockOwnerProps {
+  /** The pending blank session, when the native router has created it. */
+  sessionId: SessionId | undefined
 }
 
 /** Header actions derive their state from standard Session props. */
@@ -395,6 +403,7 @@ export type ConversationSlotProps =
     | 'conversation.hero.brand.mark'
     | 'conversation.hero.workspace'
     | 'conversation.hero.scope'
+    | 'conversation.hero.dock'
     | 'conversation.hero.agentPreset'
   >
   & InjectFace<ConversationInjected>
