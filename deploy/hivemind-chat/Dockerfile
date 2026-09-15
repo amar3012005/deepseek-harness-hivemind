@@ -7,6 +7,8 @@ RUN apt-get update \
 RUN corepack enable
 ARG DSH_CLIENT_COMMIT_HASH
 ENV DSH_CLIENT_COMMIT_HASH=${DSH_CLIENT_COMMIT_HASH}
+ARG DSH_CLIENT_TITLE="SINGULANCE · HIVE-MIND"
+ENV DSH_CLIENT_TITLE=${DSH_CLIENT_TITLE}
 COPY . .
 RUN test -n "${DSH_CLIENT_COMMIT_HASH}"
 RUN --mount=type=cache,id=deepseek-harness-pnpm,target=/pnpm/store \
@@ -31,7 +33,11 @@ RUN set -eu; \
   done
 
 FROM node:24-bookworm-slim AS runtime
-ENV NODE_ENV=production DSH_HOME=/var/lib/dsh PORT=3080
+ARG DSH_CLIENT_COMMIT_HASH
+LABEL org.opencontainers.image.revision=${DSH_CLIENT_COMMIT_HASH}
+LABEL com.singulance.service=harness-runner
+ARG DSH_CLIENT_TITLE="SINGULANCE · HIVE-MIND"
+ENV NODE_ENV=production DSH_HOME=/var/lib/dsh PORT=3080 DSH_CLIENT_TITLE=${DSH_CLIENT_TITLE}
 WORKDIR /opt/deepseek-harness
 COPY --from=build /opt/deepseek-harness /opt/deepseek-harness
 COPY deploy/hivemind-chat/entrypoint.sh /usr/local/bin/hivemind-harness-entrypoint
