@@ -5,18 +5,49 @@ import css from './ScopeSelect.module.css'
 
 export type HivemindReadScope = 'full' | 'personal' | 'organization' | 'project'
 
+interface ProjectOption {
+  id: string
+  name: string
+  slug: string
+}
+
 export interface ScopeSelectProps extends InputScopeOwnerProps {
   initialScope: HivemindReadScope
+  initialProject?: string
   onSelect: (sessionId: SessionId, scope: HivemindReadScope, project?: string) => void
 }
 
 /** The HIVE read lens in the native folder selector seat. Full scope is a
  * read union; writes still require a concrete approval destination. */
-export function ScopeSelect({ sessionId, locked, initialScope, onSelect }: ScopeSelectProps) {
+export function ScopeSelect({ sessionId, locked, initialScope, initialProject, onSelect }: ScopeSelectProps) {
   const [scope, setScope] = useState<HivemindReadScope>(initialScope)
-  const [project, setProject] = useState('')
+  const [project, setProject] = useState(initialProject ?? '')
+  const [projects, setProjects] = useState<ProjectOption[]>()
+  const [loadingProjects, setLoadingProjects] = useState(false)
+  const [projectError, setProjectError] = useState<string>()
 
   useEffect(() => setScope(initialScope), [initialScope])
+  useEffect(() => setProject(initialProject ?? ''), [initialProject])
+
+  const openProjectPicker = async (): Promise<void> => {
+    if (projects !== undefined || loadingProjects) return
+    setLoadingProjects(true)
+    setProjectError(undefined)
+    try {
+      const response = await fetch('/api/hivemind/projects', { credentials: 'include' })
+      if (!response.ok) throw new Error('project catalog unavailable')
+      const body = await response.json() as { projects?: ProjectOption[] }
+      const next = Array.isArray(body.projects)
+        ? body.projects.filter((row): row is ProjectOption => typeof row?.id === 'string' && typeof row.name === 'string' && typeof row.slug === 'string')
+        : []
+      setProjects(next)
+      if (next.length === 0) setProjectError('No authorized projects are available.')
+    } catch {
+      setProjectError('Project list is unavailable. Your scope was not changed.')
+    } finally {
+      setLoadingProjects(false)
+    }
+  }
 
   return <label className={css.root}>
     <span className={css.icon} aria-hidden>▱</span>
@@ -31,6 +62,8 @@ export function ScopeSelect({ sessionId, locked, initialScope, onSelect }: Scope
         if (next !== 'project') {
           setProject('')
           onSelect(sessionId, next)
+        } else {
+          void openProjectPicker()
         }
       }}
     >
@@ -40,14 +73,20 @@ export function ScopeSelect({ sessionId, locked, initialScope, onSelect }: Scope
       <option value="project">Project</option>
     </select>
     <span className={css.agent} aria-hidden>HIVE-MIND Chat</span>
-    {scope === 'project' && <input
+    {scope === 'project' && <select
       className={css.project}
       aria-label="Authorized project"
-      placeholder="Project"
       value={project}
       disabled={locked}
-      onChange={event => setProject(event.target.value)}
-      onBlur={() => { if (project.trim() !== '') onSelect(sessionId, 'project', project.trim()) }}
-    />}
+      onChange={(event) => {
+        const projectId = event.target.value
+        setProject(projectId)
+        if (projectId !== '') onSelect(sessionId, 'project', projectId)
+      }}
+    >
+      <option value="">{loadingProjects ? 'Loading projects…' : 'Choose project'}</option>
+      {(projects ?? []).map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
+    </select>}
+    {scope === 'project' && projectError !== undefined && <span className={css.error} role="status">{projectError}</span>}
   </label>
 }
