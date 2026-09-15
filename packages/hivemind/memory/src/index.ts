@@ -56,6 +56,65 @@ export interface MemoryProvider {
 
 export interface MemoryPluginConfig { defaultLimit: number }
 
+const SAVE_DESTINATIONS = {
+  personal: 'Personal',
+  organization: 'Organization',
+  project: 'Project',
+} as const
+
+/** Pause one prepared save for a native destination approval, then return the
+ * final request to the same invocation. A declined/cancelled card performs no
+ * provider write and never asks the model to reconstruct the save. */
+async function approveSaveDestination(
+  ctx: Context,
+  execution: ToolExecution,
+  request: SaveRequest,
+): Promise<SaveRequest | undefined> {
+  if (execution.agent === undefined) throw new TypeError('hivemind-memory: active agent required')
+  const choices: Array<keyof typeof SAVE_DESTINATIONS> = ['personal', 'organization']
+  if (request.project !== undefined) choices.push('project')
+  const questionId = `hivemind-memory-save-destination:${execution.callId}`
+  try {
+    const userQuestions = ctx.get('userQuestions') as {
+      ask(input: {
+        agent: Agent
+        signal: AbortSignal
+        questions: readonly {
+          id: string
+          question: string
+          detail: string
+          options: readonly { label: string; description: string }[]
+        }[]
+      }): Promise<{ answers: readonly { id: string; selected: readonly string[] }[] }>
+    } | undefined
+    if (userQuestions === undefined) throw new Error('hivemind-memory: save approval channel is unavailable')
+    const answer = await userQuestions.ask({
+      agent: execution.agent,
+      signal: execution.signal,
+      questions: [{
+        id: questionId,
+        question: `Save “${request.title}” to HIVE-MIND?`,
+        detail: 'Choose one destination, then approve this prepared memory save.\n\n<!-- hivemind-memory-save-destination:v1 -->',
+        options: choices.map(scope => ({
+          label: SAVE_DESTINATIONS[scope],
+          description: scope === 'project'
+            ? `Save to the selected project: ${request.project}`
+            : `Save this memory to your ${scope} scope.`,
+        })),
+      }],
+    })
+    const selected = answer.answers.find(item => item.id === questionId)?.selected ?? []
+    const scope = choices.find(candidate => selected.includes(SAVE_DESTINATIONS[candidate]))
+    return scope === undefined ? undefined : { ...request, scope }
+  } catch (error: unknown) {
+    const code = typeof error === 'object' && error !== null && 'code' in error
+      ? (error as { code?: unknown }).code
+      : undefined
+    if (execution.signal.aborted || code === 'ASK_ABORTED') return undefined
+    throw error
+  }
+}
+
 function object(value: unknown, label: string): Record<string, unknown> {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) throw new TypeError(`hivemind-memory: ${label} must be an object`)
   return value as Record<string, unknown>
@@ -167,7 +226,10 @@ export function memoryPlugin(config: MemoryPluginConfig, provider: MemoryProvide
         isConcurrencySafe: () => true,
         async execute(args, execution) {
           if (execution.agent === undefined) throw new TypeError('hivemind-memory: active agent required')
-          return provider.save(execution.agent, saveRequest(args), execution.signal, execution)
+          const approved = await approveSaveDestination(ctx, execution, saveRequest(args))
+          return approved === undefined
+            ? { operation: 'save', status: 'cancelled' }
+            : provider.save(execution.agent, approved, execution.signal, execution)
         },
       })))
       ctx.effect(() => ctx.tools.register(defineTool({
@@ -255,7 +317,10 @@ export function memoryPlugin(config: MemoryPluginConfig, provider: MemoryProvide
             const rawSave = args.save === undefined
               ? args
               : object(args.save, 'save')
-            return provider.save(execution.agent, saveRequest(rawSave), execution.signal, execution)
+            const approved = await approveSaveDestination(ctx, execution, saveRequest(rawSave))
+            return approved === undefined
+              ? { operation: 'save', status: 'cancelled' }
+              : provider.save(execution.agent, approved, execution.signal, execution)
           }
           if (operation === 'save_status') {
             const input = object(args.save_status, 'save_status')
