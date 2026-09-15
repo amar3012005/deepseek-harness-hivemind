@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { Fragment, type ReactNode } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import type { SessionListState, SessionSummary } from '@deepseek-ai/dsh-api-session-controller/client'
@@ -36,6 +37,8 @@ function list(...items: SessionSummary[]): SessionListState {
 const t = makeTranslate(en, commonEn) as never
 const noAttention: SessionPendingInteractionSnapshot = new Map()
 const runtime = {} as GlobalStandardProps
+const renderSlot = () => null
+const SessionProvider = ({ children }: { children: ReactNode }) => <Fragment>{children}</Fragment>
 const actions = {
   renameSession: vi.fn(async () => {}),
   forkSession: vi.fn(),
@@ -53,6 +56,8 @@ describe('HIVE native session projection', () => {
     const openSession = vi.fn()
     render(<HiveSessionProjection
       {...runtime}
+      renderSlot={renderSlot}
+      SessionProvider={SessionProvider}
       useSessions={selector => selector(sessions)}
       useSessionPendingInteraction={selector => selector(noAttention)}
       createSession={vi.fn()}
@@ -80,6 +85,8 @@ describe('HIVE native session projection', () => {
     const openSession = vi.fn()
     render(<HiveSessionProjection
       {...runtime}
+      renderSlot={renderSlot}
+      SessionProvider={SessionProvider}
       useSessions={selector => selector(list())}
       useSessionPendingInteraction={selector => selector(noAttention)}
       createSession={createSession}
@@ -99,6 +106,8 @@ describe('HIVE native session projection', () => {
     Object.defineProperty(navigator, 'share', { configurable: true, value: share })
     render(<HiveSessionProjection
       {...runtime}
+      renderSlot={renderSlot}
+      SessionProvider={SessionProvider}
       useSessions={selector => selector(sessions)}
       useSessionPendingInteraction={selector => selector(noAttention)}
       createSession={vi.fn()}

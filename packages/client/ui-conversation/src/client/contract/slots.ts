@@ -123,6 +123,8 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
     'conversation.session': { kind: 'single'; scope: 'session' }
     /** Strict per-Session title, actions, and View navigation. */
     'conversation.session.header': { kind: 'single'; scope: 'session' }
+    /** Optional alternate native placement for the Session view navigation. */
+    'conversation.sidebar.viewTabs': { kind: 'single'; scope: 'session' }
     /** Optional replacement for one Session breadcrumb title. */
     'conversation.session.header.lineage': {
       kind: 'single'
@@ -289,6 +291,14 @@ export interface ConversationSessionHeaderInjected {
   open: (sessionId: SessionId) => void
   /** Select and activate one registered Conversation View. */
   selectView: (view: string) => void
+  /** Whether native view tabs render in the header or in the HIVE session rail. */
+  showViewTabs?: boolean
+}
+
+/** Business callbacks injected into the HIVE session-rail view selector. */
+export interface ConversationSidebarViewTabsInjected {
+  readonly hooks: { readonly conversationViews: ObservableSnapshot<readonly ViewTab[]> }
+  selectView: (view: string) => void
 }
 
 /** Owner share of the resident composer bar. */
@@ -412,6 +422,12 @@ export type ConversationSessionHeaderSlotProps =
   & PropsStore<ConversationStore>
   & InjectFace<ConversationSessionHeaderInjected>
   & PropsLocale<'conversation'>
+
+/** Full props for a native session-rail view selector. */
+export type ConversationSidebarViewTabsSlotProps =
+  PropsRuntime<'conversation.sidebar.viewTabs'>
+  & PropsStore<ConversationStore>
+  & InjectFace<ConversationSidebarViewTabsInjected>
 
 /** Full props of the draft-attachment renderer. */
 export type ComposerAttachmentsProps =

@@ -204,6 +204,42 @@
   background: var(--dsw-alias-state-business-primary);
 }
 
+/* The HIVE session rail uses the native tab language without creating a
+   competing conversation surface. The active blue rule matches the original
+   view control while the equal-width buttons keep the rail symmetric. */
+.sidebarTabs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin: 14px 8px 0;
+  border-bottom: 1px solid var(--dsw-alias-border-l3);
+}
+
+.sidebarTab {
+  position: relative;
+  padding: 9px 4px 8px;
+  border: 0;
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary);
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.sidebarTab::after {
+  position: absolute;
+  right: 0;
+  bottom: -1px;
+  left: 0;
+  height: 2px;
+  border-radius: 2px;
+  background: transparent;
+  content: '';
+}
+
+.sidebarTabActive { color: var(--dsw-alias-state-business-primary); }
+.sidebarTabActive::after { background: var(--dsw-alias-state-business-primary); }
+
 .viewArea {
   display: flex;
   flex: 1;

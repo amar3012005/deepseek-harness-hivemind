@@ -175,12 +175,20 @@ interface BindingRecord {
 export class UiConversation extends Service {
   /** Whether the active product profile requires a filesystem workspace. */
   requiresWorkspace = true
+  /** HIVE can place native view navigation in the session rail without changing its state model. */
+  sidebarViewNavigation = false
 
   /** Temporarily override the native workspace prerequisite for an embedded profile. */
   configureWorkspaceRequirement(required: boolean): () => void {
     const previous = this.requiresWorkspace
     this.requiresWorkspace = required
     return () => { this.requiresWorkspace = previous }
+  }
+
+  configureSidebarViewNavigation(enabled: boolean): () => void {
+    const previous = this.sidebarViewNavigation
+    this.sidebarViewNavigation = enabled
+    return () => { this.sidebarViewNavigation = previous }
   }
   /** Registry of event matchers and target snapshot builders. */
   readonly events: ConversationEventRegistry

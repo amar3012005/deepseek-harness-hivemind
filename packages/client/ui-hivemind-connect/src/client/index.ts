@@ -102,12 +102,15 @@ export function apply(ctx: ClientContext): void {
       () => scope.uiConversation.configureWorkspaceRequirement(false),
       'ui-hivemind-connect: filesystem-free conversation',
     )
+    scope.effect(
+      () => scope.uiConversation.configureSidebarViewNavigation(true),
+      'ui-hivemind-connect: session-rail view navigation',
+    )
   })
-  ctx.slots.inject('conversation.hero.scope', () => ctx.slots.register({
-    name: 'conversation.hero.scope',
+  ctx.slots.inject('conversation.input.scope', () => ctx.slots.register({
+    name: 'conversation.input.scope',
     locale: NS,
-  }, ({ sessionId, locked }: { sessionId?: SessionId | undefined; locked: boolean }) => {
-    if (sessionId === undefined) return createElement('span', { 'aria-label': 'HIVE-MIND read scope' }, '▱ Full scope')
+  }, ({ sessionId, locked }: { sessionId: SessionId; locked: boolean }) => {
     const key = `hivemind:read-scope:${sessionId}`
     let initialScope: HivemindReadScope = 'full'
     try {
