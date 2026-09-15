@@ -18,9 +18,19 @@ import { setupSingulanceHeadline, SingulanceMark } from './SingulanceMark.tsx'
 import { setupHivemindSessionRouting } from './session-route.ts'
 import { setupConnectionCallbackReturn } from './connection-callback.ts'
 import type {} from '@deepseek-ai/dsh-client-ui-tool/client'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import { createElement } from 'react'
+import { ScopeSelect, type HivemindReadScope } from './ScopeSelect.tsx'
+import { DefaultModelLabel } from './DefaultModelLabel.tsx'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap { 'hivemind-connect': HivemindConnectKey }
+}
+
+declare module '@deepseek-ai/dsh-session/types' {
+  interface SessionEventMap {
+    'hivemind/read-scope': { scope: HivemindReadScope; project?: string }
+  }
 }
 
 const NS = 'hivemind-connect'
@@ -93,6 +103,39 @@ export function apply(ctx: ClientContext): void {
       'ui-hivemind-connect: filesystem-free conversation',
     )
   })
+  ctx.slots.inject('conversation.input.scope', () => ctx.slots.register({
+    name: 'conversation.input.scope',
+    locale: NS,
+  }, ({ sessionId, locked }: { sessionId: SessionId; locked: boolean }) => {
+    const key = `hivemind:read-scope:${sessionId}`
+    let initialScope: HivemindReadScope = 'full'
+    try {
+      const stored = sessionStorage.getItem(key)
+      if (stored === 'personal' || stored === 'organization' || stored === 'project' || stored === 'full') initialScope = stored
+    } catch { /* storage can be unavailable in embedded contexts; full is safe */ }
+    const onSelect = (id: SessionId, readScope: HivemindReadScope, project?: string): void => {
+      try { sessionStorage.setItem(key, readScope) } catch { /* durable session event remains authoritative */ }
+      const scoped = ctx.sessions.scope(id)
+      const session = scoped === undefined ? undefined : ctx.sessions.sessionOf(scoped)
+      if (session === undefined) return
+      const argument = project === undefined ? readScope : `${readScope} ${project}`
+      void session.command(`/hivemind-scope ${argument}`)
+    }
+    return createElement(ScopeSelect, { sessionId, locked, initialScope, onSelect })
+  }))
+  ctx.slots.inject('conversation.input.model', () => ctx.slots.register({
+    name: 'conversation.input.model',
+    locale: NS,
+  }, DefaultModelLabel))
+  ctx.slots.inject('sidebar.brand.name', () => ctx.slots.register({
+    name: 'sidebar.brand.name',
+    locale: NS,
+  }, () => createElement('span', { 'data-hivemind-sidebar-brand': 'singulance' }, 'SINGULANCE')))
+  ctx.effect(() => {
+    const previous = document.title
+    document.title = 'SINGULANCE · HIVE-MIND'
+    return () => { document.title = previous }
+  }, 'ui-hivemind-connect: white-label document title')
   ctx.slots.inject('conversation.hero.brand.mark', () =>
     ctx.slots.register({ name: 'conversation.hero.brand.mark' }, SingulanceMark))
   ctx.effect(setupSingulanceHeadline, 'ui-hivemind-connect: Singulance hero headline')

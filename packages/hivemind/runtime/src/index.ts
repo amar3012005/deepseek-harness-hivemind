@@ -26,6 +26,12 @@ import { contextPlugin } from '@deepseek-ai/dsh-hivemind-context'
 import { memoryPlugin, type EntitySearchRequest, type RecallRequest, type SaveRequest, type SaveStatusRequest } from '@deepseek-ai/dsh-hivemind-memory'
 import { projectHyperagentProfiles } from '@deepseek-ai/dsh-hivemind-employee-directory'
 
+declare module '@deepseek-ai/dsh-session/types' {
+  interface SessionEventMap {
+    'hivemind/read-scope': { scope: 'full' | 'personal' | 'organization' | 'project'; project?: string }
+  }
+}
+
 export { completedExchanges, recentConversationText } from '@deepseek-ai/dsh-hivemind-context'
 
 /** Cordis plugin name used in diagnostics and prompt snapshots. */
@@ -33,6 +39,35 @@ export const name = 'hivemind-runtime'
 
 /** Services required to assemble context and expose progressive tools. */
 export const inject = ['tools', 'skills', 'hivemindIdentity', 'hivemindExecutionScope']
+
+type HivemindReadScope = 'full' | 'personal' | 'organization' | 'project'
+
+interface ScopeCommandContext {
+  commands: {
+    register(spec: {
+      name: string
+      description: string
+      input: { hint: string }
+      handler(input: { agent: Agent; rawInput: string }): { kind: 'success' | 'error'; text: string }
+    }): unknown
+  }
+}
+
+/** Read the latest durable scope event; full is represented by omission in API calls. */
+function sessionReadScope(agent: Agent): { scope?: 'personal' | 'organization' | 'project'; project?: string } {
+  const events = agent.session?.snapshotEvents?.() ?? []
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const event = events[index]
+    if (event?.type !== 'hivemind/read-scope') continue
+    const data = event.data as { scope?: HivemindReadScope; project?: string }
+    if (data.scope === 'personal' || data.scope === 'organization') return { scope: data.scope }
+    if (data.scope === 'project' && typeof data.project === 'string' && data.project.trim() !== '') {
+      return { scope: 'project', project: data.project.trim() }
+    }
+    return {}
+  }
+  return {}
+}
 
 const MAX_RESPONSE_BYTES = 2 * 1024 * 1024
 const MAX_PROFILE_CONTEXT_CHARS = 12_000
@@ -552,11 +587,24 @@ function compactSaveReceipt(value: JsonRecord, idempotencyKey: string, sourceRec
     : value
   const durable = typeof value['receipt'] === 'object' && value['receipt'] !== null && !Array.isArray(value['receipt'])
     ? value['receipt'] as JsonRecord
-    : undefined
+    // Core may return the terminal receipt at the top level. Treat that shape
+    // as authoritative too; requiring a nested `receipt` here caused valid
+    // saves to be reported as indeterminate and invited duplicate attempts.
+    : (typeof value['receipt_id'] === 'string' || typeof value['memory_id'] === 'string')
+      ? value
+      : undefined
   const memoryId = typeof durable?.['memory_id'] === 'string'
     ? durable['memory_id']
     : typeof memory['id'] === 'string' ? memory['id'] : undefined
-  const receiptId = typeof durable?.['receipt_id'] === 'string' ? durable['receipt_id'] : undefined
+  const receiptId = typeof durable?.['receipt_id'] === 'string'
+    ? durable['receipt_id']
+    : typeof value['receipt_id'] === 'string' ? value['receipt_id']
+      // The canonical synchronous Core memory endpoint predates the explicit
+      // receipt envelope and returns the persisted memory object instead. Its
+      // UUID is still a durable, tenant-authorized read handle; make that
+      // compatibility shape explicit so a successful save is not reported as
+      // indeterminate (which used to trigger duplicate retries).
+      : memoryId === undefined ? undefined : `memory:${memoryId}`
   if (value['skipped'] === true) {
     return { status: 'unchanged', operation: 'save', idempotency_key: idempotencyKey, reason: 'canonical_duplicate' }
   }
@@ -575,6 +623,9 @@ function compactSaveReceipt(value: JsonRecord, idempotencyKey: string, sourceRec
   const receipt: Record<string, JsonValue> = {
     status: 'saved', operation: 'save', memory_id: memoryId, receipt_id: receiptId,
     idempotency_key: idempotencyKey, replayed: value['replayed'] === true,
+  }
+  if (typeof durable?.['receipt_id'] !== 'string' && typeof value['receipt_id'] !== 'string') {
+    receipt['receipt_source'] = 'core_memory_id'
   }
   for (const field of ['title', 'memory_type', 'citation_id', 'created_at', 'updated_at']) {
     if (typeof memory[field] === 'string') receipt[field] = memory[field]
@@ -596,6 +647,7 @@ function saveIdempotencyKey(snapshot: ProfileSnapshot, execution: ToolExecution,
     title: request.title, content: request.content, source_type: request.sourceType,
     tags: [...(request.tags ?? [])].sort(), project: request.project ?? null,
     relationship: request.relationship ?? null, related_to: request.relatedTo ?? null,
+    scope: request.scope ?? null,
   })
   return `hive-save:${createHash('sha256').update(canonical).digest('hex')}`
 }
@@ -816,6 +868,33 @@ export function apply(ctx: Context, config: Config): void {
       })
     },
   }))
+  // The browser scope control uses this one native command to append a
+  // durable session event. It is a session command, not prompt text or
+  // client-only state, so reload/replay keeps the selected read lens.
+  const inject = (ctx as unknown as { inject?: unknown }).inject
+  if (typeof inject === 'function') {
+    (inject as (services: readonly string[], callback: (value: unknown) => void) => void)(['commands'], (commandCtx) => {
+      const commands = commandCtx as unknown as ScopeCommandContext
+      commands.commands.register({
+        name: 'hivemind-scope',
+        description: 'Set the HIVE-MIND read scope for this session.',
+        input: { hint: '<full|personal|organization|project> [authorized-project]' },
+        handler: ({ agent, rawInput }) => {
+          const [scope, ...rest] = rawInput.trim().split(/\s+/)
+          if (!['full', 'personal', 'organization', 'project'].includes(scope ?? '')) {
+            return { kind: 'error', text: 'scope must be full, personal, organization, or project' }
+          }
+          const project = rest.join(' ').trim()
+          if (scope === 'project' && project === '') return { kind: 'error', text: 'project scope requires an authorized project' }
+          agent.session.append('hivemind/read-scope', {
+            scope: scope as HivemindReadScope,
+            ...(scope === 'project' ? { project } : {}),
+          })
+          return { kind: 'success', text: `read scope ${scope}${project === '' ? '' : `: ${project}`}` }
+        },
+      })
+    })
+  }
   ctx.plugin(contextPlugin({
     historyTurns: config.historyTurns,
     historyMaxChars: config.historyMaxChars,
@@ -827,10 +906,16 @@ export function apply(ctx: Context, config: Config): void {
       return { status: 'ready', operation: 'context', context: snapshot.fullContext }
     },
     async entities(request: EntitySearchRequest, signal, execution) {
+      const durableScope = execution.agent === undefined ? {} : sessionReadScope(execution.agent)
+      const effectiveRequest = request.scopeFilter === undefined && durableScope.scope !== undefined
+        ? { ...request, scopeFilter: durableScope.scope, ...(request.project === undefined ? { project: durableScope.project } : {}) }
+        : request
       const authority = await resolveAuthority(ctx, config)
       const target = new URL(ENTITY_SEARCH_PATH, authority.apiBase)
-      target.searchParams.set('q', request.query)
-      target.searchParams.set('limit', String(Math.min(request.limit, config.entityResultLimit)))
+      target.searchParams.set('q', effectiveRequest.query)
+      target.searchParams.set('limit', String(Math.min(effectiveRequest.limit, config.entityResultLimit)))
+      if (effectiveRequest.scopeFilter !== undefined) target.searchParams.set('scope', effectiveRequest.scopeFilter)
+      if (effectiveRequest.project !== undefined) target.searchParams.set('project', effectiveRequest.project)
       let result: unknown
       try {
         result = await hiveRequest(authority, `${ENTITY_SEARCH_PATH}${target.search}`, { method: 'GET' }, signal, config)
@@ -846,7 +931,7 @@ export function apply(ctx: Context, config: Config): void {
       }
       const record = apiRecord(result, 'entity search response')
       const receipt = await saveMemoryReceipt(ctx, execution, 'hivemind-entities.json', record)
-      return compactEntityResponse(record, request.limit, receipt)
+      return compactEntityResponse(record, effectiveRequest.limit, receipt)
     },
     async profiles(signal) {
       const authority = await resolveAuthority(ctx, config)
@@ -856,20 +941,25 @@ export function apply(ctx: Context, config: Config): void {
       return { operation: 'profiles', ...hyperagentProfilesFromResponse(result) }
     },
     async recall(request: RecallRequest, signal, execution) {
+      const durableScope = execution.agent === undefined ? {} : sessionReadScope(execution.agent)
+      const effectiveRequest = request.scopeFilter === undefined && durableScope.scope !== undefined
+        ? { ...request, scopeFilter: durableScope.scope, ...(request.project === undefined ? { project: durableScope.project } : {}) }
+        : request
       const authority = await resolveAuthority(ctx, config)
       const result = await hiveRequest(authority, RECALL_PATH, {
         method: 'POST',
         body: JSON.stringify({
-          query_context: request.query,
-          max_memories: request.limit,
-          mode: request.mode,
-          ...request.tags === undefined ? {} : { tags: request.tags },
-          ...request.sourcePlatforms === undefined ? {} : { source_platforms: request.sourcePlatforms },
-          ...request.project === undefined ? {} : { project: request.project },
-          ...request.validAt === undefined ? {} : { valid_at: request.validAt },
-          ...request.transactionAt === undefined ? {} : { transaction_at: request.transactionAt },
-          ...request.sort === undefined ? {} : { sort: request.sort },
-          ...request.includeSuperseded === undefined ? {} : { include_superseded: request.includeSuperseded },
+          query_context: effectiveRequest.query,
+          max_memories: effectiveRequest.limit,
+          mode: effectiveRequest.mode,
+          ...effectiveRequest.tags === undefined ? {} : { tags: effectiveRequest.tags },
+          ...effectiveRequest.sourcePlatforms === undefined ? {} : { source_platforms: effectiveRequest.sourcePlatforms },
+          ...effectiveRequest.project === undefined ? {} : { project: effectiveRequest.project },
+          ...effectiveRequest.validAt === undefined ? {} : { valid_at: effectiveRequest.validAt },
+          ...effectiveRequest.transactionAt === undefined ? {} : { transaction_at: effectiveRequest.transactionAt },
+          ...effectiveRequest.sort === undefined ? {} : { sort: effectiveRequest.sort },
+          ...effectiveRequest.includeSuperseded === undefined ? {} : { include_superseded: effectiveRequest.includeSuperseded },
+          ...effectiveRequest.scopeFilter === undefined ? {} : { scope_filter: effectiveRequest.scopeFilter },
         }),
       }, signal, config)
       const record = apiRecord(result, 'meta recall response')
@@ -877,7 +967,7 @@ export function apply(ctx: Context, config: Config): void {
       return {
         status: 'ready',
         operation: 'recall',
-        result: compactRecallResponse(record, request.limit, config.recallItemMaxChars, receipt),
+        result: compactRecallResponse(record, effectiveRequest.limit, config.recallItemMaxChars, receipt),
       }
     },
     async save(agent, request: SaveRequest, signal, execution) {
@@ -891,13 +981,14 @@ export function apply(ctx: Context, config: Config): void {
         source_platform: 'deepseek-harness',
         tags: request.tags ?? [],
         ...request.project === undefined ? {} : { project: request.project },
+        ...request.scope === undefined ? {} : { scope: request.scope },
         ...request.relationship === undefined ? {} : {
           relationship: {
             type: { update: 'Updates', extend: 'Extends', derive: 'Derives' }[request.relationship],
             target_id: request.relatedTo,
           },
         },
-        metadata: { source_type: request.sourceType, governed: true },
+        metadata: { source_type: request.sourceType, governed: true, ...(request.scope === undefined ? {} : { scope: request.scope }) },
         idempotency_key: idempotencyKey,
         user_id: snapshot.identity.userId,
         org_id: snapshot.identity.orgId,

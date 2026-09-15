@@ -184,6 +184,8 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
     'conversation.input.plan': { kind: 'single'; scope: 'session'; owner: InputControlOwnerProps }
     /** Model selector inside the composer tool row. */
     'conversation.input.model': { kind: 'single'; scope: 'session'; owner: InputControlOwnerProps }
+    /** Optional HIVE read-scope selector in the resident access-seat position. */
+    'conversation.input.scope': { kind: 'single'; scope: 'session'; owner: InputScopeOwnerProps }
   }
 
   interface GlobalStandardProps {
@@ -335,13 +337,19 @@ export interface InputControlOwnerProps {
   locked: boolean
 }
 
+/** HIVE read-scope control occupying the resident access-seat position. */
+export interface InputScopeOwnerProps extends InputControlOwnerProps {
+  /** Current native Session identity; scope changes are appended to this log. */
+  sessionId: SessionId
+}
+
 /** Full props of the resident composer bar. */
 export type ComposerBarProps =
   PropsRuntime<'conversation.composer.bar'>
   & PropsRenderSlots<
     | 'conversation.input.attachments' | 'conversation.input.overlay'
     | 'conversation.input.left' | 'conversation.input.plan'
-    | 'conversation.input.right' | 'conversation.input.model'
+    | 'conversation.input.right' | 'conversation.input.model' | 'conversation.input.scope'
     | 'conversation.composer.dock'
   >
   & InjectFace<ComposerBarInjected>

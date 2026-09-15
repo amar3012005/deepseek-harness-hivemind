@@ -1,0 +1,22 @@
+.root {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  color: var(--dsh-color-text-secondary, #6b7280);
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.icon { font-size: 17px; line-height: 1; }
+.brand { color: var(--dsh-color-text-primary, #3f4650); font-weight: 500; }
+.select, .project {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  outline: none;
+}
+.select { cursor: pointer; max-width: 128px; }
+.project { width: 88px; border-bottom: 1px solid currentColor; }
+.select:disabled, .project:disabled { cursor: default; opacity: .65; }

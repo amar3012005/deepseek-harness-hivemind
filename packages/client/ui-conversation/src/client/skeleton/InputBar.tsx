@@ -514,7 +514,9 @@ export const InputBar = memo(function InputBar({
               onChange={onPickFiles}
             />
             <div className={css.modes}>
-              {accessSelect}
+              {sessionId === undefined
+                ? accessSelect
+                : renderSlot('conversation.input.scope', { locked, sessionId }, { fallback: accessSelect })}
               {sessionId === undefined ? null : renderSlot('conversation.input.plan', { locked })}
             </div>
             {input === undefined || sessionId === undefined

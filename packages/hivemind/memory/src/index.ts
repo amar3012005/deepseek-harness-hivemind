@@ -15,12 +15,17 @@ export interface RecallRequest {
   transactionAt?: string
   sort?: 'score' | 'date_asc' | 'date_desc'
   includeSuperseded?: boolean
+  /** Optional server-enforced read lens. Omitted means the full authorized union. */
+  scopeFilter?: 'personal' | 'organization' | 'project'
 }
 
 /** A bounded lookup against the authenticated organization's canonical entity index. */
 export interface EntitySearchRequest {
   query: string
   limit: number
+  /** Optional server-enforced read lens. Omitted means the full authorized union. */
+  scopeFilter?: 'personal' | 'organization' | 'project'
+  project?: string
 }
 
 /** A policy-checked durable fact or correction proposed by the HIVE agent. */
@@ -32,7 +37,12 @@ export interface SaveRequest {
   project?: string
   relationship?: 'update' | 'extend' | 'derive'
   relatedTo?: string
+  /** Concrete write destination. Full scope is intentionally not writable. */
+  scope?: 'personal' | 'organization' | 'project'
 }
+
+const READ_SCOPES = ['personal', 'organization', 'project'] as const
+type ReadScope = typeof READ_SCOPES[number]
 
 export interface SaveStatusRequest { idempotencyKey: string }
 
@@ -61,6 +71,13 @@ function strings(value: unknown, label: string): string[] | undefined {
   if (value === undefined) return undefined
   if (!Array.isArray(value)) throw new TypeError(`hivemind-memory: ${label} must be an array`)
   return value.map((item, index) => text(item, `${label}[${index}]`))
+}
+
+function optionalScope(value: unknown, label: string): ReadScope | undefined {
+  if (value === undefined) return undefined
+  const result = text(value, label)
+  if (!(READ_SCOPES as readonly string[]).includes(result)) throw new TypeError(`hivemind-memory: ${label} is unsupported`)
+  return result as ReadScope
 }
 
 function boundedText(value: unknown, label: string, maxChars: number): string {
@@ -103,6 +120,9 @@ function saveRequest(input: Record<string, unknown>): SaveRequest {
   const relationship = input['relationship'] === undefined ? undefined : text(input['relationship'], 'relationship')
   if (relationship !== undefined && !['update', 'extend', 'derive'].includes(relationship)) throw new TypeError('hivemind-memory: relationship is unsupported')
   const relatedTo = input['related_to'] === undefined ? undefined : memoryId(input['related_to'], 'related_to')
+  const scope = optionalScope(input['scope'] ?? input['destination_scope'], 'scope')
+  const project = input['project'] === undefined ? undefined : boundedText(input['project'], 'project', 255)
+  if (scope === 'project' && project === undefined) throw new TypeError('hivemind-memory: project scope requires project')
   if (relationship !== undefined && relatedTo === undefined) throw new TypeError('hivemind-memory: related_to is required when relationship is set')
   if (relationship === undefined && relatedTo !== undefined) throw new TypeError('hivemind-memory: relationship is required when related_to is set')
   const tags = strings(input['tags'], 'tags')
@@ -112,9 +132,10 @@ function saveRequest(input: Record<string, unknown>): SaveRequest {
     content: boundedText(input['content'], 'save.content', 2_000),
     sourceType: sourceType as SaveRequest['sourceType'],
     ...tags === undefined ? {} : { tags },
-    ...input['project'] === undefined ? {} : { project: boundedText(input['project'], 'project', 255) },
+    ...project === undefined ? {} : { project },
     ...relationship === undefined ? {} : { relationship: relationship as NonNullable<SaveRequest['relationship']> },
     ...relatedTo === undefined ? {} : { relatedTo },
+    ...scope === undefined ? {} : { scope },
   }
   if (containsCredentialMaterial(`${request.title}\n${request.content}`)) throw new TypeError('hivemind-memory: save refuses credential material')
   return request
@@ -140,6 +161,7 @@ export function memoryPlugin(config: MemoryPluginConfig, provider: MemoryProvide
           source_type: { type: 'string', enum: ['text', 'conversation', 'documentation', 'decision'] },
           tags: { type: 'array', items: { type: 'string' } },
           project: { type: 'string' },
+          scope: { type: 'string', enum: ['personal', 'organization', 'project'], description: 'Concrete write destination. Full scope is read-only and cannot be used for a save. Project scope requires project.' },
           relationship: { type: 'string', enum: ['update', 'extend', 'derive'], description: 'Optional relation to an existing recalled memory. Omit for a new standalone memory. When set, related_to is required.' },
           related_to: { type: 'string', description: 'The exact recalled memory UUID that the relationship targets. Never use a person, project, topic, or label.' },
         },
@@ -161,6 +183,8 @@ export function memoryPlugin(config: MemoryPluginConfig, provider: MemoryProvide
             properties: {
               query: { type: 'string', required: true, description: 'Exact named subject to match against canonical names and aliases.' },
               limit: { type: 'integer', description: 'Maximum canonical matches to return.' },
+              scope_filter: { type: 'string', enum: ['personal', 'organization', 'project'], description: 'Optional server-enforced read lens. Omit for the full authorized union.' },
+              project: { type: 'string', description: 'Authorized project identifier when using project scope.' },
             },
           },
           recall: {
@@ -180,6 +204,7 @@ export function memoryPlugin(config: MemoryPluginConfig, provider: MemoryProvide
               transaction_at: { type: 'string' },
               sort: { type: 'string', enum: ['score', 'date_asc', 'date_desc'] },
               include_superseded: { type: 'boolean' },
+              scope_filter: { type: 'string', enum: ['personal', 'organization', 'project'], description: 'Optional server-enforced read lens. Omit for the full authorized union.' },
             },
           },
           save: {
@@ -192,6 +217,7 @@ export function memoryPlugin(config: MemoryPluginConfig, provider: MemoryProvide
               source_type: { type: 'string', enum: ['text', 'conversation', 'documentation', 'decision'] },
               tags: { type: 'array', items: { type: 'string' } },
               project: { type: 'string' },
+              scope: { type: 'string', enum: ['personal', 'organization', 'project'], description: 'Concrete write destination. Full scope is read-only and cannot be used for a save. Project scope requires project.' },
               relationship: { type: 'string', enum: ['update', 'extend', 'derive'], description: 'Optional relation to an existing memory. Omit for a new standalone memory. When set, related_to is required.' },
               related_to: { type: 'string', description: 'The exact recalled memory UUID that the relationship targets. Never use a person, project, topic, or label.' },
             },
@@ -221,11 +247,22 @@ export function memoryPlugin(config: MemoryPluginConfig, provider: MemoryProvide
             const input = object(args.entities, 'entities')
             const rawLimit = input['limit'] ?? config.defaultLimit
             if (!Number.isInteger(rawLimit) || (rawLimit as number) < 1 || (rawLimit as number) > 25) throw new TypeError('hivemind-memory: entity limit must be an integer from 1 to 25')
-            return provider.entities({ query: text(input['query'], 'entities.query'), limit: rawLimit as number }, execution.signal, execution)
+            const scopeFilter = optionalScope(input['scope_filter'] ?? input['scope'], 'entities.scope_filter')
+            return provider.entities({
+              query: text(input['query'], 'entities.query'), limit: rawLimit as number,
+              ...scopeFilter === undefined ? {} : { scopeFilter },
+              ...input['project'] === undefined ? {} : { project: boundedText(input['project'], 'entities.project', 255) },
+            }, execution.signal, execution)
           }
           if (operation === 'save') {
             if (execution.agent === undefined) throw new TypeError('hivemind-memory: active agent required')
-            return provider.save(execution.agent, saveRequest(object(args.save, 'save')), execution.signal, execution)
+            // Accept the historical flat form once and normalize it into the canonical
+            // nested contract. This prevents a model formatting slip from causing a
+            // second inference/search loop while retaining strict field validation.
+            const rawSave = args.save === undefined
+              ? args
+              : object(args.save, 'save')
+            return provider.save(execution.agent, saveRequest(rawSave), execution.signal, execution)
           }
           if (operation !== 'recall') throw new TypeError('hivemind-memory: unsupported operation')
           const input = object(args.recall, 'recall')
@@ -234,6 +271,8 @@ export function memoryPlugin(config: MemoryPluginConfig, provider: MemoryProvide
           const mode = text(input['mode'] ?? 'memory', 'mode')
           if (!['memory', 'auto', 'hybrid', 'evidence'].includes(mode)) throw new TypeError('hivemind-memory: recall mode is unsupported')
           const request: RecallRequest = { query: text(input['query'], 'query'), mode: mode as RecallRequest['mode'], limit: rawLimit as number }
+          const scopeFilter = optionalScope(input['scope_filter'] ?? input['scope'], 'recall.scope_filter')
+          if (scopeFilter !== undefined) request.scopeFilter = scopeFilter
           const tags = tagsFor(input)
           const sourcePlatforms = strings(input['source_platforms'], 'source_platforms')
           if (tags !== undefined) request.tags = tags

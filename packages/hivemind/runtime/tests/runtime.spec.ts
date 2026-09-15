@@ -607,6 +607,60 @@ describe('HIVE-MIND runtime', () => {
     expect(JSON.stringify(value)).not.toContain('org-1')
   })
 
+  it('normalizes a flat meta save once and accepts a top-level terminal receipt', async () => {
+    const path = await authorityFile()
+    profileResponses([jsonResponse({
+      status: 'saved', receipt_id: 'receipt-flat', memory_id: 'memory-flat',
+      memory: { id: 'memory-flat', title: 'Flat save', memory_type: 'fact' },
+    })])
+    const harness = mount(config(path))
+
+    const value = await tool(harness, 'hivemind_meta').execute({
+      operation: 'save', title: 'Flat save', content: 'A confirmed flat-form save.', scope: 'personal',
+    }, execContext())
+
+    expect(value).toMatchObject({ status: 'saved', memory_id: 'memory-flat', receipt_id: 'receipt-flat' })
+    const posts = vi.mocked(fetch).mock.calls.filter(([, init]) => init?.method === 'POST')
+    expect(posts).toHaveLength(1)
+    expect(JSON.parse(String(posts[0]?.[1]?.body))).toMatchObject({ scope: 'personal' })
+  })
+
+  it('treats the canonical synchronous Core memory id as a durable save receipt', async () => {
+    const path = await authorityFile()
+    profileResponses([jsonResponse({
+      success: true,
+      memory: { id: 'memory-123', title: 'Stable fact' },
+    })])
+    const harness = mount(config(path))
+    const result = await tool(harness, 'hivemind_meta').execute({
+      operation: 'save', title: 'Stable fact', content: 'A confirmed fact.', source_type: 'conversation', scope: 'personal',
+    }, execContext())
+    expect(result).toMatchObject({
+      status: 'saved', memory_id: 'memory-123', receipt_id: 'memory:memory-123',
+      receipt_source: 'core_memory_id',
+    })
+  })
+
+  it('forwards an explicit read scope without changing full-scope default behavior', async () => {
+    const path = await authorityFile()
+    profileResponses([jsonResponse({ items: [] }), jsonResponse({ results: [] })])
+    const harness = mount(config(path))
+
+    await tool(harness, 'hivemind_meta').execute({
+      operation: 'entities', entities: { query: 'Amar', scope_filter: 'organization' },
+    }, execContext())
+    await tool(harness, 'hivemind_meta').execute({
+      operation: 'recall', recall: { query: 'Amar', scope_filter: 'personal' },
+    }, execContext())
+
+    const calls = vi.mocked(fetch).mock.calls
+    const entityCall = calls.find(([url]) => String(url).includes('/api/entities?'))
+    const recallCall = calls.find(([, init]) => init?.method === 'POST' && String(init?.body).includes('scope_filter'))
+    expect(String(entityCall?.[0])).toContain('/api/entities?q=Amar&limit=')
+    expect(String(entityCall?.[0])).toContain('scope=organization')
+    expect(JSON.parse(String(recallCall?.[1]?.body))).toMatchObject({ scope_filter: 'personal' })
+  })
+
   it('defaults an omitted memory source type to conversation', async () => {
     const path = await authorityFile()
     profileResponses([jsonResponse({
