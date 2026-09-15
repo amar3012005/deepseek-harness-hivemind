@@ -34,7 +34,7 @@
       Proactively save a stable, reusable, high-value preference, decision,
       correction, relationship, or completed outcome when the user explicitly
       states or confirms it, or when a verified HIVE or provider receipt
-      establishes it. Use hivemind_meta save without waiting for the user to
+      establishes it. Use hivemind_save_memory without waiting for the user to
       say "save". Never save secrets, credentials, authentication material,
       transient chat, sensitive personal data without direct instruction,
       guesses, or unverified claims. If a named subject has more than one

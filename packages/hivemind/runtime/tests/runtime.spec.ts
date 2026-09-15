@@ -359,13 +359,13 @@ describe('HIVE-MIND runtime', () => {
     pluginConfig.legacyToolsEnabled = false
     const harness = mount(pluginConfig)
 
-    expect([...harness.tools.keys()]).toEqual(['hivemind_capabilities', 'hivemind_meta'])
+    expect([...harness.tools.keys()]).toEqual(['hivemind_capabilities', 'hivemind_save_memory', 'hivemind_meta'])
     const skill = harness.skills.get('hivemind-company-brain')
     expect(skill?.description).toContain('multi-source')
     expect(skill?.content).toContain('not a workspace path')
     expect(skill?.invocation).toEqual({ modelInvocable: true, userInvocable: true })
     expect(skill?.content).toContain('Never save secrets')
-    expect(skill?.description).toContain('call hivemind_meta directly')
+    expect(skill?.description).toContain('hivemind_save_memory')
   })
 
   it('requests the native skill catalog without loading profile data', async () => {
@@ -904,6 +904,12 @@ describe('HIVE-MIND runtime', () => {
     expect(serialized).toContain('For a new standalone memory, omit both relationship and related_to')
     expect(serialized).toContain('requires related_to')
     expect(serialized).toContain('exact recalled memory UUID')
+  })
+
+  it('exposes a direct typed save contract without requiring a meta operation envelope', async () => {
+    const harness = mount(config(await authorityFile()))
+    expect(JSON.stringify(tool(harness, 'hivemind_save_memory').parameters)).not.toContain('operation')
+    expect(JSON.stringify(tool(harness, 'hivemind_save_memory').parameters)).toContain('title')
   })
 
 })

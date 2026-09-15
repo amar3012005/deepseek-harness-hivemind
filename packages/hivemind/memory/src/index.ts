@@ -96,6 +96,30 @@ function tagsFor(input: Record<string, unknown>): string[] | undefined {
   return tags.length === 0 ? undefined : [...new Set(tags)]
 }
 
+/** Parse the one canonical shape accepted by both the compatibility gateway and save tool. */
+function saveRequest(input: Record<string, unknown>): SaveRequest {
+  const sourceType = text(input['source_type'] ?? 'conversation', 'source_type')
+  if (!['text', 'conversation', 'documentation', 'decision'].includes(sourceType)) throw new TypeError('hivemind-memory: source_type is unsupported')
+  const relationship = input['relationship'] === undefined ? undefined : text(input['relationship'], 'relationship')
+  if (relationship !== undefined && !['update', 'extend', 'derive'].includes(relationship)) throw new TypeError('hivemind-memory: relationship is unsupported')
+  const relatedTo = input['related_to'] === undefined ? undefined : memoryId(input['related_to'], 'related_to')
+  if (relationship !== undefined && relatedTo === undefined) throw new TypeError('hivemind-memory: related_to is required when relationship is set')
+  if (relationship === undefined && relatedTo !== undefined) throw new TypeError('hivemind-memory: relationship is required when related_to is set')
+  const tags = strings(input['tags'], 'tags')
+  if (tags !== undefined && tags.length > 20) throw new TypeError('hivemind-memory: tags may contain at most 20 items')
+  const request: SaveRequest = {
+    title: boundedText(input['title'], 'save.title', 240),
+    content: boundedText(input['content'], 'save.content', 2_000),
+    sourceType: sourceType as SaveRequest['sourceType'],
+    ...tags === undefined ? {} : { tags },
+    ...input['project'] === undefined ? {} : { project: boundedText(input['project'], 'project', 255) },
+    ...relationship === undefined ? {} : { relationship: relationship as NonNullable<SaveRequest['relationship']> },
+    ...relatedTo === undefined ? {} : { relatedTo },
+  }
+  if (containsCredentialMaterial(`${request.title}\n${request.content}`)) throw new TypeError('hivemind-memory: save refuses credential material')
+  return request
+}
+
 const output = {
   schema: { type: 'object' as const, additionalProperties: true, properties: {} },
   render: (_args: unknown, value: JsonValue) => [{ type: 'text' as const, text: JSON.stringify(value) }],
@@ -107,6 +131,25 @@ export function memoryPlugin(config: MemoryPluginConfig, provider: MemoryProvide
     name: 'hivemind-memory',
     inject: ['tools'],
     apply(ctx: Context): void {
+      ctx.tools.register(defineTool({
+        name: 'hivemind_save_memory',
+        description: 'Durably save one confirmed, stable HIVE-MIND memory. Use this direct tool for a standalone fact, preference, decision, correction, relationship, or completed outcome. A successful result must include the saved memory receipt. Never save secrets, credentials, ephemeral chat, guesses, or unverified claims.',
+        parameters: {
+          title: { type: 'string', required: true },
+          content: { type: 'string', required: true },
+          source_type: { type: 'string', enum: ['text', 'conversation', 'documentation', 'decision'] },
+          tags: { type: 'array', items: { type: 'string' } },
+          project: { type: 'string' },
+          relationship: { type: 'string', enum: ['update', 'extend', 'derive'], description: 'Optional relation to an existing recalled memory. Omit for a new standalone memory. When set, related_to is required.' },
+          related_to: { type: 'string', description: 'The exact recalled memory UUID that the relationship targets. Never use a person, project, topic, or label.' },
+        },
+        output,
+        isConcurrencySafe: () => true,
+        async execute(args, execution) {
+          if (execution.agent === undefined) throw new TypeError('hivemind-memory: active agent required')
+          return provider.save(execution.agent, saveRequest(args), execution.signal, execution)
+        },
+      }))
       ctx.tools.register(defineTool({
         name: 'hivemind_meta',
         description: 'HIVE-MIND gateway for authenticated context, canonical entity discovery, bounded memory recall, governed durable memory saves, or the exact HyperAgent directory. Use context for questions about the caller or company profile. Use entities first for a named person, topic, project, organization, document, or other subject when its canonical name could narrow recall. Use save only for a stable user preference, confirmed decision, correction, or completed outcome that will matter later; never save secrets, credentials, ephemeral chat, guesses, or unverified claims. Tenant scope is derived from the current HIVE-MIND credential.',
@@ -182,29 +225,7 @@ export function memoryPlugin(config: MemoryPluginConfig, provider: MemoryProvide
           }
           if (operation === 'save') {
             if (execution.agent === undefined) throw new TypeError('hivemind-memory: active agent required')
-            const input = object(args.save, 'save')
-            const sourceType = text(input['source_type'] ?? 'conversation', 'source_type')
-            if (!['text', 'conversation', 'documentation', 'decision'].includes(sourceType)) throw new TypeError('hivemind-memory: source_type is unsupported')
-            const relationship = input['relationship'] === undefined ? undefined : text(input['relationship'], 'relationship')
-            if (relationship !== undefined && !['update', 'extend', 'derive'].includes(relationship)) throw new TypeError('hivemind-memory: relationship is unsupported')
-            const relatedTo = input['related_to'] === undefined ? undefined : memoryId(input['related_to'], 'related_to')
-            if (relationship !== undefined && relatedTo === undefined) throw new TypeError('hivemind-memory: related_to is required when relationship is set')
-            if (relationship === undefined && relatedTo !== undefined) throw new TypeError('hivemind-memory: relationship is required when related_to is set')
-            const tags = strings(input['tags'], 'tags')
-            if (tags !== undefined && tags.length > 20) throw new TypeError('hivemind-memory: tags may contain at most 20 items')
-            const request: SaveRequest = {
-              title: boundedText(input['title'], 'save.title', 240),
-              content: boundedText(input['content'], 'save.content', 2_000),
-              sourceType: sourceType as SaveRequest['sourceType'],
-              ...tags === undefined ? {} : { tags },
-              ...input['project'] === undefined ? {} : { project: boundedText(input['project'], 'project', 255) },
-              ...relationship === undefined ? {} : { relationship: relationship as NonNullable<SaveRequest['relationship']> },
-              ...relatedTo === undefined ? {} : { relatedTo },
-            }
-            if (containsCredentialMaterial(`${request.title}\n${request.content}`)) {
-              throw new TypeError('hivemind-memory: save refuses credential material')
-            }
-            return provider.save(execution.agent, request, execution.signal, execution)
+            return provider.save(execution.agent, saveRequest(object(args.save, 'save')), execution.signal, execution)
           }
           if (operation !== 'recall') throw new TypeError('hivemind-memory: unsupported operation')
           const input = object(args.recall, 'recall')
