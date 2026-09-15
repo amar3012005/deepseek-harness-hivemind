@@ -12,6 +12,8 @@ describe('HIVE-MIND read scope control', () => {
     const onSelect = vi.fn()
     render(<ScopeSelect sessionId={'session-1' as never} locked={false} initialScope="full" onSelect={onSelect} />)
 
+    expect(screen.getByRole('option', { name: 'Choose your workspace' })).toBeTruthy()
+    expect(screen.getByLabelText('HIVE-MIND read scope').parentElement?.querySelector('svg')).not.toBeNull()
     expect(fetchMock).not.toHaveBeenCalled()
     fireEvent.change(screen.getByLabelText('HIVE-MIND read scope'), { target: { value: 'project' } })
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/hivemind/projects', { credentials: 'include' }))

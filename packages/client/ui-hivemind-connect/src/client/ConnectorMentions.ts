@@ -2,6 +2,7 @@ interface InputTriggerCandidate {
   name: string
   description?: string
   value?: string
+  logo?: string
 }
 
 interface InputTriggerSource {
@@ -19,6 +20,7 @@ interface Connector {
   slug: string
   name: string
   connected: boolean
+  logo?: string
 }
 
 function connectorRows(value: unknown): Connector[] {
@@ -26,8 +28,9 @@ function connectorRows(value: unknown): Connector[] {
   return (value as { connectors: unknown[] }).connectors.flatMap((candidate): Connector[] => {
     if (typeof candidate !== 'object' || candidate === null) return []
     const row = candidate as Record<string, unknown>
+    const logo = typeof row.logo === 'string' && row.logo.startsWith('https://') ? row.logo : undefined
     return typeof row.slug === 'string' && typeof row.name === 'string' && typeof row.connected === 'boolean'
-      ? [{ slug: row.slug, name: row.name, connected: row.connected }]
+      ? [{ slug: row.slug, name: row.name, connected: row.connected, ...(logo === undefined ? {} : { logo }) }]
       : []
   })
 }
@@ -49,6 +52,7 @@ export function createConnectorMentionSource(): InputTriggerSource {
           name: item.name,
           description: item.connected ? 'Connected app' : 'Available connector',
           value: item.name,
+          ...(item.logo === undefined ? {} : { logo: item.logo }),
         }))
       } catch {
         return []

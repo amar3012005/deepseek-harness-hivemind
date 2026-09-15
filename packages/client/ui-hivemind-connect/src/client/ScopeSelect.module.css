@@ -8,7 +8,14 @@
   white-space: nowrap;
 }
 
-.icon { font-size: 17px; line-height: 1; }
+.icon {
+  display: inline-flex;
+  width: 17px;
+  height: 17px;
+  color: var(--dsh-color-text-primary, #3f4650);
+}
+
+.icon svg { width: 100%; height: 100%; fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linejoin: round; }
 .brand, .agent { color: var(--dsh-color-text-primary, #3f4650); font-weight: 500; }
 .select, .project {
   border: 0;

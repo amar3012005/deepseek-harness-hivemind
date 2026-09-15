@@ -51,7 +51,9 @@ export function ScopeSelect({ sessionId, locked = false, initialScope, initialPr
   }
 
   return <label className={css.root}>
-    <span className={css.icon} aria-hidden>▱</span>
+    <span className={css.icon} aria-hidden>
+      <svg viewBox="0 0 24 24" focusable="false"><path d="M3.5 6.75A2.25 2.25 0 0 1 5.75 4.5h4l1.75 2h6.75A2.25 2.25 0 0 1 20.5 8.75v8.5a2.25 2.25 0 0 1-2.25 2.25H5.75A2.25 2.25 0 0 1 3.5 17.25v-10.5Z" /></svg>
+    </span>
     <select
       className={css.select}
       aria-label="HIVE-MIND read scope"
@@ -68,7 +70,7 @@ export function ScopeSelect({ sessionId, locked = false, initialScope, initialPr
         }
       }}
     >
-      <option value="full">Full scope</option>
+      <option value="full">Choose your workspace</option>
       <option value="personal">Personal</option>
       <option value="organization">Organization</option>
       <option value="project">Project</option>

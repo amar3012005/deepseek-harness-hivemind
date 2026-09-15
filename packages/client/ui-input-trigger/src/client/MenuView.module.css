@@ -78,6 +78,13 @@
   color: var(--dsw-alias-label-tertiary);
 }
 
+.itemLogo {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  object-fit: contain;
+}
+
 .itemName {
   flex: none;
   max-width: 40%;

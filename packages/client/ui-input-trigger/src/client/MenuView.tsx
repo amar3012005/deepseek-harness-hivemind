@@ -148,7 +148,9 @@ export function MenuView({ menu, headers, onPick, onCrumb, onHover, onDismiss, t
                         // pointer must not steal it back.
                         onMouseMove={active ? undefined : () => { onHover(group.source, index) }}
                       >
-                        {item.icon !== undefined && (
+                        {item.logo !== undefined ? (
+                          <img className={css.itemLogo} src={item.logo} alt="" referrerPolicy="no-referrer" />
+                        ) : item.icon !== undefined && (
                           <span className={css.itemIcon} aria-hidden>
                             <ReferenceIcon kind={item.icon} size={16} />
                           </span>

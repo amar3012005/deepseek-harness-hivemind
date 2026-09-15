@@ -48,6 +48,8 @@ export interface InputTriggerCandidate {
   readonly name: string
   readonly description?: string
   readonly icon?: InputTriggerCandidateIcon
+  /** Optional HTTPS application logo supplied by the candidate's authenticated source. */
+  readonly logo?: string
   readonly hint?: string
   /** Optional visual heading shared by adjacent candidates; sectioned groups omit their source-title row. */
   readonly section?: string

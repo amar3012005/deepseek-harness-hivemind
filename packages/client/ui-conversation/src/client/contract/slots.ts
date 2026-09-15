@@ -161,7 +161,7 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
     /** Workspace picker shown by the blank-session Hero. */
     'conversation.hero.workspace': { kind: 'single'; scope: 'root'; owner: EmptyWorkspaceOwnerProps }
     /** Optional knowledge read lens beside the native preset control. */
-    'conversation.hero.scope': { kind: 'single'; scope: 'root'; owner: { sessionId?: SessionId | undefined; locked: boolean } }
+    'conversation.hero.scope': { kind: 'single'; scope: 'root'; owner: { sessionId?: SessionId | undefined; hero: boolean; locked: boolean } }
     /** Optional, empty-session-only content below the Hero composer. */
     'conversation.hero.dock': { kind: 'list'; scope: 'root'; owner: HeroDockOwnerProps }
     /** Brand mark shown before the blank-session headline. */

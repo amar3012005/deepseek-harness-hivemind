@@ -114,6 +114,17 @@ describe('MenuView', () => {
     expect(status.children).toHaveLength(2)
   })
 
+  it('uses an application logo in place of the generic candidate icon', () => {
+    mount(openState({
+      groups: [{ source: 'connectors', status: 'ready', items: [{
+        name: 'Gmail', logo: 'https://logos.example/gmail.svg', icon: 'file',
+      }] }],
+      highlight: null,
+    }))
+    expect(document.querySelector('img[src="https://logos.example/gmail.svg"]')).not.toBeNull()
+    expect(screen.getByRole('option').querySelector('svg')).toBeNull()
+  })
+
   it('keeps an opted-out source title hidden while its candidates are pending', () => {
     mount(openState({
       groups: [{ source: 'reference', showGroupTitle: false, status: 'pending', items: [] }],

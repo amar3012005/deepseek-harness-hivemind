@@ -11,9 +11,14 @@ describe('HIVE-MIND connector mentions', () => {
     expect(screen.queryByLabelText('Suggested connectors')).toBeNull()
   })
 
+  it('shows app logos in hero-only connector suggestions', () => {
+    const { container } = render(createElement(ConnectorChips, { insertMention: () => {} }))
+    expect(container.querySelector('img[src="https://logos.composio.dev/api/gmail"]')).not.toBeNull()
+  })
+
   it('does not load a catalog until the user types an @ query', async () => {
     const fetchMock = vi.fn(async () => new Response(JSON.stringify({ connectors: [{
-      slug: 'gmail', name: 'Gmail', connected: true,
+      slug: 'gmail', name: 'Gmail', connected: true, logo: 'https://logos.example/gmail.svg',
     }] })))
     vi.stubGlobal('fetch', fetchMock)
     const source = createConnectorMentionSource()
@@ -26,7 +31,9 @@ describe('HIVE-MIND connector mentions', () => {
       query: 'gma', signal: new AbortController().signal,
     })
     expect(fetchMock).toHaveBeenCalledWith('/api/hivemind/connectors?q=gma', expect.objectContaining({ credentials: 'include' }))
-    expect(candidates).toMatchObject([{ name: 'Gmail', description: 'Connected app', value: 'Gmail' }])
+    expect(candidates).toMatchObject([{
+      name: 'Gmail', description: 'Connected app', value: 'Gmail', logo: 'https://logos.example/gmail.svg',
+    }])
     expect(source.onPick({ candidate: candidates[0]! })).toEqual({ text: '@Gmail ' })
   })
 })

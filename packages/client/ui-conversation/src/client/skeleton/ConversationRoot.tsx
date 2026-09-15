@@ -292,7 +292,7 @@ export function ConversationRoot({
 
   const heroWorkspaceRow = (
     <div className={css.heroWorkspaceRow}>
-      {renderSlot('conversation.hero.scope', { sessionId, locked: sessionId === undefined })}
+      {renderSlot('conversation.hero.scope', { sessionId, hero, locked: sessionId === undefined })}
       {requiresWorkspace && <WorkspaceChip
         buttonRef={pickerAnchor}
         label={chipTitle}
