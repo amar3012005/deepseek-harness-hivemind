@@ -389,6 +389,7 @@ declare module '@deepseek-ai/cordis' {
      * @mode serial
      */
     'agent/turn-stopping'(this: Scoped<Agent>, payload: { agent: Agent; turn: number; signal: AbortSignal }): Promise<void> | void
+    'agent/turn-ended'(this: Scoped<Agent>, payload: { agent: Agent; turn: number; reason: TurnEndReason; signal: AbortSignal }): Promise<void> | void
     // ---- error notifications (emit) ----
     /**
      * A step or turn errored. The machine reports a failure here even when
