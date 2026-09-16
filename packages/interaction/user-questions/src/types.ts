@@ -27,6 +27,9 @@ export type AskUserQuestionIntent = {
    * An `approve` naming no option of its own question is rejected at `ask()`.
    */
   approve: string
+} | {
+  /** A prepared HIVE memory save waiting for one destination choice. */
+  kind: 'memory-save-destination'
 }
 
 /** One question in a user-questions request. */

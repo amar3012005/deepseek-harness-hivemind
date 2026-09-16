@@ -1,4 +1,5 @@
 /** Progressive model-facing HIVE-MIND memory capability. @module @deepseek-ai/dsh-hivemind-memory */
+import { createHash } from 'node:crypto'
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { defineTool, type ToolExecution } from '@deepseek-ai/dsh-tools'
@@ -58,6 +59,17 @@ export interface MemoryProvider {
 
 export interface MemoryPluginConfig { defaultLimit: number }
 
+declare module '@deepseek-ai/dsh-session/types' {
+  interface SessionEventMap {
+    'hivemind/memory-save': {
+      operation_id: string
+      status: 'prepared' | 'approved' | 'executing' | 'completed' | 'cancelled'
+      destination?: 'personal' | 'organization' | 'project'
+      idempotency_key?: string
+    }
+  }
+}
+
 const SAVE_DESTINATIONS = {
   personal: 'Personal',
   organization: 'Organization',
@@ -75,7 +87,16 @@ async function approveSaveDestination(
   if (execution.agent === undefined) throw new TypeError('hivemind-memory: active agent required')
   const choices: Array<keyof typeof SAVE_DESTINATIONS> = ['personal', 'organization']
   if (request.project !== undefined) choices.push('project')
-  const questionId = `hivemind-memory-save-destination:${execution.callId}`
+  const operationId = saveOperationId(execution, request)
+  const questionId = `hivemind-memory-save-destination:${operationId}`
+  const prior = latestSaveEvent(execution.agent, operationId)
+  if (prior?.status === 'completed' && prior.destination !== undefined) {
+    return { ...request, scope: prior.destination }
+  }
+  if (prior?.status === 'approved' && prior.destination !== undefined) {
+    return { ...request, scope: prior.destination }
+  }
+  appendSaveEvent(execution.agent, { operation_id: operationId, status: 'prepared' })
   try {
     const userQuestions = ctx.get('userQuestions') as {
       ask(input: {
@@ -86,6 +107,7 @@ async function approveSaveDestination(
           question: string
           detail: string
           options: readonly { label: string; description: string }[]
+          intent?: { kind: 'memory-save-destination' }
         }[]
       }): Promise<{ answers: readonly { id: string; selected: readonly string[] }[] }>
     } | undefined
@@ -96,7 +118,8 @@ async function approveSaveDestination(
       questions: [{
         id: questionId,
         question: `Save “${request.title}” to HIVE-MIND?`,
-        detail: 'Choose one destination, then approve this prepared memory save.\n\n<!-- hivemind-memory-save-destination:v1 -->',
+        detail: 'Choose one destination, then approve this prepared memory save.',
+        intent: { kind: 'memory-save-destination' },
         options: choices.map(scope => ({
           label: SAVE_DESTINATIONS[scope],
           description: scope === 'project'
@@ -107,14 +130,60 @@ async function approveSaveDestination(
     })
     const selected = answer.answers.find(item => item.id === questionId)?.selected ?? []
     const scope = choices.find(candidate => selected.includes(SAVE_DESTINATIONS[candidate]))
-    return scope === undefined ? undefined : { ...request, scope }
+    if (scope === undefined) {
+      appendSaveEvent(execution.agent, { operation_id: operationId, status: 'cancelled' })
+      return undefined
+    }
+    appendSaveEvent(execution.agent, { operation_id: operationId, status: 'approved', destination: scope })
+    return { ...request, scope }
   } catch (error: unknown) {
     const code = typeof error === 'object' && error !== null && 'code' in error
       ? (error as { code?: unknown }).code
       : undefined
-    if (execution.signal.aborted || code === 'ASK_ABORTED') return undefined
+    if (execution.signal.aborted || code === 'ASK_ABORTED' || code === 'ASK_CANCELLED') {
+      appendSaveEvent(execution.agent, { operation_id: operationId, status: 'cancelled' })
+      return undefined
+    }
     throw error
   }
+}
+
+type SaveEventStatus = 'prepared' | 'approved' | 'executing' | 'completed' | 'cancelled'
+
+interface SaveEventData {
+  operation_id: string
+  status: SaveEventStatus
+  destination?: 'personal' | 'organization' | 'project'
+  idempotency_key?: string
+}
+
+export function saveOperationId(execution: ToolExecution, request: SaveRequest): string {
+  const sessionId = execution.agent?.session?.header.id || 'session-unavailable'
+  const canonical = JSON.stringify({
+    session_id: sessionId,
+    title: request.title,
+    content: request.content,
+    source_type: request.sourceType,
+    tags: [...(request.tags ?? [])].sort(),
+    project: request.project ?? null,
+    relationship: request.relationship ?? null,
+    related_to: request.relatedTo ?? null,
+  })
+  return `saveop:${createHash('sha256').update(canonical).digest('hex')}`
+}
+
+function appendSaveEvent(agent: Agent, data: SaveEventData): void {
+  agent.session.append('hivemind/memory-save', data)
+}
+
+function latestSaveEvent(agent: Agent, operationId: string): SaveEventData | undefined {
+  const events = (agent.session as unknown as { events?: readonly { type?: string; data?: SaveEventData }[] }).events
+  if (!Array.isArray(events)) return undefined
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const event = events[index]
+    if (event?.type === 'hivemind/memory-save' && event.data?.operation_id === operationId) return event.data
+  }
+  return undefined
 }
 
 function object(value: unknown, label: string): Record<string, unknown> {

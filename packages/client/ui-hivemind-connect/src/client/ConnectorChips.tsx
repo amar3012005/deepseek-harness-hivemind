@@ -1,23 +1,44 @@
+import { cachedConnectorLogos } from './ConnectorMentions.ts'
 import css from './ConnectorChips.module.css'
 
-/** Compact, release-owned suggestions. They never imply an active connection
- * and deliberately avoid loading provider metadata before the user asks. */
 const POPULAR_CONNECTORS = ['Gmail', 'Google Calendar', 'Google Drive', 'LinkedIn'] as const
 
+export interface ConnectorChipInsert {
+  source: 'connectors'
+  ref: string
+  label: string
+  clipboardText: string
+  logoUrl?: string
+}
+
 export interface ConnectorChipsProps {
-  insertMention: (app: string) => void
+  insertMention: (chip: ConnectorChipInsert) => void
   visible?: boolean
 }
 
-/** Insert a connector mention into the native composer without executing it. */
 export function ConnectorChips({ insertMention, visible = true }: ConnectorChipsProps) {
   if (!visible) return null
+  const logos = cachedConnectorLogos()
   return <div className={css.root} aria-label="Suggested connectors">
-    {POPULAR_CONNECTORS.map(app => <button
-      key={app}
-      type="button"
-      className={css.chip}
-      onClick={() => { insertMention(app) }}
-    >{app}</button>)}
+    {POPULAR_CONNECTORS.map((app) => {
+      const logo = logos[app]
+      return <button
+        key={app}
+        type="button"
+        className={css.chip}
+        onClick={() => {
+          insertMention({
+            source: 'connectors',
+            ref: app.toLowerCase().replaceAll(' ', ''),
+            label: app,
+            clipboardText: `@${app}`,
+            ...(logo === undefined ? {} : { logoUrl: logo }),
+          })
+        }}
+      >
+        {logo ? <img className={css.logo} src={logo} alt="" /> : <span className={css.fallback} aria-hidden>@</span>}
+        {app}
+      </button>
+    })}
   </div>
 }

@@ -328,6 +328,23 @@ describe('UserQuestionService', () => {
     expect(p.ask).not.toHaveBeenCalled()
   })
 
+  it('accepts a destination-only memory save intent without an approve label', async () => {
+    const ctx = new Context()
+    await ctx.plugin(UserQuestionService)
+    const p = provider('Personal')
+    registerAnswerer(ctx, p)
+    const result = await ctx.userQuestions.ask({
+      questions: [{
+        id: 'save',
+        question: 'Save this?',
+        intent: { kind: 'memory-save-destination' },
+        options: [{ label: 'Personal' }, { label: 'Organization' }],
+      }],
+    })
+    expect(result.answers).toEqual([{ id: 'save', selected: ['Personal'] }])
+    expect(p.seen[0]?.questions[0]?.intent).toEqual({ kind: 'memory-save-destination' })
+  })
+
   it('passes an intent through once its approve label names an offered option', async () => {
     const ctx = new Context()
     await ctx.plugin(UserQuestionService)

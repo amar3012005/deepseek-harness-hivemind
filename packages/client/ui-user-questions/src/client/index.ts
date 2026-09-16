@@ -28,7 +28,7 @@ import { QuestionComposer } from './QuestionComposer.tsx'
 import { en, zh, type QuestionKey } from './locales.ts'
 
 export type {
-  PendingQuestion, PlanReview, QuestionAnswer, QuestionComposerProps, QuestionWait,
+  MemorySaveDestination, PendingQuestion, PlanReview, QuestionAnswer, QuestionComposerProps, QuestionWait,
 } from './contract/slots.ts'
 export type { QuestionKey } from './locales.ts'
 
@@ -95,7 +95,7 @@ export function apply(ctx: ClientContext): void {
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-user-questions: dictionaries')
   const questionDraftStore = createQuestionDraftStore()
   const registerPendingInteraction = ctx.uiSession.registerPendingInteraction<PendingQuestion>(
-    pending => pending.kind === 'plan-review' ? 2 : 1,
+    pending => pending.kind === 'plan-review' || pending.kind === 'memory-save-destination' ? 2 : 1,
   )
   ctx.slots.inject('conversation.composer', () => ctx.slots.register(
     {

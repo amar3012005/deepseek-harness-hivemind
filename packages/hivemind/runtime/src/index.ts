@@ -29,6 +29,12 @@ import { projectHyperagentProfiles } from '@deepseek-ai/dsh-hivemind-employee-di
 declare module '@deepseek-ai/dsh-session/types' {
   interface SessionEventMap {
     'hivemind/read-scope': { scope: 'full' | 'personal' | 'organization' | 'project'; project?: string }
+    'hivemind/memory-save': {
+      operation_id: string
+      status: 'prepared' | 'approved' | 'executing' | 'completed' | 'cancelled'
+      destination?: 'personal' | 'organization' | 'project'
+      idempotency_key?: string
+    }
   }
 }
 
@@ -667,7 +673,6 @@ function saveIdempotencyKey(snapshot: ProfileSnapshot, execution: ToolExecution,
     title: request.title, content: request.content, source_type: request.sourceType,
     tags: [...(request.tags ?? [])].sort(), project: request.project ?? null,
     relationship: request.relationship ?? null, related_to: request.relatedTo ?? null,
-    scope: request.scope ?? null,
   })
   return `hive-save:${createHash('sha256').update(canonical).digest('hex')}`
 }
@@ -1032,6 +1037,21 @@ export function apply(ctx: Context, config: Config): void {
       const snapshot = await snapshotFor(agent, signal)
       const authority = await resolveAuthority(ctx, config)
       const idempotencyKey = saveIdempotencyKey(snapshot, execution, request)
+      try {
+        const existing = await hiveRequest(authority, `${SAVE_STATUS_PATH}?idempotency_key=${encodeURIComponent(idempotencyKey)}`, {
+          method: 'GET', headers: { 'x-idempotency-key': idempotencyKey },
+        }, signal, config)
+        const durable = apiRecord(existing, 'meta save status response')
+        if (durable['status'] === 'completed' && durable['receipt'] && typeof durable['receipt'] === 'object') {
+          return compactSaveReceipt({ ...(durable['receipt'] as JsonRecord), replayed: true }, idempotencyKey)
+        }
+      } catch {
+        // A missing durable row is the first-write path.
+      }
+      execution.agent?.session.append('hivemind/memory-save', {
+        operation_id: idempotencyKey, status: 'executing', idempotency_key: idempotencyKey,
+        ...(request.scope === undefined ? {} : { destination: request.scope }),
+      })
       const payload = {
         title: request.title,
         content: request.content,
@@ -1077,7 +1097,13 @@ export function apply(ctx: Context, config: Config): void {
         }
       }
       const receipt = await saveMemoryReceipt(ctx, config, execution, 'hivemind-save.json', record)
-      return compactSaveReceipt(record, idempotencyKey, receipt)
+      const compacted = compactSaveReceipt(record, idempotencyKey, receipt)
+      execution.agent?.session.append('hivemind/memory-save', {
+        operation_id: idempotencyKey, status: compacted.status === 'saved' ? 'completed' : 'executing',
+        idempotency_key: idempotencyKey,
+        ...(request.scope === undefined ? {} : { destination: request.scope }),
+      })
+      return compacted
     },
     async saveStatus(request: SaveStatusRequest, signal) {
       const authority = await resolveAuthority(ctx, config)

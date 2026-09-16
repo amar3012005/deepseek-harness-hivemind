@@ -21,6 +21,7 @@ export type SerializedReferenceChipNode = Spread<{
   ref: string
   label: string
   appearance?: ReferenceInsert['appearance']
+  logoUrl?: string
   clipboardText: string
   invalid: boolean
 }, SerializedLexicalNode>
@@ -35,6 +36,8 @@ export class ReferenceChipNode extends DecoratorNode<JSX.Element> {
   __label: string
   /** Optional domain glyph (insert-time cache). */
   __appearance: ReferenceInsert['appearance']
+  /** Optional validated HTTPS app logo. */
+  __logoUrl: string | undefined
   /** Clipboard / persistence projection, e.g. `/name` (never the model form). */
   __clipboardText: string
   /** Owner-resolution failure flag: chip renders invalid; serialization must fail. */
@@ -57,6 +60,7 @@ export class ReferenceChipNode extends DecoratorNode<JSX.Element> {
         ref: node.__ref,
         label: node.__label,
         appearance: node.__appearance,
+        ...(node.__logoUrl === undefined ? {} : { logoUrl: node.__logoUrl }),
         clipboardText: node.__clipboardText,
       },
       node.__invalid,
@@ -76,6 +80,7 @@ export class ReferenceChipNode extends DecoratorNode<JSX.Element> {
         ref: json.ref,
         label: json.label,
         appearance: json.appearance,
+        ...(json.logoUrl === undefined ? {} : { logoUrl: json.logoUrl }),
         clipboardText: json.clipboardText,
       },
       json.invalid,
@@ -93,6 +98,7 @@ export class ReferenceChipNode extends DecoratorNode<JSX.Element> {
     this.__ref = insert.ref
     this.__label = insert.label
     this.__appearance = insert.appearance
+    this.__logoUrl = insert.logoUrl
     this.__clipboardText = insert.clipboardText
     this.__invalid = invalid
   }
@@ -107,6 +113,7 @@ export class ReferenceChipNode extends DecoratorNode<JSX.Element> {
       ref: this.__ref,
       label: this.__label,
       ...(this.__appearance === undefined ? {} : { appearance: this.__appearance }),
+      ...(this.__logoUrl === undefined ? {} : { logoUrl: this.__logoUrl }),
       clipboardText: this.__clipboardText,
       invalid: this.__invalid,
     }
@@ -183,12 +190,17 @@ export class ReferenceChipNode extends DecoratorNode<JSX.Element> {
     return this.getLatest().__appearance
   }
 
+  getLogoUrl(): string | undefined {
+    return this.getLatest().__logoUrl
+  }
+
   /** React face rendered into the host element by the decorator portal. */
   override decorate(): JSX.Element {
     return (
       <ReferenceChip
         label={this.__label}
         appearance={this.__appearance}
+        logoUrl={this.__logoUrl}
         invalid={this.__invalid}
       />
     )

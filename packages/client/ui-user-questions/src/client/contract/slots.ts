@@ -95,6 +95,28 @@ export function planReviewOf(questions: readonly QuestionItem[]): PlanReview | u
   }
 }
 
+export interface MemorySaveDestination {
+  readonly id: string
+  readonly question: string
+  readonly detail?: string
+  readonly options: readonly QuestionOption[]
+}
+
+export function memorySaveDestinationOf(questions: readonly QuestionItem[]): MemorySaveDestination | undefined {
+  if (questions.length !== 1) return undefined
+  const question = questions[0] as QuestionItem
+  if (question.intent?.kind !== 'memory-save-destination') return undefined
+  if (question.multiSelect === true) return undefined
+  const options = question.options ?? []
+  if (options.length < 2) return undefined
+  return {
+    id: question.id,
+    question: question.question,
+    ...(question.detail === undefined ? {} : { detail: question.detail }),
+    options,
+  }
+}
+
 let nextQuestionKey = 0
 
 /** Create a wire-preserved user-question rejection. */
@@ -108,7 +130,7 @@ function questionError(message: string, code: 'ASK_ABORTED' | 'ASK_CANCELLED'): 
 /** One answerable Client presentation of a pending Host waterfall. */
 export class PendingQuestion {
   /** Presentation discriminator used by Session pending-interaction consumers. */
-  readonly kind: 'question' | 'plan-review'
+  readonly kind: 'question' | 'plan-review' | 'memory-save-destination'
   /** Opaque render identity and request key for the Session-scoped draft store. */
   readonly key: string
   /** The request's question list. */
@@ -138,7 +160,11 @@ export class PendingQuestion {
     nextQuestionKey += 1
     this.key = `question:${String(nextQuestionKey)}`
     this.questions = questions
-    this.kind = planReviewOf(questions) === undefined ? 'question' : 'plan-review'
+    this.kind = planReviewOf(questions) !== undefined
+      ? 'plan-review'
+      : memorySaveDestinationOf(questions) !== undefined
+        ? 'memory-save-destination'
+        : 'question'
     const completion = Promise.withResolvers<QuestionAnswer>()
     this.result = completion.promise
     this.#resolve = completion.resolve

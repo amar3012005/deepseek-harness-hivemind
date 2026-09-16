@@ -19,6 +19,16 @@ describe('ReferenceChip', () => {
     expect(container.textContent).toBe('Research notes')
   })
 
+  it('renders a validated HTTPS app logo and falls back otherwise', () => {
+    const { container, rerender } = render(
+      <ReferenceChip label="Gmail" logoUrl="https://logos.composio.dev/api/gmail" invalid={false} />,
+    )
+    expect(container.querySelector('img[src="https://logos.composio.dev/api/gmail"]')).not.toBeNull()
+    rerender(<ReferenceChip label="Unknown" logoUrl="javascript:alert(1)" invalid={false} />)
+    expect(container.querySelector('img')).toBeNull()
+    expect(container.textContent).toBe('@Unknown')
+  })
+
   it('falls back to the trigger marker without an appearance', () => {
     const { container } = render(<ReferenceChip label="commit-helper" invalid={false} />)
     expect(container.querySelector('svg')).toBeNull()

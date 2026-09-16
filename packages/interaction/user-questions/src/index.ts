@@ -115,6 +115,14 @@ export class UserQuestionService extends Service {
     for (const question of request.questions) {
       const intent = question.intent
       if (intent === undefined) continue
+      if (intent.kind === 'memory-save-destination') {
+        if (question.multiSelect === true || (question.options ?? []).length < 2) {
+          throw new UserQuestionError(
+            `question ${question.id} declares intent memory-save-destination without a single-select destination list`,
+            'BAD_INTENT')
+        }
+        continue
+      }
       if (!(question.options ?? []).some(option => option.label === intent.approve)) {
         throw new UserQuestionError(
           `question ${question.id} declares intent ${intent.kind} whose approve label `

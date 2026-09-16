@@ -7,6 +7,9 @@
 }
 
 .chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   min-height: 30px;
   padding: 5px 12px;
   border: 1px solid var(--dsw-alias-border-l3);
@@ -23,4 +26,14 @@
   border-color: var(--dsw-alias-state-business-primary);
   background: var(--dsw-alias-interactive-bg-hover);
   color: var(--dsw-alias-label-primary);
+}
+
+.logo {
+  width: 14px;
+  height: 14px;
+  object-fit: contain;
+}
+
+.fallback {
+  font-weight: 600;
 }

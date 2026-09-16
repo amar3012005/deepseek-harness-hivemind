@@ -17,6 +17,9 @@ export const zh = {
   'plan.approve': '确认执行',
   'plan.decline': '拒绝',
   'plan.discuss': '去聊天里说',
+  'save.header': '保存到 HIVE-MIND',
+  'save.submit': '提交',
+  'save.decline': '取消',
 } satisfies Record<string, string>
 
 /** The question namespace key union. */
@@ -39,4 +42,7 @@ export const en = {
   'plan.approve': 'Approve',
   'plan.decline': 'Refuse',
   'plan.discuss': 'Chat about it',
+  'save.header': 'Save to HIVE-MIND',
+  'save.submit': 'Submit',
+  'save.decline': 'Cancel',
 } satisfies Record<QuestionKey, string>

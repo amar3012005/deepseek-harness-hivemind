@@ -28,6 +28,14 @@
   flex: none;
 }
 
+.logo {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  object-fit: contain;
+  border-radius: 3px;
+}
+
 .label {
   overflow: hidden;
   text-overflow: ellipsis;

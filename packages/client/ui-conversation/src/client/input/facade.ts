@@ -808,6 +808,7 @@ export class SessionInputShell implements SessionInput {
             ref: occurrence.ref,
             label: occurrence.label,
             ...(occurrence.appearance === undefined ? {} : { appearance: occurrence.appearance }),
+            ...(occurrence.logoUrl === undefined ? {} : { logoUrl: occurrence.logoUrl }),
             clipboardText: occurrence.clipboardText,
           }, occurrence.invalid === true))
           cursor = occurrence.offset + occurrence.length

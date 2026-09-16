@@ -164,10 +164,10 @@ export function apply(ctx: ClientContext): void {
         if (conversation === undefined) throw new Error('HIVE-MIND connector chips: conversation service unavailable')
         const input = conversation.input.for(scope)
         return {
-          insertMention: (app) => {
-            const draft = input.state.getSnapshot().draft
-            const prefix = draft.trimEnd() === '' ? '' : `${draft.endsWith(' ') ? '' : ' '}`
-            input.setDraft(`${draft}${prefix}@${app} `)
+          insertMention: (chip) => {
+            const snapshot = input.state.getSnapshot()
+            const end = snapshot.draft.length
+            input.insertReference(chip, { start: end, end, draftRev: snapshot.draftRev })
           },
         }
       },

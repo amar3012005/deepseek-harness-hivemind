@@ -62,6 +62,7 @@ export interface ReferenceInsert {
   readonly ref: string
   readonly label: string
   readonly appearance?: 'session' | 'file' | 'folder'
+  readonly logoUrl?: string
   readonly clipboardText: string
 }
 
@@ -319,6 +320,8 @@ export interface Occurrence {
   readonly label: string
   /** Optional domain glyph (insert-time cache). */
   readonly appearance?: ReferenceInsert['appearance']
+  /** Optional validated HTTPS app logo serialized with the chip. */
+  readonly logoUrl?: string
   /** Clipboard / persistence projection, e.g. `/name` (insert-time cache, never the model form). */
   readonly clipboardText: string
   /** Owner-resolution failure flag: the chip renders the failure treatment. */
