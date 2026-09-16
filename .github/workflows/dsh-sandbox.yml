@@ -44,6 +44,7 @@ jobs:
           exit 1
       - name: Webhook fixture
         run: |
+          set -o pipefail
           curl -fsS -X POST http://127.0.0.1:18080/run \
             -H 'content-type: application/json' \
             -d "{\"prompt\":\"${{ github.event.inputs.prompt || 'branding fixture' }}\"}" | tee /tmp/dsh-sandbox-run.json
