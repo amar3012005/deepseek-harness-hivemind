@@ -9,7 +9,7 @@
  * suite: the derived writable root is resolved in the constructor.
  */
 
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
@@ -165,7 +165,76 @@ describe('the shipped preset root', () => {
       includeDefaultRoots: false,
       watch: false,
     })
+    expect(filesystem.config).toHaveProperty('customSkillDirs')
     expect(findEntry(hivemind, 'tool-skill')?.disabled).not.toBe(true)
+    const persona = findEntry(hivemind, 'persona')
+    if (typeof persona?.config !== 'object' || persona.config === null) {
+      throw new TypeError('hivemind preset must configure its persona')
+    }
+    expect(persona.config).not.toHaveProperty('complete')
+  })
+
+  it('points both HIVE presets at the same curated company skill directory', async () => {
+    const hivemind = await readFile(join(SHIPPED_PRESET_ROOT, 'hivemind/agent.cordis.yml'), 'utf8')
+    const hivemindChat = await readFile(join(SHIPPED_PRESET_ROOT, 'hivemind-chat/agent.cordis.yml'), 'utf8')
+    expect(hivemind).toContain("fileURLToPath(new URL('skills/', baseUrl))")
+    expect(hivemindChat).toContain("fileURLToPath(new URL('../hivemind/skills/', baseUrl))")
+  })
+
+  it('ships a 1:1 playbook catalog plus shared company skills, not a second taxonomy', async () => {
+    const root = join(SHIPPED_PRESET_ROOT, 'hivemind/skills')
+    const entries = (await readdir(root, { withFileTypes: true }))
+      .filter(entry => entry.isDirectory())
+      .map(entry => entry.name)
+      .sort()
+
+    expect(entries).toEqual([
+      'composio-connected-workflows',
+      'output-contract',
+      'playbook-branding',
+      'playbook-campaign',
+      'playbook-design',
+      'playbook-finance',
+      'playbook-fundraising',
+      'playbook-marketing',
+      'playbook-outreach',
+      'playbook-product',
+      'playbook-research',
+      'playbook-seo',
+      'research-web',
+      'visual-artifact',
+    ])
+
+    const playbooks: Record<string, string> = {
+      'playbook-branding': 'branding.artifact.v1',
+      'playbook-campaign': 'campaign.contract.v1',
+      'playbook-design': 'design.artifact.v1',
+      'playbook-finance': 'legal_finance.review.v1',
+      'playbook-fundraising': 'fundraising.artifact.v1',
+      'playbook-marketing': 'marketing.artifact.v1',
+      'playbook-outreach': 'outreach.prepare.v1',
+      'playbook-product': 'product.artifact.v1',
+      'playbook-research': 'research.decision.v1',
+      'playbook-seo': 'seo.audit.v1',
+    }
+
+    for (const name of entries) {
+      const body = await readFile(join(root, name, 'SKILL.md'), 'utf8')
+      expect(body.startsWith('---\n'), name).toBe(true)
+      expect(body, name).toContain(`name: ${name}`)
+      expect(body, name).toMatch(/^description: \S/m)
+      const profile = playbooks[name]
+      if (profile !== undefined) expect(body, name).toContain(profile)
+    }
+
+    const outputContract = await readFile(join(root, 'output-contract/SKILL.md'), 'utf8')
+    expect(outputContract).toContain('Visual is opt-in')
+    expect(outputContract).toContain('Evidence is independent of visual')
+    expect(outputContract).toContain('Render gate only for artifact plus required visual')
+    expect(outputContract).toContain('Never withhold a textual draft')
+    expect(outputContract).toContain('Profile none is text')
+    expect(outputContract).toContain('Unverified draft — gaps:')
+    expect(outputContract).toContain('general.answer.v1')
   })
 
   it('keeps HIVE chat additive to native prompt guidance and renderer-safe', async () => {
