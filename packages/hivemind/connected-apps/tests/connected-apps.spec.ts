@@ -337,6 +337,7 @@ describe('progressive Composio bridge', () => {
         serviceApiBase: 'http://127.0.0.1:3000', serviceSecretEnv: 'TEST_CONNECTED_RECEIPT_SECRET', withSpill: true,
       })
       const agent = { session: { header: { id: 'session-12345678' }, snapshotEvents: () => [], append: vi.fn() } }
+      await app.listeners.get('agent/pre-step')?.({ agent, turn: 1 } as never, (async () => ({ kind: 'accept', messages: [] })) as never)
       await app.tool().execute({
         action: 'search', queries: [{ use_case: 'Example: read one value.', result_fields: ['value'] }],
         session: { generate_id: true },
@@ -344,6 +345,9 @@ describe('progressive Composio bridge', () => {
       const completed = await app.tool().execute({
         action: 'execute', tool_slug: 'EXAMPLE_READ', arguments: { query: 'value' },
       }, { signal: AbortSignal.abort(), agent, name: 'hivemind_connected_task', callId: 'execute-call' } as never)
+      await app.listeners.get('agent/turn-ended')?.({
+        agent, turn: 1, reason: { kind: 'completed' }, signal: new AbortController().signal,
+      } as never)
 
       expect(app.spills).toEqual([])
       expect(requests).toHaveLength(3)
@@ -354,7 +358,7 @@ describe('progressive Composio bridge', () => {
         session_id: 'session-12345678', call_id: 'execute-call', tool: 'EXAMPLE_READ',
         allowed_fields: ['value'], approved_projection: { value: 'selected evidence' },
       })
-      expect(requests[1]?.body).toMatchObject({ kind: 'composio_execution', tool: 'EXAMPLE_READ' })
+      expect(requests[1]?.body).toMatchObject({ kind: 'composio_execution', turn_id: 1, tool: 'EXAMPLE_READ' })
       expect(JSON.stringify(requests[2]?.body.approved_projection)).not.toContain('must stay private')
       expect(completed).toMatchObject({ source_receipt: { receipt_id: '62f448d1-8c82-4e41-a44d-f380384e0b49', bytes: 123 } })
     } finally {

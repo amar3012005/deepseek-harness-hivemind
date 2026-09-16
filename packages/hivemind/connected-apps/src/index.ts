@@ -1942,7 +1942,7 @@ export function apply(ctx: Context, config: Config = {}): void {
   }))
   ctx.effect(() => ctx.on('agent/turn-ended', async ({ agent, turn, signal, reason }) => {
     const state = turns.get(agent)
-    if (reason.kind !== 'completed' || state === undefined || state.turn !== turn || signal.aborted) return
+    if (reason.kind !== 'completed' || state === undefined || state.turn !== turn || state.billableCalls > 0 || signal.aborted) return
     await admitHarnessCredit(ctx, config, { signal, callId: `turn-${turn}` }, {
       sessionId: String(agent.session.header.id), turnId: turn, kind: 'no_tool_turn',
     })
