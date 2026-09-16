@@ -1,0 +1,37 @@
+# Isolated lab. Never include this file from the live HIVEMIND compose project.
+# Start with: docker compose -p dsh-sandbox -f deploy/dsh-sandbox/docker-compose.sandbox.yml up -d
+# Recreate only hivemind-dsh-sandbox. Never --remove-orphans. Never share networks/volumes with hivemind.
+name: dsh-sandbox
+
+services:
+  hivemind-dsh-sandbox:
+    image: hivemind/dsh-sandbox:${DSH_SANDBOX_TAG:-local}
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: hivemind-dsh-sandbox
+    restart: unless-stopped
+    environment:
+      DSH_SANDBOX_SHA: ${DSH_SANDBOX_SHA:-unknown}
+      DSH_SANDBOX_MODEL_KEY: ${DSH_SANDBOX_MODEL_KEY:-}
+      PORT: "8080"
+    ports:
+      - "127.0.0.1:18080:8080"
+    volumes:
+      - dsh_sandbox_rooms:/sandbox-rooms
+    networks:
+      - dsh_sandbox_net
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8080/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+
+networks:
+  dsh_sandbox_net:
+    name: dsh_sandbox_net
+    driver: bridge
+
+volumes:
+  dsh_sandbox_rooms:
+    name: dsh_sandbox_rooms
