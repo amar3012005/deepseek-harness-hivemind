@@ -52,7 +52,29 @@ function state(overrides: Partial<ModelDirectoryState> = {}): ModelDirectoryStat
 
 afterEach(cleanup)
 
+afterEach(() => {
+  delete document.documentElement.dataset.dshMode
+})
+
 describe('ModelSelect reasoning effort', () => {
+  it('keeps the resolved provider private in HIVE-MIND mode', () => {
+    document.documentElement.dataset.dshMode = 'hivemind-chat'
+    const load = vi.fn()
+    render(<ModelSelect
+      locked={false}
+      available
+      directory={createSnapshotStore(state())}
+      load={load}
+      select={vi.fn().mockResolvedValue(true)}
+      t={t}
+    />)
+
+    expect(screen.getByLabelText('Model: Default').textContent).toBe('Default')
+    expect(screen.queryByRole('button')).toBeNull()
+    expect(screen.queryByText('DeepSeek-V4-Flash')).toBeNull()
+    expect(load).not.toHaveBeenCalled()
+  })
+
   it('renders effort names without descriptions and submits the effort as part of the session selection', async () => {
     const directory = createSnapshotStore<ModelDirectoryState>(state())
     const select = vi.fn(async (selection: ModelSelection) => {

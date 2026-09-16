@@ -8,7 +8,7 @@
   white-space: nowrap;
 }
 
-.icon { font-size: 17px; line-height: 1; }
+.icon { flex: 0 0 auto; }
 .brand, .agent { color: var(--dsh-color-text-primary, #3f4650); font-weight: 500; }
 .select, .project {
   border: 0;

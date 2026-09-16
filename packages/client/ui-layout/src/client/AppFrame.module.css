@@ -41,14 +41,9 @@
   background: transparent;
 }
 
-/* Trajectory deliberately owns the complete canvas. Its native composer
-   overlay marker is the only reliable shell-visible signal, so temporarily
-   hide the projected session rail rather than painting it across the ledger.
-   The workspace plugin and its rows remain registered and return unchanged
-   when Chat is selected again. */
-.frame:has([data-conversation-composer-overlay]) .sessionRailCol {
-  display: none;
-}
+/* Trajectory owns its ledger, not the session shell. Keep the same HIVE
+   session rail (including its native Chat/Trajectory tabs) visible while the
+   view changes so switching views never looks like a different application. */
 
 /* At compact host widths there is no guaranteed whitespace beside the native
    transcript. Preserve the full conversation width and avoid a floating rail

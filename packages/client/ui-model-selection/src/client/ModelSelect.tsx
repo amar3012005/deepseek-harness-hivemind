@@ -49,6 +49,11 @@ export function ModelSelect(
   { locked, available, directory, load, select, t }:
   ModelSelectInjected & { locked: boolean } & PropsLocale<'model'>,
 ) {
+  // HIVE-MIND owns the product-facing default. The selected provider and
+  // reasoning configuration remain session-owned, but neither provider nor
+  // model catalog belongs in the company-brain composer UI.
+  const hivemindMode = typeof document !== 'undefined'
+    && document.documentElement.dataset.dshMode === 'hivemind-chat'
   const state = useSyncExternalStore(
     fn => directory.subscribe(fn),
     () => directory.getSnapshot(),
@@ -158,6 +163,10 @@ export function ModelSelect(
   /* jscpd:ignore-end */
 
   if (!available) return null
+
+  if (hivemindMode) {
+    return <span className={css.defaultLabel} aria-label="Model: Default">Default</span>
+  }
 
   const show = (): void => {
     setPane('root')

@@ -3,6 +3,19 @@
   min-width: 0;
 }
 
+/* HIVE-MIND deliberately presents one product default. Runtime selection and
+   effort policy remain configured by the resolved profile, not by this label. */
+.defaultLabel {
+  display: inline-flex;
+  align-items: center;
+  height: 28px;
+  padding: 0 8px;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 20px;
+}
+
 /* Figma 313:14108 ToggleButton: 13/20 medium secondary label, 4px gap,
    12px caption chevron; 28px chip height matches the sibling Plan /
    Read-only selects in the same tool row. */

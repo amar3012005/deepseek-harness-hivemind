@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { IconFolderClose16 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import css from './ScopeSelect.module.css'
 
@@ -51,7 +52,7 @@ export function ScopeSelect({ sessionId, locked = false, initialScope, initialPr
   }
 
   return <label className={css.root}>
-    <span className={css.icon} aria-hidden>▱</span>
+    <IconFolderClose16 className={css.icon} aria-hidden />
     <select
       className={css.select}
       aria-label="HIVE-MIND read scope"
