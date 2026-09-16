@@ -50,6 +50,20 @@ type Phase =
 
 type StepEndReason = Extract<TurnEndReason, { kind: 'completed' | 'max-tokens' }>
 
+function terminalFailure(error: unknown): Extract<TurnEndReason, { kind: 'error' }>['error'] {
+  if (error instanceof LlmError) return error.failure
+  // Plugins can expose a stable, non-sensitive failure category without being
+  // misclassified as an LLM/provider error.  This is deliberately bounded so
+  // arbitrary thrown values cannot become durable protocol vocabulary.
+  const code = typeof error === 'object' && error !== null
+    ? (error as { code?: unknown }).code
+    : undefined
+  if (typeof code === 'string' && /^[A-Za-z0-9_.-]{1,64}$/.test(code)) {
+    return { message: errorChain(error), code }
+  }
+  return { message: errorChain(error), code: 'UNKNOWN' }
+}
+
 type PreparedStep =
   | { kind: 'reject' }
   | {
@@ -324,13 +338,11 @@ export class ReactLoopAgent implements Agent {
         turnEnds = { kind: 'aborted', reason: signal.reason as AgentCancelCause }
         throw error
       }
-      // Every failure is structured: an `LlmError` keeps its facts, anything
-      // else flattens to `errorChain` text under the `UNKNOWN` code.
+      // Provider failures and bounded plugin failure categories retain their
+      // typed code; all other values stay safely classified as UNKNOWN.
       turnEnds = {
         kind: 'error',
-        error: error instanceof LlmError
-          ? error.failure
-          : { message: errorChain(error), code: 'UNKNOWN' },
+        error: terminalFailure(error),
       }
       this.throwError(error)
     } finally {

@@ -244,7 +244,11 @@ async function admitHarnessCredit(
     signal: execution.signal,
   })
   const body = await response.json().catch(() => ({})) as Record<string, unknown>
-  if (response.status === 402 || body['code'] === 'credits_exhausted' || body['code'] === 'plan_limit_exceeded') throw new Error('HIVE-MIND credits are exhausted for this turn')
+  if (response.status === 402 || body['code'] === 'credits_exhausted' || body['code'] === 'plan_limit_exceeded') {
+    const error = new Error('HIVE-MIND credits are exhausted for this turn') as Error & { code: string }
+    error.code = 'plan_limit_exceeded'
+    throw error
+  }
   if (!response.ok || body['admitted'] !== true) throw new Error(`Harness credit admission failed: ${typeof body['error'] === 'string' ? body['error'] : response.status}`)
 }
 

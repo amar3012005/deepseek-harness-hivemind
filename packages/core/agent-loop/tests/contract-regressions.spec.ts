@@ -373,6 +373,23 @@ describe('plugin exceptions are contained', () => {
     expect(agent.status).toBe('idle')
   })
 
+  it('preserves a bounded plugin failure code in the durable terminal reason', async () => {
+    const adapter = new MockAdapter([textResponse('unused')])
+    const ctx = await harness(adapter)
+    const agent = await ctx.agentLoop.create(SessionId('typed-plugin-failure'), { provider: 'mock', model: 'mock' })
+    ctx.on('agent/turn-stopping', () => {
+      const error = new Error('plan limit reached') as Error & { code: string }
+      error.code = 'plan_limit_exceeded'
+      throw error
+    })
+
+    send(agent, 'first')
+    await waitForIdle(ctx, agent)
+    expect(agent.session.snapshotEvents().findLast(event => event.type === 'turn/end')).toMatchObject({
+      data: { reason: { kind: 'error', error: { message: 'plan limit reached', code: 'plan_limit_exceeded' } } },
+    })
+  })
+
 })
 
 describe('disposal leaves the two-state status contract balanced', () => {

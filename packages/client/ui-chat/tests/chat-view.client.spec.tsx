@@ -1286,6 +1286,23 @@ describe('ChatView', () => {
     ])
   })
 
+  it('forwards a typed plan limit to the embedding host instead of rendering a turn error', async () => {
+    const received = vi.fn()
+    window.addEventListener('dsh:turn-error', received)
+    try {
+      const h = makeHarness({ nodes: [user(1, 'try'), turnError(2, 'plan_limit_exceeded')] })
+      const view = render(<h.ChatView {...h.props} />)
+      await waitFor(() => {
+        expect(received).toHaveBeenCalledWith(expect.objectContaining({
+          detail: { code: 'plan_limit_exceeded', message: 'API key is invalid' },
+        }))
+      })
+      expect(view.queryByText('API key is invalid')).toBeNull()
+    } finally {
+      window.removeEventListener('dsh:turn-error', received)
+    }
+  })
+
   it('renders the max-tokens notice with localized guidance, distinct from turn errors', () => {
     const h = makeHarness({ nodes: [user(1, 'try'), assistant(2, 'truncated'), turnMaxTokens(3)] })
     const view = render(<h.ChatView {...h.props} />)

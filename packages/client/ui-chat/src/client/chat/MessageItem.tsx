@@ -362,7 +362,23 @@ export const RetryNodeView = memo(function RetryNodeView({ node, t }: ChatNodeVi
 
 /** Terminal turn-error keyed Chat renderer. */
 export const TurnErrorNodeView = memo(function TurnErrorNodeView({ node, t }: ChatNodeViewProps<'turn-error'>) {
-  return <TurnErrorItem node={node.data} t={t} />
+  const data = node.data
+  useEffect(() => {
+    if (data.code !== 'plan_limit_exceeded' || typeof window === 'undefined') return
+    // Child effects run before effects installed by an embedding host. Defer
+    // one task so the host shell has attached its global upgrade listener on
+    // a cold session replay as well as during a live turn.
+    const timeout = window.setTimeout(() => {
+      window.dispatchEvent(new CustomEvent('dsh:turn-error', {
+        detail: { code: data.code, message: data.message },
+      }))
+    }, 0)
+    return () => window.clearTimeout(timeout)
+  }, [data.code, data.message, data.seq])
+  // The embedding host owns the common upgrade dialog. Avoid rendering a
+  // second generic failure row behind that dialog for a plan-limit outcome.
+  if (data.code === 'plan_limit_exceeded') return null
+  return <TurnErrorItem node={data} t={t} />
 })
 
 /** Max-tokens turn-end notice keyed Chat renderer. */
