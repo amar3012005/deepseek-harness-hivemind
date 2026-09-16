@@ -231,7 +231,7 @@ async function admitHarnessCredit(
   ctx: Context,
   config: Config,
   execution: Pick<ToolExecution, 'signal'> & { readonly callId: string },
-  input: { readonly sessionId: string; readonly turnId: number; readonly kind: 'composio_execution' | 'no_tool_turn'; readonly tool?: string },
+  input: { readonly sessionId: string; readonly turnId: number; readonly kind: 'composio_execution' | 'no_tool_turn' | 'turn_admission'; readonly tool?: string },
 ): Promise<void> {
   const service = await scopedServiceToken(ctx, config, execution)
   if (service === undefined) return
@@ -244,7 +244,7 @@ async function admitHarnessCredit(
     signal: execution.signal,
   })
   const body = await response.json().catch(() => ({})) as Record<string, unknown>
-  if (response.status === 402 || body['code'] === 'credits_exhausted') throw new Error('HIVE-MIND credits are exhausted for this tool call')
+  if (response.status === 402 || body['code'] === 'credits_exhausted' || body['code'] === 'plan_limit_exceeded') throw new Error('HIVE-MIND credits are exhausted for this turn')
   if (!response.ok || body['admitted'] !== true) throw new Error(`Harness credit admission failed: ${typeof body['error'] === 'string' ? body['error'] : response.status}`)
 }
 
@@ -1888,7 +1888,7 @@ export function apply(ctx: Context, config: Config = {}): void {
     },
   })))
 
-  ctx.effect(() => ctx.on('agent/pre-step', async ({ agent, turn }, next) => {
+  ctx.effect(() => ctx.on('agent/pre-step', async ({ agent, turn, step, messages, signal }, next) => {
     if (turns.get(agent)?.turn !== turn) {
       turns.set(agent, {
         turn,
@@ -1900,6 +1900,14 @@ export function apply(ctx: Context, config: Config = {}): void {
     const decision = await next()
     // Some test and compatibility middleware terminates the chain without a decision.
     if (decision === undefined || decision.kind === 'reject') return decision
+    // Admit a user-originated turn before its first provider request. This is
+    // a check, not a debit: terminal settlement below still owns exactly-once
+    // charging after it knows whether the turn ran a connected operation.
+    if (step === 1 && messages.length > 0) {
+      await admitHarnessCredit(ctx, config, { signal, callId: `turn-${turn}-admission` }, {
+        sessionId: String(agent.session.header.id), turnId: turn, kind: 'turn_admission',
+      })
+    }
     const unfinished = unfinishedWorkflow(agent.session.snapshotEvents(), turn)
     return unfinished === undefined
       ? decision

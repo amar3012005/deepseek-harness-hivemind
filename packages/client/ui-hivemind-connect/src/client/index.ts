@@ -21,7 +21,6 @@ import type {} from '@deepseek-ai/dsh-client-ui-tool/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { createElement } from 'react'
 import { ScopeSelect, type HivemindReadScope } from './ScopeSelect.tsx'
-import { DefaultModelLabel } from './DefaultModelLabel.tsx'
 import { ConnectorChips, type ConnectorChipsProps } from './ConnectorChips.tsx'
 import { createConnectorMentionSource } from './ConnectorMentions.ts'
 
@@ -151,10 +150,6 @@ export function apply(ctx: ClientContext): void {
   }, ({ sessionId, locked }: { sessionId?: SessionId | undefined; locked: boolean }) => {
     return sessionId === undefined ? null : renderScopeSelect(sessionId, locked)
   }))
-  ctx.slots.inject('conversation.input.model', () => ctx.slots.register({
-    name: 'conversation.input.model',
-    locale: NS,
-  }, DefaultModelLabel))
   ctx.inject(['conversation'], () => {
     ctx.slots.inject('conversation.hero.dock', () => ctx.slots.register({
       name: 'conversation.hero.dock',
