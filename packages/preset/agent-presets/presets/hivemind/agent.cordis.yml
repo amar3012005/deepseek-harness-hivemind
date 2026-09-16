@@ -124,15 +124,19 @@
 # The skill registry lives in the host composition and is layered per scope.
 # HIVE-MIND deliberately does not scan the user's or project's general-purpose
 # skill roots. Those roots contain the broad development catalog and would add
-# every summary to the first model request, even for a greeting. The native
-# `skill` loader remains mounted: a future HIVE-specific provider can register
-# a small, curated catalog without changing the Harness tool or session model.
+# every summary to the first model request, even for a greeting. This preset
+# mounts only the curated company catalog beside this composition
+# (`presets/hivemind/skills/`). `hivemind-chat` reads the same directory.
+# The native `skill` loader stays mounted; `hivemind_capabilities` still
+# withholds the catalog until the model asks for a playbook.
 - id: skill-filesystem
   name: '@deepseek-ai/dsh-skill-filesystem'
   config:
     providerName: hivemind-filesystem
     includeDefaultRoots: false
     watch: false
+    customSkillDirs:
+      - !!js "process.getBuiltinModule('node:url').fileURLToPath(new URL('skills/', baseUrl))"
 
 - id: tool-skill
   name: '@deepseek-ai/dsh-tool-skill'
