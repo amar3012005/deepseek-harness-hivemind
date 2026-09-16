@@ -1,0 +1,54 @@
+name: dsh-sandbox
+
+on:
+  workflow_dispatch:
+    inputs:
+      prompt:
+        description: Branding fixture prompt
+        required: false
+        default: branding fixture
+  push:
+    branches: [grok/dsh-sandbox-lab]
+    paths:
+      - deploy/dsh-sandbox/**
+      - .github/workflows/dsh-sandbox.yml
+
+jobs:
+  sandbox:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build isolated sandbox image
+        run: |
+          SHORT=$(echo "${GITHUB_SHA}" | cut -c1-12)
+          docker build -t "hivemind/dsh-sandbox:sha-${SHORT}" -f deploy/dsh-sandbox/Dockerfile deploy/dsh-sandbox
+      - name: Recreate only hivemind-dsh-sandbox
+        env:
+          DSH_SANDBOX_MODEL_KEY: ${{ secrets.DSH_SANDBOX_MODEL_KEY }}
+        run: |
+          SHORT=$(echo "${GITHUB_SHA}" | cut -c1-12)
+          docker rm -f hivemind-dsh-sandbox >/dev/null 2>&1 || true
+          docker run -d --name hivemind-dsh-sandbox --restart=no \
+            -p 127.0.0.1:18080:8080 \
+            -e DSH_SANDBOX_SHA="${GITHUB_SHA}" \
+            -e DSH_SANDBOX_MODEL_KEY="${DSH_SANDBOX_MODEL_KEY}" \
+            "hivemind/dsh-sandbox:sha-${SHORT}"
+      - name: Health
+        run: |
+          for i in $(seq 1 20); do
+            if curl -fsS http://127.0.0.1:18080/health; then exit 0; fi
+            sleep 1
+          done
+          exit 1
+      - name: Webhook fixture
+        run: |
+          curl -fsS -X POST http://127.0.0.1:18080/run \
+            -H 'content-type: application/json' \
+            -d "{\"prompt\":\"${{ github.event.inputs.prompt || 'branding fixture' }}\"}" | tee /tmp/dsh-sandbox-run.json
+      - name: Upload observe log
+        uses: actions/upload-artifact@v4
+        with:
+          name: dsh-sandbox-observe
+          path: /tmp/dsh-sandbox-run.json
