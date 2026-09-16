@@ -1069,7 +1069,13 @@ describe('exit_plan_mode', () => {
     expect(question?.intent).toEqual({ kind: 'plan-review', approve: 'Approve' })
     // The named label is one this same question offers, so a UI honouring the
     // intent answers a choice this tool accepts.
-    expect(question?.options?.map(option => option.label)).toContain(question?.intent?.approve)
+    // Other question intents (for example HIVE's save-destination chooser)
+    // deliberately do not carry a binary approval label. This assertion is
+    // specific to the plan-review contract above.
+    expect(question?.intent?.kind).toBe('plan-review')
+    if (question?.intent?.kind === 'plan-review') {
+      expect(question.options?.map(option => option.label)).toContain(question.intent.approve)
+    }
   })
 
   it('reads a dismissed review as the user taking the turn back, not as a failure', async () => {
