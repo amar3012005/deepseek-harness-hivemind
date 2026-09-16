@@ -65,7 +65,10 @@ export function cachedConnectorLogos(): Record<string, string> {
 
 export async function loadConnectorCatalog(signal?: AbortSignal): Promise<readonly Connector[]> {
   if (Date.now() - catalogCache.at < 60_000 && catalogCache.rows.length > 0) return catalogCache.rows
-  const response = await fetch('/api/hivemind/connectors?q=', { credentials: 'include', signal })
+  const response = await fetch('/api/hivemind/connectors?q=', {
+    credentials: 'include',
+    ...(signal === undefined ? {} : { signal }),
+  })
   if (!response.ok) return catalogCache.rows
   const rows = connectorRows(await response.json())
   catalogCache = { at: Date.now(), rows }
@@ -80,7 +83,10 @@ export function createConnectorMentionSource(): InputTriggerSource {
     async candidates(_session, { query, signal }) {
       if (query.trim() === '') return []
       try {
-        const response = await fetch(`/api/hivemind/connectors?q=${encodeURIComponent(query)}`, { credentials: 'include', signal })
+        const response = await fetch(`/api/hivemind/connectors?q=${encodeURIComponent(query)}`, {
+          credentials: 'include',
+          ...(signal === undefined ? {} : { signal }),
+        })
         if (!response.ok || signal.aborted) return []
         const rows = connectorRows(await response.json())
         catalogCache = { at: Date.now(), rows: [...catalogCache.rows.filter(item => !rows.some(row => row.slug === item.slug)), ...rows] }
