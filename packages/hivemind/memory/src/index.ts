@@ -129,7 +129,9 @@ async function approveSaveDestination(
       }],
     })
     const selected = answer.answers.find(item => item.id === questionId)?.selected ?? []
-    const scope = choices.find(candidate => selected.includes(SAVE_DESTINATIONS[candidate]))
+    const normalized = selected.map(value => String(value).trim().toLowerCase())
+    const scope = choices.find(candidate => normalized.includes(candidate)
+      || normalized.includes(SAVE_DESTINATIONS[candidate].toLowerCase()))
     if (scope === undefined) {
       appendSaveEvent(execution.agent, { operation_id: operationId, status: 'cancelled' })
       return undefined
