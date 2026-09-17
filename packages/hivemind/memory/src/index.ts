@@ -177,8 +177,11 @@ function appendSaveEvent(agent: Agent, data: SaveEventData): void {
 }
 
 function latestSaveEvent(agent: Agent, operationId: string): SaveEventData | undefined {
-  const events = (agent.session as unknown as { events?: readonly { type?: string; data?: SaveEventData }[] }).events
-  if (!Array.isArray(events)) return undefined
+  // Session keeps its authoritative event log behind snapshotEvents(); the
+  // public Session object does not expose an `events` field. Reading that
+  // private-looking field caused resumed approvals to appear pending and the
+  // destination card to be shown repeatedly.
+  const events = agent.session.snapshotEvents() as readonly { type?: string; data?: SaveEventData }[]
   for (let index = events.length - 1; index >= 0; index -= 1) {
     const event = events[index]
     if (event?.type === 'hivemind/memory-save' && event.data?.operation_id === operationId) return event.data
