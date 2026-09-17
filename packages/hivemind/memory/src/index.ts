@@ -61,6 +61,7 @@ export interface MemoryPluginConfig { defaultLimit: number }
 
 declare module '@deepseek-ai/dsh-session/types' {
   interface SessionEventMap {
+    /** Compact receipt for one authenticated HIVE-MIND memory write. Tenant identifiers stay off this log. */
     'hivemind/memory-save': {
       operation_id: string
       status: 'prepared' | 'approved' | 'executing' | 'completed' | 'cancelled'

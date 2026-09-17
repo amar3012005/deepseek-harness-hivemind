@@ -110,6 +110,10 @@
         historyTurns: 3
         historyMaxChars: 3000
         webApprovalRequired: true
+        # Production HIVE chat keeps Standard's native continuation. Company
+        # facts stay available through hivemind_meta; this preset does not
+        # replace prior steps with a HIVE profile projection.
+        modelContextProjection: false
     - id: hivemind-connected-apps
       name: '@deepseek-ai/dsh-hivemind-connected-apps'
       config:

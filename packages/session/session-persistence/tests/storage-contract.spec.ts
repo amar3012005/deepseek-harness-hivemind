@@ -138,6 +138,19 @@ describe('validateStoredEvents', () => {
     expect((refusal as SessionFormatUnsupportedError).location).toBe(LOCATION)
   })
 
+  it('accepts a durable hivemind/memory-save receipt without an ignorable marker', () => {
+    const m = meta('memory-save')
+    const events = [
+      {
+        type: 'hivemind/memory-save',
+        seq: 0,
+        time: 1,
+        data: { operation_id: 'op-1', status: 'completed', idempotency_key: 'op-1' },
+      },
+    ] as unknown as SessionEvent[]
+    expect(validateStoredEvents(m, events)).toBe(events)
+  })
+
   it('retains an unknown event type its writer marked ignorable', () => {
     const m = meta('ignorable-unknown')
     const events = [

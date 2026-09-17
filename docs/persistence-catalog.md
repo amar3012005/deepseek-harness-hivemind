@@ -479,7 +479,34 @@ Source: [`packages/goal/goal/src/domain.ts:66`](../packages/goal/goal/src/domain
 'hivemind/composio-session': ComposioRouterSessionEventData
 ```
 
-Source: [`packages/hivemind/connected-apps/src/index.ts:30`](../packages/hivemind/connected-apps/src/index.ts)
+Source: [`packages/hivemind/connected-apps/src/index.ts:33`](../packages/hivemind/connected-apps/src/index.ts)
+
+<a id="hivemindmemory-save--log-only"></a>
+
+#### `hivemind/memory-save` — log-only
+
+```ts persistence-catalog
+/** Compact receipt for one authenticated HIVE-MIND memory write. Tenant identifiers stay off this log. */
+'hivemind/memory-save': {
+  operation_id: string
+  status: 'prepared' | 'approved' | 'executing' | 'completed' | 'cancelled'
+  destination?: 'personal' | 'organization' | 'project'
+  idempotency_key?: string
+}
+```
+
+Source: [`packages/hivemind/memory/src/index.ts:65`](../packages/hivemind/memory/src/index.ts)
+
+<a id="hivemindread-scope--log-only"></a>
+
+#### `hivemind/read-scope` — log-only
+
+```ts persistence-catalog
+/** Records the session's current HIVE memory read lens: full, personal, organization, or a named project. */
+'hivemind/read-scope': { scope: 'full' | 'personal' | 'organization' | 'project'; project?: string }
+```
+
+Source: [`packages/hivemind/runtime/src/index.ts:32`](../packages/hivemind/runtime/src/index.ts)
 
 ### `hook/*`
 

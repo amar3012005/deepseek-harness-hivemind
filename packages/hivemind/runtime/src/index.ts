@@ -28,13 +28,8 @@ import { projectHyperagentProfiles } from '@deepseek-ai/dsh-hivemind-employee-di
 
 declare module '@deepseek-ai/dsh-session/types' {
   interface SessionEventMap {
+    /** Records the session's current HIVE memory read lens: full, personal, organization, or a named project. */
     'hivemind/read-scope': { scope: 'full' | 'personal' | 'organization' | 'project'; project?: string }
-    'hivemind/memory-save': {
-      operation_id: string
-      status: 'prepared' | 'approved' | 'executing' | 'completed' | 'cancelled'
-      destination?: 'personal' | 'organization' | 'project'
-      idempotency_key?: string
-    }
   }
 }
 
@@ -156,6 +151,8 @@ export interface Config {
   historyMaxChars: number
   /** Whether HIVE requires one native approval before each web read. */
   webApprovalRequired: boolean
+  /** Whether this preset lets HIVE replace native model messages with context projections. Default keeps current production behavior. */
+  modelContextProjection?: boolean
 }
 
 /** Schemastery validation for {@link Config}. */
@@ -177,6 +174,7 @@ export const Config: z<Config> = z.object({
   historyTurns: z.natural().min(1).required(),
   historyMaxChars: z.natural().min(1).required(),
   webApprovalRequired: z.boolean().default(true),
+  modelContextProjection: z.boolean().default(true),
 })
 
 interface JsonRecord {
@@ -946,11 +944,13 @@ export function apply(ctx: Context, config: Config): void {
       }))
     })
   }
-  ctx.plugin(contextPlugin({
-    historyTurns: config.historyTurns,
-    historyMaxChars: config.historyMaxChars,
-    capabilityToolName: HIVE_CAPABILITIES_TOOL,
-  }))
+  if (config.modelContextProjection !== false) {
+    ctx.plugin(contextPlugin({
+      historyTurns: config.historyTurns,
+      historyMaxChars: config.historyMaxChars,
+      capabilityToolName: HIVE_CAPABILITIES_TOOL,
+    }))
+  }
   ctx.plugin(memoryPlugin({ defaultLimit: config.recallResultLimit }, {
     async context(agent, signal) {
       const snapshot = await snapshotFor(agent, signal)

@@ -192,6 +192,9 @@ describe('the shipped preset root', () => {
     expect(prefix).toContain('use entities once before recall')
     expect(prefix).toContain('call the exact selected execute tool once')
     expect(prefix).toContain("native Harness pauses that tool call for the user's single approval")
+    expect(findEntry(hivemindChat, 'hivemind-runtime')?.config).toMatchObject({
+      modelContextProjection: false,
+    })
   })
 
   it('limits the Composio catalog entry to complex workflows', async () => {

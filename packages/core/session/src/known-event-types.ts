@@ -39,6 +39,8 @@ export const KNOWN_SESSION_EVENT_TYPES: ReadonlySet<string> = new Set([
   'feedback/record',
   'goal/change',
   'hivemind/composio-session',
+  'hivemind/memory-save',
+  'hivemind/read-scope',
   'hook/invoked',
   'hook/result',
   'llm/retry',
