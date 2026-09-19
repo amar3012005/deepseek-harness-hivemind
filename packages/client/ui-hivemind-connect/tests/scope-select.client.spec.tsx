@@ -2,7 +2,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { ScopeSelect } from '../src/client/ScopeSelect.tsx'
-import { setupSingulanceHeadline } from '../src/client/SingulanceMark.tsx'
+import { setupSingulanceHeadline, SingulanceMark } from '../src/client/SingulanceMark.tsx'
 
 describe('HIVE-MIND read scope control', () => {
   it('uses the native folder mark for the Full scope read union', () => {
@@ -40,5 +40,13 @@ describe('HIVE-MIND hero branding', () => {
     dispose()
     expect(view.getByTestId('headline').hasAttribute('data-hivemind-hero-headline')).toBe(false)
     expect(view.getByText('Beyond Horizon Of Intelligence')).toBeTruthy()
+  })
+
+  it('renders the hero mark at the doubled 48px size', () => {
+    // The component default is part of the visual contract; inspect its
+    // rendered SVG rather than duplicating the sizing rule in test setup.
+    const rendered = render(<SingulanceMark />)
+    expect(rendered.container.querySelector('svg')?.getAttribute('width')).toBe('48')
+    expect(rendered.container.querySelector('svg')?.getAttribute('height')).toBe('48')
   })
 })

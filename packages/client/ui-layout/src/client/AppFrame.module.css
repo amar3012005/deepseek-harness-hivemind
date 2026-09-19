@@ -32,13 +32,17 @@
 .sessionRailCol {
   position: absolute;
   top: 18px;
+  bottom: 18px;
   left: 18px;
   z-index: 6;
   width: 196px;
-  max-height: 286px;
   min-width: 0;
   overflow: visible;
   background: transparent;
+}
+
+.sessionRailCol > * {
+  height: 100%;
 }
 
 /* Trajectory owns its ledger, not the session shell. Keep the same HIVE

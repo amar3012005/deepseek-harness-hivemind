@@ -23,9 +23,10 @@
 
 :global([data-hivemind-hero-headline]) {
   justify-content: flex-start !important;
+  gap: 2px !important;
   padding-left: 8px;
-  font-size: 13px !important;
-  line-height: 20px !important;
+  font-size: 26px !important;
+  line-height: 32px !important;
   font-weight: 600 !important;
   letter-spacing: .04em;
 }

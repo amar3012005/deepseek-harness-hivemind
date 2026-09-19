@@ -344,6 +344,7 @@
   display: flex;
   flex: none;
   flex-direction: column;
+  width: 100%;
   /* One cap for every scrolling text region a composer seat can hold: the
      InputBar draft (figma Input 75:8208 max 14 lines × 24px line) and the
      takeover panels' bodies top out at the same height, so electing a
@@ -352,6 +353,13 @@
      elected overlay are siblings — and custom properties inherit down to
      whichever entry is mounted. */
   --dsh-composer-text-max-height: 336px;
+}
+
+/* In the embedded HIVE shell the TopBar's OS switch and conversation canvas
+   share the same center axis. Keep every composer phase on that axis even
+   when the session rail is visible as floating chrome. */
+:global(html[data-dsh-mode='hivemind-chat']) .composerSeat > .composerStack {
+  margin-inline: auto;
 }
 
 /* Active phase: header is ordinary column chrome above the scrollport (not

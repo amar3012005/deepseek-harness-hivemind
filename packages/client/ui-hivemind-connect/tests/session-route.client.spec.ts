@@ -16,6 +16,7 @@ function fixture(initial: SessionListState): {
   set: (state: SessionListState) => void
   open: ReturnType<typeof vi.fn>
   create: ReturnType<typeof vi.fn>
+  refresh: ReturnType<typeof vi.fn>
 } {
   let state = initial
   const listeners = new Set<() => void>()
@@ -26,6 +27,7 @@ function fixture(initial: SessionListState): {
   const create = vi.fn(({ sessionId }: { sessionId?: SessionId } = {}) => (
     Promise.resolve(sessionId ?? sid('session-created'))
   ))
+  const refresh = vi.fn(async () => {})
   return {
     sessions: {
       list: {
@@ -34,10 +36,12 @@ function fixture(initial: SessionListState): {
       },
       open,
       create,
+      refresh,
     } as unknown as ISessions,
     set: (next) => { state = next; for (const listener of listeners) listener() },
     open,
     create,
+    refresh,
   }
 }
 
@@ -131,13 +135,28 @@ describe('HIVE native session routes', () => {
     expect(window.location.pathname).toBe(`${HIVE_OVERVIEW_PATH}/session/session-older`)
   })
 
-  it('adopts and opens an opaque deep link absent from the bounded recent list', async () => {
+  it('refreshes an opaque deep link and never creates a replacement session for it', async () => {
     window.history.replaceState(null, '', `${HIVE_OVERVIEW_PATH}/session/session-not-recent`)
     const harness = fixture(state())
     install(harness.sessions)
-    await vi.waitFor(() => { expect(harness.open).toHaveBeenLastCalledWith('session-not-recent') })
-    expect(harness.create).toHaveBeenCalledWith({ sessionId: 'session-not-recent' })
-    expect(window.location.pathname).toBe(`${HIVE_OVERVIEW_PATH}/session/session-not-recent`)
+    await vi.waitFor(() => { expect(harness.refresh).toHaveBeenCalledOnce() })
+    expect(harness.create).not.toHaveBeenCalled()
+    expect(harness.open).toHaveBeenLastCalledWith('session-recent')
+    expect(window.location.pathname).toBe(`${HIVE_OVERVIEW_PATH}/session/session-recent`)
+  })
+
+  it('moves away from a deleted current route without recreating the deleted id', async () => {
+    window.history.replaceState(null, '', `${HIVE_OVERVIEW_PATH}/session/session-older`)
+    const harness = fixture(state('session-older'))
+    install(harness.sessions)
+    const next = state()
+    const { [sid('session-older')]: _removed, ...remaining } = next.byId
+    next.byId = remaining
+    next.ids = next.ids.filter(id => id !== sid('session-older'))
+    harness.set(next)
+    await vi.waitFor(() => { expect(harness.open).toHaveBeenLastCalledWith('session-recent') })
+    expect(harness.create).not.toHaveBeenCalled()
+    expect(window.location.pathname).toBe(`${HIVE_OVERVIEW_PATH}/session/session-recent`)
   })
 
   it('does not promote a known subagent into the root conversation surface', () => {

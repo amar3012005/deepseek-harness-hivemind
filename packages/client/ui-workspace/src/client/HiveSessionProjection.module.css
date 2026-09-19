@@ -1,5 +1,6 @@
 .root {
   display: flex;
+  height: 100%;
   min-height: 0;
   flex-direction: column;
   color: var(--dsw-alias-label-primary);
@@ -71,4 +72,10 @@
   margin-top: 8px;
   color: var(--dsw-alias-state-error-primary);
   font-size: 12px;
+}
+
+/* The view switch belongs to the session rail, but it must remain a stable
+   bottom control while the recent list above it changes or scrolls. */
+.viewTabs {
+  margin-top: auto;
 }

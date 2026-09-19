@@ -94,7 +94,9 @@ export function HiveSessionProjection({
         t={t}
       />)}
     </nav>
-    {list.current !== undefined && renderSlot('conversation.sidebar.viewTabs', {}, { fallback: null })}
+    {list.current !== undefined && <div className={css.viewTabs}>
+      {renderSlot('conversation.sidebar.viewTabs', {}, { fallback: null })}
+    </div>}
     <Modal
       open={renameTarget !== undefined}
       onClose={closeRename}

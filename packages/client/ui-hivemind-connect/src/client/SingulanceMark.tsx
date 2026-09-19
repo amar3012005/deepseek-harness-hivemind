@@ -7,7 +7,7 @@ export interface SingulanceMarkProps extends Omit<SVGProps<SVGSVGElement>, 'widt
 }
 
 /** The exact orbit-and-star Singulance mark used by the Da-vinci shell. */
-export function SingulanceMark({ size = 24, className, ...props }: SingulanceMarkProps) {
+export function SingulanceMark({ size = 48, className, ...props }: SingulanceMarkProps) {
   return <svg
     width={size}
     height={size}

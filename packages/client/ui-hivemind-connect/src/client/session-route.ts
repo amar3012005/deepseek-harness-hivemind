@@ -63,6 +63,7 @@ export function setupHivemindSessionRouting(
   let disposed = false
   let applyingRoute = false
   let creating = false
+  let resolving = false
   let generation = 0
   let initialized = false
   let observedCurrent: SessionId | undefined
@@ -99,7 +100,7 @@ export function setupHivemindSessionRouting(
   }
 
   const selectExact = (state: SessionListState, sessionId: SessionId): void => {
-    if (creating) return
+    if (creating || resolving) return
     if (rootSession(state, sessionId) !== undefined) {
       applyingRoute = true
       initialized = true
@@ -109,19 +110,28 @@ export function setupHivemindSessionRouting(
       applyingRoute = false
       return
     }
+    // A route identifies an existing durable Session; it is never permission
+    // to create a new one. Refresh once to cover a boot/list race, then fall
+    // back to the newest real root if the host still does not project it.
     const attempt = ++generation
-    creating = true
-    void sessions.create({ sessionId }).then((adoptedSessionId) => {
+    resolving = true
+    void sessions.refresh().then(() => {
       if (disposed || attempt !== generation) return
-      applyingRoute = true
-      initialized = true
-      observedCurrent = adoptedSessionId
-      sessions.open(adoptedSessionId)
-      replace(hivemindSessionPath(adoptedSessionId))
-      applyingRoute = false
+      const refreshed = sessions.list.getSnapshot()
+      if (rootSession(refreshed, sessionId) !== undefined) {
+        applyingRoute = true
+        initialized = true
+        observedCurrent = sessionId
+        if (refreshed.current !== sessionId) sessions.open(sessionId)
+        replace(hivemindSessionPath(sessionId))
+        applyingRoute = false
+        return
+      }
+      replace(HIVE_OVERVIEW_PATH)
+      selectOrCreate(refreshed, false)
     }).catch(() => {
       if (!disposed && attempt === generation) replace(HIVE_OVERVIEW_PATH)
-    }).finally(() => { creating = false })
+    }).finally(() => { resolving = false })
   }
 
   const applyLocation = (): void => {
@@ -159,7 +169,17 @@ export function setupHivemindSessionRouting(
       return
     }
     const current = rootSession(state, state.current)
-    if (current === undefined || current === observedCurrent) return
+    if (current === undefined) {
+      const route = parseHivemindSessionRoute(browser.location.pathname)
+      if (route.kind === 'session' && rootSession(state, route.sessionId) === undefined && !resolving) {
+        initialized = false
+        observedCurrent = undefined
+        replace(HIVE_OVERVIEW_PATH)
+        selectOrCreate(state, false)
+      }
+      return
+    }
+    if (current === observedCurrent) return
     observedCurrent = current
     const path = hivemindSessionPath(current)
     if (browser.location.pathname !== path) browser.history.pushState(browser.history.state, '', path)

@@ -127,4 +127,26 @@ describe('HIVE native session projection', () => {
     }))
     expect(share.mock.calls[0]?.[0]?.url).not.toMatch(/[?#]/)
   })
+
+  it('dispatches permanent deletion from the session overflow menu', async () => {
+    const sessions = list(summary('delete-me', 10))
+    const deleteSession = vi.fn(async () => {})
+    render(<HiveSessionProjection
+      {...runtime}
+      renderSlot={renderSlot}
+      SessionProvider={SessionProvider}
+      useSessions={selector => selector(sessions)}
+      useSessionPendingInteraction={selector => selector(noAttention)}
+      createSession={vi.fn()}
+      openSession={vi.fn()}
+      {...actions}
+      deleteSession={deleteSession}
+      t={t}
+    />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Session actions for delete-me' }))
+    fireEvent.click(screen.getByText('Delete session permanently'))
+    await waitFor(() => { expect(deleteSession).toHaveBeenCalledTimes(1) })
+    expect(deleteSession).toHaveBeenCalledWith(sid('delete-me'))
+  })
 })
