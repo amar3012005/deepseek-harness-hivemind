@@ -335,6 +335,8 @@
   display: flex;
   flex-direction: column;
   gap: var(--dsh-composer-stack-gap);
+  align-self: center;
+  width: min(calc(var(--dsh-composer-card-max-width) + 2 * var(--dsh-composer-side-clearance)), 100%);
 }
 
 /* Common seat for the composer chain (fallback + elected overlay siblings). */
@@ -623,7 +625,6 @@
   padding-bottom: 32px;
   /* Card cap + both clearances: the hero input card lands at exactly the same
      width as the docked composer at every viewport. */
-  width: min(calc(var(--dsh-composer-card-max-width) + 2 * var(--dsh-composer-side-clearance)), 100%);
   z-index: 1;
 }
 

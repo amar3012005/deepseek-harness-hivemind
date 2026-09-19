@@ -1,6 +1,6 @@
 import type { SVGProps } from 'react'
 
-const HERO_HEADLINE = 'Beyond Horizon Of Intelligence'
+const HERO_HEADLINE = 'BRAIN'
 
 export interface SingulanceMarkProps extends Omit<SVGProps<SVGSVGElement>, 'width' | 'height'> {
   size?: number
@@ -33,15 +33,17 @@ export function SingulanceMark({ size = 24, className, ...props }: SingulanceMar
   </svg>
 }
 
-/** Replace only the native new-session hero copy adjacent to this overlay's mark. */
+/** Replace the native headline with the compact BRAIN label used above the composer. */
 export function setupSingulanceHeadline(): () => void {
-  const originals = new Map<Element, string>()
+  const originals = new Map<HTMLElement, string>()
   const apply = (): void => {
     for (const mark of document.querySelectorAll('[data-hivemind-hero-brand="singulance"]')) {
-      const headline = mark.closest('span')?.nextElementSibling?.firstElementChild
-      if (headline === undefined || headline === null || headline.textContent === HERO_HEADLINE) continue
-      originals.set(headline, headline.textContent ?? '')
-      headline.textContent = HERO_HEADLINE
+      const headline = mark.closest('span')?.parentElement
+      const title = headline?.lastElementChild?.firstElementChild
+      if (!(headline instanceof HTMLElement) || !(title instanceof HTMLElement) || originals.has(title)) continue
+      originals.set(title, title.textContent ?? '')
+      title.textContent = HERO_HEADLINE
+      headline.setAttribute('data-hivemind-hero-headline', '')
     }
   }
   const observer = new MutationObserver(apply)
@@ -49,8 +51,9 @@ export function setupSingulanceHeadline(): () => void {
   apply()
   return () => {
     observer.disconnect()
-    for (const [headline, original] of originals) {
-      if (headline.isConnected && headline.textContent === HERO_HEADLINE) headline.textContent = original
+    for (const [title, original] of originals) {
+      title.textContent = original
+      title.closest('[data-hivemind-hero-headline]')?.removeAttribute('data-hivemind-hero-headline')
     }
   }
 }

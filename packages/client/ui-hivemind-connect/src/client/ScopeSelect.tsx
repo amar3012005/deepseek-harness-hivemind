@@ -74,7 +74,6 @@ export function ScopeSelect({ sessionId, locked = false, initialScope, initialPr
       <option value="organization">Organization</option>
       <option value="project">Project</option>
     </select>
-    <span className={css.agent} aria-hidden>HIVE-MIND Chat</span>
     {scope === 'project' && <select
       className={css.project}
       aria-label="Authorized project"
