@@ -362,6 +362,17 @@
   margin-inline: auto;
 }
 
+/* The desktop session rail is floating chrome but the host reserves its
+   visual lane to the left of the conversation. Counter half of that lane so
+   the BRAIN hero and composer stay on the host's true centre axis (the OS
+   switch), rather than the centre of the remaining space. Compact layouts
+   hide the rail and therefore need no compensation. */
+@media (min-width: 1101px) {
+  :global(html[data-dsh-mode='hivemind-chat']) .composerSeat > .composerStack {
+    transform: translateX(-107px);
+  }
+}
+
 /* Active phase: header is ordinary column chrome above the scrollport (not
    sticky). The scroll body holds the transcript and the sticky composer seat
    so wheel over the footer moves the flow. */

@@ -19,6 +19,16 @@ describe('HIVE composer layout', () => {
     expect(css).toMatch(/main:has\(\[data-conversation-scroll\]\)[\s\S]*height:\s*calc\(100vh - 56px\)/s)
   })
 
+  it('centers the desktop HIVE composer on the host OS axis', () => {
+    const hostAxis = new RegExp(
+      String.raw`min-width:\s*1101px[\s\S]*data-dsh-mode='hivemind-chat'`
+      + String.raw`[\s\S]*\.composerSeat > \.composerStack\s*\{`
+      + String.raw`[^}]*transform:\s*translateX\(-107px\)`,
+      's',
+    )
+    expect(css).toMatch(hostAxis)
+  })
+
   it('keeps Chat and Trajectory as lower-left HIVE overlay controls', () => {
     const lowerLeft = new RegExp(
       String.raw`data-dsh-mode='hivemind-chat'[\s\S]*\.header:not\(\.headerHidden\)[^{]*\{`
