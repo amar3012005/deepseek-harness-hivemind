@@ -31,6 +31,7 @@ const signal = new AbortController().signal
 const agent = {} as Agent
 
 afterEach(async () => {
+  vi.useRealTimers()
   delete process.env.TEST_HIVE_RUNNER_SECRET
   vi.restoreAllMocks()
   await Promise.all(roots.splice(0).map(path => rm(path, { recursive: true, force: true })))
@@ -370,7 +371,7 @@ describe('HIVE-MIND runtime', () => {
     pluginConfig.legacyToolsEnabled = false
     const harness = mount(pluginConfig)
 
-    expect([...harness.tools.keys()]).toEqual(['hivemind_capabilities', 'hivemind_save_memory', 'hivemind_meta'])
+    expect([...harness.tools.keys()]).toEqual(['hivemind_capabilities', 'hivemind_save_memory', 'hivemind_meta', 'hivemind_web_search'])
     const skill = harness.skills.get('hivemind-company-brain')
     expect(skill?.description).toContain('multi-source')
     expect(skill?.content).toContain('not a workspace path')
@@ -394,12 +395,35 @@ describe('HIVE-MIND runtime', () => {
     const harness = mount(config(await authorityFile()))
     const allow = vi.fn(async () => ({ kind: 'allow' as const }))
 
-    await expect(harness.toolPreExecute?.({ name: 'web_search' }, allow)).resolves.toEqual({
+    await expect(harness.toolPreExecute?.({ name: 'hivemind_web_search' }, allow)).resolves.toEqual({
       kind: 'ask',
       reason: 'Web research requires your approval before accessing external sources.',
     })
     await expect(harness.toolPreExecute?.({ name: 'hivemind_meta' }, allow)).resolves.toEqual({ kind: 'allow' })
     expect(allow).toHaveBeenCalledOnce()
+  })
+
+  it('searches external sources through the authenticated HIVE job service', async () => {
+    const pluginConfig = config(await authorityFile())
+    const requests: string[] = []
+    vi.stubGlobal('fetch', vi.fn(async (url: URL) => {
+      requests.push(String(url))
+      if (String(url).endsWith('/api/web/search/jobs')) {
+        return jsonResponse({ job_id: '123e4567-e89b-12d3-a456-426614174000', status: 'queued' }, 202)
+      }
+      return jsonResponse({ status: 'succeeded', results: [{
+        title: 'Singulance', url: 'https://singulancelabs.com', snippet: 'AI workforce inside memory',
+      }] })
+    }))
+    const harness = mount(pluginConfig)
+    await expect(tool(harness, 'hivemind_web_search').execute({ query: 'Singulance', limit: 5 }, execContext())).resolves.toEqual({
+      status: 'ready', operation: 'web_search', query: 'Singulance', count: 1,
+      results: [{ title: 'Singulance', url: 'https://singulancelabs.com', snippet: 'AI workforce inside memory' }],
+    })
+    expect(requests).toEqual([
+      'http://127.0.0.1:3099/api/web/search/jobs',
+      'http://127.0.0.1:3099/api/web/jobs/123e4567-e89b-12d3-a456-426614174000',
+    ])
   })
 
   it('mounts connection routes without contributing model features when globally disabled', async () => {

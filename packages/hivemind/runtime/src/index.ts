@@ -85,12 +85,15 @@ const RECALL_PATH = '/api/recall'
 const SAVE_PATH = '/api/memories?sync=true'
 const SAVE_STATUS_PATH = '/api/memories/save-status'
 const ENTITY_SEARCH_PATH = '/api/entities'
+const WEB_SEARCH_JOBS_PATH = '/api/web/search/jobs'
+const WEB_JOBS_PATH = '/api/web/jobs'
 const HYPERAGENT_PROFILES_URL = 'https://api.singulancelabs.com/v1/hyperagents/profiles'
 const CONNECT_STATUS_PATH = '/hivemind/connect/status'
 const CONNECT_START_PATH = '/hivemind/connect/start'
 const CONNECT_DISCONNECT_PATH = '/hivemind/connect'
 const HIVE_META_TOOL = 'hivemind_meta'
 const HIVE_CAPABILITIES_TOOL = 'hivemind_capabilities'
+const HIVE_WEB_SEARCH_TOOL = 'hivemind_web_search'
 
 /** Keep spill implementation details out of model-visible HIVE receipts. */
 interface PrivateReceiptReference {
@@ -880,7 +883,7 @@ export function apply(ctx: Context, config: Config): void {
   if (config.authorityMode !== 'scoped-service') registerWebConnectRoutes(ctx, config)
   if (!config.agentFeaturesEnabled) return
   ctx.effect(() => ctx.on('tools/pre-execute', async (execution, next): Promise<PreToolDecision> => {
-    if (!config.webApprovalRequired || (execution.name !== 'web_search' && execution.name !== 'web_fetch')) return next()
+    if (!config.webApprovalRequired || (execution.name !== HIVE_WEB_SEARCH_TOOL && execution.name !== 'web_fetch')) return next()
     return { kind: 'ask', reason: 'Web research requires your approval before accessing external sources.' }
   }))
   ctx.effect(() => ctx.skills.register({
@@ -1121,6 +1124,55 @@ export function apply(ctx: Context, config: Config): void {
       }
     },
   }))
+
+  ctx.effect(() => ctx.tools.register(defineTool({
+    name: HIVE_WEB_SEARCH_TOOL,
+    description: 'Search current external web sources through the authenticated HIVE-MIND web-intelligence service. Use only after HIVE context and one focused recall do not contain sufficient evidence, or when the user explicitly requests current external verification. Cite returned source URLs.',
+    parameters: {
+      query: { type: 'string', required: true, description: 'One focused external search query.' },
+      limit: { type: 'integer', description: 'Maximum sources to return, from 1 to 8.' },
+    },
+    output: jsonOutput,
+    timeoutMs: 60_000,
+    isConcurrencySafe: () => true,
+    async execute(args, execution) {
+      const query = nonEmptyString(args.query, 'web search query')
+      const requestedLimit = typeof args.limit === 'number' && Number.isInteger(args.limit) ? args.limit : 5
+      const limit = Math.max(1, Math.min(requestedLimit, 8))
+      const authority = await resolveAuthority(ctx, config)
+      const queued = apiRecord(await hiveRequest(authority, WEB_SEARCH_JOBS_PATH, {
+        method: 'POST', body: JSON.stringify({ query, limit }),
+      }, execution.signal, config), 'web search submission')
+      const jobId = nonEmptyString(queued['job_id'], 'web search job id')
+      for (let attempt = 0; attempt < 24; attempt += 1) {
+        await new Promise<void>((resolve, reject) => {
+          const timer = setTimeout(resolve, 1_000)
+          execution.signal.addEventListener('abort', () => {
+            clearTimeout(timer)
+            reject(execution.signal.reason)
+          }, { once: true })
+        })
+        const job = apiRecord(await hiveRequest(authority, `${WEB_JOBS_PATH}/${encodeURIComponent(jobId)}`, {
+          method: 'GET',
+        }, execution.signal, config), 'web search job')
+        if (job['status'] === 'failed') {
+          throw new HiveMindRuntimeError(`web search failed: ${String(job['error'] || 'provider unavailable')}`)
+        }
+        if (job['status'] !== 'succeeded') continue
+        const results = Array.isArray(job['results']) ? job['results'].slice(0, limit).map((item) => {
+          const source = record(item, 'web search result')
+          return {
+            title: typeof source['title'] === 'string' ? source['title'] : '',
+            url: typeof source['url'] === 'string' ? source['url'] : '',
+            snippet: typeof source['snippet'] === 'string' ? source['snippet'].slice(0, 800)
+              : typeof source['content'] === 'string' ? source['content'].slice(0, 800) : '',
+          }
+        }) : []
+        return { status: 'ready', operation: 'web_search', query, results, count: results.length }
+      }
+      throw new HiveMindRuntimeError('web search timed out; retry with a narrower query')
+    },
+  })))
 
   if (!config.legacyToolsEnabled) return
 
