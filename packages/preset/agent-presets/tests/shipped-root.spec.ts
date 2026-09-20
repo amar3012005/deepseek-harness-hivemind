@@ -60,6 +60,7 @@ interface ShippedEntry {
   id?: unknown
   disabled?: unknown
   config?: unknown
+  isolate?: unknown
 }
 
 /** Find one entry through the shipped composition's nested groups. */
@@ -195,6 +196,10 @@ describe('the shipped preset root', () => {
     expect(prefix).toContain('always use the available HIVE context first')
     expect(prefix).toContain('Use hivemind_web_search only when HIVE has no sufficient evidence')
     expect(findEntry(hivemindChat, 'tool-web')?.config).toMatchObject({ search: false, fetch: true })
+    expect(findEntry(hivemindChat, 'hivemind-capabilities')?.isolate).toMatchObject({
+      hivemindIdentity: true,
+      hivemindDecisionGateway: true,
+    })
   })
 
   it('limits the Composio catalog entry to complex workflows', async () => {
