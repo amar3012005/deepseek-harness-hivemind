@@ -59,7 +59,10 @@ function stableRequestPromptAnchor(
  * @param inspect - Pure surface interpretation supplied by uiConversation.
  * @returns The Chat system-prompt Definition.
  */
-export function systemMessageDefinition(inspect: SystemPromptInspector): ConversationNodeDefinition<SystemPromptState> {
+export function systemMessageDefinition(
+  inspect: SystemPromptInspector,
+  showSystemPrompts = true,
+): ConversationNodeDefinition<SystemPromptState> {
   return {
     kind: 'system-message',
     target: 'chat',
@@ -72,6 +75,7 @@ export function systemMessageDefinition(inspect: SystemPromptInspector): Convers
     },
     update: context => context.state,
     buildViewNode: (context) => {
+      if (!showSystemPrompts) return null
       const state = context.state?.introduced
       if (state === undefined || state.text === ''
         || context.start?.event.type !== 'system/message' || context.start.event.surfaceOp !== 'append') return null
@@ -88,7 +92,10 @@ export function systemMessageDefinition(inspect: SystemPromptInspector): Convers
  * uiConversation service (a client bundle cannot value-import it).
  * @returns the Chat request-prompt Definition.
  */
-export function requestPromptDefinition(inspect: RequestPromptInspector): ConversationNodeDefinition<RequestPromptState> {
+export function requestPromptDefinition(
+  inspect: RequestPromptInspector,
+  showSystemPrompts = true,
+): ConversationNodeDefinition<RequestPromptState> {
   return {
     kind: 'request-prompt',
     target: 'chat',
@@ -132,6 +139,7 @@ export function requestPromptDefinition(inspect: RequestPromptInspector): Conver
     },
     update: context => context.state,
     buildViewNode: (context) => {
+      if (!showSystemPrompts) return null
       const state = context.state
       if (state === undefined) return null
       const current = context.current.get('chat') as ChatNode | null | undefined
@@ -152,11 +160,13 @@ export function requestPromptDefinition(inspect: RequestPromptInspector): Conver
  * Register the system-prompt surface node and the model-request prompt card in the Chat flow.
  * @param ctx - Owning UI Conversation context.
  */
-export function registerRequestPromptConversationNode(ctx: Context): void {
+export function registerRequestPromptConversationNode(ctx: Context, showSystemPrompts = true): void {
   ctx.uiConversation.events.register(systemMessageDefinition(
     (previous, event) => ctx.uiConversation.inspectSystemPrompt(previous, event),
+    showSystemPrompts,
   ))
   ctx.uiConversation.events.register(requestPromptDefinition(
     (previous, event, system) => ctx.uiConversation.inspectRequestPrompt(previous, event, system),
+    showSystemPrompts,
   ))
 }

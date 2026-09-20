@@ -15,6 +15,9 @@ describe('hivemind-web native renderer parity', () => {
     expect(patch).toContain('surfaceContext: false')
     expect(patch).not.toContain('complete: true')
   })
+  it('keeps prompt events but hides their developer-facing transcript rows', () => {
+    expect(patch).toMatch(/- id: ui-chat\n  config:\n    showSystemPrompts: false/)
+  })
   it('does not disable native conversation and rendering plugins', () => {
     const nativeSurfaces = [
       'ui-layout', 'ui-renderer', 'ui-session', 'ui-sidebar', 'ui-conversation',

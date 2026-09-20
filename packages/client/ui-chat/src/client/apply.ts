@@ -1,5 +1,6 @@
 /** Register the Chat Conversation target, renderers, stats, and details surface. */
 import type { Context } from '@deepseek-ai/cordis'
+import z from '@deepseek-ai/schemastery'
 import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
 import type { SessionBinding } from '@deepseek-ai/dsh-api-session-controller/client'
@@ -49,11 +50,22 @@ export const inject = [
   'settingsScope', 'remote', 'remote.session', 'sidebarRight',
 ]
 
+/** Chat presentation configuration. */
+export interface Config {
+  /** Whether model-visible system prompts appear as transcript disclosure rows. */
+  showSystemPrompts?: boolean
+}
+
+/** Validated Chat presentation configuration. */
+export const Config: z<Config> = z.object({
+  showSystemPrompts: z.boolean().default(true),
+})
+
 /**
  * Mount all Chat-owned contributions.
  * @param ctx - Client root context.
  */
-export function apply(ctx: Context): void {
+export function apply(ctx: Context, config: Config = Config({})): void {
   const chatSources = new WeakMap<SessionBinding, ObservableSnapshot<ChatSnapshot>>()
   const chatSource = (binding: SessionBinding): ObservableSnapshot<ChatSnapshot> => {
     let source = chatSources.get(binding)
@@ -67,7 +79,7 @@ export function apply(ctx: Context): void {
     }
     return source
   }
-  registerConversationNodes(ctx)
+  registerConversationNodes(ctx, config.showSystemPrompts as boolean)
   registerChatNodeRenderers(ctx)
   ctx.uiSession.provide({
     hooks: ['chat'],

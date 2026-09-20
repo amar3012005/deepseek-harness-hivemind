@@ -6,6 +6,12 @@
     includeHarnessIdentity: false
     includeRuntimeContext: false
 
+# Keep model-visible prompt events in the durable transcript for replay and
+# inspection while omitting their developer-facing disclosure rows in HIVE Chat.
+- id: ui-chat
+  config:
+    showSystemPrompts: false
+
 - id: web-runtime
   config:
     openBrowser: !!js ctx.webStartup.openBrowser

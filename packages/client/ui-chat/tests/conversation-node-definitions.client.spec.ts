@@ -244,6 +244,19 @@ describe('built-in conversation node Definitions', () => {
     expect(systemMessageDefinition(inspectSystemPrompt).update({ state } as never, invalidStart)).toBe(state)
   })
 
+  it('can suppress system-prompt presentation without relinquishing event ownership', () => {
+    const systemDefinition = systemMessageDefinition(inspectSystemPrompt, false)
+    const requestDefinition = requestPromptDefinition(inspectRequestPrompt, false)
+
+    expect(systemDefinition.match(systemAt(1, '# System').event)).not.toBeNull()
+    expect(requestDefinition.match(at(2, 'request/header', {
+      reason: 'initial',
+      header: { config: { provider: 'fake', model: 'fake' } },
+    }).event)).not.toBeNull()
+    expect(systemDefinition.buildViewNode?.({} as never)).toBeNull()
+    expect(requestDefinition.buildViewNode?.({} as never)).toBeNull()
+  })
+
   it('keeps ordinary command-only history inactive for the Conversation shell', () => {
     const value = assembler([
       at(1, 'command/run', {

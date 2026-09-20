@@ -29,6 +29,8 @@ File-mention providers receive the viewed Session ID with the closing-turn owner
 
 Each nonempty appended `system/message` owns a collapsed prompt row, including a complete prompt at the start of a headerless window; the same-step header does not duplicate it. Chat also shows a collapsed `System prompt` row for a non-empty initial request, explicit message-series start, or `system/message` surface node replacement whose text differs, reading the last nonempty surviving system node in surface order at the `request/header`; a non-initial request whose preceding header is outside the loaded history window also shows one. A resume repeats the row even when its system text is unchanged, including after pagination supplies the preceding header and system node; same-series config-only or tool-only changes, tool steps, and retries create no repetition, and a `system/message` event is never rendered as a transcript message. The row appears before that request's user messages, matching the provider envelope, and expands to the exact model-visible text with its original line breaks. A request whose system node is empty or outside the loaded window creates no row until the page holding the node arrives.
 
+Set `showSystemPrompts: false` on the `ui-chat` client plugin to retain prompt events for replay and inspection while omitting their transcript disclosure rows.
+
 <a id="turn-token-usage"></a>
 ## Turn token usage
 

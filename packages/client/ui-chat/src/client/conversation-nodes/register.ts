@@ -18,10 +18,10 @@ import { registerTurnTailConversationNode } from './turn-tail.ts'
  * Register the Chat business Definitions and target builder contributed by this package.
  * @param ctx - owning UI Conversation context.
  */
-export function registerConversationNodes(ctx: Context): void {
+export function registerConversationNodes(ctx: Context, showSystemPrompts = true): void {
   registerInboxConversationNodes(ctx)
   registerMessageConversationNode(ctx)
-  registerRequestPromptConversationNode(ctx)
+  registerRequestPromptConversationNode(ctx, showSystemPrompts)
   registerAssistantConversationNode(ctx)
   registerTurnProcess(ctx)
   registerToolConversationNode(ctx)
