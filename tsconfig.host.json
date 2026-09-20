@@ -137,6 +137,7 @@
     { "path": "./packages/hivemind/identity" },
     { "path": "./packages/hivemind/connected-apps" },
     { "path": "./packages/hivemind/context" },
+    { "path": "./packages/hivemind/decision-gateway" },
     { "path": "./packages/hivemind/memory" },
     { "path": "./packages/hivemind/employee-directory" },
     { "path": "./packages/hivemind/runtime" },

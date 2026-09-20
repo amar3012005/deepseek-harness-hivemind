@@ -110,6 +110,14 @@
         serviceApiBase: !!js process.env.HIVEMIND_CONTROL_PLANE_URL ?? 'http://control-plane:3000'
         serviceHttpOrigins: !!js (process.env.HIVEMIND_SERVICE_HTTP_ORIGINS ?? '').split(',').map(value => value.trim()).filter(Boolean)
         serviceSecretEnv: HIVE_HARNESS_RUNNER_SERVICE_SECRET
+    - id: hivemind-decision-gateway
+      name: '@deepseek-ai/dsh-hivemind-decision-gateway'
+      config:
+        mode: !!js process.env.HIVEMIND_DECISION_GATEWAY_MODE ?? 'off'
+        serviceApiBase: !!js process.env.HIVEMIND_CONTROL_PLANE_URL ?? 'http://control-plane:3000'
+        serviceHttpOrigins: !!js (process.env.HIVEMIND_SERVICE_HTTP_ORIGINS ?? '').split(',').map(value => value.trim()).filter(Boolean)
+        serviceSecretEnv: HIVE_HARNESS_RUNNER_SERVICE_SECRET
+        timeoutMs: 4500
 
 - id: hivemind-skill-filesystem
   name: '@deepseek-ai/dsh-skill-filesystem'

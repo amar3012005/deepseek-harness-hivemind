@@ -6598,6 +6598,31 @@ importers:
         specifier: workspace:^
         version: link:../../core/session
 
+  packages/hivemind/decision-gateway:
+    dependencies:
+      '@deepseek-ai/schemastery':
+        specifier: link:../../../vendor/schemastery
+        version: link:../../../vendor/schemastery
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:^
+        version: link:../../../vendor/cordis
+      '@deepseek-ai/dsh-agent':
+        specifier: workspace:^
+        version: link:../../core/agent
+      '@deepseek-ai/dsh-hivemind-execution-scope':
+        specifier: workspace:^
+        version: link:../execution-scope
+      '@deepseek-ai/dsh-llm':
+        specifier: workspace:^
+        version: link:../../llm/llm
+      '@deepseek-ai/dsh-session':
+        specifier: workspace:^
+        version: link:../../core/session
+      '@deepseek-ai/dsh-tools':
+        specifier: workspace:^
+        version: link:../../core/tools
+
   packages/hivemind/employee-directory:
     devDependencies:
       '@deepseek-ai/dsh-util-values':
@@ -7709,6 +7734,9 @@ importers:
       '@deepseek-ai/dsh-hivemind-connected-apps':
         specifier: workspace:^
         version: link:../../hivemind/connected-apps
+      '@deepseek-ai/dsh-hivemind-decision-gateway':
+        specifier: workspace:^
+        version: link:../../hivemind/decision-gateway
       '@deepseek-ai/dsh-hivemind-runtime':
         specifier: workspace:^
         version: link:../../hivemind/runtime
