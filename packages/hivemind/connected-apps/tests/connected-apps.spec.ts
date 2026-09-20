@@ -536,6 +536,57 @@ describe('progressive Composio bridge', () => {
     expect(projected).toContain('pagination_pages')
   })
 
+  it('does not project an unfinished workflow into an unrelated human request', async () => {
+    const events = [
+      { type: 'tool/call', data: { turn: 1, callId: 'call-search', name: 'hivemind_connected_task', arguments: JSON.stringify({
+        action: 'search', session: { generate_id: true }, queries: [{ use_case: 'List recent Gmail messages from Rama.' }],
+      }) } },
+      { type: 'tool/result', data: { message: { source: { callId: 'call-search' }, content: [{ type: 'tool-result', content: [{ type: 'text', text: JSON.stringify({
+        status: 'ready', session_id: 'workflow-gmail', results: [{ primary_tool_slugs: ['GMAIL_FETCH_EMAILS'] }],
+        execution_contracts: [{ tool_slug: 'GMAIL_FETCH_EMAILS', required_fields: [], properties: {} }],
+      }) }] }] } } },
+      { type: 'tool/call', data: { turn: 1, callId: 'call-page-1', name: 'hivemind_connected_task', arguments: JSON.stringify({
+        action: 'execute', session_id: 'workflow-gmail', tool_slug: 'GMAIL_FETCH_EMAILS', arguments: {},
+      }) } },
+      { type: 'tool/result', data: { message: { source: { callId: 'call-page-1' }, content: [{ type: 'tool-result', content: [{ type: 'text', text: JSON.stringify({
+        status: 'ready', pagination: { cursor: 'next-2', cursor_field: 'nextPageToken' },
+      }) }] }] } } },
+    ]
+    const agent = { session: { header: { id: 'conversation-pivot' }, snapshotEvents: () => events, append: vi.fn() } }
+    const next = vi.fn(async () => ({ kind: 'enter', messages: [] }))
+    const app = harness()
+    const decision = await app.listeners.get('agent/pre-step')?.({
+      agent, turn: 2, messages: [{
+        role: 'user', source: { kind: 'user' },
+        content: [{ type: 'text', text: 'What do you know about me and my company?' }],
+      }],
+    } as never, next as never) as { messages: unknown[] }
+
+    expect(decision.messages).toEqual([])
+  })
+
+  it('projects an unfinished workflow when the user explicitly continues it', async () => {
+    const events = [
+      { type: 'tool/call', data: { turn: 1, callId: 'call-search', name: 'hivemind_connected_task', arguments: JSON.stringify({
+        action: 'search', session: { generate_id: true }, queries: [{ use_case: 'List records.' }],
+      }) } },
+      { type: 'tool/result', data: { message: { source: { callId: 'call-search' }, content: [{ type: 'tool-result', content: [{ type: 'text', text: JSON.stringify({
+        status: 'ready', session_id: 'workflow-continue', results: [{ primary_tool_slugs: ['EXAMPLE_LIST'] }],
+        execution_contracts: [{ tool_slug: 'EXAMPLE_LIST', required_fields: [], properties: {} }],
+      }) }] }] } } },
+    ]
+    const agent = { session: { header: { id: 'conversation-continue' }, snapshotEvents: () => events, append: vi.fn() } }
+    const next = vi.fn(async () => ({ kind: 'enter', messages: [] }))
+    const app = harness()
+    const decision = await app.listeners.get('agent/pre-step')?.({
+      agent, turn: 2, messages: [{
+        role: 'user', source: { kind: 'user' }, content: [{ type: 'text', text: 'Continue with the same task.' }],
+      }],
+    } as never, next as never) as { messages: unknown[] }
+
+    expect(JSON.stringify(decision.messages)).toContain('workflow-continue')
+  })
+
   it('does not project a workflow after its native approval was rejected', async () => {
     const events = [
       { type: 'tool/call', data: {

@@ -821,6 +821,38 @@ function workflowContextMessage(state: UnfinishedWorkflowProjection) {
   })
 }
 
+const WORKFLOW_CONTINUATION_REQUEST = new RegExp(
+  String.raw`\b(?:continue|resume|retry|try again|next page|more results|show more|keep going|proceed|`
+    + String.raw`finish (?:it|that)|complete (?:it|that)|same (?:task|request|search|workflow)|`
+    + String.raw`i (?:connected|authorized)|connection (?:is )?(?:done|ready))\b`,
+  'iu',
+)
+
+/** Return only the current human-authored request, never a plugin projection. */
+function latestUserRequest(messages: readonly unknown[] | undefined): string | undefined {
+  if (messages === undefined) return undefined
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index]
+    if (!record(message) || message['role'] !== 'user' || !record(message['source'])
+      || message['source']['kind'] !== 'user' || !Array.isArray(message['content'])) continue
+    const text = message['content'].flatMap(item => record(item) && item['type'] === 'text'
+      && typeof item['text'] === 'string' ? [item['text']] : []).join('\n').trim()
+    if (text !== '') return text
+  }
+  return undefined
+}
+
+/**
+ * Durable workflow state is advisory across turns. A new human request must
+ * never inherit a provider cursor or execution contract merely because an old
+ * read exposed pagination. Automatic auth-return turns have no human message
+ * and still resume; human-authored turns require an explicit continuation.
+ */
+function shouldProjectWorkflow(messages: readonly unknown[] | undefined): boolean {
+  const request = latestUserRequest(messages)
+  return request === undefined || WORKFLOW_CONTINUATION_REQUEST.test(request)
+}
+
 function discoveryKey(value: unknown): string {
   return createHash('sha256').update(JSON.stringify(value)).digest('hex')
 }
@@ -1915,7 +1947,9 @@ export function apply(ctx: Context, config: Config = {}): void {
     const unfinished = unfinishedWorkflow(agent.session.snapshotEvents(), turn)
     return unfinished === undefined
       ? decision
-      : { ...decision, messages: [...decision.messages, workflowContextMessage(unfinished)] }
+      : shouldProjectWorkflow(messages)
+        ? { ...decision, messages: [...decision.messages, workflowContextMessage(unfinished)] }
+        : decision
   }))
   ctx.effect(() => ctx.on('tools/pre-execute', async (execution, next) => {
     if (!isConnectedAppInvocation(execution.name, execution.arguments)) return next()
