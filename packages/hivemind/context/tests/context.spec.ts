@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
+import type { Agent } from '@deepseek-ai/dsh-agent'
 import { createUserMessage, createAssistantMessage, createToolResultMessage } from '@deepseek-ai/dsh-llm'
 import { contextPlugin } from '../src/index.ts'
 
@@ -6,7 +7,7 @@ function user(text: string) {
   return createUserMessage({ content: [{ type: 'text', text }], source: { kind: 'user' } })
 }
 
-function mount(events: unknown[] = []) {
+function mount(events: unknown[] = [], profileBrief?: (agent: Agent, signal: AbortSignal, turn: number) => Promise<string | undefined>) {
   let preStep: ((payload: never, next: () => Promise<unknown>) => Promise<unknown>) | undefined
   const ctx = {
     effect(callback: () => (() => void) | undefined) {
@@ -21,6 +22,7 @@ function mount(events: unknown[] = []) {
     historyTurns: 3,
     historyMaxChars: 3_000,
     capabilityToolName: 'hivemind_capabilities',
+    ...(profileBrief === undefined ? {} : { profileBrief }),
   }).apply(ctx as never)
   const agent = {
     session: {
@@ -93,6 +95,30 @@ describe('HIVE progressive context', () => {
       messages: [request],
     })) as { messages: ReturnType<typeof user>[] }
     expect(second.messages).toEqual([request])
+  })
+
+  it('injects a server-owned brief on the first turn and refreshes it for a later direct profile question', async () => {
+    const brief = vi.fn(async (_agent: Agent, _signal: AbortSignal, turn: number) => `profile-v${turn}`)
+    const harness = mount([], brief)
+    const first = await harness.preStep({ agent: harness.agent, turn: 1, signal: new AbortController().signal } as never, async () => ({
+      kind: 'enter' as const,
+      messages: [user('hello')],
+    })) as { messages: ReturnType<typeof user>[] }
+    const ordinary = await harness.preStep({ agent: harness.agent, turn: 2, signal: new AbortController().signal } as never, async () => ({
+      kind: 'enter' as const,
+      messages: [user('Draft a note')],
+    })) as { messages: ReturnType<typeof user>[] }
+    const profile = await harness.preStep({ agent: harness.agent, turn: 3, signal: new AbortController().signal } as never, async () => ({
+      kind: 'enter' as const,
+      messages: [user('What is my company profile?')],
+    })) as { messages: ReturnType<typeof user>[] }
+
+    const texts = (messages: ReturnType<typeof user>[]) => messages.map(message => message.content
+      .flatMap(block => block.type === 'text' ? [block.text] : []).join('\n'))
+    expect(texts(first.messages)).toEqual(['profile-v1', 'hello'])
+    expect(texts(ordinary.messages)).toEqual(['Draft a note'])
+    expect(texts(profile.messages)).toEqual(['profile-v3', 'What is my company profile?'])
+    expect(brief).toHaveBeenCalledTimes(2)
   })
 
   it('leaves the first model step to answer or request capabilities', async () => {

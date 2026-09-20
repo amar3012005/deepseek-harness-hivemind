@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-`dsh-hivemind-runtime` binds a Harness agent to the HIVE-MIND identity saved by ICARUS. It validates the local credential and resolves user and organization scope server-side without adding profile data to ordinary model requests. HIVE mode exposes direct bounded tools plus an on-demand capability-catalog tool, retains recent completed user/final-answer exchanges, and omits prior tool payloads from later model requests. Credentials and tenant identifiers never enter model-visible schemas or results.
+`dsh-hivemind-runtime` binds a Harness agent to the HIVE-MIND identity saved by ICARUS. It validates the local credential and resolves user and organization scope server-side. A bounded, versioned authenticated profile brief is added on the first turn and refreshed on later direct profile or company questions; other later turns do not pay for it. HIVE mode exposes direct bounded tools plus an on-demand capability-catalog tool, retains recent completed user/final-answer exchanges, and omits prior tool payloads from later model requests. Credentials and tenant identifiers never enter model-visible schemas or results.
 
 ## Use this package
 
@@ -37,9 +37,9 @@ The ICARUS credential must be a regular file owned by the current user and not w
 
 ## Semantics
 
-The runtime composes three independently testable capabilities: `hivemind-context` owns the awaited prompt projection, `hivemind-memory` owns the model-facing tool, and `hivemind-employee-directory` validates exact organization HyperAgent profiles. The first model step receives the system contract, bounded completed conversation, and any current unfinished workflow state. Direct registered tools remain available, but the native skill catalog is withheld. When detailed playbook guidance is needed, the model calls `hivemind_capabilities`; the next native Harness step receives the current catalog and the model may load one relevant skill. This uses no prompt keyword classifier and does not modify the native planner, tool registry, or loop. The history projection retains at most `historyTurns` completed direct-user/final-assistant exchanges within `historyMaxChars`; reasoning, tool calls, and tool outputs remain in the append-only session log but leave later model requests.
+The runtime composes three independently testable capabilities: `hivemind-context` owns the awaited prompt projection, `hivemind-memory` owns the model-facing tool, and `hivemind-employee-directory` validates exact organization HyperAgent profiles. The first model step receives the system contract, bounded authenticated profile brief, bounded completed conversation, and any current unfinished workflow state. A later direct profile or company question reloads the brief so a changed server version appears on the next relevant turn. Direct registered tools remain available, but the native skill catalog is withheld. When detailed playbook guidance is needed, the model calls `hivemind_capabilities`; the next native Harness step receives the current catalog and the model may load one relevant skill. This does not modify the native planner, tool registry, or loop. The history projection retains at most `historyTurns` completed direct-user/final-assistant exchanges within `historyMaxChars`; reasoning, tool calls, and tool outputs remain in the append-only session log but leave later model requests.
 
-`hivemind_meta` supports `context`, `recall`, and `profiles`. Recall exposes one deduplicated top-five list, preserves material content and citation metadata, and caps each evidence item at `recallItemMaxChars`. Its focused schema supports source, project, time, explicit tag, media-kind, filename, and entity filters. No operation accepts a user or organization identifier.
+`hivemind_meta` supports `context`, `entities`, `recall`, `save`, `save_status`, and `profiles`. Recall exposes one deduplicated bounded list, preserves material content and citation metadata, and caps each evidence item at `recallItemMaxChars`. Entity results expose canonical name, aliases, types, and linked-memory count when supplied. Expected optional-service failures return `entity_index_unavailable`, `memory_retrieval_timeout`, `profile_context_unavailable`, or `feature_unavailable`; an unavailable read is never represented as an authoritative empty result. No operation accepts a user or organization identifier.
 
 HIVE can require one native approval before each `web_search` or `web_fetch` call. The `webApprovalRequired` setting defaults to `true`; the scoped pre-execution policy fails closed when no approval channel is available and does not affect HIVE memory or connected-app tools.
 
@@ -53,11 +53,11 @@ The source package owns authentication-backed composition and local connection r
 
 #### What the model sees
 
-The model initially sees the HIVE system contract, recent completed conversation, unfinished workflow state, and gateway tools—but no authenticated profile brief or skill catalog. It can answer directly, ask one concise clarification, call `hivemind_meta context` for an identity or company-profile request, call another bounded registered tool, or request the compact catalog through `hivemind_capabilities`. A current-turn tool result remains available for synthesis and is omitted from later turns by the history projection.
+The model initially sees the HIVE system contract, a bounded authenticated profile brief, recent completed conversation, unfinished workflow state, and gateway tools—but no skill catalog. It can answer a direct identity or company-profile request from that brief, call `hivemind_meta context` only when the brief is insufficient, call another bounded registered tool, or request the compact catalog through `hivemind_capabilities`. A current-turn tool result remains available for synthesis and is omitted from later turns by the history projection.
 
 #### Token effect
 
-The initial request pays for direct gateway schemas but not the skill catalog, organization profile, or previous tool receipts. A detailed playbook adds one capability-request receipt and one native catalog only in the active turn.
+The initial request pays for the bounded profile brief and direct gateway schemas, but not the skill catalog, full organization profile, or previous tool receipts. Later ordinary turns omit the brief; a later direct profile question refreshes it. A detailed playbook adds one capability-request receipt and one native catalog only in the active turn.
 
 #### KV Cache effect
 

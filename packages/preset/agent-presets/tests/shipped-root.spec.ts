@@ -182,7 +182,7 @@ describe('the shipped preset root', () => {
     expect(persona.config).toMatchObject({ includeRuntimeContext: false })
     expect(prefix).toContain('clean Markdown for the native Harness renderer')
     expect(prefix).toContain('For one bounded task, call search directly without loading a skill')
-    expect(prefix).toContain('Begin with only this contract, recent completed conversation')
+    expect(prefix).toContain('Begin with this contract, recent completed conversation')
     expect(prefix).toContain('ask one concise clarification')
     expect(prefix).toContain('when the returned guidance supports obtaining a missing requested field')
     expect(prefix).toContain('Request hivemind_capabilities only when a detailed playbook is genuinely needed')

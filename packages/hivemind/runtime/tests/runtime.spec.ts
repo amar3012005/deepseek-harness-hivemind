@@ -28,7 +28,13 @@ interface HarnessMock {
 
 const roots: string[] = []
 const signal = new AbortController().signal
-const agent = {} as Agent
+const agent = {
+  session: {
+    header: { id: 'session-runtime-test' },
+    snapshotEvents: () => [],
+    append: vi.fn(),
+  },
+} as unknown as Agent
 
 afterEach(async () => {
   vi.useRealTimers()
@@ -175,13 +181,18 @@ function profileResponses(extra: Response[] = []): void {
     jsonResponse({ ok: true, profile: { user_id: 'user-1', org_id: 'org-1', name: 'Amar' } }),
     jsonResponse({ context: 'Singulance builds governed AI systems.' }),
     jsonResponse({ facts: [
-      { key: 'company', value: 'Singulance' },
-      { key: 'company:website', value: 'https://singulancelabs.com' },
+      { key: 'name', value: 'Amar', lastConfirmedAt: '2026-09-20T10:00:00.000Z' },
+      { key: 'role', value: 'Founder', lastConfirmedAt: '2026-09-20T10:00:00.000Z' },
+      { key: 'company', value: 'Singulance', lastConfirmedAt: '2026-09-20T11:00:00.000Z' },
+      { key: 'company:website', value: 'https://singulancelabs.com', lastConfirmedAt: '2026-09-20T11:00:00.000Z' },
       { key: 'company:location', value: 'Hannover, Germany' },
       { key: 'company:what_it_does', value: 'Builds governed AI systems.' },
       { key: 'company:mission', value: 'Give organizations a trustworthy company brain.' },
       { key: 'company:icp', value: 'Regulated European enterprises.' },
-    ] }),
+    ], profile_versions: {
+      user: { version: 7, updated_at: '2026-09-20T10:00:00.000Z' },
+      organization: { version: 12, updated_at: '2026-09-20T11:00:00.000Z' },
+    } }),
     ...extra,
   ]
   vi.stubGlobal('fetch', vi.fn(async () => {
@@ -279,7 +290,7 @@ describe('HIVE-MIND runtime', () => {
     expect(JSON.stringify(error)).not.toContain('test-secret-token')
   })
 
-  it('keeps a greeting first step free of authenticated profile context', async () => {
+  it('injects one compact authenticated profile brief at session start', async () => {
     const path = await authorityFile()
     profileResponses()
     const harness = mount(config(path))
@@ -301,11 +312,14 @@ describe('HIVE-MIND runtime', () => {
     }
     expect(next).toHaveBeenCalledOnce()
     expect(decision.startsRequestSeries).toBeUndefined()
-    expect(decision.messages).toHaveLength(1)
-    expect(textOfForTest(decision.messages[0] as UserMessage)).toBe('hello')
+    expect(decision.messages).toHaveLength(2)
+    expect(textOfForTest(decision.messages[0] as UserMessage)).toContain('Authenticated HIVE-MIND profile brief')
+    expect(textOfForTest(decision.messages[0] as UserMessage)).toContain('User profile version: 7')
+    expect(textOfForTest(decision.messages[0] as UserMessage)).toContain('Organization profile version: 12')
+    expect(textOfForTest(decision.messages[1] as UserMessage)).toBe('hello')
   })
 
-  it('does not add authenticated profile context before a current mailbox request', async () => {
+  it('keeps the compact profile brief bounded before a current mailbox request', async () => {
     profileResponses()
     const harness = mount(config(await authorityFile()))
     const scopedAgent = {
@@ -321,11 +335,12 @@ describe('HIVE-MIND runtime', () => {
     })) as { messages: UserMessage[]; startsRequestSeries?: true }
 
     expect(decision.startsRequestSeries).toBeUndefined()
-    expect(decision.messages).toHaveLength(1)
-    expect(textOfForTest(decision.messages[0] as UserMessage)).toBe('When was the last email from Uwe?')
+    expect(decision.messages).toHaveLength(2)
+    expect(textOfForTest(decision.messages[0] as UserMessage).length).toBeLessThanOrEqual(500)
+    expect(textOfForTest(decision.messages[1] as UserMessage)).toBe('When was the last email from Uwe?')
   })
 
-  it('leaves an identity request to the registered meta tool without loading a skill', async () => {
+  it('answers an identity request from the compact brief without loading a skill', async () => {
     const path = await authorityFile()
     profileResponses()
     const harness = mount(config(path))
@@ -349,11 +364,38 @@ describe('HIVE-MIND runtime', () => {
       messages: UserMessage[]
     }
 
-    expect(decision.messages).toHaveLength(1)
-    expect(textOfForTest(decision.messages[0] as UserMessage)).toBe('What do u know about me?')
+    expect(decision.messages).toHaveLength(2)
+    expect(textOfForTest(decision.messages[0] as UserMessage)).toContain('User: Amar')
+    expect(textOfForTest(decision.messages[0] as UserMessage)).toContain('Role: Founder')
+    expect(textOfForTest(decision.messages[1] as UserMessage)).toBe('What do u know about me?')
     expect(harness.skills.get('hivemind-company-brain')).toMatchObject({
       invocation: { modelInvocable: true, userInvocable: true },
     })
+  })
+
+  it('refreshes a changed profile brief on the next direct profile turn', async () => {
+    profileResponses([
+      jsonResponse({ ok: true, profile: { user_id: 'user-1', org_id: 'org-1' } }),
+      jsonResponse({ context: 'Singulance builds governed AI systems.' }),
+      jsonResponse({
+        facts: [{ key: 'name', value: 'Amar Sai' }, { key: 'company', value: 'Singulance Labs' }],
+        profile_versions: {
+          user: { version: 8, updated_at: '2026-09-20T12:00:00.000Z' },
+          organization: { version: 13, updated_at: '2026-09-20T12:00:00.000Z' },
+        },
+      }),
+    ])
+    const harness = mount(config(await authorityFile()))
+    const scopedAgent = { session: { surface: { nodes: [] }, eventAt: () => undefined, snapshotEvents: () => [] } } as unknown as Agent
+    const enter = (text: string) => async () => ({ kind: 'enter' as const, messages: [user(text)] })
+
+    const first = await harness.preStep?.({ agent: scopedAgent, turn: 1, step: 0, signal }, enter('hello')) as { messages: UserMessage[] }
+    const second = await harness.preStep?.({ agent: scopedAgent, turn: 2, step: 0, signal }, enter('What is my company profile?')) as { messages: UserMessage[] }
+
+    expect(textOfForTest(first.messages[0]!)).toContain('User profile version: 7')
+    expect(textOfForTest(second.messages[0]!)).toContain('User profile version: 8')
+    expect(textOfForTest(second.messages[0]!)).toContain('Organization profile version: 13')
+    expect(textOfForTest(second.messages[0]!)).toContain('Company: Singulance Labs')
   })
 
   it('exhausts the HIVE memory budget after one focused call in the current turn', () => {
@@ -418,7 +460,7 @@ describe('HIVE-MIND runtime', () => {
     const harness = mount(pluginConfig)
     await expect(tool(harness, 'hivemind_web_search').execute({ query: 'Singulance', limit: 5 }, execContext())).resolves.toEqual({
       status: 'ready', operation: 'web_search', query: 'Singulance', count: 1,
-      results: [{ title: 'Singulance', url: 'https://singulancelabs.com', snippet: 'AI workforce inside memory' }],
+      results: [{ title: 'Singulance', url: 'https://singulancelabs.com', excerpt: 'AI workforce inside memory' }],
     })
     expect(requests).toEqual([
       'http://127.0.0.1:3099/api/web/search/jobs',
@@ -592,7 +634,7 @@ describe('HIVE-MIND runtime', () => {
 
   it('saves only a bounded, profile-scoped memory and returns a compact receipt', async () => {
     const path = await authorityFile()
-    profileResponses([jsonResponse({
+    profileResponses([jsonResponse({}, 404), jsonResponse({
       id: 'memory-1',
       title: 'Approved positioning',
       memory_type: 'decision',
@@ -611,7 +653,7 @@ describe('HIVE-MIND runtime', () => {
         tags: ['positioning'],
       },
     }, execContext())
-    const saveInit = vi.mocked(fetch).mock.calls[3]?.[1]
+    const saveInit = vi.mocked(fetch).mock.calls[4]?.[1]
     const saveBody = JSON.parse(String(saveInit?.body))
 
     expect(saveInit).toMatchObject({ method: 'POST', redirect: 'manual' })
@@ -639,7 +681,7 @@ describe('HIVE-MIND runtime', () => {
 
   it('normalizes a flat meta save once and accepts a top-level terminal receipt', async () => {
     const path = await authorityFile()
-    profileResponses([jsonResponse({
+    profileResponses([jsonResponse({}, 404), jsonResponse({
       status: 'saved', receipt_id: 'receipt-flat', memory_id: 'memory-flat',
       memory: { id: 'memory-flat', title: 'Flat save', memory_type: 'fact' },
     })])
@@ -657,7 +699,7 @@ describe('HIVE-MIND runtime', () => {
 
   it('treats the canonical synchronous Core memory id as a durable save receipt', async () => {
     const path = await authorityFile()
-    profileResponses([jsonResponse({
+    profileResponses([jsonResponse({}, 404), jsonResponse({
       success: true,
       memory: { id: 'memory-123', title: 'Stable fact' },
     })])
@@ -693,14 +735,14 @@ describe('HIVE-MIND runtime', () => {
 
   it('defaults an omitted memory source type to conversation', async () => {
     const path = await authorityFile()
-    profileResponses([jsonResponse({ id: 'memory-1' })])
+    profileResponses([jsonResponse({}, 404), jsonResponse({ id: 'memory-1' })])
     const harness = mount(config(path))
 
     await tool(harness, 'hivemind_meta').execute({
       operation: 'save',
       save: { title: 'Confirmed preference', content: 'Use compact answers by default.' },
     }, execContext())
-    const saveBody = JSON.parse(String(vi.mocked(fetch).mock.calls[3]?.[1]?.body))
+    const saveBody = JSON.parse(String(vi.mocked(fetch).mock.calls[4]?.[1]?.body))
 
     expect(saveBody.metadata).toEqual({ source_type: 'conversation', governed: true, scope: 'personal' })
   })
@@ -723,14 +765,14 @@ describe('HIVE-MIND runtime', () => {
 
   it('maps a correction to the canonical version relationship after validating its prior id', async () => {
     const path = await authorityFile()
-    profileResponses([jsonResponse({ id: 'replacement-id' })])
+    profileResponses([jsonResponse({}, 404), jsonResponse({ id: 'replacement-id' })])
     const harness = mount(config(path))
 
     await tool(harness, 'hivemind_meta').execute({
       operation: 'save',
       save: { title: 'Correction', content: 'Corrected fact.', relationship: 'update', related_to: 'e0b4a5e9-6ae3-45e0-8c15-5e0a300d7e23' },
     }, execContext())
-    const saveBody = JSON.parse(String(vi.mocked(fetch).mock.calls[3]?.[1]?.body))
+    const saveBody = JSON.parse(String(vi.mocked(fetch).mock.calls[4]?.[1]?.body))
 
     expect(saveBody.relationship).toEqual({ type: 'Updates', target_id: 'e0b4a5e9-6ae3-45e0-8c15-5e0a300d7e23' })
   })
@@ -762,7 +804,7 @@ describe('HIVE-MIND runtime', () => {
 
     expect(String(vi.mocked(fetch).mock.calls[0]?.[0])).toBe('http://127.0.0.1:3099/api/entities?q=Amar&limit=5')
     expect(value.result.matches).toEqual([{
-      id: '4bb787fc-9fb9-45dd-a22c-3e4839193024', canonical_name: 'Amar Sai Gadde', kind: 'person', aliases: ['Amar', 'amar-sai'],
+      id: '4bb787fc-9fb9-45dd-a22c-3e4839193024', canonical_name: 'Amar Sai Gadde', types: ['person'], aliases: ['Amar', 'amar-sai'],
     }])
     expect(JSON.stringify(value)).not.toContain('private@example.com')
   })
@@ -777,7 +819,34 @@ describe('HIVE-MIND runtime', () => {
     }, execContext())).resolves.toEqual({
       status: 'unavailable',
       operation: 'entities',
-      result: { matches: [], degradation: 'Canonical entity discovery is unavailable; use one focused recall with the original subject.' },
+      error: {
+        code: 'entity_index_unavailable',
+        retryable: true,
+        guidance: 'Use one focused recall with the original subject; an unavailable index is not proof that no memory exists.',
+      },
+      result: { matches: [] },
+    })
+  })
+
+  it('returns a typed recall timeout instead of an empty-memory claim', async () => {
+    const pluginConfig = config(await authorityFile())
+    pluginConfig.requestTimeoutMs = 10
+    vi.stubGlobal('fetch', vi.fn(async (_url: URL, init: RequestInit) => new Promise<Response>((_resolve, reject) => {
+      init.signal?.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')), { once: true })
+    })))
+    const harness = mount(pluginConfig)
+
+    await expect(tool(harness, 'hivemind_meta').execute({
+      operation: 'recall', recall: { query: 'Solvis' },
+    }, execContext())).resolves.toEqual({
+      status: 'unavailable',
+      operation: 'recall',
+      error: {
+        code: 'memory_retrieval_timeout',
+        retryable: true,
+        guidance: 'Memory could not be retrieved. Do not claim that no matching memory exists.',
+      },
+      result: { results: [], count: 0 },
     })
   })
 

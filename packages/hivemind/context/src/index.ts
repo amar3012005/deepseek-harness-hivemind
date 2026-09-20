@@ -2,7 +2,7 @@
 import type { Context, Plugin } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
-import type { ContentBlock, Message } from '@deepseek-ai/dsh-llm'
+import type { ContentBlock, Message, UserMessage } from '@deepseek-ai/dsh-llm'
 import { isAppendSurfaceEvent } from '@deepseek-ai/dsh-session'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 /** Prompt-projection budgets and the registered on-demand capability tool. */
@@ -10,10 +10,28 @@ export interface ContextConfig {
   historyTurns: number
   historyMaxChars: number
   capabilityToolName: string
+  /** Load the bounded authenticated profile brief for the first turn and direct profile questions. */
+  profileBrief?: (agent: Agent, signal: AbortSignal, turn: number) => Promise<string | undefined>
 }
 interface ConversationExchange { turn: number; user: string; assistant: string }
 const HISTORY_CONTEXT_SOURCE = 'dsh-hivemind-runtime/history'
+const PROFILE_CONTEXT_SOURCE = 'dsh-hivemind-runtime/profile'
 function textOf(message: Message): string { return message.content.filter((block): block is Extract<ContentBlock,{ type:'text' }> => block.type === 'text').map(block => block.text.trim()).filter(Boolean).join('\n') }
+function isDirectUserMessage(message: Message): boolean { return (message.source as { readonly kind: string }).kind === 'user' }
+const DIRECT_USER_PROFILE = /\b(?:about me|know about me|my profile|who am i|my (?:name|role|locale|language|timezone))\b/u
+const DIRECT_ORG_PROFILE = /\b(?:my|our) (?:company|organization|organisation|website)\b|\b(?:company|organization|organisation) profile\b/u
+function needsProfileBrief(messages: readonly Message[], turn: number): boolean {
+  if (turn === 1) return true
+  const request = messages.filter(isDirectUserMessage).map(textOf).join('\n').toLowerCase()
+  if (request === '') return false
+  return DIRECT_USER_PROFILE.test(request) || DIRECT_ORG_PROFILE.test(request)
+}
+function profileMessage(text: string): UserMessage {
+  return createUserMessage({
+    content: [{ type: 'text', text }],
+    source: { kind: 'plugin', plugin: PROFILE_CONTEXT_SOURCE, form: 'recall' },
+  })
+}
 /**
  * Extract completed direct-user/final-assistant exchanges from durable events.
  * @param events - append-only session events.
@@ -70,7 +88,7 @@ export function contextPlugin(config: ContextConfig): Plugin.Object<void> {
     name: 'hivemind-context',
     apply(ctx: Context): void {
       const projected = new WeakMap<Agent, number>()
-      ctx.effect(() => ctx.on('agent/pre-step', async ({ agent, turn }, next) => {
+      ctx.effect(() => ctx.on('agent/pre-step', async ({ agent, turn, signal }, next) => {
         const decision = await next()
         if (decision.kind === 'reject') return decision
 
@@ -85,9 +103,19 @@ export function contextPlugin(config: ContextConfig): Plugin.Object<void> {
         const withoutCatalog = showCatalog
           ? decision.messages
           : decision.messages.filter(message => !isSkillCatalog(message))
+        let messages = withoutCatalog
+        if (first && config.profileBrief !== undefined && needsProfileBrief(withoutCatalog, turn)) {
+          try {
+            const brief = await config.profileBrief(agent, signal, turn)
+            if (brief !== undefined && brief.trim() !== '') messages = [profileMessage(brief), ...withoutCatalog]
+          } catch {
+            // The explicit HIVE meta operation owns typed retrieval failures. A
+            // missing optional brief must not prevent the user's turn.
+          }
+        }
         return changed
-          ? { ...decision, messages: withoutCatalog, startsRequestSeries: true }
-          : { ...decision, messages: withoutCatalog }
+          ? { ...decision, messages, startsRequestSeries: true }
+          : { ...decision, messages }
       }, { prepend: true }))
     },
   }
