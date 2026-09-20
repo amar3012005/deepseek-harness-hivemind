@@ -6558,6 +6558,9 @@ importers:
       '@deepseek-ai/dsh-agent':
         specifier: workspace:^
         version: link:../../core/agent
+      '@deepseek-ai/dsh-hivemind-decision-gateway':
+        specifier: workspace:^
+        version: link:../decision-gateway
       '@deepseek-ai/dsh-hivemind-identity':
         specifier: workspace:^
         version: link:../identity

@@ -11,13 +11,19 @@ import { createHmac, randomUUID } from 'node:crypto'
 declare module '@deepseek-ai/dsh-session/types' {
   interface SessionEventMap {
     'hivemind/decision': {
-      stage: 'capability'
+      stage: 'capability' | 'composio_selection' | 'hivemind_meta_selection' | 'hivemind_recall_filters'
       mode: 'shadow' | 'active'
       status: 'selected' | 'defer'
       selected?: string
       source?: string
       reason?: string
     }
+  }
+}
+
+declare module '@deepseek-ai/cordis' {
+  interface Context {
+    hivemindDecisionGateway: HivemindDecisionGateway
   }
 }
 
@@ -52,6 +58,18 @@ interface DecisionResponse {
   authoritative?: boolean
   receipt?: { source?: string; reason?: string }
   reason?: string
+}
+
+export interface DecisionStageInput {
+  readonly stage: 'capability' | 'composio_selection' | 'hivemind_meta_selection' | 'hivemind_recall_filters'
+  readonly userQuery: string
+  readonly turn: number
+  readonly context?: unknown
+  readonly observation?: unknown
+  readonly appMentions?: readonly string[]
+  readonly operationalAppIntent?: boolean
+  readonly discovery?: unknown
+  readonly progress?: unknown
 }
 
 const TOOL_BY_CAPABILITY: Readonly<Record<string, readonly string[]>> = Object.freeze({
@@ -111,12 +129,20 @@ function visibleUserText(messages: readonly UserMessage[]): string {
   return ''
 }
 
-async function decide(ctx: Context, config: Config, userQuery: string, turn: number, signal: AbortSignal): Promise<DecisionResponse> {
+async function decide(ctx: Context, config: Config, input: DecisionStageInput, signal: AbortSignal): Promise<DecisionResponse> {
   const target = new URL('/internal/v1/harness-chat/core/decision', allowedServiceBase(config.serviceApiBase, config.serviceHttpOrigins))
   const response = await fetch(target, {
     method: 'POST',
     headers: { accept: 'application/json', authorization: `Bearer ${serviceToken(ctx, config)}`, 'content-type': 'application/json' },
-    body: JSON.stringify({ runtime: 'harness', stage: 'capability', turn_id: turn, user_query: userQuery }),
+    body: JSON.stringify({
+      runtime: 'harness', stage: input.stage, turn_id: input.turn, user_query: input.userQuery,
+      ...(input.context === undefined ? {} : { context: input.context }),
+      ...(input.observation === undefined ? {} : { observation: input.observation }),
+      ...(input.appMentions === undefined ? {} : { app_mentions: input.appMentions }),
+      ...(input.operationalAppIntent === undefined ? {} : { operational_app_intent: input.operationalAppIntent }),
+      ...(input.discovery === undefined ? {} : { discovery: input.discovery }),
+      ...(input.progress === undefined ? {} : { progress: input.progress }),
+    }),
     redirect: 'manual',
     signal: AbortSignal.any([signal, AbortSignal.timeout(config.timeoutMs)]),
   })
@@ -128,10 +154,20 @@ async function decide(ctx: Context, config: Config, userQuery: string, turn: num
   return result as DecisionResponse
 }
 
-function appendDecision(agent: Agent, config: Config, response: DecisionResponse): void {
+/** Shared, fail-open decision client available to later progressive stages. */
+export class HivemindDecisionGateway {
+  constructor(private readonly ctx: Context, private readonly config: Config) {}
+
+  async choose(input: DecisionStageInput, signal: AbortSignal): Promise<DecisionResponse> {
+    if (this.config.mode === 'off') return { status: 'defer', mode: 'off', reason: 'decision gateway disabled' }
+    return decide(this.ctx, this.config, input, signal)
+  }
+}
+
+export function appendDecision(agent: Agent, config: Config, stage: DecisionStageInput['stage'], response: DecisionResponse): void {
   if (config.mode === 'off') return
   agent.session.append('hivemind/decision', {
-    stage: 'capability', mode: config.mode,
+    stage, mode: config.mode,
     status: response.status,
     ...(typeof response.selected === 'string' ? { selected: response.selected } : {}),
     ...(typeof response.receipt?.source === 'string' ? { source: response.receipt.source.slice(0, 80) } : {}),
@@ -142,6 +178,8 @@ function appendDecision(agent: Agent, config: Config, response: DecisionResponse
 
 /** Mount the first-step decision consumer. The current Harness path is fallback. */
 export function apply(ctx: Context, config: Config): void {
+  const gateway = new HivemindDecisionGateway(ctx, config)
+  if (typeof ctx.provide === 'function') ctx.effect(() => ctx.provide('hivemindDecisionGateway', gateway))
   if (config.mode === 'off') return
   const restrictions = new WeakMap<Agent, () => void>()
   ctx.effect(() => ctx.on('agent/pre-step', async (payload, next) => {
@@ -155,15 +193,15 @@ export function apply(ctx: Context, config: Config): void {
     const query = visibleUserText(decision.messages)
     if (query === '') return decision
     try {
-      const response = await decide(ctx, config, query, payload.turn, payload.signal)
-      appendDecision(payload.agent, config, response)
+      const response = await gateway.choose({ stage: 'capability', userQuery: query, turn: payload.turn }, payload.signal)
+      appendDecision(payload.agent, config, 'capability', response)
       if (config.mode !== 'active' || response.status !== 'selected' || response.authoritative !== true
         || typeof response.selected !== 'string') return decision
       const allow = TOOL_BY_CAPABILITY[response.selected]
       if (allow === undefined || allow.some(tool => payload.agent.ctx.tools.get(tool, payload.agent) === undefined)) return decision
       restrictions.set(payload.agent, payload.agent.ctx.tools.restrict({ allow }))
     } catch (error: unknown) {
-      appendDecision(payload.agent, config, {
+      appendDecision(payload.agent, config, 'capability', {
         status: 'defer',
         reason: error instanceof Error ? error.message : 'decision gateway unavailable',
       })

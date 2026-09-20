@@ -28,8 +28,10 @@ function harness(
     withSpill?: boolean
     serviceApiBase?: string
     serviceSecretEnv?: string
+    decisionGateway?: { choose: ReturnType<typeof vi.fn> }
   } = {},
 ) {
+  const { decisionGateway, ...pluginConfig } = config
   const concludeTurn = vi.fn()
   const ask = vi.fn()
   const spills: Array<{ suggestedName: string; content: string }> = []
@@ -52,11 +54,12 @@ function harness(
         spills.push(input)
         return { locator: SpillLocator(`private:${spills.length}`), bytes: input.content.length, retrievalHint: 'Inspect privately.' }
       } }
+      if (name === 'hivemindDecisionGateway') return decisionGateway
       return undefined
     },
     logger: { warn: vi.fn() },
   }
-  apply(ctx as never, { apiKey: 'server-secret', enabledByDefault, ...config })
+  apply(ctx as never, { apiKey: 'server-secret', enabledByDefault, ...pluginConfig })
   return {
     tool: () => ({
       execute: (args: Record<string, unknown>, execution: { signal: AbortSignal }) =>
@@ -273,6 +276,44 @@ describe('progressive Composio bridge', () => {
     expect(JSON.stringify(execute.mock.calls[0]?.[1])).not.toContain('result_fields')
     expect(JSON.stringify(result)).not.toContain('tool_schemas')
     expect(result).toMatchObject({ status: 'ready', results: [{ primary_tool_slugs: ['SLACK_LIST_CHANNELS'] }] })
+  })
+
+  it('uses the progressive decision stage to authorize only the matching read candidate', async () => {
+    execute.mockResolvedValueOnce({ data: { results: [
+      { use_case: 'Read the newest matching Gmail message.', primary_tool_slugs: ['GMAIL_FETCH_EMAILS'], toolkits: ['gmail'], tool_schemas: {
+        GMAIL_FETCH_EMAILS: { input_schema: { type: 'object', properties: { query: { type: 'string' } } } },
+      } },
+      { use_case: 'Add a label to a Gmail message.', primary_tool_slugs: ['GMAIL_ADD_LABEL_TO_EMAIL'], toolkits: ['gmail'], tool_schemas: {
+        GMAIL_ADD_LABEL_TO_EMAIL: { input_schema: { type: 'object', required: ['message_id'], properties: { message_id: { type: 'string' } } } },
+      } },
+    ] } })
+    const choose = vi.fn(async () => ({
+      status: 'selected', mode: 'active', selected: 'use:GMAIL_FETCH_EMAILS', authoritative: true,
+      receipt: { source: 'jev' },
+    }))
+    const app = harness(true, undefined, false, { decisionGateway: { choose } })
+    const append = vi.fn()
+    const agent = { session: { header: { id: 'read-only-selection' }, snapshotEvents: () => [], append } }
+    await app.listeners.get('agent/pre-step')?.({
+      agent, turn: 4, step: 1, signal: new AbortController().signal,
+      messages: [{ source: { kind: 'user' }, content: [{ type: 'text', text: 'Find my last email. Do not modify anything.' }] }],
+    } as never, (async () => ({ kind: 'enter', messages: [] })) as never)
+
+    const discovered = await app.tool().execute({
+      action: 'search', queries: [{ app: 'Gmail', use_case: 'Find the newest email and return its date and subject.' }],
+      session: { generate_id: true },
+    }, { signal: new AbortController().signal, agent, name: 'hivemind_connected_task', callId: 'search-read' } as never) as Record<string, unknown>
+
+    expect(choose).toHaveBeenCalledWith(expect.objectContaining({ stage: 'composio_selection' }), expect.any(AbortSignal))
+    expect(discovered.results).toEqual([expect.objectContaining({ primary_tool_slugs: ['GMAIL_FETCH_EMAILS'] })])
+    expect(discovered.execution_contracts).toEqual([expect.objectContaining({ tool_slug: 'GMAIL_FETCH_EMAILS' })])
+    expect(append).toHaveBeenCalledWith('hivemind/decision', expect.objectContaining({
+      stage: 'composio_selection', selected: 'use:GMAIL_FETCH_EMAILS', source: 'jev',
+    }))
+    await expect(app.tool().execute({
+      action: 'execute', tool_slug: 'GMAIL_ADD_LABEL_TO_EMAIL', arguments: { message_id: 'm-1' },
+    }, { signal: new AbortController().signal, agent, name: 'hivemind_connected_task', callId: 'write' } as never))
+      .rejects.toThrow('not selected')
   })
 
   it('persists the original provider response before projecting search and execution', async () => {

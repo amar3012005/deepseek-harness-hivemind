@@ -7,6 +7,7 @@ import type { Composio } from '@composio/core'
 import z from '@deepseek-ai/schemastery'
 import type {} from '@deepseek-ai/dsh-agent'
 import type {} from '@deepseek-ai/dsh-hivemind-identity'
+import type { HivemindDecisionGateway } from '@deepseek-ai/dsh-hivemind-decision-gateway'
 import { createUserMessage, type ContentBlock } from '@deepseek-ai/dsh-llm'
 import type {} from '@deepseek-ai/dsh-settings'
 import type { SaveTextSpill, SpillRef } from '@deepseek-ai/dsh-spill'
@@ -97,6 +98,18 @@ function stringValue(value: unknown): string | undefined {
 
 function stringArray(value: unknown): string[] {
   return Array.isArray(value) ? value.flatMap(item => typeof item === 'string' ? [item] : []) : []
+}
+
+function latestUserText(messages: readonly unknown[]): string {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index]
+    if (!record(message) || !record(message['source']) || message['source']['kind'] !== 'user'
+      || !Array.isArray(message['content'])) continue
+    const text = message['content'].flatMap(item => record(item) && item['type'] === 'text'
+      && typeof item['text'] === 'string' ? [item['text']] : []).join('\n').trim()
+    if (text !== '') return text.slice(0, 4000)
+  }
+  return ''
 }
 
 function safeHttpsUrl(value: unknown): string | undefined {
@@ -1231,6 +1244,58 @@ export function compactComposioSearchReceipt(
   return compact
 }
 
+function decisionDiscovery(value: Record<string, JsonValue>): Record<string, unknown> {
+  const contractsBySlug = new Map<string, ExecutionContract>()
+  if (Array.isArray(value['execution_contracts'])) {
+    for (const item of value['execution_contracts']) {
+      if (!record(item)) continue
+      const slug = stringValue(item['tool_slug'])
+      if (slug !== undefined) contractsBySlug.set(slug, item as unknown as ExecutionContract)
+    }
+  }
+  const tools = Array.isArray(value['results']) ? value['results'].flatMap((item) => {
+    if (!record(item)) return []
+    const slug = stringArray(item['primary_tool_slugs'])[0]
+    if (slug === undefined) return []
+    const contract = contractsBySlug.get(slug)
+    const toolkit = toolkitFromToolSlug(slug) ?? 'connected-app'
+    return [{
+      slug,
+      _composio: { slug, toolkit, read_only: !MUTATING_TOOL.test(slug) },
+      function: {
+        name: slug,
+        description: stringValue(item['use_case']) ?? slug,
+        read_only: !MUTATING_TOOL.test(slug),
+        parameters: {
+          type: 'object',
+          properties: contract?.properties ?? {},
+          required: contract?.required_fields ?? [],
+        },
+      },
+    }]
+  }) : []
+  const statuses = Object.fromEntries((Array.isArray(value['toolkit_connection_statuses'])
+    ? value['toolkit_connection_statuses'] : []).flatMap((item) => {
+    if (!record(item)) return []
+    const toolkit = stringValue(item['toolkit'])
+    return toolkit === undefined ? [] : [[toolkit.toLowerCase(), item]]
+  }))
+  return { tools, toolkit_connection_statuses: statuses }
+}
+
+function narrowSearchProjection(value: Record<string, JsonValue>, slug: string): Record<string, JsonValue> {
+  return {
+    ...value,
+    results: Array.isArray(value['results']) ? value['results'].filter(item => record(item)
+      && stringArray(item['primary_tool_slugs']).includes(slug)) : [],
+    execution_contracts: Array.isArray(value['execution_contracts'])
+      ? value['execution_contracts'].filter(item => record(item) && item['tool_slug'] === slug) : [],
+    decision_selection: { stage: 'composio_selection', selected_tool_slug: slug, authoritative: true },
+    next_action: 'execute_selected_tool',
+    next_action_guidance: `Use only ${slug} for this request. Do not execute any other discovered action.`,
+  }
+}
+
 async function saveReceipt(
   ctx: Context,
   config: Config,
@@ -1294,6 +1359,7 @@ async function saveReceipt(
 export function apply(ctx: Context, config: Config = {}): void {
   const turns = new WeakMap<object, {
     turn: number
+    userQuery: string
     enabled: boolean
     searchFingerprints: Set<string>
     billableCalls: number
@@ -1780,6 +1846,44 @@ export function apply(ctx: Context, config: Config = {}): void {
             ? 'No matching tool was found in these searches. Report that limitation, not that the provider cannot support the operation; do not check or connect another app.'
             : 'Refine search once in this same workflow session for the missing provider-owned prerequisite or listing operation. Do not check connection status or connect another app.'
         }
+        if (record(projected) && discovered.size > 1 && execution.agent !== undefined) {
+          const decisionGateway = ctx.get('hivemindDecisionGateway') as HivemindDecisionGateway | undefined
+          if (decisionGateway !== undefined && turnState?.userQuery) {
+            try {
+              const response = await decisionGateway.choose({
+                stage: 'composio_selection',
+                userQuery: turnState.userQuery,
+                turn: turnState.turn,
+                discovery: decisionDiscovery(projected),
+                progress: { completed_operations: operations },
+              }, execution.signal)
+              if (response.mode === 'shadow' || response.mode === 'active') {
+                execution.agent.session.append('hivemind/decision', {
+                  stage: 'composio_selection', mode: response.mode, status: response.status,
+                  ...(typeof response.selected === 'string' ? { selected: response.selected } : {}),
+                  ...(typeof response.receipt?.source === 'string' ? { source: response.receipt.source.slice(0, 80) } : {}),
+                  ...(typeof (response.reason ?? response.receipt?.reason) === 'string'
+                    ? { reason: String(response.reason ?? response.receipt?.reason).slice(0, 240) } : {}),
+                })
+              }
+              if (response.status === 'selected' && response.authoritative === true
+                && typeof response.selected === 'string' && response.selected.startsWith('use:')) {
+                const selectedSlug = response.selected.slice(4)
+                if (discovered.has(selectedSlug)) {
+                  for (const stateKey of stateKeys) {
+                    selectedTools.set(stateKey, new Set([selectedSlug]))
+                    const selectedContract = discoveredContracts.get(selectedSlug)
+                    contracts.set(stateKey, selectedContract === undefined
+                      ? new Map() : new Map([[selectedSlug, selectedContract]]))
+                  }
+                  return narrowSearchProjection(projected, selectedSlug)
+                }
+              }
+            } catch (error: unknown) {
+              ctx.logger.warn(`hivemind-connected-apps: progressive decision fallback: ${String(error)}`)
+            }
+          }
+        }
         return record(projected) ? projected : { status: 'ready', operations }
       }
       const key = workflowStateKey(identity, execution, workflowSessionId(args))
@@ -1924,10 +2028,11 @@ export function apply(ctx: Context, config: Config = {}): void {
     },
   })))
 
-  ctx.effect(() => ctx.on('agent/pre-step', async ({ agent, turn, step, messages, signal }, next) => {
+  ctx.effect(() => ctx.on('agent/pre-step', async ({ agent, turn, step, messages = [], signal }, next) => {
     if (turns.get(agent)?.turn !== turn) {
       turns.set(agent, {
         turn,
+        userQuery: latestUserText(messages),
         enabled: connectedAppsEnabled(ctx, config.enabledByDefault === true),
         searchFingerprints: new Set(),
         billableCalls: 0,
