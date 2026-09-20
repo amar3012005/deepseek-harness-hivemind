@@ -24,6 +24,7 @@ import { ScopeSelect, type HivemindReadScope } from './ScopeSelect.tsx'
 import { DefaultModelLabel } from './DefaultModelLabel.tsx'
 import { ConnectorChips, type ConnectorChipsProps } from './ConnectorChips.tsx'
 import { createConnectorMentionSource } from './ConnectorMentions.ts'
+import { HivemindRoomsCanvas } from './HivemindRoomsCanvas.tsx'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap { 'hivemind-connect': HivemindConnectKey }
@@ -156,6 +157,12 @@ export function apply(ctx: ClientContext): void {
     locale: NS,
   }, DefaultModelLabel))
   ctx.inject(['conversation'], () => {
+    ctx.slots.inject('conversation.hero.dock', () => ctx.slots.register({
+      name: 'conversation.hero.dock',
+      id: 'hivemind-rooms-canvas',
+      order: -100,
+      locale: NS,
+    }, HivemindRoomsCanvas))
     ctx.slots.inject('conversation.hero.dock', () => ctx.slots.register({
       name: 'conversation.hero.dock',
       id: 'hivemind-connector-suggestions',
