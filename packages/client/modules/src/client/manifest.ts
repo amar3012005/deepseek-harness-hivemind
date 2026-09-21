@@ -60,8 +60,6 @@ export interface WebBootEntry {
   immediately?: boolean
   /** Non-baseline module specifiers this row requests; omitted when it requests none. */
   external?: string[]
-  /** Public JSON configuration resolved for this browser plugin by the host profile. */
-  config?: unknown
 }
 
 /** Initial scheduling phase for one content-addressed combo script. */
@@ -117,8 +115,6 @@ export interface BootPluginRow {
   inject: string[]
   /** Stage-one prefetch tier (false when the wire omits it). */
   immediately: boolean
-  /** Public JSON configuration resolved for this browser plugin by the host profile. */
-  config?: unknown
 }
 
 /** The parsed boot manifest: one wire, two consumer views. */
@@ -202,16 +198,6 @@ export function parseBootManifest(wire: unknown): BootManifest {
     if (row.immediately !== undefined && typeof row.immediately !== 'boolean') {
       throw new Error(`client-modules: boot manifest entry ${where} immediately must be a boolean`)
     }
-    // The manifest is JSON serialized into the HTML index. Reject values that
-    // cannot survive that boundary instead of silently changing a plugin's
-    // configuration in the browser.
-    if (row.config !== undefined) {
-      try {
-        JSON.stringify(row.config)
-      } catch {
-        throw new Error(`client-modules: boot manifest entry ${where} config must be JSON-serializable`)
-      }
-    }
     moduleFields.push({
       id: row.id,
       url: row.url,
@@ -223,7 +209,6 @@ export function parseBootManifest(wire: unknown): BootManifest {
       id: row.id,
       inject: inject === undefined ? [] : [...inject],
       immediately: row.immediately === true,
-      ...(row.config === undefined ? {} : { config: row.config }),
     })
   }
 

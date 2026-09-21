@@ -17,6 +17,7 @@ describe('hivemind-web native renderer parity', () => {
   })
   it('keeps prompt events but hides their developer-facing transcript rows', () => {
     expect(patch).toMatch(/- id: ui-chat\n  config:\n    showSystemPrompts: false/)
+    expect(readFileSync(new URL('../src/index.ts', import.meta.url), 'utf8')).toContain('__DSH_HIVEMIND_CHAT_PRESENTATION__')
   })
   it('does not disable native conversation and rendering plugins', () => {
     const nativeSurfaces = [

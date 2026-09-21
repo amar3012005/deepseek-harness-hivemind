@@ -55,8 +55,6 @@ interface WebBootRowFields {
   /** Module specifiers the package requests from the module table. */
   external: string[]
   immediately: boolean
-  /** Profile-resolved browser configuration. This is copied only when it can cross the HTML JSON boundary. */
-  config?: unknown
 }
 
 /** Filesystem baseline captured before a client artifact snapshot is read. */
@@ -409,22 +407,6 @@ function graphRow(id: string, rev: string, fields: WebBootRowFields): WebBootEnt
     ...(fields.inject !== undefined ? { inject: fields.inject } : {}),
     ...(fields.immediately ? { immediately: true } : {}),
     ...(fields.external.length > 0 ? { external: fields.external } : {}),
-    ...(fields.config === undefined ? {} : { config: fields.config }),
-  }
-}
-
-/**
- * Copy an entry configuration through the browser wire without sharing mutable
- * host objects. Configurations containing non-JSON values are host-only by
- * definition and therefore deliberately omitted from a client package row.
- */
-function publicClientConfig(value: unknown): unknown | undefined {
-  if (value === undefined) return undefined
-  try {
-    const serialized = JSON.stringify(value)
-    return serialized === undefined ? undefined : JSON.parse(serialized) as unknown
-  } catch {
-    return undefined
   }
 }
 
@@ -965,14 +947,7 @@ export class ClientModuleRegistry extends Service {
     }
     const resolved = this.resolveMeta(loaderName, baseUrl)
     if (resolved === null) return undefined
-    const config = publicClientConfig(entry.options.config)
-    return {
-      ...resolved,
-      loaderName,
-      baseUrl,
-      sourceKey: this.sourceKey(loaderName, baseUrl),
-      meta: { ...resolved.meta, ...(config === undefined ? {} : { config }) },
-    }
+    return { ...resolved, loaderName, baseUrl, sourceKey: this.sourceKey(loaderName, baseUrl) }
   }
 
   private reconcilePackage(packageName: string): boolean {
@@ -990,17 +965,7 @@ export class ClientModuleRegistry extends Service {
     }
     const source = sources[0]
     if (source === undefined) return this.table.delete(packageName)
-    const existing = this.table.get(packageName)
-    if (existing?.sourceKey === source.sourceKey) {
-      // Config reloads do not alter a module's resolver identity or bundle
-      // bytes, but they must still publish a fresh boot graph for the next
-      // browser load. Keep the existing artifact revision and replace only
-      // the profile-owned row fields.
-      if (JSON.stringify(existing.meta.config) === JSON.stringify(source.meta.config)) return false
-      existing.meta = source.meta
-      existing.entry = graphRow(packageName, existing.entry.rev, source.meta)
-      return true
-    }
+    if (this.table.get(packageName)?.sourceKey === source.sourceKey) return false
     // The opaque initial rev rides the row until HMR observes a file change;
     // a fiber restart from the same source reuses the existing row.
     const snapshot = this.initialBundleSnapshot(packageName, source.meta.clientPath)

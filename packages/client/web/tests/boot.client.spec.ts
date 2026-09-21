@@ -91,44 +91,6 @@ describe('bootstrap failure rendering', () => {
 })
 
 describe('plugin activation', () => {
-  it('passes profile-resolved public config to the browser plugin', async () => {
-    const container = document.createElement('div')
-    document.body.append(container)
-    const target = installFacade()
-    const entries: WebBootEntry[] = [
-      { id: 'configured', url: '/configured.js', rev: '1', config: { showSystemPrompts: false } },
-      { id: 'renderer', url: '/renderer.js', rev: '1' },
-    ]
-    win.__DSH_BOOT__ = {
-      rev: 'configured-profile',
-      entries,
-      batches: [{ phase: 'application', url: '/application.js', rev: 'batch', entries: entries.map(row => row.id) }],
-    }
-    const entry = new AppWebEntry(container, {
-      loadBundle: async () => {
-        target.load({
-          id: 'configured',
-          factory: () => ({
-            apply: (_ctx: Context, config: unknown) => {
-              expect(config).toEqual({ showSystemPrompts: false })
-            },
-          }),
-        })
-        target.load({
-          id: 'renderer',
-          factory: () => ({
-            apply: (ctx: Context) => {
-              ctx.reflect.provide('uiRenderer', { mount: () => () => {} })
-            },
-          }),
-        })
-      },
-    })
-
-    await entry.run()
-    await entry.dispose()
-  })
-
   it('prefetches a parser-loaded immediate row through the injected bundle transport', async () => {
     const container = document.createElement('div')
     document.body.append(container)

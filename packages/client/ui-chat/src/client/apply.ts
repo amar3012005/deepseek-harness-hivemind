@@ -61,6 +61,18 @@ export const Config: z<Config> = z.object({
   showSystemPrompts: z.boolean().default(true),
 })
 
+/** HIVE's profile-scoped browser presentation policy, absent in every other shell. */
+interface HivemindChatPresentation {
+  showSystemPrompts?: boolean
+}
+
+function resolvedShowSystemPrompts(config: Config): boolean {
+  const presentation = (globalThis as {
+    __DSH_HIVEMIND_CHAT_PRESENTATION__?: HivemindChatPresentation
+  }).__DSH_HIVEMIND_CHAT_PRESENTATION__
+  return presentation?.showSystemPrompts ?? config.showSystemPrompts ?? true
+}
+
 /**
  * Mount all Chat-owned contributions.
  * @param ctx - Client root context.
@@ -79,7 +91,7 @@ export function apply(ctx: Context, config: Config = Config({})): void {
     }
     return source
   }
-  registerConversationNodes(ctx, config.showSystemPrompts as boolean)
+  registerConversationNodes(ctx, resolvedShowSystemPrompts(config))
   registerChatNodeRenderers(ctx)
   ctx.uiSession.provide({
     hooks: ['chat'],
