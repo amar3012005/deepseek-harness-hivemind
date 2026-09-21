@@ -1089,6 +1089,18 @@ const PROVIDER_NOISE = new Set([
   'image_192', 'image_512', 'image_1024', 'status_emoji_display_info', 'cache_ts',
 ])
 
+/** Authentication material may be read from a connected app but must never be
+ * projected into model context or the rendered conversation. The private,
+ * tenant-scoped receipt remains available for governed audit/replay only. */
+function containsAuthenticationMaterial(value: string): boolean {
+  return [
+    /\b(?:one[- ]time (?:pass(?:word|code)|code)|otp|verification code|security code|login code|sign[- ]in code|2fa code|mfa code)\b/i,
+    /\b(?:reset|recover|change)\s+(?:your\s+)?password\b/i,
+    /https?:\/\/\S*(?:reset[-_\/]?password|password[-_\/]?reset|verify[-_]?(?:account|email)|magic[-_\/]?link)\S*/i,
+    /\b(?:new|unrecognized|unrecognised|suspicious)\s+(?:sign[- ]?in|login|authentication)(?:\s+(?:attempt|alert|activity))?\b/i,
+  ].some(pattern => pattern.test(value))
+}
+
 function isMimeTransportTree(value: unknown): boolean {
   if (!record(value)) return false
   const mime = stringValue(value['mimeType']) ?? stringValue(value['mime_type'])
@@ -1101,7 +1113,10 @@ function isMimeTransportTree(value: unknown): boolean {
 }
 
 function compactProviderValue(value: unknown): JsonValue {
-  if (typeof value === 'string') return value.length > 800 ? `${value.slice(0, 800)}…` : value
+  if (typeof value === 'string') {
+    if (containsAuthenticationMaterial(value)) return '[Authentication-related content redacted]'
+    return value.length > 800 ? `${value.slice(0, 800)}…` : value
+  }
   if (typeof value === 'number' || typeof value === 'boolean' || value === null) return value
   if (Array.isArray(value)) return value.slice(0, 20).map(item => compactProviderValue(item))
   if (!record(value)) return String(value)

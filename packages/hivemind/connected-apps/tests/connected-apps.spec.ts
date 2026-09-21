@@ -189,6 +189,19 @@ describe('progressive Composio bridge', () => {
     expect(String((compact as { data: { text: string } }).data.text).endsWith('…')).toBe(true)
   })
 
+  it('redacts authentication material from connected-app model projections', () => {
+    const compact = compactComposioExecutionReceipt({ data: {
+      subject: 'Your verification code',
+      snippet: 'A new sign-in to your account was detected.',
+      safe: 'Quarterly planning invitation',
+    } })
+    const rendered = JSON.stringify(compact)
+    expect(rendered).not.toContain('verification code')
+    expect(rendered).not.toContain('sign-in')
+    expect(rendered).toContain('[Authentication-related content redacted]')
+    expect(rendered).toContain('Quarterly planning invitation')
+  })
+
   it('keeps readable evidence while omitting duplicated MIME transport trees generically', () => {
     const compact = compactComposioExecutionReceipt({ data: { records: [{
       id: 'record-1', messageText: 'Readable evidence for the model.',
