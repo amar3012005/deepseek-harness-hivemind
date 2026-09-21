@@ -173,7 +173,10 @@ export function saveOperationId(execution: ToolExecution, request: SaveRequest):
 }
 
 function appendSaveEvent(agent: Agent, data: SaveEventData): void {
-  agent.session.append('hivemind/memory-save', data)
+  // The host must be able to observe a session before this preset is mounted.
+  // Keep the event durable for resumed approvals, but allow older/newer hosts
+  // without this optional HIVE plugin to skip the telemetry safely.
+  agent.session.append('hivemind/memory-save', data, { ignorable: true })
 }
 
 function latestSaveEvent(agent: Agent, operationId: string): SaveEventData | undefined {

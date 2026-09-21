@@ -1089,7 +1089,7 @@ export function apply(ctx: Context, config: Config): void {
           agent.session.append('hivemind/read-scope', {
             scope: scope as HivemindReadScope,
             ...(scope === 'project' ? { project } : {}),
-          })
+          }, { ignorable: true })
           return { kind: 'success', text: `read scope ${scope}${project === '' ? '' : `: ${project}`}` }
         },
       }))
@@ -1221,7 +1221,7 @@ export function apply(ctx: Context, config: Config): void {
       execution.agent?.session.append('hivemind/memory-save', {
         operation_id: idempotencyKey, status: 'executing', idempotency_key: idempotencyKey,
         ...(request.scope === undefined ? {} : { destination: request.scope }),
-      })
+      }, { ignorable: true })
       const payload = {
         title: request.title,
         content: request.content,
@@ -1269,7 +1269,7 @@ export function apply(ctx: Context, config: Config): void {
         operation_id: idempotencyKey, status: compacted.status === 'saved' ? 'completed' : 'executing',
         idempotency_key: idempotencyKey,
         ...(request.scope === undefined ? {} : { destination: request.scope }),
-      })
+      }, { ignorable: true })
       return compacted
     },
     async saveStatus(request: SaveStatusRequest, signal) {

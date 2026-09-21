@@ -309,7 +309,7 @@ describe('progressive Composio bridge', () => {
     expect(discovered.execution_contracts).toEqual([expect.objectContaining({ tool_slug: 'GMAIL_FETCH_EMAILS' })])
     expect(append).toHaveBeenCalledWith('hivemind/decision', expect.objectContaining({
       stage: 'composio_selection', selected: 'use:GMAIL_FETCH_EMAILS', source: 'jev',
-    }))
+    }), { ignorable: true })
     await expect(app.tool().execute({
       action: 'execute', tool_slug: 'GMAIL_ADD_LABEL_TO_EMAIL', arguments: { message_id: 'm-1' },
     }, { signal: new AbortController().signal, agent, name: 'hivemind_connected_task', callId: 'write' } as never))

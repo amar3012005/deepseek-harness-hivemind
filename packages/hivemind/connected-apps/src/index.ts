@@ -1423,7 +1423,7 @@ export function apply(ctx: Context, config: Config = {}): void {
             userKey: canonicalKey,
             subject,
             routerSessionId: created.sessionId,
-          })
+          }, { ignorable: true })
         }
         return created
       })()
@@ -1864,7 +1864,7 @@ export function apply(ctx: Context, config: Config = {}): void {
                   ...(typeof response.receipt?.source === 'string' ? { source: response.receipt.source.slice(0, 80) } : {}),
                   ...(typeof (response.reason ?? response.receipt?.reason) === 'string'
                     ? { reason: String(response.reason ?? response.receipt?.reason).slice(0, 240) } : {}),
-                })
+                }, { ignorable: true })
               }
               if (response.status === 'selected' && response.authoritative === true
                 && typeof response.selected === 'string' && response.selected.startsWith('use:')) {
