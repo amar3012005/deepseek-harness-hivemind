@@ -37,14 +37,17 @@ for (const [feature, ids] of Object.entries(presentation)) {
 
 const defaultModel = row('agent-default-model')
 const llmProvider = row('llm-pi-ai')
-if (!defaultModel.includes("model: openrouter/deepseek/deepseek-v4-flash-0731")
+if (!defaultModel.includes('provider: cloudflare-openrouter-streaming')
+  || !defaultModel.includes('model: z-ai/glm-5.3-flash:nitro')
+  || !llmProvider.includes('cloudflare-openrouter-streaming:')
+  || !/reasoning:\s*['"]?low['"]?/.test(llmProvider)) {
+  throw new Error('hivemind-web image profile must use the streaming GLM route with required reasoning')
+}
+if (!llmProvider.includes('id: openrouter/deepseek/deepseek-v4-flash-0731')
   || !/reasoning:\s*['"]?off['"]?/.test(llmProvider)) {
-  throw new Error('hivemind-web image profile must disable optional reasoning for its default model')
+  throw new Error('hivemind-web image profile must retain the legacy DeepSeek route for persisted sessions')
 }
-if (!dump.includes("'off': none")) {
-  throw new Error('hivemind-web image profile must map Harness reasoning off to OpenRouter none')
-}
-console.log('hivemind-web image profile disables optional default-model reasoning')
+console.log('hivemind-web image profile uses streaming GLM and retains the legacy DeepSeek route')
 
 const ctx = new Context()
 ctx.baseUrl = pathToFileURL('/opt/deepseek-harness/apps/cli/').href

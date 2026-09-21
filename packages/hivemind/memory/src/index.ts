@@ -232,6 +232,10 @@ function containsCredentialMaterial(value: string): boolean {
     /-----BEGIN(?: [A-Z]+)? PRIVATE KEY-----/i,
     /\b(?:api[ _-]?key|access[ _-]?token|auth(?:entication)?[ _-]?token|password|secret)\s*[:=]\s*\S+/i,
     /\b(?:sk|ak|pk)_[A-Za-z0-9_-]{16,}\b/,
+    /\b(?:one[- ]time (?:pass(?:word|code)|code)|otp|verification code|security code|login code|sign[- ]in code|2fa code|mfa code)\b/i,
+    /\b(?:reset|recover|change)\s+(?:your\s+)?password\b/i,
+    /https?:\/\/\S*(?:reset[-_/]?password|password[-_/]?reset|verify[-_/]?(?:account|email)|magic[-_/]?link)\S*/i,
+    /\b(?:new|unrecognized|unrecognised|suspicious)\s+(?:sign[- ]?in|login|authentication)(?:\s+(?:attempt|alert|activity))?\b/i,
   ].some(pattern => pattern.test(value))
 }
 
@@ -243,6 +247,17 @@ function tagsFor(input: Record<string, unknown>): string[] | undefined {
   if (filename !== undefined) tags.push(`filename:${text(filename, 'filename')}`)
   for (const entity of strings(input['entities'], 'entities') ?? []) tags.push(`entity:${entity}`)
   return tags.length === 0 ? undefined : [...new Set(tags)]
+}
+
+/** Accept the historical flat read form without spending another model turn.
+ * The canonical public schema remains nested and both forms receive the same
+ * strict field validation below. */
+function readInput(args: Record<string, unknown>, key: 'recall' | 'entities'): Record<string, unknown> {
+  const nested = args[key]
+  if (nested !== undefined) return object(nested, key)
+  const { operation: _operation, ...flat } = args
+  if (flat['query'] === undefined) return object(nested, key)
+  return flat
 }
 
 /** Parse the one canonical shape accepted by both the compatibility gateway and save tool. */
@@ -269,7 +284,7 @@ function saveRequest(input: Record<string, unknown>): SaveRequest {
     ...relatedTo === undefined ? {} : { relatedTo },
     ...scope === undefined ? {} : { scope },
   }
-  if (containsCredentialMaterial(`${request.title}\n${request.content}`)) throw new TypeError('hivemind-memory: save refuses credential material')
+  if (containsCredentialMaterial(`${request.title}\n${request.content}`)) throw new TypeError('hivemind-memory: save refuses credential or authentication material')
   return request
 }
 const output = {
@@ -297,7 +312,7 @@ export function memoryPlugin(config: MemoryPluginConfig, provider: MemoryProvide
           related_to: { type: 'string', description: 'The exact recalled memory UUID that the relationship targets. Never use a person, project, topic, or label.' },
         },
         output,
-        isConcurrencySafe: () => true,
+        isConcurrencySafe: () => false,
         async execute(args, execution) {
           if (execution.agent === undefined) throw new TypeError('hivemind-memory: active agent required')
           const prepared = provider.prepareSave?.(execution.agent, saveRequest(args)) ?? saveRequest(args)
@@ -305,6 +320,62 @@ export function memoryPlugin(config: MemoryPluginConfig, provider: MemoryProvide
           return approved === undefined
             ? { operation: 'save', status: 'cancelled' }
             : provider.save(execution.agent, approved, execution.signal, execution)
+        },
+      })))
+      ctx.effect(() => ctx.tools.register(defineTool({
+        name: 'hivemind_batch_save_memories',
+        description: 'Durably save a bounded batch of confirmed stable HIVE-MIND memories with one destination approval. Use this instead of many individual save calls when the user explicitly asks to save multiple records. Every item is validated before approval; writes execute sequentially and return one batch receipt.',
+        parameters: {
+          items: {
+            type: 'array', required: true,
+            items: {
+              type: 'object', additionalProperties: false,
+              properties: {
+                title: { type: 'string', required: true },
+                content: { type: 'string', required: true },
+                source_type: { type: 'string', enum: ['text', 'conversation', 'documentation', 'decision'] },
+                tags: { type: 'array', items: { type: 'string' } },
+                project: { type: 'string' },
+                relationship: { type: 'string', enum: ['update', 'extend', 'derive'] },
+                related_to: { type: 'string' },
+              },
+            },
+          },
+          scope: { type: 'string', enum: ['personal', 'organization', 'project'], description: 'One destination for the complete batch. Project scope requires every item to use the same project.' },
+        },
+        output,
+        isConcurrencySafe: () => false,
+        async execute(args, execution) {
+          if (execution.agent === undefined) throw new TypeError('hivemind-memory: active agent required')
+          const agent = execution.agent
+          if (!Array.isArray(args.items) || args.items.length < 1 || args.items.length > 25) {
+            throw new TypeError('hivemind-memory: batch requires between 1 and 25 items')
+          }
+          const requestedScope = optionalScope(args.scope, 'scope')
+          const prepared = args.items.map((item, index) => {
+            const raw = object(item, `items[${index}]`)
+            const request = saveRequest({ ...raw, ...(requestedScope === undefined ? {} : { scope: requestedScope }) })
+            return provider.prepareSave?.(agent, request) ?? request
+          })
+          const projects = [...new Set(prepared.flatMap(item => item.project === undefined ? [] : [item.project]))]
+          if (requestedScope === 'project' && projects.length !== 1) {
+            throw new TypeError('hivemind-memory: project batch requires one shared project')
+          }
+          const approvalRequest: SaveRequest = {
+            title: `${prepared.length} prepared memories`,
+            content: prepared.map(item => item.title).join('\n'),
+            sourceType: 'conversation',
+            ...(projects.length === 1 ? { project: projects[0] } : {}),
+            ...(requestedScope === undefined ? {} : { scope: requestedScope }),
+          }
+          const approved = await approveSaveDestination(ctx, execution, approvalRequest)
+          if (approved === undefined) return { operation: 'batch_save', status: 'cancelled', count: prepared.length }
+          if (approved.scope === undefined) throw new Error('hivemind-memory: approved batch destination is unavailable')
+          const results: Record<string, JsonValue>[] = []
+          for (const request of prepared) {
+            results.push(await provider.save(agent, { ...request, scope: approved.scope }, execution.signal, execution))
+          }
+          return { operation: 'batch_save', status: 'completed', count: results.length, destination: approved.scope, results }
         },
       })))
       ctx.effect(() => ctx.tools.register(defineTool({
@@ -365,7 +436,7 @@ export function memoryPlugin(config: MemoryPluginConfig, provider: MemoryProvide
           },
         },
         output,
-        isConcurrencySafe: () => true,
+        isConcurrencySafe: args => args.operation !== 'save',
         async execute(args, execution) {
           const operation = text(args.operation, 'operation')
           if (operation === 'context') {
@@ -374,7 +445,7 @@ export function memoryPlugin(config: MemoryPluginConfig, provider: MemoryProvide
           }
           if (operation === 'profiles') return provider.profiles(execution.signal)
           if (operation === 'entities') {
-            const input = object(args.entities, 'entities')
+            const input = readInput(args, 'entities')
             const rawLimit = input['limit'] ?? config.defaultLimit
             if (!Number.isInteger(rawLimit) || (rawLimit as number) < 1 || (rawLimit as number) > 25) throw new TypeError('hivemind-memory: entity limit must be an integer from 1 to 25')
             const scopeFilter = optionalScope(input['scope_filter'] ?? input['scope'], 'entities.scope_filter')
@@ -404,7 +475,7 @@ export function memoryPlugin(config: MemoryPluginConfig, provider: MemoryProvide
             return provider.saveStatus({ idempotencyKey: text(input['idempotency_key'], 'idempotency_key') }, execution.signal)
           }
           if (operation !== 'recall') throw new TypeError('hivemind-memory: unsupported operation')
-          const input = object(args.recall, 'recall')
+          const input = readInput(args, 'recall')
           const rawLimit = input['limit'] ?? config.defaultLimit
           if (!Number.isInteger(rawLimit) || (rawLimit as number) < 1 || (rawLimit as number) > 25) throw new TypeError('hivemind-memory: recall limit must be an integer from 1 to 25')
           const mode = text(input['mode'] ?? 'memory', 'mode')

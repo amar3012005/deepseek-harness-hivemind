@@ -6,6 +6,12 @@
     includeHarnessIdentity: false
     includeRuntimeContext: false
 
+# The session service already provides an immediate deterministic fallback
+# title. A second model request competes with the answer on some OpenRouter
+# routes and delays the first visible response chunk.
+- id: session-title-llm
+  disabled: true
+
 - id: web-runtime
   config:
     openBrowser: !!js ctx.webStartup.openBrowser
@@ -16,8 +22,9 @@
 - id: llm-pi-ai
   config:
     providers:
+      # Retain this provider/model identity for existing persisted sessions.
       cloudflare-openrouter:
-        displayName: Cloudflare AI Gateway / OpenRouter
+        displayName: Cloudflare AI Gateway / OpenRouter (legacy sessions)
         apiKeyEnv: CLOUDFLARE_API_KEY
         api: openai-completions
         reasoning: off
@@ -28,6 +35,37 @@
         compat:
           thinkingFormat: openrouter
         baseURL: https://gateway.ai.cloudflare.com/v1/0dc6b9186b5a9b8985613b10c1c59f4f/hivemind-prod/compat
+        headers:
+          cf-aig-byok-alias: first-bundb
+        defaultContextWindow: 131072
+        defaultMaxTokens: 32768
+        defaultInput: [text]
+        retryPolicy:
+          mode: normal
+          maxRetries: 3
+        models:
+          - id: openrouter/deepseek/deepseek-v4-flash-0731
+            name: DeepSeek V4 Flash 0731 (legacy sessions)
+            contextWindow: 1310720
+            maxTokens: 32768
+            input: [text]
+            reasoningEfforts:
+              off: none
+              low: low
+              high: high
+              max: max
+
+      # New HIVE sessions use the native provider adapter against Cloudflare's
+      # OpenRouter route. The adapter emits ordinary Harness text deltas; no
+      # profile-specific streaming loop or UI patch is involved.
+      cloudflare-openrouter-streaming:
+        displayName: Cloudflare AI Gateway / OpenRouter Streaming
+        apiKeyEnv: CLOUDFLARE_API_KEY
+        api: openai-completions
+        reasoning: low
+        compat:
+          thinkingFormat: openrouter
+        baseURL: https://gateway.ai.cloudflare.com/v1/0dc6b9186b5a9b8985613b10c1c59f4f/hivemind-prod/openrouter/v1
         headers:
           cf-aig-byok-alias: first-bundb
         defaultContextWindow: 131072
@@ -96,21 +134,21 @@
             contextWindow: 131072
             maxTokens: 8192
             input: [text, image]
-          - id: openrouter/deepseek/deepseek-v4-flash-0731
-            name: DeepSeek V4 Flash 0731
-            contextWindow: 1310720
+          - id: z-ai/glm-5.3-flash:nitro
+            name: GLM 5.3 Flash Nitro
+            contextWindow: 131072
             maxTokens: 32768
             input: [text]
             reasoningEfforts:
-              off: none
               low: low
+              medium: medium
               high: high
               max: max
 
 - id: agent-default-model
   config:
-    provider: cloudflare-openrouter
-    model: openrouter/deepseek/deepseek-v4-flash-0731
+    provider: cloudflare-openrouter-streaming
+    model: z-ai/glm-5.3-flash:nitro
 
 - id: session-persistence-jsonl
   disabled: true

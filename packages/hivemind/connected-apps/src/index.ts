@@ -23,6 +23,13 @@ interface ComposioRouterSessionEventData {
   readonly routerSessionId: string
 }
 
+interface ConnectedReceiptEventData {
+  readonly version: 1
+  readonly workflowSessionId?: string
+  readonly tool: string
+  readonly receipt: JsonValue
+}
+
 declare module '@deepseek-ai/dsh-session/types' {
   interface SessionEventMap {
     /**
@@ -31,6 +38,8 @@ declare module '@deepseek-ai/dsh-session/types' {
      * enters derived model history.
      */
     'hivemind/composio-session': ComposioRouterSessionEventData
+    /** Compact replayable connected-app evidence retained across turns. */
+    'hivemind/connected-receipt': ConnectedReceiptEventData
   }
 }
 
@@ -43,6 +52,7 @@ const CONNECTED_WORKFLOWS_SKILL = 'composio-connected-workflows'
 const PLUGINS_SETTINGS_NAMESPACE = 'hivemind-plugins'
 const BRIDGE_TOOL = 'hivemind_connected_task'
 const WORKFLOW_CONTEXT_SOURCE = 'dsh-hivemind-connected-apps/workflow'
+const RECEIPT_CONTEXT_SOURCE = 'dsh-hivemind-connected-apps/receipt'
 const META_TOOLS = new Set([
   'COMPOSIO_SEARCH_TOOLS',
   'COMPOSIO_GET_TOOL_SCHEMAS',
@@ -1066,6 +1076,17 @@ const PROVIDER_NOISE = new Set([
   'image_192', 'image_512', 'image_1024', 'status_emoji_display_info', 'cache_ts',
 ])
 
+/** Keep authentication content out of the model projection and rendered chat.
+ * The complete tenant-scoped provider receipt remains private and durable. */
+function containsAuthenticationMaterial(value: string): boolean {
+  return [
+    /\b(?:one[- ]time (?:pass(?:word|code)|code)|otp|verification code|security code|login code|sign[- ]in code|2fa code|mfa code)\b/i,
+    /\b(?:reset|recover|change)\s+(?:your\s+)?password\b/i,
+    /https?:\/\/\S*(?:reset[-_/]?password|password[-_/]?reset|verify[-_]?(?:account|email)|magic[-_/]?link)\S*/i,
+    /\b(?:new|unrecognized|unrecognised|suspicious)\s+(?:sign[- ]?in|login|authentication)(?:\s+(?:attempt|alert|activity))?\b/i,
+  ].some(pattern => pattern.test(value))
+}
+
 function isMimeTransportTree(value: unknown): boolean {
   if (!record(value)) return false
   const mime = stringValue(value['mimeType']) ?? stringValue(value['mime_type'])
@@ -1078,7 +1099,10 @@ function isMimeTransportTree(value: unknown): boolean {
 }
 
 function compactProviderValue(value: unknown): JsonValue {
-  if (typeof value === 'string') return value.length > 800 ? `${value.slice(0, 800)}…` : value
+  if (typeof value === 'string') {
+    if (containsAuthenticationMaterial(value)) return '[Authentication-related content redacted]'
+    return value.length > 800 ? `${value.slice(0, 800)}…` : value
+  }
   if (typeof value === 'number' || typeof value === 'boolean' || value === null) return value
   if (Array.isArray(value)) return value.slice(0, 20).map(item => compactProviderValue(item))
   if (!record(value)) return String(value)
@@ -1204,6 +1228,8 @@ export function compactComposioSearchReceipt(
     }),
     schema_policy: 'Use the exact execution_contracts below. If a selected slug has no contract, load its schema before execution. Never infer argument names.',
   }
+  const workflowSessionId = returnedWorkflowSessionId(value)
+  if (workflowSessionId !== undefined) compact['session_id'] = workflowSessionId
   // Composio ranks primary slugs. Expose and authorize only the first bounded
   // action of each atomic query. A different branch needs a fresh, justified
   // discovery result rather than widening the active workflow contract.
@@ -1229,6 +1255,40 @@ export function compactComposioSearchReceipt(
   }
   copyPlanningFields(data, compact)
   return compact
+}
+
+function appendConnectedReceipt(
+  execution: Pick<ToolExecution, 'agent'>,
+  tool: string,
+  receipt: JsonValue,
+  workflowSessionId?: string,
+): void {
+  execution.agent?.session.append('hivemind/connected-receipt', {
+    version: 1,
+    tool,
+    receipt,
+    ...(workflowSessionId === undefined ? {} : { workflowSessionId }),
+  })
+}
+
+function latestConnectedReceipt(agent: ToolExecution['agent']): ConnectedReceiptEventData | undefined {
+  const events = agent?.session.snapshotEvents()
+  if (events === undefined) return undefined
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const event = events[index]
+    if (event?.type === 'hivemind/connected-receipt') return event.data
+  }
+  return undefined
+}
+
+function connectedReceiptContextMessage(receipt: ConnectedReceiptEventData) {
+  return createUserMessage({
+    content: [{
+      type: 'text',
+      text: `## Most recent connected-app receipt\nThis compact evidence was durably retained from a prior completed connected-app operation. Use it when the current request refers to those results; do not repeat the provider read merely to reconstruct context.\n${JSON.stringify(receipt)}`,
+    }],
+    source: { kind: 'plugin', plugin: RECEIPT_CONTEXT_SOURCE, form: 'recall' },
+  })
 }
 
 async function saveReceipt(
@@ -1911,7 +1971,7 @@ export function apply(ctx: Context, config: Config = {}): void {
           approvedProjection: flattenedRequestedProjection(providerResult, new Set(fields)),
         },
       )
-      return {
+      const compact = {
         ...compactComposioExecutionReceipt(
           providerResult,
           sourceReceipt,
@@ -1920,7 +1980,9 @@ export function apply(ctx: Context, config: Config = {}): void {
         status: 'ready',
         ...(MUTATING_TOOL.test(slug) ? { idempotency_key: idempotencyKey } : {}),
         operations: [{ tool: slug, status: 'completed' }],
-      }
+      } as Record<string, JsonValue>
+      appendConnectedReceipt(execution, slug, compact, workflowSessionId(args))
+      return compact
     },
   })))
 
@@ -1945,11 +2007,12 @@ export function apply(ctx: Context, config: Config = {}): void {
       })
     }
     const unfinished = unfinishedWorkflow(agent.session.snapshotEvents(), turn)
-    return unfinished === undefined
-      ? decision
-      : shouldProjectWorkflow(messages)
-        ? { ...decision, messages: [...decision.messages, workflowContextMessage(unfinished)] }
-        : decision
+    const receipt = latestConnectedReceipt(agent)
+    const projections = [
+      ...(unfinished !== undefined && shouldProjectWorkflow(messages) ? [workflowContextMessage(unfinished)] : []),
+      ...(receipt === undefined ? [] : [connectedReceiptContextMessage(receipt)]),
+    ]
+    return projections.length === 0 ? decision : { ...decision, messages: [...decision.messages, ...projections] }
   }))
   ctx.effect(() => ctx.on('tools/pre-execute', async (execution, next) => {
     if (!isConnectedAppInvocation(execution.name, execution.arguments)) return next()

@@ -1,7 +1,7 @@
 import { Context } from '@deepseek-ai/cordis'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { memoryPlugin, saveOperationId } from '../src/index.ts'
 
 describe('hivemind-memory plugin lifecycle', () => {
@@ -19,8 +19,66 @@ describe('hivemind-memory plugin lifecycle', () => {
 
     const tools = fiber.ctx.tools
     expect(tools.get('hivemind_meta')).toBeDefined()
+    expect(tools.get('hivemind_batch_save_memories')).toBeDefined()
     await fiber.dispose()
     expect(tools.get('hivemind_meta')).toBeUndefined()
+    expect(tools.get('hivemind_batch_save_memories')).toBeUndefined()
+  })
+
+  it('normalizes historical flat entity and recall reads without another model turn', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SystemPrompt, {})
+    await ctx.plugin(ToolRuntime)
+    const entities = vi.fn(async () => ({ status: 'ready' }))
+    const recall = vi.fn(async () => ({ status: 'ready' }))
+    const fiber = await ctx.plugin(memoryPlugin({ defaultLimit: 5 }, {
+      context: async () => ({}), entities, recall,
+      save: async () => ({}), profiles: async () => ({}),
+    }))
+    const meta = fiber.ctx.tools.get('hivemind_meta')!
+    await meta.execute({ operation: 'entities', query: 'Griseldis', limit: 5 }, {
+      signal: new AbortController().signal,
+    } as never)
+    await meta.execute({ operation: 'recall', query: 'company decision', limit: 3 }, {
+      signal: new AbortController().signal,
+    } as never)
+    expect(entities).toHaveBeenCalledWith({ query: 'Griseldis', limit: 5 }, expect.any(AbortSignal), expect.any(Object))
+    expect(recall).toHaveBeenCalledWith({ query: 'company decision', mode: 'memory', limit: 3 }, expect.any(AbortSignal), expect.any(Object))
+    await fiber.dispose()
+  })
+
+  it('marks memory mutations exclusive and keeps reads parallel-safe', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SystemPrompt, {})
+    await ctx.plugin(ToolRuntime)
+    const fiber = await ctx.plugin(memoryPlugin({ defaultLimit: 5 }, {
+      context: async () => ({}), entities: async () => ({}), recall: async () => ({}),
+      save: async () => ({}), profiles: async () => ({}),
+    }))
+    expect(fiber.ctx.tools.get('hivemind_save_memory')?.isConcurrencySafe?.({})).toBe(false)
+    expect(fiber.ctx.tools.get('hivemind_batch_save_memories')?.isConcurrencySafe?.({})).toBe(false)
+    expect(fiber.ctx.tools.get('hivemind_meta')?.isConcurrencySafe?.({ operation: 'save' })).toBe(false)
+    expect(fiber.ctx.tools.get('hivemind_meta')?.isConcurrencySafe?.({ operation: 'recall' })).toBe(true)
+    await fiber.dispose()
+  })
+
+  it.each([
+    ['Your verification code', 'Use 482991 to sign in'],
+    ['Password reset', 'Reset your password at https://example.com/reset-password?t=secret'],
+    ['Security alert', 'Unrecognized login attempt from a new device'],
+  ])('blocks authentication material before approval: %s', async (title, content) => {
+    const ctx = new Context()
+    await ctx.plugin(SystemPrompt, {})
+    await ctx.plugin(ToolRuntime)
+    const fiber = await ctx.plugin(memoryPlugin({ defaultLimit: 5 }, {
+      context: async () => ({}), entities: async () => ({}), recall: async () => ({}),
+      save: async () => ({}), profiles: async () => ({}),
+    }))
+    await expect(fiber.ctx.tools.get('hivemind_save_memory')!.execute({ title, content, source_type: 'text' }, {
+      signal: new AbortController().signal,
+      agent: { session: { header: { id: 'session-1' }, append() {}, snapshotEvents: () => [] } },
+    } as never)).rejects.toThrow('authentication material')
+    await fiber.dispose()
   })
 
   it('uses a durable save-operation id that is independent of call id', () => {

@@ -106,6 +106,13 @@ describe('progressive Composio bridge', () => {
     expect(compact).not.toHaveProperty('source_receipt')
   })
 
+  it('promotes the real provider workflow session id to the stable receipt', () => {
+    expect(compactComposioSearchReceipt({ result: { data: {
+      session: { id: 'workflow-real-123', instructions: 'continue this workflow' },
+      results: [{ primary_tool_slugs: ['EXAMPLE_READ'] }],
+    } } })).toMatchObject({ session_id: 'workflow-real-123', session: { id: 'workflow-real-123' } })
+  })
+
   it('preserves execution contracts when a search receipt is projected again', () => {
     const first = compactComposioSearchReceipt({ data: { results: [{
       primary_tool_slugs: ['GMAIL_FETCH_MESSAGE_BY_MESSAGE_ID'],
@@ -177,6 +184,19 @@ describe('progressive Composio bridge', () => {
     expect(JSON.stringify(compact)).not.toContain('authorization')
     expect(JSON.stringify(compact)).not.toContain('mime_type')
     expect(String((compact as { data: { text: string } }).data.text).endsWith('…')).toBe(true)
+  })
+
+  it('redacts authentication material from connected-app model projections', () => {
+    const compact = compactComposioExecutionReceipt({ data: {
+      subject: 'Your verification code',
+      snippet: 'A new sign-in to your account was detected.',
+      safe: 'Quarterly planning invitation',
+    } })
+    const rendered = JSON.stringify(compact)
+    expect(rendered).not.toContain('verification code')
+    expect(rendered).not.toContain('sign-in')
+    expect(rendered).toContain('[Authentication-related content redacted]')
+    expect(rendered).toContain('Quarterly planning invitation')
   })
 
   it('keeps readable evidence while omitting duplicated MIME transport trees generically', () => {
