@@ -1,4 +1,5 @@
 import { defineConfig } from 'tsdown'
+import { typertPlugin } from '../typert/generator/lib/types/tsdown-plugin.js'
 
 // Compact release overlay: bundle only the two changed HIVE plugins after their
 // TypeScript declarations have been emitted. This deliberately avoids a full
@@ -13,6 +14,7 @@ export default defineConfig([
     fixedExtension: false,
     dts: false,
     clean: false,
+    plugins: [typertPlugin({ mode: 'workspace', faces: ['host'] })],
   },
   {
     entry: ['connected-apps/lib/types/index.js'],
@@ -24,5 +26,6 @@ export default defineConfig([
     dts: false,
     clean: false,
     deps: { alwaysBundle: ['@composio/core', 'ajv'] },
+    plugins: [typertPlugin({ mode: 'workspace', faces: ['host'] })],
   },
 ])
