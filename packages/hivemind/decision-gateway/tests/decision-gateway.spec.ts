@@ -73,7 +73,7 @@ describe('HIVE decision gateway consumer', () => {
 
     await harness.preStep?.({ agent: subject.value, turn: 1, step: 1, signal: new AbortController().signal } as never, enter)
     expect(subject.restrict).toHaveBeenCalledWith({ allow: ['hivemind_connected_task'] })
-    expect(subject.append).toHaveBeenCalledWith('hivemind/decision', expect.objectContaining({ status: 'selected', selected: 'composio_search' }))
+    expect(subject.append).toHaveBeenCalledWith('hivemind/decision', expect.objectContaining({ status: 'selected', selected: 'composio_search' }), { ignorable: true })
 
     await harness.preStep?.({ agent: subject.value, turn: 1, step: 2, signal: new AbortController().signal } as never,
       async () => ({ kind: 'enter' as const, messages: [] }))
@@ -95,8 +95,8 @@ describe('HIVE decision gateway consumer', () => {
     await harness.preStep?.({ agent: subject.value, turn: 2, step: 1, signal: new AbortController().signal } as never, enter)
 
     expect(subject.restrict).not.toHaveBeenCalled()
-    expect(subject.append).toHaveBeenNthCalledWith(1, 'hivemind/decision', expect.objectContaining({ status: 'defer' }))
-    expect(subject.append).toHaveBeenNthCalledWith(2, 'hivemind/decision', expect.objectContaining({ status: 'defer', reason: 'decision service returned 503' }))
+    expect(subject.append).toHaveBeenNthCalledWith(1, 'hivemind/decision', expect.objectContaining({ status: 'defer' }), { ignorable: true })
+    expect(subject.append).toHaveBeenNthCalledWith(2, 'hivemind/decision', expect.objectContaining({ status: 'defer', reason: 'decision service returned 503' }), { ignorable: true })
   })
 
   it('off mode registers no pre-step listener', () => {

@@ -1652,9 +1652,6 @@ importers:
       '@deepseek-ai/dsh-hivemind-web-runner':
         specifier: workspace:^
         version: link:../../hivemind/web-runner
-      '@deepseek-ai/dsh-host-webserver':
-        specifier: workspace:^
-        version: link:../../host/webserver
       '@deepseek-ai/dsh-session-persistence-postgres':
         specifier: workspace:^
         version: link:../../session/session-persistence-postgres

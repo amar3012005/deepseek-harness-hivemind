@@ -1,6 +1,3 @@
-import type { Context } from '@deepseek-ai/cordis'
-import type { IndexInjection } from '@deepseek-ai/dsh-host-webserver'
-
 /** HIVE-MIND chat-only Web profile bundle marker. */
 export const name = 'hivemind-web-app'
 
@@ -12,8 +9,10 @@ export const inject = ['webServer']
  * system/request events remain available for replay and inspection; only their
  * chat transcript disclosure cards are suppressed in the HIVE browser shell.
  */
-export function apply(ctx: Context): void {
-  ctx.on('webserver/index-inject', (table: IndexInjection[]) => {
+export function apply(ctx: {
+  on(event: 'webserver/index-inject', listener: (table: Array<{ kind: 'global'; name: string; value: unknown }>) => void): unknown
+}): void {
+  ctx.on('webserver/index-inject', (table) => {
     table.push({
       kind: 'global',
       name: '__DSH_HIVEMIND_CHAT_PRESENTATION__',

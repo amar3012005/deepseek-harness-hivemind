@@ -10,6 +10,11 @@ import { createHmac, randomUUID } from 'node:crypto'
 
 declare module '@deepseek-ai/dsh-session/types' {
   interface SessionEventMap {
+    /**
+     * Informational audit of an advisory HIVE decision. It never changes the
+     * reconstructed conversation: readers that do not include this extension
+     * may preserve and skip it safely.
+     */
     'hivemind/decision': {
       stage: 'capability' | 'composio_selection' | 'hivemind_meta_selection' | 'hivemind_recall_filters'
       mode: 'shadow' | 'active'
@@ -173,7 +178,7 @@ export function appendDecision(agent: Agent, config: Config, stage: DecisionStag
     ...(typeof response.receipt?.source === 'string' ? { source: response.receipt.source.slice(0, 80) } : {}),
     ...(typeof (response.reason ?? response.receipt?.reason) === 'string'
       ? { reason: String(response.reason ?? response.receipt?.reason).slice(0, 240) } : {}),
-  })
+  }, { ignorable: true })
 }
 
 /** Mount the first-step decision consumer. The current Harness path is fallback. */

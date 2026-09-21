@@ -13,6 +13,12 @@ import SessionStore, {
 } from '@deepseek-ai/dsh-session'
 import type { CreateSessionOptions, SessionEventType, SessionHeader, SessionSurface } from '@deepseek-ai/dsh-session'
 
+declare module '@deepseek-ai/dsh-session/types' {
+  interface SessionEventMap {
+    'test/informational': { readonly value: string }
+  }
+}
+
 describe('Session', () => {
   it('exposes one stable readonly surface view', () => {
     const session = Session.create(SessionId('surface-view'))
@@ -1231,6 +1237,13 @@ describe('Session', () => {
       { ...base, ignorable: true } as SessionEvent,
     ])
     expect(marked.snapshotEvents()[0]?.ignorable).toBe(true)
+  })
+
+  it('writes an explicitly ignorable log-only extension event', () => {
+    const session = Session.create(SessionId('ignorable-extension'))
+    const event = session.append('test/informational', { value: 'audit only' }, { ignorable: true })
+    expect(event).toMatchObject({ type: 'test/informational', data: { value: 'audit only' }, ignorable: true })
+    expect(session.snapshotEvents()).toEqual([event])
   })
 })
 

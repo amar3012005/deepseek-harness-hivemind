@@ -450,6 +450,18 @@ export type SurfaceIntent<T extends SurfaceEventType = SurfaceEventType> = {
 })
 
 /**
+ * Compatibility classification for a log-only extension event.
+ *
+ * An extension may set this only for informational records whose omission
+ * cannot change reconstructed conversation, tool, approval, or workflow
+ * state. It lets an older Harness retain and skip an event it does not know
+ * instead of refusing the entire session log.
+ */
+export interface LogEventIntent {
+  ignorable?: true
+}
+
+/**
  * One immutable entry in the session log.
  *
  * A proper discriminated union over `type` (not independent `type`/`data`
