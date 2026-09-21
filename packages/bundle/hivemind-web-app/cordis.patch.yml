@@ -64,7 +64,10 @@
         displayName: Cloudflare AI Gateway / OpenRouter Streaming
         apiKeyEnv: CLOUDFLARE_API_KEY
         api: openai-completions
-        reasoning: off
+        # GLM Flash Nitro's OpenRouter endpoint requires reasoning to remain
+        # enabled. Keep it low for responsive chat rather than emitting the
+        # unsupported `reasoning: disabled` request.
+        reasoning: low
         # Cloudflare forwards this route to OpenRouter. Declare the protocol
         # dialect so every reasoning-capable model uses OpenRouter's unified
         # `reasoning: { effort }` request contract instead of the OpenAI-only
@@ -146,8 +149,8 @@
             maxTokens: 32768
             input: [text]
             reasoningEfforts:
-              off: none
               low: low
+              medium: medium
               high: high
               max: max
 

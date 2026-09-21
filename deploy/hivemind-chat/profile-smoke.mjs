@@ -38,13 +38,13 @@ for (const [feature, ids] of Object.entries(presentation)) {
 const defaultModel = row('agent-default-model')
 const llmProvider = row('llm-pi-ai')
 if (!defaultModel.includes("model: z-ai/glm-5.3-flash:nitro")
-  || !/reasoning:\s*['"]?off['"]?/.test(llmProvider)) {
-  throw new Error('hivemind-web image profile must disable optional reasoning for its default model')
+  || !/reasoning:\s*['"]?low['"]?/.test(llmProvider)) {
+  throw new Error('hivemind-web image profile must retain required low reasoning for its default model')
 }
-if (!dump.includes("'off': none")) {
-  throw new Error('hivemind-web image profile must map Harness reasoning off to OpenRouter none')
+if (!dump.includes("low: low")) {
+  throw new Error('hivemind-web image profile must map Harness low reasoning to OpenRouter low')
 }
-console.log('hivemind-web image profile disables optional default-model reasoning')
+console.log('hivemind-web image profile enables required low default-model reasoning')
 
 if (!llmProvider.includes('cloudflare-openrouter-streaming:')
   || !llmProvider.includes('cloudflare-openrouter:')
