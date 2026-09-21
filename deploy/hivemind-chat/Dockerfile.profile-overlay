@@ -1,0 +1,4 @@
+# Tiny immutable compatibility overlay for profile-only emergency releases.
+ARG BASE_IMAGE
+FROM ${BASE_IMAGE}
+COPY cordis.patch.yml /opt/deepseek-harness/packages/bundle/hivemind-web-app/cordis.patch.yml
