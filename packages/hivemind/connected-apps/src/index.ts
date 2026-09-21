@@ -1948,7 +1948,10 @@ export function apply(ctx: Context, config: Config = {}): void {
             ? 'No matching tool was found in these searches. Report that limitation, not that the provider cannot support the operation; do not check or connect another app.'
             : 'Refine search once in this same workflow session for the missing provider-owned prerequisite or listing operation. Do not check connection status or connect another app.'
         }
-        if (record(projected) && discovered.size > 1 && execution.agent !== undefined) {
+        // Every usable discovery result receives a second, bounded JEV choice.
+        // A one-tool search still needs a decision receipt: it proves the
+        // returned contract is relevant and keeps the same gate for every app.
+        if (record(projected) && discovered.size > 0 && execution.agent !== undefined) {
           const decisionGateway = ctx.get('hivemindDecisionGateway') as HivemindDecisionGateway | undefined
           if (decisionGateway !== undefined && turnState?.userQuery) {
             try {

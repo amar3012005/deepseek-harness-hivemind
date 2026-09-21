@@ -43,7 +43,7 @@ function agent() {
     releases.push(release)
     return release
   })
-  const tools = new Map([['hivemind_meta', {}], ['hivemind_save_memory', {}], ['hivemind_update_profile', {}], ['hivemind_connected_task', {}]])
+  const tools = new Map([['hivemind_meta', {}], ['hivemind_save_memory', {}], ['hivemind_batch_save_memories', {}], ['hivemind_update_profile', {}], ['hivemind_connected_task', {}]])
   return {
     value: {
       session: { append },
@@ -111,7 +111,7 @@ describe('HIVE decision gateway consumer', () => {
     await harness.preStep?.({ agent: subject.value, turn: 1, step: 1, signal: new AbortController().signal } as never,
       async () => ({ kind: 'enter' as const, messages: [user('save this to hivemind')] }))
 
-    expect(subject.restrict).toHaveBeenCalledWith({ allow: ['hivemind_save_memory'] })
+    expect(subject.restrict).toHaveBeenCalledWith({ allow: ['hivemind_save_memory', 'hivemind_batch_save_memories'] })
   })
 
   it('exposes only profile update for an admitted profile change', async () => {

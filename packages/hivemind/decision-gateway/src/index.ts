@@ -81,9 +81,16 @@ const TOOL_BY_CAPABILITY: Readonly<Record<string, readonly string[]>> = Object.f
   direct_answer: [],
   hivemind_context: [],
   hivemind_meta: ['hivemind_meta'],
+  hivemind_memory_lookup: ['hivemind_meta'],
+  hivemind_entity_lookup: ['hivemind_meta'],
+  hivemind_hyperagent_directory: ['hivemind_meta'],
+  hivemind_request: ['hivemind_meta'],
   hivemind_profile_update: ['hivemind_update_profile'],
   hivemind_save: ['hivemind_save_memory', 'hivemind_batch_save_memories'],
   composio_search: ['hivemind_connected_task'],
+  composio_read: ['hivemind_connected_task'],
+  composio_action: ['hivemind_connected_task'],
+  web_research: ['hivemind_web_search'],
 })
 
 function base64url(value: unknown): string {
@@ -204,6 +211,9 @@ export function apply(ctx: Context, config: Config): void {
       if (config.mode !== 'active' || response.status !== 'selected' || response.authoritative !== true
         || typeof response.selected !== 'string') return decision
       const allow = TOOL_BY_CAPABILITY[response.selected]
+      // `multi_task` and workflow planning deliberately retain the native
+      // combined surface. Their provider-facing branches are governed again
+      // after discovery has returned typed evidence.
       if (allow === undefined || allow.some(tool => payload.agent.ctx.tools.get(tool, payload.agent) === undefined)) return decision
       restrictions.set(payload.agent, payload.agent.ctx.tools.restrict({ allow }))
     } catch (error: unknown) {
