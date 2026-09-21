@@ -61,16 +61,22 @@ export const Config: z<Config> = z.object({
   showSystemPrompts: z.boolean().default(true),
 })
 
-/** HIVE's profile-scoped browser presentation policy, absent in every other shell. */
-interface HivemindChatPresentation {
-  showSystemPrompts?: boolean
+/** Native HIVE runner marker, injected only into the authenticated HIVE shell. */
+interface HivemindEmbedConfig {
+  version?: unknown
 }
 
-function resolvedShowSystemPrompts(config: Config): boolean {
-  const presentation = (globalThis as {
-    __DSH_HIVEMIND_CHAT_PRESENTATION__?: HivemindChatPresentation
-  }).__DSH_HIVEMIND_CHAT_PRESENTATION__
-  return presentation?.showSystemPrompts ?? config.showSystemPrompts ?? true
+/**
+ * System prompts are still persisted and replayed, but never rendered as
+ * transcript cards by the native HIVE shell. The runner injects this global at
+ * the HTML boundary; other DSH shells retain their profile/config default.
+ */
+export function resolvedShowSystemPrompts(config: Config): boolean {
+  const hivemind = (globalThis as {
+    __HIVEMIND_EMBED_CONFIG__?: HivemindEmbedConfig
+  }).__HIVEMIND_EMBED_CONFIG__
+  if (hivemind !== undefined) return false
+  return config.showSystemPrompts ?? true
 }
 
 /**
