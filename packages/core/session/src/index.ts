@@ -705,10 +705,11 @@ export class Session {
     data: SessionEventMap[T],
     ...opts: T extends SurfaceEventType ? [opts: SurfaceIntent<T>] : [opts?: LogEventIntent]
   ): SessionEvent<T> {
-    const eventOpts: SurfaceIntent | LogEventIntent | undefined = opts[0]
-    const surfaceOpts: SurfaceIntent | undefined = eventOpts as SurfaceIntent | undefined
+    const eventOpts = opts[0] as SurfaceIntent | LogEventIntent | undefined
+    const logOpts = opts[0] as LogEventIntent | undefined
+    const surfaceOpts = eventOpts as SurfaceIntent | undefined
     const surfaceMetadata = {
-      ...(eventOpts?.ignorable === true ? { ignorable: true as const } : {}),
+      ...(logOpts?.ignorable === true ? { ignorable: true as const } : {}),
       ...surfaceOpts?.sourceEventSeqs === undefined ? {} : { sourceEventSeqs: surfaceOpts.sourceEventSeqs },
       ...surfaceOpts?.surfaceOp === undefined ? {} : { surfaceOp: surfaceOpts.surfaceOp },
     }
