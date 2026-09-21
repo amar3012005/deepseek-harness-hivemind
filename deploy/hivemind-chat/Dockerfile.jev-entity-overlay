@@ -1,0 +1,7 @@
+ARG BASE_IMAGE
+FROM ${BASE_IMAGE}
+
+# Built from already-emitted plugin artifacts. Keeps the native Harness runtime
+# and its SSE streaming transport intact while updating governed JEV routing.
+COPY decision-gateway-lib/ /opt/deepseek-harness/packages/hivemind/decision-gateway/lib/
+COPY connected-apps-lib/ /opt/deepseek-harness/packages/hivemind/connected-apps/lib/
