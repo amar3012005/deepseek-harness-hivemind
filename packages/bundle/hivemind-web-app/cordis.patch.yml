@@ -40,7 +40,7 @@
         # `reasoning_effort` field.
         compat:
           thinkingFormat: openrouter
-        baseURL: https://gateway.ai.cloudflare.com/v1/0dc6b9186b5a9b8985613b10c1c59f4f/hivemind-prod/compat
+        baseURL: https://gateway.ai.cloudflare.com/v1/0dc6b9186b5a9b8985613b10c1c59f4f/hivemind-prod/openrouter/v1
         headers:
           cf-aig-byok-alias: first-bundb
         defaultContextWindow: 131072
@@ -109,9 +109,9 @@
             contextWindow: 131072
             maxTokens: 8192
             input: [text, image]
-          - id: openrouter/deepseek/deepseek-v4-flash-0731:nitro
-            name: DeepSeek V4 Flash 0731 Nitro
-            contextWindow: 1310720
+          - id: z-ai/glm-5.3-flash:nitro
+            name: GLM 5.3 Flash Nitro
+            contextWindow: 131072
             maxTokens: 32768
             input: [text]
             reasoningEfforts:
@@ -123,7 +123,7 @@
 - id: agent-default-model
   config:
     provider: cloudflare-openrouter
-    model: openrouter/deepseek/deepseek-v4-flash-0731:nitro
+    model: z-ai/glm-5.3-flash:nitro
 
 - id: session-persistence-jsonl
   disabled: true

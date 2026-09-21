@@ -56,7 +56,9 @@ describe('hivemind-web native renderer parity', () => {
     expect(patch).toContain('reasoning: off')
     expect(patch).toContain('thinkingFormat: openrouter')
     expect(patch).not.toContain('reasoningEffort: off')
-    expect(patch).toContain('model: openrouter/deepseek/deepseek-v4-flash-0731:nitro')
+    expect(patch).toContain('model: z-ai/glm-5.3-flash:nitro')
+    expect(patch).toContain('/hivemind-prod/openrouter/v1')
+    expect(patch).not.toContain('/hivemind-prod/compat')
   })
 
   it('does not contend with the answer request for an LLM-generated title', () => {

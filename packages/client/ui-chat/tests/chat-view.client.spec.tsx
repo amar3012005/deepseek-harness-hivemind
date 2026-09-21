@@ -1953,7 +1953,7 @@ describe('ChatView', () => {
     const tails = view.container.querySelectorAll('[data-turn-tail]')
     expect(new Map([...tails].map(tail => [
       tail.getAttribute('data-turn-tail'), tail.getAttribute('data-actions-reveal'),
-    ]))).toEqual(new Map([['1', 'hover'], ['2', 'always']]))
+    ]))).toEqual(new Map([['1', 'always'], ['2', 'always']]))
     expect(view.container.querySelectorAll('[data-chat-flow-kind="user"]')).toHaveLength(2)
   })
 

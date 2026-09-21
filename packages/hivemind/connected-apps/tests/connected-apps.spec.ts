@@ -109,6 +109,13 @@ describe('progressive Composio bridge', () => {
     expect(compact).not.toHaveProperty('source_receipt')
   })
 
+  it('promotes the provider workflow session id to the stable top-level receipt', () => {
+    expect(compactComposioSearchReceipt({ result: { data: {
+      session: { id: 'workflow-real-123', instructions: 'continue this workflow' },
+      results: [{ primary_tool_slugs: ['EXAMPLE_READ'] }],
+    } } })).toMatchObject({ session_id: 'workflow-real-123', session: { id: 'workflow-real-123' } })
+  })
+
   it('preserves execution contracts when a search receipt is projected again', () => {
     const first = compactComposioSearchReceipt({ data: { results: [{
       primary_tool_slugs: ['GMAIL_FETCH_MESSAGE_BY_MESSAGE_ID'],

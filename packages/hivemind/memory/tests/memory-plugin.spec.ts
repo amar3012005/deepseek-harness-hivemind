@@ -20,10 +20,46 @@ describe('hivemind-memory plugin lifecycle', () => {
 
     const tools = fiber.ctx.tools
     expect(tools.get('hivemind_meta')).toBeDefined()
+    expect(tools.get('hivemind_batch_save_memories')).toBeDefined()
     expect(tools.get('hivemind_update_profile')).toBeDefined()
     await fiber.dispose()
     expect(tools.get('hivemind_meta')).toBeUndefined()
+    expect(tools.get('hivemind_batch_save_memories')).toBeUndefined()
     expect(tools.get('hivemind_update_profile')).toBeUndefined()
+  })
+
+  it('marks memory mutations exclusive and keeps only reads parallel-safe', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SystemPrompt, {})
+    await ctx.plugin(ToolRuntime)
+    const fiber = await ctx.plugin(memoryPlugin({ defaultLimit: 5 }, {
+      context: async () => ({}), entities: async () => ({}), recall: async () => ({}),
+      save: async () => ({}), profiles: async () => ({}),
+    }))
+    expect(fiber.ctx.tools.get('hivemind_save_memory')?.isConcurrencySafe?.({})).toBe(false)
+    expect(fiber.ctx.tools.get('hivemind_batch_save_memories')?.isConcurrencySafe?.({})).toBe(false)
+    expect(fiber.ctx.tools.get('hivemind_meta')?.isConcurrencySafe?.({ operation: 'save' })).toBe(false)
+    expect(fiber.ctx.tools.get('hivemind_meta')?.isConcurrencySafe?.({ operation: 'recall' })).toBe(true)
+    await fiber.dispose()
+  })
+
+  it.each([
+    ['Your verification code', 'Use 482991 to sign in'],
+    ['Password reset', 'Reset your password at https://example.com/reset-password?t=secret'],
+    ['Security alert', 'Unrecognized login attempt from a new device'],
+  ])('blocks authentication material before approval: %s', async (title, content) => {
+    const ctx = new Context()
+    await ctx.plugin(SystemPrompt, {})
+    await ctx.plugin(ToolRuntime)
+    const fiber = await ctx.plugin(memoryPlugin({ defaultLimit: 5 }, {
+      context: async () => ({}), entities: async () => ({}), recall: async () => ({}),
+      save: async () => ({}), profiles: async () => ({}),
+    }))
+    await expect(fiber.ctx.tools.get('hivemind_save_memory')!.execute({ title, content, source_type: 'text' }, {
+      signal: new AbortController().signal,
+      agent: { session: { header: { id: 'session-1' }, append() {}, snapshotEvents: () => [] } },
+    } as never)).rejects.toThrow('authentication material')
+    await fiber.dispose()
   })
 
   it('uses a durable save-operation id that is independent of call id', () => {

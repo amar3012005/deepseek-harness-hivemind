@@ -11,7 +11,7 @@ type TurnTailNodeViewProps = ChatNodeViewProps<'turn-tail'>
 
 /** Turn-local actions and feature tail over the Location index, independent of Assistant placement. */
 export const TurnTailNodeView = memo(function TurnTailNodeView({
-  node, openFile, forkAt, renderSlot, renderSlotChain, t, useChat,
+  node, openFile, forkAt, renderSlot, renderSlotChain, t, useChat, inputActions,
 }: TurnTailNodeViewProps) {
   const data = node.data
   const hasLaterChatNode = useChat(snapshot =>
@@ -38,7 +38,7 @@ export const TurnTailNodeView = memo(function TurnTailNodeView({
     <div
       className={css.root}
       data-turn-tail={data.turn}
-      data-actions-reveal={isLatestTurn ? 'always' : 'hover'}
+      data-actions-reveal="always"
     >
       {tail}
       <MessageIconActions
@@ -64,6 +64,23 @@ export const TurnTailNodeView = memo(function TurnTailNodeView({
         )}
         t={t}
       />
+      {isLatestTurn && (
+        <div className={css.followups} aria-label="Suggested follow-ups">
+          {['Show the evidence', 'What should I do next?', 'Go deeper on this'].map(label => (
+            <button
+              key={label}
+              type="button"
+              className={css.followup}
+              onClick={() => {
+                inputActions.setDraft(label)
+                queueMicrotask(() => { inputActions.submit() })
+              }}
+            >
+              <span aria-hidden="true">↳</span>{label}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   )
 })

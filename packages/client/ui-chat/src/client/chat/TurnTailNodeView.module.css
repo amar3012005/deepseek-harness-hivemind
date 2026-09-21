@@ -7,3 +7,29 @@
 .actions {
   margin-left: -6px;
 }
+
+.followups {
+  display: grid;
+  gap: 6px;
+  margin-top: 12px;
+}
+
+.followup {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: fit-content;
+  max-width: 100%;
+  padding: 4px 0;
+  border: 0;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.followup:hover,
+.followup:focus-visible {
+  color: var(--dsw-alias-label-primary);
+}

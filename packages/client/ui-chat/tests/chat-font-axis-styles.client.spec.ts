@@ -131,11 +131,10 @@ describe('chat flow font-size axis', () => {
     expect(narrow).toMatch(/\.root \+ \.root \{[^}]*margin-left: 0/)
   })
 
-  it('non-latest turn tails hide the whole actions row until hover or focus', () => {
-    // TurnTailNodeView tags its root data-actions-reveal='hover' for every
-    // turn but the latest; the gate lives under @media (hover: hover) so
-    // no-hover devices keep the row visible. 'always' has no rule at all —
-    // absence, not an override, keeps the latest turn's row shown.
+  it('keeps an explicit no-rule path for persistent assistant turn actions', () => {
+    // TurnTailNodeView uses data-actions-reveal='always' for completed turns.
+    // The hover selector remains available to user-authored flow rows and
+    // opt-in extensions, while the absence of an always rule keeps tails shown.
     const css = read('MessageIconActions.module.css')
     expect(css).toContain("[data-actions-reveal='hover'] .actions,")
     expect(css).toMatch(/\) \.actions \{\s*opacity: 0/)
