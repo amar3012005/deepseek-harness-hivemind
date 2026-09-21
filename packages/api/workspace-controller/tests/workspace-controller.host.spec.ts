@@ -225,6 +225,14 @@ describe('WorkspaceController commands', () => {
 })
 
 describe('WorkspaceController follow', () => {
+  it('emits an empty archive set while the injected registry proxy is initializing', async () => {
+    const { ctx } = await harness()
+    vi.spyOn(ctx.workspaceRegistry, 'archivedSessionIds', 'get').mockReturnValue(undefined as never)
+    const feed = new WorkspaceFeed(ctx)
+
+    expect(feed.baseline()).toEqual({ items: [], archivedSessionIds: [] })
+  })
+
   it('seeds a new feed from existing rows and rejects an inconsistent registry commit', async () => {
     const { ctx, root } = await harness()
     const existing = await ctx.workspaceRegistry.create(stageDir(root, 'existing'))

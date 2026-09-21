@@ -75,7 +75,7 @@ export class WorkspaceFeed {
   baseline(): WorkspaceBaseline {
     return {
       items: this.ctx.workspaceRegistry.list().map(workspaceView),
-      archivedSessionIds: [...this.ctx.workspaceRegistry.archivedSessionIds],
+      archivedSessionIds: [...(this.ctx.workspaceRegistry.archivedSessionIds ?? [])],
     }
   }
 
