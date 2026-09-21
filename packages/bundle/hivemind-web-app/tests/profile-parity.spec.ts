@@ -59,4 +59,8 @@ describe('hivemind-web native renderer parity', () => {
     expect(patch).toContain('model: openrouter/deepseek/deepseek-v4-flash-0731:nitro')
   })
 
+  it('does not contend with the answer request for an LLM-generated title', () => {
+    expect(patch).toMatch(/- id: session-title-llm\n  disabled: true/)
+  })
+
 })

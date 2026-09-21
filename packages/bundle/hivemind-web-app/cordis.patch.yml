@@ -12,6 +12,13 @@
   config:
     showSystemPrompts: false
 
+# The first user turn already receives an immediate deterministic fallback
+# title from the session service. Do not launch a second model request in
+# parallel with the actual answer: OpenRouter may serialize those requests,
+# which delays the first visible answer chunk even on a high-throughput route.
+- id: session-title-llm
+  disabled: true
+
 - id: web-runtime
   config:
     openBrowser: !!js ctx.webStartup.openBrowser
