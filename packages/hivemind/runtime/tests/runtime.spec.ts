@@ -413,7 +413,7 @@ describe('HIVE-MIND runtime', () => {
     pluginConfig.legacyToolsEnabled = false
     const harness = mount(pluginConfig)
 
-    expect([...harness.tools.keys()]).toEqual(['hivemind_capabilities', 'hivemind_save_memory', 'hivemind_meta', 'hivemind_web_search'])
+    expect([...harness.tools.keys()]).toEqual(['hivemind_capabilities', 'hivemind_save_memory', 'hivemind_batch_save_memories', 'hivemind_meta', 'hivemind_web_search'])
     const skill = harness.skills.get('hivemind-company-brain')
     expect(skill?.description).toContain('multi-source')
     expect(skill?.content).toContain('not a workspace path')
@@ -713,6 +713,28 @@ describe('HIVE-MIND runtime', () => {
     })
   })
 
+  it('resolves a successful save from the durable status receipt without reposting', async () => {
+    const path = await authorityFile()
+    profileResponses([
+      jsonResponse({}, 404),
+      jsonResponse({ success: true }),
+      jsonResponse({
+        status: 'completed',
+        receipt: { status: 'saved', memory_id: 'memory-status', receipt_id: 'receipt-status' },
+      }),
+    ])
+    const harness = mount(config(path))
+
+    const result = await tool(harness, 'hivemind_meta').execute({
+      operation: 'save', title: 'Status receipt', content: 'The persisted write completed.', source_type: 'conversation',
+    }, execContext())
+
+    expect(result).toMatchObject({
+      status: 'saved', memory_id: 'memory-status', receipt_id: 'receipt-status', replayed: true,
+    })
+    expect(vi.mocked(fetch).mock.calls.filter(([, init]) => init?.method === 'POST')).toHaveLength(1)
+  })
+
   it('forwards an explicit read scope without changing full-scope default behavior', async () => {
     const path = await authorityFile()
     profileResponses([jsonResponse({ items: [] }), jsonResponse({ results: [] })])
@@ -760,7 +782,7 @@ describe('HIVE-MIND runtime', () => {
     await expect(tool(harness, 'hivemind_meta').execute({
       operation: 'save',
       save: { title: 'Credential', content: 'api_key: sk_abcdefghijklmnop' },
-    }, execContext())).rejects.toThrow('save refuses credential material')
+    }, execContext())).rejects.toThrow('save refuses credential')
   })
 
   it('maps a correction to the canonical version relationship after validating its prior id', async () => {

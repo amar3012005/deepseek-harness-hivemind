@@ -718,29 +718,38 @@ function compactSaveReceipt(
   idempotencyKey: string,
   sourceReceipt?: SpillRef | PrivateReceiptReference,
 ): Record<string, JsonValue> {
-  const memory = typeof value['memory'] === 'object' && value['memory'] !== null && !Array.isArray(value['memory'])
-    ? value['memory'] as JsonRecord
-    : value
-  const durable = typeof value['receipt'] === 'object' && value['receipt'] !== null && !Array.isArray(value['receipt'])
-    ? value['receipt'] as JsonRecord
-    // Core may return the terminal receipt at the top level. Treat that shape
-    // as authoritative too; requiring a nested `receipt` here caused valid
-    // saves to be reported as indeterminate and invited duplicate attempts.
-    : (typeof value['receipt_id'] === 'string' || typeof value['memory_id'] === 'string')
-      ? value
-      : undefined
-  const memoryId = typeof durable?.['memory_id'] === 'string'
-    ? durable['memory_id']
-    : typeof memory['id'] === 'string' ? memory['id'] : undefined
-  const receiptId = typeof durable?.['receipt_id'] === 'string'
-    ? durable['receipt_id']
-    : typeof value['receipt_id'] === 'string' ? value['receipt_id']
-      // The canonical synchronous Core memory endpoint predates the explicit
-      // receipt envelope and returns the persisted memory object instead. Its
-      // UUID is still a durable, tenant-authorized read handle; make that
-      // compatibility shape explicit so a successful save is not reported as
-      // indeterminate (which used to trigger duplicate retries).
-      : memoryId === undefined ? undefined : `memory:${memoryId}`
+  // Core has returned a few compatible envelopes over its lifetime: the
+  // canonical POST returns `memory.id`, idempotent replay returns a receipt,
+  // and an older proxy may use camelCase ids or wrap the response in `data` /
+  // `result`. Inspect all of those *read-only* response envelopes before
+  // declaring a completed write indeterminate. Never use the idempotency key
+  // as a receipt id; it is a request dedupe key, not a memory handle.
+  const records: JsonRecord[] = [value]
+  for (const field of ['receipt', 'memory', 'result', 'data', 'response']) {
+    const candidate = value[field]
+    if (candidate !== null && typeof candidate === 'object' && !Array.isArray(candidate)) {
+      records.push(candidate as JsonRecord)
+    }
+  }
+  const memory = records.find(record => typeof record['id'] === 'string'
+    || typeof record['memory_id'] === 'string' || typeof record['memoryId'] === 'string') ?? value
+  const durable = records.find(record => typeof record['receipt_id'] === 'string'
+    || typeof record['receiptId'] === 'string' || record['status'] === 'processing'
+    || record['status'] === 'failed' || record['status'] === 'not_found')
+  const firstString = (field: string): string | undefined => {
+    for (const record of records) {
+      if (typeof record[field] === 'string' && record[field] !== '') return record[field] as string
+    }
+    return undefined
+  }
+  const memoryId = firstString('memory_id') ?? firstString('memoryId') ?? firstString('id')
+  const receiptId = firstString('receipt_id') ?? firstString('receiptId')
+    // The canonical synchronous Core memory endpoint predates the explicit
+    // receipt envelope and returns the persisted memory object instead. Its
+    // UUID is still a durable, tenant-authorized read handle; make that
+    // compatibility shape explicit so a successful save is not reported as
+    // indeterminate (which used to trigger duplicate retries).
+    ?? (memoryId === undefined ? undefined : `memory:${memoryId}`)
   if (value['skipped'] === true) {
     return { status: 'unchanged', operation: 'save', idempotency_key: idempotencyKey, reason: 'canonical_duplicate' }
   }
@@ -760,7 +769,8 @@ function compactSaveReceipt(
     status: 'saved', operation: 'save', memory_id: memoryId, receipt_id: receiptId,
     idempotency_key: idempotencyKey, replayed: value['replayed'] === true,
   }
-  if (typeof durable?.['receipt_id'] !== 'string' && typeof value['receipt_id'] !== 'string') {
+  if (typeof durable?.['receipt_id'] !== 'string' && typeof durable?.['receiptId'] !== 'string'
+    && typeof value['receipt_id'] !== 'string' && typeof value['receiptId'] !== 'string') {
     receipt['receipt_source'] = 'core_memory_id'
   }
   for (const field of ['title', 'memory_type', 'citation_id', 'created_at', 'updated_at']) {
@@ -1222,7 +1232,31 @@ export function apply(ctx: Context, config: Config): void {
         }
       }
       const receipt = await saveMemoryReceipt(ctx, config, execution, 'hivemind-save.json', record)
-      const compacted = compactSaveReceipt(record, idempotencyKey, receipt)
+      let compacted = compactSaveReceipt(record, idempotencyKey, receipt)
+      // A successful synchronous Core write can be returned without the
+      // persisted memory envelope (for example when the post-write projection
+      // is still being assembled). The save operation receipt is the durable,
+      // tenant-scoped source of truth. Resolve it with one read-only status
+      // lookup before exposing `indeterminate`; never POST the save again.
+      if (compacted.status === 'indeterminate') {
+        try {
+          const status = await hiveRequest(authority, `${SAVE_STATUS_PATH}?idempotency_key=${encodeURIComponent(idempotencyKey)}`, {
+            method: 'GET', headers: { 'x-idempotency-key': idempotencyKey },
+          }, signal, config)
+          const durable = apiRecord(status, 'meta save status response')
+          const statusReceipt = durable['receipt'] && typeof durable['receipt'] === 'object' && !Array.isArray(durable['receipt'])
+            ? durable['receipt'] as JsonRecord
+            : durable['response'] && typeof durable['response'] === 'object' && !Array.isArray(durable['response'])
+              ? durable['response'] as JsonRecord
+              : undefined
+          if (durable['status'] === 'completed' && statusReceipt !== undefined) {
+            compacted = compactSaveReceipt({ ...statusReceipt, replayed: true }, idempotencyKey, receipt)
+          }
+        } catch {
+          // Preserve the original indeterminate receipt if the status read is
+          // unavailable. The caller must not retry blindly.
+        }
+      }
       execution.agent?.session.append('hivemind/memory-save', {
         operation_id: idempotencyKey, status: compacted.status === 'saved' ? 'completed' : 'executing',
         idempotency_key: idempotencyKey,

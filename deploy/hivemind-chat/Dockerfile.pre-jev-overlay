@@ -11,6 +11,7 @@ WORKDIR /opt/deepseek-harness
 
 # Overlay only the two rebuilt Cordis plugins and the reviewed profile/config
 # files. The verified pre-JEV runner remains the complete immutable base.
+COPY packages/hivemind/runtime/lib/ packages/hivemind/runtime/lib/
 COPY packages/hivemind/memory/lib/ packages/hivemind/memory/lib/
 COPY packages/hivemind/connected-apps/lib/ packages/hivemind/connected-apps/lib/
 COPY packages/preset/agent-presets/presets/hivemind-chat/agent.cordis.yml packages/preset/agent-presets/presets/hivemind-chat/agent.cordis.yml
