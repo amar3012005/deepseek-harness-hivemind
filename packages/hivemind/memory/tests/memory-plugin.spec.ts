@@ -62,6 +62,59 @@ describe('hivemind-memory plugin lifecycle', () => {
     await fiber.dispose()
   })
 
+  it('normalizes exhaustive save entities into searchable entity tags', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SystemPrompt, {})
+    await ctx.plugin(ToolRuntime)
+    const save = vi.fn(async (_agent, request) => ({ status: 'completed', tags: request.tags }))
+    const fiber = await ctx.plugin(memoryPlugin({ defaultLimit: 5 }, {
+      context: async () => ({}), entities: async () => ({}), recall: async () => ({}),
+      save, profiles: async () => ({}),
+      prepareSave: (_agent, request) => ({ ...request, scope: 'organization' }),
+    }))
+    const expectedRequest = {
+      title: 'Enterprise memory reliability',
+      content: 'Authenticate memory access and preserve evidence receipts.',
+      sourceType: 'documentation' as const,
+      tags: [
+        'kind:note', 'urgency:low', 'entity:enterprise-memory',
+        'entity:authentication', 'entity:evidence-receipts',
+      ],
+      scope: 'organization' as const,
+    }
+    const agent = {
+      session: {
+        header: { id: 'session-1' },
+        append() {},
+        snapshotEvents: () => [{
+          type: 'hivemind/memory-save',
+          data: {
+            operation_id: saveOperationId({ agent } as never, expectedRequest),
+            status: 'approved',
+            destination: 'organization',
+          },
+        }],
+      },
+    }
+    const result = await fiber.ctx.tools.get('hivemind_save_memory')!.execute({
+      title: 'Enterprise memory reliability',
+      content: 'Authenticate memory access and preserve evidence receipts.',
+      source_type: 'documentation',
+      tags: ['kind:note', 'urgency:low'],
+      entities: ['Enterprise Memory', 'Authentication', 'Evidence Receipts', 'Enterprise Memory'],
+    }, {
+      signal: new AbortController().signal,
+      agent,
+    } as never)
+    expect(result).toMatchObject({
+      tags: [
+        'kind:note', 'urgency:low', 'entity:enterprise-memory',
+        'entity:authentication', 'entity:evidence-receipts',
+      ],
+    })
+    await fiber.dispose()
+  })
+
   it.each([
     ['Your verification code', 'Use 482991 to sign in'],
     ['Password reset', 'Reset your password at https://example.com/reset-password?t=secret'],

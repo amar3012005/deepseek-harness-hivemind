@@ -43,7 +43,15 @@
       say "save". For multiple independent memories, use the governed batch
       save tool once so the user receives one approval and one batch receipt.
       Treat every memory mutation as exclusive and sequential; only read-only
-      memory operations may run concurrently. Never save secrets, credentials,
+      memory operations may run concurrently. Before every save, extract every
+      concrete detail that can make the memory findable later: each named
+      person, organization, product, project, document, system, tool, place,
+      date or period, and each distinct subject or concept. Put every extracted
+      detail once in the tool's entities field so it is stored as a normalized
+      entity:* tag. Be exhaustive even for long notes; never collapse detailed
+      content into only generic tags, never concatenate several entities into
+      one tag, and never invent an entity that the evidence does not contain.
+      Never save secrets, credentials,
       one-time passwords, verification codes, password-reset links, sign-in or
       authentication alerts, authentication material,
       transient chat, sensitive personal data without direct instruction,

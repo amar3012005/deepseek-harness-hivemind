@@ -249,6 +249,24 @@ function tagsFor(input: Record<string, unknown>): string[] | undefined {
   return tags.length === 0 ? undefined : [...new Set(tags)]
 }
 
+/** Normalize model-extracted save entities deterministically at the tool
+ * boundary. Entity extraction remains with the model because it has the full
+ * user meaning; this function never performs a second inference. */
+function saveTags(input: Record<string, unknown>): string[] | undefined {
+  const tags = strings(input['tags'], 'tags') ?? []
+  for (const entity of strings(input['entities'], 'entities') ?? []) {
+    const normalized = entity
+      .normalize('NFKC')
+      .toLocaleLowerCase('en-US')
+      .replace(/[^\p{L}\p{N}]+/gu, '-')
+      .replace(/^-+|-+$/g, '')
+    if (normalized !== '') tags.push(`entity:${normalized}`)
+  }
+  const unique = [...new Set(tags)]
+  if (unique.length > 50) throw new TypeError('hivemind-memory: tags and entities may contain at most 50 unique items')
+  return unique.length === 0 ? undefined : unique
+}
+
 /** Accept the historical flat read form without spending another model turn.
  * The canonical public schema remains nested and both forms receive the same
  * strict field validation below. */
@@ -272,8 +290,7 @@ function saveRequest(input: Record<string, unknown>): SaveRequest {
   if (scope === 'project' && project === undefined) throw new TypeError('hivemind-memory: project scope requires project')
   if (relationship !== undefined && relatedTo === undefined) throw new TypeError('hivemind-memory: related_to is required when relationship is set')
   if (relationship === undefined && relatedTo !== undefined) throw new TypeError('hivemind-memory: relationship is required when related_to is set')
-  const tags = strings(input['tags'], 'tags')
-  if (tags !== undefined && tags.length > 50) throw new TypeError('hivemind-memory: tags may contain at most 50 items')
+  const tags = saveTags(input)
   const request: SaveRequest = {
     title: boundedText(input['title'], 'save.title', 500),
     content: boundedText(input['content'], 'save.content', 20_000),
@@ -300,12 +317,13 @@ export function memoryPlugin(config: MemoryPluginConfig, provider: MemoryProvide
     apply(ctx: Context): void {
       ctx.effect(() => ctx.tools.register(defineTool({
         name: 'hivemind_save_memory',
-        description: 'Durably save one confirmed, stable HIVE-MIND memory. Use this direct tool for a standalone fact, preference, decision, correction, relationship, or completed outcome. A successful result must include the saved memory receipt. Never save secrets, credentials, ephemeral chat, guesses, or unverified claims.',
+        description: 'Durably save one confirmed, stable HIVE-MIND memory. Use this direct tool for a standalone fact, preference, decision, correction, relationship, or completed outcome. Before saving, extract every concrete detail that will help future recall—each named person, organization, product, project, document, system, tool, place, date or period, and distinct subject or concept—and include each once in entities; the Harness deterministically stores them as normalized entity:* tags. Do not collapse a detailed memory into only broad generic tags. A successful result must include the saved memory receipt. Never save secrets, credentials, ephemeral chat, guesses, or unverified claims.',
         parameters: {
           title: { type: 'string', required: true },
           content: { type: 'string', required: true },
           source_type: { type: 'string', enum: ['text', 'conversation', 'documentation', 'decision'] },
-          tags: { type: 'array', items: { type: 'string' } },
+          tags: { type: 'array', items: { type: 'string' }, description: 'Optional non-entity classification tags. Put concrete named details in entities.' },
+          entities: { type: 'array', items: { type: 'string' }, description: 'Exhaustive concrete details from the memory: every named person, organization, product, project, document, system, tool, place, date or period, and distinct subject or concept. Each value becomes one normalized entity:* tag. Never invent an entity.' },
           project: { type: 'string' },
           scope: { type: 'string', enum: ['personal', 'organization', 'project'], description: 'Concrete write destination. Full scope is read-only and cannot be used for a save. Project scope requires project.' },
           relationship: { type: 'string', enum: ['update', 'extend', 'derive'], description: 'Optional relation to an existing recalled memory. Omit for a new standalone memory. When set, related_to is required.' },
@@ -324,7 +342,7 @@ export function memoryPlugin(config: MemoryPluginConfig, provider: MemoryProvide
       })))
       ctx.effect(() => ctx.tools.register(defineTool({
         name: 'hivemind_batch_save_memories',
-        description: 'Durably save a bounded batch of confirmed stable HIVE-MIND memories with one destination approval. Use this instead of many individual save calls when the user explicitly asks to save multiple records. Every item is validated before approval; writes execute sequentially and return one batch receipt.',
+        description: 'Durably save a bounded batch of confirmed stable HIVE-MIND memories with one destination approval. Use this instead of many individual save calls when the user explicitly asks to save multiple records. For every item, extract every concrete detail that will help future recall into entities; the Harness stores those values as normalized entity:* tags. Do not reduce detailed records to broad generic tags. Every item is validated before approval; writes execute sequentially and return one batch receipt.',
         parameters: {
           items: {
             type: 'array', required: true,
@@ -334,7 +352,8 @@ export function memoryPlugin(config: MemoryPluginConfig, provider: MemoryProvide
                 title: { type: 'string', required: true },
                 content: { type: 'string', required: true },
                 source_type: { type: 'string', enum: ['text', 'conversation', 'documentation', 'decision'] },
-                tags: { type: 'array', items: { type: 'string' } },
+                tags: { type: 'array', items: { type: 'string' }, description: 'Optional non-entity classification tags.' },
+                entities: { type: 'array', items: { type: 'string' }, description: 'Exhaustive concrete details: named people, organizations, products, projects, documents, systems, tools, places, dates or periods, and distinct subjects or concepts.' },
                 project: { type: 'string' },
                 relationship: { type: 'string', enum: ['update', 'extend', 'derive'] },
                 related_to: { type: 'string' },
@@ -380,7 +399,7 @@ export function memoryPlugin(config: MemoryPluginConfig, provider: MemoryProvide
       })))
       ctx.effect(() => ctx.tools.register(defineTool({
         name: 'hivemind_meta',
-        description: 'HIVE-MIND gateway for authenticated context, canonical entity discovery, bounded memory recall, governed durable memory saves, or the exact HyperAgent directory. Use context for questions about the caller or company profile. Use entities first for a named person, topic, project, organization, document, or other subject when its canonical name could narrow recall. Use save only for a stable user preference, confirmed decision, correction, or completed outcome that will matter later; never save secrets, credentials, ephemeral chat, guesses, or unverified claims. Tenant scope is derived from the current HIVE-MIND credential.',
+        description: 'HIVE-MIND gateway for authenticated context, canonical entity discovery, bounded memory recall, governed durable memory saves, or the exact HyperAgent directory. Use context for questions about the caller or company profile. Use entities first for a named person, topic, project, organization, document, or other subject when its canonical name could narrow recall. Use save only for a stable user preference, confirmed decision, correction, or completed outcome that will matter later. Before saving, extract every concrete named detail and distinct subject into save.entities so the Harness persists exhaustive normalized entity:* tags; do not collapse detailed content into generic tags. Never save secrets, credentials, ephemeral chat, guesses, or unverified claims. Tenant scope is derived from the current HIVE-MIND credential.',
         parameters: {
           operation: { type: 'string', required: true, enum: ['context', 'entities', 'recall', 'save', 'save_status', 'profiles'] },
           entities: {
@@ -420,7 +439,8 @@ export function memoryPlugin(config: MemoryPluginConfig, provider: MemoryProvide
               title: { type: 'string', required: true },
               content: { type: 'string', required: true },
               source_type: { type: 'string', enum: ['text', 'conversation', 'documentation', 'decision'] },
-              tags: { type: 'array', items: { type: 'string' } },
+              tags: { type: 'array', items: { type: 'string' }, description: 'Optional non-entity classification tags.' },
+              entities: { type: 'array', items: { type: 'string' }, description: 'Exhaustive concrete details from the memory: every named person, organization, product, project, document, system, tool, place, date or period, and distinct subject or concept. Each value becomes one normalized entity:* tag.' },
               project: { type: 'string' },
               scope: { type: 'string', enum: ['personal', 'organization', 'project'], description: 'Concrete write destination. Full scope is read-only and cannot be used for a save. Project scope requires project.' },
               relationship: { type: 'string', enum: ['update', 'extend', 'derive'], description: 'Optional relation to an existing memory. Omit for a new standalone memory. When set, related_to is required.' },
