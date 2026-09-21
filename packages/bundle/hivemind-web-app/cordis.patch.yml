@@ -29,8 +29,39 @@
 - id: llm-pi-ai
   config:
     providers:
+      # Existing persisted conversations store this provider/model pair. Keep
+      # it on the compatibility endpoint so replay remains valid while new
+      # conversations use the streaming provider below.
       cloudflare-openrouter:
-        displayName: Cloudflare AI Gateway / OpenRouter
+        displayName: Cloudflare AI Gateway / OpenRouter (legacy sessions)
+        apiKeyEnv: CLOUDFLARE_API_KEY
+        api: openai-completions
+        reasoning: off
+        compat:
+          thinkingFormat: openrouter
+        baseURL: https://gateway.ai.cloudflare.com/v1/0dc6b9186b5a9b8985613b10c1c59f4f/hivemind-prod/compat
+        headers:
+          cf-aig-byok-alias: first-bundb
+        defaultContextWindow: 131072
+        defaultMaxTokens: 32768
+        defaultInput: [text]
+        retryPolicy:
+          mode: normal
+          maxRetries: 3
+        models:
+          - id: openrouter/deepseek/deepseek-v4-flash-0731:nitro
+            name: DeepSeek V4 Flash Nitro (legacy sessions)
+            contextWindow: 1310720
+            maxTokens: 32768
+            input: [text]
+            reasoningEfforts:
+              off: none
+              low: low
+              medium: medium
+              high: high
+              max: max
+      cloudflare-openrouter-streaming:
+        displayName: Cloudflare AI Gateway / OpenRouter Streaming
         apiKeyEnv: CLOUDFLARE_API_KEY
         api: openai-completions
         reasoning: off
@@ -122,7 +153,7 @@
 
 - id: agent-default-model
   config:
-    provider: cloudflare-openrouter
+    provider: cloudflare-openrouter-streaming
     model: z-ai/glm-5.3-flash:nitro
 
 - id: session-persistence-jsonl

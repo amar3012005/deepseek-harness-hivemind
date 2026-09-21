@@ -46,6 +46,17 @@ if (!dump.includes("'off': none")) {
 }
 console.log('hivemind-web image profile disables optional default-model reasoning')
 
+if (!llmProvider.includes('cloudflare-openrouter-streaming:')
+  || !llmProvider.includes('cloudflare-openrouter:')
+  || !llmProvider.includes('openrouter/deepseek/deepseek-v4-flash-0731:nitro')
+  || !llmProvider.includes('/compat')) {
+  throw new Error('hivemind-web image profile must retain legacy Cloudflare/OpenRouter session compatibility')
+}
+if (!defaultModel.includes('provider: cloudflare-openrouter-streaming')) {
+  throw new Error('hivemind-web image profile must use the streaming provider for new sessions')
+}
+console.log('hivemind-web image profile preserves legacy sessions and streams new sessions')
+
 const ctx = new Context()
 ctx.baseUrl = pathToFileURL('/opt/deepseek-harness/apps/cli/').href
 try {
