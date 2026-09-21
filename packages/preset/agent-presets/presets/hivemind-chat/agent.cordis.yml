@@ -116,6 +116,7 @@
         serviceApiBase: !!js process.env.HIVEMIND_CONNECTED_RECEIPT_SERVICE_URL
         serviceHttpOrigins: !!js (process.env.HIVEMIND_SERVICE_HTTP_ORIGINS ?? '').split(',').map(value => value.trim()).filter(Boolean)
         serviceSecretEnv: HIVE_HARNESS_RUNNER_SERVICE_SECRET
+        progressiveDecisionAfterDiscovery: false
         durableReceiptsRequired: !!js process.env.HIVEMIND_CONNECTED_RECEIPTS_REQUIRED === 'true'
         requestTimeoutMs: 20000
         responseMaxBytes: 2097152

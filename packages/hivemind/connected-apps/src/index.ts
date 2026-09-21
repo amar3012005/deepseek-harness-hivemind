@@ -7,7 +7,7 @@ import type { Composio } from '@composio/core'
 import z from '@deepseek-ai/schemastery'
 import type {} from '@deepseek-ai/dsh-agent'
 import type {} from '@deepseek-ai/dsh-hivemind-identity'
-import type { HivemindDecisionGateway } from '@deepseek-ai/dsh-hivemind-decision-gateway'
+import type {} from '@deepseek-ai/dsh-hivemind-decision-gateway'
 import { createUserMessage, type ContentBlock } from '@deepseek-ai/dsh-llm'
 import type {} from '@deepseek-ai/dsh-settings'
 import type { SaveTextSpill, SpillRef } from '@deepseek-ai/dsh-spill'
@@ -83,6 +83,11 @@ export interface Config {
   serviceSecretEnv?: string
   /** Refuse provider execution when the durable receipt service is not configured. */
   durableReceiptsRequired?: boolean
+  /**
+   * Experimental progressive JEV choice after discovery.  Keep disabled until
+   * the durable workflow owner directly executes selected read contracts.
+   */
+  progressiveDecisionAfterDiscovery?: boolean
 }
 
 export const Config: z<Config> = z.object({
@@ -96,6 +101,7 @@ export const Config: z<Config> = z.object({
   serviceHttpOrigins: z.array(String).default([]),
   serviceSecretEnv: z.string(),
   durableReceiptsRequired: z.boolean().default(false),
+  progressiveDecisionAfterDiscovery: z.boolean().default(false),
 })
 
 function record(value: unknown): value is Record<string, unknown> {
@@ -1948,11 +1954,29 @@ export function apply(ctx: Context, config: Config = {}): void {
             ? 'No matching tool was found in these searches. Report that limitation, not that the provider cannot support the operation; do not check or connect another app.'
             : 'Refine search once in this same workflow session for the missing provider-owned prerequisite or listing operation. Do not check connection status or connect another app.'
         }
-        // Every usable discovery result receives a second, bounded JEV choice.
-        // A one-tool search still needs a decision receipt: it proves the
-        // returned contract is relevant and keeps the same gate for every app.
-        if (record(projected) && discovered.size > 0 && execution.agent !== undefined) {
-          const decisionGateway = ctx.get('hivemindDecisionGateway') as HivemindDecisionGateway | undefined
+        // Intent-only JEV is the active path: one inexpensive intent decision
+        // narrows the initial tool surface, then the native Harness loop owns
+        // discovery, argument construction, and execution.  A second model
+        // decision after discovery is feature-gated until the dedicated
+        // durable workflow owner can execute its selected safe read directly.
+        if (config.progressiveDecisionAfterDiscovery === true
+          && record(projected) && discovered.size > 0 && execution.agent !== undefined) {
+          const decisionGateway = ctx.get('hivemindDecisionGateway') as {
+            choose: (input: {
+              stage: 'composio_selection'
+              userQuery: string
+              turn: number
+              discovery: Record<string, unknown>
+              progress: { completed_operations: { tool: string; status: string }[] }
+            }, signal: AbortSignal) => Promise<{
+              mode?: string
+              status: 'selected' | 'defer'
+              authoritative?: boolean
+              selected?: string
+              receipt?: { source?: string; reason?: string }
+              reason?: string
+            }>
+          } | undefined
           if (decisionGateway !== undefined && turnState?.userQuery) {
             try {
               const response = await decisionGateway.choose({

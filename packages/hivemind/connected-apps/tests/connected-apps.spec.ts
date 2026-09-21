@@ -28,6 +28,7 @@ function harness(
     withSpill?: boolean
     serviceApiBase?: string
     serviceSecretEnv?: string
+    progressiveDecisionAfterDiscovery?: boolean
     decisionGateway?: { choose: ReturnType<typeof vi.fn> }
   } = {},
 ) {
@@ -311,7 +312,7 @@ describe('progressive Composio bridge', () => {
       status: 'selected', mode: 'active', selected: 'use:GMAIL_FETCH_EMAILS', authoritative: true,
       receipt: { source: 'jev' },
     }))
-    const app = harness(true, undefined, false, { decisionGateway: { choose } })
+    const app = harness(true, undefined, false, { progressiveDecisionAfterDiscovery: true, decisionGateway: { choose } })
     const append = vi.fn()
     const agent = { session: { header: { id: 'read-only-selection' }, snapshotEvents: () => [], append } }
     await app.listeners.get('agent/pre-step')?.({
