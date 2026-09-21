@@ -1547,7 +1547,11 @@ export function apply(ctx: Context, config: Config = {}): void {
       }), 'hivemind-connected-apps: authenticated connector catalog')
       ctx.effect(() => runtime.webServer.register({
         kind: 'exact',
-        path: '/api/hivemind/runner-drain-status',
+        // Do not mount under `/api`: the browser Connection transport owns
+        // that prefix and rejects non-cookie service probes before an exact
+        // plugin route is considered. This private runner-only route has its
+        // own constant-time bearer-secret gate below.
+        path: '/internal/hivemind/runner-drain-status',
         handler: async (req, res) => {
           if (req.method !== 'GET') {
             connectorCatalogResponse(res, 405, { ok: false, diagnostic: 'method_not_allowed' })
