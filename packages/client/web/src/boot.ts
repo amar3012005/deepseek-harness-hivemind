@@ -136,13 +136,13 @@ export class AppWebEntry {
       this.page.setState(entry.options.name, STATE_LABELS[entry.fiber.state])
     })
 
-    const rows = this.manifest.plugins.map(row => row.id)
+    const rows = this.manifest.plugins
     this.page.setTotal(rows.length)
     await prefetching
-    await Promise.all(rows.map(async (name) => {
-      this.page.setState(name, 'loading')
-      const id = await loader.create({ name })
-      if (loader.resolve(id).fiber === undefined) this.page.setState(name, 'failed')
+    await Promise.all(rows.map(async (row) => {
+      this.page.setState(row.id, 'loading')
+      const id = await loader.create({ name: row.id, ...(row.config === undefined ? {} : { config: row.config }) })
+      if (loader.resolve(id).fiber === undefined) this.page.setState(row.id, 'failed')
     }))
 
     await loader.await()
