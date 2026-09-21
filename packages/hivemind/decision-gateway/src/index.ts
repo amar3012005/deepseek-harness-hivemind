@@ -81,7 +81,7 @@ const TOOL_BY_CAPABILITY: Readonly<Record<string, readonly string[]>> = Object.f
   direct_answer: [],
   hivemind_context: [],
   hivemind_meta: ['hivemind_meta'],
-  hivemind_save: ['hivemind_meta'],
+  hivemind_save: ['hivemind_save_memory'],
   composio_search: ['hivemind_connected_task'],
 })
 

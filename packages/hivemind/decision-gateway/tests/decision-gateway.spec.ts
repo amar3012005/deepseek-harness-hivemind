@@ -43,7 +43,7 @@ function agent() {
     releases.push(release)
     return release
   })
-  const tools = new Map([['hivemind_meta', {}], ['hivemind_connected_task', {}]])
+  const tools = new Map([['hivemind_meta', {}], ['hivemind_save_memory', {}], ['hivemind_connected_task', {}]])
   return {
     value: {
       session: { append },
@@ -97,6 +97,21 @@ describe('HIVE decision gateway consumer', () => {
     expect(subject.restrict).not.toHaveBeenCalled()
     expect(subject.append).toHaveBeenNthCalledWith(1, 'hivemind/decision', expect.objectContaining({ status: 'defer' }), { ignorable: true })
     expect(subject.append).toHaveBeenNthCalledWith(2, 'hivemind/decision', expect.objectContaining({ status: 'defer', reason: 'decision service returned 503' }), { ignorable: true })
+  })
+
+  it('exposes only the direct memory-save tool for an admitted save intent', async () => {
+    process.env.TEST_DECISION_SECRET = secret
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({
+      status: 'selected', mode: 'active', selected: 'hivemind_save', authoritative: true,
+      receipt: { source: 'deterministic', reason: 'explicit_hivemind_save_intent' },
+    }))))
+    const harness = mount(config())
+    const subject = agent()
+
+    await harness.preStep?.({ agent: subject.value, turn: 1, step: 1, signal: new AbortController().signal } as never,
+      async () => ({ kind: 'enter' as const, messages: [user('save this to hivemind')] }))
+
+    expect(subject.restrict).toHaveBeenCalledWith({ allow: ['hivemind_save_memory'] })
   })
 
   it('off mode registers no pre-step listener', () => {

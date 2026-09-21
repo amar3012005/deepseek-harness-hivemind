@@ -772,6 +772,47 @@ function compactSaveReceipt(
   return receipt
 }
 
+function waitForRetry(delayMs: number, signal: AbortSignal): Promise<boolean> {
+  if (signal.aborted) return Promise.resolve(false)
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => {
+      signal.removeEventListener('abort', abort)
+      resolve(true)
+    }, delayMs)
+    const abort = () => {
+      clearTimeout(timer)
+      resolve(false)
+    }
+    signal.addEventListener('abort', abort, { once: true })
+  })
+}
+
+/** Reconcile a timed-out write without asking the model to issue another save. */
+async function reconcileSave(
+  authority: IcarusAuthority,
+  idempotencyKey: string,
+  signal: AbortSignal,
+  config: Config,
+): Promise<JsonRecord | undefined> {
+  for (let attempt = 0; attempt < 6 && !signal.aborted; attempt += 1) {
+    try {
+      const result = await hiveRequest(authority, `${SAVE_STATUS_PATH}?idempotency_key=${encodeURIComponent(idempotencyKey)}`, {
+        method: 'GET', headers: { 'x-idempotency-key': idempotencyKey },
+      }, signal, config)
+      const durable = apiRecord(result, 'meta save status response')
+      if (durable['status'] === 'completed' && durable['receipt'] && typeof durable['receipt'] === 'object'
+        && !Array.isArray(durable['receipt'])) {
+        return { ...(durable['receipt'] as JsonRecord), replayed: true }
+      }
+      if (durable['status'] === 'cancelled') return { receipt: durable as unknown as JsonValue }
+    } catch (error: unknown) {
+      if (!(error instanceof HiveMindRuntimeError) || error.status !== 404) return undefined
+    }
+    if (attempt < 5 && !await waitForRetry(250 * (attempt + 1), signal)) return undefined
+  }
+  return undefined
+}
+
 function saveIdempotencyKey(snapshot: ProfileSnapshot, execution: ToolExecution, request: SaveRequest): string {
   const sessionId = execution.agent?.session?.header.id || 'session-unavailable'
   const canonical = JSON.stringify({
@@ -1170,6 +1211,10 @@ export function apply(ctx: Context, config: Config): void {
         if (durable['status'] === 'completed' && durable['receipt'] && typeof durable['receipt'] === 'object') {
           return compactSaveReceipt({ ...(durable['receipt'] as JsonRecord), replayed: true }, idempotencyKey)
         }
+        if (durable['status'] === 'executing' || durable['status'] === 'prepared' || durable['status'] === 'approved') {
+          const reconciled = await reconcileSave(authority, idempotencyKey, signal, config)
+          if (reconciled !== undefined) return compactSaveReceipt(reconciled, idempotencyKey)
+        }
       } catch {
         // A missing durable row is the first-write path.
       }
@@ -1204,22 +1249,19 @@ export function apply(ctx: Context, config: Config): void {
           method: 'POST', headers: { 'x-idempotency-key': idempotencyKey }, body: JSON.stringify(payload),
         }, signal, config)
         record = apiRecord(result, 'meta save response')
+        if (record['status'] === 'executing' || record['status'] === 'prepared' || record['status'] === 'approved') {
+          record = await reconcileSave(authority, idempotencyKey, signal, config) ?? record
+        }
       } catch (error: unknown) {
         if (signal.aborted) throw error
-        try {
-          const status = await hiveRequest(authority, `${SAVE_STATUS_PATH}?idempotency_key=${encodeURIComponent(idempotencyKey)}`, {
-            method: 'GET', headers: { 'x-idempotency-key': idempotencyKey },
-          }, signal, config)
-          const durable = apiRecord(status, 'meta save status response')
-          record = durable['response'] && typeof durable['response'] === 'object' && !Array.isArray(durable['response'])
-            ? { ...(durable['response'] as JsonRecord), receipt: durable as unknown as JsonValue }
-            : { receipt: durable as unknown as JsonValue }
-        } catch {
+        const reconciled = await reconcileSave(authority, idempotencyKey, signal, config)
+        if (reconciled === undefined) {
           return {
             status: 'indeterminate', operation: 'save', idempotency_key: idempotencyKey,
             error_code: 'MEMORY_SAVE_STATUS_UNAVAILABLE', retry_safe: false,
           }
         }
+        record = reconciled
       }
       const receipt = await saveMemoryReceipt(ctx, config, execution, 'hivemind-save.json', record)
       const compacted = compactSaveReceipt(record, idempotencyKey, receipt)

@@ -713,6 +713,27 @@ describe('HIVE-MIND runtime', () => {
     })
   })
 
+  it('reconciles an in-flight idempotent save without issuing a duplicate POST', async () => {
+    const path = await authorityFile()
+    profileResponses([
+      jsonResponse({ status: 'executing', operation: 'save_status' }),
+      jsonResponse({
+        status: 'completed', operation: 'save_status',
+        receipt: { status: 'saved', memory_id: 'memory-reconciled', receipt_id: 'memory:memory-reconciled' },
+      }),
+    ])
+    const harness = mount(config(path))
+    const result = await tool(harness, 'hivemind_save_memory').execute({
+      title: 'Reconciled save', content: 'This must be written exactly once.', scope: 'personal',
+    }, execContext())
+
+    expect(result).toMatchObject({
+      status: 'saved', memory_id: 'memory-reconciled', receipt_id: 'memory:memory-reconciled', replayed: true,
+    })
+    const posts = vi.mocked(fetch).mock.calls.filter(([, init]) => init?.method === 'POST')
+    expect(posts).toHaveLength(0)
+  })
+
   it('forwards an explicit read scope without changing full-scope default behavior', async () => {
     const path = await authorityFile()
     profileResponses([jsonResponse({ items: [] }), jsonResponse({ results: [] })])
