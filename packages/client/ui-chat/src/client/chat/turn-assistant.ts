@@ -7,4 +7,6 @@ import type { AssistantBlock } from '../contract/snapshot.ts'
  */
 export function assistantText(blocks: readonly AssistantBlock[]): string {
   return blocks.flatMap(block => block.kind === 'text' ? [block.text] : []).join('')
+    .replace(/<!--\s*hivemind-follow-ups:\s*\[[\s\S]*?\]\s*-->/giu, '')
+    .trimEnd()
 }

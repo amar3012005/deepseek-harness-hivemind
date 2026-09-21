@@ -36,7 +36,7 @@ describe('HIVE-MIND hero branding', () => {
     </div>)
     const dispose = setupSingulanceHeadline()
     expect(view.getByTestId('headline').hasAttribute('data-hivemind-hero-headline')).toBe(true)
-    expect(view.getByText('BRAIN')).toBeTruthy()
+    expect(view.getByText('BRAIN · Remember what matters.')).toBeTruthy()
     dispose()
     expect(view.getByTestId('headline').hasAttribute('data-hivemind-hero-headline')).toBe(false)
     expect(view.getByText('Beyond Horizon Of Intelligence')).toBeTruthy()

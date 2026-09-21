@@ -23,6 +23,7 @@ import { createElement } from 'react'
 import { ScopeSelect, type HivemindReadScope } from './ScopeSelect.tsx'
 import { ConnectorChips, type ConnectorChipsProps } from './ConnectorChips.tsx'
 import { createConnectorMentionSource } from './ConnectorMentions.ts'
+import { ContextualFollowUps, selectContextualFollowUps } from './ContextualFollowUps.tsx'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap { 'hivemind-connect': HivemindConnectKey }
@@ -172,6 +173,16 @@ export function apply(ctx: ClientContext): void {
         }
       },
     }, ConnectorChips))
+    const sendFollowUp = (prompt: string): void => {
+      const sessionId = ctx.sessions.list.getSnapshot().current
+      const scope = sessionId === undefined ? undefined : ctx.sessions.scope(sessionId)
+      const conversation = scope?.get('conversation')
+      if (conversation !== undefined) void conversation.send(prompt)
+    }
+    ctx.slots.inject('conversation.chat.turnTail', () => ctx.slots.register({
+      name: 'conversation.chat.turnTail', priority: 40,
+      select: selectContextualFollowUps,
+    }, ({ matched }) => createElement(ContextualFollowUps, { matched, send: sendFollowUp })))
   })
   ctx.inject(['inputTriggers'], (scope: ClientContext) => {
     const inputTriggers = scope.get('inputTriggers') as {

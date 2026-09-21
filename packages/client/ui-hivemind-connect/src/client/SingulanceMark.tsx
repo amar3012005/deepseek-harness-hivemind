@@ -1,6 +1,6 @@
 import type { SVGProps } from 'react'
 
-const HERO_HEADLINE = 'BRAIN'
+const HERO_HEADLINE = 'BRAIN · Remember what matters.'
 
 export interface SingulanceMarkProps extends Omit<SVGProps<SVGSVGElement>, 'width' | 'height'> {
   size?: number
@@ -37,6 +37,7 @@ export function SingulanceMark({ size = 48, className, ...props }: SingulanceMar
 export function setupSingulanceHeadline(): () => void {
   const originals = new Map<HTMLElement, string>()
   const apply = (): void => {
+    if (typeof document === 'undefined') return
     for (const mark of document.querySelectorAll('[data-hivemind-hero-brand="singulance"]')) {
       const headline = mark.closest('span')?.parentElement
       const title = headline?.lastElementChild?.firstElementChild

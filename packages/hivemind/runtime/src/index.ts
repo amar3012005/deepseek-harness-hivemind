@@ -94,6 +94,8 @@ const CONNECT_DISCONNECT_PATH = '/hivemind/connect'
 const HIVE_META_TOOL = 'hivemind_meta'
 const HIVE_CAPABILITIES_TOOL = 'hivemind_capabilities'
 const HIVE_WEB_SEARCH_TOOL = 'hivemind_web_search'
+const HIVE_LIST_PROJECTS_TOOL = 'hivemind_list_projects'
+const HIVE_CREATE_PROJECT_TOOL = 'hivemind_create_project'
 
 /** Keep spill implementation details out of model-visible HIVE receipts. */
 interface PrivateReceiptReference {
@@ -998,8 +1000,13 @@ export function apply(ctx: Context, config: Config): void {
   if (config.authorityMode !== 'scoped-service') registerWebConnectRoutes(ctx, config)
   if (!config.agentFeaturesEnabled) return
   ctx.effect(() => ctx.on('tools/pre-execute', async (execution, next): Promise<PreToolDecision> => {
-    if (!config.webApprovalRequired || (execution.name !== HIVE_WEB_SEARCH_TOOL && execution.name !== 'web_fetch')) return next()
-    return { kind: 'ask', reason: 'Web research requires your approval before accessing external sources.' }
+    if (execution.name === HIVE_CREATE_PROJECT_TOOL) {
+      return { kind: 'ask', reason: 'Creating a HIVE-MIND project requires your approval.' }
+    }
+    if (config.webApprovalRequired && (execution.name === HIVE_WEB_SEARCH_TOOL || execution.name === 'web_fetch')) {
+      return { kind: 'ask', reason: 'Web research requires your approval before accessing external sources.' }
+    }
+    return next()
   }))
   ctx.effect(() => ctx.skills.register({
     name: 'hivemind-company-brain',
@@ -1280,6 +1287,40 @@ export function apply(ctx: Context, config: Config): void {
       }
     },
   }))
+
+  ctx.effect(() => ctx.tools.register(defineTool({
+    name: HIVE_LIST_PROJECTS_TOOL,
+    description: 'List the authenticated user\'s authorized HIVE-MIND projects. Identity and organization scope are derived by the server; never ask for or invent IDs.',
+    parameters: {},
+    output: jsonOutput,
+    isConcurrencySafe: () => true,
+    async execute(_args, execution) {
+      const authority = await resolveAuthority(ctx, config)
+      return apiRecord(await hiveRequest(authority, '/projects', { method: 'GET' }, execution.signal, config), 'project catalog')
+    },
+  })))
+
+  ctx.effect(() => ctx.tools.register(defineTool({
+    name: HIVE_CREATE_PROJECT_TOOL,
+    description: 'Create one project inside the authenticated HIVE-MIND organization after native user approval. Use only when the user explicitly asks to create a project.',
+    parameters: {
+      name: { type: 'string', required: true, description: 'Project name, 1 to 120 characters.' },
+      description: { type: 'string', description: 'Optional concise project description, up to 1000 characters.' },
+    },
+    output: jsonOutput,
+    isConcurrencySafe: () => false,
+    async execute(args, execution) {
+      const projectName = nonEmptyString(args.name, 'project name')
+      if (projectName.length > 120) throw new HiveMindRuntimeError('project name exceeds 120 characters')
+      const description = typeof args.description === 'string' ? args.description.trim() : ''
+      if (description.length > 1000) throw new HiveMindRuntimeError('project description exceeds 1000 characters')
+      const authority = await resolveAuthority(ctx, config)
+      return apiRecord(await hiveRequest(authority, '/projects', {
+        method: 'POST',
+        body: JSON.stringify({ name: projectName, ...(description === '' ? {} : { description }) }),
+      }, execution.signal, config), 'project creation receipt')
+    },
+  })))
 
   ctx.effect(() => ctx.tools.register(defineTool({
     name: HIVE_WEB_SEARCH_TOOL,

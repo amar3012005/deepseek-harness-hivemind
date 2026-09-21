@@ -28,6 +28,7 @@ export const TurnTailNodeView = memo(function TurnTailNodeView({
   const runMs = turn.start === undefined || turn.end === undefined
     ? undefined
     : Math.max(0, turn.end.time - turn.start.time)
+  const showTokenUsage = document.documentElement.dataset.dshMode !== 'hivemind-chat'
   // Interruption-frozen partials carry no messageId, so they address no
   // durable message and contribute no per-message actions.
   const messageId = closing.finalNode.messageId
@@ -51,7 +52,7 @@ export const TurnTailNodeView = memo(function TurnTailNodeView({
         extraActions={assistantActions}
         usageAction={(
           <>
-            {data.tokenUsage !== undefined && <TurnUsagePanel usage={data.tokenUsage} t={t} />}
+            {showTokenUsage && data.tokenUsage !== undefined && <TurnUsagePanel usage={data.tokenUsage} t={t} />}
             {runMs !== undefined && (
               <TurnTimePanel
                 runMs={runMs}

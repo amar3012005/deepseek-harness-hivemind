@@ -323,6 +323,7 @@ export const StatsPills = memo(function StatsPills({ useChat, useProjection, t }
   // billing (e.g. every request failed) shows its counts without a usage pill.
   const hasTokens = usage !== undefined
     && (billedInputTokens(usage) > 0 || usage.outputTokens > 0)
+  const showTokenUsage = document.documentElement.dataset.dshMode !== 'hivemind-chat'
   if (stats.steps === 0 && !hasTokens) return null
   // data-composer-stats: InputBar's `.root:has([data-composer-stats])` rule
   // tightens the composer's bottom clearance only while this row renders.
@@ -338,7 +339,7 @@ export const StatsPills = memo(function StatsPills({ useChat, useProjection, t }
           }}
         />
       )}
-      {hasTokens && (
+      {showTokenUsage && hasTokens && (
         <UsagePill
           usage={usage}
           t={t}

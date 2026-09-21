@@ -413,7 +413,7 @@ describe('HIVE-MIND runtime', () => {
     pluginConfig.legacyToolsEnabled = false
     const harness = mount(pluginConfig)
 
-    expect([...harness.tools.keys()]).toEqual(['hivemind_capabilities', 'hivemind_save_memory', 'hivemind_batch_save_memories', 'hivemind_meta', 'hivemind_web_search'])
+    expect([...harness.tools.keys()]).toEqual(['hivemind_capabilities', 'hivemind_save_memory', 'hivemind_batch_save_memories', 'hivemind_meta', 'hivemind_list_projects', 'hivemind_create_project', 'hivemind_web_search'])
     const skill = harness.skills.get('hivemind-company-brain')
     expect(skill?.description).toContain('multi-source')
     expect(skill?.content).toContain('not a workspace path')
@@ -440,6 +440,10 @@ describe('HIVE-MIND runtime', () => {
     await expect(harness.toolPreExecute?.({ name: 'hivemind_web_search' }, allow)).resolves.toEqual({
       kind: 'ask',
       reason: 'Web research requires your approval before accessing external sources.',
+    })
+    await expect(harness.toolPreExecute?.({ name: 'hivemind_create_project' }, allow)).resolves.toEqual({
+      kind: 'ask',
+      reason: 'Creating a HIVE-MIND project requires your approval.',
     })
     await expect(harness.toolPreExecute?.({ name: 'hivemind_meta' }, allow)).resolves.toEqual({ kind: 'allow' })
     expect(allow).toHaveBeenCalledOnce()
