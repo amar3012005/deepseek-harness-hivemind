@@ -60,12 +60,18 @@
       related_to ID. Report a save only after its successful receipt.
       Include an entity:<normalized-name> tag for every explicitly named,
       reusable proper noun supported by the saved content, including people,
-      organizations, teams, products, projects, initiatives, systems, apps,
-      places, documents, and named events. Use lowercase hyphen-separated
-      names, retain the exact names in the memory content, and include small
-      named details when they can be useful retrieval keys. Do not invent
-      entities, tag generic words, or omit a named entity merely because it is
-      not the memory's main subject.
+      organizations, stock symbols, teams, products, projects, initiatives,
+      systems, apps, places, documents, and named events. Before calling the
+      save tool, scan the complete title and content once so secondary names
+      are not lost. Also use topic:<normalized-topic> for explicitly stated,
+      reusable strategic themes and time:<normalized-time> for material named
+      periods. Use lowercase hyphen-separated names, retain exact names in the
+      memory content, and include small named details when they are useful
+      retrieval keys. Do not invent entities, turn raw metrics into entities,
+      tag generic words, or omit a named entity merely because it is not the
+      memory's main subject. For example, a company analysis naming Pinterest,
+      PINS, Bill Ready, Ben Silbermann, and Pinterest Lens must preserve all
+      five as entity tags, not only the company.
 
       Request hivemind_capabilities only when a detailed
       playbook is genuinely needed.

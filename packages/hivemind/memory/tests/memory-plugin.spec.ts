@@ -1,7 +1,7 @@
 import { Context } from '@deepseek-ai/cordis'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { memoryPlugin, saveOperationId } from '../src/index.ts'
 
 describe('hivemind-memory plugin lifecycle', () => {
@@ -33,5 +33,43 @@ describe('hivemind-memory plugin lifecycle', () => {
     const second = saveOperationId({ agent, callId: 'call-b' } as never, request)
     expect(first).toMatch(/^saveop:[a-f0-9]{64}$/)
     expect(first).toBe(second)
+  })
+
+  it('normalizes the historical flat recall shape without another model turn', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SystemPrompt, {})
+    await ctx.plugin(ToolRuntime)
+    const recall = vi.fn(async () => ({ status: 'ready' }))
+    const fiber = await ctx.plugin(memoryPlugin({ defaultLimit: 5 }, {
+      context: async () => ({}), entities: async () => ({}), recall,
+      save: async () => ({}), profiles: async () => ({}),
+    }))
+    const meta = fiber.ctx.tools.get('hivemind_meta')!
+    await expect(meta.execute({ operation: 'recall', query: 'Pinterest company analysis', limit: 5 }, {
+      signal: new AbortController().signal,
+    } as never)).resolves.toEqual({ status: 'ready' })
+    expect(recall).toHaveBeenCalledWith({
+      query: 'Pinterest company analysis', mode: 'memory', limit: 5,
+    }, expect.any(AbortSignal), expect.any(Object))
+    await fiber.dispose()
+  })
+
+  it('keeps the canonical nested recall shape unchanged', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SystemPrompt, {})
+    await ctx.plugin(ToolRuntime)
+    const recall = vi.fn(async () => ({ status: 'ready' }))
+    const fiber = await ctx.plugin(memoryPlugin({ defaultLimit: 5 }, {
+      context: async () => ({}), entities: async () => ({}), recall,
+      save: async () => ({}), profiles: async () => ({}),
+    }))
+    const meta = fiber.ctx.tools.get('hivemind_meta')!
+    await meta.execute({ operation: 'recall', recall: { query: 'Pinterest', limit: 3, entities: ['Pinterest'] } }, {
+      signal: new AbortController().signal,
+    } as never)
+    expect(recall).toHaveBeenCalledWith({
+      query: 'Pinterest', mode: 'memory', limit: 3, tags: ['entity:Pinterest'],
+    }, expect.any(AbortSignal), expect.any(Object))
+    await fiber.dispose()
   })
 })

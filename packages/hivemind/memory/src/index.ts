@@ -251,6 +251,17 @@ function tagsFor(input: Record<string, unknown>): string[] | undefined {
   return tags.length === 0 ? undefined : [...new Set(tags)]
 }
 
+/** Normalize the small historical flat read shape emitted by older models.
+ * The canonical public schema stays nested, but a formatting slip must not
+ * spend another model turn or turn a valid read into a user-visible failure. */
+function readInput(args: Record<string, unknown>, key: 'recall' | 'entities'): Record<string, unknown> {
+  const nested = args[key]
+  if (nested !== undefined) return object(nested, key)
+  const { operation: _operation, ...flat } = args
+  if (flat['query'] === undefined) return object(nested, key)
+  return flat
+}
+
 /** Parse the one canonical shape accepted by both the compatibility gateway and save tool. */
 function saveRequest(input: Record<string, unknown>): SaveRequest {
   const sourceType = text(input['source_type'] ?? 'conversation', 'source_type')
@@ -298,7 +309,7 @@ export function memoryPlugin(config: MemoryPluginConfig, provider: MemoryProvide
           title: { type: 'string', required: true },
           content: { type: 'string', required: true },
           source_type: { type: 'string', enum: ['text', 'conversation', 'documentation', 'decision'] },
-          tags: { type: 'array', items: { type: 'string' }, description: 'Include entity:<normalized-name> for every explicitly named reusable proper noun supported by the content: people, organizations, teams, products, projects, initiatives, systems, apps, places, documents, and named events. Use lowercase hyphen-separated names. Include small named details that can serve as retrieval keys; never invent entities or tag generic words.' },
+          tags: { type: 'array', items: { type: 'string' }, description: 'Before calling, scan the complete title and content and tag every explicitly named reusable proper noun: entity:<lowercase-hyphenated-name> for people, organizations, stock symbols, products, projects, initiatives, systems, apps, places, documents, and named events; topic:<normalized-topic> for explicitly stated reusable strategic themes; time:<normalized-time> for material named periods. Include secondary named details, not only the main subject. Never invent entities, convert raw metrics into entities, or tag generic words.' },
           project: { type: 'string' },
           scope: { type: 'string', enum: ['personal', 'organization', 'project'], description: 'Concrete write destination. Full scope is read-only and cannot be used for a save. Project scope requires project.' },
           relationship: { type: 'string', enum: ['update', 'extend', 'derive'], description: 'Optional relation to an existing recalled memory. Omit for a new standalone memory. When set, related_to is required.' },
@@ -337,7 +348,7 @@ export function memoryPlugin(config: MemoryPluginConfig, provider: MemoryProvide
               query: { type: 'string', required: true },
               mode: { type: 'string', enum: ['memory', 'auto', 'hybrid', 'evidence'] },
               limit: { type: 'integer' },
-              tags: { type: 'array', items: { type: 'string' }, description: 'Include entity:<normalized-name> for every explicitly named reusable proper noun supported by the content, including small named details useful for later retrieval. Use lowercase hyphen-separated names; never invent entities or tag generic words.' },
+              tags: { type: 'array', items: { type: 'string' }, description: 'Filters only. Use exact saved tags when the request supplies a tag constraint.' },
               source_platforms: { type: 'array', items: { type: 'string' } },
               media_kind: { type: 'string', enum: ['image', 'document'] },
               filename: { type: 'string' },
@@ -382,7 +393,7 @@ export function memoryPlugin(config: MemoryPluginConfig, provider: MemoryProvide
           }
           if (operation === 'profiles') return provider.profiles(execution.signal)
           if (operation === 'entities') {
-            const input = object(args.entities, 'entities')
+            const input = readInput(args, 'entities')
             const rawLimit = input['limit'] ?? config.defaultLimit
             if (!Number.isInteger(rawLimit) || (rawLimit as number) < 1 || (rawLimit as number) > 25) throw new TypeError('hivemind-memory: entity limit must be an integer from 1 to 25')
             const scopeFilter = optionalScope(input['scope_filter'] ?? input['scope'], 'entities.scope_filter')
@@ -412,7 +423,7 @@ export function memoryPlugin(config: MemoryPluginConfig, provider: MemoryProvide
             return provider.saveStatus({ idempotencyKey: text(input['idempotency_key'], 'idempotency_key') }, execution.signal)
           }
           if (operation !== 'recall') throw new TypeError('hivemind-memory: unsupported operation')
-          const input = object(args.recall, 'recall')
+          const input = readInput(args, 'recall')
           const rawLimit = input['limit'] ?? config.defaultLimit
           if (!Number.isInteger(rawLimit) || (rawLimit as number) < 1 || (rawLimit as number) > 25) throw new TypeError('hivemind-memory: recall limit must be an integer from 1 to 25')
           const mode = text(input['mode'] ?? 'memory', 'mode')
