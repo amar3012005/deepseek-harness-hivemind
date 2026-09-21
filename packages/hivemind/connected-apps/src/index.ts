@@ -1573,7 +1573,9 @@ export function apply(ctx: Context, config: Config = {}): void {
           // failed check would otherwise be rendered as an opaque 400 and
           // force the release script down its legacy bootstrap path.
           try {
-            const active = Array.from(ctx.agents.list()).filter(agent => agent.status !== 'idle')
+            // Connected-apps runs in a scoped child context. Live agents are
+            // registered by the host root, so resolve the registry there.
+            const active = Array.from(ctx.root.agents.list()).filter(agent => agent.status !== 'idle')
             connectorCatalogResponse(res, 200, {
               ok: true,
               active_turns: active.length,
