@@ -1104,6 +1104,19 @@ export function apply(ctx: Context, config: Config): void {
     },
   }))
   ctx.plugin(memoryPlugin({ defaultLimit: config.recallResultLimit }, {
+    async updateProfile(agent, request, signal) {
+      const authority = await resolveAuthority(ctx, config)
+      const response = apiRecord(await hiveRequest(authority, '/api/profiles', {
+        method: 'POST', body: JSON.stringify(Object.entries(request.fields).map(([key, value]) => ({ category: 'static', key, value, confidence: 1 }))),
+      }, signal, config), 'profile update response')
+      const results = response['results']
+      if (!Array.isArray(results) || results.length !== Object.keys(request.fields).length || results.some(row => !row || typeof row !== 'object' || (row as JsonRecord)['success'] !== true)) {
+        snapshots.delete(agent)
+        throw new HiveMindRuntimeError('Profile update was not fully confirmed; read the current profile before retrying')
+      }
+      snapshots.delete(agent)
+      return { status: 'updated', operation: 'update_profile', fields: request.fields, scope: 'authenticated_user' }
+    },
     async context(agent, signal) {
       try {
         const snapshot = await snapshotFor(agent, signal, undefined, true)

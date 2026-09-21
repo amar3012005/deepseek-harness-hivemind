@@ -56,7 +56,7 @@ describe('hivemind-web native renderer parity', () => {
     expect(patch).toContain('reasoning: off')
     expect(patch).toContain('thinkingFormat: openrouter')
     expect(patch).not.toContain('reasoningEffort: off')
-    expect(patch).toContain('model: openrouter/deepseek/deepseek-v4-flash-0731')
+    expect(patch).toContain('model: openrouter/deepseek/deepseek-v4-flash-0731:nitro')
   })
 
 })

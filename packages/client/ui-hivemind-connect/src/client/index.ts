@@ -23,6 +23,7 @@ import { createElement } from 'react'
 import { ScopeSelect, type HivemindReadScope } from './ScopeSelect.tsx'
 import { ConnectorChips, type ConnectorChipsProps } from './ConnectorChips.tsx'
 import { createConnectorMentionSource } from './ConnectorMentions.ts'
+import { setupHivemindSessionDeletion } from '../session-delete.ts'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap { 'hivemind-connect': HivemindConnectKey }
@@ -93,6 +94,7 @@ async function answerConnectionQuestion(
 export function apply(ctx: ClientContext): void {
   ctx.effect(setupConnectionCallbackReturn, 'ui-hivemind-connect: connected-app authorization return')
   ctx.effect(setupEmbedMessaging, 'ui-hivemind-connect: embedded authentication')
+  ctx.effect(setupHivemindSessionDeletion, 'ui-hivemind-connect: permanent session deletion')
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-hivemind-connect: dictionaries')
   const publishConnection = ctx.uiSession.registerPendingInteraction<PendingConnectionAuthorization>(() => 2)
   ctx.remote.$on('user-questions/request', function (request, next) {

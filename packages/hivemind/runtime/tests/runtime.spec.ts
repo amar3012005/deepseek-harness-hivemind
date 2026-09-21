@@ -139,7 +139,7 @@ function mount(pluginConfig: Config, withSpill = false): HarnessMock {
         return {
           async ask(input: { questions: readonly { id: string }[] }) {
             const question = input.questions[0]
-            return { answers: question === undefined ? [] : [{ id: question.id, selected: ['Personal'] }] }
+            return { answers: question === undefined ? [] : [{ id: question.id, selected: [question.id.startsWith('profile:') ? 'Approve' : 'Personal'] }] }
           },
         }
       }
@@ -408,18 +408,37 @@ describe('HIVE-MIND runtime', () => {
     expect(hiveMemoryBudgetExhausted([{ ...events[0], data: { ...events[0]!.data, name: 'hivemind_connected_task' } }] as SessionEvent[], 4)).toBe(false)
   })
 
-  it('exposes only the progressive meta-tool when compatibility tools are disabled', async () => {
+  it('exposes progressive reads and approval-gated writes when compatibility tools are disabled', async () => {
     const pluginConfig = config(await authorityFile())
     pluginConfig.legacyToolsEnabled = false
     const harness = mount(pluginConfig)
 
-    expect([...harness.tools.keys()]).toEqual(['hivemind_capabilities', 'hivemind_save_memory', 'hivemind_meta', 'hivemind_web_search'])
+    expect([...harness.tools.keys()]).toEqual(['hivemind_capabilities', 'hivemind_update_profile', 'hivemind_save_memory', 'hivemind_meta', 'hivemind_web_search'])
     const skill = harness.skills.get('hivemind-company-brain')
     expect(skill?.description).toContain('multi-source')
     expect(skill?.content).toContain('not a workspace path')
     expect(skill?.invocation).toEqual({ modelInvocable: true, userInvocable: true })
     expect(skill?.content).toContain('Never save secrets')
     expect(skill?.description).toContain('call hivemind_meta directly')
+  })
+
+  it('posts approved descriptive profile fields without model-supplied identity', async () => {
+    const harness = mount(config(await authorityFile()))
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({ results: [{ success: true }] })))
+    const result = await tool(harness, 'hivemind_update_profile').execute({ fields: { name: 'ASTER HELIUS' } }, execContext())
+    expect(result).toMatchObject({ status: 'updated', fields: { name: 'ASTER HELIUS' }, scope: 'authenticated_user' })
+    expect(fetch).toHaveBeenCalledTimes(1)
+    const [url, init] = vi.mocked(fetch).mock.calls[0]!
+    expect(url).toBeInstanceOf(URL)
+    expect(url instanceof URL ? url.href : '').toBe('http://127.0.0.1:3099/api/profiles')
+    expect(init?.method).toBe('POST')
+    expect(init?.body).toBe(JSON.stringify([{ category: 'static', key: 'name', value: 'ASTER HELIUS', confidence: 1 }]))
+  })
+
+  it('does not report success when the profile store rejects an update', async () => {
+    const harness = mount(config(await authorityFile()))
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({ results: [{ success: false }] })))
+    await expect(tool(harness, 'hivemind_update_profile').execute({ fields: { name: 'ASTER HELIUS' } }, execContext())).rejects.toThrow('not fully confirmed')
   })
 
   it('requests the native skill catalog without loading profile data', async () => {

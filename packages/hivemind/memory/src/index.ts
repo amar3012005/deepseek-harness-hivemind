@@ -4,6 +4,8 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { defineTool, type ToolExecution } from '@deepseek-ai/dsh-tools'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
+import { registerProfileUpdate, type ProfileUpdateRequest } from './profile-update.ts'
+export type { ProfileUpdateRequest } from './profile-update.ts'
 
 export interface RecallRequest {
   query: string
@@ -47,6 +49,7 @@ type ReadScope = typeof READ_SCOPES[number]
 
 export interface SaveStatusRequest { idempotencyKey: string }
 export interface MemoryProvider {
+  updateProfile?(agent: Agent, request: ProfileUpdateRequest, signal: AbortSignal): Promise<Record<string, JsonValue>>
   context(agent: Agent, signal: AbortSignal): Promise<Record<string, JsonValue>>
   entities(request: EntitySearchRequest, signal: AbortSignal, execution: ToolExecution): Promise<Record<string, JsonValue>>
   recall(request: RecallRequest, signal: AbortSignal, execution: ToolExecution): Promise<Record<string, JsonValue>>
@@ -286,6 +289,8 @@ export function memoryPlugin(config: MemoryPluginConfig, provider: MemoryProvide
     name: 'hivemind-memory',
     inject: ['tools'],
     apply(ctx: Context): void {
+      const updateProfile = provider.updateProfile?.bind(provider)
+      if (updateProfile) ctx.effect(() => registerProfileUpdate(ctx, updateProfile))
       ctx.effect(() => ctx.tools.register(defineTool({
         name: 'hivemind_save_memory',
         description: 'Durably save one confirmed, stable HIVE-MIND memory. Use this direct tool for a standalone fact, preference, decision, correction, relationship, or completed outcome. A successful result must include the saved memory receipt. Never save secrets, credentials, ephemeral chat, guesses, or unverified claims.',
@@ -293,7 +298,7 @@ export function memoryPlugin(config: MemoryPluginConfig, provider: MemoryProvide
           title: { type: 'string', required: true },
           content: { type: 'string', required: true },
           source_type: { type: 'string', enum: ['text', 'conversation', 'documentation', 'decision'] },
-          tags: { type: 'array', items: { type: 'string' } },
+          tags: { type: 'array', items: { type: 'string' }, description: 'Include entity:<normalized-name> for every explicitly named reusable proper noun supported by the content: people, organizations, teams, products, projects, initiatives, systems, apps, places, documents, and named events. Use lowercase hyphen-separated names. Include small named details that can serve as retrieval keys; never invent entities or tag generic words.' },
           project: { type: 'string' },
           scope: { type: 'string', enum: ['personal', 'organization', 'project'], description: 'Concrete write destination. Full scope is read-only and cannot be used for a save. Project scope requires project.' },
           relationship: { type: 'string', enum: ['update', 'extend', 'derive'], description: 'Optional relation to an existing recalled memory. Omit for a new standalone memory. When set, related_to is required.' },
@@ -332,7 +337,7 @@ export function memoryPlugin(config: MemoryPluginConfig, provider: MemoryProvide
               query: { type: 'string', required: true },
               mode: { type: 'string', enum: ['memory', 'auto', 'hybrid', 'evidence'] },
               limit: { type: 'integer' },
-              tags: { type: 'array', items: { type: 'string' } },
+              tags: { type: 'array', items: { type: 'string' }, description: 'Include entity:<normalized-name> for every explicitly named reusable proper noun supported by the content, including small named details useful for later retrieval. Use lowercase hyphen-separated names; never invent entities or tag generic words.' },
               source_platforms: { type: 'array', items: { type: 'string' } },
               media_kind: { type: 'string', enum: ['image', 'document'] },
               filename: { type: 'string' },

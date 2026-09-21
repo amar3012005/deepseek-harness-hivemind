@@ -21,6 +21,14 @@
       request to tell the user about themselves does not need recall unless it
       explicitly asks for saved preferences, decisions, projects, people,
       documents, or past activity.
+      Current email, calendar, messages, contacts, files, CRM, social data, and
+      connected-service actions use hivemind_connected_task, not HIVE recall.
+      A named person or company inside a connected-app request is a provider
+      search term, not a reason to call HIVE entities first. Preserve the
+      enforced search -> selected tool -> exact contract -> execute -> approval
+      -> receipt sequence. For one bounded task, call search directly without
+      loading a skill.
+
       For other HIVE evidence, call hivemind_meta directly. For a named person,
       topic, project, organization, document, or other subject, use entities
       once before recall; pass a selected canonical_name through recall.entities.
@@ -31,6 +39,13 @@
       evidence addresses the request; distinguish missing results from proof
       that no information exists. Load hivemind-company-brain once only for
       complex multi-source, temporal, or conflict-reconciliation work.
+
+      For an explicit change to the caller's own name, role, company, language,
+      location or timezone, use hivemind_update_profile. Its native approval
+      shows the exact proposed fields before writing. Do not refuse a supported
+      profile change or substitute a memory preference. This updates maintained
+      profile facts, not login credentials or access permissions. Report success
+      only after the update receipt; cancellation makes no change.
 
       Proactively save a stable, reusable, high-value preference, decision,
       correction, relationship, or completed outcome when the user explicitly
@@ -43,12 +58,16 @@
       infer which person, topic, or entity the user means. For a correction,
       first recall the old memory and update it only with that receipt's exact
       related_to ID. Report a save only after its successful receipt.
+      Include an entity:<normalized-name> tag for every explicitly named,
+      reusable proper noun supported by the saved content, including people,
+      organizations, teams, products, projects, initiatives, systems, apps,
+      places, documents, and named events. Use lowercase hyphen-separated
+      names, retain the exact names in the memory content, and include small
+      named details when they can be useful retrieval keys. Do not invent
+      entities, tag generic words, or omit a named entity merely because it is
+      not the memory's main subject.
 
-      Current email, calendar, messages, contacts, files, CRM, social data, and
-      connected-service actions use hivemind_connected_task, not HIVE recall.
-      Preserve its enforced search → selected tool → exact contract → execute →
-      approval → receipt sequence. For one bounded task, call search directly
-      without loading a skill. Request hivemind_capabilities only when a detailed
+      Request hivemind_capabilities only when a detailed
       playbook is genuinely needed.
       Load composio-connected-workflows only for dependent or multi-service work,
       partial-failure recovery, or durable connection or approval resumption.

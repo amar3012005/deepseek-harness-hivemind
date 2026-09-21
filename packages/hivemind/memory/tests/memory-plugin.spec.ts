@@ -15,12 +15,15 @@ describe('hivemind-memory plugin lifecycle', () => {
       recall: async () => ({}),
       save: async () => ({}),
       profiles: async () => ({}),
+      updateProfile: async () => ({ status: 'updated' }),
     }))
 
     const tools = fiber.ctx.tools
     expect(tools.get('hivemind_meta')).toBeDefined()
+    expect(tools.get('hivemind_update_profile')).toBeDefined()
     await fiber.dispose()
     expect(tools.get('hivemind_meta')).toBeUndefined()
+    expect(tools.get('hivemind_update_profile')).toBeUndefined()
   })
 
   it('uses a durable save-operation id that is independent of call id', () => {

@@ -43,7 +43,7 @@ function agent() {
     releases.push(release)
     return release
   })
-  const tools = new Map([['hivemind_meta', {}], ['hivemind_save_memory', {}], ['hivemind_connected_task', {}]])
+  const tools = new Map([['hivemind_meta', {}], ['hivemind_save_memory', {}], ['hivemind_update_profile', {}], ['hivemind_connected_task', {}]])
   return {
     value: {
       session: { append },
@@ -112,6 +112,21 @@ describe('HIVE decision gateway consumer', () => {
       async () => ({ kind: 'enter' as const, messages: [user('save this to hivemind')] }))
 
     expect(subject.restrict).toHaveBeenCalledWith({ allow: ['hivemind_save_memory'] })
+  })
+
+  it('exposes only profile update for an admitted profile change', async () => {
+    process.env.TEST_DECISION_SECRET = secret
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({
+      status: 'selected', mode: 'active', selected: 'hivemind_profile_update', authoritative: true,
+      receipt: { source: 'jev' },
+    }))))
+    const harness = mount(config())
+    const subject = agent()
+
+    await harness.preStep?.({ agent: subject.value, turn: 1, step: 1, signal: new AbortController().signal } as never,
+      async () => ({ kind: 'enter' as const, messages: [user('change my name to ASTER HELIUS')] }))
+
+    expect(subject.restrict).toHaveBeenCalledWith({ allow: ['hivemind_update_profile'] })
   })
 
   it('off mode registers no pre-step listener', () => {

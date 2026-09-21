@@ -37,7 +37,7 @@ for (const [feature, ids] of Object.entries(presentation)) {
 
 const defaultModel = row('agent-default-model')
 const llmProvider = row('llm-pi-ai')
-if (!defaultModel.includes("model: openrouter/deepseek/deepseek-v4-flash-0731")
+if (!defaultModel.includes("model: openrouter/deepseek/deepseek-v4-flash-0731:nitro")
   || !/reasoning:\s*['"]?off['"]?/.test(llmProvider)) {
   throw new Error('hivemind-web image profile must disable optional reasoning for its default model')
 }
