@@ -1,0 +1,4 @@
+# Cached runtime overlay for a compiled connected-apps package change.
+ARG BASE_IMAGE
+FROM ${BASE_IMAGE}
+COPY lib/ /opt/deepseek-harness/packages/hivemind/connected-apps/lib/

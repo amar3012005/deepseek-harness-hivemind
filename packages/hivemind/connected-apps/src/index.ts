@@ -1564,12 +1564,20 @@ export function apply(ctx: Context, config: Config = {}): void {
             connectorCatalogResponse(res, 401, { ok: false, diagnostic: 'authentication_required' })
             return
           }
-          const active = ctx.agents.list().filter(agent => agent.status !== 'idle')
-          connectorCatalogResponse(res, 200, {
-            ok: true,
-            active_turns: active.length,
-            sessions: active.slice(0, 20).map(agent => ({ session_id: String(agent.id), status: agent.status })),
-          })
+          // `list()` is iterable in the runner, rather than assuming it is an
+          // Array.  A drain check must never crash the outer HTTP handler: a
+          // failed check would otherwise be rendered as an opaque 400 and
+          // force the release script down its legacy bootstrap path.
+          try {
+            const active = Array.from(ctx.agents.list()).filter(agent => agent.status !== 'idle')
+            connectorCatalogResponse(res, 200, {
+              ok: true,
+              active_turns: active.length,
+              sessions: active.slice(0, 20).map(agent => ({ session_id: String(agent.id), status: agent.status })),
+            })
+          } catch {
+            connectorCatalogResponse(res, 503, { ok: false, diagnostic: 'runner_state_unavailable' })
+          }
         },
       }), 'hivemind-connected-apps: authenticated runner drain status')
     })
