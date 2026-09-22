@@ -29,13 +29,6 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap { 'hivemind-connect': HivemindConnectKey }
 }
 
-declare module '@deepseek-ai/dsh-session/types' {
-  interface SessionEventMap {
-    'hivemind/read-scope': { scope: HivemindReadScope; project?: string }
-    'hivemind/reply-language': { language: string }
-  }
-}
-
 const NS = 'hivemind-connect'
 
 /** Browser dependencies for the shell-overlay connection control. */

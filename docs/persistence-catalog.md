@@ -479,7 +479,56 @@ Source: [`packages/goal/goal/src/domain.ts:66`](../packages/goal/goal/src/domain
 'hivemind/composio-session': ComposioRouterSessionEventData
 ```
 
-Source: [`packages/hivemind/connected-apps/src/index.ts:30`](../packages/hivemind/connected-apps/src/index.ts)
+Source: [`packages/hivemind/connected-apps/src/index.ts:40`](../packages/hivemind/connected-apps/src/index.ts)
+
+<a id="hivemindconnected-receipt--log-only"></a>
+
+#### `hivemind/connected-receipt` — log-only
+
+```ts persistence-catalog
+/** Compact replayable connected-app evidence retained across turns. */
+'hivemind/connected-receipt': ConnectedReceiptEventData
+```
+
+Source: [`packages/hivemind/connected-apps/src/index.ts:42`](../packages/hivemind/connected-apps/src/index.ts)
+
+<a id="hivemindmemory-save--log-only"></a>
+
+#### `hivemind/memory-save` — log-only
+
+```ts persistence-catalog
+/** Records the governed HIVE memory-save lifecycle, destination, and idempotency key. */
+'hivemind/memory-save': {
+  operation_id: string
+  status: 'prepared' | 'approved' | 'executing' | 'completed' | 'cancelled'
+  destination?: 'personal' | 'organization' | 'project'
+  idempotency_key?: string
+}
+```
+
+Source: [`packages/hivemind/memory/src/index.ts:65`](../packages/hivemind/memory/src/index.ts)
+
+<a id="hivemindread-scope--log-only"></a>
+
+#### `hivemind/read-scope` — log-only
+
+```ts persistence-catalog
+/** Records the active HIVE read lens and optional authorized project id. */
+'hivemind/read-scope': { scope: 'full' | 'personal' | 'organization' | 'project'; project?: string }
+```
+
+Source: [`packages/hivemind/runtime/src/index.ts:32`](../packages/hivemind/runtime/src/index.ts)
+
+<a id="hivemindreply-language--log-only"></a>
+
+#### `hivemind/reply-language` — log-only
+
+```ts persistence-catalog
+/** Recognizes the legacy selected reply language event; new selections use command/run. */
+'hivemind/reply-language': { language: string }
+```
+
+Source: [`packages/hivemind/runtime/src/index.ts:34`](../packages/hivemind/runtime/src/index.ts)
 
 ### `hook/*`
 

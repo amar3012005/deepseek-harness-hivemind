@@ -28,14 +28,10 @@ import { projectHyperagentProfiles } from '@deepseek-ai/dsh-hivemind-employee-di
 
 declare module '@deepseek-ai/dsh-session/types' {
   interface SessionEventMap {
+    /** Records the active HIVE read lens and optional authorized project id. */
     'hivemind/read-scope': { scope: 'full' | 'personal' | 'organization' | 'project'; project?: string }
+    /** Recognizes the legacy selected reply language event; new selections use command/run. */
     'hivemind/reply-language': { language: string }
-    'hivemind/memory-save': {
-      operation_id: string
-      status: 'prepared' | 'approved' | 'executing' | 'completed' | 'cancelled'
-      destination?: 'personal' | 'organization' | 'project'
-      idempotency_key?: string
-    }
   }
 }
 
@@ -62,11 +58,19 @@ interface SessionCommandContext {
 }
 
 function sessionReplyLanguage(agent: Agent): string {
-  const events = agent.session.snapshotEvents()
+  const events = agent.session.snapshotEvents() as unknown as ReadonlyArray<{ type: string; data: unknown }>
   for (let index = events.length - 1; index >= 0; index -= 1) {
     const event = events[index]
-    if (event?.type !== 'hivemind/reply-language') continue
-    const language = (event.data as { language?: unknown }).language
+    let language: unknown
+    if (event?.type === 'command/run') {
+      const data = event.data as { name?: unknown; args?: unknown }
+      if (data.name !== 'hivemind-language') continue
+      language = typeof data.args === 'string' ? data.args.trim().toLowerCase() : undefined
+    } else if (event?.type === 'hivemind/reply-language') {
+      language = (event.data as { language?: unknown }).language
+    } else {
+      continue
+    }
     if (typeof language === 'string' && /^[a-z]{2}$/u.test(language)) return language
   }
   return 'en'
@@ -1085,10 +1089,9 @@ export function apply(ctx: Context, config: Config): void {
         name: 'hivemind-language',
         description: 'Set the user-selected reply language for this HIVE-MIND session.',
         input: { hint: '<two-letter-language-code>' },
-        handler: ({ agent, rawInput }) => {
+        handler: ({ rawInput }) => {
           const language = rawInput.trim().toLowerCase()
           if (!/^[a-z]{2}$/u.test(language)) return { kind: 'error', text: 'language must be a two-letter code' }
-          agent.session.append('hivemind/reply-language', { language })
           return { kind: 'success', text: `reply language ${language}` }
         },
       }))

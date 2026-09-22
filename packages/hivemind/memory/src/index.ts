@@ -61,6 +61,7 @@ export interface MemoryPluginConfig { defaultLimit: number }
 
 declare module '@deepseek-ai/dsh-session/types' {
   interface SessionEventMap {
+    /** Records the governed HIVE memory-save lifecycle, destination, and idempotency key. */
     'hivemind/memory-save': {
       operation_id: string
       status: 'prepared' | 'approved' | 'executing' | 'completed' | 'cancelled'
