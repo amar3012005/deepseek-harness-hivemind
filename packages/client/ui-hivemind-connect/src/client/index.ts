@@ -96,11 +96,15 @@ export function apply(ctx: ClientContext): void {
   ctx.effect(() => {
     let disposed = false
     const sent = new Map<SessionId, string>()
+    const localeFace = ctx.locale as unknown as {
+      getSnapshot?: () => { active?: unknown }
+      subscribe?: (listener: () => void) => () => void
+    }
     const normalize = (value: unknown): string => {
       const match = typeof value === 'string' ? value.toLowerCase().match(/^[a-z]{2}/u) : null
       return match?.[0] ?? 'en'
     }
-    let selected = normalize(document.documentElement.lang)
+    let selected = normalize(localeFace.getSnapshot?.().active ?? document.documentElement.lang)
     const sync = (): void => {
       if (disposed) return
       const sessionId = ctx.sessions.list.getSnapshot().current
@@ -112,17 +116,17 @@ export function apply(ctx: ClientContext): void {
       sent.set(sessionId, selected)
       void session.command(`/hivemind-language ${selected}`).catch(() => { sent.delete(sessionId) })
     }
-    const onLanguage = (event: Event): void => {
-      selected = normalize((event as CustomEvent<{ language?: unknown }>).detail.language)
+    const onLanguage = (): void => {
+      selected = normalize(localeFace.getSnapshot?.().active ?? document.documentElement.lang)
       sync()
     }
     const stop = ctx.sessions.list.subscribe(sync)
-    window.addEventListener('hivemind:ui-language', onLanguage)
+    const stopLanguage = localeFace.subscribe?.(onLanguage) ?? (() => {})
     sync()
     return () => {
       disposed = true
       stop()
-      window.removeEventListener('hivemind:ui-language', onLanguage)
+      stopLanguage()
     }
   }, 'ui-hivemind-connect: navbar reply language')
   // Language synchronization is durable session state, not user-authored chat.
