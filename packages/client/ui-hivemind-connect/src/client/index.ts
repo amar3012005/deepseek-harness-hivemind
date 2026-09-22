@@ -132,6 +132,13 @@ export function apply(ctx: ClientContext): void {
       window.removeEventListener('hivemind:ui-language', onLanguage)
     }
   }, 'ui-hivemind-connect: navbar reply language')
+  // Language synchronization is durable session state, not user-authored chat.
+  // Keep its command lifecycle available to replay while omitting the internal
+  // transport row from the HIVE-MIND transcript.
+  ctx.slots.inject('conversation.chat.commandview', () => ctx.slots.register({
+    name: 'conversation.chat.commandview',
+    key: 'hivemind-language',
+  }, () => null))
   ctx.inject(['uiConversation'], (scope: ClientContext) => {
     scope.effect(
       () => scope.uiConversation.configureWorkspaceRequirement(false),
