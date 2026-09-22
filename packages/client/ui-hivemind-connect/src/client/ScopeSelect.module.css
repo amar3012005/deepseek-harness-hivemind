@@ -34,3 +34,8 @@
 :global([data-hivemind-hero-headline] > span:last-child > span:last-child) {
   display: none !important;
 }
+
+:global([data-hivemind-hero-headline] > span:last-child > span:first-child) {
+  font-weight: 400 !important;
+  opacity: .58;
+}
