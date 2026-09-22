@@ -32,6 +32,7 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 declare module '@deepseek-ai/dsh-session/types' {
   interface SessionEventMap {
     'hivemind/read-scope': { scope: HivemindReadScope; project?: string }
+    'hivemind/reply-language': { language: string }
   }
 }
 
@@ -99,6 +100,38 @@ export function apply(ctx: ClientContext): void {
   ctx.remote.$on('user-questions/request', function (request, next) {
     return answerConnectionQuestion(ctx, this, request, next, publishConnection)
   })
+  ctx.effect(() => {
+    let disposed = false
+    const sent = new Map<SessionId, string>()
+    const normalize = (value: unknown): string => {
+      const match = typeof value === 'string' ? value.toLowerCase().match(/^[a-z]{2}/u) : null
+      return match?.[0] ?? 'en'
+    }
+    let selected = normalize(document.documentElement.lang)
+    const sync = (): void => {
+      if (disposed) return
+      const sessionId = ctx.sessions.list.getSnapshot().current
+      if (sessionId === undefined || sent.get(sessionId) === selected) return
+      if (typeof ctx.sessions.scope !== 'function' || typeof ctx.sessions.sessionOf !== 'function') return
+      const scope = ctx.sessions.scope(sessionId)
+      const session = scope === undefined ? undefined : ctx.sessions.sessionOf(scope)
+      if (session === undefined) return
+      sent.set(sessionId, selected)
+      void session.command(`/hivemind-language ${selected}`).catch(() => { sent.delete(sessionId) })
+    }
+    const onLanguage = (event: Event): void => {
+      selected = normalize((event as CustomEvent<{ language?: unknown }>).detail.language)
+      sync()
+    }
+    const stop = ctx.sessions.list.subscribe(sync)
+    window.addEventListener('hivemind:ui-language', onLanguage)
+    sync()
+    return () => {
+      disposed = true
+      stop()
+      window.removeEventListener('hivemind:ui-language', onLanguage)
+    }
+  }, 'ui-hivemind-connect: navbar reply language')
   ctx.inject(['uiConversation'], (scope: ClientContext) => {
     scope.effect(
       () => scope.uiConversation.configureWorkspaceRequirement(false),

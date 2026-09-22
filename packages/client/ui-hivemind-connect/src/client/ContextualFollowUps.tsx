@@ -20,6 +20,8 @@ export function selectContextualFollowUps(owner: TurnTailOwnerProps): readonly s
 
 export function ContextualFollowUps({ matched, send }: { matched: readonly string[]; send: (prompt: string) => void }) {
   return <div className={css.root} data-hivemind-follow-ups>
-    {matched.map(prompt => <button key={prompt} type="button" className={css.chip} onClick={() => send(prompt)}>↳ {prompt}</button>)}
+    {matched.map(prompt => <button key={prompt} type="button" className={css.row} onClick={() => { send(prompt) }}>
+      <span className={css.arrow} aria-hidden="true">↳</span><span>{prompt}</span>
+    </button>)}
   </div>
 }

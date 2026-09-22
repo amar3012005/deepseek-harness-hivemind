@@ -9,6 +9,15 @@ import { ReasoningRow } from './ReasoningRow.tsx'
 import { useSearchableHidden } from './searchable-hidden.ts'
 import css from './AssistantMarkdown.module.css'
 
+const HIVE_FOLLOW_UP_MARKER = /<!--\s*hivemind-follow-ups:\s*\[[\s\S]*?\]\s*-->/giu
+const HIVE_PARTIAL_FOLLOW_UP_MARKER = /<!--\s*hivemind-follow-ups:[\s\S]*$/iu
+
+/** Hide HIVE control metadata from prose without changing the durable message. */
+export function visibleAssistantText(text: string): string {
+  if (document.documentElement.dataset.dshMode !== 'hivemind-chat') return text
+  return text.replace(HIVE_FOLLOW_UP_MARKER, '').replace(HIVE_PARTIAL_FOLLOW_UP_MARKER, '').trimEnd()
+}
+
 /**
  * Map one authored media destination to the same-origin workspace-file URL.
  * @param protocol - `window.location.protocol` at render time.
@@ -71,16 +80,20 @@ export const AssistantMarkdown = memo(function AssistantMarkdown({
     if (block === undefined) continue
     switch (block.kind) {
       case 'text':
-        rendered.push(
-          <MarkdownText
-            key={i}
-            text={block.text}
-            streaming={streaming}
-            labels={labels}
-            fileMentions={mentions}
-            pathImages={pathImages}
-          />,
-        )
+        {
+          const text = visibleAssistantText(block.text)
+          if (text === '' && !streaming) break
+          rendered.push(
+            <MarkdownText
+              key={i}
+              text={text}
+              streaming={streaming}
+              labels={labels}
+              fileMentions={mentions}
+              pathImages={pathImages}
+            />,
+          )
+        }
         break
       case 'reasoning':
         rendered.push(

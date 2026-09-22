@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { cleanup, render } from '@testing-library/react'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts'
-import { AssistantMarkdown, type AssistantMarkdownProps } from '../src/client/chat/AssistantMarkdown.tsx'
+import { AssistantMarkdown, visibleAssistantText, type AssistantMarkdownProps } from '../src/client/chat/AssistantMarkdown.tsx'
 import { zh } from '../src/client/locale.ts'
 
 const t: AssistantMarkdownProps['t'] = makeTranslate(zh, commonZh)
@@ -13,6 +13,14 @@ const renderMessageImages: AssistantMarkdownProps['renderMessageImages'] = () =>
 afterEach(cleanup)
 
 describe('tails', () => {
+  it('hides HIVE follow-up metadata from visible prose, including a streaming partial', () => {
+    document.documentElement.dataset.dshMode = 'hivemind-chat'
+    expect(visibleAssistantText('Answer\n<!-- hivemind-follow-ups:["Next"] -->')).toBe('Answer')
+    expect(visibleAssistantText('Answer\n<!-- hivemind-follow-ups:["Par')).toBe('Answer')
+    document.documentElement.dataset.dshMode = 'standard'
+    expect(visibleAssistantText('Answer <!-- ordinary -->')).toBe('Answer <!-- ordinary -->')
+  })
+
   it('AssistantMarkdown renders reasoning as a Think row and unknown blocks as JSON fallback', () => {
     const view = render(
       <AssistantMarkdown

@@ -12,10 +12,13 @@ export interface ContextConfig {
   capabilityToolName: string
   /** Load the bounded authenticated profile brief for the first turn and direct profile questions. */
   profileBrief?: (agent: Agent, signal: AbortSignal, turn: number) => Promise<string | undefined>
+  /** Return a compact authoritative instruction that is re-read for every user turn. */
+  turnInstruction?: (agent: Agent, turn: number) => string | undefined
 }
 interface ConversationExchange { turn: number; user: string; assistant: string }
 const HISTORY_CONTEXT_SOURCE = 'dsh-hivemind-runtime/history'
 const PROFILE_CONTEXT_SOURCE = 'dsh-hivemind-runtime/profile'
+const TURN_CONTEXT_SOURCE = 'dsh-hivemind-runtime/turn'
 function textOf(message: Message): string { return message.content.filter((block): block is Extract<ContentBlock,{ type:'text' }> => block.type === 'text').map(block => block.text.trim()).filter(Boolean).join('\n') }
 function isDirectUserMessage(message: Message): boolean { return (message.source as { readonly kind: string }).kind === 'user' }
 const DIRECT_USER_PROFILE = /\b(?:about me|know about me|my profile|who am i|my (?:name|role|locale|language|timezone))\b/u
@@ -30,6 +33,12 @@ function profileMessage(text: string): UserMessage {
   return createUserMessage({
     content: [{ type: 'text', text }],
     source: { kind: 'plugin', plugin: PROFILE_CONTEXT_SOURCE, form: 'recall' },
+  })
+}
+function turnInstructionMessage(text: string): UserMessage {
+  return createUserMessage({
+    content: [{ type: 'text', text }],
+    source: { kind: 'plugin', plugin: TURN_CONTEXT_SOURCE, form: 'recall' },
   })
 }
 /**
@@ -104,6 +113,12 @@ export function contextPlugin(config: ContextConfig): Plugin.Object<void> {
           ? decision.messages
           : decision.messages.filter(message => !isSkillCatalog(message))
         let messages = withoutCatalog
+        if (first && config.turnInstruction !== undefined) {
+          const instruction = config.turnInstruction(agent, turn)
+          if (instruction !== undefined && instruction.trim() !== '') {
+            messages = [turnInstructionMessage(instruction), ...messages]
+          }
+        }
         if (first && config.profileBrief !== undefined && needsProfileBrief(withoutCatalog, turn)) {
           try {
             const brief = await config.profileBrief(agent, signal, turn)

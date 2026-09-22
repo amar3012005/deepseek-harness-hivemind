@@ -7,7 +7,11 @@ function user(text: string) {
   return createUserMessage({ content: [{ type: 'text', text }], source: { kind: 'user' } })
 }
 
-function mount(events: unknown[] = [], profileBrief?: (agent: Agent, signal: AbortSignal, turn: number) => Promise<string | undefined>) {
+function mount(
+  events: unknown[] = [],
+  profileBrief?: (agent: Agent, signal: AbortSignal, turn: number) => Promise<string | undefined>,
+  turnInstruction?: (agent: Agent, turn: number) => string | undefined,
+) {
   let preStep: ((payload: never, next: () => Promise<unknown>) => Promise<unknown>) | undefined
   const ctx = {
     effect(callback: () => (() => void) | undefined) {
@@ -23,6 +27,7 @@ function mount(events: unknown[] = [], profileBrief?: (agent: Agent, signal: Abo
     historyMaxChars: 3_000,
     capabilityToolName: 'hivemind_capabilities',
     ...(profileBrief === undefined ? {} : { profileBrief }),
+    ...(turnInstruction === undefined ? {} : { turnInstruction }),
   }).apply(ctx as never)
   const agent = {
     session: {
@@ -35,6 +40,21 @@ function mount(events: unknown[] = [], profileBrief?: (agent: Agent, signal: Abo
 }
 
 describe('HIVE progressive context', () => {
+  it('re-reads the authoritative turn instruction on every new turn', async () => {
+    let language = 'en'
+    const harness = mount([], undefined, () => `Reply language: ${language}`)
+    const run = async (turn: number, text: string) => await harness.preStep({
+      agent: harness.agent, turn, signal: new AbortController().signal,
+    } as never, async () => ({ kind: 'enter' as const, messages: [user(text)] })) as { messages: ReturnType<typeof user>[] }
+    const first = await run(1, 'hello')
+    language = 'de'
+    const second = await run(2, 'hello again')
+    const texts = (messages: ReturnType<typeof user>[]) => messages.map(message => message.content
+      .flatMap(block => block.type === 'text' ? [block.text] : []).join('\n'))
+    expect(texts(first.messages)).toEqual(['Reply language: en', 'hello'])
+    expect(texts(second.messages)).toEqual(['Reply language: de', 'hello again'])
+  })
+
   it('replaces completed tool history without requiring a profile anchor and leaves current work intact', async () => {
     const harness = mount()
     const events = [

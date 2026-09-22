@@ -29,6 +29,7 @@ import { projectHyperagentProfiles } from '@deepseek-ai/dsh-hivemind-employee-di
 declare module '@deepseek-ai/dsh-session/types' {
   interface SessionEventMap {
     'hivemind/read-scope': { scope: 'full' | 'personal' | 'organization' | 'project'; project?: string }
+    'hivemind/reply-language': { language: string }
     'hivemind/memory-save': {
       operation_id: string
       status: 'prepared' | 'approved' | 'executing' | 'completed' | 'cancelled'
@@ -49,7 +50,7 @@ export const inject = ['tools', 'skills', 'hivemindIdentity', 'hivemindExecution
 type HivemindReadScope = 'full' | 'personal' | 'organization' | 'project'
 const PROJECT_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu
 
-interface ScopeCommandContext {
+interface SessionCommandContext {
   commands: {
     register(spec: {
       name: string
@@ -58,6 +59,17 @@ interface ScopeCommandContext {
       handler(input: { agent: Agent; rawInput: string }): { kind: 'success' | 'error'; text: string }
     }): () => void
   }
+}
+
+function sessionReplyLanguage(agent: Agent): string {
+  const events = agent.session.snapshotEvents()
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const event = events[index]
+    if (event?.type !== 'hivemind/reply-language') continue
+    const language = (event.data as { language?: unknown }).language
+    if (typeof language === 'string' && /^[a-z]{2}$/u.test(language)) return language
+  }
+  return 'en'
 }
 
 /** Read the latest durable scope event; full is represented by omission in API calls. */
@@ -1047,7 +1059,7 @@ export function apply(ctx: Context, config: Config): void {
   const inject = (ctx as unknown as { inject?: unknown }).inject
   if (typeof inject === 'function') {
     (inject as (services: readonly string[], callback: (value: unknown) => void) => void).call(ctx, ['commands'], (commandCtx) => {
-      const commands = commandCtx as unknown as ScopeCommandContext
+      const commands = commandCtx as unknown as SessionCommandContext
       ctx.effect(() => commands.commands.register({
         name: 'hivemind-scope',
         description: 'Set the HIVE-MIND read scope for this session.',
@@ -1069,12 +1081,27 @@ export function apply(ctx: Context, config: Config): void {
           return { kind: 'success', text: `read scope ${scope}${project === '' ? '' : `: ${project}`}` }
         },
       }))
+      ctx.effect(() => commands.commands.register({
+        name: 'hivemind-language',
+        description: 'Set the user-selected reply language for this HIVE-MIND session.',
+        input: { hint: '<two-letter-language-code>' },
+        handler: ({ agent, rawInput }) => {
+          const language = rawInput.trim().toLowerCase()
+          if (!/^[a-z]{2}$/u.test(language)) return { kind: 'error', text: 'language must be a two-letter code' }
+          agent.session.append('hivemind/reply-language', { language })
+          return { kind: 'success', text: `reply language ${language}` }
+        },
+      }))
     })
   }
   ctx.plugin(contextPlugin({
     historyTurns: config.historyTurns,
     historyMaxChars: config.historyMaxChars,
     capabilityToolName: HIVE_CAPABILITIES_TOOL,
+    turnInstruction(agent) {
+      const language = sessionReplyLanguage(agent)
+      return `Reply language for this turn: ${language}. Write the entire user-facing response and every contextual follow-up in that language. Preserve proper nouns, code, tool names, and quoted source text unless translation is requested.`
+    },
     async profileBrief(agent, signal, turn) {
       return (await snapshotFor(agent, signal, turn)).initialContext
     },
