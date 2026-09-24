@@ -32,6 +32,15 @@ declare module '@deepseek-ai/dsh-session/types' {
     'hivemind/read-scope': { scope: 'full' | 'personal' | 'organization' | 'project'; project?: string }
     /** Recognizes the legacy selected reply language event; new selections use command/run. */
     'hivemind/reply-language': { language: string }
+    /** Legacy JEV routing audit from completed turns; retained for session replay only. */
+    'hivemind/decision': {
+      stage: 'capability'
+      mode: 'shadow' | 'active'
+      status: 'selected' | 'defer'
+      selected?: string
+      source?: string
+      reason?: string
+    }
   }
 }
 

@@ -492,6 +492,24 @@ Source: [`packages/hivemind/connected-apps/src/index.ts:40`](../packages/hivemin
 
 Source: [`packages/hivemind/connected-apps/src/index.ts:42`](../packages/hivemind/connected-apps/src/index.ts)
 
+<a id="hiveminddecision--log-only"></a>
+
+#### `hivemind/decision` — log-only
+
+```ts persistence-catalog
+/** Legacy JEV routing audit from completed turns; retained for session replay only. */
+'hivemind/decision': {
+  stage: 'capability'
+  mode: 'shadow' | 'active'
+  status: 'selected' | 'defer'
+  selected?: string
+  source?: string
+  reason?: string
+}
+```
+
+Source: [`packages/hivemind/runtime/src/index.ts:36`](../packages/hivemind/runtime/src/index.ts)
+
 <a id="hivemindmemory-save--log-only"></a>
 
 #### `hivemind/memory-save` — log-only

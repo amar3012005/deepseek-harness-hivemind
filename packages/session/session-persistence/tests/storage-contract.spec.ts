@@ -147,6 +147,17 @@ describe('validateStoredEvents', () => {
     expect(events[0]).toMatchObject({ type: 'foreign/telemetry', ignorable: true })
   })
 
+  it('replays a legacy HIVE decision audit without weakening unknown-event refusal', () => {
+    const m = meta('legacy-hive-decision')
+    const events = [{
+      type: 'hivemind/decision',
+      seq: 0,
+      time: 1,
+      data: { stage: 'capability', mode: 'active', status: 'selected', selected: 'composio_search' },
+    }] as SessionEvent[]
+    expect(validateStoredEvents(m, events)).toBe(events)
+  })
+
   it('refuses the retired request/header "fallback" reason while accepting current headers', () => {
     const m = meta('retired-reason')
     const retired = [
