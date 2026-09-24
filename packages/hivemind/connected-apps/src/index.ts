@@ -1592,7 +1592,7 @@ export function apply(ctx: Context, config: Config = {}): void {
 
   ctx.effect(() => ctx.tools.register(defineTool({
     name: BRIDGE_TOOL,
-    description: 'Tenant-scoped connected-app gateway. Start external-app work with atomic search queries, explicit outcomes, exact result limits, and session.generate_id=true. Follow recommended_plan_steps: for an explicitly planned read tool, call schemas with its exact slug in the same session, then execute using that contract. Never execute a plan hint directly or guess tools. External writes require HIVE approval.',
+    description: 'Tenant-scoped connected-app gateway. Start external-app work with atomic search queries, explicit outcomes, exact result limits, all concrete search filters in known_fields, and session.generate_id=true. Follow recommended_plan_steps: for an explicitly planned read tool, call schemas with its exact slug in the same session, then execute using that contract. Never execute a plan hint directly or guess tools. External writes require HIVE approval.',
     parameters: {
       action: { type: 'string', required: true, enum: ['connection_status', 'search', 'schemas', 'manage_connection', 'wait_connection', 'execute'], description: 'Use connection_status only for a pure status check of explicitly named apps. Use search for real app work.' },
       apps: { type: 'array', items: { type: 'string' }, description: 'One to four explicit app names for connection_status. Resolved against authenticated toolkit metadata, never semantic tool search.' },
@@ -1602,8 +1602,8 @@ export function apply(ctx: Context, config: Config = {}): void {
           type: 'object',
           properties: {
             app: { type: 'string', description: 'External app only when explicitly named or already established. Omit it when the user named only a service category so authenticated discovery can select an active provider.' },
-            use_case: { type: 'string', required: true, description: 'Normalized complete use case for one atomic app action. Name the app; include operation, filters, ordering, limit, and required output fields. Do not include personal identifiers.' },
-            known_fields: { type: 'string', description: 'Optional comma-separated key:value identifiers or settings. Keep to 1-2 short items.' },
+            use_case: { type: 'string', required: true, description: 'Normalized complete use case for one atomic app action. Name the app when established; say whether to search matching records or list a collection, and include filters, ordering, limit, and required output fields. Do not include personal identifiers.' },
+            known_fields: { type: 'string', description: 'Include every concrete user-supplied search constraint before the FIRST search: filter expression or field:value predicates, identifiers, ordering, and limit. For a filtered read, a limit alone is insufficient. Use exact app-native query syntax only when already known; never invent a provider schema or missing value.' },
             result_fields: {
               type: 'array', items: { type: 'string' },
               description: 'Exact provider response keys required in the final answer. Used only to project execution evidence; omitted from Composio search. Omit when the response keys are unknown.',
@@ -1881,7 +1881,7 @@ export function apply(ctx: Context, config: Config = {}): void {
           projected['next_action'] = searches >= maxUnmatched ? 'report_discovery_limit' : 'refine_search'
           projected['next_action_guidance'] = searches >= maxUnmatched
             ? 'No matching tool was found in these searches. Report that limitation, not that the provider cannot support the operation; do not check or connect another app.'
-            : 'Refine search once in this same workflow session for the missing provider-owned prerequisite or listing operation. Do not check connection status or connect another app.'
+            : 'Refine search once in this same workflow session. Put the concrete user-supplied filter, identifiers, and result limit into known_fields; ask for a search of matching records rather than an unrelated collection. Do not check connection status or connect another app.'
         }
         return record(projected) ? projected : { status: 'ready', operations }
       }
