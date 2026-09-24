@@ -464,6 +464,18 @@ function searchSession(value: unknown): { generate_id: true } | { id: string } {
   throw new TypeError('Search session must generate a new id or continue an existing id')
 }
 
+function searchSessionFromArgs(args: Record<string, unknown>): { generate_id: true } | { id: string } {
+  const nested = Array.isArray(args['queries'])
+    ? args['queries'].flatMap(item => record(item) && item['session'] !== undefined ? [searchSession(item['session'])] : [])
+    : []
+  const session = args['session'] === undefined ? nested[0] : searchSession(args['session'])
+  if (session === undefined) throw new TypeError('Search requires a top-level session or a session on the first query')
+  if (nested.some(value => JSON.stringify(value) !== JSON.stringify(session))) {
+    throw new TypeError('Search queries must use the same workflow session')
+  }
+  return session
+}
+
 function returnedWorkflowSessionId(value: unknown): string | undefined {
   if (!record(value)) return undefined
   const unwrapped = record(value['result']) ? value['result'] : value
@@ -1592,7 +1604,7 @@ export function apply(ctx: Context, config: Config = {}): void {
 
   ctx.effect(() => ctx.tools.register(defineTool({
     name: BRIDGE_TOOL,
-    description: 'Tenant-scoped connected-app gateway. Start external-app work with atomic search queries, explicit outcomes, exact result limits, all concrete search filters in known_fields, and session.generate_id=true. Follow recommended_plan_steps: for an explicitly planned read tool, call schemas with its exact slug in the same session, then execute using that contract. Never execute a plan hint directly or guess tools. External writes require HIVE approval.',
+    description: 'Tenant-scoped connected-app gateway. Start external-app work with atomic search queries, explicit outcomes, exact result limits, all concrete search filters in known_fields, and a top-level session: { generate_id: true }. Follow recommended_plan_steps: for an explicitly planned read tool, call schemas with its exact slug in the same session, then execute using that contract. Never execute a plan hint directly or guess tools. External writes require HIVE approval.',
     parameters: {
       action: { type: 'string', required: true, enum: ['connection_status', 'search', 'schemas', 'manage_connection', 'wait_connection', 'execute'], description: 'Use connection_status only for a pure status check of explicitly named apps. Use search for real app work.' },
       apps: { type: 'array', items: { type: 'string' }, description: 'One to four explicit app names for connection_status. Resolved against authenticated toolkit metadata, never semantic tool search.' },
@@ -1604,6 +1616,7 @@ export function apply(ctx: Context, config: Config = {}): void {
             app: { type: 'string', description: 'External app only when explicitly named or already established. Omit it when the user named only a service category so authenticated discovery can select an active provider.' },
             use_case: { type: 'string', required: true, description: 'Normalized complete use case for one atomic app action. Name the app when established; say whether to search matching records or list a collection, and include filters, ordering, limit, and required output fields. Do not include personal identifiers.' },
             known_fields: { type: 'string', description: 'Include every concrete user-supplied search constraint before the FIRST search: filter expression or field:value predicates, identifiers, ordering, and limit. For a filtered read, a limit alone is insufficient. Use exact app-native query syntax only when already known; never invent a provider schema or missing value.' },
+            session: { type: 'object', properties: { id: { type: 'string' }, generate_id: { type: 'boolean' } }, additionalProperties: false, description: 'Accepted for compatibility if nested here; prefer the top-level session. All queries must share one workflow session.' },
             result_fields: {
               type: 'array', items: { type: 'string' },
               description: 'Exact provider response keys required in the final answer. Used only to project execution evidence; omitted from Composio search. Omit when the response keys are unknown.',
@@ -1620,7 +1633,7 @@ export function apply(ctx: Context, config: Config = {}): void {
           generate_id: { type: 'boolean', description: 'True for the first search of a new workflow or after a user pivots.' },
         },
         additionalProperties: false,
-        description: 'Required for search. Generate a new id or continue the current workflow id. Later actions may reuse the returned id here or in session_id.',
+        description: 'Top-level search session. Generate a new id or continue the current workflow id. Later actions may reuse the returned id here or in session_id.',
       },
       model: { type: 'string', description: 'Current client LLM model name, when known.' },
       search_strategy: { type: 'string', enum: ['auto', 'tool_search'], description: 'Use auto normally; retry with tool_search only when the returned plan or tools do not match.' },
@@ -1680,7 +1693,7 @@ export function apply(ctx: Context, config: Config = {}): void {
       if (args.action === 'search') {
         const turnState = execution.agent === undefined ? undefined : turns.get(execution.agent)
         const queries = searchQueries(args.queries)
-        const workflowSession = searchSession(args.session)
+        const workflowSession = searchSessionFromArgs(args)
         const searchStrategy = stringValue(args.search_strategy)
         if (searchStrategy !== undefined && searchStrategy !== 'auto' && searchStrategy !== 'tool_search') throw new TypeError('Unsupported Composio search strategy')
         const requestedWorkflowId = workflowSessionId(args)

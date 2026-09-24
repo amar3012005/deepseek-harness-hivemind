@@ -1154,6 +1154,27 @@ describe('progressive Composio bridge', () => {
     })
   })
 
+  it('accepts a query-nested workflow session but forwards one top-level provider session', async () => {
+    execute.mockResolvedValueOnce({ data: { session: { id: 'mail-workflow' }, results: [] } })
+    const { tool } = harness()
+    await tool().execute({ action: 'search', queries: [{
+      use_case: 'Search received messages by sender', known_fields: 'sender_contains:singulance, limit:2',
+      session: { generate_id: true },
+    }] }, { signal: AbortSignal.abort() })
+    expect(execute).toHaveBeenCalledWith('COMPOSIO_SEARCH_TOOLS', {
+      queries: [{ use_case: 'Search received messages by sender', known_fields: 'sender_contains:singulance, limit:2' }],
+      session: { generate_id: true },
+    })
+  })
+
+  it('rejects conflicting nested workflow sessions before provider discovery', async () => {
+    const { tool } = harness()
+    await expect(tool().execute({ action: 'search', queries: [{
+      use_case: 'Search records', session: { id: 'other-workflow' },
+    }], session: { id: 'current-workflow' } }, { signal: AbortSignal.abort() })).rejects.toThrow('same workflow session')
+    expect(execute).not.toHaveBeenCalled()
+  })
+
   it('retries a received-message search once when discovery selects drafts', async () => {
     execute
       .mockResolvedValueOnce({ data: { session: { id: 'mail-workflow' }, results: [{
