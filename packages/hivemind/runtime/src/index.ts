@@ -705,18 +705,25 @@ function compactEntityResponse(
   limit: number,
   receipt?: SpillRef | PrivateReceiptReference,
 ): Record<string, JsonValue> {
-  const items = Array.isArray(value['items']) ? value['items'] : []
+  // The scoped Harness proxy maps /api/entities to Core's /api/entity-search,
+  // whose authorized chooser returns { matches: [{ entity_id, canonical_name }] }.
+  // Older direct Core installations returned { items: [{ id, canonicalName }] }.
+  const items = Array.isArray(value['matches']) ? value['matches']
+    : Array.isArray(value['items']) ? value['items'] : []
   const matches: Array<Record<string, JsonValue>> = []
   for (const item of items) {
     if (matches.length >= limit || typeof item !== 'object' || item === null || Array.isArray(item)) continue
     const entity = item as JsonRecord
-    if (typeof entity['id'] !== 'string' || typeof entity['canonicalName'] !== 'string') continue
+    const id = entity['entity_id'] ?? entity['id']
+    const canonicalName = entity['canonical_name'] ?? entity['canonicalName']
+    if (typeof id !== 'string' || typeof canonicalName !== 'string') continue
     const match: Record<string, JsonValue> = {
-      id: entity['id'],
-      canonical_name: entity['canonicalName'],
+      id,
+      canonical_name: canonicalName,
     }
-    const kind = typeof entity['entityKind'] === 'string' ? entity['entityKind']
-      : typeof entity['entityType'] === 'string' ? entity['entityType'] : undefined
+    const kind = typeof entity['entity_type'] === 'string' ? entity['entity_type']
+      : typeof entity['entityKind'] === 'string' ? entity['entityKind']
+        : typeof entity['entityType'] === 'string' ? entity['entityType'] : undefined
     const types = Array.isArray(entity['types'])
       ? entity['types'].filter((type): type is string => typeof type === 'string').slice(0, 6)
       : kind === undefined ? [] : [kind]
@@ -724,8 +731,9 @@ function compactEntityResponse(
     if (Array.isArray(entity['aliases'])) {
       match['aliases'] = entity['aliases'].filter((alias): alias is string => typeof alias === 'string').slice(0, 12)
     }
-    const linkedMemoryCount = typeof entity['linkedMemoryCount'] === 'number' ? entity['linkedMemoryCount']
-      : typeof entity['mentionCount'] === 'number' ? entity['mentionCount'] : undefined
+    const linkedMemoryCount = typeof entity['mention_count'] === 'number' ? entity['mention_count']
+      : typeof entity['linkedMemoryCount'] === 'number' ? entity['linkedMemoryCount']
+        : typeof entity['mentionCount'] === 'number' ? entity['mentionCount'] : undefined
     if (linkedMemoryCount !== undefined && Number.isFinite(linkedMemoryCount)) match['linked_memory_count'] = linkedMemoryCount
     matches.push(match)
   }
@@ -1051,7 +1059,7 @@ export function apply(ctx: Context, config: Config): void {
     source: 'runtime',
     content: `Use this skill only for a question about the authenticated user's organization, internal memories, files, documents, evidence, decisions, people, projects, or HyperAgents. HIVE-MIND should be considered automatically for such work, but do not load this skill or call recall for greetings, general knowledge, simple transformations, or a fact already established by a recent completed answer.
 
-1. First decide whether company history is actually needed. Simple profile, entity lookup, one-shot recall, exact HyperAgent-directory requests, and a stable single-fact save do not need this skill: call \`hivemind_meta\` directly from its registered schema. Use this playbook only when the request requires multi-source retrieval, temporal reconstruction, or conflict reconciliation. For “what do you know about me?”, “tell me about myself”, “my profile”, or a company-profile question, call \`hivemind_meta\` with \`operation: "context"\` before answering; if the request also asks for stored preferences, decisions, projects, or past activity, make one focused \`recall\` call after context. For another named person, topic, project, organization, document, or subject, call \`entities\` once first. If it returns a canonical match, use that exact \`canonical_name\` in the subsequent recall \`entities\` filter. If it is empty or unavailable, make one focused recall with the original name and do not treat the empty index as proof that no evidence exists. For other requests, use a sufficient compact organization brief or recent completed answer directly. Otherwise call \`hivemind_meta\` with exactly one operation:
+1. First decide whether company history is actually needed. Simple profile, entity lookup, one-shot recall, exact HyperAgent-directory requests, and a stable single-fact save do not need this skill: call \`hivemind_meta\` directly from its registered schema. Use this playbook only when the request requires multi-source retrieval, temporal reconstruction, or conflict reconciliation. Every \`hivemind_meta\` call requires top-level \`operation\`; put entity arguments under \`entities\` and memory arguments under \`recall\`. For “what do you know about me?”, “tell me about myself”, “my profile”, or a company-profile question, call \`hivemind_meta\` with \`operation: "context"\` before answering; if the request also asks for stored preferences, decisions, projects, or past activity, make one focused \`recall\` call after context. For another named person, topic, project, organization, document, or subject, call \`recall\` directly with the full user question and resolved recent conversation context. The name is a soft hint, not an entity-ID prerequisite. Optional entity lookup may enrich the answer but empty or failed lookup never blocks recall and is not memory evidence. Only an explicit entity-search request needs \`entities\`; report its actual matches without substituting recall results. Keep similarly named people distinct unless evidence links them. For other requests, use a sufficient compact organization brief or recent completed answer directly. Otherwise call \`hivemind_meta\` with exactly one operation:
    - \`context\`: load the full onboarding-derived user and organization profile.
    - \`entities\`: find canonical names and aliases across the authorized organization.
    - \`recall\`: search internal company memory and evidence.
@@ -1143,6 +1151,8 @@ export function apply(ctx: Context, config: Config): void {
         ? { ...request, scopeFilter: durableScope.scope, ...(request.project === undefined ? { project: durableScope.project } : {}) }
         : request
       const authority = await resolveAuthority(ctx, config)
+      const principal = config.authorityMode === 'scoped-service' ? ctx.hivemindExecutionScope.require() : undefined
+      const identity = principal === undefined ? 'legacy' : createHash('sha256').update(`${principal.orgId}:${principal.userId}`).digest('hex').slice(0, 12)
       const target = new URL(ENTITY_SEARCH_PATH, authority.apiBase)
       target.searchParams.set('q', effectiveRequest.query)
       target.searchParams.set('limit', String(Math.min(effectiveRequest.limit, config.entityResultLimit)))
@@ -1157,6 +1167,7 @@ export function apply(ctx: Context, config: Config): void {
         throw error
       }
       const record = apiRecord(result, 'entity search response')
+      ctx.logger.warn(`hivemind-runtime: entity read route=${ENTITY_SEARCH_PATH} authority=${config.authorityMode} identity=${identity} scope=${effectiveRequest.scopeFilter ?? 'full'} response=${Array.isArray(record['matches']) ? 'matches' : Array.isArray(record['items']) ? 'items' : 'other'} count=${Array.isArray(record['matches']) ? record['matches'].length : Array.isArray(record['items']) ? record['items'].length : 0}`)
       const receipt = await saveMemoryReceipt(ctx, config, execution, 'hivemind-entities.json', record)
       return compactEntityResponse(record, effectiveRequest.limit, receipt)
     },
@@ -1179,6 +1190,9 @@ export function apply(ctx: Context, config: Config): void {
         ? { ...request, scopeFilter: durableScope.scope, ...(request.project === undefined ? { project: durableScope.project } : {}) }
         : request
       const authority = await resolveAuthority(ctx, config)
+      const principal = config.authorityMode === 'scoped-service' ? ctx.hivemindExecutionScope.require() : undefined
+      const identity = principal === undefined ? 'legacy' : createHash('sha256').update(`${principal.orgId}:${principal.userId}`).digest('hex').slice(0, 12)
+      ctx.logger.warn(`hivemind-runtime: recall read route=${RECALL_PATH} authority=${config.authorityMode} identity=${identity} scope=${effectiveRequest.scopeFilter ?? 'full'}`)
       let result: unknown
       try {
         result = await hiveRequest(authority, RECALL_PATH, {

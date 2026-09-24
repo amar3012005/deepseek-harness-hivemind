@@ -400,9 +400,9 @@ export function memoryPlugin(config: MemoryPluginConfig, provider: MemoryProvide
       })))
       ctx.effect(() => ctx.tools.register(defineTool({
         name: 'hivemind_meta',
-        description: 'HIVE-MIND gateway for authenticated context, canonical entity discovery, bounded memory recall, governed durable memory saves, or the exact HyperAgent directory. Use context for questions about the caller or company profile. Use entities first for a named person, topic, project, organization, document, or other subject when its canonical name could narrow recall. Proactively use save for a stable user preference, confirmed company decision, project direction, role assignment, correction, or completed outcome that will matter later, even when the user did not say "save". Do not treat proposals, questions, transient remarks, or speculation as settled memory. Before saving, extract every concrete named detail and distinct subject into save.entities so the Harness persists exhaustive normalized entity:* tags; do not collapse detailed content into generic tags. Never save secrets, credentials, ephemeral chat, guesses, or unverified claims. Tenant scope is derived from the current HIVE-MIND credential.',
+        description: 'HIVE-MIND gateway. REQUIRED top-level operation: "context", "entities", "recall", "save", "save_status", or "profiles". Put entity-search arguments under entities and memory-search arguments under recall; never send only {entities:{...}} or {recall:{...}}. For questions about a named person, organization, topic, project, or document, call {operation:"recall",recall:{query:"full user question with relevant recent conversation context"}} directly; entity search is optional, not a prerequisite. For an explicit entity-search request, call {operation:"entities",entities:{query:"name"}} and report actual matches only. Empty entity matches are not evidence of absent memories. Use context for the caller or company profile. Proactively save a confirmed stable preference, decision, project direction, role assignment, correction, or completed outcome, but never a proposal, question, transient remark, guess, secret, or credential. Add every concrete named detail to save.entities. Tenant scope comes from the current credential.',
         parameters: {
-          operation: { type: 'string', required: true, enum: ['context', 'entities', 'recall', 'save', 'save_status', 'profiles'] },
+          operation: { type: 'string', required: true, enum: ['context', 'entities', 'recall', 'save', 'save_status', 'profiles'], description: 'REQUIRED at the top level on every call. Do not place it inside entities or recall. If validation reports a missing operation, correct the next call once; do not repeat the malformed call.' },
           entities: {
             type: 'object',
             additionalProperties: false,
@@ -417,7 +417,7 @@ export function memoryPlugin(config: MemoryPluginConfig, provider: MemoryProvide
             type: 'object',
             additionalProperties: false,
             properties: {
-              query: { type: 'string', required: true },
+              query: { type: 'string', required: true, description: 'The full user memory question, including resolved referents from recent completed conversation. A person name is a soft query hint, not an entity ID requirement.' },
               mode: { type: 'string', enum: ['memory', 'auto', 'hybrid', 'evidence'] },
               limit: { type: 'integer' },
               tags: { type: 'array', items: { type: 'string' } },

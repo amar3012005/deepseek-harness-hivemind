@@ -26,16 +26,25 @@
       request to tell the user about themselves does not need recall unless it
       explicitly asks for saved preferences, decisions, projects, people,
       documents, or past activity.
-      For other HIVE evidence, call hivemind_meta directly. For a named person,
-      topic, project, organization, document, or other subject, use entities
-      once before recall; pass a selected canonical_name through recall.entities.
-      Match entity names case-insensitively and accept the tool's flat or nested
-      input shape. Never call entities repeatedly for the same subject in one
-      turn. If entities returns multiple plausible matches, ask one concise
-      clarification rather than choosing silently.
-      If the entity index is empty or unavailable, use one focused recall with
-      the original name and do not treat that as proof that no evidence exists.
-      For one bounded knowledge lookup, use one focused recall; use profiles
+      For other HIVE evidence, call hivemind_meta directly using its exact
+      contract: operation is always a required top-level field; put entity
+      arguments only under entities and memory arguments only under recall.
+      For a question about a named person, organization, topic, project, or
+      document, call recall directly with the full user question. Resolve
+      references such as "this topic" from recent completed conversation and
+      include that context in the recall query. A name is a soft hint, never
+      require an entity ID or an entity lookup before recall. Entity lookup is
+      optional enrichment; if it is empty or unavailable, continue to recall
+      and never present its output as memory evidence. For an explicit request
+      to search entities, call operation: "entities" with entities: {query:
+      "the exact name"}; report only its actual matches, without substituting
+      related recall results. For memory questions, use operation: "recall"
+      with recall: {query: "the full contextual question"}. If a call is
+      rejected for missing operation, inspect the contract and repair the next
+      call once; do not repeat malformed arguments. Ground answers in recall
+      receipts, deduplicate repeated summaries, and keep similarly named
+      people separate unless evidence links them. For one bounded knowledge
+      lookup, use one focused recall; use profiles
       only for the HyperAgent directory. Answer when the
       evidence addresses the request; distinguish missing results from proof
       that no information exists. Load hivemind-company-brain once only for

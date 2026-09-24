@@ -856,6 +856,47 @@ describe('HIVE-MIND runtime', () => {
     expect(JSON.stringify(value)).not.toContain('private@example.com')
   })
 
+  it('projects authenticated Core entity-search matches instead of reporting a false empty index', async () => {
+    const path = await authorityFile()
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({
+      matches: [{
+        entity_id: '4bb787fc-9fb9-45dd-a22c-3e4839193024',
+        canonical_name: 'Rama Santhoshi', entity_type: 'person',
+        aliases: ['Rama'], mention_count: 6, match: 'canonical_prefix',
+        private_field: 'not model-visible',
+      }], degradation: null,
+    })))
+    const harness = mount(config(path))
+    const value = await tool(harness, 'hivemind_meta').execute({
+      operation: 'entities', entities: { query: 'Rama', limit: 5 },
+    }, execContext()) as { result: { matches: Array<Record<string, unknown>> } }
+    expect(String(vi.mocked(fetch).mock.calls[0]?.[0])).toBe('http://127.0.0.1:3099/api/entities?q=Rama&limit=5')
+    expect(value.result.matches).toEqual([{
+      id: '4bb787fc-9fb9-45dd-a22c-3e4839193024', canonical_name: 'Rama Santhoshi',
+      types: ['person'], aliases: ['Rama'], linked_memory_count: 6,
+    }])
+    expect(JSON.stringify(value)).not.toContain('private_field')
+  })
+
+  it('keeps an empty entity chooser separate from a successful full-question recall', async () => {
+    const path = await authorityFile()
+    vi.stubGlobal('fetch', vi.fn(async input => String(input).includes('/api/entities')
+      ? jsonResponse({ matches: [], degradation: null })
+      : jsonResponse({ results: [{ id: '5d0334d6-987a-483f-9c1d-2d60be012a7c', title: 'Rama project', content: 'Rama leads the Singapore incorporation.' }] })))
+    const harness = mount(config(path))
+    const entities = await tool(harness, 'hivemind_meta').execute({
+      operation: 'entities', entities: { query: 'Rama' },
+    }, execContext()) as { result: { matches: unknown[] } }
+    const recall = await tool(harness, 'hivemind_meta').execute({
+      operation: 'recall', recall: { query: 'What do you know about Rama and her Singapore incorporation?' },
+    }, execContext()) as { result: { results: unknown[] } }
+    expect(entities.result.matches).toEqual([])
+    expect(recall.result.results).toHaveLength(1)
+    expect(JSON.parse(String(vi.mocked(fetch).mock.calls[1]?.[1]?.body))).toMatchObject({
+      query_context: 'What do you know about Rama and her Singapore incorporation?',
+    })
+  })
+
   it('returns a typed entity-index degradation for an unavailable optional index', async () => {
     const path = await authorityFile()
     vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({ error: 'entity index disabled' }, 503)))
