@@ -1164,15 +1164,19 @@ describe('progressive Composio bridge', () => {
           GMAIL_FETCH_EMAILS: { input_schema: { type: 'object', required: ['query'], properties: { query: { type: 'string' } } } },
         },
       }] } })
-    const app = harness()
+    const app = harness(true, undefined, false, { withSpill: true })
+    const agent = { session: { header: { id: 'received-mail-canary' }, snapshotEvents: () => [], append: vi.fn() } }
     const value = await app.tool().execute({ action: 'search', queries: [{
       app: 'Gmail', use_case: 'Fetch the 5 latest emails from Singulance, newest first, excluding drafts',
-    }], session: { generate_id: true } }, { signal: new AbortController().signal })
+    }], session: { generate_id: true } }, {
+      signal: new AbortController().signal, agent, name: 'hivemind_connected_task', callId: 'search-call',
+    } as never)
     expect(value).toMatchObject({ status: 'ready', session_id: 'mail-workflow',
       execution_contracts: [{ tool_slug: 'GMAIL_FETCH_EMAILS' }],
       operations: [{ tool: 'COMPOSIO_SEARCH_TOOLS' }, { tool: 'COMPOSIO_SEARCH_TOOLS' }],
     })
     expect(JSON.stringify(value)).not.toContain('GMAIL_LIST_DRAFTS')
+    expect(app.spills).toHaveLength(1)
     expect(execute).toHaveBeenNthCalledWith(2, 'COMPOSIO_SEARCH_TOOLS', expect.objectContaining({
       session: { id: 'mail-workflow' }, search_strategy: 'tool_search',
     }))

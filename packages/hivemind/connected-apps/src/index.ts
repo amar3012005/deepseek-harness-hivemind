@@ -1731,10 +1731,6 @@ export function apply(ctx: Context, config: Config = {}): void {
           ...(model === undefined ? {} : { model }),
           ...(searchStrategy === undefined ? {} : { search_strategy: searchStrategy }),
         })
-        let sourceReceipt = await saveReceipt(
-          ctx, config, execution, JSON.stringify(result), 'composio-search-tools.json',
-          { tool: 'COMPOSIO_SEARCH_TOOLS' },
-        )
         let searchOperations = 1
         if (searchStrategy !== 'tool_search' && selectedDraftForReceivedRequest(result, queries)) {
           // One deterministic provider retry avoids another model inference. Keep
@@ -1748,12 +1744,12 @@ export function apply(ctx: Context, config: Config = {}): void {
             ...(model === undefined ? {} : { model }),
             search_strategy: 'tool_search',
           })
-          sourceReceipt = await saveReceipt(
-            ctx, config, execution, JSON.stringify(result), 'composio-search-tools-refined.json',
-            { tool: 'COMPOSIO_SEARCH_TOOLS' },
-          )
           searchOperations = 2
         }
+        const sourceReceipt = await saveReceipt(
+          ctx, config, execution, JSON.stringify(result), 'composio-search-tools.json',
+          { tool: 'COMPOSIO_SEARCH_TOOLS' },
+        )
         const scoped = scopeSearchResult(result, requestedApps(args.queries), queries)
         const scopedResult = scoped.value
         const container: unknown = record(scopedResult) && record(scopedResult['data']) ? scopedResult['data'] : scopedResult
