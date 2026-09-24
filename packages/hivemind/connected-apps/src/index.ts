@@ -1241,6 +1241,7 @@ export function compactComposioExecutionReceipt(
       ? 'Duplicated MIME transport trees and transport headers omitted; readable evidence retained, while long text and collections are bounded. The original receipt is preserved separately when source_receipt is present.'
       : 'Only the exact requested result fields are projected. Missing requested fields are reported explicitly; unrelated provider payload is never substituted.',
     ...(missing.length === 0 ? {} : { missing_result_fields: missing }),
+    ...(requested.size === 0 ? {} : { projection_status: missing.length === 0 ? 'complete' : 'incomplete' }),
     ...(pagination === undefined ? {} : { pagination }),
   }
 }
@@ -1353,6 +1354,40 @@ function connectedReceiptContextMessage(receipt: ConnectedReceiptEventData) {
       text: `## Most recent connected-app receipt\nThis compact evidence was durably retained from a prior completed connected-app operation. Use it when the current request refers to those results; do not repeat the provider read merely to reconstruct context.\n${JSON.stringify(receipt)}`,
     }],
     source: { kind: 'plugin', plugin: RECEIPT_CONTEXT_SOURCE, form: 'recall' },
+  })
+}
+
+function messageText(value: unknown): string | undefined {
+  if (!record(value) || !Array.isArray(value['content'])) return undefined
+  const blocks = value['content'].flatMap(block =>
+    record(block) && block['type'] === 'text' && typeof block['text'] === 'string' ? [block['text']] : [])
+  return blocks.length === 0 ? undefined : blocks.join('\n')
+}
+
+function visibleSessionMessages(session: { deriveMessages?: () => unknown[] }): unknown[] {
+  return session.deriveMessages?.() ?? []
+}
+
+function hasVisiblePluginContext(messages: readonly unknown[], expected: ReturnType<typeof createUserMessage>): boolean {
+  const source = expected.source
+  if (source.kind !== 'plugin') return false
+  const text = messageText(expected)
+  if (text === undefined) return false
+  return messages.some(message => record(message)
+    && message['role'] === 'user'
+    && record(message['source'])
+    && message['source']['kind'] === 'plugin'
+    && message['source']['plugin'] === source.plugin
+    && messageText(message) === text)
+}
+
+function hasVisibleReceipt(messages: readonly unknown[], receipt: ConnectedReceiptEventData): boolean {
+  const payload = record(receipt.receipt) ? receipt.receipt : undefined
+  const source = payload !== undefined && record(payload['source_receipt']) ? payload['source_receipt'] : undefined
+  const receiptId = source === undefined ? undefined : stringValue(source['receipt_id'])
+  if (receiptId === undefined) return false
+  return messages.some((message) => {
+    try { return JSON.stringify(message).includes(receiptId) } catch { return false }
   })
 }
 
@@ -1604,7 +1639,7 @@ export function apply(ctx: Context, config: Config = {}): void {
 
   ctx.effect(() => ctx.tools.register(defineTool({
     name: BRIDGE_TOOL,
-    description: 'Tenant-scoped connected-app gateway. Start external-app work with atomic search queries, explicit outcomes, exact result limits, all concrete search filters in known_fields, and a top-level session: { generate_id: true }. Follow recommended_plan_steps: for an explicitly planned read tool, call schemas with its exact slug in the same session, then execute using that contract. Never execute a plan hint directly or guess tools. External writes require HIVE approval.',
+    description: 'Tenant-scoped connected-app gateway. Start external-app work with atomic search queries, explicit outcomes, exact result limits, all concrete search filters in known_fields, and a top-level session: { generate_id: true }. Follow recommended_plan_steps: for an explicitly planned read tool, call schemas with its exact slug in the same session, then execute using that contract. Never execute a plan hint directly or guess tools. External writes require HIVE approval. When result_fields were requested, report projection_status and every missing_result_fields entry; never claim requested evidence was returned when projection_status is incomplete. For writes, request the stable resource identifier needed for later verification or follow-up when its exact field is known from the selected contract.',
     parameters: {
       action: { type: 'string', required: true, enum: ['connection_status', 'search', 'schemas', 'manage_connection', 'wait_connection', 'execute'], description: 'Use connection_status only for a pure status check of explicitly named apps. Use search for real app work.' },
       apps: { type: 'array', items: { type: 'string' }, description: 'One to four explicit app names for connection_status. Resolved against authenticated toolkit metadata, never semantic tool search.' },
@@ -2074,11 +2109,17 @@ export function apply(ctx: Context, config: Config = {}): void {
       })
     }
     const unfinished = unfinishedWorkflow(agent.session.snapshotEvents(), turn)
+    const visibleMessages = [...visibleSessionMessages(agent.session), ...messages]
+    const projections: ReturnType<typeof createUserMessage>[] = []
+    if (unfinished !== undefined && shouldProjectWorkflow(messages)) {
+      const workflowMessage = workflowContextMessage(unfinished)
+      if (!hasVisiblePluginContext(visibleMessages, workflowMessage)) projections.push(workflowMessage)
+    }
     const receipt = latestConnectedReceipt(agent)
-    const projections = [
-      ...(unfinished !== undefined && shouldProjectWorkflow(messages) ? [workflowContextMessage(unfinished)] : []),
-      ...(receipt === undefined ? [] : [connectedReceiptContextMessage(receipt)]),
-    ]
+    if (receipt !== undefined && !hasVisibleReceipt(visibleMessages, receipt)) {
+      const receiptMessage = connectedReceiptContextMessage(receipt)
+      if (!hasVisiblePluginContext(visibleMessages, receiptMessage)) projections.push(receiptMessage)
+    }
     return projections.length === 0 ? decision : { ...decision, messages: [...decision.messages, ...projections] }
   }))
   ctx.effect(() => ctx.on('tools/pre-execute', async (execution, next) => {

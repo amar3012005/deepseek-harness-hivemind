@@ -243,8 +243,13 @@ describe('progressive Composio bridge', () => {
     const projected = compactComposioExecutionReceipt(
       { data: { actual_key: 'provider evidence' } }, undefined, ['unknown_key'],
     )
-    expect(projected).toMatchObject({ missing_result_fields: ['unknown_key'] })
+    expect(projected).toMatchObject({ missing_result_fields: ['unknown_key'], projection_status: 'incomplete' })
     expect(JSON.stringify(projected)).not.toContain('provider evidence')
+  })
+
+  it('marks requested result projections complete only when every field is present', () => {
+    expect(compactComposioExecutionReceipt({ subject: 'Draft title', id: 'draft-1' }, undefined, ['subject', 'id']))
+      .toMatchObject({ projection_status: 'complete', subject: 'Draft title', id: 'draft-1' })
   })
 
   it('preserves only a bounded provider continuation cursor beside compact evidence', () => {
@@ -357,7 +362,7 @@ describe('progressive Composio bridge', () => {
         serviceApiBase: 'http://127.0.0.1:3000', serviceSecretEnv: 'TEST_CONNECTED_RECEIPT_SECRET', withSpill: true,
       })
       const agent = { session: { header: { id: 'session-12345678' }, snapshotEvents: () => [], append: vi.fn() } }
-      await app.listeners.get('agent/pre-step')?.({ agent, turn: 1 } as never, (async () => ({ kind: 'accept', messages: [] })) as never)
+      await app.listeners.get('agent/pre-step')?.({ agent, turn: 1, messages: [] } as never, (async () => ({ kind: 'accept', messages: [] })) as never)
       await app.tool().execute({
         action: 'search', queries: [{ use_case: 'Example: read one value.', result_fields: ['value'] }],
         session: { generate_id: true },
@@ -510,13 +515,14 @@ describe('progressive Composio bridge', () => {
         }) }] }],
       } } },
     ]
+    const visible: unknown[] = []
     const agent = { session: {
-      header: { id: 'conversation-resume' }, snapshotEvents: () => events, append: vi.fn(),
+      header: { id: 'conversation-resume' }, snapshotEvents: () => events, deriveMessages: () => visible, append: vi.fn(),
     } }
     const app = harness()
     const next = vi.fn(async () => ({ kind: 'enter', messages: [] }))
     const decision = await app.listeners.get('agent/pre-step')?.(
-      { agent, turn: 2 } as never, next as never,
+      { agent, turn: 2, messages: [] } as never, next as never,
     ) as { messages: unknown[] }
     const projected = JSON.stringify(decision.messages)
 
@@ -526,6 +532,50 @@ describe('progressive Composio bridge', () => {
     expect(projected).toContain('Read the newest record')
     expect(projected).toContain('wait_connection')
     expect(execute).not.toHaveBeenCalled()
+
+    visible.push(...decision.messages)
+    const repeated = await app.listeners.get('agent/pre-step')?.(
+      { agent, turn: 2, step: 2, messages: [] } as never, next as never,
+    ) as { messages: unknown[] }
+    expect(repeated.messages).toEqual([])
+  })
+
+  it('injects a connected receipt only when its evidence is absent from the visible session', async () => {
+    const events: unknown[] = [{ type: 'hivemind/connected-receipt', data: {
+      version: 1, tool: 'GMAIL_FETCH_EMAILS', receipt: {
+        status: 'ready', source_receipt: { receipt_id: 'receipt-visible-1', bytes: 128 },
+      },
+    } }]
+    const visible: unknown[] = []
+    const agent = { session: {
+      header: { id: 'conversation-receipt' }, snapshotEvents: () => events,
+      deriveMessages: () => visible, append: vi.fn(),
+    } }
+    const app = harness()
+    const next = vi.fn(async () => ({ kind: 'enter', messages: [] }))
+    const first = await app.listeners.get('agent/pre-step')?.(
+      { agent, turn: 1, step: 1, messages: [] } as never, next as never,
+    ) as { messages: unknown[] }
+
+    expect(first.messages).toHaveLength(1)
+    expect(JSON.stringify(first.messages)).toContain('receipt-visible-1')
+    visible.push(...first.messages)
+
+    const nextStep = await app.listeners.get('agent/pre-step')?.(
+      { agent, turn: 1, step: 2, messages: [] } as never, next as never,
+    ) as { messages: unknown[] }
+    expect(nextStep.messages).toEqual([])
+
+    events.push({ type: 'hivemind/connected-receipt', data: {
+      version: 1, tool: 'GMAIL_GET_EMAIL', receipt: {
+        status: 'ready', source_receipt: { receipt_id: 'receipt-visible-2', bytes: 256 },
+      },
+    } })
+    const updated = await app.listeners.get('agent/pre-step')?.(
+      { agent, turn: 2, step: 1, messages: [] } as never, next as never,
+    ) as { messages: unknown[] }
+    expect(JSON.stringify(updated.messages)).toContain('receipt-visible-2')
+    expect(updated.messages).toHaveLength(1)
   })
 
   it('restores a bounded pagination cursor as an unfinished continuation only', async () => {
@@ -548,7 +598,7 @@ describe('progressive Composio bridge', () => {
     const app = harness()
     const next = vi.fn(async () => ({ kind: 'enter', messages: [] }))
     const decision = await app.listeners.get('agent/pre-step')?.(
-      { agent, turn: 2 } as never, next as never,
+      { agent, turn: 2, messages: [] } as never, next as never,
     ) as { messages: unknown[] }
     const projected = JSON.stringify(decision.messages)
     expect(projected).toContain('continue_page')
@@ -638,7 +688,7 @@ describe('progressive Composio bridge', () => {
     const app = harness()
     const next = vi.fn(async () => ({ kind: 'enter', messages: [] }))
     const decision = await app.listeners.get('agent/pre-step')?.(
-      { agent, turn: 2 } as never, next as never,
+      { agent, turn: 2, messages: [] } as never, next as never,
     ) as { messages: unknown[] }
 
     expect(decision.messages).toEqual([])
