@@ -709,21 +709,20 @@ describe('progressive Composio bridge', () => {
     expect(app.concludeTurn).not.toHaveBeenCalled()
   })
 
-  it('returns the exact named toolkit connection card instead of a semantic substitute', async () => {
+  it('reports a disconnected named toolkit without initiating OAuth', async () => {
     toolkits.mockResolvedValueOnce({ items: [{
       slug: 'instagram', name: 'Instagram', logo: 'https://logos.example/instagram.svg',
       connection: { isActive: false },
     }] })
-    execute.mockResolvedValueOnce({ data: { redirect_url: 'https://connect.example/instagram' } })
     const app = harness()
     await expect(app.tool().execute({ action: 'connection_status', apps: ['Instagram'] }, { signal: AbortSignal.abort() }))
       .resolves.toMatchObject({
-        status: 'connection_required', toolkit: 'instagram', app_label: 'Instagram',
-        redirect_url: 'https://connect.example/instagram',
+        status: 'not_connected', toolkit: 'instagram', app_label: 'Instagram',
+        disconnected_toolkits: ['instagram'],
+        toolkit_connection_statuses: [{ toolkit: 'instagram', has_active_connection: false }],
       })
-    expect(execute).toHaveBeenCalledOnce()
-    expect(execute).toHaveBeenCalledWith('COMPOSIO_MANAGE_CONNECTIONS', { toolkits: ['instagram'] })
-    expect(app.concludeTurn).toHaveBeenCalledOnce()
+    expect(execute).not.toHaveBeenCalled()
+    expect(app.concludeTurn).not.toHaveBeenCalled()
   })
 
   it('configures a conversation callback URL on the authenticated Composio session', async () => {

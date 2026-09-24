@@ -1640,51 +1640,21 @@ export function apply(ctx: Context, config: Config = {}): void {
         }
         const selected = disconnected[0]
         if (selected === undefined) throw new Error('Disconnected toolkit selection unexpectedly became empty')
-        const managed = await session.execute('COMPOSIO_MANAGE_CONNECTIONS', { toolkits: [selected.slug] })
-        const sourceReceipt = await saveReceipt(
-          ctx, config, execution, JSON.stringify(managed), 'composio-manage-connections.json',
-          { tool: 'COMPOSIO_MANAGE_CONNECTIONS' },
-        )
-        const redirectUrl = safeHttpsUrl(firstString(managed, ['redirect_url', 'redirectUrl', 'connection_url', 'url']))
-        const logoUrl = selected.logo ?? `https://logos.composio.dev/api/${encodeURIComponent(selected.slug)}`
-        const conversationId = execution.agent === undefined ? undefined : execution.agent.session?.header.id
-        if (redirectUrl !== undefined && conversationId !== undefined && execution.agent !== undefined) {
-          const connected = await awaitConnection(execution, {
-            toolkit: selected.slug,
-            appLabel: selected.name,
-            redirectUrl,
-            logoUrl,
-            workflowSessionId: `connection:${String(conversationId)}`,
-          }, async () => exactToolkit(
-            await session.toolkits({ toolkits: [selected.slug], limit: 1 }), selected.name,
-          ).connected)
-          if (connected) {
-            return {
-              ...compactComposioExecutionReceipt(managed, sourceReceipt) as Record<string, JsonValue>,
-              status: 'ready',
-              toolkit: selected.slug,
-              app_label: selected.name,
-              logo_url: logoUrl,
-              connected_toolkits: [selected.slug],
-              toolkit_connection_statuses: [{
-                toolkit: selected.slug, app_label: selected.name, has_active_connection: true, status_message: 'ACTIVE',
-              }],
-              operations: [{ tool: 'COMPOSIO_MANAGE_CONNECTIONS', status: 'completed' }],
-              next_action: 'continue_current_request',
-              next_action_guidance: 'Connection is now active. Continue the same user request with connected-app search; do not end the turn, ask the user to repeat it, or switch to HIVE memory.',
-            }
-          }
-        }
-        execution.concludeTurn()
+        // A status check is observational. Only a requested connected-app task
+        // or an explicit manage_connection action may initiate authorization.
         return {
-          ...compactComposioExecutionReceipt(managed, sourceReceipt) as Record<string, JsonValue>,
-          status: 'connection_required',
+          status: 'not_connected',
           toolkit: selected.slug,
           app_label: selected.name,
-          logo_url: logoUrl,
-          prompt: `Connect ${selected.name} to continue, then return here.`,
-          ...(redirectUrl === undefined ? {} : { redirect_url: redirectUrl }),
-          operations: [{ tool: 'COMPOSIO_MANAGE_CONNECTIONS', status: redirectUrl === undefined ? 'failed' : 'completed' }],
+          logo_url: selected.logo ?? `https://logos.composio.dev/api/${encodeURIComponent(selected.slug)}`,
+          connected_toolkits: resolved.filter(item => item.connected).map(item => item.slug),
+          disconnected_toolkits: disconnected.map(item => item.slug),
+          toolkit_connection_statuses: resolved.map(item => ({
+            toolkit: item.slug, app_label: item.name, has_active_connection: item.connected,
+            status_message: item.connected ? 'ACTIVE' : 'NOT_CONNECTED',
+          })),
+          next_action: 'report_connection_status',
+          next_action_guidance: 'Report the inactive connection without initiating authorization. If the user also requested an app task, explain that it needs a connection and ask whether to connect; do not treat a status check as consent.',
         }
       }
       if (args.action === 'search') {
