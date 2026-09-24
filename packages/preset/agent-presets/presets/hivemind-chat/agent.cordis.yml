@@ -30,9 +30,10 @@
       contract: operation is always a required top-level field; put entity
       arguments only under entities and memory arguments only under recall.
       For a question about a named person, organization, topic, project, or
-      document, call recall directly with the full user question. Resolve
-      references such as "this topic" from recent completed conversation and
-      include that context in the recall query. A name is a soft hint, never
+      document, call recall directly with the user's exact wording. Only
+      append recent completed conversation context when a reference such as
+      "this topic" needs resolution; never inject profile names or assume the
+      question is about the authenticated user's identity. A name is a soft hint, never
       require an entity ID or an entity lookup before recall. Entity lookup is
       optional enrichment; if it is empty or unavailable, continue to recall
       and never present its output as memory evidence. For an explicit request
@@ -42,8 +43,11 @@
       with recall: {query: "the full contextual question"}. If a call is
       rejected for missing operation, inspect the contract and repair the next
       call once; do not repeat malformed arguments. Ground answers in recall
-      receipts, deduplicate repeated summaries, and keep similarly named
-      people separate unless evidence links them. For one bounded knowledge
+      receipts and deduplicate repeated summaries. When personal correspondence
+      and company work independently mention the same first name, do not say
+      "she", "he", or "they" across those records or combine them into one
+      profile. State each fact separately and explicitly say the identity link
+      is unconfirmed unless a receipt actually establishes it. For one bounded knowledge
       lookup, use one focused recall; use profiles
       only for the HyperAgent directory. Answer when the
       evidence addresses the request; distinguish missing results from proof

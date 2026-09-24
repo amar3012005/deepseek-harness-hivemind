@@ -47,6 +47,30 @@ describe('hivemind-memory plugin lifecycle', () => {
     await fiber.dispose()
   })
 
+  it('repairs only an unambiguous missing read operation before schema validation', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SystemPrompt, {})
+    await ctx.plugin(ToolRuntime)
+    const entities = vi.fn(async () => ({ status: 'ready' }))
+    const recall = vi.fn(async () => ({ status: 'ready' }))
+    const fiber = await ctx.plugin(memoryPlugin({ defaultLimit: 5 }, {
+      context: async () => ({}), entities, recall,
+      save: async () => ({}), profiles: async () => ({}),
+    }))
+    const meta = fiber.ctx.tools.get('hivemind_meta')!
+    await meta.execute({ entities: { query: 'a named subject' } }, { signal: new AbortController().signal } as never)
+    await meta.execute({ recall: { query: 'What do you know about this subject?' } }, { signal: new AbortController().signal } as never)
+    expect(entities).toHaveBeenCalledTimes(1)
+    expect(recall).toHaveBeenCalledTimes(1)
+    await expect(meta.execute({ entities: { query: 'a named subject' }, recall: { query: 'same' } }, {
+      signal: new AbortController().signal,
+    } as never)).rejects.toThrow('missing required property "operation"')
+    await expect(meta.execute({ save: { title: 'No implicit write', content: 'No implicit write' } }, {
+      signal: new AbortController().signal,
+    } as never)).rejects.toThrow('missing required property "operation"')
+    await fiber.dispose()
+  })
+
   it('marks memory mutations exclusive and keeps reads parallel-safe', async () => {
     const ctx = new Context()
     await ctx.plugin(SystemPrompt, {})

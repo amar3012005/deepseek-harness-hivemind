@@ -279,6 +279,19 @@ function readInput(args: Record<string, unknown>, key: 'recall' | 'entities'): R
   return flat
 }
 
+/** Repair only an unambiguous single read envelope before native validation.
+ * Writes and mixed/unknown shapes still fail the required-operation schema. */
+function repairMissingReadOperation(args: unknown): unknown {
+  if (typeof args !== 'object' || args === null || Array.isArray(args)) return args
+  const input = args as Record<string, unknown>
+  if (Object.hasOwn(input, 'operation')) return args
+  const keys = Object.keys(input)
+  if (keys.length !== 1 || (keys[0] !== 'entities' && keys[0] !== 'recall')) return args
+  const nested = input[keys[0]]
+  if (typeof nested !== 'object' || nested === null || Array.isArray(nested)) return args
+  return { ...input, operation: keys[0] }
+}
+
 /** Parse the one canonical shape accepted by both the compatibility gateway and save tool. */
 function saveRequest(input: Record<string, unknown>): SaveRequest {
   const sourceType = text(input['source_type'] ?? 'conversation', 'source_type')
@@ -398,9 +411,9 @@ export function memoryPlugin(config: MemoryPluginConfig, provider: MemoryProvide
           return { operation: 'batch_save', status: 'completed', count: results.length, destination: approved.scope, results }
         },
       })))
-      ctx.effect(() => ctx.tools.register(defineTool({
+      const metaTool = defineTool({
         name: 'hivemind_meta',
-        description: 'HIVE-MIND gateway. REQUIRED top-level operation: "context", "entities", "recall", "save", "save_status", or "profiles". Put entity-search arguments under entities and memory-search arguments under recall; never send only {entities:{...}} or {recall:{...}}. For questions about a named person, organization, topic, project, or document, call {operation:"recall",recall:{query:"full user question with relevant recent conversation context"}} directly; entity search is optional, not a prerequisite. For an explicit entity-search request, call {operation:"entities",entities:{query:"name"}} and report actual matches only. Empty entity matches are not evidence of absent memories. Use context for the caller or company profile. Proactively save a confirmed stable preference, decision, project direction, role assignment, correction, or completed outcome, but never a proposal, question, transient remark, guess, secret, or credential. Add every concrete named detail to save.entities. Tenant scope comes from the current credential.',
+        description: 'HIVE-MIND gateway. REQUIRED top-level operation: "context", "entities", "recall", "save", "save_status", or "profiles". Put entity-search arguments under entities and memory-search arguments under recall. An unambiguous omitted read operation is repaired once before dispatch; mixed forms and writes are rejected. For questions about a named person, organization, topic, project, or document, call {operation:"recall",recall:{query:"exact user question"}} directly; append recent conversation context only to resolve an ambiguous reference, never an inferred profile identity. Entity search is optional, not a prerequisite. For an explicit entity-search request, call {operation:"entities",entities:{query:"name"}} and report actual matches only. Empty entity matches are not evidence of absent memories. Do not merge same-name people or personal and company facts without an evidence-backed identity link. Use context for the caller or company profile. Proactively save a confirmed stable preference, decision, project direction, role assignment, correction, or completed outcome, but never a proposal, question, transient remark, guess, secret, or credential. Add every concrete named detail to save.entities. Tenant scope comes from the current credential.',
         parameters: {
           operation: { type: 'string', required: true, enum: ['context', 'entities', 'recall', 'save', 'save_status', 'profiles'], description: 'REQUIRED at the top level on every call. Do not place it inside entities or recall. If validation reports a missing operation, correct the next call once; do not repeat the malformed call.' },
           entities: {
@@ -417,7 +430,7 @@ export function memoryPlugin(config: MemoryPluginConfig, provider: MemoryProvide
             type: 'object',
             additionalProperties: false,
             properties: {
-              query: { type: 'string', required: true, description: 'The full user memory question, including resolved referents from recent completed conversation. A person name is a soft query hint, not an entity ID requirement.' },
+              query: { type: 'string', required: true, description: 'Use the full user question verbatim. Only append a referent from recent completed conversation when a pronoun or "this topic" needs resolution. Do not inject profile names or inferred identity. A name is a soft query hint, not an entity ID requirement.' },
               mode: { type: 'string', enum: ['memory', 'auto', 'hybrid', 'evidence'] },
               limit: { type: 'integer' },
               tags: { type: 'array', items: { type: 'string' } },
@@ -518,7 +531,16 @@ export function memoryPlugin(config: MemoryPluginConfig, provider: MemoryProvide
           if (input['include_superseded'] !== undefined) request.includeSuperseded = input['include_superseded'] === true
           return provider.recall(request, execution.signal, execution)
         },
-      })))
+      })
+      ctx.effect(() => ctx.tools.register({
+        ...metaTool,
+        execute(args, execution) {
+          return metaTool.execute(repairMissingReadOperation(args), execution)
+        },
+        isConcurrencySafe(args) {
+          return metaTool.isConcurrencySafe?.(repairMissingReadOperation(args)) === true
+        },
+      }))
     },
   }
 }
