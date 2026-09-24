@@ -944,6 +944,52 @@ describe('progressive Composio bridge', () => {
     expect(execute).toHaveBeenCalledTimes(1)
   })
 
+  it('loads an exact read-only follow-up from the provider plan before execution', async () => {
+    execute
+      .mockResolvedValueOnce({ data: { session: { id: 'workflow-pr' }, results: [{
+        primary_tool_slugs: ['GITHUB_GET_A_PULL_REQUEST'],
+        recommended_plan_steps: [
+          '[Required] [Step] GITHUB_GET_A_PULL_REQUEST for PR details',
+          '[Required] [Step] GITHUB_LIST_COMMITS_ON_A_PULL_REQUEST for commit history',
+          '[Optional] GITHUB_COMPARE_TWO_COMMITS for diff fallback',
+        ],
+        tool_schemas: { GITHUB_GET_A_PULL_REQUEST: { input_schema: {
+          type: 'object', required: ['pull_number'], properties: { pull_number: { type: 'integer' } },
+        } } },
+      }] } })
+      .mockResolvedValueOnce({ data: { number: 122 } })
+      .mockResolvedValueOnce({ data: { tool_schemas: { GITHUB_LIST_COMMITS_ON_A_PULL_REQUEST: { input_schema: {
+        type: 'object', required: ['pull_number'], properties: { pull_number: { type: 'integer' } },
+      } } } } })
+      .mockResolvedValueOnce({ data: { commits: [{ sha: '3bdbfc0' }] } })
+    const app = harness()
+    const first = await app.tool().execute({ action: 'search', queries: [{ app: 'GitHub', use_case: 'Inspect PR 122 commits.' }], session: { generate_id: true } }, { signal: AbortSignal.abort() })
+    expect(first).toMatchObject({ session_id: 'workflow-pr' })
+    await app.tool().execute({ action: 'execute', session_id: 'workflow-pr', tool_slug: 'GITHUB_GET_A_PULL_REQUEST', arguments: { pull_number: 122 } }, { signal: AbortSignal.abort() })
+    await expect(app.tool().execute({ action: 'execute', session_id: 'workflow-pr', tool_slug: 'GITHUB_LIST_COMMITS_ON_A_PULL_REQUEST', arguments: { pull_number: 122 } }, { signal: AbortSignal.abort() }))
+      .rejects.toThrow('Tool was not selected')
+    await expect(app.tool().execute({ action: 'schemas', session_id: 'workflow-pr', tool_slug: 'GITHUB_LIST_COMMITS_ON_A_PULL_REQUEST' }, { signal: AbortSignal.abort() }))
+      .resolves.toMatchObject({ execution_contracts: [{ tool_slug: 'GITHUB_LIST_COMMITS_ON_A_PULL_REQUEST' }] })
+    await expect(app.tool().execute({ action: 'execute', session_id: 'workflow-pr', tool_slug: 'GITHUB_LIST_COMMITS_ON_A_PULL_REQUEST', arguments: { pull_number: 122 } }, { signal: AbortSignal.abort() }))
+      .resolves.toMatchObject({ status: 'ready' })
+    expect(execute).toHaveBeenNthCalledWith(3, 'COMPOSIO_GET_TOOL_SCHEMAS', { session_id: 'workflow-pr', tool_slugs: ['GITHUB_LIST_COMMITS_ON_A_PULL_REQUEST'] })
+    expect(execute).toHaveBeenNthCalledWith(4, 'GITHUB_LIST_COMMITS_ON_A_PULL_REQUEST', { pull_number: 122 })
+  })
+
+  it('never promotes a write or unrelated toolkit from a provider plan', async () => {
+    execute.mockResolvedValueOnce({ data: { session: { id: 'workflow-safe' }, results: [{
+      primary_tool_slugs: ['GITHUB_GET_A_PULL_REQUEST'],
+      recommended_plan_steps: ['GITHUB_DELETE_A_REPOSITORY', 'SLACK_FETCH_MESSAGES'],
+    }] } })
+    const app = harness()
+    await app.tool().execute({ action: 'search', queries: [{ app: 'GitHub', use_case: 'Inspect PR 122.' }], session: { generate_id: true } }, { signal: AbortSignal.abort() })
+    for (const slug of ['GITHUB_DELETE_A_REPOSITORY', 'SLACK_FETCH_MESSAGES']) {
+      await expect(app.tool().execute({ action: 'schemas', session_id: 'workflow-safe', tool_slug: slug }, { signal: AbortSignal.abort() }))
+        .rejects.toThrow('Schema request contains a tool not selected')
+    }
+    expect(execute).toHaveBeenCalledTimes(1)
+  })
+
   it('asks for the toolkit selected by the search instead of an unrelated missing toolkit', async () => {
     execute
       .mockResolvedValueOnce({ data: {

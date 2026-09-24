@@ -596,8 +596,35 @@ type ExecutionContract = {
 
 type RestoredWorkflowState = {
   selected: Set<string>
+  plannedReads: Set<string>
   contracts: Map<string, ExecutionContract>
   resultFields: string[]
+}
+
+/** Provider plans are hints, never executable contracts. Only bounded read tools
+ * from the selected toolkit may become schema-eligible; writes still require
+ * a fresh explicit selection through search and native approval. */
+function plannedReadTools(value: unknown): Set<string> {
+  if (!record(value)) return new Set()
+  const unwrapped = record(value['result']) ? value['result'] : value
+  const data = record(unwrapped['data']) ? unwrapped['data'] : unwrapped
+  const results = Array.isArray(data['results']) ? data['results'] : []
+  const planned = new Set<string>()
+  for (const item of results) {
+    if (!record(item)) continue
+    const primary = stringArray(item['primary_tool_slugs'])[0]
+    const toolkit = primary === undefined ? undefined : toolkitFromToolSlug(primary)
+    if (toolkit === undefined) continue
+    for (const step of stringArray(item['recommended_plan_steps']).slice(0, 8)) {
+      for (const match of step.matchAll(/\b[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+\b/g)) {
+        const slug = match[0]
+        if (planned.size >= 8 || slug === primary || META_TOOLS.has(slug) || MUTATING_TOOL.test(slug)
+          || toolkitFromToolSlug(slug) !== toolkit) continue
+        planned.add(slug)
+      }
+    }
+  }
+  return planned
 }
 
 function bridgeCall(event: unknown): { callId: string; args: Record<string, unknown>; turn?: number } | undefined {
@@ -1020,6 +1047,7 @@ function restoreWorkflowState(execution: Pick<ToolExecution, 'agent'>, requested
   }
   if (workflowId === undefined) return undefined
   const selected = new Set<string>()
+  const plannedReads = new Set<string>()
   const restoredContracts = new Map<string, ExecutionContract>()
   const resultFields = new Set<string>()
   let foundSearch = false
@@ -1041,13 +1069,18 @@ function restoreWorkflowState(execution: Pick<ToolExecution, 'agent'>, requested
           if (primary !== undefined) selected.add(primary)
         }
       }
+      for (const slug of plannedReadTools(result.value)) plannedReads.add(slug)
       for (const contract of executionContracts(result.value, selected)) restoredContracts.set(contract.tool_slug, contract)
       continue
     }
     if (args?.['action'] !== 'schemas' || workflowSessionId(args) !== workflowId) continue
-    for (const contract of executionContracts(result.value, selected)) restoredContracts.set(contract.tool_slug, contract)
+    const eligible = new Set([...selected, ...plannedReads])
+    for (const contract of executionContracts(result.value, eligible)) {
+      restoredContracts.set(contract.tool_slug, contract)
+      selected.add(contract.tool_slug)
+    }
   }
-  return foundSearch ? { selected, contracts: restoredContracts, resultFields: [...resultFields] } : undefined
+  return foundSearch ? { selected, plannedReads, contracts: restoredContracts, resultFields: [...resultFields] } : undefined
 }
 
 const argumentSchemaValidator = new Ajv({ allErrors: true, strict: false, validateFormats: false })
@@ -1226,7 +1259,7 @@ export function compactComposioSearchReceipt(
     ...(receipt === undefined ? {} : {
       source_receipt: privateReceiptReference(receipt),
     }),
-    schema_policy: 'Use the exact execution_contracts below. If a selected slug has no contract, load its schema before execution. Never infer argument names.',
+    schema_policy: 'Use exact execution contracts. For a read-only next tool explicitly named in recommended_plan_steps, load its authoritative schema in this workflow before executing it. Unrelated or write tools need a fresh search selection. Never infer argument names.',
   }
   const workflowSessionId = returnedWorkflowSessionId(value)
   if (workflowSessionId !== undefined) compact['session_id'] = workflowSessionId
@@ -1366,6 +1399,7 @@ export function apply(ctx: Context, config: Config = {}): void {
   type ComposioSession = Awaited<ReturnType<Composio['sessions']['create']>>
   const sessions = new Map<string, Promise<ComposioSession>>()
   const selectedTools = new Map<string, Set<string>>()
+  const plannedReads = new Map<string, Set<string>>()
   const contracts = new Map<string, Map<string, ExecutionContract>>()
   const resultFields = new Map<string, string[]>()
 
@@ -1538,7 +1572,7 @@ export function apply(ctx: Context, config: Config = {}): void {
 
   ctx.effect(() => ctx.tools.register(defineTool({
     name: BRIDGE_TOOL,
-    description: 'Tenant-scoped connected-app gateway. Start external-app work with atomic search queries, explicit outcomes, exact result limits, and session.generate_id=true. Continue the returned session when further provider-owned discovery is needed; never guess tools. External writes require HIVE approval.',
+    description: 'Tenant-scoped connected-app gateway. Start external-app work with atomic search queries, explicit outcomes, exact result limits, and session.generate_id=true. Follow recommended_plan_steps: for an explicitly planned read tool, call schemas with its exact slug in the same session, then execute using that contract. Never execute a plan hint directly or guess tools. External writes require HIVE approval.',
     parameters: {
       action: { type: 'string', required: true, enum: ['connection_status', 'search', 'schemas', 'manage_connection', 'wait_connection', 'execute'], description: 'Use connection_status only for a pure status check of explicitly named apps. Use search for real app work.' },
       apps: { type: 'array', items: { type: 'string' }, description: 'One to four explicit app names for connection_status. Resolved against authenticated toolkit metadata, never semantic tool search.' },
@@ -1571,7 +1605,7 @@ export function apply(ctx: Context, config: Config = {}): void {
       model: { type: 'string', description: 'Current client LLM model name, when known.' },
       search_strategy: { type: 'string', enum: ['auto', 'tool_search'], description: 'Use auto normally; retry with tool_search only when the returned plan or tools do not match.' },
       tool_slug: { type: 'string', description: 'Exact selected tool slug.' },
-      tool_slugs: { type: 'array', items: { type: 'string' }, description: 'Selected tool slugs for schema loading.' },
+      tool_slugs: { type: 'array', items: { type: 'string' }, description: 'Selected tool slugs or exact read-only slugs from recommended_plan_steps for schema loading.' },
       toolkits: { type: 'array', items: { type: 'string' }, description: 'Exact toolkits returned by search.' },
       session_id: { type: 'string', description: 'Search session id reused by later schema, connection, and execution operations.' },
       arguments: { type: 'object', additionalProperties: true, description: 'Selected tool arguments.' },
@@ -1736,10 +1770,14 @@ export function apply(ctx: Context, config: Config = {}): void {
           workflowStateKey(identity, execution, returnedWorkflowId ?? requestedWorkflowId),
         ])
         const discoveredContracts = new Map(executionContracts(scopedResult, discovered).map(contract => [contract.tool_slug, contract]))
+        const planned = plannedReadTools(scopedResult)
         for (const stateKey of stateKeys) {
           const selected = selectedTools.get(stateKey) ?? new Set<string>()
           for (const slug of discovered) selected.add(slug)
           selectedTools.set(stateKey, selected)
+          const availableReads = plannedReads.get(stateKey) ?? new Set<string>()
+          for (const slug of planned) availableReads.add(slug)
+          plannedReads.set(stateKey, availableReads)
           const available = contracts.get(stateKey) ?? new Map<string, ExecutionContract>()
           for (const [slug, contract] of discoveredContracts) available.set(slug, contract)
           contracts.set(stateKey, available)
@@ -1845,16 +1883,20 @@ export function apply(ctx: Context, config: Config = {}): void {
       const key = workflowStateKey(identity, execution, workflowSessionId(args))
       const fallbackKey = workflowStateKey(identity, execution)
       let selectedForWorkflow = selectedTools.get(key) ?? selectedTools.get(fallbackKey)
+      let plannedForWorkflow = plannedReads.get(key) ?? plannedReads.get(fallbackKey)
       let contractsForWorkflow = contracts.get(key) ?? contracts.get(fallbackKey)
       if (selectedForWorkflow === undefined || contractsForWorkflow === undefined) {
         const restored = restoreWorkflowState(execution, workflowSessionId(args))
         if (restored !== undefined) {
           selectedForWorkflow = restored.selected
+          plannedForWorkflow = restored.plannedReads
           contractsForWorkflow = restored.contracts
           selectedTools.set(key, restored.selected)
+          plannedReads.set(key, restored.plannedReads)
           contracts.set(key, restored.contracts)
           resultFields.set(key, restored.resultFields)
           selectedTools.set(fallbackKey, restored.selected)
+          plannedReads.set(fallbackKey, restored.plannedReads)
           contracts.set(fallbackKey, restored.contracts)
           resultFields.set(fallbackKey, restored.resultFields)
         }
@@ -1867,7 +1909,7 @@ export function apply(ctx: Context, config: Config = {}): void {
         const singular = stringValue(args.tool_slug)
         const slugs = listed.length > 0 ? listed : singular === undefined ? [] : [singular]
         if (slugs.length === 0) throw new TypeError('Schema request requires tool_slugs or one tool_slug')
-        if (slugs.some(slug => !selectedForWorkflow?.has(slug))) {
+        if (slugs.some(slug => !selectedForWorkflow?.has(slug) && !plannedForWorkflow?.has(slug))) {
           throw new Error('Schema request contains a tool not selected by the current search')
         }
         const result = await session.execute('COMPOSIO_GET_TOOL_SCHEMAS', { ...metaArguments, tool_slugs: slugs })
@@ -1876,8 +1918,15 @@ export function apply(ctx: Context, config: Config = {}): void {
           { tool: 'COMPOSIO_GET_TOOL_SCHEMAS' },
         )
         const loaded = executionContracts(result, new Set(slugs))
+        if (loaded.length !== new Set(slugs).size) throw new Error('Provider did not return an authoritative schema for every requested tool')
         const workflowContracts = contractsForWorkflow ?? new Map<string, ExecutionContract>()
-        for (const contract of loaded) workflowContracts.set(contract.tool_slug, contract)
+        const workflowSelected = selectedForWorkflow ?? new Set<string>()
+        for (const contract of loaded) {
+          workflowContracts.set(contract.tool_slug, contract)
+          workflowSelected.add(contract.tool_slug)
+        }
+        selectedTools.set(key, workflowSelected)
+        selectedTools.set(fallbackKey, workflowSelected)
         contracts.set(key, workflowContracts)
         contracts.set(fallbackKey, workflowContracts)
         return {
