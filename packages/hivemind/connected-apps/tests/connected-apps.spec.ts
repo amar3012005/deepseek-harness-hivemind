@@ -1154,6 +1154,56 @@ describe('progressive Composio bridge', () => {
     })
   })
 
+  it('retries a received-message search once when discovery selects drafts', async () => {
+    execute
+      .mockResolvedValueOnce({ data: { session: { id: 'mail-workflow' }, results: [{
+        primary_tool_slugs: ['GMAIL_LIST_DRAFTS'], toolkits: ['gmail'],
+      }] } })
+      .mockResolvedValueOnce({ data: { session: { id: 'mail-workflow' }, results: [{
+        primary_tool_slugs: ['GMAIL_FETCH_EMAILS'], toolkits: ['gmail'], tool_schemas: {
+          GMAIL_FETCH_EMAILS: { input_schema: { type: 'object', required: ['query'], properties: { query: { type: 'string' } } } },
+        },
+      }] } })
+    const app = harness()
+    const value = await app.tool().execute({ action: 'search', queries: [{
+      app: 'Gmail', use_case: 'Fetch the 5 latest emails from Singulance, newest first, excluding drafts',
+    }], session: { generate_id: true } }, { signal: new AbortController().signal })
+    expect(value).toMatchObject({ status: 'ready', session_id: 'mail-workflow',
+      execution_contracts: [{ tool_slug: 'GMAIL_FETCH_EMAILS' }],
+      operations: [{ tool: 'COMPOSIO_SEARCH_TOOLS' }, { tool: 'COMPOSIO_SEARCH_TOOLS' }],
+    })
+    expect(JSON.stringify(value)).not.toContain('GMAIL_LIST_DRAFTS')
+    expect(execute).toHaveBeenNthCalledWith(2, 'COMPOSIO_SEARCH_TOOLS', expect.objectContaining({
+      session: { id: 'mail-workflow' }, search_strategy: 'tool_search',
+    }))
+  })
+
+  it('does not authorize a drafts contract when refined discovery still selects drafts', async () => {
+    execute.mockResolvedValue({ data: { session: { id: 'mail-workflow' }, results: [{
+      primary_tool_slugs: ['GMAIL_LIST_DRAFTS'], toolkits: ['gmail'],
+    }] } })
+    const app = harness()
+    const value = await app.tool().execute({ action: 'search', queries: [{
+      use_case: 'Read my inbox emails from Singulance',
+    }], session: { generate_id: true } }, { signal: new AbortController().signal })
+    expect(value).toMatchObject({ status: 'no_matching_tool', results: [], next_action: 'refine_search' })
+    await expect(app.tool().execute({ action: 'execute', tool_slug: 'GMAIL_LIST_DRAFTS', arguments: {} },
+      { signal: new AbortController().signal })).rejects.toThrow('not selected')
+  })
+
+  it('keeps draft listing available when the user actually requests drafts', async () => {
+    execute.mockResolvedValueOnce({ data: { session: { id: 'draft-workflow' }, results: [{
+      primary_tool_slugs: ['GMAIL_LIST_DRAFTS'], toolkits: ['gmail'], tool_schemas: {
+        GMAIL_LIST_DRAFTS: { input_schema: { type: 'object', required: [], properties: {} } },
+      },
+    }] } })
+    const value = await harness().tool().execute({ action: 'search', queries: [{
+      app: 'Gmail', use_case: 'List my five newest email drafts',
+    }], session: { generate_id: true } }, { signal: new AbortController().signal })
+    expect(value).toMatchObject({ status: 'ready', execution_contracts: [{ tool_slug: 'GMAIL_LIST_DRAFTS' }] })
+    expect(execute).toHaveBeenCalledTimes(1)
+  })
+
   it('lets authenticated discovery choose the provider when the user named only a service', async () => {
     execute.mockResolvedValueOnce({ data: { results: [] } })
     const { tool } = harness()

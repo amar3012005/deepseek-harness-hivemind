@@ -389,18 +389,38 @@ function searchResultMatchesApps(value: unknown, apps: ReadonlySet<string>): boo
  * provider-neutral requests, but must never create an authorization prompt for
  * a different app than the one the user named.
  */
-function scopeSearchResult(value: unknown, apps: ReadonlySet<string>): { value: unknown; rejected: boolean } {
-  if (!record(value) || apps.size === 0) return { value, rejected: false }
+function receivedMessageRequest(queries: readonly SearchQuery[]): boolean {
+  return queries.length > 0 && queries.every(({ use_case }) => {
+    const positive = use_case.replace(/\b(?:exclude|excluding|not|without)\s+drafts?\b/gi, '')
+    return /\b(?:inbox|received|incoming|emails?\s+from|messages?\s+from)\b/i.test(positive)
+      && !/\bdrafts?\b/i.test(positive)
+  })
+}
+
+function selectedDraftForReceivedRequest(value: unknown, queries: readonly SearchQuery[]): boolean {
+  if (!receivedMessageRequest(queries) || !record(value)) return false
+  const unwrapped = record(value['result']) ? value['result'] : value
+  const data = record(unwrapped['data']) ? unwrapped['data'] : unwrapped
+  return Array.isArray(data['results']) && data['results'].some(item =>
+    record(item) && /(?:^|_)DRAFTS?(?:_|$)/i.test(stringArray(item['primary_tool_slugs'])[0] ?? ''))
+}
+
+function scopeSearchResult(
+  value: unknown, apps: ReadonlySet<string>, queries: readonly SearchQuery[],
+): { value: unknown; rejected: boolean } {
+  if (!record(value)) return { value, rejected: false }
   if (record(value['result'])) {
-    const scoped = scopeSearchResult(value['result'], apps)
+    const scoped = scopeSearchResult(value['result'], apps, queries)
     return scoped.rejected ? { value: { ...value, result: scoped.value }, rejected: true } : { value, rejected: false }
   }
   if (record(value['data'])) {
-    const scoped = scopeSearchResult(value['data'], apps)
+    const scoped = scopeSearchResult(value['data'], apps, queries)
     return scoped.rejected ? { value: { ...value, data: scoped.value }, rejected: true } : { value, rejected: false }
   }
   if (!Array.isArray(value['results'])) return { value, rejected: false }
-  const results = value['results'].filter(item => searchResultMatchesApps(item, apps))
+  const results = value['results'].filter(item => searchResultMatchesApps(item, apps)
+    && (!receivedMessageRequest(queries) || !record(item)
+      || !/(?:^|_)DRAFTS?(?:_|$)/i.test(stringArray(item['primary_tool_slugs'])[0] ?? '')))
   if (results.length === value['results'].length) return { value, rejected: false }
   const statuses = Array.isArray(value['toolkit_connection_statuses'])
     ? value['toolkit_connection_statuses'].filter((item) => {
@@ -1705,17 +1725,36 @@ export function apply(ctx: Context, config: Config = {}): void {
           throw new Error('Connected-app search repeated without new evidence; refine the query or follow the current plan')
         }
         const model = stringValue(args.model)
-        const result = await session.execute('COMPOSIO_SEARCH_TOOLS', {
+        let result = await session.execute('COMPOSIO_SEARCH_TOOLS', {
           queries,
           session: workflowSession,
           ...(model === undefined ? {} : { model }),
           ...(searchStrategy === undefined ? {} : { search_strategy: searchStrategy }),
         })
-        const sourceReceipt = await saveReceipt(
+        let sourceReceipt = await saveReceipt(
           ctx, config, execution, JSON.stringify(result), 'composio-search-tools.json',
           { tool: 'COMPOSIO_SEARCH_TOOLS' },
         )
-        const scoped = scopeSearchResult(result, requestedApps(args.queries))
+        let searchOperations = 1
+        if (searchStrategy !== 'tool_search' && selectedDraftForReceivedRequest(result, queries)) {
+          // One deterministic provider retry avoids another model inference. Keep
+          // the real workflow id and never turn an inbox request into a draft read.
+          const workflowId = returnedWorkflowSessionId(result)
+          result = await session.execute('COMPOSIO_SEARCH_TOOLS', {
+            queries: queries.map(query => ({ ...query,
+              use_case: `${query.use_case} Select a received-message search or listing tool, not a draft-listing tool.`,
+            })),
+            session: workflowId === undefined ? workflowSession : { id: workflowId },
+            ...(model === undefined ? {} : { model }),
+            search_strategy: 'tool_search',
+          })
+          sourceReceipt = await saveReceipt(
+            ctx, config, execution, JSON.stringify(result), 'composio-search-tools-refined.json',
+            { tool: 'COMPOSIO_SEARCH_TOOLS' },
+          )
+          searchOperations = 2
+        }
+        const scoped = scopeSearchResult(result, requestedApps(args.queries), queries)
         const scopedResult = scoped.value
         const container: unknown = record(scopedResult) && record(scopedResult['data']) ? scopedResult['data'] : scopedResult
         if ([scopedResult, container].some(value => record(value) && (value['successful'] === false || value['success'] === false))) {
@@ -1769,7 +1808,7 @@ export function apply(ctx: Context, config: Config = {}): void {
           const label = titleCaseToolkit(toolkit)
           const logoUrl = `https://logos.composio.dev/api/${encodeURIComponent(toolkit)}`
           const operations = [
-            { tool: 'COMPOSIO_SEARCH_TOOLS', status: 'completed' },
+            ...Array.from({ length: searchOperations }, () => ({ tool: 'COMPOSIO_SEARCH_TOOLS', status: 'completed' })),
             { tool: 'COMPOSIO_MANAGE_CONNECTIONS', status: redirectUrl === undefined ? 'failed' : 'completed' },
           ]
           const projected = compactComposioSearchReceipt(
@@ -1824,7 +1863,7 @@ export function apply(ctx: Context, config: Config = {}): void {
             ...(workflowSessionId === undefined ? {} : { session_id: workflowSessionId }),
           }
         }
-        const operations = [{ tool: 'COMPOSIO_SEARCH_TOOLS', status: 'completed' }]
+        const operations = Array.from({ length: searchOperations }, () => ({ tool: 'COMPOSIO_SEARCH_TOOLS', status: 'completed' }))
         const projected = compactComposioSearchReceipt({
           status: discovered.size === 0 ? 'no_matching_tool' : 'ready',
           operations,
