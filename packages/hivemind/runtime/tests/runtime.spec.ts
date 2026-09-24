@@ -129,7 +129,7 @@ function mount(pluginConfig: Config, withSpill = false): HarnessMock {
     },
     hivemindIdentity: { register(provider: { identity: NonNullable<HarnessMock['identity']> }) {
       harness.identity = provider.identity
-      return () => { harness.identity = undefined }
+      return () => { delete harness.identity }
     } },
     hivemindExecutionScope: {
       require: () => ({
