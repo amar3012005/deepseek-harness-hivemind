@@ -14,7 +14,7 @@ Unsuccessful searches carry versioned discovery metadata through native tool-res
 
 #### What the model sees
 
-The model selects skills, searches, and provider tools through `hivemind_connected_task`. Search results contain bounded plans and exact selected execution contracts. An atomic query may declare exact `result_fields`; these names are retained with the workflow but are not sent to Composio search. Provider execution then projects only matching fields and their structural containers. If none match, the existing bounded evidence projection is returned so a mistaken field name cannot silently discard the receipt. An active connection receipt carries `next_action: "continue_current_request"` and stays in the same native turn. On a later turn, an unfinished workflow adds one plugin user message with source `dsh-hivemind-connected-apps/workflow`; it contains the workflow session ID, original atomic queries, selected tools, exact contracts, connection state, and next action reconstructed from committed tool events.
+The model selects skills, searches, and provider tools through `hivemind_connected_task`. Search results contain bounded plans and exact selected execution contracts. An atomic query may declare exact `result_fields`; these names are retained with the workflow but are not sent to Composio search. Provider execution then projects only matching fields and their structural containers. The projection reports `projection_status: "incomplete"` when any requested field is absent, and the model must report that gap rather than claim the evidence was returned. An active connection receipt carries `next_action: "continue_current_request"` and stays in the same native turn. On a later turn, an unfinished workflow adds one plugin user message with source `dsh-hivemind-connected-apps/workflow`; it contains the workflow session ID, original atomic queries, selected tools, exact contracts, connection state, and next action reconstructed from committed tool events. An unchanged projection already visible in the session is reused; changed state gets one new projection. Selected mutating tools require the native approval decision after search and argument validation; rejection, cancellation, or an unavailable approval channel prevents provider execution. A successful approval executes only the selected tool once. Rejection or cancellation is terminal for that proposed execution, and the bridge returns no intermediate approval receipt that forces another model step.
 
 ##### Unfinished workflow preamble
 
@@ -25,15 +25,11 @@ This state is reconstructed from durable receipts in this conversation. If the c
 
 #### Token effect
 
-The registered bridge tool schema is present while connected tools are enabled. Each search or provider call adds one bounded receipt. Non-executable schema annotations and duplicated MIME transport trees are excluded from the model projection, while plans, validation constraints, requested evidence, and the private full-receipt reference remain. Exact `result_fields` reduce execution evidence without changing provider discovery or execution arguments. `maxDiscoverySearches` (default 2) bounds consecutive discovery-only calls. The unfinished projection is absent from the originating turn and appears only while a prior workflow remains incomplete.
+The registered bridge tool schema is present while connected tools are enabled. Each search or provider call writes one bounded receipt to the session log. Non-executable schema annotations and duplicated MIME transport trees are excluded from the model projection, while plans, validation constraints, requested evidence, and the private full-receipt reference remain. Exact `result_fields` reduce execution evidence without changing provider discovery or execution arguments. `maxDiscoverySearches` (default 2) bounds consecutive discovery-only calls. The unfinished projection is absent from the originating turn and appears only while a prior workflow remains incomplete.
 
 #### KV Cache effect
 
-Append-only within a turn and when an unfinished projection is added on a later turn. Stable system and tool-schema prefixes remain reusable. The bridge does not rewrite native completed history; provider execution or completion removes the need for future workflow projection.
-
-### External actions
-
-Selected mutating tools use the native Harness approval seam after search and argument validation. One `allowed-once` decision executes the exact selected Composio tool once; rejection, cancellation, or an unavailable approval channel prevents provider execution. A durable rejection or approval cancellation is terminal for that proposed execution and is not projected as unfinished workflow state on later turns. The bridge does not return an intermediate approval receipt that requires another model step.
+The bridge reuses an unchanged workflow or receipt projection already visible in the live session and adds a fresh projection only when its state changes or history compaction removes the prior evidence. Full provider receipts remain durable and private. Stable system and tool-schema prefixes remain reusable. The bridge does not rewrite native completed history; provider execution or completion removes the need for future workflow projection.
 
 ## Known Limitations and Deferred Work
 
