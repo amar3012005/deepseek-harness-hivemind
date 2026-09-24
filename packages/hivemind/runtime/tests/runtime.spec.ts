@@ -14,6 +14,7 @@ import {
 
 interface HarnessMock {
   tools: Map<string, ToolDefinition>
+  identity?: (signal: AbortSignal) => Promise<{ userId: string; orgId: string }>
   preStep?: (payload: unknown, next: () => Promise<unknown>) => Promise<unknown>
   inboxInserted?: (payload: { agent: Agent; message: UserMessage }) => void
   turnStopping?: (payload: { agent: Agent }) => void
@@ -126,7 +127,10 @@ function mount(pluginConfig: Config, withSpill = false): HarnessMock {
         return () => skills.delete(skill.name)
       },
     },
-    hivemindIdentity: { register: () => () => {} },
+    hivemindIdentity: { register(provider: { identity: NonNullable<HarnessMock['identity']> }) {
+      harness.identity = provider.identity
+      return () => { harness.identity = undefined }
+    } },
     hivemindExecutionScope: {
       require: () => ({
         userId: '54f5568b-4d6a-4ae1-9a33-48cb2909d59b',
@@ -209,6 +213,23 @@ function tool(harness: HarnessMock, name: string): ToolDefinition {
 }
 
 describe('HIVE-MIND runtime', () => {
+  it('resolves connected-app identity from the authenticated request scope without a Core profile request', async () => {
+    const pluginConfig = config('/does/not/exist')
+    pluginConfig.authorityMode = 'scoped-service'
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+    const harness = mount(pluginConfig)
+
+    await expect(harness.identity?.(signal)).resolves.toEqual({
+      userId: '54f5568b-4d6a-4ae1-9a33-48cb2909d59b',
+      orgId: '67503d34-97e9-49a8-8c52-8ee30cc7603e',
+    })
+    expect(fetchMock).not.toHaveBeenCalled()
+    const cancelled = new AbortController()
+    cancelled.abort()
+    await expect(harness.identity?.(cancelled.signal)).rejects.toMatchObject({ name: 'AbortError' })
+  })
+
   it('uses the request-scoped service proxy without reading an ICARUS credential', async () => {
     const pluginConfig = config('/does/not/exist')
     pluginConfig.authorityMode = 'scoped-service'

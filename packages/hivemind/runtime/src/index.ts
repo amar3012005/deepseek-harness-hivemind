@@ -1006,6 +1006,14 @@ function registerWebConnectRoutes(ctx: Context, config: Config): void {
 export function apply(ctx: Context, config: Config): void {
   ctx.effect(() => ctx.hivemindIdentity.register({
     async identity(signal) {
+      if (config.authorityMode === 'scoped-service') {
+        // The web runner has already authenticated and bound this principal to
+        // the current request. Connected-app discovery must not depend on a
+        // second Core profile round trip for the same identity.
+        const principal = ctx.hivemindExecutionScope.require()
+        signal.throwIfAborted()
+        return { userId: principal.userId, orgId: principal.orgId }
+      }
       const authority = await resolveAuthority(ctx, config)
       return identityFromProfile(await hiveRequest(authority, PROFILE_PATH, { method: 'GET' }, signal, config))
     },
