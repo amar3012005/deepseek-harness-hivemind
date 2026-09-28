@@ -199,7 +199,7 @@
     default: hivemind-chat
     includeShippedRoot: true
     includeUserRoot: false
-    allowed: [hivemind-chat]
+    allowed: [hivemind-chat, hivemind-hyperagents]
 
 - insert:
     - id: hivemind-execution-scope

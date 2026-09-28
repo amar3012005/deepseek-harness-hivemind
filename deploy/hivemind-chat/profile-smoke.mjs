@@ -60,12 +60,14 @@ try {
     roots: [],
     includeShippedRoot: true,
     includeUserRoot: false,
-    allowed: ['hivemind-chat'],
+    allowed: ['hivemind-chat', 'hivemind-hyperagents'],
   })
-  const preset = await ctx.agentPresets.resolve('hivemind-chat')
-  if (preset.broken !== undefined) throw new Error(`hivemind-chat preset cannot mount: ${preset.broken}`)
+  for (const id of ['hivemind-chat', 'hivemind-hyperagents']) {
+    const preset = await ctx.agentPresets.resolve(id)
+    if (preset.broken !== undefined) throw new Error(`${id} preset cannot mount: ${preset.broken}`)
+  }
   await import('@deepseek-ai/dsh-hivemind-connected-apps')
-  console.log('hivemind-chat preset and connected-apps resolve from the image')
+  console.log('both HIVE presets and connected-apps resolve from the image')
 } finally {
   await ctx.fiber.dispose()
 }

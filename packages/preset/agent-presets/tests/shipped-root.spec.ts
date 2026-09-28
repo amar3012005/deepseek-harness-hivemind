@@ -15,7 +15,8 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { Context } from '@deepseek-ai/cordis'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
-import Include, { entryListSchema } from '@deepseek-ai/cordis-plugin-include'
+import Include, { applyEntryPatches, entryListSchema } from '@deepseek-ai/cordis-plugin-include'
+import type { EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import * as yaml from 'js-yaml'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -89,7 +90,7 @@ describe('the shipped preset root', () => {
     const ctx = await roster({ includeUserRoot: false })
 
     const listed = await ctx.agentPresets.list()
-    expect(listed.map(preset => preset.id).sort()).toEqual(['cordis', 'hivemind', 'hivemind-chat', 'hyperagents', 'minimal', 'ptc', 'standard'])
+    expect(listed.map(preset => preset.id).sort()).toEqual(['cordis', 'hivemind', 'hivemind-chat', 'hivemind-hyperagents', 'hyperagents', 'minimal', 'ptc', 'standard'])
     expect(listed.every(preset => preset.trust === 'system')).toBe(true)
     // Not `broken === undefined`: health asks whether each row's package is
     // installed above the base, and the shipped rows name packages the
@@ -165,6 +166,23 @@ describe('the shipped preset root', () => {
       watch: false,
     })
     expect(findEntry(hivemind, 'tool-skill')?.disabled).not.toBe(true)
+  })
+
+  it('composes HyperAgents from tenant-scoped HIVE chat without host file or shell tools', async () => {
+    const [included] = await shippedEntries('hivemind-hyperagents') as Array<{
+      config: { path: string; patches: Parameters<typeof applyEntryPatches>[1] }
+    }>
+    expect(included?.config.path).toBe('../hivemind-chat/agent.cordis.yml')
+
+    const chat = await shippedEntries('hivemind-chat') as EntryOptions[]
+    const composed = applyEntryPatches(chat, included.config.patches, () => {})
+    expect(findEntry(composed, 'hivemind-capabilities')).toMatchObject({ isolate: { hivemindIdentity: true } })
+    expect(findEntry(composed, 'hivemind-runtime')).toBeDefined()
+    expect(findEntry(composed, 'hivemind-connected-apps')).toBeDefined()
+    expect(findEntry(composed, 'tool-todo')).toBeDefined()
+    expect(findEntry(composed, 'tool-shell')).toBeUndefined()
+    expect(findEntry(composed, 'tool-filesystem')).toBeUndefined()
+    expect(findEntry(composed, 'persona')?.config).toMatchObject({ includeRuntimeContext: false })
   })
 
   it('keeps HIVE chat additive to native prompt guidance and renderer-safe', async () => {

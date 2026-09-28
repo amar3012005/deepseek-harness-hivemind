@@ -9,6 +9,11 @@ const connectPackage = JSON.parse(readFileSync(
 )) as { dsh: { client: { inject: string[] } } }
 
 describe('hivemind-web native renderer parity', () => {
+  it('allows authenticated chat and company work without changing the default', () => {
+    expect(patch).toContain('default: hivemind-chat')
+    expect(patch).toContain('allowed: [hivemind-chat, hivemind-hyperagents]')
+  })
+
   it('omits developer prompt contributions without replacing native tool guidance', () => {
     expect(patch).toContain('includeHarnessIdentity: false')
     expect(patch).toContain('includeRuntimeContext: false')
