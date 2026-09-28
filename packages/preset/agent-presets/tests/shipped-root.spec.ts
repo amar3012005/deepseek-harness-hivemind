@@ -172,7 +172,8 @@ describe('the shipped preset root', () => {
     const [included] = await shippedEntries('hivemind-hyperagents') as Array<{
       config: { path: string; patches: Parameters<typeof applyEntryPatches>[1] }
     }>
-    expect(included?.config.path).toBe('../hivemind-chat/agent.cordis.yml')
+    if (!included) throw new TypeError('HyperAgents composition must include HIVE chat')
+    expect(included.config.path).toBe('../hivemind-chat/agent.cordis.yml')
 
     const chat = await shippedEntries('hivemind-chat') as EntryOptions[]
     const composed = applyEntryPatches(chat, included.config.patches, () => {})
