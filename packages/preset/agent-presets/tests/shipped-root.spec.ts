@@ -180,7 +180,7 @@ describe('the shipped preset root', () => {
     expect(findEntry(composed, 'hivemind-capabilities')).toMatchObject({ isolate: { hivemindIdentity: true } })
     expect(findEntry(composed, 'hivemind-runtime')).toBeDefined()
     expect(findEntry(composed, 'hivemind-connected-apps')).toBeDefined()
-    expect(findEntry(composed, 'tool-todo')).toBeDefined()
+    expect(findEntry(composed, 'tool-todo')?.config).toMatchObject({ allowParallelInProgress: true })
     expect(findEntry(composed, 'tool-shell')).toBeUndefined()
     expect(findEntry(composed, 'tool-filesystem')).toBeUndefined()
     expect(findEntry(composed, 'persona')?.config).toMatchObject({ includeRuntimeContext: false })
