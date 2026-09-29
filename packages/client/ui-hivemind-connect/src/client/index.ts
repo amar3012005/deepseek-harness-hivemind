@@ -275,10 +275,10 @@ export function apply(ctx: ClientContext): void {
       else sidebar.toggleExpanded()
     } }),
   }, HyperagentPanelToggle))
-  // The right-sidebar service pair shares one provider. uiConversation is a
-  // separate scope; requiring all three here can leave the embedded composer
-  // without its toggle even though the sidebar itself is mounted.
-  ctx.inject(['sidebarRight', 'sidebarRightTabs'], (scope: ClientContext) => {
+  // Preview and download read session attachments, and thumbnail rendering
+  // uses the conversation image cache. Inject both services in the pane scope;
+  // the header toggle is registered above and remains independent of it.
+  ctx.inject(['sidebarRight', 'sidebarRightTabs', 'remote.session', 'uiConversation'], (scope: ClientContext) => {
     rightSidebar = scope.sidebarRight
     scope.effect(() => () => { rightSidebar = undefined }, 'ui-hivemind-connect: release right sidebar')
     const t = scope.locale.bind(NS)
@@ -292,12 +292,7 @@ export function apply(ctx: ClientContext): void {
         inject: sessionId => ({
           kind,
           hooks: { employeeEvents: employeeEvents(sessionId) },
-          loadImage: (ref: ImageAttachmentRef) => {
-            const conversation = scope.get('uiConversation')
-            return conversation === undefined
-              ? Promise.reject(new Error('Conversation preview is unavailable'))
-              : conversation.imageUrl(sessionId, ref)
-          },
+          loadImage: (ref: ImageAttachmentRef) => scope.uiConversation.imageUrl(sessionId, ref),
           loadPdf: async (file: FileAttachmentRef) => {
             const result = await scope.remote.session.fileAttachment({ sessionId, attachmentId: file.attachmentId })
             if (!result.ok || result.value.attachment.attachmentId !== file.attachmentId) throw new Error('Artifact preview unavailable')
