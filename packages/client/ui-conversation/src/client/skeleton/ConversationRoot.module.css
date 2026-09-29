@@ -371,6 +371,9 @@
   :global(html[data-dsh-mode='hivemind-chat']) .composerSeat > .composerStack {
     transform: translateX(-107px);
   }
+  :global(html[data-dsh-hyperagent-os='true']) .composerSeat > .composerStack {
+    transform: none;
+  }
 }
 
 /* Active phase: header is ordinary column chrome above the scrollport (not
@@ -464,6 +467,18 @@
 :global(html[data-dsh-mode='hivemind-chat']) .root .header .titleCluster,
 :global(html[data-dsh-mode='hivemind-chat']) .root .header .headerUtilities {
   display: none;
+}
+
+/* HyperAgents has its own OS route; keep task management available beside the
+   top-right preview control even though the host owns the rest of the header. */
+:global(html[data-dsh-hyperagent-os='true']) .root .header .headerUtilities {
+  position: fixed;
+  top: 70px;
+  right: 54px;
+  z-index: 30;
+  display: flex;
+  margin: 0;
+  pointer-events: auto;
 }
 
 :global(html[data-dsh-mode='hivemind-chat']) .root .header .tabs {

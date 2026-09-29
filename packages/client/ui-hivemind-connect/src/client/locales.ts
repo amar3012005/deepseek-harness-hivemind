@@ -10,7 +10,7 @@ export type HivemindConnectKey =
   | 'composio.dismiss'
   | 'composio.connected' | 'composio.connectionVerified'
   | 'employee.initial' | 'employee.auto' | 'employee.autoDetail' | 'employee.label' | 'employee.loading' | 'employee.unavailable'
-  | 'employee.environment' | 'employee.working' | 'employee.ready' | 'employee.panel' | 'employee.toggle'
+  | 'employee.environment' | 'employee.hide' | 'employee.working' | 'employee.ready' | 'employee.panel' | 'employee.toggle'
   | 'workbench.preview' | 'workbench.artifacts' | 'workbench.computer' | 'workbench.sources'
   | 'workbench.emptyPreview' | 'workbench.emptyArtifacts' | 'workbench.emptyComputer' | 'workbench.emptySources' | 'workbench.pdfUnavailable' | 'workbench.browserCapture' | 'workbench.open' | 'workbench.download' | 'workbench.downloadPdf'
 
@@ -44,7 +44,7 @@ export const en: Record<HivemindConnectKey, string> = {
   'employee.initial': 'H', 'employee.auto': 'HyperAgents', 'employee.autoDetail': 'Let Harness choose an employee',
   'employee.label': 'Choose employee', 'employee.loading': 'Loading employees…',
   'employee.unavailable': 'Employee directory unavailable. Selection unchanged.',
-  'employee.environment': 'Environment', 'employee.working': 'Working on this task',
+  'employee.environment': 'Environment', 'employee.hide': 'Hide', 'employee.working': 'Working on this task',
   'employee.ready': 'Ready for a task', 'employee.panel': 'Agent', 'employee.toggle': 'Toggle right panel',
   'workbench.preview': 'Preview', 'workbench.artifacts': 'Artifacts', 'workbench.computer': 'Computer', 'workbench.sources': 'Sources',
   'workbench.emptyPreview': 'Generated work appears here when ready.', 'workbench.emptyArtifacts': 'No artifacts yet.',
@@ -86,7 +86,7 @@ export const zh: Record<HivemindConnectKey, string> = {
   'employee.initial': 'H', 'employee.auto': 'HyperAgents', 'employee.autoDetail': '让 Harness 选择员工',
   'employee.label': '选择员工', 'employee.loading': '正在加载员工…',
   'employee.unavailable': '员工目录不可用，选择未更改。',
-  'employee.environment': '工作环境', 'employee.working': '正在执行任务',
+  'employee.environment': '工作环境', 'employee.hide': '隐藏', 'employee.working': '正在执行任务',
   'employee.ready': '等待任务', 'employee.panel': '员工', 'employee.toggle': '切换右侧面板',
   'workbench.preview': '预览', 'workbench.artifacts': '成果', 'workbench.computer': '电脑', 'workbench.sources': '来源',
   'workbench.emptyPreview': '生成的成果就绪后将在此显示。', 'workbench.emptyArtifacts': '暂无成果。',

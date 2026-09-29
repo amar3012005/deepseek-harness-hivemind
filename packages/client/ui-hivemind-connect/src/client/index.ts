@@ -93,6 +93,10 @@ async function answerConnectionQuestion(
 
 /** Register the localized HIVE-MIND connection control above sidebar Settings. */
 export function apply(ctx: ClientContext): void {
+  if (typeof window !== 'undefined' && window.location.pathname.startsWith('/hivemind/app/employee/harness/')) {
+    document.documentElement.dataset.dshHyperagentOs = 'true'
+    ctx.effect(() => () => { delete document.documentElement.dataset.dshHyperagentOs }, 'ui-hivemind-connect: OS route layout')
+  }
   ctx.effect(setupConnectionCallbackReturn, 'ui-hivemind-connect: connected-app authorization return')
   ctx.effect(setupEmbedMessaging, 'ui-hivemind-connect: embedded authentication')
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-hivemind-connect: dictionaries')
@@ -267,7 +271,9 @@ export function apply(ctx: ClientContext): void {
   // its expand/collapse behavior for non-HyperAgents sessions.
   ctx.slots.inject('conversation.session.header.corner', () => ctx.slots.register({
     name: 'conversation.session.header.corner', locale: NS, priority: -1,
-    inject: () => ({ swapPanel: (hyperagents) => {
+    inject: sessionId => ({ hooks: { employeeEvents: employeeEvents(sessionId) }, ensurePreview: () => {
+      rightSidebar?.openTab('hivemind-workbench-preview')
+    }, swapPanel: (hyperagents) => {
       const sidebar = rightSidebar
       if (sidebar === undefined) return
       if (sidebar.isExpanded()) { sidebar.toggleExpanded(); return }
@@ -282,7 +288,9 @@ export function apply(ctx: ClientContext): void {
     rightSidebar = scope.sidebarRight
     scope.effect(() => () => { rightSidebar = undefined }, 'ui-hivemind-connect: release right sidebar')
     const t = scope.locale.bind(NS)
-    scope.effect(() => scope.sidebarRightTabs.register({ id: employeeTab, kind: 'hivemind-employee', title: () => t('employee.panel') }), 'ui-hivemind-connect: employee right tab')
+    if (!window.location.pathname.startsWith('/hivemind/app/employee/harness/')) {
+      scope.effect(() => scope.sidebarRightTabs.register({ id: employeeTab, kind: 'hivemind-employee', title: () => t('employee.panel') }), 'ui-hivemind-connect: employee right tab')
+    }
     for (const kind of workbenchKinds) {
       const tabKind = `hivemind-workbench-${kind}`
       const tabId = `@deepseek-ai/dsh-client-ui-hivemind-connect/${kind}`
@@ -319,18 +327,20 @@ export function apply(ctx: ClientContext): void {
                 link.download = file.name
                 link.click()
               }
-              setTimeout(() => URL.revokeObjectURL(url), 60_000)
+              setTimeout(() => { URL.revokeObjectURL(url) }, 60_000)
             }).catch(() => { opened?.close() })
           },
         }),
       }, HyperagentWorkbench))
     }
-    scope.slots.inject('sidebar.right.pane.tab', () => scope.slots.register({
-      name: 'sidebar.right.pane.tab', key: employeeTab, locale: NS,
-      inject: (sessionId): { hooks: { employeeEvents: ReturnType<typeof employeeEvents> } } => ({
-        hooks: { employeeEvents: employeeEvents(sessionId) },
-      }),
-    }, HyperagentEmployeePanel))
+    if (!window.location.pathname.startsWith('/hivemind/app/employee/harness/')) {
+      scope.slots.inject('sidebar.right.pane.tab', () => scope.slots.register({
+        name: 'sidebar.right.pane.tab', key: employeeTab, locale: NS,
+        inject: (sessionId): { hooks: { employeeEvents: ReturnType<typeof employeeEvents> } } => ({
+          hooks: { employeeEvents: employeeEvents(sessionId) },
+        }),
+      }, HyperagentEmployeePanel))
+    }
   })
   ctx.inject(['conversation'], () => {
     ctx.slots.inject('conversation.hero.dock', () => ctx.slots.register({

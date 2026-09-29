@@ -611,6 +611,13 @@ it('updates original Session navigation as metadata arrives and archive state ch
 })
 
 describe('Task manager catalog', () => {
+  it('returns to the conversation from the embedded manager', () => {
+    const onCloseManager = vi.fn()
+    mount({ records: [] }, en, { onCloseManager })
+    fireEvent.click(screen.getByRole('button', { name: en['close.action'] }))
+    expect(onCloseManager).toHaveBeenCalledOnce()
+  })
+
   it('starts a new Session instead of offering a page creation form', () => {
     const h = mount({ records: [at] })
     // The heading's compact action and the empty state's named action are the

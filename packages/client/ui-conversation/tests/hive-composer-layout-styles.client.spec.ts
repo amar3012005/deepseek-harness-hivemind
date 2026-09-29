@@ -29,6 +29,11 @@ describe('HIVE composer layout', () => {
     expect(css).toMatch(hostAxis)
   })
 
+  it('centers both HyperAgents composer phases in the conversation column', () => {
+    expect(css).toMatch(/data-dsh-hyperagent-os='true'[^}]*\.composerSeat > \.composerStack\s*\{[^}]*transform:\s*none/s)
+    expect(css).toMatch(/data-dsh-hyperagent-os='true'[^}]*\.header \.headerUtilities\s*\{[^}]*display:\s*flex/s)
+  })
+
   it('keeps Chat and Trajectory as lower-left HIVE overlay controls', () => {
     const lowerLeft = new RegExp(
       String.raw`data-dsh-mode='hivemind-chat'[\s\S]*\.header:not\(\.headerHidden\)[^{]*\{`
@@ -37,7 +42,7 @@ describe('HIVE composer layout', () => {
     )
     expect(css).toMatch(lowerLeft)
     expect(css).toMatch(
-      /data-dsh-mode='hivemind-chat'[\s\S]*\.header \.titleRow\s*\{[^}]*display:\s*none/s,
+      /data-dsh-mode='hivemind-chat'[\s\S]*\.header \.titleRow\s*\{[^}]*display:\s*contents/s,
     )
     expect(css).toMatch(
       /data-dsh-mode='hivemind-chat'[\s\S]*\.header \.tabs\s*\{[^}]*pointer-events:\s*auto/s,

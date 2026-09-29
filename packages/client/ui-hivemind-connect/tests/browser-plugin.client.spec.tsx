@@ -49,7 +49,7 @@ describe('HIVE-MIND connection UI', () => {
           ? undefined
           : { cancel }
       ),
-      list: { getSnapshot: () => ({ current: sessionId, ids: [sessionId], phase: 'ready' }), subscribe: () => () => {} },
+      list: { getSnapshot: () => ({ current: sessionId, ids: [sessionId], byId: {}, phase: 'ready' }), subscribe: () => () => {} },
     } as never)
     ctx.provide('conversation', {} as never)
     ctx.provide('uiConversation', { configureWorkspaceRequirement: () => () => {} } as never)
@@ -122,7 +122,7 @@ describe('HIVE-MIND connection UI', () => {
     ctx.provide('sessions', {
       scopeOf: (candidate: Context) => (candidate as Context & { [SESSION_SCOPE]?: SessionId })[SESSION_SCOPE],
       sessionOf: () => ({ cancel }),
-      list: { getSnapshot: () => ({ current: sessionId, ids: [sessionId], phase: 'ready' }), subscribe: () => () => {} },
+      list: { getSnapshot: () => ({ current: sessionId, ids: [sessionId], byId: {}, phase: 'ready' }), subscribe: () => () => {} },
     } as never)
     ctx.provide('conversation', {} as never)
     ctx.provide('uiConversation', { configureWorkspaceRequirement: () => () => {} } as never)
@@ -170,7 +170,7 @@ describe('HIVE-MIND connection UI', () => {
       open: vi.fn(),
       create: vi.fn(async () => 'session-1'),
       list: {
-        getSnapshot: () => ({ current: 'session-1', ids: ['session-1'], phase: 'ready' }),
+        getSnapshot: () => ({ current: 'session-1', ids: ['session-1'], byId: {}, phase: 'ready' }),
         subscribe: () => () => {},
       },
     } as never)
@@ -201,8 +201,10 @@ describe('HIVE-MIND connection UI', () => {
       'sidebar.right.pane.tab': { kind: 'keyed', scope: 'session' },
     } } as never, () => null)
     ctx.provide('locale', { register: () => () => {}, bind: () => () => '' } as never)
-    ctx.provide('sessions', { list: { getSnapshot: () => ({ current: undefined, ids: [], phase: 'ready' }), subscribe: () => () => {} } } as never)
-    ctx.provide('remote', { $on: () => () => {} } as never)
+    ctx.provide('sessions', { list: { getSnapshot: () => ({ current: undefined, ids: [], byId: {}, phase: 'ready' }), subscribe: () => () => {} }, create: vi.fn(async () => 'session-1') } as never)
+    ctx.provide('remote', { $on: () => () => {}, session: {} } as never)
+    ctx.provide('remote.session', {} as never)
+    ctx.provide('uiConversation', {} as never)
     ctx.provide('uiSession', { registerPendingInteraction: () => () => () => {} } as never)
     const registerTab = vi.fn(() => () => {})
     const fiber = ctx.plugin({ inject: [...inject], apply })

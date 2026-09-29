@@ -46,6 +46,7 @@ import { createCatalogSource, type CatalogDeleteOutcome, type CatalogInjected } 
 import { createDeleteToastSource, ScheduleDeleteToast } from './DeleteToast.tsx'
 import { SCHEDULE_TASK_ID, SCHEDULE_TASK_KIND, scheduleTaskDefinition } from './definition.ts'
 import { ScheduleCatalogAction } from './ScheduleCatalogAction.tsx'
+import { ScheduleManagerAction } from './ScheduleManagerAction.tsx'
 import { ScheduleTurnCard, type ScheduleTurnCardInjected } from './ScheduleTurnCard.tsx'
 import { scheduleTurnDefinition, selectScheduleTasks } from './schedule-turn.ts'
 import { ScheduleTaskTab, type ScheduleTaskBindingInjected, type ScheduleTaskCatalogInjected, type ScheduleTaskTabInjected } from './ScheduleTaskTab.tsx'
@@ -74,7 +75,7 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 /** Required services for catalogs, ambient Session marks, the right Sidebar, Remote queries, and original-Session navigation. */
 export const inject = [
   'slots', 'locale', 'remote', 'remote.schedule', 'conversation', 'uiConversation', 'uiWorkspace', 'sessions',
-  'workspaces', 'sidebarRightTabs', 'sidebarRight',
+  'workspaces', 'sidebarRightTabs', 'sidebarRight', 'layout',
 ]
 
 /**
@@ -171,6 +172,7 @@ export function apply(ctx: ClientContext): void {
       ...detail,
       // The page has no creation form: a new reminder starts in a Session.
       onNewTask: () => { ctx.uiWorkspace.startSession() },
+      onCloseManager: () => { ctx.layout.selectPanel(null) },
     }),
   }, TaskManagerPage))
   ctx.slots.inject('sidebar.panellist', () => ctx.slots.register({
@@ -226,4 +228,11 @@ export function apply(ctx: ClientContext): void {
       },
     }, ScheduleCatalogAction),
   )
+  ctx.slots.inject('conversation.session.header.utilities', () => ctx.slots.register({
+    name: 'conversation.session.header.utilities',
+    id: 'schedule-manager',
+    order: -4,
+    locale: MANAGER_NS,
+    inject: () => ({ title: t('panel'), onOpen: () => { ctx.layout.selectPanel(PANEL_ID) } }),
+  }, ScheduleManagerAction))
 }

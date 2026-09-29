@@ -24,6 +24,7 @@ export interface TaskManagerInjected extends TaskDetailInjected {
    * schedule it. The page deliberately has no creation form of its own.
    */
   readonly onNewTask: () => void
+  readonly onCloseManager?: () => void
 }
 
 /** Root-scoped task catalog props derived from the framework and injected actions. */
@@ -39,7 +40,7 @@ type StatusFilter = 'all' | ScheduleCatalogEntry['status']
  * @returns the searchable task list beside the selected task's detail.
  */
 export function TaskManagerPage(props: TaskManagerPageProps) {
-  const { useCatalog, onNewTask, onRetry, t } = props
+  const { useCatalog, onNewTask, onCloseManager, onRetry, t } = props
   const catalog = useCatalog(snapshot => snapshot)
   const { records, status } = catalog
   const [search, setSearch] = useState('')
@@ -117,6 +118,7 @@ export function TaskManagerPage(props: TaskManagerPageProps) {
             <div className={css.pageHeading}>
               <h1 ref={headingRef} tabIndex={-1}>{t('title')}</h1>
               <div className={css.creationActions}>
+                {onCloseManager && <Button variant="outline" size="sm" aria-label={t('close.action')} icon={<IconCloseOutline16 size={13} />} onClick={onCloseManager}>{t('close.action')}</Button>}
                 <Button variant="primary" size="sm" className={css.newButton} icon={<IconPlusOutline16 size={13} />} onClick={onNewTask}>{t('new.action')}</Button>
               </div>
             </div>

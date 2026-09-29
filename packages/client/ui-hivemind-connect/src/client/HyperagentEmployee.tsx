@@ -1,4 +1,5 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { Avatar } from '@humation/react'
 import { humation1 } from '@humation/assets-humation-1'
 import { IconPanelLeftOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
@@ -114,13 +115,79 @@ export function HyperagentEmployeePanel({ useSession, useEmployeeEvents, t }: Pa
   </div>
 }
 
-export interface PanelToggleInjected { swapPanel: (hyperagents: boolean) => void }
+export interface PanelToggleInjected {
+  swapPanel: (hyperagents: boolean) => void
+  ensurePreview: () => void
+  useEmployeeEvents: SnapshotSelectorHook<SessionEventWindow>
+}
 type ToggleProps = PropsRuntime<'conversation.session.header.corner'> & PropsLocale<'hivemind-connect'> & PanelToggleInjected
 
-export function HyperagentPanelToggle({ sessionId, useSessions, swapPanel, t }: ToggleProps) {
+export function HyperagentPanelToggle({ sessionId, useSessions, useEmployeeEvents, swapPanel, ensurePreview, t }: ToggleProps) {
   // The HIVE app owns the conversation's far-right header seat. Keep the
   // native panel affordance there for every session; it opens Preview for
   // HyperAgents and toggles the sidebar for other presets.
   const preset = useSessions(state => state.byId[sessionId]?.projectionValues?.agentPreset)
-  return <button type="button" className={css.panelToggle} aria-label={t('employee.toggle')} title={t('employee.toggle')} onClick={() => { swapPanel(isHyperagentPreset(preset)) }}><IconPanelLeftOutline16 className={css.panelToggleIcon} /></button>
+  const selected = useEmployeeEvents(selectedEmployee)
+  const isOsRoute = typeof window !== 'undefined' && window.location.pathname.startsWith('/hivemind/app/employee/harness/')
+  const [dismissed, setDismissed] = useState(false)
+  const [collision, setCollision] = useState(false)
+  const [right, setRight] = useState(48)
+  const toggleRef = useRef<HTMLButtonElement>(null)
+  const previewOpenedFor = useRef<string | null>(null)
+  useEffect(() => {
+    if (!isOsRoute || !isHyperagentPreset(preset) || previewOpenedFor.current === sessionId) return
+    previewOpenedFor.current = sessionId
+    ensurePreview()
+  }, [isOsRoute, preset, sessionId, ensurePreview])
+  useEffect(() => {
+    if (!isOsRoute || !isHyperagentPreset(preset)) return
+    const root = toggleRef.current?.closest<HTMLElement>('[data-phase]')
+    const scroller = root?.querySelector<HTMLElement>('[data-conversation-scroll]')
+    if (!root || !scroller) return
+    const measure = () => {
+      const boundary = root.getBoundingClientRect()
+      setRight(Math.max(16, window.innerWidth - boundary.right + 16))
+      if (dismissed) return
+      const card = { left: boundary.right - 336, right: boundary.right - 16, top: 112, bottom: 316 }
+      const rows = scroller.querySelectorAll<HTMLElement>('[data-chat-flow] > [data-chat-flow-key]:not(:empty):not([hidden])')
+      setCollision([...rows].some((row) => {
+        const box = row.getBoundingClientRect()
+        return box.right > card.left && box.left < card.right && box.bottom > card.top && box.top < card.bottom
+      }))
+    }
+    const observer = new ResizeObserver(measure)
+    observer.observe(root)
+    observer.observe(scroller)
+    let pendingFrame = 0
+    const mutationObserver = new MutationObserver(() => {
+      if (pendingFrame === 0) pendingFrame = requestAnimationFrame(() => { pendingFrame = 0; measure() })
+    })
+    mutationObserver.observe(scroller, { childList: true, subtree: true })
+    scroller.addEventListener('scroll', measure, { passive: true })
+    window.addEventListener('resize', measure)
+    const frame = requestAnimationFrame(measure)
+    return () => {
+      cancelAnimationFrame(frame)
+      cancelAnimationFrame(pendingFrame)
+      observer.disconnect()
+      mutationObserver.disconnect()
+      scroller.removeEventListener('scroll', measure)
+      window.removeEventListener('resize', measure)
+    }
+  }, [isOsRoute, preset, dismissed])
+  const showEnvironment = isOsRoute && isHyperagentPreset(preset)
+  return <>
+    <button ref={toggleRef} type="button" className={css.panelToggle} aria-label={t('employee.toggle')} title={t('employee.toggle')} onClick={() => { swapPanel(isHyperagentPreset(preset)) }}><IconPanelLeftOutline16 className={css.panelToggleIcon} /></button>
+    {showEnvironment && createPortal(<div
+      className={css.environmentDock} style={{ right }} data-collapsed={dismissed || collision || undefined}
+    >
+      {dismissed || collision
+        ? <button type="button" className={css.environmentReveal} onClick={() => { setDismissed(false); setCollision(false) }} aria-label={t('employee.environment')}>{t('employee.environment')}</button>
+        : <section className={css.environment} aria-label={t('employee.environment')}>
+          <header><span className={css.dots} aria-hidden="true">● ● ●</span>{t('employee.environment')}<button type="button" onClick={() => { setDismissed(true) }}>{t('employee.hide')}</button></header>
+          <div className={css.identity}>{selected === null ? <span className={css.autoAvatar}>{t('employee.initial')}</span> : <EmployeeAvatar employee={selected} size={36} />}<span><strong>{selected?.name ?? t('employee.auto')}</strong><small>{selected?.role ?? t('employee.autoDetail')}</small></span></div>
+          <p>{t('employee.ready')}</p>
+        </section>}
+    </div>, document.body)}
+  </>
 }

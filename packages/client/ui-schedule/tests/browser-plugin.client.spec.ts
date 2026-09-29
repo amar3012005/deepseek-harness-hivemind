@@ -93,6 +93,7 @@ async function baseContext(
   ctx.provide('uiWorkspace', { openSession: vi.fn(), startSession: vi.fn() } as never)
   ctx.provide('sidebarRightTabs', { register: sidebar.register } as never)
   ctx.provide('sidebarRight', { openTab: sidebar.openTab, tabsIn: sidebar.tabsIn } as never)
+  ctx.provide('layout', { selectPanel: vi.fn() } as never)
   const id = 'cold-original' as SessionId
   const sessions: SessionListState = {
     ids: [id], byId: { [id]: { id, displayTitle: id, running: false, blank: false, updatedAt: 0 } },
@@ -132,7 +133,7 @@ describe('ui-schedule browser half', () => {
   it('declares only the services used by registration', () => {
     expect(inject).toEqual([
       'slots', 'locale', 'remote', 'remote.schedule', 'conversation', 'uiConversation', 'uiWorkspace', 'sessions',
-      'workspaces', 'sidebarRightTabs', 'sidebarRight',
+      'workspaces', 'sidebarRightTabs', 'sidebarRight', 'layout',
     ])
   })
 
@@ -149,7 +150,7 @@ describe('ui-schedule browser half', () => {
     ctx.slots.register({
       name: 'conversation.session.header.utilities', id: 'job-list', order: 20,
     }, Empty)
-    expect(headerEntryIds(ctx)).toEqual(['agent-preset', 'schedule-catalog', 'job-list'])
+    expect(headerEntryIds(ctx)).toEqual(['agent-preset', 'schedule-catalog', 'schedule-manager', 'job-list'])
 
     await fiber.dispose()
     expect(headerEntryIds(ctx)).toEqual(['agent-preset', 'job-list'])
