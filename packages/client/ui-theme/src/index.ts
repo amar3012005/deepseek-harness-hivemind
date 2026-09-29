@@ -33,12 +33,12 @@ function readSection(ctx: Context): { preference: ThemePreference; fontSize: num
  * theme bootstrap row.
  * @param ctx - Host context that may acquire the settings service.
  */
-export function apply(ctx: Context): void {
+export function apply(ctx: Context, config: { lockToLight?: boolean } = {}): void {
   ctx.inject(['settings'], (settingsCtx) => {
     settingsCtx.settings.register(THEME_NAMESPACE, ThemeSettingsSchema)
   })
   ctx.on('webserver/index-inject', (table) => {
     const section = readSection(ctx)
-    table.push(bootThemeInjection(section.preference, section.fontSize))
+    table.push(bootThemeInjection(config.lockToLight === true ? 'light' : section.preference, section.fontSize))
   })
 }

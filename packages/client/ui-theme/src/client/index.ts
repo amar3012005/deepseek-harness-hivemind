@@ -440,7 +440,12 @@ export const inject = ['slots', 'locale', 'remote', 'settingsScope']
 export function apply(ctx: ClientContext, config: ThemeConfig = {}): void {
   installThemeStyles(ctx)
   const host = ctx.settingsScope.bind<ThemeSettings>({ namespace: THEME_SETTINGS_NAMESPACE })
-  const theme = new ThemeRuntime(ctx, host, { lockToLight: config.lockToLight === true })
+  // The embedded HIVE host can mount the client without forwarding its
+  // profile row config. The mode is set before plugins run, so enforce the
+  // product policy from that stable browser marker as well.
+  const lockToLight = config.lockToLight === true
+    || (typeof document !== 'undefined' && document.documentElement.dataset.dshMode === 'hivemind-chat')
+  const theme = new ThemeRuntime(ctx, host, { lockToLight })
   ctx.provide('theme', theme)
 
   ctx.effect(() => ctx.locale.register(SETTINGS_NS, { zh, en }), 'ui-theme: settings row dictionaries')
@@ -461,7 +466,7 @@ export function apply(ctx: ClientContext, config: ThemeConfig = {}): void {
     sync(theme.getTheme())
     return {
       setTheme: (id) => { theme.setTheme(id) },
-      ...(config.lockToLight === true ? { disabledPreferences: ['dark', 'system'] as const } : {}),
+      ...(lockToLight ? { disabledPreferences: ['dark', 'system'] as const } : {}),
     }
   }
   ctx.slots.inject('settings.general.item', () => ctx.slots.register({
