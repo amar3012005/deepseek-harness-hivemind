@@ -382,6 +382,8 @@ export interface LaunchOptions {
    * default, so it wins.
    */
   agentPresets?: {
+    /** Whether the fixture includes the shipped preset root. */
+    includeShippedRoot?: boolean
     /** Roots to discover after the plugin's shipped root, in precedence order. */
     roots: { path: string; trust: 'system' | 'user' }[]
     /** The preset a session that names none is composed from. */

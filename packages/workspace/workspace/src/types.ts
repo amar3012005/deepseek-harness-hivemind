@@ -110,3 +110,27 @@ export interface Workspace {
    */
   status(): Promise<'ok' | 'missing-dir'>
 }
+
+/** Activity families contributed by plugins. */
+export interface SessionActivityKindMap { turn: true }
+
+/** One activity family key. */
+export type SessionActivityKind = keyof SessionActivityKindMap
+
+/** One active item of a family that has per-item identity. */
+export interface SessionActivityItem {
+  /** Family-specific identity: a session id, a job id, or a schedule id. */
+  readonly id: string
+  /** Display label when the family carries one (a job label, a subagent label). */
+  readonly label?: string
+}
+
+/**
+ * One reason a session counts as active for archive admission. Families with
+ * per-item identity list their items so a caller can name what must stop.
+ */
+export interface SessionActivity {
+  readonly kind: SessionActivityKind
+  /** Active items of the family; absent for a family without per-item identity (`turn`). */
+  readonly items?: readonly SessionActivityItem[]
+}

@@ -18,9 +18,9 @@ export { WorkspaceMoveInvalidError } from './entity.ts'
 import { defaultWorkspaceTitle, realpathNormalize } from './paths.ts'
 import { workspaceDomainSpec } from './spec.ts'
 import type { WorkspaceDomainState, WorkspaceRecord } from './spec.ts'
-import type { Workspace, WorkspaceId as WorkspaceIdBrand } from './types.ts'
+import type { SessionActivity, Workspace, WorkspaceId as WorkspaceIdBrand } from './types.ts'
 
-export type { Workspace } from './types.ts'
+export type { Workspace, SessionActivity, SessionActivityKindMap } from './types.ts'
 export { workspaceDomainState, workspaceRecord, workspaceDomainSpec } from './spec.ts'
 export type { WorkspaceDomainState, WorkspaceRecord } from './spec.ts'
 export { realpathNormalize } from './paths.ts'
@@ -66,6 +66,10 @@ export class WorkspaceOrderInvalidError extends Error {
 declare module '@deepseek-ai/cordis' {
   interface Context {
     workspaceRegistry: WorkspaceRegistry
+  }
+  interface Events {
+    'workspace/session-activity'(request: { sessionId: SessionId }, next: () => Promise<readonly SessionActivity[]>): Promise<readonly SessionActivity[]>
+    'workspace/session-stop'(request: { sessionId: SessionId }): Promise<void> | void
   }
 }
 
@@ -248,6 +252,7 @@ export class WorkspaceRegistry extends Service {
       if (!(await this.sessionKnown(sessionId))) {
         throw new WorkspaceUnknownSessionError(sessionId)
       }
+      await this.ctx.parallel('workspace/session-stop', { sessionId })
       const state = this.requireState()
       await this.setState({ ...state, archivedSessionIds: [...state.archivedSessionIds, sessionId] })
     })

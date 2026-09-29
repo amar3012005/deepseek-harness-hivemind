@@ -9,7 +9,10 @@ import { mountAgentLoopTestDependencies } from '@deepseek-ai/dsh-agent-loop-test
 import { SessionId } from '@deepseek-ai/dsh-session'
 import type { SessionEvent, SessionEventMap } from '@deepseek-ai/dsh-session'
 import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
-import * as toolSchedule from '@deepseek-ai/dsh-schedule'
+import toolSchedule from '@deepseek-ai/dsh-schedule'
+import Storage from '@deepseek-ai/dsh-storage'
+import * as StorageJson from '@deepseek-ai/dsh-storage-json'
+import * as StorageDomain from '@deepseek-ai/dsh-storage-domain'
 import * as SubagentSpawn from '@deepseek-ai/dsh-subagent-spawn-in-process'
 import * as SubagentFork from '@deepseek-ai/dsh-subagent-fork-in-process'
 import type { ContentBlock, GenerateOptions, MessageId, StreamChunk } from '@deepseek-ai/dsh-llm'
@@ -93,7 +96,13 @@ async function setupWith(
     })
   }
   await ctx.plugin(AgentLoop, { agents: [] })
-  if (options.schedule) await ctx.plugin(toolSchedule)
+  if (options.schedule) {
+    await ctx.plugin(Storage)
+    await ctx.plugin(StorageJson, { root: join(root!, 'schedule-storage') })
+    await ctx.plugin(StorageDomain, { backend: 'json' })
+    ctx.provide('sessionController', { resolveAgent: async () => { throw new Error('No due task in child ownership test') } } as never)
+    await ctx.plugin(toolSchedule)
+  }
   if (options.sessionQuery !== false) await ctx.plugin(TestSessionQuery)
   await ctx.plugin(SubagentRuntime)
   await ctx.plugin(SubagentSpawn, { providerName: 'spawn' })

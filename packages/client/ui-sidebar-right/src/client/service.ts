@@ -223,6 +223,12 @@ export class SidebarRightController implements ISidebarRight {
     this.tabDomain = new TabDomain(this, pin)
   }
 
+  /** Read committed tabs for a session without activating it. */
+  tabsIn(sessionId: SessionId): readonly TabRecord[] {
+    return Object.values(this.adopted.get(sessionId)?.store.getSnapshot().bySession[sessionId]?.layout.tabs ?? {})
+  }
+
+
   /**
    * Adopt the mounted seat's binding, replacing any previous one.
    *
@@ -230,6 +236,7 @@ export class SidebarRightController implements ISidebarRight {
    * @param binding - the mounted seat's session, actions, and the store's surfaces.
    * @returns a release callback that clears exactly this binding.
    */
+
   bind(binding: SidebarRightBinding): () => void {
     this.binding = binding
     return () => {

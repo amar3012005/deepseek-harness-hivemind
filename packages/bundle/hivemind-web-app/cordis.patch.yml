@@ -237,3 +237,28 @@
         serviceHttpOrigins: !!js (process.env.HIVEMIND_SERVICE_HTTP_ORIGINS ?? '').split(',').map(value => value.trim()).filter(Boolean)
         serviceSecretEnv: HIVE_HARNESS_RUNNER_SERVICE_SECRET
         databaseUrlEnv: DATABASE_URL
+
+# Host scheduling is tenant-scoped and tools attach only to HyperAgents roots.
+- id: ui-schedule
+  disabled: false
+
+- insert:
+    - id: hivemind-schedule-postgres
+      name: '@deepseek-ai/dsh-hivemind-schedule-postgres'
+      config:
+        connectionStringEnv: DATABASE_URL
+        schema: hivemind
+        pollIntervalMs: 5000
+        retryIntervalMs: 30000
+        batchSize: 100
+        maxConnections: 4
+        statementTimeoutMs: 15000
+        maxTasksPerUser: 100
+
+    - id: schedule
+      name: '@deepseek-ai/dsh-schedule'
+      inject: [scheduleBackend]
+      config:
+        storage: external
+        deliveryHistoryDays: 30
+        deliveryHistoryRecords: 200
