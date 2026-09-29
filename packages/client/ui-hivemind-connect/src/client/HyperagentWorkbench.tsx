@@ -72,7 +72,7 @@ type WorkbenchProps = PropsRuntime<'sidebar.right.pane.tab'> & PropsLocale<'hive
   kind: Kind
   useEmployeeEvents: SnapshotSelectorHook<SessionEventWindow>
   loadImage: (ref: ImageAttachmentRef) => Promise<string>
-  openArtifact: (artifact: Artifact) => void
+  openArtifact: (artifact: Artifact, disposition?: 'open' | 'download') => void
 }
 
 function ReceiptImage({ attachment, loadImage }: { attachment: ImageAttachmentRef | undefined; loadImage: WorkbenchProps['loadImage'] }) {
@@ -96,7 +96,7 @@ export function HyperagentWorkbench({ kind, sessionId, useSessions, useEmployeeE
   return <div className={css.workbench} data-hivemind-workbench={kind}>
     {kind === 'preview' && (lastArtifact === undefined
       ? <p className={css.workbenchEmpty}>{t('workbench.emptyPreview')}</p>
-      : <article><span className={css.workbenchEyebrow}>{lastArtifact.mediaType}</span><h2>{lastArtifact.title}</h2><ReceiptImage attachment={lastArtifact.preview} loadImage={loadImage} /><button type="button" className={css.workbenchOpen} disabled={lastArtifact.file === undefined} onClick={() => { openArtifact(lastArtifact) }}>{t('workbench.open')}</button></article>)}
+      : <article><span className={css.workbenchEyebrow}>{lastArtifact.mediaType}</span><h2>{lastArtifact.title}</h2><ReceiptImage attachment={lastArtifact.preview} loadImage={loadImage} /><button type="button" className={css.workbenchOpen} disabled={lastArtifact.file === undefined} onClick={() => { openArtifact(lastArtifact) }}>{t('workbench.open')}</button><button type="button" className={css.workbenchOpen} disabled={lastArtifact.file === undefined} onClick={() => { openArtifact(lastArtifact, 'download') }}>{t('workbench.download')}</button></article>)}
     {kind === 'artifacts' && (data.artifacts.length === 0
       ? <p className={css.workbenchEmpty}>{t('workbench.emptyArtifacts')}</p>
       : <ul className={css.workbenchList}>{[...data.artifacts].reverse().map(artifact => <li key={artifact.id}><button type="button" disabled={artifact.file === undefined} onClick={() => { openArtifact(artifact) }}>{artifact.title}</button><small>{artifact.mediaType} · {artifact.path.split('/').at(-1)}</small></li>)}</ul>)}

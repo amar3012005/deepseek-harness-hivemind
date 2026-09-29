@@ -306,9 +306,9 @@ export function apply(ctx: ClientContext): void {
               ? Promise.reject(new Error('Conversation preview is unavailable'))
               : conversation.imageUrl(sessionId, ref)
           },
-          openArtifact: (artifact: { mediaType: string; file: FileAttachmentRef | undefined }) => {
+          openArtifact: (artifact: { mediaType: string; file: FileAttachmentRef | undefined }, disposition: 'open' | 'download' = 'open') => {
             if (artifact.file === undefined) return
-            const opened = artifact.mediaType === 'application/pdf' ? window.open('about:blank', '_blank') : null
+            const opened = disposition === 'open' && artifact.mediaType === 'application/pdf' ? window.open('about:blank', '_blank') : null
             void scope.remote.session.fileAttachment({ sessionId, attachmentId: artifact.file.attachmentId }).then((result) => {
               if (!result.ok || result.value.attachment.attachmentId !== artifact.file?.attachmentId) throw new Error('Artifact download failed')
               const binary = atob(result.value.data)
