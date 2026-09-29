@@ -780,9 +780,15 @@ export function apply(ctx: Context, config: Partial<Config> = {}): void {
       : undefined
     if (typeof planId !== 'string') {
       const oriented = events.some(event => event.type === 'hivemind/operating-context')
+      // An unplanned request is a bounded task. Once its PDF receipt is
+      // durable, another render in the same turn is duplicate work, not a
+      // continuation. Multi-artifact work uses a plan and keeps this lane.
+      const artifactSuppressed = events.some(event => event.type === 'hivemind/artifact-created')
+        ? ['hivemind_artifact_render', 'hivemind_generate', 'hivemind_generation_discover']
+        : []
       return oriented
-        ? new Set(['ask_user_question', 'hivemind_operating_context', 'hivemind_playbooks', 'hivemind_capabilities', ...browserSuppressed])
-        : new Set(browserSuppressed)
+        ? new Set(['ask_user_question', 'hivemind_operating_context', 'hivemind_playbooks', 'hivemind_capabilities', ...browserSuppressed, ...artifactSuppressed])
+        : new Set([...browserSuppressed, ...artifactSuppressed])
     }
     const suppressed = new Set(['hivemind_operating_context', 'hivemind_playbooks', ...browserSuppressed])
     const plannedWorkstreams = typeof plan?.data === 'object' && plan.data !== null && !Array.isArray(plan.data)

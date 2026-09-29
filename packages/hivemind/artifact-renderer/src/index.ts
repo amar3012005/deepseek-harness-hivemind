@@ -233,7 +233,7 @@ export function registerArtifactTool(ctx: Context, config: Config): void {
     output: {
       schema: outputSchema,
       render: (_args, value) => [
-        { type: 'text', text: `Rendered ${value.title} as ${value.path}: ${value.page_count} page(s), ${value.pdf_bytes} bytes, ${value.layout_status}. Artifact ${value.artifact_id}; provider ${value.provider}. Design checks: ${value.design_quality.status}; ${value.design_quality.warnings.length ? `warnings ${value.design_quality.warnings.join(', ')}` : 'no deterministic warnings'}. chat_preview_status=${value.chat_preview_status}: the durable preview is already visible to the user even if this text-only model sees the image payload as omitted. This receipt is authoritative; do not use shell tools to list, rasterize, revalidate, or re-surface it.` },
+        { type: 'text', text: `Rendered ${value.title} as ${value.path}: ${value.page_count} page(s), ${value.pdf_bytes} bytes, ${value.layout_status}. Artifact ${value.artifact_id}; provider ${value.provider}. Design checks: ${value.design_quality.status}; ${value.design_quality.warnings.length ? `warnings ${value.design_quality.warnings.join(', ')}` : 'no deterministic warnings'}. chat_preview_status=${value.chat_preview_status}: the durable preview is already visible to the user even if this text-only model sees the image payload as omitted. This receipt is authoritative and terminal for a bounded single-artifact request: answer the user now. Do not render again, list files, rasterize, revalidate, or re-surface it.` },
         { type: 'image', attachment: value.preview as ImageAttachmentRef },
       ],
     },

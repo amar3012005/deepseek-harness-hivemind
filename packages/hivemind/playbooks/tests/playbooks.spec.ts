@@ -321,6 +321,14 @@ describe('hivemind playbooks', () => {
     expect(artifactResult.visibleTools).toContain('hivemind_artifact_render')
     expect(artifactResult.recommended_skills).toEqual(['hivemind-document-design'])
     expect(agent.ctx.tools.schemas().map(tool => tool.name)).toContain('hivemind_artifact_render')
+    const priorEvents = events.splice(0) // simulate a separate bounded turn
+    events.push({ type: 'hivemind/artifact-created', data: { artifactId: 'pdf-1', title: 'One-page PDF' } })
+    const afterArtifact = (await listeners.get('system-prompt/assemble')!(
+      assembly, { agent, scope: agent }, async () => assembly,
+    )) as typeof assembly
+    expect(afterArtifact.tools.map(tool => tool.name)).not.toContain('hivemind_artifact_render')
+    expect(agent.ctx.tools.schemas().map(tool => tool.name)).not.toContain('hivemind_artifact_render')
+    events.splice(0, events.length, ...priorEvents)
     const skillsResult = (await capabilityTool.execute({ operation: 'lease', capabilities: ['skills'] }, {
       agent,
       signal: new AbortController().signal,
