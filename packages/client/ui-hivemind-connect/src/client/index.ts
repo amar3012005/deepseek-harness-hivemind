@@ -200,6 +200,7 @@ export function apply(ctx: ClientContext): void {
   const employeeTab = '@deepseek-ai/dsh-client-ui-hivemind-connect/employee'
   const workbenchKinds = ['preview', 'artifacts', 'computer', 'sources'] as const
   const previousRightTabs = new Map<string, TabId>()
+  let rightSidebar: ClientContext['sidebarRight'] | undefined
   const employeeEvents = (sessionId: SessionId) => {
     const binding = ctx.sessions.binding(sessionId)
     if (binding === undefined) throw new Error('HIVE-MIND employee selection requires an open session')
@@ -263,10 +264,32 @@ export function apply(ctx: ClientContext): void {
       },
     }),
   }, HyperagentEmployeePicker))
+  // Composer slot exists before the right-sidebar provider comes online.
+  // Register its control beside the picker; resolve the sidebar on click.
+  ctx.slots.inject('conversation.input.right', () => ctx.slots.register({
+    name: 'conversation.input.right', id: 'hivemind-employee-panel', order: 20, locale: NS,
+    inject: sessionId => ({ swapPanel: () => {
+      const sidebar = rightSidebar
+      if (sidebar === undefined) return
+      const active = sidebar.active()
+      if (active?.kind === 'hivemind-employee') {
+        const previous = previousRightTabs.get(sessionId)
+        if (previous !== undefined) sidebar.focus(previous)
+        else sidebar.openTab('hivemind-workbench-preview')
+        return
+      }
+      if (active !== undefined) previousRightTabs.set(sessionId, active.id)
+      if (active === undefined || !active.kind.startsWith('hivemind-workbench-')) {
+        for (const kind of ['artifacts', 'computer', 'sources', 'preview'] as const) sidebar.openTab(`hivemind-workbench-${kind}`)
+      } else sidebar.openTab('hivemind-employee')
+    } }),
+  }, HyperagentPanelToggle))
   // The right-sidebar service pair shares one provider. uiConversation is a
   // separate scope; requiring all three here can leave the embedded composer
   // without its toggle even though the sidebar itself is mounted.
   ctx.inject(['sidebarRight', 'sidebarRightTabs'], () => {
+    rightSidebar = ctx.sidebarRight
+    ctx.effect(() => () => { rightSidebar = undefined }, 'ui-hivemind-connect: release right sidebar')
     const t = ctx.locale.bind(NS)
     ctx.effect(() => ctx.sidebarRightTabs.register({ id: employeeTab, kind: 'hivemind-employee', title: () => t('employee.panel') }), 'ui-hivemind-connect: employee right tab')
     for (const kind of workbenchKinds) {
@@ -297,22 +320,6 @@ export function apply(ctx: ClientContext): void {
         hooks: { employeeEvents: employeeEvents(sessionId) },
       }),
     }, HyperagentEmployeePanel))
-    ctx.slots.inject('conversation.input.right', () => ctx.slots.register({
-      name: 'conversation.input.right', id: 'hivemind-employee-panel', order: 20, locale: NS,
-      inject: sessionId => ({ swapPanel: () => {
-        const active = ctx.sidebarRight.active()
-        if (active?.kind === 'hivemind-employee') {
-          const previous = previousRightTabs.get(sessionId)
-          if (previous !== undefined) ctx.sidebarRight.focus(previous)
-          else ctx.sidebarRight.openTab('hivemind-workbench-preview')
-          return
-        }
-        if (active !== undefined) previousRightTabs.set(sessionId, active.id)
-        if (active === undefined || !active.kind.startsWith('hivemind-workbench-')) {
-          for (const kind of ['artifacts', 'computer', 'sources', 'preview'] as const) ctx.sidebarRight.openTab(`hivemind-workbench-${kind}`)
-        } else ctx.sidebarRight.openTab('hivemind-employee')
-      } }),
-    }, HyperagentPanelToggle))
   })
   ctx.inject(['conversation'], () => {
     ctx.slots.inject('conversation.hero.dock', () => ctx.slots.register({
