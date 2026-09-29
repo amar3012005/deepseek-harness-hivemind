@@ -204,12 +204,16 @@ describe('HIVE-MIND connection UI', () => {
     ctx.provide('sessions', { list: { getSnapshot: () => ({ current: undefined, ids: [], phase: 'ready' }), subscribe: () => () => {} } } as never)
     ctx.provide('remote', { $on: () => () => {} } as never)
     ctx.provide('uiSession', { registerPendingInteraction: () => () => () => {} } as never)
-    ctx.provide('sidebarRight', { active: () => undefined, openTab: () => {} } as never)
     const registerTab = vi.fn(() => () => {})
-    ctx.provide('sidebarRightTabs', { register: registerTab } as never)
     const fiber = ctx.plugin({ inject: [...inject], apply })
     await fiber.await()
+    const sidebar = ctx.plugin({ apply(scope) {
+      scope.reflect.provide('sidebarRight', { active: () => undefined, openTab: () => {} } as never)
+      scope.reflect.provide('sidebarRightTabs', { register: registerTab } as never)
+    } })
+    await sidebar.await()
     await waitFor(() => expect(registerTab).toHaveBeenCalledWith(expect.objectContaining({ kind: 'hivemind-employee' })))
+    await sidebar.dispose()
     await fiber.dispose()
   })
 

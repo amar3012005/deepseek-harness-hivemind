@@ -287,34 +287,34 @@ export function apply(ctx: ClientContext): void {
   // The right-sidebar service pair shares one provider. uiConversation is a
   // separate scope; requiring all three here can leave the embedded composer
   // without its toggle even though the sidebar itself is mounted.
-  ctx.inject(['sidebarRight', 'sidebarRightTabs'], () => {
-    rightSidebar = ctx.sidebarRight
-    ctx.effect(() => () => { rightSidebar = undefined }, 'ui-hivemind-connect: release right sidebar')
-    const t = ctx.locale.bind(NS)
-    ctx.effect(() => ctx.sidebarRightTabs.register({ id: employeeTab, kind: 'hivemind-employee', title: () => t('employee.panel') }), 'ui-hivemind-connect: employee right tab')
+  ctx.inject(['sidebarRight', 'sidebarRightTabs'], (scope: ClientContext) => {
+    rightSidebar = scope.sidebarRight
+    scope.effect(() => () => { rightSidebar = undefined }, 'ui-hivemind-connect: release right sidebar')
+    const t = scope.locale.bind(NS)
+    scope.effect(() => scope.sidebarRightTabs.register({ id: employeeTab, kind: 'hivemind-employee', title: () => t('employee.panel') }), 'ui-hivemind-connect: employee right tab')
     for (const kind of workbenchKinds) {
       const tabKind = `hivemind-workbench-${kind}`
       const tabId = `@deepseek-ai/dsh-client-ui-hivemind-connect/${kind}`
-      ctx.effect(() => ctx.sidebarRightTabs.register({ id: tabId, kind: tabKind, title: () => t(`workbench.${kind}`) }), `ui-hivemind-connect: ${kind} tab`)
-      ctx.slots.inject('sidebar.right.pane.tab', () => ctx.slots.register({
+      scope.effect(() => scope.sidebarRightTabs.register({ id: tabId, kind: tabKind, title: () => t(`workbench.${kind}`) }), `ui-hivemind-connect: ${kind} tab`)
+      scope.slots.inject('sidebar.right.pane.tab', () => scope.slots.register({
         name: 'sidebar.right.pane.tab', key: tabId, locale: NS,
         inject: sessionId => ({
           kind,
           hooks: { employeeEvents: employeeEvents(sessionId) },
           loadImage: (ref: ImageAttachmentRef) => {
-            const conversation = ctx.get('uiConversation')
+            const conversation = scope.get('uiConversation')
             return conversation === undefined
               ? Promise.reject(new Error('Conversation preview is unavailable'))
               : conversation.imageUrl(sessionId, ref)
           },
           openArtifact: (path: string) => {
-            const cwd = ctx.sessions.list.getSnapshot().byId[sessionId]?.cwd
-            ctx.sidebarRight.openResource(fileAddressFor(sessionId, cwd, path))
+            const cwd = scope.sessions.list.getSnapshot().byId[sessionId]?.cwd
+            scope.sidebarRight.openResource(fileAddressFor(sessionId, cwd, path))
           },
         }),
       }, HyperagentWorkbench))
     }
-    ctx.slots.inject('sidebar.right.pane.tab', () => ctx.slots.register({
+    scope.slots.inject('sidebar.right.pane.tab', () => scope.slots.register({
       name: 'sidebar.right.pane.tab', key: employeeTab, locale: NS,
       inject: (sessionId): { hooks: { employeeEvents: ReturnType<typeof employeeEvents> } } => ({
         hooks: { employeeEvents: employeeEvents(sessionId) },

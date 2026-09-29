@@ -119,5 +119,5 @@ type ToggleProps = PropsRuntime<'conversation.input.right'> & PropsLocale<'hivem
 export function HyperagentPanelToggle({ sessionId, useSessions, swapPanel, t }: ToggleProps) {
   const preset = useSessions(state => state.byId[sessionId]?.projectionValues?.agentPreset)
   if (!isHyperagentPreset(preset)) return null
-  return <button type="button" className={css.panelToggle} aria-label={t('employee.toggle')} onClick={swapPanel}>{t('employee.toggle')}</button>
+  return <button type="button" className={css.panelToggle} aria-label={t('employee.toggle')} title={t('employee.toggle')} onClick={swapPanel}>⇄</button>
 }

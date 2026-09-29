@@ -17,7 +17,7 @@
 .dots { letter-spacing: 2px; color: #f5b13d; }
 .identity { display: flex; align-items: center; gap: 10px; padding: 12px 0; }
 .environment p { margin: 0; border-top: 1px solid var(--dsw-border-subtle, #e4e4e7); padding-top: 10px; color: var(--dsw-text-secondary, #71717a); font-size: 12px; }
-.panelToggle { border: 1px solid var(--dsw-border-subtle, #e4e4e7); border-radius: 9px; padding: 5px 10px; background: var(--dsw-surface-primary, #fff); color: var(--dsw-text-primary, #27272a); font: inherit; cursor: pointer; }
+.panelToggle { flex: 0 0 34px; width: 34px; height: 34px; border: 1px solid var(--dsw-border-subtle, #e4e4e7); border-radius: 9px; padding: 0; background: var(--dsw-surface-primary, #fff); color: var(--dsw-text-primary, #27272a); font: inherit; cursor: pointer; }
 .workbench { height: 100%; overflow: auto; padding: 28px 32px; background: var(--dsw-surface-primary, #fff); color: var(--dsw-text-primary, #27272a); }
 .workbench article { max-width: 900px; margin: 0 auto; }
 .workbench h2 { margin: 14px 0 22px; font-size: 25px; line-height: 1.25; }
