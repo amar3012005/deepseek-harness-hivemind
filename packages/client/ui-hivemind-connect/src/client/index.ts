@@ -29,7 +29,9 @@ import {
   HyperagentEmployeePicker, HyperagentEmployeePanel, HyperagentPanelToggle,
   type EmployeeOption,
 } from './HyperagentEmployee.tsx'
+import { HyperagentWorkbench } from './HyperagentWorkbench.tsx'
 import type { TabId } from '@deepseek-ai/dsh-client-ui-dockkit'
+import { fileAddressFor } from '@deepseek-ai/dsh-util-workspace-path'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap { 'hivemind-connect': HivemindConnectKey }
@@ -195,6 +197,7 @@ export function apply(ctx: ClientContext): void {
     return sessionId === undefined ? null : renderScopeSelect(sessionId, locked)
   }))
   const employeeTab = '@deepseek-ai/dsh-client-ui-hivemind-connect/employee'
+  const workbenchKinds = ['preview', 'artifacts', 'computer', 'sources'] as const
   const previousRightTabs = new Map<string, TabId>()
   const employeeEvents = (sessionId: SessionId) => {
     const binding = ctx.sessions.binding(sessionId)
@@ -259,9 +262,26 @@ export function apply(ctx: ClientContext): void {
       },
     }),
   }, HyperagentEmployeePicker))
-  ctx.inject(['sidebarRight', 'sidebarRightTabs'], () => {
+  ctx.inject(['sidebarRight', 'sidebarRightTabs', 'uiConversation'], () => {
     const t = ctx.locale.bind(NS)
     ctx.effect(() => ctx.sidebarRightTabs.register({ id: employeeTab, kind: 'hivemind-employee', title: () => t('employee.panel') }), 'ui-hivemind-connect: employee right tab')
+    for (const kind of workbenchKinds) {
+      const tabKind = `hivemind-workbench-${kind}`
+      const tabId = `@deepseek-ai/dsh-client-ui-hivemind-connect/${kind}`
+      ctx.effect(() => ctx.sidebarRightTabs.register({ id: tabId, kind: tabKind, title: () => t(`workbench.${kind}`) }), `ui-hivemind-connect: ${kind} tab`)
+      ctx.slots.inject('sidebar.right.pane.tab', () => ctx.slots.register({
+        name: 'sidebar.right.pane.tab', key: tabId, locale: NS,
+        inject: sessionId => ({
+          kind,
+          hooks: { employeeEvents: employeeEvents(sessionId) },
+          loadImage: (ref: Parameters<typeof ctx.uiConversation.imageUrl>[1]) => ctx.uiConversation.imageUrl(sessionId, ref),
+          openArtifact: (path: string) => {
+            const cwd = ctx.sessions.list.getSnapshot().byId[sessionId]?.cwd
+            ctx.sidebarRight.openResource(fileAddressFor(sessionId, cwd, path))
+          },
+        }),
+      }, HyperagentWorkbench))
+    }
     ctx.slots.inject('sidebar.right.pane.tab', () => ctx.slots.register({
       name: 'sidebar.right.pane.tab', key: employeeTab, locale: NS,
       inject: (sessionId): { hooks: { employeeEvents: ReturnType<typeof employeeEvents> } } => ({
@@ -275,11 +295,13 @@ export function apply(ctx: ClientContext): void {
         if (active?.kind === 'hivemind-employee') {
           const previous = previousRightTabs.get(sessionId)
           if (previous !== undefined) ctx.sidebarRight.focus(previous)
-          else if (ctx.sidebarRight.isExpanded()) ctx.sidebarRight.toggleExpanded()
+          else ctx.sidebarRight.openTab('hivemind-workbench-preview')
           return
         }
         if (active !== undefined) previousRightTabs.set(sessionId, active.id)
-        ctx.sidebarRight.openTab('hivemind-employee')
+        if (active === undefined || !active.kind.startsWith('hivemind-workbench-')) {
+          for (const kind of ['artifacts', 'computer', 'sources', 'preview'] as const) ctx.sidebarRight.openTab(`hivemind-workbench-${kind}`)
+        } else ctx.sidebarRight.openTab('hivemind-employee')
       } }),
     }, HyperagentPanelToggle))
   })
