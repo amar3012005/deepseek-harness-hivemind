@@ -458,6 +458,11 @@
 }
 
 :global(html[data-dsh-mode='hivemind-chat']) .root .header .titleRow {
+  display: contents;
+}
+
+:global(html[data-dsh-mode='hivemind-chat']) .root .header .titleCluster,
+:global(html[data-dsh-mode='hivemind-chat']) .root .header .headerUtilities {
   display: none;
 }
 
@@ -502,7 +507,7 @@
 }
 
 :global(html[data-dsh-mode='hivemind-chat']) .root[data-phase='active'] .titleRow {
-  display: none;
+  display: contents;
 }
 
 :global(html[data-dsh-mode='hivemind-chat']) .root[data-phase='active'] .tabs {

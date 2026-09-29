@@ -20,6 +20,20 @@
 .panelToggle { display: inline-flex; flex: none; align-items: center; justify-content: center; width: 28px; height: 28px; border: 0; border-radius: 50%; padding: 6px; background: transparent; color: var(--dsw-alias-label-secondary, #71717a); cursor: pointer; }
 .panelToggle:hover { background: var(--dsw-alias-interactive-bg-hover, #f4f4f5); }
 .panelToggleIcon { width: 16px; height: 16px; transform: scaleX(-1); }
+
+:global(html[data-dsh-mode='hivemind-chat']) .panelToggle {
+  position: fixed;
+  top: 12px;
+  right: 14px;
+  z-index: 30;
+  width: 32px;
+  height: 32px;
+  pointer-events: auto;
+}
+
+:global(html[data-dsh-mode='hivemind-chat']:has([data-sidebar-right-open])) .panelToggle {
+  display: none;
+}
 .workbench { height: 100%; overflow: auto; padding: 28px 32px; background: var(--dsw-surface-primary, #fff); color: var(--dsw-text-primary, #27272a); }
 .workbench article { max-width: 900px; margin: 0 auto; }
 .workbench h2 { margin: 14px 0 22px; font-size: 25px; line-height: 1.25; }

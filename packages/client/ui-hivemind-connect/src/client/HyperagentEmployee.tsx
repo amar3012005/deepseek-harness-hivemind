@@ -119,8 +119,8 @@ type ToggleProps = PropsRuntime<'conversation.session.header.corner'> & PropsLoc
 
 export function HyperagentPanelToggle({ sessionId, useSessions, swapPanel, t }: ToggleProps) {
   // The HIVE app owns the conversation's far-right header seat. Keep the
-  // native panel affordance there for every session; the injected action
-  // switches Preview/Agent for HyperAgents and expands/collapses otherwise.
+  // native panel affordance there for every session; it opens Preview for
+  // HyperAgents and toggles the sidebar for other presets.
   const preset = useSessions(state => state.byId[sessionId]?.projectionValues?.agentPreset)
   return <button type="button" className={css.panelToggle} aria-label={t('employee.toggle')} title={t('employee.toggle')} onClick={() => { swapPanel(isHyperagentPreset(preset)) }}><IconPanelLeftOutline16 className={css.panelToggleIcon} /></button>
 }

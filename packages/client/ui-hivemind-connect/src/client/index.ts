@@ -31,7 +31,6 @@ import {
   type EmployeeOption,
 } from './HyperagentEmployee.tsx'
 import { HyperagentWorkbench } from './HyperagentWorkbench.tsx'
-import type { TabId } from '@deepseek-ai/dsh-client-ui-dockkit'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap { 'hivemind-connect': HivemindConnectKey }
@@ -198,7 +197,6 @@ export function apply(ctx: ClientContext): void {
   }))
   const employeeTab = '@deepseek-ai/dsh-client-ui-hivemind-connect/employee'
   const workbenchKinds = ['preview', 'artifacts', 'computer', 'sources'] as const
-  const previousRightTabs = new Map<string, TabId>()
   let rightSidebar: ClientContext['sidebarRight'] | undefined
   const employeeEvents = (sessionId: SessionId) => {
     const binding = ctx.sessions.binding(sessionId)
@@ -269,25 +267,12 @@ export function apply(ctx: ClientContext): void {
   // its expand/collapse behavior for non-HyperAgents sessions.
   ctx.slots.inject('conversation.session.header.corner', () => ctx.slots.register({
     name: 'conversation.session.header.corner', locale: NS, priority: -1,
-    inject: sessionId => ({ swapPanel: (hyperagents) => {
+    inject: () => ({ swapPanel: (hyperagents) => {
       const sidebar = rightSidebar
       if (sidebar === undefined) return
-      if (!hyperagents) { sidebar.toggleExpanded(); return }
-      const active = sidebar.active()
-      if (!sidebar.isExpanded()) {
-        sidebar.openTab('hivemind-workbench-preview')
-        return
-      }
-      if (active?.kind === 'hivemind-employee') {
-        const previous = previousRightTabs.get(sessionId)
-        if (previous !== undefined) sidebar.focus(previous)
-        else sidebar.openTab('hivemind-workbench-preview')
-        return
-      }
-      if (active !== undefined) previousRightTabs.set(sessionId, active.id)
-      if (active === undefined || !active.kind.startsWith('hivemind-workbench-')) {
-        for (const kind of ['artifacts', 'computer', 'sources', 'preview'] as const) sidebar.openTab(`hivemind-workbench-${kind}`)
-      } else sidebar.openTab('hivemind-employee')
+      if (sidebar.isExpanded()) { sidebar.toggleExpanded(); return }
+      if (hyperagents) sidebar.openTab('hivemind-workbench-preview')
+      else sidebar.toggleExpanded()
     } }),
   }, HyperagentPanelToggle))
   // The right-sidebar service pair shares one provider. uiConversation is a
