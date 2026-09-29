@@ -380,7 +380,7 @@
    floating room rail. Native HyperAgents already occupies the remaining chat
    column, so that host rule must not shift either composer phase underneath
    the rail. This route-only override wins over the host's attribute selector. */
-:global(html[data-dsh-hyperagent-os='true'][data-dsh-mode='hivemind-chat'] [data-os-harness-rooms] [data-hivemind-harness-surface]) .composerStack {
+:global(html[data-dsh-hyperagent-os='true'][data-dsh-mode='hivemind-chat']:has([data-sidebar-right-open]) [data-os-harness-rooms] [data-hivemind-harness-surface]) .composerStack {
   transform: none !important;
 }
 
@@ -482,7 +482,7 @@
 :global(html[data-dsh-hyperagent-os='true']) .root .header .headerUtilities {
   position: fixed;
   top: 70px;
-  right: calc(var(--dsh-hyperagent-chat-right-inset, 0px) + 16px);
+  right: calc(var(--dsh-hyperagent-chat-right-inset, 0px) + 56px);
   z-index: 30;
   display: flex;
   margin: 0;
