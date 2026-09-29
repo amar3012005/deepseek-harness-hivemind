@@ -121,10 +121,26 @@ export function apply(ctx: ClientContext): void {
     })
 
     scope.effect(() => {
+      let autoPresetSessionId: string | undefined
+      const applySeat = (): void => {
+        const state = scope.sessions.list.getSnapshot()
+        const id = state.current
+        const session = id === undefined ? undefined : state.byId[id]
+        // The employee Harness route uses the same native session surface,
+        // with HyperAgents as its starting composition. Existing conversations
+        // retain their recorded preset; only a blank session receives it.
+        if (window.location.pathname.startsWith('/hivemind/app/employee/harness/')
+          && id !== undefined && session?.blank && id !== autoPresetSessionId) {
+          autoPresetSessionId = id
+          if (session.projectionValues?.agentPreset !== 'hyperagents') seat.stage('hyperagents')
+        }
+        void seat.apply()
+      }
       // Connecting a workspace either creates a blank session or reuses one,
       // and either way the chip's pick predates it — so the stage is applied
       // when the session arrives, not when it was made.
-      const stop = scope.sessions.list.subscribe(() => { void seat.apply() })
+      const stop = scope.sessions.list.subscribe(applySeat)
+      applySeat()
       // The chip opens on the deployment default, so a default changed from
       // the settings surface moves it too — otherwise the screen that starts
       // the next session keeps offering the previous default until a reload,
