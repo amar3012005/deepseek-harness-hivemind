@@ -55,7 +55,7 @@
     "react-dom": "^18.2.0"
   },
   "dependencies": {
-    "@humation/react": "1.0.2",
-    "@humation/assets-humation-1": "1.0.2"
+    "@humation/react": "1.0.1",
+    "@humation/assets-humation-1": "1.0.1"
   }
 }
