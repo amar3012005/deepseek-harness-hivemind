@@ -11,6 +11,7 @@ import { SessionId } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-hivemind-execution-scope'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
+import { projectHyperagentProfiles } from '@deepseek-ai/dsh-hivemind-employee-directory'
 
 export const name = 'hivemind-web-runner'
 export const inject = ['webServer', 'connection', 'sessionPersistence', 'hivemindExecutionScope']
@@ -19,6 +20,7 @@ const EXCHANGE_PATH = '/api/hivemind/embed/exchange'
 const ESTABLISH_PATH = '/api/hivemind/session/establish'
 const BOOT_PATH = '/api/hivemind/boot'
 const PROJECTS_PATH = '/api/hivemind/projects'
+const EMPLOYEES_PATH = '/api/hivemind/employees'
 const HEALTH_PATH = '/health'
 const TICKET_NONCE_PREFIX = 'hive:harness-ticket:'
 const MAX_BODY_BYTES = 8192
@@ -399,6 +401,43 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
       }
     },
   }), 'hivemind-web-runner: authenticated project catalog')
+  ctx.effect(() => ctx.webServer.register({
+    kind: 'exact',
+    path: EMPLOYEES_PATH,
+    handler: async (req, res) => {
+      if (req.method !== 'GET') {
+        json(res, 405, { ok: false, diagnostic: 'method_not_allowed' }, { allow: 'GET' })
+        return
+      }
+      const principal = ctx.connection.principal({
+        headers: { host: publicHost(req) || req.headers.host, cookie: req.headers.cookie },
+      })
+      if (principal?.profile !== 'hivemind-chat' || !nonEmpty(principal.user_id) || !nonEmpty(principal.org_id)) {
+        json(res, 401, { ok: false, diagnostic: 'authentication_required' })
+        return
+      }
+      try {
+        const response = await fetch(new URL('/internal/v1/harness-chat/core/v1/hyperagents/profiles', projectCatalogBase), {
+          method: 'GET',
+          headers: {
+            accept: 'application/json',
+            authorization: `Bearer ${serviceToken(principal, projectCatalogSecret)}`,
+          },
+          redirect: 'manual',
+          signal: AbortSignal.timeout(10_000),
+        })
+        if (!response.ok) throw new Error(`employee catalog status ${response.status}`)
+        const projected = projectHyperagentProfiles(await response.json())
+        const profiles = projected.profiles as Array<Record<string, unknown>>
+        json(res, 200, { ok: true, profiles: profiles.map(profile => ({
+          id: profile.id, name: profile.name, role_archetype: profile.role_archetype,
+          avatar_url: profile.avatar_url, status: profile.status,
+        })) })
+      } catch {
+        json(res, 503, { ok: false, diagnostic: 'employee_catalog_unavailable' })
+      }
+    },
+  }), 'hivemind-web-runner: authenticated employee catalog')
   ctx.effect(() => ctx.webServer.register({ kind: 'exact', path: HEALTH_PATH, handler: async (_req, res) => {
     try {
       const persistence = ctx.sessionPersistence as typeof ctx.sessionPersistence & { health?: () => Promise<void> }

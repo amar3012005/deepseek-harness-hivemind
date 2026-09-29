@@ -572,7 +572,7 @@ Source: [`packages/hivemind/connected-apps/src/index.ts:42`](../packages/hivemin
 }
 ```
 
-Source: [`packages/hivemind/runtime/src/index.ts:36`](../packages/hivemind/runtime/src/index.ts)
+Source: [`packages/hivemind/runtime/src/index.ts:38`](../packages/hivemind/runtime/src/index.ts)
 
 <a id="hivemindemployee-delegation-end--log-only"></a>
 
@@ -580,13 +580,14 @@ Source: [`packages/hivemind/runtime/src/index.ts:36`](../packages/hivemind/runti
 
 ```ts persistence-catalog
 /**
- * Records the terminal status, native child identity when available, diagnostic, and output fingerprint for one attempted employee delegation.
- * The payload's delegation identifier pairs it with the preceding start record, including when child startup rejects before publication.
+ * Records terminal status, native child identity, diagnostic, and output
+ * fingerprint for one attempted employee delegation. Its identifier pairs
+ * with the start record even when child startup rejects before publication.
  */
 'hivemind/employee-delegation-end': EmployeeDelegationEnd
 ```
 
-Source: [`packages/hivemind/employee-delegation/src/index.ts:118`](../packages/hivemind/employee-delegation/src/index.ts)
+Source: [`packages/hivemind/employee-delegation/src/index.ts:126`](../packages/hivemind/employee-delegation/src/index.ts)
 
 <a id="hivemindemployee-delegation-start--log-only"></a>
 
@@ -594,13 +595,26 @@ Source: [`packages/hivemind/employee-delegation/src/index.ts:118`](../packages/h
 
 ```ts persistence-catalog
 /**
- * Records the immutable employee identity, assignment, model budget, evidence scope, and effective child policy before native child publication.
- * The payload uses digests for profile bodies so later profile edits cannot reinterpret the assignment without copying sensitive or bulky source content.
+ * Records immutable employee identity, assignment, model budget, evidence scope,
+ * and effective child policy before native child publication.
+ * Profile-body digests prevent later edits from reinterpreting the assignment
+ * without copying sensitive or bulky source content.
  */
 'hivemind/employee-delegation-start': EmployeeDelegationStart
 ```
 
-Source: [`packages/hivemind/employee-delegation/src/index.ts:113`](../packages/hivemind/employee-delegation/src/index.ts)
+Source: [`packages/hivemind/employee-delegation/src/index.ts:120`](../packages/hivemind/employee-delegation/src/index.ts)
+
+<a id="hivemindemployee-selection--log-only"></a>
+
+#### `hivemind/employee-selection` — log-only
+
+```ts persistence-catalog
+/** User-selected employee identity for inline HyperAgents work. */
+'hivemind/employee-selection': { id: string | null; name?: string; role?: string; avatarUrl?: string }
+```
+
+Source: [`packages/hivemind/runtime/src/index.ts:34`](../packages/hivemind/runtime/src/index.ts)
 
 <a id="hivemindevidence-gap-recorded--log-only"></a>
 
@@ -715,7 +729,7 @@ Source: [`packages/hivemind/runtime/src/index.ts:32`](../packages/hivemind/runti
 'hivemind/reply-language': { language: string }
 ```
 
-Source: [`packages/hivemind/runtime/src/index.ts:34`](../packages/hivemind/runtime/src/index.ts)
+Source: [`packages/hivemind/runtime/src/index.ts:36`](../packages/hivemind/runtime/src/index.ts)
 
 <a id="hivemindrequest-assembly-budget--log-only"></a>
 

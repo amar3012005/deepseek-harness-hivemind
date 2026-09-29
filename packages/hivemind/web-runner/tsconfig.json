@@ -8,6 +8,7 @@
     { "path": "../../client/connection/tsconfig.host.json" },
     { "path": "../../host/webserver" },
     { "path": "../../session/session-persistence" },
-    { "path": "../execution-scope" }
+    { "path": "../execution-scope" },
+    { "path": "../employee-directory" }
   ]
 }

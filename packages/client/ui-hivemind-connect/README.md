@@ -29,6 +29,8 @@ The client contributes one `sidebar.footer.action` slot. It refreshes connection
 
 The package also contributes the keyed `hivemind_connected_task` tool view. Its durable result projects each bounded Composio operation, including search and connection management, before showing a connection, approval, completion, or failure card. While the Host waits for connection authorization, the same tool view renders the pending interaction inline after its progress rows; the resident composer stays mounted below the transcript. Replay derives settled progress rows from the recorded tool result, while the Session pending-interaction service owns the live authorization controls.
 
+For `hivemind-hyperagents` sessions only, the package adds a composer employee picker and native right-sidebar Agent tab. The picker fetches the authenticated tenant roster only when opened, renders the same Humation asset and stable employee-ID seed as the Da-vinci employee avatar, and records a validated selection through the Host session command. The right-side toggle switches between the Agent tab and the previously active preview tab without replacing the native artifact viewer. Other presets render neither control.
+
 ## Model Experience
 
 The model sees nothing from this browser-only plugin. The paired runtime adds authenticated company context and the progressive HIVE-MIND tool after server-side validation. This package adds no prompt tokens and does not affect the model KV cache.

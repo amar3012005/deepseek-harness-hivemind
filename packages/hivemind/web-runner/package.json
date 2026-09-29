@@ -14,6 +14,7 @@
   "license": "MIT",
   "dependencies": {
     "@deepseek-ai/schemastery": "workspace:^",
+    "@deepseek-ai/dsh-hivemind-employee-directory": "workspace:^",
     "@deepseek-ai/dsh-hivemind-execution-scope": "workspace:^",
     "redis": "^5.8.2"
   },

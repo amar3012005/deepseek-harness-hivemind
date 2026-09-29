@@ -18,12 +18,18 @@ import { setupSingulanceHeadline, SingulanceMark } from './SingulanceMark.tsx'
 import { setupHivemindSessionRouting } from './session-route.ts'
 import { setupConnectionCallbackReturn } from './connection-callback.ts'
 import type {} from '@deepseek-ai/dsh-client-ui-tool/client'
+import type {} from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { createElement } from 'react'
 import { ScopeSelect, type HivemindReadScope } from './ScopeSelect.tsx'
 import { ConnectorChips, type ConnectorChipsProps } from './ConnectorChips.tsx'
 import { createConnectorMentionSource } from './ConnectorMentions.ts'
 import { ContextualFollowUps, selectContextualFollowUps } from './ContextualFollowUps.tsx'
+import {
+  HyperagentEmployeePicker, HyperagentEmployeePanel, HyperagentPanelToggle,
+  type EmployeeOption,
+} from './HyperagentEmployee.tsx'
+import type { TabId } from '@deepseek-ai/dsh-client-ui-dockkit'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap { 'hivemind-connect': HivemindConnectKey }
@@ -188,6 +194,95 @@ export function apply(ctx: ClientContext): void {
   }, ({ sessionId, locked }: { sessionId?: SessionId | undefined; locked: boolean }) => {
     return sessionId === undefined ? null : renderScopeSelect(sessionId, locked)
   }))
+  const employeeTab = '@deepseek-ai/dsh-client-ui-hivemind-connect/employee'
+  const previousRightTabs = new Map<string, TabId>()
+  const employeeEvents = (sessionId: SessionId) => {
+    const binding = ctx.sessions.binding(sessionId)
+    if (binding === undefined) throw new Error('HIVE-MIND employee selection requires an open session')
+    return binding.eventSource
+  }
+  const listEmployees = async (): Promise<EmployeeOption[]> => {
+    const response = await fetch('/api/hivemind/employees', { credentials: 'same-origin' })
+    if (!response.ok) throw new Error(`employee catalog unavailable (${response.status})`)
+    const body = await response.json() as { profiles?: Array<Record<string, unknown>> }
+    if (!Array.isArray(body.profiles)) throw new Error('invalid employee catalog')
+    return body.profiles.flatMap((profile) => {
+      if (typeof profile.id !== 'string' || typeof profile.name !== 'string') return []
+      const role = typeof profile.role_archetype === 'string' ? profile.role_archetype : 'employee'
+      const avatarUrl = typeof profile.avatar_url === 'string' ? profile.avatar_url : undefined
+      return [{ id: profile.id, name: profile.name, role, ...(avatarUrl === undefined ? {} : { avatarUrl }) }]
+    })
+  }
+  ctx.slots.inject('conversation.input.left', () => ctx.slots.register({
+    name: 'conversation.input.left', id: 'hivemind-employee-picker', order: 20, locale: NS,
+    inject: (sessionId): {
+      hooks: { employeeEvents: ReturnType<typeof employeeEvents> }
+      listEmployees: typeof listEmployees
+      selectEmployee: (id: string | null) => Promise<boolean>
+    } => ({
+      hooks: { employeeEvents: employeeEvents(sessionId) },
+      listEmployees,
+      selectEmployee: async (id) => {
+        const binding = ctx.sessions.binding(sessionId)
+        if (binding === undefined) return false
+        const events = binding.eventSource
+        const before = Math.max(0, ...events.getSnapshot().entries.map(entry => entry.event.seq))
+        let cancelWait = () => {}
+        const accepted = new Promise<boolean>((resolve) => {
+          let settled = false
+          let stop = () => {}
+          const finish = (value: boolean) => {
+            if (settled) return
+            settled = true
+            clearTimeout(timer)
+            stop()
+            resolve(value)
+          }
+          const timer = setTimeout(() => { finish(false) }, 5000)
+          cancelWait = () => { finish(false) }
+          const check = () => {
+            const snapshot = events.getSnapshot()
+            for (const entry of snapshot.entries) {
+              if (entry.event.seq <= before) continue
+              if (entry.type !== 'event' || (entry.event.type as string) !== 'hivemind/employee-selection') continue
+              if ((entry.event.data as { id: string | null }).id !== id) continue
+              finish(true)
+              return
+            }
+          }
+          stop = events.subscribe(check)
+          check()
+        })
+        const result = await binding.session.command(`/hivemind-employee ${id ?? 'auto'}`).catch(() => null)
+        if (result === null || !result.ok || !result.value.matched) { cancelWait(); return false }
+        return accepted
+      },
+    }),
+  }, HyperagentEmployeePicker))
+  ctx.inject(['sidebarRight', 'sidebarRightTabs'], () => {
+    const t = ctx.locale.bind(NS)
+    ctx.effect(() => ctx.sidebarRightTabs.register({ id: employeeTab, kind: 'hivemind-employee', title: () => t('employee.panel') }), 'ui-hivemind-connect: employee right tab')
+    ctx.slots.inject('sidebar.right.pane.tab', () => ctx.slots.register({
+      name: 'sidebar.right.pane.tab', key: employeeTab, locale: NS,
+      inject: (sessionId): { hooks: { employeeEvents: ReturnType<typeof employeeEvents> } } => ({
+        hooks: { employeeEvents: employeeEvents(sessionId) },
+      }),
+    }, HyperagentEmployeePanel))
+    ctx.slots.inject('conversation.session.header.actions', () => ctx.slots.register({
+      name: 'conversation.session.header.actions', id: 'hivemind-employee-panel', order: 20, locale: NS,
+      inject: sessionId => ({ swapPanel: () => {
+        const active = ctx.sidebarRight.active()
+        if (active?.kind === 'hivemind-employee') {
+          const previous = previousRightTabs.get(sessionId)
+          if (previous !== undefined) ctx.sidebarRight.focus(previous)
+          else if (ctx.sidebarRight.isExpanded()) ctx.sidebarRight.toggleExpanded()
+          return
+        }
+        if (active !== undefined) previousRightTabs.set(sessionId, active.id)
+        ctx.sidebarRight.openTab('hivemind-employee')
+      } }),
+    }, HyperagentPanelToggle))
+  })
   ctx.inject(['conversation'], () => {
     ctx.slots.inject('conversation.hero.dock', () => ctx.slots.register({
       name: 'conversation.hero.dock',

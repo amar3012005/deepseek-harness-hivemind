@@ -2958,6 +2958,13 @@ importers:
         version: 18.3.1(react@18.3.1)
 
   packages/client/ui-hivemind-connect:
+    dependencies:
+      '@humation/assets-humation-1':
+        specifier: 1.0.2
+        version: 1.0.2
+      '@humation/react':
+        specifier: 1.0.2
+        version: 1.0.2(react@18.3.1)
     devDependencies:
       '@deepseek-ai/cordis':
         specifier: workspace:^
@@ -2971,9 +2978,15 @@ importers:
       '@deepseek-ai/dsh-client-locale':
         specifier: workspace:^
         version: link:../locale
+      '@deepseek-ai/dsh-client-store':
+        specifier: workspace:^
+        version: link:../store
       '@deepseek-ai/dsh-client-ui-conversation':
         specifier: workspace:^
         version: link:../ui-conversation
+      '@deepseek-ai/dsh-client-ui-dockkit':
+        specifier: workspace:^
+        version: link:../ui-dockkit
       '@deepseek-ai/dsh-client-ui-layout':
         specifier: workspace:^
         version: link:../ui-layout
@@ -2989,6 +3002,9 @@ importers:
       '@deepseek-ai/dsh-client-ui-sidebar':
         specifier: workspace:^
         version: link:../ui-sidebar
+      '@deepseek-ai/dsh-client-ui-sidebar-right':
+        specifier: workspace:^
+        version: link:../ui-sidebar-right
       '@deepseek-ai/dsh-client-ui-slots':
         specifier: workspace:^
         version: link:../ui-slots
@@ -6999,6 +7015,9 @@ importers:
 
   packages/hivemind/web-runner:
     dependencies:
+      '@deepseek-ai/dsh-hivemind-employee-directory':
+        specifier: workspace:^
+        version: link:../employee-directory
       '@deepseek-ai/dsh-hivemind-execution-scope':
         specifier: workspace:^
         version: link:../execution-scope

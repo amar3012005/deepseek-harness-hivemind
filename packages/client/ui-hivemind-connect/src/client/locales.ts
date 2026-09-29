@@ -9,6 +9,8 @@ export type HivemindConnectKey =
   | 'composio.continue'
   | 'composio.dismiss'
   | 'composio.connected' | 'composio.connectionVerified'
+  | 'employee.initial' | 'employee.auto' | 'employee.autoDetail' | 'employee.label' | 'employee.loading' | 'employee.unavailable'
+  | 'employee.environment' | 'employee.working' | 'employee.ready' | 'employee.panel' | 'employee.toggle'
 
 export const en: Record<HivemindConnectKey, string> = {
   connect: 'Connect HIVE-MIND',
@@ -37,6 +39,11 @@ export const en: Record<HivemindConnectKey, string> = {
   'composio.dismiss': 'Dismiss and stop this turn',
   'composio.connected': '{app} connected',
   'composio.connectionVerified': 'Connection verified. Continuing this request.',
+  'employee.initial': 'H', 'employee.auto': 'HyperAgents', 'employee.autoDetail': 'Let Harness choose an employee',
+  'employee.label': 'Choose employee', 'employee.loading': 'Loading employees…',
+  'employee.unavailable': 'Employee directory unavailable. Selection unchanged.',
+  'employee.environment': 'Environment', 'employee.working': 'Working on this task',
+  'employee.ready': 'Ready for a task', 'employee.panel': 'Agent', 'employee.toggle': 'Swap Preview and Agent',
 }
 
 export const zh: Record<HivemindConnectKey, string> = {
@@ -66,4 +73,9 @@ export const zh: Record<HivemindConnectKey, string> = {
   'composio.dismiss': '关闭并停止本轮',
   'composio.connected': '{app} 已连接',
   'composio.connectionVerified': '连接已验证。正在继续此请求。',
+  'employee.initial': 'H', 'employee.auto': 'HyperAgents', 'employee.autoDetail': '让 Harness 选择员工',
+  'employee.label': '选择员工', 'employee.loading': '正在加载员工…',
+  'employee.unavailable': '员工目录不可用，选择未更改。',
+  'employee.environment': '工作环境', 'employee.working': '正在执行任务',
+  'employee.ready': '等待任务', 'employee.panel': '员工', 'employee.toggle': '切换预览和员工',
 }

@@ -30,6 +30,8 @@ declare module '@deepseek-ai/dsh-session/types' {
   interface SessionEventMap {
     /** Records the active HIVE read lens and optional authorized project id. */
     'hivemind/read-scope': { scope: 'full' | 'personal' | 'organization' | 'project'; project?: string }
+    /** User-selected employee identity for inline HyperAgents work. */
+    'hivemind/employee-selection': { id: string | null; name?: string; role?: string; avatarUrl?: string }
     /** Recognizes the legacy selected reply language event; new selections use command/run. */
     'hivemind/reply-language': { language: string }
     /** Legacy JEV routing audit from completed turns; retained for session replay only. */
@@ -61,7 +63,8 @@ interface SessionCommandContext {
       name: string
       description: string
       input: { hint: string }
-      handler(input: { agent: Agent; rawInput: string }): { kind: 'success' | 'error'; text: string }
+      recordInput?: boolean
+      handler(input: { agent: Agent; rawInput: string; signal: AbortSignal }): { kind: 'success' | 'error'; text: string } | Promise<{ kind: 'success' | 'error'; text: string }>
     }): () => void
   }
 }
@@ -83,6 +86,20 @@ function sessionReplyLanguage(agent: Agent): string {
     if (typeof language === 'string' && /^[a-z]{2}$/u.test(language)) return language
   }
   return 'en'
+}
+
+function sessionSelectedEmployee(agent: Agent): { id: string; name: string; role: string } | undefined {
+  const events = agent.session.snapshotEvents()
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const event = events[index]
+    if (event?.type !== 'hivemind/employee-selection') continue
+    const value = event.data as { id: string | null; name?: string; role?: string }
+    if (value.id === null) return undefined
+    if (typeof value.name === 'string' && typeof value.role === 'string') {
+      return { id: value.id, name: value.name, role: value.role }
+    }
+  }
+  return undefined
 }
 
 /** Read the latest durable scope event; full is represented by omission in API calls. */
@@ -1140,6 +1157,34 @@ export function apply(ctx: Context, config: Config): void {
           return { kind: 'success', text: `reply language ${language}` }
         },
       }))
+      ctx.effect(() => commands.commands.register({
+        name: 'hivemind-employee',
+        description: 'Select an authorized HIVE-MIND employee for inline work in this session.',
+        input: { hint: '<employee-id|auto>' },
+        recordInput: false,
+        handler: async ({ agent, rawInput, signal }) => {
+          const id = rawInput.trim()
+          if (id === 'auto') {
+            agent.session.append('hivemind/employee-selection', { id: null })
+            return { kind: 'success', text: 'employee selection automatic' }
+          }
+          if (!PROJECT_ID_PATTERN.test(id)) return { kind: 'error', text: 'invalid employee id' }
+          const authority = await resolveAuthority(ctx, config)
+          const result = config.authorityMode === 'scoped-service'
+            ? await hiveRequest(authority, '/v1/hyperagents/profiles', { method: 'GET' }, signal, config)
+            : await hiveRequest(authority, HYPERAGENT_PROFILES_URL, { method: 'GET' }, signal, config, 'https://api.singulancelabs.com')
+          const projected = hyperagentProfilesFromResponse(result)
+          const profiles = projected['profiles'] as Array<Record<string, unknown>>
+          const selected = profiles.find(profile => profile['id'] === id)
+          if (selected === undefined) return { kind: 'error', text: 'employee is not available to this user' }
+          const name = selected['name'] as string
+          const role = typeof selected['role_archetype'] === 'string' ? selected['role_archetype'] : 'employee'
+          const avatarUrl = typeof selected['avatar_url'] === 'string' && selected['avatar_url'].startsWith('https://')
+            ? selected['avatar_url'] : undefined
+          agent.session.append('hivemind/employee-selection', { id, name, role, ...(avatarUrl === undefined ? {} : { avatarUrl }) })
+          return { kind: 'success', text: `selected ${name}` }
+        },
+      }))
     })
   }
   ctx.plugin(contextPlugin({
@@ -1148,7 +1193,8 @@ export function apply(ctx: Context, config: Config): void {
     capabilityToolName: HIVE_CAPABILITIES_TOOL,
     turnInstruction(agent) {
       const language = sessionReplyLanguage(agent)
-      return `Reply language for this turn: ${language}. Write the entire user-facing response and every contextual follow-up in that language. Preserve proper nouns, code, tool names, and quoted source text unless translation is requested.`
+      const employee = sessionSelectedEmployee(agent)
+      return `Reply language for this turn: ${language}. Write the entire user-facing response and every contextual follow-up in that language. Preserve proper nouns, code, tool names, and quoted source text unless translation is requested.${employee === undefined ? '' : ` User selected ${employee.name} (${employee.role}, id ${employee.id}) for this session. Parent Harness executes inline from that employee perspective; do not spawn a child solely for identity.`}`
     },
     async profileBrief(agent, signal, turn) {
       return (await snapshotFor(agent, signal, turn)).initialContext
