@@ -62,7 +62,9 @@ export function HiveSessionProjection({
   }
   const shareSession = (id: SessionId, title: string) => {
     const url = new URL(window.location.href)
-    url.pathname = `/hivemind/app/overview/session/${encodeURIComponent(id)}`
+    const base = window.location.pathname.startsWith('/hivemind/app/employee/harness/session/')
+      ? '/hivemind/app/employee/harness' : '/hivemind/app/overview'
+    url.pathname = `${base}/session/${encodeURIComponent(id)}`
     url.search = ''
     url.hash = ''
     const sharing = navigator.share?.({ title, url: url.toString() })

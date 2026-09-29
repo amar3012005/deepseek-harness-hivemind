@@ -2,8 +2,22 @@ import type { ISessions, SessionListState } from '@deepseek-ai/dsh-api-session-c
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 
 export const HIVE_OVERVIEW_PATH = '/hivemind/app/overview'
+export const HIVE_EMPLOYEE_HARNESS_PATH = '/hivemind/app/employee/harness'
 const LEGACY_HIVE_OVERVIEW_PATH = '/hivemind/app/v1/overview'
 const SESSION_PATH_PREFIX = `${HIVE_OVERVIEW_PATH}/session/`
+const EMPLOYEE_SESSION_PATH_PREFIX = `${HIVE_EMPLOYEE_HARNESS_PATH}/session/`
+
+function routeBase(pathname: string): string {
+  return pathname.startsWith(EMPLOYEE_SESSION_PATH_PREFIX) || pathname === `${HIVE_EMPLOYEE_HARNESS_PATH}/new`
+    ? HIVE_EMPLOYEE_HARNESS_PATH : HIVE_OVERVIEW_PATH
+}
+
+function isHivemindRoute(pathname: string): boolean {
+  return pathname.startsWith(HIVE_OVERVIEW_PATH)
+    || pathname.startsWith(EMPLOYEE_SESSION_PATH_PREFIX)
+    || pathname === `${HIVE_EMPLOYEE_HARNESS_PATH}/new`
+    || pathname === LEGACY_HIVE_OVERVIEW_PATH
+}
 
 type Route =
   | { readonly kind: 'overview' }
@@ -21,9 +35,10 @@ interface BrowserRoute {
 /** Parse only the public HIVE route grammar. Session ids remain opaque. */
 export function parseHivemindSessionRoute(pathname: string): Route {
   if (pathname === HIVE_OVERVIEW_PATH || pathname === LEGACY_HIVE_OVERVIEW_PATH) return { kind: 'overview' }
-  if (pathname === `${HIVE_OVERVIEW_PATH}/new`) return { kind: 'new' }
-  if (!pathname.startsWith(SESSION_PATH_PREFIX)) return { kind: 'invalid' }
-  const [encoded, ...suffix] = pathname.slice(SESSION_PATH_PREFIX.length).split('/')
+  if (pathname === `${HIVE_OVERVIEW_PATH}/new` || pathname === `${HIVE_EMPLOYEE_HARNESS_PATH}/new`) return { kind: 'new' }
+  const prefix = pathname.startsWith(EMPLOYEE_SESSION_PATH_PREFIX) ? EMPLOYEE_SESSION_PATH_PREFIX : SESSION_PATH_PREFIX
+  if (!pathname.startsWith(prefix)) return { kind: 'invalid' }
+  const [encoded, ...suffix] = pathname.slice(prefix.length).split('/')
   if (encoded === undefined || encoded === '' || encoded.length > 512
     || (suffix.length > 0 && suffix.some(segment => segment !== 'overview'))) return { kind: 'invalid' }
   try {
@@ -35,8 +50,8 @@ export function parseHivemindSessionRoute(pathname: string): Route {
   }
 }
 
-export function hivemindSessionPath(sessionId: SessionId): string {
-  return `${SESSION_PATH_PREFIX}${encodeURIComponent(sessionId)}`
+export function hivemindSessionPath(sessionId: SessionId, base = HIVE_OVERVIEW_PATH): string {
+  return `${base}/session/${encodeURIComponent(sessionId)}`
 }
 
 function rootSession(state: SessionListState, sessionId: SessionId | undefined): SessionId | undefined {
@@ -67,6 +82,8 @@ export function setupHivemindSessionRouting(
   let generation = 0
   let initialized = false
   let observedCurrent: SessionId | undefined
+  let currentBase = routeBase(browser.location.pathname)
+  const sessionPath = (id: SessionId): string => hivemindSessionPath(id, currentBase)
 
   const replace = (path: string): void => {
     if (browser.location.pathname !== path) browser.history.replaceState(browser.history.state, '', path)
@@ -81,7 +98,7 @@ export function setupHivemindSessionRouting(
       initialized = true
       observedCurrent = selected
       sessions.open(selected)
-      replace(hivemindSessionPath(selected))
+      replace(sessionPath(selected))
       applyingRoute = false
       return
     }
@@ -92,7 +109,7 @@ export function setupHivemindSessionRouting(
       initialized = true
       observedCurrent = sessionId
       sessions.open(sessionId)
-      replace(hivemindSessionPath(sessionId))
+      replace(sessionPath(sessionId))
       applyingRoute = false
     }).catch(() => {
       if (!disposed && attempt === generation) replace(HIVE_OVERVIEW_PATH)
@@ -106,7 +123,7 @@ export function setupHivemindSessionRouting(
       initialized = true
       observedCurrent = sessionId
       if (state.current !== sessionId) sessions.open(sessionId)
-      replace(hivemindSessionPath(sessionId))
+      replace(sessionPath(sessionId))
       applyingRoute = false
       return
     }
@@ -123,7 +140,7 @@ export function setupHivemindSessionRouting(
         initialized = true
         observedCurrent = sessionId
         if (refreshed.current !== sessionId) sessions.open(sessionId)
-        replace(hivemindSessionPath(sessionId))
+        replace(sessionPath(sessionId))
         applyingRoute = false
         return
       }
@@ -135,8 +152,8 @@ export function setupHivemindSessionRouting(
   }
 
   const applyLocation = (): void => {
-    if (!browser.location.pathname.startsWith(HIVE_OVERVIEW_PATH)
-      && browser.location.pathname !== LEGACY_HIVE_OVERVIEW_PATH) return
+    if (!isHivemindRoute(browser.location.pathname)) return
+    currentBase = routeBase(browser.location.pathname)
     const state = sessions.list.getSnapshot()
     if (state.phase !== 'ready') return
     const route = parseHivemindSessionRoute(browser.location.pathname)
@@ -160,8 +177,8 @@ export function setupHivemindSessionRouting(
   }
 
   const onList = (): void => {
-    if (!browser.location.pathname.startsWith(HIVE_OVERVIEW_PATH)
-      && browser.location.pathname !== LEGACY_HIVE_OVERVIEW_PATH) return
+    if (!isHivemindRoute(browser.location.pathname)) return
+    currentBase = routeBase(browser.location.pathname)
     const state = sessions.list.getSnapshot()
     if (applyingRoute) return
     if (!initialized) {
@@ -181,7 +198,7 @@ export function setupHivemindSessionRouting(
     }
     if (current === observedCurrent) return
     observedCurrent = current
-    const path = hivemindSessionPath(current)
+    const path = sessionPath(current)
     if (browser.location.pathname !== path) browser.history.pushState(browser.history.state, '', path)
   }
 

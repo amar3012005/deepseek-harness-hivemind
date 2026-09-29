@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ISessions, SessionListState } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import {
+  HIVE_EMPLOYEE_HARNESS_PATH,
   HIVE_OVERVIEW_PATH,
   hivemindSessionPath,
   parseHivemindSessionRoute,
@@ -92,6 +93,8 @@ describe('HIVE native session routes', () => {
     expect(parseHivemindSessionRoute(`${HIVE_OVERVIEW_PATH}/session/session-a/overview/overview`))
       .toEqual({ kind: 'session', sessionId: 'session-a' })
     expect(parseHivemindSessionRoute(`${HIVE_OVERVIEW_PATH}/session/a/b`)).toEqual({ kind: 'invalid' })
+    expect(parseHivemindSessionRoute(`${HIVE_EMPLOYEE_HARNESS_PATH}/session/session-a`))
+      .toEqual({ kind: 'session', sessionId: 'session-a' })
   })
 
   it('opens the newest non-empty root and replaces the landing route', () => {
@@ -101,6 +104,16 @@ describe('HIVE native session routes', () => {
     expect(harness.open).toHaveBeenCalledWith('session-recent')
     expect(window.location.pathname).toBe(hivemindSessionPath(sid('session-recent')))
     expect(push).not.toHaveBeenCalled()
+  })
+
+  it('keeps the employee Harness URL when opening a linked session and selecting another', () => {
+    window.history.replaceState(null, '', `${HIVE_EMPLOYEE_HARNESS_PATH}/session/session-older`)
+    const harness = fixture(state())
+    install(harness.sessions)
+    expect(harness.open).toHaveBeenCalledWith('session-older')
+    expect(window.location.pathname).toBe(`${HIVE_EMPLOYEE_HARNESS_PATH}/session/session-older`)
+    harness.set(state('session-recent'))
+    expect(window.location.pathname).toBe(`${HIVE_EMPLOYEE_HARNESS_PATH}/session/session-recent`)
   })
 
   it('creates exactly once from /new and canonicalizes with replaceState', async () => {
