@@ -20,7 +20,7 @@ import { setupConnectionCallbackReturn } from './connection-callback.ts'
 import type {} from '@deepseek-ai/dsh-client-ui-tool/client'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
-import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
+import type { FileAttachmentRef, ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import { createElement } from 'react'
 import { ScopeSelect, type HivemindReadScope } from './ScopeSelect.tsx'
 import { ConnectorChips, type ConnectorChipsProps } from './ConnectorChips.tsx'
@@ -32,7 +32,6 @@ import {
 } from './HyperagentEmployee.tsx'
 import { HyperagentWorkbench } from './HyperagentWorkbench.tsx'
 import type { TabId } from '@deepseek-ai/dsh-client-ui-dockkit'
-import { fileAddressFor } from '@deepseek-ai/dsh-util-workspace-path'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap { 'hivemind-connect': HivemindConnectKey }
@@ -307,9 +306,24 @@ export function apply(ctx: ClientContext): void {
               ? Promise.reject(new Error('Conversation preview is unavailable'))
               : conversation.imageUrl(sessionId, ref)
           },
-          openArtifact: (path: string) => {
-            const cwd = scope.sessions.list.getSnapshot().byId[sessionId]?.cwd
-            scope.sidebarRight.openResource(fileAddressFor(sessionId, cwd, path))
+          openArtifact: (artifact: { mediaType: string; file: FileAttachmentRef | undefined }) => {
+            if (artifact.file === undefined) return
+            const opened = artifact.mediaType === 'application/pdf' ? window.open('about:blank', '_blank') : null
+            void scope.remote.session.fileAttachment({ sessionId, attachmentId: artifact.file.attachmentId }).then((result) => {
+              if (!result.ok || result.value.attachment.attachmentId !== artifact.file?.attachmentId) throw new Error('Artifact download failed')
+              const binary = atob(result.value.data)
+              if (binary.length !== artifact.file.bytes || binary.length > 64 * 1024 * 1024) throw new Error('Artifact size mismatch')
+              const bytes = Uint8Array.from(binary, char => char.charCodeAt(0))
+              const url = URL.createObjectURL(new Blob([bytes], { type: artifact.mediaType }))
+              if (opened !== null) opened.location.href = url
+              else {
+                const link = document.createElement('a')
+                link.href = url
+                link.download = artifact.file.name
+                link.click()
+              }
+              setTimeout(() => URL.revokeObjectURL(url), 60_000)
+            }).catch(() => { opened?.close() })
           },
         }),
       }, HyperagentWorkbench))

@@ -26,12 +26,13 @@ describe('HyperAgents employee selection', () => {
 
   it('projects only durable artifact, capture and research receipts', () => {
     const window = { entries: [
-      { type: 'event', event: { type: 'hivemind/artifact-created', data: { artifactId: 'a1', title: 'Report', path: '/work/report.pdf', mediaType: 'application/pdf', preview: { attachmentId: 'p1', mediaType: 'image/png' } } } },
+      { type: 'event', event: { type: 'hivemind/artifact-created', data: { artifactId: 'a1', title: 'Report', path: 'report.pdf', mediaType: 'application/pdf', pdf: { attachmentId: 'f1', name: 'report.pdf', bytes: 4 }, preview: { attachmentId: 'p1', mediaType: 'image/png' } } } },
       { type: 'event', event: { type: 'hivemind/browser-capture', data: { captureId: 'b1', title: 'Home', url: 'https://example.com', status: 200 } } },
       { type: 'event', event: { type: 'hivemind/research-receipt', data: { sources: [{ url: 'https://example.com', title: 'Source' }, { url: 'https://example.com', title: 'Duplicate' }] } } },
     ] } as unknown as SessionEventWindow
     const result = workbenchSnapshot(window)
     expect(result.artifacts.map(item => item.title)).toEqual(['Report'])
+    expect(result.artifacts[0]?.file).toMatchObject({ attachmentId: 'f1', name: 'report.pdf' })
     expect(result.captures.map(item => item.title)).toEqual(['Home'])
     expect(result.sources).toEqual([{ url: 'https://example.com', title: 'Source' }])
   })

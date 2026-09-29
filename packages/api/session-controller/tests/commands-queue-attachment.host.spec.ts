@@ -294,6 +294,7 @@ function event(type: string, seq: SessionSeq, data: unknown): SessionEvent {
 async function persistedController(
   events: SessionEvent[],
   readImage: (ref: ImageAttachmentRef) => Promise<{ ref: ImageAttachmentRef; data: Uint8Array }>,
+  readFileStream?: (ref: { attachmentId: string }) => AsyncIterable<Uint8Array>,
 ): Promise<{ ctx: Context; controller: SessionCommandController; sessionId: SessionId }> {
   const ctx = new Context()
   await ctx.plugin(SessionStore)
@@ -314,12 +315,24 @@ async function persistedController(
     }),
   }) as never)
   installSessionReadTestServices(ctx)
-  ctx.provide('attachments', { readImage } as never)
+  ctx.provide('attachments', { readImage, readFileStream } as never)
   const agents = { resolveAgent: vi.fn() } as unknown as ApiSessionAgentController
   return { ctx, controller: new SessionCommandController(ctx, agents, '/workspace'), sessionId }
 }
 
 describe('Session attachment authorization', () => {
+  it('serves only generated files referenced by this session', async () => {
+    const file = { attachmentId: AttachmentId('generated'), name: 'report.pdf', bytes: 4 }
+    const readFileStream = vi.fn(async function* () { yield Uint8Array.of(37, 80, 68, 70) })
+    const fixture = await persistedController([
+      event('hivemind/artifact-created', SessionSeq(0), { pdf: file }),
+    ], vi.fn(), readFileStream)
+    await expect(fixture.controller.fileAttachment({ sessionId: fixture.sessionId, attachmentId: file.attachmentId }))
+      .resolves.toEqual({ attachment: file, data: 'JVBERg==' })
+    await expectFailure(fixture.controller.fileAttachment({ sessionId: fixture.sessionId, attachmentId: AttachmentId('other') }), 'session/attachment-invalid')
+    expect(readFileStream).toHaveBeenCalledTimes(1)
+    await fixture.ctx.fiber.dispose()
+  })
   it('finds references in direct, message, inserted, nested, and streamed content', async () => {
     const nested = imageRef('nested')
     const message = imageRef('message')

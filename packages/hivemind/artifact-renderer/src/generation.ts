@@ -103,11 +103,14 @@ export async function generateArtifact(
   },
   agent: { readonly session: { readonly header: { readonly cwd?: string }; append(type: 'hivemind/generation-created', receipt: GenerationReceipt): unknown } },
   signal: AbortSignal,
+  attachmentOnly = false,
 ): Promise<GenerationReceipt> {
   const cwd = agent.session.header.cwd ?? process.cwd()
-  const root = resolve(cwd, outputDirectory)
-  const rel = relative(resolve(cwd), root)
-  if (isAbsolute(outputDirectory) || rel === '..' || rel.startsWith('../') || rel.startsWith('..\\')) throw new Error('Artifact directory must be inside the workspace')
+  const root = attachmentOnly ? undefined : resolve(cwd, outputDirectory)
+  if (root !== undefined) {
+    const rel = relative(resolve(cwd), root)
+    if (isAbsolute(outputDirectory) || rel === '..' || rel.startsWith('../') || rel.startsWith('..\\')) throw new Error('Artifact directory must be inside the workspace')
+  }
   const provider = registry.get(input.format)
   const generated = await provider.generate({
     title: input.title, content: input.content, cwd, signal,
@@ -123,9 +126,11 @@ export async function generateArtifact(
   const leaf = input.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 64) || 'artifact'
   if (!/^[a-z0-9]+$/.test(generated.extension)) throw new Error('Provider returned an invalid file extension')
   const filename = `${leaf}.${generated.extension}`
-  await mkdir(root, { recursive: true })
-  const path = join(root, `${artifactId}-${filename}`)
-  await writeFile(path, generated.data, { flag: 'wx', mode: 0o600, signal })
+  const path = root === undefined ? filename : join(root, `${artifactId}-${filename}`)
+  if (root !== undefined) {
+    await mkdir(root, { recursive: true })
+    await writeFile(path, generated.data, { flag: 'wx', mode: 0o600, signal })
+  }
   const file = await ctx.attachments.saveFile({ data: generated.data, name: filename })
   const generatedPreview = generated.preview ?? (provider.format === 'image' && (
     generated.mediaType === 'image/png' || generated.mediaType === 'image/jpeg' || generated.mediaType === 'image/webp'
@@ -156,7 +161,7 @@ export async function generateArtifact(
 
 /** Register discovery and generation through the normal guarded tool pipeline. */
 export function registerGenerationTools(
-  ctx: Context, registry: GenerationRegistry, outputDirectory: string, maxContentChars: number,
+  ctx: Context, registry: GenerationRegistry, outputDirectory: string, maxContentChars: number, attachmentOnly = false,
 ): void {
   const output = { schema: { type: 'object' as const, additionalProperties: true, properties: {} }, render: (_args: unknown, value: unknown) => {
     const preview = typeof value === 'object' && value !== null && 'preview' in value ? value.preview as ImageAttachmentRef | undefined : undefined
@@ -198,6 +203,7 @@ export function registerGenerationTools(
         },
         agent,
         execution.signal,
+        attachmentOnly,
       )
       return {
         artifact_id: receipt.artifactId, title: args.title, format: receipt.format, provider: receipt.provider,

@@ -28,6 +28,7 @@ import type {
   ModelCatalog,
   SessionAttachmentRequest,
   SessionAttachmentValue,
+  SessionFileAttachmentValue,
   SessionCancelRequest,
   SessionCancelValue,
   SessionControlFrame,
@@ -356,6 +357,12 @@ export class SessionController extends TypertRemoteService {
   @Remote('attachment')
   attachment(request: SessionAttachmentRequest): Promise<SessionAttachmentValue> {
     return this.commands.attachment(request)
+  }
+
+  /** Read a generated file only when its receipt belongs to this Session. */
+  @Remote('fileAttachment')
+  fileAttachment(request: SessionAttachmentRequest): Promise<SessionFileAttachmentValue> {
+    return this.commands.fileAttachment(request)
   }
 
   /**

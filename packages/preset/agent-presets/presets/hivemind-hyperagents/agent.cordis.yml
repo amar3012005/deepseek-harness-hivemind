@@ -116,6 +116,7 @@
             config:
               provider: playwright
               outputDirectory: .hivemind/artifacts
+              attachmentOnly: true
       - insert:
           - id: tool-todo
             name: '@deepseek-ai/dsh-tool-todo'

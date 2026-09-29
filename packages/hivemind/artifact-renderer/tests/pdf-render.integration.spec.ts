@@ -23,6 +23,22 @@ it('renders a real paginated PDF and rasterizes its first page', async () => {
   }
 }, 30_000)
 
+it('renders attachment-only PDF without a writable session workspace', async () => {
+  const ctx = new Context()
+  const renderer = new PlaywrightArtifactRenderer(ctx, {
+    provider: 'playwright', outputDirectory: '.hivemind/artifacts', attachmentOnly: true,
+    timeoutMs: 10_000, maxHtmlChars: 400_000,
+  })
+  const result = await renderer.render({
+    cwd: '/nonexistent/hyperagents-session', title: 'Scheduled PDF', pageSize: 'A4',
+    printBackground: true, signal: new AbortController().signal,
+    html: '<html><body><h1>Scheduled PDF</h1></body></html>',
+  })
+  expect(result.path).toBe('scheduled-pdf.pdf')
+  expect(Buffer.from(result.pdf).subarray(0, 5).toString()).toBe('%PDF-')
+  expect(Buffer.from(result.preview).subarray(1, 4).toString()).toBe('PNG')
+}, 30_000)
+
 it('renders a generated HTML artifact to a native PNG preview without network access', async () => {
   const result = await webProvider.generate({
     cwd: process.cwd(), title: 'HTML canary', signal: new AbortController().signal,

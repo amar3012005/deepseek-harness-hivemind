@@ -4,7 +4,6 @@
   "include": ["src"],
   "references": [
     { "path": "../../api/remotes/tsconfig.client.json" },
-    { "path": "../../api/workspace-files/tsconfig.client.json" },
     { "path": "../ui-session" },
     { "path": "../../../vendor/cordis" },
     { "path": "../../api/session-controller/tsconfig.client.json" },

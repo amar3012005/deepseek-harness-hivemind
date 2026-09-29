@@ -55,6 +55,7 @@ export abstract class ArtifactRenderer extends Service {
 export interface Config {
   provider: 'playwright'
   outputDirectory: string
+  attachmentOnly?: boolean
   timeoutMs: number
   maxHtmlChars: number
   imageBaseURL?: string
@@ -75,6 +76,7 @@ export interface Config {
 export const Config: z<Config> = z.object({
   provider: z.const('playwright').default('playwright'),
   outputDirectory: z.string().default('.hivemind/artifacts'),
+  attachmentOnly: z.boolean().default(false),
   timeoutMs: z.natural().min(1).max(120_000).default(30_000),
   maxHtmlChars: z.natural().min(1_000).max(2_000_000).default(400_000),
   imageBaseURL: z.string().default(''),
@@ -143,9 +145,10 @@ export class PlaywrightArtifactRenderer extends ArtifactRenderer {
 
   override async render(request: ArtifactRenderRequest): Promise<ArtifactRenderResult> {
     request.signal.throwIfAborted()
-    const outputRoot = safeOutputRoot(request.cwd, this.config.outputDirectory)
-    await mkdir(outputRoot, { recursive: true })
-    const path = join(outputRoot, `${safeLeaf(request.title)}-${randomUUID()}.pdf`)
+    const path = this.config.attachmentOnly
+      ? `${safeLeaf(request.title)}.pdf`
+      : join(safeOutputRoot(request.cwd, this.config.outputDirectory), `${safeLeaf(request.title)}-${randomUUID()}.pdf`)
+    if (!this.config.attachmentOnly) await mkdir(safeOutputRoot(request.cwd, this.config.outputDirectory), { recursive: true })
     const browser = await chromium.launch({ headless: true })
     try {
       const viewport = request.pageSize === 'Letter'
@@ -178,7 +181,7 @@ export class PlaywrightArtifactRenderer extends ArtifactRenderer {
         await first.render({ canvas: canvas as unknown as HTMLCanvasElement, canvasContext: canvas.getContext('2d') as unknown as CanvasRenderingContext2D, viewport: view }).promise
         preview = await canvas.encode('png')
       } finally { await loading.destroy() }
-      await writeFile(path, pdf, { flag: 'wx', signal: request.signal })
+      if (!this.config.attachmentOnly) await writeFile(path, pdf, { flag: 'wx', signal: request.signal })
       return { provider: 'playwright', path, pdf, preview, pageCount }
     } finally {
       await browser.close()
@@ -312,7 +315,7 @@ export function apply(ctx: Context, config: Config): void {
         return { data: rendered.pdf, extension: 'pdf', mediaType: 'application/pdf', designQuality: evaluateDesignQuality(html, request.designProfile) }
       },
     }))
-    registerGenerationTools(rendererCtx, registry, config.outputDirectory, config.maxHtmlChars)
+    registerGenerationTools(rendererCtx, registry, config.outputDirectory, config.maxHtmlChars, config.attachmentOnly)
     registerMediaWorkflow(rendererCtx, registry, config.outputDirectory, {
       maxBriefChars: config.mediaMaxBriefChars ?? 12_000,
       imageAttempts: config.mediaImageAttempts ?? 3,

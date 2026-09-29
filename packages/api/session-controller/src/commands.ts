@@ -35,6 +35,7 @@ import {
 import type {
   SessionAttachmentRequest,
   SessionAttachmentValue,
+  SessionFileAttachmentValue,
   SessionCancelRequest,
   SessionCancelValue,
   SessionCreateRequest,
@@ -416,6 +417,43 @@ export class SessionCommandController {
     }
   }
 
+  /** Serve only files committed by generated-artifact events in this Session. */
+  async fileAttachment(request: SessionAttachmentRequest): Promise<SessionFileAttachmentValue> {
+    let source: SessionReadState
+    try {
+      source = await this.readSessionState(request.sessionId)
+    } catch (error) {
+      if (error instanceof ApiSessionNotFound) {
+        throw new RemoteError('session/not-found', error.message, { sessionId: request.sessionId })
+      }
+      throw new RemoteError('gateway/internal', 'File attachment authorization unavailable.', {})
+    }
+    const ref = referencedGeneratedFile(source.events, String(request.attachmentId))
+    if (ref === undefined) {
+      throw new RemoteError('session/attachment-invalid', 'File is not referenced by this session.', { reason: 'ATTACHMENT_NOT_REFERENCED' })
+    }
+    const limit = 64 * 1024 * 1024
+    if (ref.bytes > limit) {
+      throw new RemoteError('session/attachment-invalid', 'Artifact exceeds download size limit.', { reason: 'FILE_TOO_LARGE' })
+    }
+    try {
+      const chunks: Buffer[] = []
+      let bytes = 0
+      for await (const chunk of this.ctx.attachments.readFileStream(ref)) {
+        bytes += chunk.byteLength
+        if (bytes > limit || bytes > ref.bytes) throw new Error('Artifact exceeds declared size.')
+        chunks.push(Buffer.from(chunk))
+      }
+      if (bytes !== ref.bytes) throw new Error('Artifact is incomplete.')
+      return { attachment: ref, data: Buffer.concat(chunks, bytes).toString('base64') }
+    } catch (error) {
+      if (error instanceof AttachmentError) {
+        throw new RemoteError('session/attachment-invalid', error.message, { reason: error.code })
+      }
+      throw new RemoteError('gateway/internal', 'Unable to read file attachment.', {})
+    }
+  }
+
   /**
    * Mutate one still-pending queue occurrence without resuming a cold Agent.
    * @param request - Session, queue item, and requested mutation.
@@ -646,6 +684,19 @@ function referencedImage(
   for (const event of events) {
     const found = imageInEvent(event, ref => String(ref.attachmentId) === attachmentId)
     if (found !== undefined) return found
+  }
+  return undefined
+}
+
+function referencedGeneratedFile(events: readonly SessionEvent[], attachmentId: string): FileAttachmentRef | undefined {
+  for (const event of events) {
+    const type = String(event.type)
+    if (type !== 'hivemind/artifact-created' && type !== 'hivemind/generation-created') continue
+    const data = event.data as unknown as Record<string, unknown>
+    const candidate = (type === 'hivemind/artifact-created' ? data['pdf'] : data['file']) as Record<string, unknown> | undefined
+    if (candidate?.['attachmentId'] !== attachmentId) continue
+    if (typeof candidate['name'] !== 'string' || typeof candidate['bytes'] !== 'number' || !Number.isSafeInteger(candidate['bytes']) || candidate['bytes'] < 0) continue
+    return candidate as unknown as FileAttachmentRef
   }
   return undefined
 }

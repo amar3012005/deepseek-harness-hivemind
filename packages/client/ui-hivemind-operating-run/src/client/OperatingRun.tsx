@@ -9,18 +9,17 @@ import type {} from '@deepseek-ai/dsh-hivemind-playbooks'
 import type {} from '@deepseek-ai/dsh-hivemind-operating-workstreams'
 import type {} from '@deepseek-ai/dsh-hivemind-research'
 import type {} from '@deepseek-ai/dsh-hivemind-artifact-renderer'
-import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
+import type { FileAttachmentRef, ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-chat/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
-import type {} from '@deepseek-ai/dsh-api-workspace-files/client'
 import { Avatar } from '@humation/react'
 import { humation1 } from '@humation/assets-humation-1'
 import { type ReactNode, useState } from 'react'
-import { artifactBlob, saveArtifact, type ReadArtifactPage } from './download.ts'
+import { fileArtifactBlob, saveArtifact } from './download.ts'
 import css from './OperatingRun.module.css'
 import { en, NS, type OperatingRunKey, zh } from './locales.ts'
 
@@ -121,6 +120,7 @@ interface ArtifactData {
   readonly pageSize: 'A4' | 'Letter'
   readonly pageCount: number
   readonly pdfBytes: number
+  readonly file?: FileAttachmentRef
   readonly preview?: ImageAttachmentRef
 }
 
@@ -415,6 +415,7 @@ function evaluationData(event: SessionEventLike): EvaluationData {
 
 function artifactData(event: SessionEventLike): ArtifactData {
   const data = record(event.data) ?? {}
+  const file = record(data['pdf'] ?? data['file'])
   const preview = record(data['preview']) ?? {}
   const previewName = string(preview['name'])
   return {
@@ -425,6 +426,9 @@ function artifactData(event: SessionEventLike): ArtifactData {
     pageSize: string(data['pageSize']) === 'Letter' ? 'Letter' : 'A4',
     pageCount: typeof data['pageCount'] === 'number' ? data['pageCount'] : 0,
     pdfBytes: typeof data['pdfBytes'] === 'number' ? data['pdfBytes'] : Number(record(data['file'])?.['bytes'] ?? 0),
+    ...(typeof file?.['attachmentId'] === 'string' && typeof file['name'] === 'string' && typeof file['bytes'] === 'number'
+      ? { file: { attachmentId: file['attachmentId'] as FileAttachmentRef['attachmentId'], name: file['name'], bytes: file['bytes'] } }
+      : {}),
     ...(data['preview'] === undefined
       ? {}
       : {
@@ -1066,7 +1070,7 @@ function EvaluationPanel({ node, t }: PanelProps<'hivemind-operating-evaluation'
   )
 }
 
-function ArtifactPanel({ node, renderMessageImages, t, read }: PanelProps<'hivemind-artifact'> & { read: ReadArtifactPage }) {
+function ArtifactPanel({ node, renderMessageImages, t, read }: PanelProps<'hivemind-artifact'> & { read: (id: FileAttachmentRef['attachmentId']) => Promise<{ ok: boolean; value?: { attachment: FileAttachmentRef; data: string } }> }) {
   const [busy, setBusy] = useState(false)
   const [failed, setFailed] = useState(false)
   return (
@@ -1090,12 +1094,15 @@ function ArtifactPanel({ node, renderMessageImages, t, read }: PanelProps<'hivem
       <button
         type="button"
         className={css.artifactAction}
-        disabled={busy}
+        disabled={busy || node.data.file === undefined}
         onClick={async () => {
           setBusy(true)
           setFailed(false)
           try {
-            saveArtifact(await artifactBlob(read, node.data.mediaType), node.data.path)
+            if (node.data.file === undefined) throw new Error('Artifact file receipt missing')
+            const result = await read(node.data.file.attachmentId)
+            if (!result.ok || result.value?.attachment.attachmentId !== node.data.file.attachmentId) throw new Error('Artifact download failed')
+            saveArtifact(fileArtifactBlob(result.value.data, node.data.mediaType, node.data.file.bytes), node.data.file.name)
           } catch {
             setFailed(true)
           } finally {
@@ -1125,7 +1132,7 @@ function MediaWorkflowPanel({ node, t }: PanelProps<'hivemind-media-workflow'>) 
 }
 
 /** Required browser services for operating-run Definitions and native Chat renderers. */
-export const inject = ['uiConversation', 'slots', 'locale', 'remote', 'remote.workspaceFiles']
+export const inject = ['uiConversation', 'slots', 'locale', 'remote', 'remote.session']
 
 /** Register durable event projections; sessions lacking HIVE events produce no nodes. */
 export function apply(ctx: ClientContext): void {
@@ -1156,7 +1163,7 @@ export function apply(ctx: ClientContext): void {
       EvaluationPanel,
     ),
     ctx.slots.register({ name: 'conversation.chat.node', key: 'hivemind-artifact', locale: NS }, props => (
-      <ArtifactPanel {...props} read={offset => ctx.remote.workspaceFiles.readBytes(props.sessionId, props.node.data.path, { offset })} />
+      <ArtifactPanel {...props} read={attachmentId => ctx.remote.session.fileAttachment({ sessionId: props.sessionId, attachmentId })} />
     )),
     ctx.slots.register({ name: 'conversation.chat.node', key: 'hivemind-media-workflow', locale: NS }, MediaWorkflowPanel),
   ])

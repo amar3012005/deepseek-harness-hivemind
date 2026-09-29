@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
+import type { FileAttachmentRef, ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import type { SessionEventWindow } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { SnapshotSelectorHook } from '@deepseek-ai/dsh-client-store'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
@@ -8,7 +8,14 @@ import css from './HyperagentEmployee.module.css'
 
 type Kind = 'preview' | 'artifacts' | 'computer' | 'sources'
 
-interface Artifact { id: string; title: string; mediaType: string; path: string; preview: ImageAttachmentRef | undefined }
+interface Artifact {
+  id: string
+  title: string
+  mediaType: string
+  path: string
+  file: FileAttachmentRef | undefined
+  preview: ImageAttachmentRef | undefined
+}
 interface Capture { id: string; title: string; url: string; status?: number; preview: ImageAttachmentRef | undefined }
 interface Source { url: string; title: string }
 interface Workbench { artifacts: Artifact[]; captures: Capture[]; sources: Source[] }
@@ -20,6 +27,12 @@ function object(value: unknown): Record<string, unknown> | undefined {
 function image(value: unknown): ImageAttachmentRef | undefined {
   const ref = object(value)
   return typeof ref?.attachmentId === 'string' && typeof ref.mediaType === 'string' ? ref as unknown as ImageAttachmentRef : undefined
+}
+
+function file(value: unknown): FileAttachmentRef | undefined {
+  const ref = object(value)
+  return typeof ref?.attachmentId === 'string' && typeof ref.name === 'string' && typeof ref.bytes === 'number'
+    ? ref as unknown as FileAttachmentRef : undefined
 }
 
 /** Only terminal, durable receipts populate preview. No provider payloads or speculative outputs. */
@@ -37,7 +50,8 @@ export function workbenchSnapshot(window: SessionEventWindow): Workbench {
     if (type === 'hivemind/artifact-created' || type === 'hivemind/generation-created') {
       if (typeof data.artifactId !== 'string' || typeof data.path !== 'string') continue
       artifacts.push({ id: data.artifactId, title: typeof data.title === 'string' ? data.title : 'Artifact', path: data.path,
-        mediaType: typeof data.mediaType === 'string' ? data.mediaType : 'application/octet-stream', preview: image(data.preview) })
+        mediaType: typeof data.mediaType === 'string' ? data.mediaType : 'application/octet-stream',
+        file: file(data.pdf ?? data.file), preview: image(data.preview) })
     } else if (type === 'hivemind/browser-capture') {
       if (typeof data.captureId !== 'string' || typeof data.url !== 'string') continue
       captures.push({ id: data.captureId, url: data.url, title: typeof data.title === 'string' ? data.title : data.url,
@@ -58,7 +72,7 @@ type WorkbenchProps = PropsRuntime<'sidebar.right.pane.tab'> & PropsLocale<'hive
   kind: Kind
   useEmployeeEvents: SnapshotSelectorHook<SessionEventWindow>
   loadImage: (ref: ImageAttachmentRef) => Promise<string>
-  openArtifact: (path: string) => void
+  openArtifact: (artifact: Artifact) => void
 }
 
 function ReceiptImage({ attachment, loadImage }: { attachment: ImageAttachmentRef | undefined; loadImage: WorkbenchProps['loadImage'] }) {
@@ -82,10 +96,10 @@ export function HyperagentWorkbench({ kind, sessionId, useSessions, useEmployeeE
   return <div className={css.workbench} data-hivemind-workbench={kind}>
     {kind === 'preview' && (lastArtifact === undefined
       ? <p className={css.workbenchEmpty}>{t('workbench.emptyPreview')}</p>
-      : <article><span className={css.workbenchEyebrow}>{lastArtifact.mediaType}</span><h2>{lastArtifact.title}</h2><ReceiptImage attachment={lastArtifact.preview} loadImage={loadImage} /><button type="button" className={css.workbenchOpen} onClick={() => { openArtifact(lastArtifact.path) }}>{t('workbench.open')}</button></article>)}
+      : <article><span className={css.workbenchEyebrow}>{lastArtifact.mediaType}</span><h2>{lastArtifact.title}</h2><ReceiptImage attachment={lastArtifact.preview} loadImage={loadImage} /><button type="button" className={css.workbenchOpen} disabled={lastArtifact.file === undefined} onClick={() => { openArtifact(lastArtifact) }}>{t('workbench.open')}</button></article>)}
     {kind === 'artifacts' && (data.artifacts.length === 0
       ? <p className={css.workbenchEmpty}>{t('workbench.emptyArtifacts')}</p>
-      : <ul className={css.workbenchList}>{[...data.artifacts].reverse().map(artifact => <li key={artifact.id}><button type="button" onClick={() => { openArtifact(artifact.path) }}>{artifact.title}</button><small>{artifact.mediaType} · {artifact.path.split('/').at(-1)}</small></li>)}</ul>)}
+      : <ul className={css.workbenchList}>{[...data.artifacts].reverse().map(artifact => <li key={artifact.id}><button type="button" disabled={artifact.file === undefined} onClick={() => { openArtifact(artifact) }}>{artifact.title}</button><small>{artifact.mediaType} · {artifact.path.split('/').at(-1)}</small></li>)}</ul>)}
     {kind === 'computer' && (lastCapture === undefined
       ? <p className={css.workbenchEmpty}>{t('workbench.emptyComputer')}</p>
       : <article><span className={css.workbenchEyebrow}>{t('workbench.browserCapture')} {lastCapture.status ?? ''}</span><h2>{lastCapture.title}</h2><ReceiptImage attachment={lastCapture.preview} loadImage={loadImage} /><a href={lastCapture.url} target="_blank" rel="noopener noreferrer">{lastCapture.url}</a></article>)}
