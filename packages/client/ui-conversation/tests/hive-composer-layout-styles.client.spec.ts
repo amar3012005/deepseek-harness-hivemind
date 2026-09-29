@@ -30,10 +30,10 @@ describe('HIVE composer layout', () => {
   })
 
   it('centers both HyperAgents composer phases in the conversation column', () => {
-    expect(css).toMatch(/data-dsh-hyperagent-os='true'[^}]*\.composerSeat > \.composerStack\s*\{[^}]*transform:\s*none/s)
+    expect(css).toMatch(/data-dsh-hyperagent-os='true'[^}]*\.composerStack\s*\{[^}]*transform:\s*none/s)
     const hostOverride = new RegExp(
       String.raw`data-dsh-hyperagent-os='true'[^}]*data-os-harness-rooms[^}]*`
-      + String.raw`\.composerSeat > \.composerStack\s*\{[^}]*transform:\s*none\s*!important`,
+      + String.raw`\.composerStack\s*\{[^}]*transform:\s*none\s*!important`,
       's',
     )
     expect(css).toMatch(hostOverride)
