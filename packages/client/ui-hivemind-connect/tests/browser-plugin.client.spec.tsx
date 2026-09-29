@@ -192,6 +192,27 @@ describe('HIVE-MIND connection UI', () => {
     expect(slots.entries('conversation.session.header.actions')).toHaveLength(0)
   })
 
+  it('registers the HyperAgents panel toggle from the sidebar service without conversation scope', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SlotRegistry).await()
+    const slots = ctx.get('slots') as SlotRegistry
+    slots.register({ name: 'root', children: {
+      'conversation.input.right': { kind: 'list', scope: 'session' },
+      'sidebar.right.pane.tab': { kind: 'keyed', scope: 'session' },
+    } } as never, () => null)
+    ctx.provide('locale', { register: () => () => {}, bind: () => () => '' } as never)
+    ctx.provide('sessions', { list: { getSnapshot: () => ({ current: undefined, ids: [], phase: 'ready' }), subscribe: () => () => {} } } as never)
+    ctx.provide('remote', { $on: () => () => {} } as never)
+    ctx.provide('uiSession', { registerPendingInteraction: () => () => () => {} } as never)
+    ctx.provide('sidebarRight', { active: () => undefined, openTab: () => {} } as never)
+    const registerTab = vi.fn(() => () => {})
+    ctx.provide('sidebarRightTabs', { register: registerTab } as never)
+    const fiber = ctx.plugin({ inject: [...inject], apply })
+    await fiber.await()
+    await waitFor(() => expect(registerTab).toHaveBeenCalledWith(expect.objectContaining({ kind: 'hivemind-employee' })))
+    await fiber.dispose()
+  })
+
   it('shows the authenticated email after live status verification', async () => {
     render(<HivemindConnect
       {...({} as PropsRuntime<'sidebar.footer.action'>)}

@@ -20,6 +20,7 @@ import { setupConnectionCallbackReturn } from './connection-callback.ts'
 import type {} from '@deepseek-ai/dsh-client-ui-tool/client'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import { createElement } from 'react'
 import { ScopeSelect, type HivemindReadScope } from './ScopeSelect.tsx'
 import { ConnectorChips, type ConnectorChipsProps } from './ConnectorChips.tsx'
@@ -262,7 +263,10 @@ export function apply(ctx: ClientContext): void {
       },
     }),
   }, HyperagentEmployeePicker))
-  ctx.inject(['sidebarRight', 'sidebarRightTabs', 'uiConversation'], () => {
+  // The right-sidebar service pair shares one provider. uiConversation is a
+  // separate scope; requiring all three here can leave the embedded composer
+  // without its toggle even though the sidebar itself is mounted.
+  ctx.inject(['sidebarRight', 'sidebarRightTabs'], () => {
     const t = ctx.locale.bind(NS)
     ctx.effect(() => ctx.sidebarRightTabs.register({ id: employeeTab, kind: 'hivemind-employee', title: () => t('employee.panel') }), 'ui-hivemind-connect: employee right tab')
     for (const kind of workbenchKinds) {
@@ -274,7 +278,12 @@ export function apply(ctx: ClientContext): void {
         inject: sessionId => ({
           kind,
           hooks: { employeeEvents: employeeEvents(sessionId) },
-          loadImage: (ref: Parameters<typeof ctx.uiConversation.imageUrl>[1]) => ctx.uiConversation.imageUrl(sessionId, ref),
+          loadImage: (ref: ImageAttachmentRef) => {
+            const conversation = ctx.get('uiConversation')
+            return conversation === undefined
+              ? Promise.reject(new Error('Conversation preview is unavailable'))
+              : conversation.imageUrl(sessionId, ref)
+          },
           openArtifact: (path: string) => {
             const cwd = ctx.sessions.list.getSnapshot().byId[sessionId]?.cwd
             ctx.sidebarRight.openResource(fileAddressFor(sessionId, cwd, path))
