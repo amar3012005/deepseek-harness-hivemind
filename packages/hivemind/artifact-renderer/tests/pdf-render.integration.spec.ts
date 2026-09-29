@@ -1,7 +1,9 @@
 import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { createCanvas, loadImage } from '@napi-rs/canvas'
 import { Context } from '@deepseek-ai/cordis'
+import { getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs'
 import { expect, it } from 'vitest'
 import { MarkdownArtifactRenderer } from '../src/index.ts'
 import { webProvider } from '../src/office-providers.ts'
@@ -16,6 +18,24 @@ it('renders a real paginated PDF and rasterizes its first page', async () => {
     expect(result.pageCount).toBeGreaterThan(1)
     expect(Buffer.from(result.pdf).subarray(0, 5).toString()).toBe('%PDF-')
     expect(Buffer.from(result.preview).subarray(1, 4).toString()).toBe('PNG')
+    const inspectionTask = getDocument({ data: new Uint8Array(result.pdf), useSystemFonts: true,
+      standardFontDataUrl: new URL('.', import.meta.resolve('pdfjs-dist/standard_fonts/FoxitSans.pfb')).href })
+    const inspection = await inspectionTask.promise
+    try {
+      const firstPage = await inspection.getPage(1)
+      const content = await firstPage.getTextContent()
+      expect(content.items.map(item => 'str' in item ? item.str : '').join(' ')).toContain('Hannover-based insurance research')
+    } finally { await inspectionTask.destroy() }
+    const image = await loadImage(Buffer.from(result.preview))
+    const canvas = createCanvas(image.width, image.height)
+    const context = canvas.getContext('2d')
+    context.drawImage(image, 0, 0)
+    const pixels = context.getImageData(0, 0, image.width, image.height).data
+    let darkPixels = 0
+    for (let index = 0; index < pixels.length; index += 4) {
+      if (pixels[index]! < 160 && pixels[index + 1]! < 160 && pixels[index + 2]! < 160) darkPixels += 1
+    }
+    expect(darkPixels).toBeGreaterThan(5_000)
     expect(await readFile(result.path)).toEqual(Buffer.from(result.pdf))
   } finally {
     await rm(cwd, { recursive: true, force: true })

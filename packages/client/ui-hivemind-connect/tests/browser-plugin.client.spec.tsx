@@ -192,12 +192,12 @@ describe('HIVE-MIND connection UI', () => {
     expect(slots.entries('conversation.session.header.actions')).toHaveLength(0)
   })
 
-  it('registers the HyperAgents panel toggle from the sidebar service without conversation scope', async () => {
+  it('registers the HyperAgents panel toggle in the native header corner', async () => {
     const ctx = new Context()
     await ctx.plugin(SlotRegistry).await()
     const slots = ctx.get('slots') as SlotRegistry
     slots.register({ name: 'root', children: {
-      'conversation.input.right': { kind: 'list', scope: 'session' },
+      'conversation.session.header.corner': { kind: 'single', scope: 'session' },
       'sidebar.right.pane.tab': { kind: 'keyed', scope: 'session' },
     } } as never, () => null)
     ctx.provide('locale', { register: () => () => {}, bind: () => () => '' } as never)

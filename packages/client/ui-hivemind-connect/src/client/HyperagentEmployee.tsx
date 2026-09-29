@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react'
 import { Avatar } from '@humation/react'
 import { humation1 } from '@humation/assets-humation-1'
+import { IconPanelLeftOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { SessionEventWindow } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { SnapshotSelectorHook } from '@deepseek-ai/dsh-client-store'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
@@ -113,11 +114,13 @@ export function HyperagentEmployeePanel({ useSession, useEmployeeEvents, t }: Pa
   </div>
 }
 
-export interface PanelToggleInjected { swapPanel: () => void }
-type ToggleProps = PropsRuntime<'conversation.input.right'> & PropsLocale<'hivemind-connect'> & PanelToggleInjected
+export interface PanelToggleInjected { swapPanel: (hyperagents: boolean) => void }
+type ToggleProps = PropsRuntime<'conversation.session.header.corner'> & PropsLocale<'hivemind-connect'> & PanelToggleInjected
 
 export function HyperagentPanelToggle({ sessionId, useSessions, swapPanel, t }: ToggleProps) {
+  // The HIVE app owns the conversation's far-right header seat. Keep the
+  // native panel affordance there for every session; the injected action
+  // switches Preview/Agent for HyperAgents and expands/collapses otherwise.
   const preset = useSessions(state => state.byId[sessionId]?.projectionValues?.agentPreset)
-  if (!isHyperagentPreset(preset)) return null
-  return <button type="button" className={css.panelToggle} aria-label={t('employee.toggle')} title={t('employee.toggle')} onClick={swapPanel}>⇄</button>
+  return <button type="button" className={css.panelToggle} aria-label={t('employee.toggle')} title={t('employee.toggle')} onClick={() => { swapPanel(isHyperagentPreset(preset)) }}><IconPanelLeftOutline16 className={css.panelToggleIcon} /></button>
 }

@@ -55,3 +55,8 @@
   background: var(--dsw-alias-bg-module-platform);
   border-color: var(--dsw-static-neutral-bluish-400);
 }
+
+.disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}

@@ -12,7 +12,7 @@ export type HivemindConnectKey =
   | 'employee.initial' | 'employee.auto' | 'employee.autoDetail' | 'employee.label' | 'employee.loading' | 'employee.unavailable'
   | 'employee.environment' | 'employee.working' | 'employee.ready' | 'employee.panel' | 'employee.toggle'
   | 'workbench.preview' | 'workbench.artifacts' | 'workbench.computer' | 'workbench.sources'
-  | 'workbench.emptyPreview' | 'workbench.emptyArtifacts' | 'workbench.emptyComputer' | 'workbench.emptySources' | 'workbench.browserCapture' | 'workbench.open' | 'workbench.download' | 'workbench.downloadPdf'
+  | 'workbench.emptyPreview' | 'workbench.emptyArtifacts' | 'workbench.emptyComputer' | 'workbench.emptySources' | 'workbench.pdfUnavailable' | 'workbench.browserCapture' | 'workbench.open' | 'workbench.download' | 'workbench.downloadPdf'
 
 export const en: Record<HivemindConnectKey, string> = {
   connect: 'Connect HIVE-MIND',
@@ -45,9 +45,10 @@ export const en: Record<HivemindConnectKey, string> = {
   'employee.label': 'Choose employee', 'employee.loading': 'Loading employees…',
   'employee.unavailable': 'Employee directory unavailable. Selection unchanged.',
   'employee.environment': 'Environment', 'employee.working': 'Working on this task',
-  'employee.ready': 'Ready for a task', 'employee.panel': 'Agent', 'employee.toggle': 'Swap Preview and Agent',
+  'employee.ready': 'Ready for a task', 'employee.panel': 'Agent', 'employee.toggle': 'Toggle right panel',
   'workbench.preview': 'Preview', 'workbench.artifacts': 'Artifacts', 'workbench.computer': 'Computer', 'workbench.sources': 'Sources',
   'workbench.emptyPreview': 'Generated work appears here when ready.', 'workbench.emptyArtifacts': 'No artifacts yet.',
+  'workbench.pdfUnavailable': 'PDF preview could not be loaded. You can still download the PDF.',
   'workbench.emptyComputer': 'Browser captures appear here when ready.', 'workbench.emptySources': 'Research sources appear here when ready.',
   'workbench.browserCapture': 'Browser capture · HTTP',
   'workbench.open': 'Open artifact',
@@ -86,9 +87,10 @@ export const zh: Record<HivemindConnectKey, string> = {
   'employee.label': '选择员工', 'employee.loading': '正在加载员工…',
   'employee.unavailable': '员工目录不可用，选择未更改。',
   'employee.environment': '工作环境', 'employee.working': '正在执行任务',
-  'employee.ready': '等待任务', 'employee.panel': '员工', 'employee.toggle': '切换预览和员工',
+  'employee.ready': '等待任务', 'employee.panel': '员工', 'employee.toggle': '切换右侧面板',
   'workbench.preview': '预览', 'workbench.artifacts': '成果', 'workbench.computer': '电脑', 'workbench.sources': '来源',
   'workbench.emptyPreview': '生成的成果就绪后将在此显示。', 'workbench.emptyArtifacts': '暂无成果。',
+  'workbench.pdfUnavailable': '无法加载 PDF 预览。你仍可下载 PDF。',
   'workbench.emptyComputer': '浏览器截图就绪后将在此显示。', 'workbench.emptySources': '研究来源就绪后将在此显示。',
   'workbench.browserCapture': '浏览器截图 · HTTP',
   'workbench.open': '打开成果',

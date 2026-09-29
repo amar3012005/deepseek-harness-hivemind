@@ -20,6 +20,8 @@ import css from './AppearanceRow.module.css'
 export interface AppearanceRowInjected {
   /** Switch the theme preference. */
   setTheme: (id: ThemePreference) => void
+  /** Preferences temporarily unavailable for this product surface. */
+  disabledPreferences?: readonly ThemePreference[]
 }
 
 /** Full component props: runtime share + store share + locale seat + injected face. */
@@ -39,7 +41,7 @@ const CUBES: readonly { id: ThemePreference; labelKey: ThemeKey; Icon: typeof Ic
  * @param props - composed slot props.
  * @returns the row element tree.
  */
-export function AppearanceRow({ t, setTheme, useStore }: AppearanceRowComponentProps) {
+export function AppearanceRow({ t, setTheme, disabledPreferences = [], useStore }: AppearanceRowComponentProps) {
   const preference = useStore(s => s.preference)
   return (
     <div className={css.group}>
@@ -49,8 +51,10 @@ export function AppearanceRow({ t, setTheme, useStore }: AppearanceRowComponentP
           <button
             key={id}
             type="button"
-            className={clsx(css.themeCube, preference === id && css.selected)}
+            className={clsx(css.themeCube, preference === id && css.selected, disabledPreferences.includes(id) && css.disabled)}
             aria-pressed={preference === id}
+            disabled={disabledPreferences.includes(id)}
+            title={disabledPreferences.includes(id) ? t('appearance.temporarilyUnavailable') : undefined}
             onClick={() => { setTheme(id) }}
           >
             <Icon />

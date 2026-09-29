@@ -34,9 +34,15 @@ export type { FontSizeRowComponentProps, FontSizeRowInjected } from './FontSizeR
 export type { AppearanceRowState, FontSizeRowState } from './settings-store.ts'
 export type { ThemeKey } from './locales.ts'
 export type { ThemePreference, ThemeSettings } from '../theme-settings.ts'
-
 /** Namespace owning this feature's settings-row copy. */
 export const SETTINGS_NS = 'settings.theme'
+
+/** Product-specific presentation policy. The dark palette remains available
+ * to other products and can be re-enabled later without restoring theme code. */
+export interface ThemeConfig {
+  /** Lock this client surface to its light palette while the product rollout is active. */
+  lockToLight?: boolean
+}
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap {
@@ -158,6 +164,7 @@ const BUILTIN_INSPECT_TOKENS: readonly ThemeTokenInspection[] = Object.freeze([
 export class ThemeRuntime {
   private readonly ctx: ClientContext
   private readonly host: SettingsScope<ThemeSettings>
+  private readonly lockToLight: boolean
   private themes: ThemeDefinition[] = [...BUILTIN_THEMES]
   private preference: ThemePreference
   private fontSize: number = bootstrapFontSize()
@@ -173,10 +180,11 @@ export class ThemeRuntime {
    * media-query and scope listeners are released through ctx.effect on dispose).
    * @param host - durable preference scope owned by the same plugin.
    */
-  constructor(ctx: ClientContext, host: SettingsScope<ThemeSettings>) {
+  constructor(ctx: ClientContext, host: SettingsScope<ThemeSettings>, options: { lockToLight?: boolean } = {}) {
     this.ctx = ctx
     this.host = host
-    this.preference = DEFAULT_PREFERENCE
+    this.lockToLight = options.lockToLight === true
+    this.preference = this.lockToLight ? 'light' : DEFAULT_PREFERENCE
     // Non-browser runs (node e2e booting the client tree) have no matchMedia.
     this.media = typeof matchMedia === 'undefined' ? undefined : matchMedia('(prefers-color-scheme: dark)')
     this.snapshot = this.buildSnapshot()
@@ -232,6 +240,9 @@ export class ThemeRuntime {
     if (id !== 'system' && !this.themes.some(t => t.id === id)) {
       throw new Error(`theme "${id}" is not registered`)
     }
+    if (this.lockToLight && id !== 'light') {
+      throw new Error('Dark and system themes are temporarily disabled for this surface')
+    }
     if (this.preference === id) return
     this.preference = id as ThemePreference
     if (isThemePreference(id)) void this.host.set(THEME_PREFERENCE_FIELD, id)
@@ -258,8 +269,9 @@ export class ThemeRuntime {
   private adopt(): void {
     const section = this.host.getSnapshot().value
     if (section === undefined) return
-    if (this.preference === section.preference && this.fontSize === section.fontSize) return
-    this.preference = section.preference
+    const preference = this.lockToLight ? 'light' : section.preference
+    if (this.preference === preference && this.fontSize === section.fontSize) return
+    this.preference = preference
     this.fontSize = section.fontSize
     this.publish()
   }
@@ -283,7 +295,7 @@ export class ThemeRuntime {
       if (!this.themes.some(t => t.id === definition.id)) return
       this.themes = this.themes.filter(t => t.id !== definition.id)
       if (this.preference === definition.id) {
-        this.preference = DEFAULT_PREFERENCE
+        this.preference = this.lockToLight ? 'light' : DEFAULT_PREFERENCE
       }
       this.publish()
     }
@@ -425,10 +437,10 @@ export const inject = ['slots', 'locale', 'remote', 'settingsScope']
  * slot (a feature owns its settings surface).
  * @param ctx - client cordis context.
  */
-export function apply(ctx: ClientContext): void {
+export function apply(ctx: ClientContext, config: ThemeConfig = {}): void {
   installThemeStyles(ctx)
   const host = ctx.settingsScope.bind<ThemeSettings>({ namespace: THEME_SETTINGS_NAMESPACE })
-  const theme = new ThemeRuntime(ctx, host)
+  const theme = new ThemeRuntime(ctx, host, { lockToLight: config.lockToLight === true })
   ctx.provide('theme', theme)
 
   ctx.effect(() => ctx.locale.register(SETTINGS_NS, { zh, en }), 'ui-theme: settings row dictionaries')
@@ -449,6 +461,7 @@ export function apply(ctx: ClientContext): void {
     sync(theme.getTheme())
     return {
       setTheme: (id) => { theme.setTheme(id) },
+      ...(config.lockToLight === true ? { disabledPreferences: ['dark', 'system'] as const } : {}),
     }
   }
   ctx.slots.inject('settings.general.item', () => ctx.slots.register({

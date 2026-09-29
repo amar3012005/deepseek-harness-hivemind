@@ -107,6 +107,19 @@ describe('ThemeRuntime', () => {
     expect(theme.getTheme().preference).toBe('dark')
   })
 
+  it('locks a product surface to day mode while retaining dark mode in the registry', () => {
+    const host = stubSettingsScope<ThemeSettings>()
+    host.publish({ status: 'ready', value: { preference: 'dark', fontSize: 14 }, revision: 1, writable: true })
+    const ctx = new Context()
+    const theme = new ThemeRuntime(ctx, host.scope, { lockToLight: true })
+    expect(theme.getTheme().preference).toBe('light')
+    expect(theme.getTheme().active.colorScheme).toBe('light')
+    expect(theme.getTheme().themes.map(item => item.id)).toEqual(['light', 'dark'])
+    expect(() => theme.setTheme('dark')).toThrow('temporarily disabled')
+    expect(theme.getTheme().active.colorScheme).toBe('light')
+    expect(host.set).not.toHaveBeenCalled()
+  })
+
   it('throws on unknown setTheme ids, duplicate registration, and the system id', () => {
     const { theme } = make()
     expect(() => { theme.setTheme('sepia') }).toThrow('not registered')

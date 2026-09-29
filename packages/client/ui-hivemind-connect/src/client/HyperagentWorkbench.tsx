@@ -87,20 +87,22 @@ function ReceiptImage({ attachment, loadImage }: { attachment: ImageAttachmentRe
   return url === undefined ? null : <img className={css.workbenchImage} src={url} alt="Generated preview" />
 }
 
-function PdfReceipt({ artifact, loadPdf, loadImage }: { artifact: Artifact; loadPdf: WorkbenchProps['loadPdf']; loadImage: WorkbenchProps['loadImage'] }) {
+function PdfReceipt({ artifact, loadPdf, loadImage, t }: { artifact: Artifact; loadPdf: WorkbenchProps['loadPdf']; loadImage: WorkbenchProps['loadImage']; t: WorkbenchProps['t'] }) {
   const [url, setUrl] = useState<string>()
+  const [failed, setFailed] = useState(false)
   const loadPdfRef = useRef(loadPdf)
   loadPdfRef.current = loadPdf
   useEffect(() => {
     let active = true
     let createdUrl: string | undefined
     setUrl(undefined)
+    setFailed(false)
     if (artifact.file !== undefined) {
       void loadPdfRef.current(artifact.file).then((blob) => {
         if (!active) return
         createdUrl = URL.createObjectURL(blob)
         setUrl(createdUrl)
-      }, () => {})
+      }, () => { if (active) setFailed(true) })
     }
     return () => {
       active = false
@@ -108,7 +110,7 @@ function PdfReceipt({ artifact, loadPdf, loadImage }: { artifact: Artifact; load
     }
   }, [artifact.file?.attachmentId])
   return url === undefined
-    ? <ReceiptImage attachment={artifact.preview} loadImage={loadImage} />
+    ? <>{failed && <p className={css.workbenchPath} role="status">{t('workbench.pdfUnavailable')}</p>}<ReceiptImage attachment={artifact.preview} loadImage={loadImage} /></>
     : <iframe className={css.workbenchPdf} src={url} title={artifact.title} />
 }
 
@@ -125,7 +127,7 @@ export function HyperagentWorkbench({
     {kind === 'preview' && (lastArtifact === undefined
       ? <p className={css.workbenchEmpty}>{t('workbench.emptyPreview')}</p>
       : <article><span className={css.workbenchEyebrow}>{lastArtifact.mediaType}</span><h2>{lastArtifact.title}</h2>{lastArtifact.mediaType === 'application/pdf' && lastArtifact.file !== undefined
-        ? <><div className={css.workbenchActions}><button type="button" className={css.workbenchOpen} onClick={() => { openArtifact(lastArtifact, 'download') }}>{t('workbench.downloadPdf')}</button></div><PdfReceipt artifact={lastArtifact} loadPdf={loadPdf} loadImage={loadImage} /></>
+        ? <><div className={css.workbenchActions}><button type="button" className={css.workbenchOpen} onClick={() => { openArtifact(lastArtifact, 'download') }}>{t('workbench.downloadPdf')}</button></div><PdfReceipt artifact={lastArtifact} loadPdf={loadPdf} loadImage={loadImage} t={t} /></>
         : <><div className={css.workbenchActions}><button type="button" className={css.workbenchOpen} disabled={lastArtifact.file === undefined} onClick={() => { openArtifact(lastArtifact) }}>{t('workbench.open')}</button><button type="button" className={css.workbenchOpen} disabled={lastArtifact.file === undefined} onClick={() => { openArtifact(lastArtifact, 'download') }}>{t('workbench.download')}</button></div><ReceiptImage attachment={lastArtifact.preview} loadImage={loadImage} /></>}</article>)}
     {kind === 'artifacts' && (data.artifacts.length === 0
       ? <p className={css.workbenchEmpty}>{t('workbench.emptyArtifacts')}</p>

@@ -263,14 +263,21 @@ export function apply(ctx: ClientContext): void {
       },
     }),
   }, HyperagentEmployeePicker))
-  // Composer slot exists before the right-sidebar provider comes online.
-  // Register its control beside the picker; resolve the sidebar on click.
-  ctx.slots.inject('conversation.input.right', () => ctx.slots.register({
-    name: 'conversation.input.right', id: 'hivemind-employee-panel', order: 20, locale: NS,
-    inject: sessionId => ({ swapPanel: () => {
+  // Put the panel/preview affordance in the conversation header's far-right
+  // corner, matching the native “door” control. A higher-priority seat shadows
+  // ui-sidebar-right's generic expand button; this implementation preserves
+  // its expand/collapse behavior for non-HyperAgents sessions.
+  ctx.slots.inject('conversation.session.header.corner', () => ctx.slots.register({
+    name: 'conversation.session.header.corner', locale: NS, priority: -1,
+    inject: sessionId => ({ swapPanel: (hyperagents) => {
       const sidebar = rightSidebar
       if (sidebar === undefined) return
+      if (!hyperagents) { sidebar.toggleExpanded(); return }
       const active = sidebar.active()
+      if (!sidebar.isExpanded()) {
+        sidebar.openTab('hivemind-workbench-preview')
+        return
+      }
       if (active?.kind === 'hivemind-employee') {
         const previous = previousRightTabs.get(sessionId)
         if (previous !== undefined) sidebar.focus(previous)

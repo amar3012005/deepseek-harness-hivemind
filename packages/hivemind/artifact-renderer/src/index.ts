@@ -158,7 +158,13 @@ export class MarkdownArtifactRenderer extends ArtifactRenderer {
     })
     request.signal.throwIfAborted()
     const { getDocument } = await import('pdfjs-dist/legacy/build/pdf.mjs')
-    const loading = getDocument({ data: new Uint8Array(pdf), useSystemFonts: true })
+    // PDFKit emits the standard Helvetica fonts by reference. PDF.js can read
+    // their text operators without these files, but its Node canvas renderer
+    // silently omits the glyphs on Linux while still drawing rules and table
+    // borders. Resolve the font assets from the installed pdfjs-dist package
+    // so the saved first-page PNG matches the PDF content in production.
+    const standardFontDataUrl = new URL('.', import.meta.resolve('pdfjs-dist/standard_fonts/FoxitSans.pfb')).href
+    const loading = getDocument({ data: new Uint8Array(pdf), useSystemFonts: true, standardFontDataUrl })
     const pdfDocument = await loading.promise
     let preview: Uint8Array
     const pageCount = pdfDocument.numPages
