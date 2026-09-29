@@ -146,7 +146,9 @@ export function HyperagentPanelToggle({ sessionId, useSessions, useEmployeeEvent
     if (!root || !scroller) return
     const measure = () => {
       const boundary = root.getBoundingClientRect()
-      setRight(Math.max(16, window.innerWidth - boundary.right + 16))
+      const inset = Math.max(0, window.innerWidth - boundary.right)
+      document.documentElement.style.setProperty('--dsh-hyperagent-chat-right-inset', `${inset}px`)
+      setRight(inset + 16)
       if (dismissed) return
       const card = { left: boundary.right - 336, right: boundary.right - 16, top: 112, bottom: 316 }
       const rows = scroller.querySelectorAll<HTMLElement>('[data-chat-flow] > [data-chat-flow-key]:not(:empty):not([hidden])')
@@ -173,6 +175,7 @@ export function HyperagentPanelToggle({ sessionId, useSessions, useEmployeeEvent
       mutationObserver.disconnect()
       scroller.removeEventListener('scroll', measure)
       window.removeEventListener('resize', measure)
+      document.documentElement.style.removeProperty('--dsh-hyperagent-chat-right-inset')
     }
   }, [isOsRoute, preset, dismissed])
   const showEnvironment = isOsRoute && isHyperagentPreset(preset)

@@ -40,9 +40,6 @@
 :global(html[data-dsh-mode='hivemind-chat']:has([data-sidebar-right-open])) .panelToggle {
   display: none;
 }
-:global(html[data-dsh-hyperagent-os='true']:has([data-sidebar-right-open])) .panelToggle {
-  display: inline-flex;
-}
 .workbench { height: 100%; overflow: auto; padding: 28px 32px; background: var(--dsw-surface-primary, #fff); color: var(--dsw-text-primary, #27272a); }
 .workbench article { max-width: 900px; margin: 0 auto; }
 .workbench h2 { margin: 14px 0 22px; font-size: 25px; line-height: 1.25; }
