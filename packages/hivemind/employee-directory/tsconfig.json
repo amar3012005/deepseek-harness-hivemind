@@ -1,1 +1,1 @@
-{ "extends":"../../../tsconfig.base.json","compilerOptions":{"rootDir":"src","outDir":"lib/types","tsBuildInfoFile":"lib/tsconfig.tsbuildinfo"},"include":["src/**/*.ts"],"references":[{"path":"../../util/values"}] }
+{ "extends":"../../../tsconfig.base.json","compilerOptions":{"rootDir":"src","outDir":"lib/types","tsBuildInfoFile":"lib/tsconfig.tsbuildinfo"},"include":["src/**/*.ts"],"references":[{"path":"../../../vendor/cosmokit"},{"path":"../../../vendor/cordis"},{"path":"../../util/values"}] }

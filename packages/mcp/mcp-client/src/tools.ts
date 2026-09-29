@@ -32,6 +32,8 @@ export interface ToolBridgeOptions {
   registrationFailure: 'contain' | 'throw'
   serverName: string
   toolCallTimeoutMs: number
+  toolDescriptionSuffixes?: Readonly<Record<string, string>>
+  recoverClient?: (failedClient: Client, signal: AbortSignal) => Promise<Client>
 }
 
 /** State for one sync generation: the current set of disposers keyed by public name. */
@@ -75,6 +77,37 @@ function listToolsUncached(client: Client, cursor?: string) {
     { method: 'tools/list', ...cursor === undefined ? {} : { params: { cursor } } },
     ListToolsResultSchema,
   )
+}
+
+export interface McpListedTool {
+  name: string
+  description?: string
+  inputSchema: Record<string, unknown>
+  outputSchema?: unknown
+  execution?: { taskSupport?: string }
+  annotations?: { readOnlyHint?: boolean }
+}
+
+export async function listMcpTools(client: Client): Promise<McpListedTool[]> {
+  const tools: McpListedTool[] = []
+  const seen = new Set<string>()
+  let cursor: string | undefined
+  do {
+    const response = await listToolsUncached(client, cursor)
+    tools.push(...response.tools as McpListedTool[])
+    cursor = response.nextCursor
+    if (cursor !== undefined) {
+      if (seen.has(cursor)) throw new Error('mcp-client: repeated tools/list cursor')
+      seen.add(cursor)
+    }
+  } while (cursor !== undefined)
+  return tools
+}
+
+function isRecoverableTransportFailure(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error)
+  return /\bSession not found\b/i.test(message)
+    || /Streamable HTTP error.*\b(?:502|503|504)\b/i.test(message)
 }
 
 /** Call without the SDK pre-validating an output schema the bridge may not support. */
@@ -160,7 +193,7 @@ export async function syncTools(
           `mcp-client(${opts.serverName}): server listed tool "${tool.name}" more than once — invalid tool list`,
         )
       }
-      definitions.set(publicName, createDefinition(
+      definitions.set(publicName, createMcpToolDefinition(
         client,
         ctx,
         publicName,
@@ -169,6 +202,7 @@ export async function syncTools(
         tool.inputSchema,
         supportedOutputSchema(tool.outputSchema),
         tool.execution?.taskSupport === 'required',
+        tool.annotations?.readOnlyHint === true,
         opts,
       ))
     }
@@ -251,7 +285,7 @@ function supportedOutputSchema(candidate: unknown): JsonSchemaNode | undefined {
  * @param opts - bridge timeout and namespace options.
  * @returns a complete ToolRuntime definition.
  */
-function createDefinition(
+export function createMcpToolDefinition(
   client: Client,
   ctx: Context,
   publicName: string,
@@ -260,6 +294,7 @@ function createDefinition(
   parameters: Record<string, unknown>,
   structuredSchema: JsonSchemaNode | undefined,
   taskRequired: boolean,
+  retrySafe: boolean,
   opts: ToolBridgeOptions,
 ): ToolDefinition {
   const projections = new WeakMap<ToolExecution, PreparedProjection>()
@@ -268,7 +303,7 @@ function createDefinition(
     description,
     parameters,
     output: createOutput(rawName, structuredSchema),
-    execute: createExecutor(client, ctx, rawName, taskRequired, opts, projections),
+    execute: createExecutor(client, ctx, rawName, taskRequired, retrySafe, opts, projections),
     finalizeContent(exec: Readonly<ToolExecution>, result: Readonly<ToolExecutionResult>) {
       const projection = projections.get(exec)
       if (projection === undefined) return undefined
@@ -315,6 +350,7 @@ function createExecutor(
   ctx: Context,
   rawName: string,
   taskRequired: boolean,
+  retrySafe: boolean,
   opts: ToolBridgeOptions,
   projections: WeakMap<ToolExecution, PreparedProjection>,
 ): ToolDefinition['execute'] {
@@ -327,7 +363,18 @@ function createExecutor(
     // string/number/null). Fallback to {} lets the MCP server produce a
     // specific "missing required param" error the model can learn from.
     const argsObj = (typeof args === 'object' && args !== null ? args : {}) as Record<string, unknown>
-    const result = await callToolUncached(client, rawName, argsObj, exec, opts)
+    let result: Awaited<ReturnType<typeof callToolUncached>>
+    try {
+      result = await callToolUncached(client, rawName, argsObj, exec, opts)
+    } catch (error: unknown) {
+      if (!isRecoverableTransportFailure(error)) throw error
+      if (!retrySafe || opts.recoverClient === undefined) {
+        void client.close().catch(() => {})
+        throw error
+      }
+      const recovered = await opts.recoverClient(client, exec.signal)
+      result = await callToolUncached(recovered, rawName, argsObj, exec, opts)
+    }
 
     // The SDK may return a legacy `toolResult` shape; normalize to content array.
     if (!Array.isArray(result.content)) {
@@ -409,22 +456,8 @@ function decodeImage(block: McpContentBlock): SaveImageAttachment {
 async function resolveImageAdmission(ctx: Context, exec: ToolExecution): Promise<AttachmentStore> {
   const attachments = ctx.get('attachments')
   if (attachments === undefined) throw new Error('no attachment store is mounted')
-  const routed = exec.agent?.session.requestHeader()?.config
-  const provider = routed?.provider ?? exec.agent?.options.provider
-  const model = routed?.model ?? exec.agent?.options.model
-  const llm = ctx.get('llm')
-  if (provider === undefined || model === undefined || llm === undefined) {
-    throw new Error('the current model route could not be resolved')
-  }
-  let info: Awaited<ReturnType<typeof llm.resolveModelInfo>>
-  try {
-    info = await llm.resolveModelInfo(provider, model, exec.signal)
-  } catch {
-    throw new Error('the current model route could not be verified')
-  }
-  if (info.inputModalities === undefined || !info.inputModalities.includes('image')) {
-    throw new Error(`model "${model}" does not declare image input`)
-  }
+  // Store image evidence regardless of model modality. LLM projection decides
+  // whether model receives image bytes; UI and session still retain attachment.
   if (exec.signal.aborted) throw new Error('the tool call was canceled before image storage')
   return attachments
 }

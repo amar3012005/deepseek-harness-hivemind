@@ -24,7 +24,7 @@ import type {} from '@deepseek-ai/dsh-hivemind-identity'
 import type {} from '@deepseek-ai/dsh-hivemind-execution-scope'
 import { contextPlugin } from '@deepseek-ai/dsh-hivemind-context'
 import { memoryPlugin, type EntitySearchRequest, type RecallRequest, type SaveRequest, type SaveStatusRequest } from '@deepseek-ai/dsh-hivemind-memory'
-import { projectHyperagentProfiles } from '@deepseek-ai/dsh-hivemind-employee-directory'
+import { hyperagentDirectory, projectHyperagentProfiles } from '@deepseek-ai/dsh-hivemind-employee-directory'
 
 declare module '@deepseek-ai/dsh-session/types' {
   interface SessionEventMap {
@@ -1040,6 +1040,17 @@ export function apply(ctx: Context, config: Config): void {
 
   if (config.authorityMode !== 'scoped-service') registerWebConnectRoutes(ctx, config)
   if (!config.agentFeaturesEnabled) return
+  ctx.inject(['hivemindEmployeeDirectory'], (directoryCtx) => {
+    directoryCtx.effect(() => directoryCtx.hivemindEmployeeDirectory.register({
+      async profiles(signal) {
+        const authority = await resolveAuthority(directoryCtx, config)
+        const result = config.authorityMode === 'scoped-service'
+          ? await hiveRequest(authority, '/v1/hyperagents/profiles', { method: 'GET' }, signal, config)
+          : await hiveRequest(authority, HYPERAGENT_PROFILES_URL, { method: 'GET' }, signal, config, 'https://api.singulancelabs.com')
+        return hyperagentDirectory(result)
+      },
+    }))
+  })
   ctx.effect(() => ctx.on('tools/pre-execute', async (execution, next): Promise<PreToolDecision> => {
     if (execution.name === HIVE_CREATE_PROJECT_TOOL) {
       return { kind: 'ask', reason: 'Creating a HIVE-MIND project requires your approval.' }

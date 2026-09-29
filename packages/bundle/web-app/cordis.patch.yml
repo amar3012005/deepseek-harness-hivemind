@@ -280,6 +280,9 @@
     - id: ui-workflow-run
       name: '@deepseek-ai/dsh-client-ui-workflow-run'
 
+    - id: ui-hivemind-operating-run
+      name: '@deepseek-ai/dsh-client-ui-hivemind-operating-run'
+
     # Turn tail: the produced-files row under each closing assistant message.
     # Remove this entry to turn the surface off; the tail hole renders empty.
     - id: ui-deliverables

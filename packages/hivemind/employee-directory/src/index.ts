@@ -1,8 +1,45 @@
 /** Validated HIVE-MIND employee and HyperAgent directory projections. @module @deepseek-ai/dsh-hivemind-employee-directory */
 
+import { Service, type Context } from '@deepseek-ai/cordis'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 
 const MAX_EMPLOYEES = 100
+
+/** Authorized directory returned for the current organization. */
+export interface HyperagentDirectory {
+  readonly status: 'ready'
+  readonly contract: 'hivemind.hyperagent-profiles.v1'
+  readonly profiles: Record<string, JsonValue>[]
+  readonly count: number
+  readonly generatedAt?: JsonValue
+}
+
+/** Provider resolves employees without accepting model-supplied tenant identifiers. */
+export interface HiveMindEmployeeDirectoryProvider {
+  profiles(signal: AbortSignal): Promise<HyperagentDirectory>
+}
+
+declare module '@deepseek-ai/cordis' {
+  interface Context { hivemindEmployeeDirectory: HiveMindEmployeeDirectory }
+}
+
+/** Preset-scoped employee directory service. */
+export default class HiveMindEmployeeDirectory extends Service {
+  private provider: HiveMindEmployeeDirectoryProvider | undefined
+
+  constructor(ctx: Context) { super(ctx, 'hivemindEmployeeDirectory') }
+
+  register(provider: HiveMindEmployeeDirectoryProvider): () => void {
+    if (this.provider !== undefined) throw new Error('hivemind-employee-directory: provider already registered')
+    this.provider = provider
+    return () => { if (this.provider === provider) this.provider = undefined }
+  }
+
+  async profiles(signal: AbortSignal): Promise<HyperagentDirectory> {
+    if (this.provider === undefined) throw new Error('hivemind-employee-directory: provider is unavailable')
+    return this.provider.profiles(signal)
+  }
+}
 
 /** Local employee profile authorized for native subagent delegation. */
 export interface EmployeeProfile {
@@ -41,6 +78,19 @@ export function projectHyperagentProfiles(value: unknown): Record<string, JsonVa
   })
   if (response['count'] !== undefined && response['count'] !== profiles.length) throw new TypeError('hivemind-employee-directory: count mismatch')
   return { status: 'ready', contract: 'hivemind.hyperagent-profiles.v1', profiles, count: profiles.length, ...(response['generated_at'] === undefined ? {} : { generated_at: response['generated_at'] as JsonValue }) }
+}
+
+/** Convert the validated server projection into a directory service value. */
+export function hyperagentDirectory(value: unknown): HyperagentDirectory {
+  const projection = projectHyperagentProfiles(value)
+  const profiles = projection['profiles']
+  const count = projection['count']
+  if (!Array.isArray(profiles) || typeof count !== 'number') throw new TypeError('hivemind-employee-directory: invalid projected directory')
+  return {
+    status: 'ready', contract: 'hivemind.hyperagent-profiles.v1',
+    profiles: profiles as Record<string, JsonValue>[], count,
+    ...(projection['generated_at'] === undefined ? {} : { generatedAt: projection['generated_at'] }),
+  }
 }
 
 /** Validate a local employee registry already read through the identity adapter's secure file policy. */

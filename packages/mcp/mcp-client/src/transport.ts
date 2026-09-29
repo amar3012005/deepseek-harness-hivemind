@@ -42,9 +42,13 @@ export function createTransport(config: Config): Transport {
       // properties typed without `| undefined` (exactOptionalPropertyTypes
       // mismatch with the Transport interface); the SDK constructed the
       // object, so the cast records only that widening.
-      return new StreamableHTTPClientTransport(
-        new URL(config.url),
-        { requestInit: { headers: config.headers } },
-      ) as Transport
+      return createStreamableHttpTransport(config.url, config.headers)
   }
+}
+
+export function createStreamableHttpTransport(url: string, headers: Record<string, string>): Transport {
+  return new StreamableHTTPClientTransport(
+    new URL(url),
+    { requestInit: { headers } },
+  ) as Transport
 }

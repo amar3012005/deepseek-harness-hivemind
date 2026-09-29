@@ -466,6 +466,70 @@ Source: [`packages/goal/goal/src/domain.ts:66`](../packages/goal/goal/src/domain
 
 ### `hivemind/*`
 
+<a id="hivemindartifact-created--log-only"></a>
+
+#### `hivemind/artifact-created` — log-only
+
+```ts persistence-catalog
+/** A rendered PDF and preview committed before the event became visible. */
+'hivemind/artifact-created': ArtifactCreated
+```
+
+Source: [`packages/hivemind/artifact-renderer/src/index.ts:113`](../packages/hivemind/artifact-renderer/src/index.ts)
+
+<a id="hivemindbrowser-capability-lease--log-only"></a>
+
+#### `hivemind/browser-capability-lease` — log-only
+
+```ts persistence-catalog
+/** Durable proof that an official browser MCP capability was revealed in one agent scope. */
+'hivemind/browser-capability-lease': {
+  readonly leaseId: string
+  readonly provider: string
+  readonly scope: 'agent' | 'global'
+  readonly operation: Operation
+  readonly sourceUrl?: string
+  readonly expiresAt: number
+  readonly tools: readonly {
+    readonly name: string
+    readonly originalName: string
+    readonly description: string
+    readonly parameters: Record<string, unknown>
+  }[]
+}
+```
+
+Source: [`packages/hivemind/progressive-browser/src/index.ts:26`](../packages/hivemind/progressive-browser/src/index.ts)
+
+<a id="hivemindbrowser-capture--log-only"></a>
+
+#### `hivemind/browser-capture` — log-only
+
+```ts persistence-catalog
+/** Durable receipt for one bounded URL → title → screenshot capture. */
+'hivemind/browser-capture': {
+  readonly captureId: string
+  readonly provider: string
+  readonly url: string
+  readonly title?: string
+  readonly status?: number
+  readonly preview?: ImageAttachmentRef
+}
+```
+
+Source: [`packages/hivemind/progressive-browser/src/index.ts:41`](../packages/hivemind/progressive-browser/src/index.ts)
+
+<a id="hivemindcapability-lease--log-only"></a>
+
+#### `hivemind/capability-lease` — log-only
+
+```ts persistence-catalog
+/** Progressive projection of the installed native Harness tool registry for one agent. */
+'hivemind/capability-lease': CapabilityLeaseRecorded
+```
+
+Source: [`packages/hivemind/playbooks/src/index.ts:200`](../packages/hivemind/playbooks/src/index.ts)
+
 <a id="hivemindcomposio-session--log-only"></a>
 
 #### `hivemind/composio-session` — log-only
@@ -510,6 +574,78 @@ Source: [`packages/hivemind/connected-apps/src/index.ts:42`](../packages/hivemin
 
 Source: [`packages/hivemind/runtime/src/index.ts:36`](../packages/hivemind/runtime/src/index.ts)
 
+<a id="hivemindemployee-delegation-end--log-only"></a>
+
+#### `hivemind/employee-delegation-end` — log-only
+
+```ts persistence-catalog
+/**
+ * Records the terminal status, native child identity when available, diagnostic, and output fingerprint for one attempted employee delegation.
+ * The payload's delegation identifier pairs it with the preceding start record, including when child startup rejects before publication.
+ */
+'hivemind/employee-delegation-end': EmployeeDelegationEnd
+```
+
+Source: [`packages/hivemind/employee-delegation/src/index.ts:118`](../packages/hivemind/employee-delegation/src/index.ts)
+
+<a id="hivemindemployee-delegation-start--log-only"></a>
+
+#### `hivemind/employee-delegation-start` — log-only
+
+```ts persistence-catalog
+/**
+ * Records the immutable employee identity, assignment, model budget, evidence scope, and effective child policy before native child publication.
+ * The payload uses digests for profile bodies so later profile edits cannot reinterpret the assignment without copying sensitive or bulky source content.
+ */
+'hivemind/employee-delegation-start': EmployeeDelegationStart
+```
+
+Source: [`packages/hivemind/employee-delegation/src/index.ts:113`](../packages/hivemind/employee-delegation/src/index.ts)
+
+<a id="hivemindevidence-gap-recorded--log-only"></a>
+
+#### `hivemind/evidence-gap-recorded` — log-only
+
+```ts persistence-catalog
+/** A specific unresolved evidence need that intentionally reopens research for the current plan. */
+'hivemind/evidence-gap-recorded': EvidenceGapRecorded
+```
+
+Source: [`packages/hivemind/operating-workstreams/src/index.ts:94`](../packages/hivemind/operating-workstreams/src/index.ts)
+
+<a id="hivemindgeneration-created--log-only"></a>
+
+#### `hivemind/generation-created` — log-only
+
+```ts persistence-catalog
+/** Generated artifact stored before the completion event is appended. */
+'hivemind/generation-created': GenerationReceipt
+```
+
+Source: [`packages/hivemind/artifact-renderer/src/generation.ts:85`](../packages/hivemind/artifact-renderer/src/generation.ts)
+
+<a id="hivemindmedia-workflow-ended--log-only"></a>
+
+#### `hivemind/media-workflow-ended` — log-only
+
+```ts persistence-catalog
+/** Terminal media outcome paired with its start by workflowId and jobId. */
+'hivemind/media-workflow-ended': MediaEnd
+```
+
+Source: [`packages/hivemind/artifact-renderer/src/media-workflow.ts:38`](../packages/hivemind/artifact-renderer/src/media-workflow.ts)
+
+<a id="hivemindmedia-workflow-started--log-only"></a>
+
+#### `hivemind/media-workflow-started` — log-only
+
+```ts persistence-catalog
+/** Media work admitted into a native, owner-scoped background job. */
+'hivemind/media-workflow-started': MediaStart
+```
+
+Source: [`packages/hivemind/artifact-renderer/src/media-workflow.ts:36`](../packages/hivemind/artifact-renderer/src/media-workflow.ts)
+
 <a id="hivemindmemory-save--log-only"></a>
 
 #### `hivemind/memory-save` — log-only
@@ -524,7 +660,40 @@ Source: [`packages/hivemind/runtime/src/index.ts:36`](../packages/hivemind/runti
 }
 ```
 
-Source: [`packages/hivemind/memory/src/index.ts:65`](../packages/hivemind/memory/src/index.ts)
+Source: [`packages/hivemind/memory/src/index.ts:69`](../packages/hivemind/memory/src/index.ts)
+
+<a id="hivemindoperating-context--log-only"></a>
+
+#### `hivemind/operating-context` — log-only
+
+```ts persistence-catalog
+/** Compact company evidence and operating candidates retrieved for one natural objective. */
+'hivemind/operating-context': OperatingContextRecorded
+```
+
+Source: [`packages/hivemind/playbooks/src/index.ts:190`](../packages/hivemind/playbooks/src/index.ts)
+
+<a id="hivemindoperating-receipt--log-only"></a>
+
+#### `hivemind/operating-receipt` — log-only
+
+```ts persistence-catalog
+/** Native browser, artifact, workflow, or approved-action receipt correlated to this operating run. */
+'hivemind/operating-receipt': OperatingReceipt
+```
+
+Source: [`packages/hivemind/operating-workstreams/src/index.ts:96`](../packages/hivemind/operating-workstreams/src/index.ts)
+
+<a id="hivemindplaybooks-loaded--log-only"></a>
+
+#### `hivemind/playbooks-loaded` — log-only
+
+```ts persistence-catalog
+/** Records the exact global doctrines and local methods made visible before an operating plan. */
+'hivemind/playbooks-loaded': PlaybooksLoaded
+```
+
+Source: [`packages/hivemind/playbooks/src/index.ts:192`](../packages/hivemind/playbooks/src/index.ts)
 
 <a id="hivemindread-scope--log-only"></a>
 
@@ -547,6 +716,160 @@ Source: [`packages/hivemind/runtime/src/index.ts:32`](../packages/hivemind/runti
 ```
 
 Source: [`packages/hivemind/runtime/src/index.ts:34`](../packages/hivemind/runtime/src/index.ts)
+
+<a id="hivemindrequest-assembly-budget--log-only"></a>
+
+#### `hivemind/request-assembly-budget` — log-only
+
+```ts persistence-catalog
+/** Exact character attribution for the assembled fixed request surface. Never enters model context. */
+'hivemind/request-assembly-budget': RequestAssemblyBudget
+```
+
+Source: [`packages/hivemind/playbooks/src/index.ts:198`](../packages/hivemind/playbooks/src/index.ts)
+
+<a id="hivemindresearch-gathered--log-only"></a>
+
+#### `hivemind/research-gathered` — log-only
+
+```ts persistence-catalog
+/** One terminal receipt for the complete bounded parallel gather phase. */
+'hivemind/research-gathered': ResearchGatherReceipt
+```
+
+Source: [`packages/hivemind/research/src/index.ts:172`](../packages/hivemind/research/src/index.ts)
+
+<a id="hivemindresearch-receipt--log-only"></a>
+
+#### `hivemind/research-receipt` — log-only
+
+```ts persistence-catalog
+/** Records the latest bounded provider attribution, result count, status, and failure evidence read for one research job. */
+'hivemind/research-receipt': ResearchReceipt
+```
+
+Source: [`packages/hivemind/research/src/index.ts:170`](../packages/hivemind/research/src/index.ts)
+
+<a id="hivemindresearch-requested--log-only"></a>
+
+#### `hivemind/research-requested` — log-only
+
+```ts persistence-catalog
+/** Records the exact governed research objective and the durable job identity returned when work is accepted. */
+'hivemind/research-requested': SubmittedResearch & { objective: string }
+```
+
+Source: [`packages/hivemind/research/src/index.ts:168`](../packages/hivemind/research/src/index.ts)
+
+<a id="hivemindresearch-workflow-started--log-only"></a>
+
+#### `hivemind/research-workflow-started` — log-only
+
+```ts persistence-catalog
+/** Starts one user-selected governed research task before its concurrent evidence lanes dispatch. */
+'hivemind/research-workflow-started': ResearchWorkflowStarted
+```
+
+Source: [`packages/hivemind/research/src/index.ts:174`](../packages/hivemind/research/src/index.ts)
+
+<a id="hivemindresearch-workflow-terminal--log-only"></a>
+
+#### `hivemind/research-workflow-terminal` — log-only
+
+```ts persistence-catalog
+/** Marks a governed research task terminal so the parent synthesizes rather than reopening completed evidence work. */
+'hivemind/research-workflow-terminal': ResearchWorkflowTerminal
+```
+
+Source: [`packages/hivemind/research/src/index.ts:176`](../packages/hivemind/research/src/index.ts)
+
+<a id="hivemindrun-evaluation--log-only"></a>
+
+#### `hivemind/run-evaluation` — log-only
+
+```ts persistence-catalog
+/** Compact run close-out proposal emitted only when no observed work remains pending. */
+'hivemind/run-evaluation': RunEvaluation
+```
+
+Source: [`packages/hivemind/operating-workstreams/src/index.ts:98`](../packages/hivemind/operating-workstreams/src/index.ts)
+
+<a id="hivemindrun-plan--log-only"></a>
+
+#### `hivemind/run-plan` — log-only
+
+```ts persistence-catalog
+/** Task-local playbook selection and adaptive approach used for this run. */
+'hivemind/run-plan': RunPlanRecorded
+```
+
+Source: [`packages/hivemind/playbooks/src/index.ts:194`](../packages/hivemind/playbooks/src/index.ts)
+
+<a id="hivemindrun-plan-revised--log-only"></a>
+
+#### `hivemind/run-plan-revised` — log-only
+
+```ts persistence-catalog
+/** Complete replacement of an earlier operating plan chosen by the parent runtime. */
+'hivemind/run-plan-revised': RunPlanRecorded
+```
+
+Source: [`packages/hivemind/playbooks/src/index.ts:196`](../packages/hivemind/playbooks/src/index.ts)
+
+<a id="hivemindworkstream-approval--log-only"></a>
+
+#### `hivemind/workstream-approval` — log-only
+
+```ts persistence-catalog
+/** A real approval-service decision bound to one operating workstream. */
+'hivemind/workstream-approval': WorkstreamApproval
+```
+
+Source: [`packages/hivemind/operating-workstreams/src/index.ts:92`](../packages/hivemind/operating-workstreams/src/index.ts)
+
+<a id="hivemindworkstream-completed--log-only"></a>
+
+#### `hivemind/workstream-completed` — log-only
+
+```ts persistence-catalog
+/** Records terminal workstream output references without replacing the native tool or child receipts. */
+'hivemind/workstream-completed': WorkstreamCompleted
+```
+
+Source: [`packages/hivemind/operating-workstreams/src/index.ts:88`](../packages/hivemind/operating-workstreams/src/index.ts)
+
+<a id="hivemindworkstream-failed--log-only"></a>
+
+#### `hivemind/workstream-failed` — log-only
+
+```ts persistence-catalog
+/** Records a terminal workstream failure. */
+'hivemind/workstream-failed': WorkstreamFailed
+```
+
+Source: [`packages/hivemind/operating-workstreams/src/index.ts:90`](../packages/hivemind/operating-workstreams/src/index.ts)
+
+<a id="hivemindworkstream-progress--log-only"></a>
+
+#### `hivemind/workstream-progress` — log-only
+
+```ts persistence-catalog
+/** Records bounded progress supplied by the active parent or linked child execution. */
+'hivemind/workstream-progress': WorkstreamProgress
+```
+
+Source: [`packages/hivemind/operating-workstreams/src/index.ts:86`](../packages/hivemind/operating-workstreams/src/index.ts)
+
+<a id="hivemindworkstream-started--log-only"></a>
+
+#### `hivemind/workstream-started` — log-only
+
+```ts persistence-catalog
+/** Records the planned actor snapshot when execution of one workstream starts. */
+'hivemind/workstream-started': WorkstreamStarted
+```
+
+Source: [`packages/hivemind/operating-workstreams/src/index.ts:84`](../packages/hivemind/operating-workstreams/src/index.ts)
 
 ### `hook/*`
 

@@ -67,7 +67,15 @@ try {
     if (preset.broken !== undefined) throw new Error(`${id} preset cannot mount: ${preset.broken}`)
   }
   await import('@deepseek-ai/dsh-hivemind-connected-apps')
-  console.log('both HIVE presets and connected-apps resolve from the image')
+  for (const packageName of [
+    '@deepseek-ai/dsh-hivemind-playbooks',
+    '@deepseek-ai/dsh-hivemind-operating-workstreams',
+    '@deepseek-ai/dsh-hivemind-research',
+    '@deepseek-ai/dsh-hivemind-progressive-browser',
+    '@deepseek-ai/dsh-hivemind-artifact-renderer',
+    '@deepseek-ai/dsh-client-ui-hivemind-operating-run',
+  ]) await import(packageName)
+  console.log('both HIVE presets and HyperAgents operating packages resolve from the image')
 } finally {
   await ctx.fiber.dispose()
 }

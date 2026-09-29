@@ -57,6 +57,10 @@ export interface MemoryProvider {
   profiles(signal: AbortSignal): Promise<Record<string, JsonValue>>
 }
 
+declare module '@deepseek-ai/cordis' {
+  interface Context { hivemindMemory: MemoryProvider }
+}
+
 export interface MemoryPluginConfig { defaultLimit: number }
 
 declare module '@deepseek-ai/dsh-session/types' {
@@ -329,6 +333,7 @@ export function memoryPlugin(config: MemoryPluginConfig, provider: MemoryProvide
     name: 'hivemind-memory',
     inject: ['tools'],
     apply(ctx: Context): void {
+      ctx.provide('hivemindMemory', provider)
       ctx.effect(() => ctx.tools.register(defineTool({
         name: 'hivemind_save_memory',
         description: 'Durably save one confirmed, stable HIVE-MIND memory. A user-stated company decision, project direction, standing preference, role assignment, or factual correction can qualify even without the words "save this"; do not persist a proposal, question, transient remark, or speculation. Use this direct tool for a standalone fact, preference, decision, correction, relationship, or completed outcome. Before saving, extract every concrete detail that will help future recall—each named person, organization, product, project, document, system, tool, place, date or period, and distinct subject or concept—and include each once in entities; the Harness deterministically stores them as normalized entity:* tags. Do not collapse a detailed memory into only broad generic tags. A successful result must include the saved memory receipt. Never save secrets, credentials, ephemeral chat, guesses, or unverified claims.',
