@@ -1,5 +1,5 @@
-# Reuse the same tenant-scoped HIVE and connected-app composition as chat.
-# Only the agent persona and native task tracking differ.
+# Keep HIVE Chat's tenant-scoped identity and connected-app boundary; add
+# company operating capabilities inside that same isolated Cordis realm.
 - id: hivemind-chat-base
   name: cordis:include
   config:
@@ -25,15 +25,67 @@
             employee. Treat receipts as evidence; do not repeat a completed
             lookup or claim that an unavailable result proves absence.
 
-            For multi-step work, keep a short native todo list and finish or
-            explicitly mark each item blocked before the final answer. Choose
-            tools as work requires; plans and playbooks guide work but are not
-            mandatory workflows. Use HIVE connected-task discovery for current
+            For substantial multi-step company work, use
+            hivemind_operating_context once, select relevant optional
+            playbooks, and record one hivemind_operating_plan. Execute its
+            workstreams inline as the selected employees, updating native
+            todos and terminating every workstream before final synthesis.
+            Lease the skills capability, then search hivemind_skills only
+            when specialist instructions would improve the task; load the
+            exact selected skill, not a full catalog.
+            Bounded requests need no plan. Use hivemind_research_answer for
+            current multi-source evidence and hivemind_browser_capture for a
+            screenshot of a known URL; each terminal receipt is enough.
+            Do not repeat completed discovery, recall, research, or capture.
+            Use HIVE connected-task discovery for current
             apps, then its exact returned contract and native approval for any
             external write. Do not claim publication, delivery, or memory save
             without a successful receipt. Never expose secrets or use local
             filesystem or shell tools in this hosted company session. Keep
             answers grounded, concise, and clear about unfinished work.
+      - id: hivemind-capabilities
+        name: cordis:group
+        isolate:
+          hivemindIdentity: true
+          hivemindMemory: true
+          hivemindEmployeeDirectory: true
+          hivemindOperatingRuns: true
+          hivemindArtifactRenderer: true
+      - id: hivemind-capabilities
+        insert:
+          - id: hivemind-employee-directory
+            name: '@deepseek-ai/dsh-hivemind-employee-directory'
+          - id: hivemind-playbooks
+            name: '@deepseek-ai/dsh-hivemind-playbooks'
+            config:
+              progressiveToolDisclosure: true
+              employeeSubagentPlanning: false
+          - id: hivemind-progressive-skills
+            name: '@deepseek-ai/dsh-hivemind-progressive-skills'
+          - id: hivemind-operating-workstreams
+            name: '@deepseek-ai/dsh-hivemind-operating-workstreams'
+          - id: hivemind-research
+            name: '@deepseek-ai/dsh-hivemind-research'
+            config:
+              executionMode: local-web
+              authorityMode: scoped-service
+              exposeAdvancedTools: false
+              serviceApiBase: !!js process.env.HIVEMIND_CONNECTED_RECEIPT_SERVICE_URL
+              serviceSecretEnv: HIVE_HARNESS_RUNNER_SERVICE_SECRET
+          - id: hivemind-progressive-browser
+            name: '@deepseek-ai/dsh-hivemind-progressive-browser'
+            config:
+              url: !!js process.env.HIVEMIND_PLAYWRIGHT_MCP_URL ?? 'https://playwright-mcp.singulancelabs.com/mcp'
+              headers:
+                Authorization: !!js process.env.PLAYWRIGHT_EXTERNAL_MCP_TOKEN ? `Bearer ${process.env.PLAYWRIGHT_EXTERNAL_MCP_TOKEN}` : ''
+              cloudflareUrl: !!js process.env.HIVEMIND_CLOUDFLARE_BROWSER_MCP_URL ?? ''
+              cloudflareHeaders:
+                Authorization: !!js process.env.CLOUDFLARE_BROWSER_RUN_MCP_TOKEN ? `Bearer ${process.env.CLOUDFLARE_BROWSER_RUN_MCP_TOKEN}` : ''
+          - id: hivemind-artifact-renderer
+            name: '@deepseek-ai/dsh-hivemind-artifact-renderer'
+            config:
+              provider: playwright
+              outputDirectory: .hivemind/artifacts
       - insert:
           - id: tool-todo
             name: '@deepseek-ai/dsh-tool-todo'
