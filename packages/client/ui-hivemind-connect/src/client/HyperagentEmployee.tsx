@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { Avatar } from '@humation/react'
 import { humation1 } from '@humation/assets-humation-1'
 import type { SessionEventWindow } from '@deepseek-ai/dsh-api-session-controller/client'
@@ -45,6 +45,10 @@ export function isHyperagentPreset(value: unknown): boolean {
   return value === 'hivemind-hyperagents' || value === 'hyperagents' || value === 'hyperagents-compressed'
 }
 
+export function employeeMenuHeight(viewportHeight: number, triggerBottom: number): number {
+  return Math.max(0, Math.min(360, viewportHeight - triggerBottom - 16))
+}
+
 export interface EmployeeInjected {
   useEmployeeEvents: SnapshotSelectorHook<SessionEventWindow>
   listEmployees: () => Promise<EmployeeOption[]>
@@ -55,15 +59,18 @@ type PickerProps = PropsRuntime<'conversation.input.left'> & PropsLocale<'hivemi
 
 /** Downward-opening selector beside native Workspace Write control. */
 export function HyperagentEmployeePicker({ sessionId, useSessions, useEmployeeEvents, listEmployees, selectEmployee, t }: PickerProps) {
+  const pickerRef = useRef<HTMLDivElement>(null)
   const preset = useSessions(state => state.byId[sessionId]?.projectionValues?.agentPreset)
   const fromLog = useEmployeeEvents(selectedEmployee)
   const [open, setOpen] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(false)
   const [options, setOptions] = useState<EmployeeOption[]>([])
+  const [menuHeight, setMenuHeight] = useState(360)
   if (!isHyperagentPreset(preset)) return null
   const selected = fromLog
   const toggle = (): void => {
+    if (!open) setMenuHeight(employeeMenuHeight(window.innerHeight, pickerRef.current?.getBoundingClientRect().bottom ?? 0))
     if (!open && options.length === 0) {
       setLoading(true)
       void listEmployees().then(setOptions, () => { setError(true) }).finally(() => { setLoading(false) })
@@ -77,12 +84,12 @@ export function HyperagentEmployeePicker({ sessionId, useSessions, useEmployeeEv
       else setError(true)
     }, () => { setError(true) }).finally(() => { setLoading(false) })
   }
-  return <div className={css.picker} data-hivemind-employee-picker>
+  return <div ref={pickerRef} className={css.picker} data-hivemind-employee-picker>
     <button className={css.pickerButton} type="button" aria-haspopup="listbox" aria-expanded={open} onClick={toggle}>
       {selected === null ? <span className={css.autoAvatar}>{t('employee.initial')}</span> : <EmployeeAvatar employee={selected} size={24} />}
       <span>{selected?.name ?? t('employee.auto')}</span><span aria-hidden="true">⌄</span>
     </button>
-    {open && <div className={css.menu} role="listbox" aria-label={t('employee.label')}>
+    {open && <div className={css.menu} role="listbox" aria-label={t('employee.label')} style={{ maxHeight: menuHeight }}>
       <button type="button" role="option" aria-selected={selected === null} disabled={loading} onClick={() => { choose(null) }}><span className={css.autoAvatar}>{t('employee.initial')}</span><span><strong>{t('employee.auto')}</strong><small>{t('employee.autoDetail')}</small></span></button>
       {options.map(employee => <button key={employee.id} type="button" role="option" aria-selected={selected?.id === employee.id} disabled={loading} onClick={() => { choose(employee) }}><EmployeeAvatar employee={employee} size={34} /><span><strong>{employee.name}</strong><small>{employee.role}</small></span></button>)}
       {loading && <p role="status">{t('employee.loading')}</p>}
@@ -107,7 +114,7 @@ export function HyperagentEmployeePanel({ useSession, useEmployeeEvents, t }: Pa
 }
 
 export interface PanelToggleInjected { swapPanel: () => void }
-type ToggleProps = PropsRuntime<'conversation.session.header.actions'> & PropsLocale<'hivemind-connect'> & PanelToggleInjected
+type ToggleProps = PropsRuntime<'conversation.input.right'> & PropsLocale<'hivemind-connect'> & PanelToggleInjected
 
 export function HyperagentPanelToggle({ sessionId, useSessions, swapPanel, t }: ToggleProps) {
   const preset = useSessions(state => state.byId[sessionId]?.projectionValues?.agentPreset)

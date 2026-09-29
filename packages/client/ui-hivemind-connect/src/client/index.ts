@@ -268,8 +268,8 @@ export function apply(ctx: ClientContext): void {
         hooks: { employeeEvents: employeeEvents(sessionId) },
       }),
     }, HyperagentEmployeePanel))
-    ctx.slots.inject('conversation.session.header.actions', () => ctx.slots.register({
-      name: 'conversation.session.header.actions', id: 'hivemind-employee-panel', order: 20, locale: NS,
+    ctx.slots.inject('conversation.input.right', () => ctx.slots.register({
+      name: 'conversation.input.right', id: 'hivemind-employee-panel', order: 20, locale: NS,
       inject: sessionId => ({ swapPanel: () => {
         const active = ctx.sidebarRight.active()
         if (active?.kind === 'hivemind-employee') {
