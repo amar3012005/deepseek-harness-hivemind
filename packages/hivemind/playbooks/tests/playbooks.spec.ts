@@ -169,6 +169,7 @@ describe('hivemind playbooks', () => {
       'hivemind_research_gather',
       'hivemind_research_answer',
       'hivemind_research_request',
+      'web_fetch',
       'hivemind_browser_capture',
       'hivemind_browser_discover',
       'hivemind_skills',
@@ -300,8 +301,9 @@ describe('hivemind playbooks', () => {
     } as never)) as { visibleTools: string[]; suppressed_tools: string[] }
     expect(suppressedLease.visibleTools).not.toEqual(expect.arrayContaining([
       'hivemind_operating_context', 'hivemind_playbooks', 'hivemind_research_gather',
-      'hivemind_research_request', 'hivemind_research_status', 'web_search', 'web_fetch',
+      'hivemind_research_request', 'hivemind_research_status', 'web_search',
     ]))
+    expect(suppressedLease.visibleTools).toContain('web_fetch')
     expect(suppressedLease.suppressed_tools).toContain('hivemind_research_gather')
     expect(agent.ctx.tools.schemas().map(tool => tool.name)).not.toContain('hivemind_operating_context')
     events.push({ type: 'hivemind/evidence-gap-recorded', data: { runId: 'run-research', planId: 'plan-research', workstreamId: 'evidence', summary: 'Missing regulator source.' } })

@@ -834,7 +834,6 @@ export function apply(ctx: Context, config: Partial<Config> = {}): void {
           'hivemind_research_request',
           'hivemind_research_status',
           'web_search',
-          'web_fetch',
         ])
       }
     }
@@ -1068,7 +1067,7 @@ export function apply(ctx: Context, config: Partial<Config> = {}): void {
             ...(suppressed.size === 0 ? {} : { suppressed_tools: [...suppressed].sort() }),
             instruction: suppressed.size === 0
               ? 'Lease only the lanes useful for the next work. The next model step receives their original native tool schemas.'
-              : 'Research and orientation are satisfied for the active plan. Continue its remaining workstreams; record an evidence gap before reopening those tools.',
+              : 'Research and orientation are satisfied. For a missing first-party passage, lease web and read its exact URL with web_fetch. To reopen research or search, call hivemind_workstream with action evidence_gap, the active workstream_id, and a specific missing-fact summary.',
           }
         }
         if (operation === 'reset') {
