@@ -67,7 +67,7 @@
           - id: hivemind-research
             name: '@deepseek-ai/dsh-hivemind-research'
             config:
-              executionMode: local-web
+              executionMode: remote
               authorityMode: scoped-service
               exposeAdvancedTools: false
               serviceApiBase: !!js process.env.HIVEMIND_CONNECTED_RECEIPT_SERVICE_URL

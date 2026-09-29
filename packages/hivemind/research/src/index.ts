@@ -341,12 +341,15 @@ function expandedPath(value: string): string {
   return isAbsolute(value) ? value : join(process.cwd(), value)
 }
 
-function apiBase(value: string, label: string, localAuthorityOnly = false): URL {
+function apiBase(value: string, label: string, localAuthorityOnly = false, internalService = false): URL {
   const parsed = new URL(value)
   const loopback = ['localhost', '127.0.0.1', '[::1]'].includes(parsed.hostname)
+  const dockerService = internalService && /^[a-z0-9][a-z0-9-]*$/iu.test(parsed.hostname)
   const canonicalHivemind = parsed.protocol === 'https:' && parsed.hostname === 'core.singulancelabs.com' && parsed.port === ''
   if (localAuthorityOnly && !canonicalHivemind && !loopback) throw new Error(`hivemind-research: ${label} must be the canonical HIVE-MIND API or loopback`)
-  if (!localAuthorityOnly && parsed.protocol !== 'https:' && !loopback) throw new Error(`hivemind-research: ${label} must use HTTPS or loopback`)
+  if (!localAuthorityOnly && parsed.protocol !== 'https:' && !loopback && !dockerService) {
+    throw new Error(`hivemind-research: ${label} must use HTTPS, loopback, or a configured internal service`)
+  }
   if (parsed.username || parsed.password || parsed.search || parsed.hash || (parsed.pathname !== '/' && parsed.pathname !== '')) {
     throw new Error(`hivemind-research: ${label} must be an origin`)
   }
@@ -381,7 +384,11 @@ function serviceAuthority(ctx: Context, config: Config): Authority {
   const now = Math.floor(Date.now() / 1000)
   const encode = (value: unknown) => Buffer.from(JSON.stringify(value)).toString('base64url')
   const unsigned = `${encode({ alg: 'HS256', typ: 'JWT' })}.${encode({ iss: 'hivemind-harness-runner', aud: 'hivemind-control-plane-harness-proxy', sub: principal.userId, org_id: principal.orgId, profile: principal.profile, iat: now, exp: now + 30, jti: randomUUID() })}`
-  return { token: `${unsigned}.${createHmac('sha256', secret).update(unsigned).digest('base64url')}`, apiBase: apiBase(config.serviceApiBase, 'service API base'), pathPrefix: '/internal/v1/harness-chat/core' }
+  return {
+    token: `${unsigned}.${createHmac('sha256', secret).update(unsigned).digest('base64url')}`,
+    apiBase: apiBase(config.serviceApiBase, 'service API base', false, true),
+    pathPrefix: '/internal/v1/harness-chat/core',
+  }
 }
 
 async function authority(ctx: Context, config: Config): Promise<Authority> {

@@ -87,6 +87,8 @@ function mount(pluginConfig: Config, withSpill = false): HarnessMock {
   const spills: Array<{ suggestedName: string; content: string }> = []
   const harness: HarnessMock = { tools, skills, spills }
   const ctx = {
+    inject() { return undefined },
+    provide() { return undefined },
     effect(callback: () => (() => void) | undefined) {
       return callback()
     },
@@ -459,6 +461,10 @@ describe('HIVE-MIND runtime', () => {
     const allow = vi.fn(async () => ({ kind: 'allow' as const }))
 
     await expect(harness.toolPreExecute?.({ name: 'hivemind_web_search' }, allow)).resolves.toEqual({
+      kind: 'ask',
+      reason: 'Web research requires your approval before accessing external sources.',
+    })
+    await expect(harness.toolPreExecute?.({ name: 'hivemind_research_answer' }, allow)).resolves.toEqual({
       kind: 'ask',
       reason: 'Web research requires your approval before accessing external sources.',
     })

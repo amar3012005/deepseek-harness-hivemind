@@ -379,6 +379,40 @@ describe('hivemind research tools', () => {
     expect(events.map(event => event.type)).toEqual(['hivemind/research-requested', 'hivemind/research-receipt'])
   })
 
+  it('routes production research through the authenticated HIVE job proxy', async () => {
+    vi.stubEnv('HIVE_TEST_SERVICE_SECRET', 'test-secret-with-at-least-thirty-two-bytes')
+    try {
+      const { request, agent } = await setup(undefined, undefined, 'remote', {
+        authorityMode: 'scoped-service',
+        serviceApiBase: 'http://control-plane:3000',
+        serviceSecretEnv: 'HIVE_TEST_SERVICE_SECRET',
+      })
+      const calls: Array<{ url: string; authorization: string }> = []
+      globalThis.fetch = vi.fn(async (url, init) => {
+        calls.push({
+          url: String(url),
+          authorization: String(new Headers(init?.headers).get('authorization')),
+        })
+        return calls.length === 1
+          ? new Response(JSON.stringify({ job_id: 'scoped-1', status: 'queued' }), { status: 202 })
+          : new Response(JSON.stringify({ id: 'scoped-1', status: 'succeeded', runtime_used: 'tavily', results: [
+            { title: 'Regulator source', url: 'https://example.test/regulator', snippet: 'Primary evidence.' },
+          ] }), { status: 200 })
+      }) as typeof globalThis.fetch
+
+      await expect(request.execute({ objective: 'Find official DORA obligations.' }, {
+        agent, signal: new AbortController().signal,
+      } as never)).resolves.toMatchObject({ receipt: { evidenceState: 'ready', provider: 'tavily' } })
+      expect(calls.map(call => call.url)).toEqual([
+        'http://control-plane:3000/internal/v1/harness-chat/core/api/web/search/jobs',
+        'http://control-plane:3000/internal/v1/harness-chat/core/api/web/jobs/scoped-1',
+      ])
+      expect(calls.every(call => call.authorization.startsWith('Bearer '))).toBe(true)
+    } finally {
+      vi.unstubAllEnvs()
+    }
+  })
+
   it('uses the native job registry to watch a pending durable receipt without a second model tool call', async () => {
     const started: Array<{ run(): { done: Promise<unknown> } }> = []
     const { status, agent, events } = await setup(undefined, { start(spec) { started.push(spec); return 'hivemind_research-1' } })

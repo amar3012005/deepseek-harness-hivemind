@@ -1055,7 +1055,13 @@ export function apply(ctx: Context, config: Config): void {
     if (execution.name === HIVE_CREATE_PROJECT_TOOL) {
       return { kind: 'ask', reason: 'Creating a HIVE-MIND project requires your approval.' }
     }
-    if (config.webApprovalRequired && (execution.name === HIVE_WEB_SEARCH_TOOL || execution.name === 'web_fetch')) {
+    if (config.webApprovalRequired && [
+      HIVE_WEB_SEARCH_TOOL,
+      'web_fetch',
+      'hivemind_research_answer',
+      'hivemind_research_request',
+      'hivemind_research_gather',
+    ].includes(execution.name)) {
       return { kind: 'ask', reason: 'Web research requires your approval before accessing external sources.' }
     }
     return next()
