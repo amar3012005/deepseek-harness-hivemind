@@ -808,7 +808,7 @@ export function apply(ctx: Context, config: Partial<Config> = {}): void {
         ...suppressed,
         ...CAPABILITY_TOOLS.research,
         ...CAPABILITY_TOOLS.web,
-        ...CAPABILITY_TOOLS.orchestration,
+        ...CAPABILITY_TOOLS.orchestration.filter(tool => tool !== 'hivemind_workstream'),
         ...CAPABILITY_TOOLS.automation,
         'hivemind_capabilities',
       ])

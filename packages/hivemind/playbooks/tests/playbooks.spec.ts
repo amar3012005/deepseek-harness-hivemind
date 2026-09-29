@@ -432,13 +432,18 @@ describe('hivemind playbooks', () => {
         data: { runId: 'run-terminal', planId: 'plan-terminal', workstreamId: 'evidence', summary: 'done' },
       },
     )
+    await tools.get('hivemind_capabilities')!.execute({ operation: 'lease', capabilities: ['orchestration'] }, {
+      agent,
+      signal: new AbortController().signal,
+    } as never)
     const projected = (await listeners.get('system-prompt/assemble')!(
       assembly,
       { agent, scope: agent },
       async () => assembly,
     )) as typeof assembly
+    expect(projected.tools.map(tool => tool.name)).toContain('hivemind_workstream')
     expect(projected.tools.map(tool => tool.name)).not.toEqual(expect.arrayContaining([
-      'hivemind_capabilities', 'hivemind_operating_plan', 'hivemind_workstream',
+      'hivemind_capabilities', 'hivemind_operating_plan',
       'hivemind_research_gather', 'web_search', 'workflow', 'todo_write',
     ]))
     expect(projected.sections).toEqual([])

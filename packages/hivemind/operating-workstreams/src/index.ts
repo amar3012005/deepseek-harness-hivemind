@@ -567,11 +567,12 @@ export function apply(ctx: Context, config: Partial<Config> = {}): void {
       const evidenceIds = Array.isArray(data['objectives'])
         ? data['objectives'].flatMap(item => stringValue(asRecord(item)?.['jobId']) ?? [])
         : []
-      const failed = data['status'] === 'failed'
-      appendProjection(sessionLike, failed ? 'hivemind/workstream-failed' : 'hivemind/workstream-completed', failed
-        ? { runId: plan.runId, planId: plan.planId, workstreamId: workstream.id, diagnostic: 'The bounded research gather completed without citeable evidence.' } satisfies WorkstreamFailed
-        : { runId: plan.runId, planId: plan.planId, workstreamId: workstream.id, summary: `Parallel research gather completed with ${evidenceIds.length} terminal evidence receipt${evidenceIds.length === 1 ? '' : 's'}.`, evidenceIds, artifactIds: [] } satisfies WorkstreamCompleted)
-      queueMicrotask(() =>{  updateWorkstreamTodo(sessionLike, workstream.id, 'completed') })
+      appendProjection(sessionLike, 'hivemind/workstream-progress', {
+        runId: plan.runId, planId: plan.planId, workstreamId: workstream.id,
+        summary: data['status'] === 'failed'
+          ? 'Research gather failed; assess the evidence gap before closing this workstream.'
+          : `Research gather returned ${evidenceIds.length} terminal evidence receipt${evidenceIds.length === 1 ? '' : 's'}; verify coverage before closing this workstream.`,
+      } satisfies WorkstreamProgress)
       return
     }
     if (observed.type === 'approval/asked') {

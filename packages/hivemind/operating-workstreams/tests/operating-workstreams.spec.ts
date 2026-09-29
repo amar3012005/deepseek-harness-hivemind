@@ -160,7 +160,7 @@ describe('HIVE-MIND operating workstreams', () => {
     })
   })
 
-  it('completes the corresponding evidence workstream and todo from a terminal gather receipt', async () => {
+  it('records research progress without completing work that may still need synthesis', async () => {
     const { ctx, agent, events } = await setup({ kind: 'main' })
     events.push({ type: 'todo/write', data: { todos: [
       { content: '[work-1] Review the market.', status: 'in_progress' },
@@ -171,14 +171,13 @@ describe('HIVE-MIND operating workstreams', () => {
       objectives: [{ jobId: 'evidence-1' }, { jobId: 'evidence-2' }], sources: [],
     } } as never)
     await new Promise<void>(resolve => setTimeout(resolve, 0))
-    expect(events).toContainEqual({ type: 'hivemind/workstream-completed', data: {
+    expect(events).toContainEqual({ type: 'hivemind/workstream-progress', data: {
       runId: 'run-1', planId: 'plan-1', workstreamId: 'work-1',
-      summary: 'Parallel research gather completed with 2 terminal evidence receipts.',
-      evidenceIds: ['evidence-1', 'evidence-2'], artifactIds: [],
+      summary: 'Research gather returned 2 terminal evidence receipts; verify coverage before closing this workstream.',
     } })
     expect(events.findLast(event => event.type === 'todo/write')).toEqual({ type: 'todo/write', data: { todos: [
-      { content: '[work-1] Review the market.', status: 'completed' },
-      { content: '[work-2] Synthesize the recommendation.', status: 'in_progress' },
+      { content: '[work-1] Review the market.', status: 'in_progress' },
+      { content: '[work-2] Synthesize the recommendation.', status: 'pending' },
     ] } })
   })
 

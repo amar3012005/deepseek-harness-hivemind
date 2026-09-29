@@ -613,14 +613,14 @@ export function apply(ctx: Context, config: Partial<Config> = {}): void {
 
   ctx.tools.register(defineTool({
     name: 'hivemind_browser_capture',
-    description: 'Capture a public page at an already-known absolute URL and return one durable receipt containing its final URL, exact rendered title when the page supplies one, HTTP status when supplied by the browser, and inline screenshot preview. Use this for a simple screenshot or rendered-title request. If the exact page URL is unknown but an official site origin is known, use hivemind_browser_discover against that official root and inspect its internal links; do not invent a path or use web search merely to guess one. If neither an exact URL nor an unambiguous official origin is known, ask the user for the URL. Use hivemind_browser_discover instead for interaction, authentication, debugging, multi-page work, or any task that needs raw browser controls.',
+    description: 'Capture a public page at an already-known absolute URL and return its final URL, exact rendered title, HTTP status, and screenshot preview. This tool DOES NOT return readable page body text and CANNOT verify product, pricing, compliance, or positioning claims. Use it only for screenshots or titles. For claims requiring first-party page text, lease the browser capability and use hivemind_browser_discover with inspect to obtain the native browser snapshot, or use a source-reading research receipt. If the exact page URL is unknown but an official site origin is known, discover that root and inspect internal links; never invent a path.',
     parameters: {
       source_url: { type: 'string', required: true, description: 'Exact absolute HTTP(S) URL supplied by the user or an authoritative preceding research result.' },
     },
     output: {
       schema: { type: 'object', additionalProperties: true, properties: {} },
       render: (_args, value) => [
-        { type: 'text' as const, text: `Browser capture complete. URL: ${value.url}. Exact title: ${value.title ?? '(not supplied by page)'}. HTTP status: ${value.http_status ?? '(not supplied by provider)'}. Provider: ${value.provider}.${value.screenshot_attachment_id === undefined ? ' Screenshot is attached.' : ` Screenshot attachment id: ${value.screenshot_attachment_id}.`} This receipt is terminal; do not rediscover, poll, navigate, capture, web-fetch, or search this same page unless the user asks for a refresh or identifies a concrete missing fact.` },
+        { type: 'text' as const, text: `Browser capture complete. URL: ${value.url}. Exact title: ${value.title ?? '(not supplied by page)'}. HTTP status: ${value.http_status ?? '(not supplied by provider)'}. Provider: ${value.provider}.${value.screenshot_attachment_id === undefined ? ' Screenshot is attached.' : ` Screenshot attachment id: ${value.screenshot_attachment_id}.`} No page body text was extracted; this receipt does not verify page claims. Do not repeat capture unless the user asks for a refresh. If source text is needed, use hivemind_browser_discover with inspect or another source-reading tool.` },
         ...(value.preview === undefined ? [] : [{ type: 'image' as const, attachment: value.preview as unknown as ImageAttachmentRef }]),
       ],
     },
