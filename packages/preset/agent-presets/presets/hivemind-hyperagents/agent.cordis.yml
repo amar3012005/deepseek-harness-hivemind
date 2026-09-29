@@ -51,6 +51,28 @@
           hivemindEmployeeDirectory: true
           hivemindOperatingRuns: true
           hivemindArtifactRenderer: true
+      - id: hivemind-runtime
+        name: '@deepseek-ai/dsh-hivemind-runtime'
+        config:
+          agentFeaturesEnabled: true
+          legacyToolsEnabled: false
+          capabilityHintEnabled: false
+          authorityMode: scoped-service
+          icarusConfigPath: !!js process.env.HIVEMIND_ICARUS_CONFIG_PATH ?? `${process.env.HOME}/.icarus/config.json`
+          serviceApiBase: !!js process.env.HIVEMIND_CONNECTED_RECEIPT_SERVICE_URL
+          serviceHttpOrigins: !!js (process.env.HIVEMIND_SERVICE_HTTP_ORIGINS ?? '').split(',').map(value => value.trim()).filter(Boolean)
+          serviceSecretEnv: HIVE_HARNESS_RUNNER_SERVICE_SECRET
+          durableReceiptsRequired: !!js process.env.HIVEMIND_CONNECTED_RECEIPTS_REQUIRED === 'true'
+          requestTimeoutMs: 20000
+          responseMaxBytes: 2097152
+          profileContextMaxChars: 12000
+          profileBriefMaxChars: 1200
+          recallResultLimit: 3
+          entityResultLimit: 10
+          recallItemMaxChars: 1200
+          historyTurns: 3
+          historyMaxChars: 3000
+          webApprovalRequired: true
       - id: hivemind-capabilities
         insert:
           - id: hivemind-employee-directory
@@ -76,11 +98,11 @@
             name: '@deepseek-ai/dsh-hivemind-progressive-browser'
             config:
               url: !!js process.env.HIVEMIND_PLAYWRIGHT_MCP_URL ?? 'https://playwright-mcp.singulancelabs.com/mcp'
-              headers:
-                Authorization: !!js process.env.PLAYWRIGHT_EXTERNAL_MCP_TOKEN ? `Bearer ${process.env.PLAYWRIGHT_EXTERNAL_MCP_TOKEN}` : ''
+              headers: !!js >-
+                ({ Authorization: process.env.PLAYWRIGHT_EXTERNAL_MCP_TOKEN ? `Bearer ${process.env.PLAYWRIGHT_EXTERNAL_MCP_TOKEN}` : '' })
               cloudflareUrl: !!js process.env.HIVEMIND_CLOUDFLARE_BROWSER_MCP_URL ?? ''
-              cloudflareHeaders:
-                Authorization: !!js process.env.CLOUDFLARE_BROWSER_RUN_MCP_TOKEN ? `Bearer ${process.env.CLOUDFLARE_BROWSER_RUN_MCP_TOKEN}` : ''
+              cloudflareHeaders: !!js >-
+                ({ Authorization: process.env.CLOUDFLARE_BROWSER_RUN_MCP_TOKEN ? `Bearer ${process.env.CLOUDFLARE_BROWSER_RUN_MCP_TOKEN}` : '' })
           - id: hivemind-artifact-renderer
             name: '@deepseek-ai/dsh-hivemind-artifact-renderer'
             config:

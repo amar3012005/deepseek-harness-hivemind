@@ -156,6 +156,8 @@ export interface Config {
   agentFeaturesEnabled: boolean
   /** Whether compatibility tools besides the progressive meta-tool are exposed. */
   legacyToolsEnabled: boolean
+  /** Disable the basic capability hint when a preset owns a richer router. */
+  capabilityHintEnabled?: boolean
   /** ICARUS JSON file holding the browser-issued HIVE-MIND credential. */
   icarusConfigPath: string
   /** Identity transport. Local mode uses ICARUS; scoped-service uses the authenticated request principal. */
@@ -192,6 +194,7 @@ export interface Config {
 export const Config: z<Config> = z.object({
   agentFeaturesEnabled: z.boolean().required(),
   legacyToolsEnabled: z.boolean().required(),
+  capabilityHintEnabled: z.boolean().default(true),
   icarusConfigPath: z.string().required(),
   authorityMode: z.union(['local', 'scoped-service'] as const).default('local'),
   serviceApiBase: z.string(),
@@ -1086,7 +1089,7 @@ export function apply(ctx: Context, config: Config): void {
 4. A returned title, filename, citation ID, or memory ID is an internal evidence reference, not a workspace path and not proof that a downloadable artifact is available. Do not use shell, filesystem, Glob, Grep, or web tools to locate it unless the user explicitly asks about a local workspace or supplies a local path.
 5. For temporal questions, preserve the user's date or timeframe verbatim in the recall query. Use \`valid_at\` only for a specific “what was true as of” timestamp and \`transaction_at\` only for a specific “what did the system know as of” timestamp. Use an explicit \`decision\` tag only when the user asks for decisions.\n6. Proactively use \`save\` for a stable, reusable, high-value preference, decision, correction, relationship, or completed outcome that the user explicitly states or confirms, or that a verified HIVE/provider receipt establishes. Do not wait for the word “save.” Before saving a fact about a named subject with more than one plausible referent, ask one concise clarification; do not infer the referent. Save a concise factual statement with a descriptive title. Never save secrets, credentials, private authentication material, transient chat, sensitive personal data without direct instruction, speculation, or unverified claims. For a correction, first recall the old memory and use \`relationship: "update"\` with the exact UUID \`related_to\` ID returned by that receipt. Do not retry an invalid update or report a save without a successful receipt.\n7. Read returned evidence and citations completely enough to answer. Identify conflicts or gaps, and do not claim that a file, image, or fact is available beyond the receipt. A bounded lookup gets one focused recall: synthesize or report no relevant match after it. A second recall is permitted only for an explicitly exhaustive or genuinely multi-source request, and must use materially new evidence constraints rather than a paraphrase.\n8. HIVE-MIND supplies internal company knowledge. Use native Harness tools for independent web evidence, coding, artifacts, workflows, and subagents when those tasks are actually requested.`,
   }))
-  ctx.effect(() => ctx.tools.register(defineTool({
+  if (config.capabilityHintEnabled !== false) ctx.effect(() => ctx.tools.register(defineTool({
     name: HIVE_CAPABILITIES_TOOL,
     description: 'Reveal the compact skill catalog when this task needs a detailed playbook. Do not call for direct answers, concise clarification, one bounded HIVE lookup, or one bounded connected-app task.',
     parameters: {},

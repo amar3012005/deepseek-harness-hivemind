@@ -445,6 +445,16 @@ describe('HIVE-MIND runtime', () => {
     expect(skill?.description).toContain('call hivemind_meta directly')
   })
 
+  it('lets HyperAgents own the capability router without removing HIVE meta', async () => {
+    const pluginConfig = config(await authorityFile())
+    pluginConfig.legacyToolsEnabled = false
+    pluginConfig.capabilityHintEnabled = false
+    const harness = mount(pluginConfig)
+
+    expect(harness.tools.has('hivemind_capabilities')).toBe(false)
+    expect(harness.tools.has('hivemind_meta')).toBe(true)
+  })
+
   it('requests the native skill catalog without loading profile data', async () => {
     const harness = mount(config(await authorityFile()))
 

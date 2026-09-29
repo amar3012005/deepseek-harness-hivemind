@@ -178,7 +178,9 @@ describe('the shipped preset root', () => {
     const chat = await shippedEntries('hivemind-chat') as EntryOptions[]
     const composed = applyEntryPatches(chat, included.config.patches, () => {})
     expect(findEntry(composed, 'hivemind-capabilities')).toMatchObject({ isolate: { hivemindIdentity: true } })
-    expect(findEntry(composed, 'hivemind-runtime')).toBeDefined()
+    expect(findEntry(composed, 'hivemind-runtime')?.config).toMatchObject({ capabilityHintEnabled: false })
+    const browser = findEntry(composed, 'hivemind-progressive-browser')
+    expect(browser?.config).toMatchObject({ headers: { __jsExpr: expect.stringContaining('Authorization:') } })
     expect(findEntry(composed, 'hivemind-connected-apps')).toBeDefined()
     expect(findEntry(composed, 'tool-todo')?.config).toMatchObject({ allowParallelInProgress: true })
     expect(findEntry(composed, 'tool-shell')).toBeUndefined()
