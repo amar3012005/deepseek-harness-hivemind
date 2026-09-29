@@ -2,14 +2,13 @@
 
 ## HIVE design profiles
 
-The renderer owns five small, versioned visual baselines: `executive`,
-`editorial`, `campaign`, `product`, and `data`. They are selected per artifact
-through `design_profile`, applied locally before authored CSS, and recorded in
-the durable receipt. They do not start or depend on an OpenDesign daemon, a
-browser session, or an external user-facing application.
+The renderer owns five visual baselines: `executive`, `editorial`, `campaign`,
+`product`, and `data`. The PDF tool selects one through `design_profile`, maps it
+to the Markdown PDF package's native typography and link colors, and records it
+in the durable receipt. HTML artifact previews keep their separate browser
+rendering path.
 
-`design_quality` is a deterministic structural check (HTML completeness,
-viewport, print styling, heading, and isolated-preview hazards). It is not a
+`design_quality` reports deterministic Markdown structure checks. It is not a
 claim of visual judgment. A vision provider remains progressive and optional
 when a real visual review is necessary.
 
@@ -27,12 +26,12 @@ Office layouts use deterministic typography and editable text. An optional OpenR
 
 The local native job registry survives model turns and browser disconnects but not a host-process restart. Full restart-safe video resumption requires an external workflow provider that persists the Higgsfield provider job identifier; the provider-neutral generation registry allows that replacement without changing the model-facing tool.
 
-PDF rendering disables page JavaScript and remote network requests. Supply self-contained HTML with embedded vetted assets. Its preview is rasterized from the actual PDF, not a screenshot of differently scaled HTML. `hivemind_calculate` provides exact two-decimal sums and running balances; it does not verify source figures or perform legal review.
+PDF rendering converts Markdown directly with PDFKit and does not launch a browser. Model-authored image references are omitted; the PDF renderer does not read local files or fetch network images. The first-page PNG preview is rasterized from the actual PDF, not a screenshot of a separate representation. `hivemind_calculate` provides exact two-decimal sums and running balances; it does not verify source figures or perform legal review.
 
 PPTX and XLSX are durable, editable downloads today. Their specialized slide and table preview renderers are deferred rather than showing an inaccurate synthetic image. Video completion currently projects workflow state and a downloadable file; a native player/poster renderer remains deferred.
 
-`@deepseek-ai/dsh-hivemind-artifact-renderer` adds the progressively disclosed `hivemind_artifact_render` tool without changing the agent loop. The consumer targets the `hivemindArtifactRenderer` service, while the bundled local provider renders self-contained HTML through Playwright. A successful call writes a unique workspace PDF, commits PDF and PNG preview attachments, then appends `hivemind/artifact-created`; the native Web projection can therefore replay the preview and open the produced file. The provider owns the requested A4 or Letter scale and returns authoritative `page_count`, `pdf_bytes`, and `layout_status` fields, so the agent does not need a second shell call to validate ordinary output.
+`@deepseek-ai/dsh-hivemind-artifact-renderer` adds the progressively disclosed `hivemind_artifact_render` tool without changing the agent loop. The consumer targets the `hivemindArtifactRenderer` service, whose Markdown PDF provider uses `@speajus/markdown-to-pdf` and PDFKit. A successful call writes a unique workspace PDF, commits PDF and PNG preview attachments, then appends `hivemind/artifact-created`; the native Web projection can replay the thumbnail, show the full PDF in Preview, and open or download the produced file. The provider owns the requested A4 or Letter scale and returns authoritative `page_count`, `pdf_bytes`, and `layout_status` fields, so the agent does not need a second shell call to validate ordinary output.
 
 The document-design and Brand DNA skills remain separate. A PDF request loads document guidance; brand guidance is loaded only when the user, audience, or selected playbook makes organizational styling relevant.
 
-README and other Markdown documents use the same lane: the native file tool reads the requested source, the progressively loaded document-design skill converts that content to self-contained HTML, and this renderer produces the PDF and preview. Markdown parsing is deliberately not fused into the renderer because document hierarchy, branding, evidence handling, and layout remain model-selected design work rather than provider behavior.
+README and other Markdown documents use the same lane: the native file tool reads the requested source, the progressively loaded document-design skill adapts its hierarchy and content, and this renderer converts the finished Markdown to PDF and preview. Branding and evidence handling remain model-selected; the renderer owns pagination and print typography.

@@ -11,7 +11,7 @@ import {
 } from '../src/index.ts'
 
 const config: Config = {
-  provider: 'playwright', outputDirectory: '.hivemind/artifacts', timeoutMs: 30_000, maxHtmlChars: 400_000,
+  provider: 'markdown-pdf', outputDirectory: '.hivemind/artifacts', maxMarkdownChars: 400_000,
 }
 
 class FakeRenderer extends ArtifactRenderer {
@@ -22,7 +22,7 @@ class FakeRenderer extends ArtifactRenderer {
     this.calls.push(request)
     if (this.failure !== undefined) return Promise.reject(this.failure)
     return Promise.resolve({
-      provider: 'fake-playwright', path: '/workspace/.hivemind/artifacts/report.pdf',
+      provider: 'fake-markdown-pdf', path: '/workspace/.hivemind/artifacts/report.pdf',
       pdf: Uint8Array.of(37, 80, 68, 70), preview: Uint8Array.of(137, 80, 78, 71), pageCount: 1,
     })
   }
@@ -58,17 +58,17 @@ describe('hivemind_artifact_render', () => {
     const { ctx, renderer, saves, session, agent } = await setup()
     const result = await ctx.tools.execute({
       signal: new AbortController().signal, callId: ToolCallId('render-1'), name: 'hivemind_artifact_render', agent,
-      arguments: { title: 'Market Report', html: '<html><body>Evidence</body></html>' },
+      arguments: { title: 'Market Report', markdown: '# Market Report\n\nEvidence' },
     })
 
     expect(result.isError).toBe(false)
     expect(renderer.calls).toHaveLength(1)
-    expect(renderer.calls[0]).toMatchObject({ pageSize: 'A4', printBackground: true, cwd: '/workspace' })
+    expect(renderer.calls[0]).toMatchObject({ pageSize: 'A4', markdown: '# Market Report\n\nEvidence', cwd: '/workspace' })
     expect(saves).toEqual(['pdf:market-report.pdf', 'preview:market-report-preview.png'])
     expect(result.content.map(block => block.type)).toEqual(['text', 'image'])
     expect(session.snapshotEvents().filter(event => event.type === 'hivemind/artifact-created')).toHaveLength(1)
     expect(result.value).toMatchObject({
-      media_type: 'application/pdf', provider: 'fake-playwright', page_size: 'A4',
+      media_type: 'application/pdf', provider: 'fake-markdown-pdf', page_size: 'A4',
       page_count: 1, pdf_bytes: 4, layout_status: 'single_page', chat_preview_status: 'visible',
     })
     expect(result.content[0]).toMatchObject({ type: 'text' })
@@ -81,14 +81,14 @@ describe('hivemind_artifact_render', () => {
     const { ctx, renderer, session, agent } = await setup()
     const result = await ctx.tools.execute({
       signal: new AbortController().signal, callId: ToolCallId('render-profile'), name: 'hivemind_artifact_render', agent,
-      arguments: { title: 'Campaign brief', html: '<html><head></head><body><h1>Launch</h1></body></html>', design_profile: 'campaign' },
+      arguments: { title: 'Campaign brief', markdown: '# Launch\n\nPlan', design_profile: 'campaign' },
     })
 
     expect(result.isError).toBe(false)
-    expect(renderer.calls[0]?.html).toContain('hivemind-design-profile')
-    expect(result.value).toMatchObject({ design_profile: 'campaign', design_quality: { status: 'needs_review' } })
+    expect(renderer.calls[0]?.markdown).toContain('# Launch')
+    expect(result.value).toMatchObject({ design_profile: 'campaign', design_quality: { status: 'ready' } })
     const event = session.snapshotEvents().find(item => item.type === 'hivemind/artifact-created')
-    expect(event?.data).toMatchObject({ designProfile: 'campaign', designQuality: { status: 'needs_review' } })
+    expect(event?.data).toMatchObject({ designProfile: 'campaign', designQuality: { status: 'ready' } })
   })
 
   it('does not claim or project an artifact when the provider fails', async () => {
@@ -96,7 +96,7 @@ describe('hivemind_artifact_render', () => {
     renderer.failure = new Error('render failed')
     const result = await ctx.tools.execute({
       signal: new AbortController().signal, callId: ToolCallId('render-fail'), name: 'hivemind_artifact_render', agent,
-      arguments: { title: 'Market Report', html: '<html></html>' },
+      arguments: { title: 'Market Report', markdown: '# Market Report' },
     })
     expect(result.isError).toBe(true)
     expect(session.snapshotEvents().some(event => event.type === 'hivemind/artifact-created')).toBe(false)
@@ -107,7 +107,7 @@ describe('hivemind_artifact_render', () => {
     ctx.on('tools/pre-execute', async (): Promise<PreToolDecision> => ({ kind: 'deny', reason: 'rendering is not allowed here' }))
     const result = await ctx.tools.execute({
       signal: new AbortController().signal, callId: ToolCallId('render-denied'), name: 'hivemind_artifact_render', agent,
-      arguments: { title: 'Market Report', html: '<html></html>' },
+      arguments: { title: 'Market Report', markdown: '# Market Report' },
     })
     expect(result.isError).toBe(true)
     expect(renderer.calls).toHaveLength(0)

@@ -57,6 +57,7 @@ External packages installed for runtime use or distributed inside the prebuilt b
 | [`@opentelemetry/resources`](https://github.com/open-telemetry/opentelemetry-js) | Apache-2.0 |
 | [`@opentelemetry/sdk-logs`](https://github.com/open-telemetry/opentelemetry-js) | Apache-2.0 |
 | [`@shikijs/langs`](https://github.com/shikijs/shiki) | MIT |
+| [`@speajus/markdown-to-pdf`](https://github.com/speajus/markdown-to-pdf) | ISC |
 | [`@standard-schema/spec`](https://github.com/standard-schema/standard-schema) | MIT |
 | [`@tanstack/react-virtual`](https://github.com/TanStack/virtual) | MIT |
 | [`@vscode/ripgrep`](https://github.com/microsoft/vscode-ripgrep) | MIT |

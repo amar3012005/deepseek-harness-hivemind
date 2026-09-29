@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { FileAttachmentRef, ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import type { SessionEventWindow } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { SnapshotSelectorHook } from '@deepseek-ai/dsh-client-store'
@@ -72,6 +72,7 @@ type WorkbenchProps = PropsRuntime<'sidebar.right.pane.tab'> & PropsLocale<'hive
   kind: Kind
   useEmployeeEvents: SnapshotSelectorHook<SessionEventWindow>
   loadImage: (ref: ImageAttachmentRef) => Promise<string>
+  loadPdf: (ref: FileAttachmentRef) => Promise<Blob>
   openArtifact: (artifact: Artifact, disposition?: 'open' | 'download') => void
 }
 
@@ -86,8 +87,35 @@ function ReceiptImage({ attachment, loadImage }: { attachment: ImageAttachmentRe
   return url === undefined ? null : <img className={css.workbenchImage} src={url} alt="Generated preview" />
 }
 
-/** HyperAgents-only native sidebar body. Preview, artifacts, computer and sources use one session log. */
-export function HyperagentWorkbench({ kind, sessionId, useSessions, useEmployeeEvents, loadImage, openArtifact, t }: WorkbenchProps) {
+function PdfReceipt({ artifact, loadPdf, loadImage }: { artifact: Artifact; loadPdf: WorkbenchProps['loadPdf']; loadImage: WorkbenchProps['loadImage'] }) {
+  const [url, setUrl] = useState<string>()
+  const loadPdfRef = useRef(loadPdf)
+  loadPdfRef.current = loadPdf
+  useEffect(() => {
+    let active = true
+    let createdUrl: string | undefined
+    setUrl(undefined)
+    if (artifact.file !== undefined) {
+      void loadPdfRef.current(artifact.file).then((blob) => {
+        if (!active) return
+        createdUrl = URL.createObjectURL(blob)
+        setUrl(createdUrl)
+      }, () => {})
+    }
+    return () => {
+      active = false
+      if (createdUrl !== undefined) URL.revokeObjectURL(createdUrl)
+    }
+  }, [artifact.file?.attachmentId])
+  return url === undefined
+    ? <ReceiptImage attachment={artifact.preview} loadImage={loadImage} />
+    : <iframe className={css.workbenchPdf} src={url} title={artifact.title} />
+}
+
+/** HyperAgents-only native sidebar body backed by one session log. */
+export function HyperagentWorkbench({
+  kind, sessionId, useSessions, useEmployeeEvents, loadImage, loadPdf, openArtifact, t,
+}: WorkbenchProps) {
   const preset = useSessions(state => state.byId[sessionId]?.projectionValues?.agentPreset)
   const data = useEmployeeEvents(workbenchSnapshot)
   if (!isHyperagentPreset(preset)) return null
@@ -96,7 +124,9 @@ export function HyperagentWorkbench({ kind, sessionId, useSessions, useEmployeeE
   return <div className={css.workbench} data-hivemind-workbench={kind}>
     {kind === 'preview' && (lastArtifact === undefined
       ? <p className={css.workbenchEmpty}>{t('workbench.emptyPreview')}</p>
-      : <article><span className={css.workbenchEyebrow}>{lastArtifact.mediaType}</span><h2>{lastArtifact.title}</h2><ReceiptImage attachment={lastArtifact.preview} loadImage={loadImage} /><button type="button" className={css.workbenchOpen} disabled={lastArtifact.file === undefined} onClick={() => { openArtifact(lastArtifact) }}>{t('workbench.open')}</button><button type="button" className={css.workbenchOpen} disabled={lastArtifact.file === undefined} onClick={() => { openArtifact(lastArtifact, 'download') }}>{t('workbench.download')}</button></article>)}
+      : <article><span className={css.workbenchEyebrow}>{lastArtifact.mediaType}</span><h2>{lastArtifact.title}</h2>{lastArtifact.mediaType === 'application/pdf' && lastArtifact.file !== undefined
+        ? <><div className={css.workbenchActions}><button type="button" className={css.workbenchOpen} onClick={() => { openArtifact(lastArtifact, 'download') }}>{t('workbench.downloadPdf')}</button></div><PdfReceipt artifact={lastArtifact} loadPdf={loadPdf} loadImage={loadImage} /></>
+        : <><div className={css.workbenchActions}><button type="button" className={css.workbenchOpen} disabled={lastArtifact.file === undefined} onClick={() => { openArtifact(lastArtifact) }}>{t('workbench.open')}</button><button type="button" className={css.workbenchOpen} disabled={lastArtifact.file === undefined} onClick={() => { openArtifact(lastArtifact, 'download') }}>{t('workbench.download')}</button></div><ReceiptImage attachment={lastArtifact.preview} loadImage={loadImage} /></>}</article>)}
     {kind === 'artifacts' && (data.artifacts.length === 0
       ? <p className={css.workbenchEmpty}>{t('workbench.emptyArtifacts')}</p>
       : <ul className={css.workbenchList}>{[...data.artifacts].reverse().map(artifact => <li key={artifact.id}><button type="button" disabled={artifact.file === undefined} onClick={() => { openArtifact(artifact) }}>{artifact.title}</button><small>{artifact.mediaType} · {artifact.path.split('/').at(-1)}</small></li>)}</ul>)}

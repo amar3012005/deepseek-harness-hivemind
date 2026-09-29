@@ -1,3 +1,5 @@
+import { defaultTheme, type ThemeConfig } from '@speajus/markdown-to-pdf'
+
 /**
  * Small HIVE-owned visual baseline for generated artifacts.
  *
@@ -81,5 +83,51 @@ export function evaluateDesignQuality(html: string, profile?: DesignProfile): De
   if (has(/@media\s+print/i, html)) checks.push('print_styles')
   if (has(/<img\b/i, html) && has(/https?:\/\//i, html)) warnings.push('remote_image_may_not_render_in_isolated_preview')
   if (!has(/<h1\b/i, html)) warnings.push('missing_primary_heading')
+  return { status: warnings.length === 0 ? 'ready' : 'needs_review', checks, warnings }
+}
+
+const markdownAccents: Record<DesignProfile, { ink: string; accent: string; link: string; rule: string }> = {
+  executive: { ink: '#102033', accent: '#087e8b', link: '#087e8b', rule: '#d9e2ea' },
+  editorial: { ink: '#151515', accent: '#bd3d2e', link: '#bd3d2e', rule: '#d9d0c1' },
+  campaign: { ink: '#091722', accent: '#e7683c', link: '#1b9aaa', rule: '#cfe0e5' },
+  product: { ink: '#13162b', accent: '#6857f5', link: '#6857f5', rule: '#dedff1' },
+  data: { ink: '#102033', accent: '#126782', link: '#126782', rule: '#d5e1e8' },
+}
+
+/** Return a print-friendly Markdown theme for the selected HIVE design profile.
+ * @param profile - Optional HIVE visual baseline.
+ * @returns PDFKit typography, colors, and spacing.
+ */
+export function designTheme(profile?: DesignProfile): ThemeConfig {
+  const colors = profile === undefined ? markdownAccents.executive : markdownAccents[profile]
+  return {
+    ...defaultTheme,
+    headings: {
+      ...defaultTheme.headings,
+      h1: { ...defaultTheme.headings.h1, fontSize: 28, color: colors.ink },
+      h2: { ...defaultTheme.headings.h2, fontSize: 20, color: colors.ink },
+      h3: { ...defaultTheme.headings.h3, fontSize: 15, color: colors.ink },
+    },
+    body: { ...defaultTheme.body, font: 'Helvetica', fontSize: 10.5, color: colors.ink, lineGap: 4 },
+    linkColor: colors.link,
+    horizontalRuleColor: colors.rule,
+    blockquote: { ...defaultTheme.blockquote, borderColor: colors.accent },
+    emojiFont: 'none',
+  }
+}
+
+/** Report deterministic Markdown structure checks; this does not claim visual review.
+ * @param markdown - Finished report source.
+ * @param profile - Optional HIVE visual baseline.
+ * @returns Checks and warnings recorded with the artifact receipt.
+ */
+export function evaluateMarkdownDesignQuality(markdown: string, profile?: DesignProfile): DesignQuality {
+  const checks = ['markdown_input', 'native_pdf_layout']
+  const warnings: string[] = []
+  if (profile !== undefined) checks.push(`profile:${profile}`)
+  if (/^\s*#\s+\S/m.test(markdown)) checks.push('primary_heading')
+  else warnings.push('missing_primary_heading')
+  if (/\[[^\]]+\]\(https?:\/\/[^)]+\)/i.test(markdown)) checks.push('clickable_links')
+  if (/^\s*\|.+\|\s*$/m.test(markdown)) checks.push('table_content')
   return { status: warnings.length === 0 ? 'ready' : 'needs_review', checks, warnings }
 }

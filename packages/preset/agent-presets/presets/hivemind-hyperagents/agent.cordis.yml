@@ -114,7 +114,7 @@
           - id: hivemind-artifact-renderer
             name: '@deepseek-ai/dsh-hivemind-artifact-renderer'
             config:
-              provider: playwright
+              provider: markdown-pdf
               outputDirectory: .hivemind/artifacts
               attachmentOnly: true
       - insert:

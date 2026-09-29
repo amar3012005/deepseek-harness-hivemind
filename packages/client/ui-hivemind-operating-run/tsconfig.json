@@ -11,6 +11,7 @@
     { "path": "../ui-chat" },
     { "path": "../ui-conversation" },
     { "path": "../ui-renderer" },
+    { "path": "../ui-sidebar-right" },
     { "path": "../ui-slots" },
     { "path": "../../core/session" },
     { "path": "../../hivemind/employee-delegation" },

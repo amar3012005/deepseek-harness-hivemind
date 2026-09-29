@@ -12,7 +12,7 @@ export type HivemindConnectKey =
   | 'employee.initial' | 'employee.auto' | 'employee.autoDetail' | 'employee.label' | 'employee.loading' | 'employee.unavailable'
   | 'employee.environment' | 'employee.working' | 'employee.ready' | 'employee.panel' | 'employee.toggle'
   | 'workbench.preview' | 'workbench.artifacts' | 'workbench.computer' | 'workbench.sources'
-  | 'workbench.emptyPreview' | 'workbench.emptyArtifacts' | 'workbench.emptyComputer' | 'workbench.emptySources' | 'workbench.browserCapture' | 'workbench.open' | 'workbench.download'
+  | 'workbench.emptyPreview' | 'workbench.emptyArtifacts' | 'workbench.emptyComputer' | 'workbench.emptySources' | 'workbench.browserCapture' | 'workbench.open' | 'workbench.download' | 'workbench.downloadPdf'
 
 export const en: Record<HivemindConnectKey, string> = {
   connect: 'Connect HIVE-MIND',
@@ -52,6 +52,7 @@ export const en: Record<HivemindConnectKey, string> = {
   'workbench.browserCapture': 'Browser capture · HTTP',
   'workbench.open': 'Open artifact',
   'workbench.download': 'Download',
+  'workbench.downloadPdf': 'Download PDF',
 }
 
 export const zh: Record<HivemindConnectKey, string> = {
@@ -92,4 +93,5 @@ export const zh: Record<HivemindConnectKey, string> = {
   'workbench.browserCapture': '浏览器截图 · HTTP',
   'workbench.open': '打开成果',
   'workbench.download': '下载',
+  'workbench.downloadPdf': '下载 PDF',
 }

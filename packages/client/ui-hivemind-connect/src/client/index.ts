@@ -306,20 +306,30 @@ export function apply(ctx: ClientContext): void {
               ? Promise.reject(new Error('Conversation preview is unavailable'))
               : conversation.imageUrl(sessionId, ref)
           },
+          loadPdf: async (file: FileAttachmentRef) => {
+            const result = await scope.remote.session.fileAttachment({ sessionId, attachmentId: file.attachmentId })
+            if (!result.ok || result.value.attachment.attachmentId !== file.attachmentId) throw new Error('Artifact preview unavailable')
+            const binary = atob(result.value.data)
+            if (binary.length !== file.bytes || binary.length > 64 * 1024 * 1024) throw new Error('Artifact size mismatch')
+            if (!binary.startsWith('%PDF-')) throw new Error('Artifact is not a PDF')
+            const bytes = Uint8Array.from(binary, char => char.charCodeAt(0))
+            return new Blob([bytes], { type: 'application/pdf' })
+          },
           openArtifact: (artifact: { mediaType: string; file: FileAttachmentRef | undefined }, disposition: 'open' | 'download' = 'open') => {
-            if (artifact.file === undefined) return
+            const file = artifact.file
+            if (file === undefined) return
             const opened = disposition === 'open' && artifact.mediaType === 'application/pdf' ? window.open('about:blank', '_blank') : null
-            void scope.remote.session.fileAttachment({ sessionId, attachmentId: artifact.file.attachmentId }).then((result) => {
-              if (!result.ok || result.value.attachment.attachmentId !== artifact.file?.attachmentId) throw new Error('Artifact download failed')
+            void scope.remote.session.fileAttachment({ sessionId, attachmentId: file.attachmentId }).then((result) => {
+              if (!result.ok || result.value.attachment.attachmentId !== file.attachmentId) throw new Error('Artifact download failed')
               const binary = atob(result.value.data)
-              if (binary.length !== artifact.file.bytes || binary.length > 64 * 1024 * 1024) throw new Error('Artifact size mismatch')
+              if (binary.length !== file.bytes || binary.length > 64 * 1024 * 1024) throw new Error('Artifact size mismatch')
               const bytes = Uint8Array.from(binary, char => char.charCodeAt(0))
               const url = URL.createObjectURL(new Blob([bytes], { type: artifact.mediaType }))
               if (opened !== null) opened.location.href = url
               else {
                 const link = document.createElement('a')
                 link.href = url
-                link.download = artifact.file.name
+                link.download = file.name
                 link.click()
               }
               setTimeout(() => URL.revokeObjectURL(url), 60_000)

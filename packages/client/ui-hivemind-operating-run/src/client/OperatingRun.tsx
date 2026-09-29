@@ -14,6 +14,7 @@ import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-chat/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
+import type {} from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
 import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
 import { Avatar } from '@humation/react'
@@ -1070,7 +1071,7 @@ function EvaluationPanel({ node, t }: PanelProps<'hivemind-operating-evaluation'
   )
 }
 
-function ArtifactPanel({ node, renderMessageImages, t, read }: PanelProps<'hivemind-artifact'> & { read: (id: FileAttachmentRef['attachmentId']) => Promise<{ ok: boolean; value?: { attachment: FileAttachmentRef; data: string } }> }) {
+function ArtifactPanel({ node, renderMessageImages, t, read, openPreview }: PanelProps<'hivemind-artifact'> & { read: (id: FileAttachmentRef['attachmentId']) => Promise<{ ok: boolean; value?: { attachment: FileAttachmentRef; data: string } }> ; openPreview: () => void }) {
   const [busy, setBusy] = useState(false)
   const [failed, setFailed] = useState(false)
   return (
@@ -1112,6 +1113,11 @@ function ArtifactPanel({ node, renderMessageImages, t, read }: PanelProps<'hivem
       >
         {t(busy ? 'artifact.downloading' : 'artifact.open')}
       </button>
+      {node.data.mediaType === 'application/pdf' && node.data.file !== undefined ? (
+        <button type="button" className={css.artifactAction} onClick={openPreview}>
+          {t('artifact.preview')}
+        </button>
+      ) : null}
       {failed ? <div role="alert">{t('artifact.failed')}</div> : null}
     </Card>
   )
@@ -1132,7 +1138,7 @@ function MediaWorkflowPanel({ node, t }: PanelProps<'hivemind-media-workflow'>) 
 }
 
 /** Required browser services for operating-run Definitions and native Chat renderers. */
-export const inject = ['uiConversation', 'slots', 'locale', 'remote', 'remote.session']
+export const inject = ['uiConversation', 'slots', 'locale', 'remote', 'remote.session', 'sidebarRight']
 
 /** Register durable event projections; sessions lacking HIVE events produce no nodes. */
 export function apply(ctx: ClientContext): void {
@@ -1163,7 +1169,11 @@ export function apply(ctx: ClientContext): void {
       EvaluationPanel,
     ),
     ctx.slots.register({ name: 'conversation.chat.node', key: 'hivemind-artifact', locale: NS }, props => (
-      <ArtifactPanel {...props} read={attachmentId => ctx.remote.session.fileAttachment({ sessionId: props.sessionId, attachmentId })} />
+      <ArtifactPanel
+        {...props}
+        read={attachmentId => ctx.remote.session.fileAttachment({ sessionId: props.sessionId, attachmentId })}
+        openPreview={() => ctx.sidebarRight.openTabIn(props.sessionId, 'hivemind-workbench-preview')}
+      />
     )),
     ctx.slots.register({ name: 'conversation.chat.node', key: 'hivemind-media-workflow', locale: NS }, MediaWorkflowPanel),
   ])

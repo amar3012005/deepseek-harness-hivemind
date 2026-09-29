@@ -8,7 +8,7 @@ import z from '@deepseek-ai/schemastery'
 import type { FileAttachmentRef, ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import type {} from '@deepseek-ai/dsh-agent'
 import { defineTool } from '@deepseek-ai/dsh-tools'
-import { chromium } from 'playwright'
+import { defaultPageLayout, generatePdf } from '@speajus/markdown-to-pdf'
 import { GenerationRegistry, registerGenerationTools } from './generation.ts'
 import { presentationProvider, spreadsheetProvider, webProvider } from './office-providers.ts'
 import { openRouterImageProvider } from './image-provider.ts'
@@ -16,7 +16,7 @@ import { higgsfieldVideoProvider } from './higgsfield-video-provider.ts'
 import { registerMediaWorkflow } from './media-workflow.ts'
 import { createCanvas } from '@napi-rs/canvas'
 import { registerCalculator } from './calculator.ts'
-import { applyDesignProfile, designProfiles, evaluateDesignQuality, type DesignProfile, type DesignQuality } from './design-kit.ts'
+import { designProfiles, designTheme, evaluateMarkdownDesignQuality, type DesignProfile, type DesignQuality } from './design-kit.ts'
 export type { GenerationReceipt } from './generation.ts'
 
 export const name = 'hivemind-artifact-renderer'
@@ -24,9 +24,9 @@ export const inject = ['tools', 'attachments', 'jobs']
 
 export interface ArtifactRenderRequest {
   readonly title: string
-  readonly html: string
+  readonly markdown: string
   readonly pageSize: 'A4' | 'Letter'
-  readonly printBackground: boolean
+  readonly designProfile?: DesignProfile
   readonly cwd: string
   readonly signal: AbortSignal
 }
@@ -48,16 +48,15 @@ declare module '@deepseek-ai/cordis' {
 /** Swappable document-rendering provider used by the model-facing consumer. */
 export abstract class ArtifactRenderer extends Service {
   constructor(ctx: Context) { super(ctx, 'hivemindArtifactRenderer') }
-  /** Render one self-contained HTML document to PDF and first-page preview. */
+  /** Render one Markdown document to PDF and first-page preview. */
   abstract render(request: ArtifactRenderRequest): Promise<ArtifactRenderResult>
 }
 
 export interface Config {
-  provider: 'playwright'
+  provider: 'markdown-pdf'
   outputDirectory: string
   attachmentOnly?: boolean
-  timeoutMs: number
-  maxHtmlChars: number
+  maxMarkdownChars: number
   imageBaseURL?: string
   imageApiKeyEnv?: string
   imageModel?: string
@@ -74,11 +73,10 @@ export interface Config {
 }
 
 export const Config: z<Config> = z.object({
-  provider: z.const('playwright').default('playwright'),
+  provider: z.const('markdown-pdf').default('markdown-pdf'),
   outputDirectory: z.string().default('.hivemind/artifacts'),
   attachmentOnly: z.boolean().default(false),
-  timeoutMs: z.natural().min(1).max(120_000).default(30_000),
-  maxHtmlChars: z.natural().min(1_000).max(2_000_000).default(400_000),
+  maxMarkdownChars: z.natural().min(1_000).max(2_000_000).default(400_000),
   imageBaseURL: z.string().default(''),
   imageApiKeyEnv: z.string().default(''),
   imageModel: z.string().default(''),
@@ -139,8 +137,8 @@ function safeLeaf(title: string): string {
   return leaf === '' ? 'document' : leaf
 }
 
-/** Local Playwright provider; consumers can replace this service without changing the tool. */
-export class PlaywrightArtifactRenderer extends ArtifactRenderer {
+/** Direct Markdown-to-PDF provider; it does not launch a browser. */
+export class MarkdownArtifactRenderer extends ArtifactRenderer {
   constructor(ctx: Context, private readonly config: Config) { super(ctx) }
 
   override async render(request: ArtifactRenderRequest): Promise<ArtifactRenderResult> {
@@ -149,43 +147,30 @@ export class PlaywrightArtifactRenderer extends ArtifactRenderer {
       ? `${safeLeaf(request.title)}.pdf`
       : join(safeOutputRoot(request.cwd, this.config.outputDirectory), `${safeLeaf(request.title)}-${randomUUID()}.pdf`)
     if (!this.config.attachmentOnly) await mkdir(safeOutputRoot(request.cwd, this.config.outputDirectory), { recursive: true })
-    const browser = await chromium.launch({ headless: true })
+    if (request.markdown.length > this.config.maxMarkdownChars) throw new TypeError(`hivemind-artifact-renderer: markdown exceeds ${this.config.maxMarkdownChars} characters`)
+    const pdf = await generatePdf(request.markdown, {
+      theme: designTheme(request.designProfile),
+      pageLayout: { ...defaultPageLayout, pageSize: request.pageSize.toUpperCase() },
+      emojiFont: false,
+      languages: ['typescript', 'javascript', 'json', 'bash', 'python'],
+      // Model-authored Markdown must never trigger local-file reads or network fetches.
+      renderImage: async () => { throw new Error('Markdown images are disabled for PDF rendering') },
+    })
+    request.signal.throwIfAborted()
+    const { getDocument } = await import('pdfjs-dist/legacy/build/pdf.mjs')
+    const loading = getDocument({ data: new Uint8Array(pdf), useSystemFonts: true })
+    const pdfDocument = await loading.promise
+    let preview: Uint8Array
+    const pageCount = pdfDocument.numPages
     try {
-      const viewport = request.pageSize === 'Letter'
-        ? { width: 1240, height: 1605 }
-        : { width: 1240, height: 1754 }
-      const page = await browser.newPage({ viewport, deviceScaleFactor: 1, javaScriptEnabled: false, serviceWorkers: 'block' })
-      // Rendering is not browsing: untrusted HTML must not access local services
-      // or exfiltrate company content. Embed vetted assets as data URLs.
-      await page.route('**/*', route => route.abort('blockedbyclient'))
-      await page.setContent(request.html, { waitUntil: 'networkidle', timeout: this.config.timeoutMs })
-      await page.evaluate(() => document.fonts.ready)
-      await page.emulateMedia({ media: 'print' })
-      const pdf = await page.pdf({
-        format: request.pageSize,
-        printBackground: request.printBackground,
-        // The compact tool contract owns the requested paper size. Page CSS
-        // may style margins, but cannot silently switch A4 to another format.
-        preferCSSPageSize: false,
-        tagged: true,
-      })
-      const { getDocument } = await import('pdfjs-dist/legacy/build/pdf.mjs')
-      const loading = getDocument({ data: new Uint8Array(pdf), useSystemFonts: true })
-      const pdfDocument = await loading.promise
-      let preview: Uint8Array
-      const pageCount = pdfDocument.numPages
-      try {
-        const first = await pdfDocument.getPage(1)
-        const view = first.getViewport({ scale: 1.5 })
-        const canvas = createCanvas(Math.ceil(view.width), Math.ceil(view.height))
-        await first.render({ canvas: canvas as unknown as HTMLCanvasElement, canvasContext: canvas.getContext('2d') as unknown as CanvasRenderingContext2D, viewport: view }).promise
-        preview = await canvas.encode('png')
-      } finally { await loading.destroy() }
-      if (!this.config.attachmentOnly) await writeFile(path, pdf, { flag: 'wx', signal: request.signal })
-      return { provider: 'playwright', path, pdf, preview, pageCount }
-    } finally {
-      await browser.close()
-    }
+      const first = await pdfDocument.getPage(1)
+      const view = first.getViewport({ scale: 1.5 })
+      const canvas = createCanvas(Math.ceil(view.width), Math.ceil(view.height))
+      await first.render({ canvas: canvas as unknown as HTMLCanvasElement, canvasContext: canvas.getContext('2d') as unknown as CanvasRenderingContext2D, viewport: view }).promise
+      preview = await canvas.encode('png')
+    } finally { await loading.destroy() }
+    if (!this.config.attachmentOnly) await writeFile(path, pdf, { flag: 'wx', signal: request.signal })
+    return { provider: 'markdown-pdf', path, pdf: new Uint8Array(pdf), preview, pageCount }
   }
 }
 
@@ -222,13 +207,12 @@ const outputSchema = {
 export function registerArtifactTool(ctx: Context, config: Config): void {
   ctx.tools.register(defineTool({
     name: 'hivemind_artifact_render',
-    description: 'Render a finished self-contained HTML document as a durable PDF with an inline first-page PNG preview. The optional HIVE design profile adds a deterministic visual baseline without opening an external design app. The durable chat projection is committed before this tool returns and chat_preview_status confirms it is visible to the user even when a text-only model sees the image payload as omitted. The receipt authoritatively reports page_count, pdf_bytes, layout_status, and deterministic design checks; do not lease shell tools to list files, recount pages, rasterize, or re-surface the preview. If explicit visual interpretation is materially required, use the progressive vision lane. README or Markdown content can be designed into HTML first. Branding is optional unless the request or selected playbook requires it.',
+    description: 'Render finished Markdown directly to a durable PDF with an inline first-page PNG preview. The renderer uses PDFKit and does not launch a browser. The optional HIVE design profile selects print typography and link colors. The durable chat projection is committed before this tool returns and chat_preview_status confirms it is visible to the user even when a text-only model sees the image payload as omitted. The receipt authoritatively reports page_count, pdf_bytes, layout_status, and deterministic design checks; do not lease shell tools to list files, recount pages, rasterize, or re-surface the preview. If explicit visual interpretation is materially required, use the progressive vision lane.',
     parameters: {
       title: { type: 'string', required: true, description: 'Human-readable document title.' },
-      html: { type: 'string', required: true, description: 'Complete self-contained HTML and CSS. Do not reference local files.' },
+      markdown: { type: 'string', required: true, description: 'Complete report in Markdown. Use headings, paragraphs, lists, tables, and links. Image references render as placeholders; they are not fetched.' },
       design_profile: { type: 'string', enum: [...designProfiles], description: 'Optional HIVE visual baseline. campaign for externally-facing campaign work, executive for leadership documents, product for product collateral, data for dashboards, editorial for narrative work. Applied locally before rendering and persisted in the receipt.' },
       page_size: { type: 'string', enum: ['A4', 'Letter'], description: 'Use A4 unless the audience or request calls for Letter.' },
-      print_background: { type: 'boolean', description: 'Preserve background colors and images. Defaults to true.' },
     },
     output: {
       schema: outputSchema,
@@ -242,13 +226,12 @@ export function registerArtifactTool(ctx: Context, config: Config): void {
       const agent = execution.agent
       if (agent === undefined) throw new Error('hivemind-artifact-renderer: active agent required')
       const title = requiredText(args.title, 'title', 240)
-      const rawHtml = requiredText(args.html, 'html', config.maxHtmlChars)
+      const markdown = requiredText(args.markdown, 'markdown', config.maxMarkdownChars)
       const designProfile = args.design_profile as DesignProfile | undefined
-      const html = applyDesignProfile(rawHtml, designProfile)
-      const designQuality = evaluateDesignQuality(html, designProfile)
+      const designQuality = evaluateMarkdownDesignQuality(markdown, designProfile)
       const pageSize = args.page_size ?? 'A4'
       const rendered = await ctx.hivemindArtifactRenderer.render({
-        title, html, pageSize, printBackground: args.print_background ?? true,
+        title, markdown, pageSize, ...(designProfile === undefined ? {} : { designProfile }),
         cwd: agent.session.header.cwd ?? process.cwd(), signal: execution.signal,
       })
       const filename = `${safeLeaf(title)}.pdf`
@@ -285,7 +268,7 @@ export function registerArtifactTool(ctx: Context, config: Config): void {
 /** Mount the selected provider and compact model-facing render tool. */
 export function apply(ctx: Context, config: Config): void {
   registerCalculator(ctx)
-  if (config.provider === 'playwright') ctx.plugin(PlaywrightArtifactRenderer, config)
+  if (config.provider === 'markdown-pdf') ctx.plugin(MarkdownArtifactRenderer, config)
   ctx.inject(['hivemindArtifactRenderer'], (rendererCtx) => {
     registerArtifactTool(rendererCtx, config)
     const registry = new GenerationRegistry()
@@ -308,14 +291,16 @@ export function apply(ctx: Context, config: Config): void {
     }
     for (const provider of [presentationProvider, spreadsheetProvider, webProvider]) rendererCtx.effect(() => registry.register(provider))
     rendererCtx.effect(() => registry.register({
-      id: config.provider, format: 'pdf', instructions: 'Provide complete self-contained HTML/CSS with print layout. For PDF plus inline preview use hivemind_artifact_render. This generator returns the PDF file only.',
+      id: config.provider, format: 'pdf', instructions: 'Provide the finished report as Markdown. For PDF plus inline preview use hivemind_artifact_render. This generator returns the PDF file only.',
       async generate(request) {
-        const html = applyDesignProfile(request.content, request.designProfile)
-        const rendered = await rendererCtx.hivemindArtifactRenderer.render({ ...request, html, pageSize: 'A4', printBackground: true })
-        return { data: rendered.pdf, extension: 'pdf', mediaType: 'application/pdf', designQuality: evaluateDesignQuality(html, request.designProfile) }
+        const rendered = await rendererCtx.hivemindArtifactRenderer.render({
+          ...request, markdown: request.content, pageSize: 'A4',
+          ...(request.designProfile === undefined ? {} : { designProfile: request.designProfile }),
+        })
+        return { data: rendered.pdf, extension: 'pdf', mediaType: 'application/pdf', designQuality: evaluateMarkdownDesignQuality(request.content, request.designProfile) }
       },
     }))
-    registerGenerationTools(rendererCtx, registry, config.outputDirectory, config.maxHtmlChars, config.attachmentOnly)
+    registerGenerationTools(rendererCtx, registry, config.outputDirectory, config.maxMarkdownChars, config.attachmentOnly)
     registerMediaWorkflow(rendererCtx, registry, config.outputDirectory, {
       maxBriefChars: config.mediaMaxBriefChars ?? 12_000,
       imageAttempts: config.mediaImageAttempts ?? 3,

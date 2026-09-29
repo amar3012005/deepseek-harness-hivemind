@@ -24,6 +24,8 @@
 .workbench a { color: inherit; overflow-wrap: anywhere; }
 .workbenchEyebrow { color: var(--dsw-text-secondary, #71717a); font-size: 11px; letter-spacing: .06em; text-transform: uppercase; }
 .workbenchImage { display: block; max-width: 100%; height: auto; margin: 14px auto 22px; border: 1px solid var(--dsw-border-subtle, #e4e4e7); border-radius: 6px; }
+.workbenchPdf { display: block; width: 100%; height: min(78vh, 1100px); min-height: 520px; margin: 12px 0 18px; border: 1px solid var(--dsw-border-subtle, #e4e4e7); border-radius: 6px; background: #f4f4f5; }
+.workbenchActions { display: flex; gap: 8px; }
 .workbenchPath, .workbenchEmpty { color: var(--dsw-text-secondary, #71717a); font-size: 13px; }
 .workbenchList { display: grid; gap: 0; padding: 0; margin: 0; list-style: none; }
 .workbenchList li { display: grid; gap: 5px; padding: 14px 0; border-bottom: 1px solid var(--dsw-border-subtle, #e4e4e7); }

@@ -31,7 +31,8 @@
         "@deepseek-ai/dsh-client-locale",
         "@deepseek-ai/dsh-client-ui-chat",
         "@deepseek-ai/dsh-client-ui-conversation",
-        "@deepseek-ai/dsh-client-ui-renderer"
+        "@deepseek-ai/dsh-client-ui-renderer",
+        "@deepseek-ai/dsh-client-ui-sidebar-right"
       ],
       "platform": "web"
     }
@@ -58,6 +59,7 @@
     "@deepseek-ai/dsh-client-ui-chat": "workspace:^",
     "@deepseek-ai/dsh-client-ui-conversation": "workspace:^",
     "@deepseek-ai/dsh-client-ui-renderer": "workspace:^",
+    "@deepseek-ai/dsh-client-ui-sidebar-right": "workspace:^",
     "@deepseek-ai/dsh-client-ui-slots": "workspace:^",
     "@deepseek-ai/dsh-hivemind-artifact-renderer": "workspace:^",
     "@deepseek-ai/dsh-hivemind-employee-delegation": "workspace:^",
