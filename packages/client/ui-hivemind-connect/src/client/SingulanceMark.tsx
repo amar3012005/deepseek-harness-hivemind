@@ -1,6 +1,8 @@
 import type { SVGProps } from 'react'
+import { isHyperagentPreset } from './HyperagentEmployee.tsx'
 
 const HERO_HEADLINE = 'BRAIN · Remember what matters.'
+const HYPERAGENT_HEADLINE = "OS · Let's do the real work."
 
 export interface SingulanceMarkProps extends Omit<SVGProps<SVGSVGElement>, 'width' | 'height'> {
   size?: number
@@ -33,24 +35,33 @@ export function SingulanceMark({ size = 48, className, ...props }: SingulanceMar
   </svg>
 }
 
-/** Replace the native headline with the compact BRAIN label used above the composer. */
-export function setupSingulanceHeadline(): () => void {
+/** Replace the native headline with the current product's compact label. */
+export function setupSingulanceHeadline(
+  getPreset?: () => unknown,
+  subscribe?: (refresh: () => void) => () => void,
+): () => void {
   const originals = new Map<HTMLElement, string>()
   const apply = (): void => {
     if (typeof document === 'undefined') return
+    const preset = getPreset?.()
+    const hyperagent = isHyperagentPreset(preset)
+      || (preset == null && window.location.pathname.startsWith('/hivemind/app/employee/harness/'))
+    const desired = hyperagent ? HYPERAGENT_HEADLINE : HERO_HEADLINE
     for (const mark of document.querySelectorAll('[data-hivemind-hero-brand="singulance"]')) {
       const headline = mark.closest('span')?.parentElement
       const title = headline?.lastElementChild?.firstElementChild
-      if (!(headline instanceof HTMLElement) || !(title instanceof HTMLElement) || originals.has(title)) continue
-      originals.set(title, title.textContent ?? '')
-      title.textContent = HERO_HEADLINE
+      if (!(headline instanceof HTMLElement) || !(title instanceof HTMLElement)) continue
+      if (!originals.has(title)) originals.set(title, title.textContent ?? '')
+      if (title.textContent !== desired) title.textContent = desired
       headline.setAttribute('data-hivemind-hero-headline', '')
     }
   }
   const observer = new MutationObserver(apply)
   observer.observe(document.body, { childList: true, subtree: true })
+  const unsubscribe = subscribe?.(apply)
   apply()
   return () => {
+    unsubscribe?.()
     observer.disconnect()
     for (const [title, original] of originals) {
       title.textContent = original

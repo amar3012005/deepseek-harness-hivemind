@@ -32,9 +32,16 @@ export function HiveSessionProjection({
   const composing = useRef(false)
   const list = useSessions(value => value)
   const pending = useSessionPendingInteraction(value => value)
+  const hyperagentRoute = window.location.pathname.startsWith('/hivemind/app/employee/harness/')
   const rows = useMemo(
-    () => deriveFlat(list, [], pending).filter(row => !row.blank),
-    [list, pending],
+    () => deriveFlat(list, [], pending).filter((row) => {
+      if (row.blank) return false
+      const preset = list.byId[row.id]?.projectionValues?.agentPreset
+      const isHyperagent = preset === 'hivemind-hyperagents'
+        || preset === 'hyperagents' || preset === 'hyperagents-compressed'
+      return hyperagentRoute ? isHyperagent : !isHyperagent
+    }),
+    [list, pending, hyperagentRoute],
   )
   const start = () => {
     if (creating) return

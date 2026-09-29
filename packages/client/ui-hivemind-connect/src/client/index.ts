@@ -383,7 +383,13 @@ export function apply(ctx: ClientContext): void {
   }, 'ui-hivemind-connect: white-label document title')
   ctx.slots.inject('conversation.hero.brand.mark', () =>
     ctx.slots.register({ name: 'conversation.hero.brand.mark' }, SingulanceMark))
-  ctx.effect(setupSingulanceHeadline, 'ui-hivemind-connect: Singulance hero headline')
+  ctx.effect(() => setupSingulanceHeadline(
+    () => {
+      const list = ctx.sessions.list.getSnapshot()
+      return list.current === undefined ? undefined : list.byId[list.current]?.projectionValues?.agentPreset
+    },
+    refresh => ctx.sessions.list.subscribe(refresh),
+  ), 'ui-hivemind-connect: Singulance hero headline')
   ctx.slots.inject('tool.call.toolview', function* () {
     const registration = (key: string) => ctx.slots.register({
       name: 'tool.call.toolview', key, locale: NS,
