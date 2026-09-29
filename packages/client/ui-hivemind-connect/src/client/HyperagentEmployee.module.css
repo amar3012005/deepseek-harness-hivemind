@@ -23,7 +23,7 @@
 
 :global(html[data-dsh-mode='hivemind-chat']) .panelToggle {
   position: fixed;
-  top: 12px;
+  top: 68px;
   right: 14px;
   z-index: 30;
   width: 32px;
