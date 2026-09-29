@@ -234,6 +234,10 @@ const CAPABILITY_TOOLS: Readonly<Record<CapabilityLane, readonly string[]>> = {
     'todo_write',
   ],
   automation: [
+    'schedule_create',
+    'schedule_list',
+    'schedule_update',
+    'schedule_delete',
     'workflow',
     'create_goal',
     'get_goal',
@@ -254,7 +258,7 @@ const CAPABILITY_DESCRIPTIONS: Readonly<Record<CapabilityLane, string>> = {
   workspace: 'Filesystem, shell and background job work.',
   employees: 'Employee delegation and native child-agent collaboration.',
   orchestration: 'Playbooks, operating plans, inline workstreams, and session todo tracking.',
-  automation: 'Durable workflows, goals, and autonomous Ralph execution when the selected work actually needs them.',
+  automation: 'Tenant-scoped scheduled tasks, durable workflows, goals, and autonomous Ralph execution.',
   skills: 'Search and load exact specialized instructions progressively without mounting the full skill catalog.',
   artifact:
     'Discover configured PDF, presentation, spreadsheet, image, video and web generators, then produce stored files. Load document design or Brand DNA when useful. Calculate financial totals with the deterministic calculator.',

@@ -272,7 +272,14 @@ export function apply(ctx: ClientContext): void {
   ctx.slots.inject('conversation.session.header.corner', () => ctx.slots.register({
     name: 'conversation.session.header.corner', locale: NS, priority: -1,
     inject: sessionId => ({ hooks: { employeeEvents: employeeEvents(sessionId) }, ensurePreview: () => {
-      rightSidebar?.openTab('hivemind-workbench-preview')
+      if (rightSidebar === undefined) return false
+      try {
+        rightSidebar.openTab('hivemind-workbench-preview')
+        return true
+      } catch (error) {
+        if (error instanceof Error && error.message === 'sidebarRight: no session surface is mounted') return false
+        throw error
+      }
     }, swapPanel: (hyperagents) => {
       const sidebar = rightSidebar
       if (sidebar === undefined) return

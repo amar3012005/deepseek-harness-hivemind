@@ -117,7 +117,7 @@ export function HyperagentEmployeePanel({ useSession, useEmployeeEvents, t }: Pa
 
 export interface PanelToggleInjected {
   swapPanel: (hyperagents: boolean) => void
-  ensurePreview: () => void
+  ensurePreview: () => boolean
   useEmployeeEvents: SnapshotSelectorHook<SessionEventWindow>
 }
 type ToggleProps = PropsRuntime<'conversation.session.header.corner'> & PropsLocale<'hivemind-connect'> & PanelToggleInjected
@@ -136,8 +136,16 @@ export function HyperagentPanelToggle({ sessionId, useSessions, useEmployeeEvent
   const previewOpenedFor = useRef<string | null>(null)
   useEffect(() => {
     if (!isOsRoute || !isHyperagentPreset(preset) || previewOpenedFor.current === sessionId) return
-    previewOpenedFor.current = sessionId
-    ensurePreview()
+    let pending: ReturnType<typeof setTimeout> | undefined
+    const openWhenMounted = () => {
+      if (ensurePreview()) {
+        previewOpenedFor.current = sessionId
+      } else {
+        pending = setTimeout(openWhenMounted, 50)
+      }
+    }
+    openWhenMounted()
+    return () => { if (pending !== undefined) clearTimeout(pending) }
   }, [isOsRoute, preset, sessionId, ensurePreview])
   useEffect(() => {
     if (!isOsRoute || !isHyperagentPreset(preset)) return

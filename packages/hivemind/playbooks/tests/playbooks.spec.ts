@@ -177,6 +177,10 @@ describe('hivemind playbooks', () => {
       'hivemind_employee_panel',
       'hivemind_delegate_employee',
       'hivemind_workstream',
+      'schedule_create',
+      'schedule_list',
+      'schedule_update',
+      'schedule_delete',
     ])
       tools.set(name, { name } as ToolDefinition)
     const assembly = {
@@ -237,6 +241,16 @@ describe('hivemind playbooks', () => {
     expect(agent.ctx.tools.schemas().map(tool => tool.name)).toEqual(
       expect.arrayContaining(['bash', 'read', 'hivemind_research_gather', 'hivemind_research_request']),
     )
+    const scheduled = (await capabilityTool.execute({ operation: 'lease', capabilities: ['automation'] }, {
+      agent,
+      signal: new AbortController().signal,
+    } as never)) as { visibleTools: string[] }
+    expect(scheduled.visibleTools).toEqual(expect.arrayContaining([
+      'schedule_create', 'schedule_list', 'schedule_update', 'schedule_delete',
+    ]))
+    expect(agent.ctx.tools.schemas().map(tool => tool.name)).toEqual(expect.arrayContaining([
+      'schedule_create', 'schedule_list', 'schedule_update', 'schedule_delete',
+    ]))
     const afterWorkspaceLease = (await listeners.get('system-prompt/assemble')!(
       assembly,
       { agent, scope: agent },
@@ -372,6 +386,7 @@ describe('hivemind playbooks', () => {
       'hivemind/request-assembly-budget',
       'hivemind/operating-context',
       'hivemind/request-assembly-budget',
+      'hivemind/capability-lease',
       'hivemind/capability-lease',
       'hivemind/request-assembly-budget',
       'hivemind/capability-lease',
