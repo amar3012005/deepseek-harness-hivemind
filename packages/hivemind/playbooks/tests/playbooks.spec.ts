@@ -137,6 +137,8 @@ describe('hivemind playbooks', () => {
             )
           },
           restrict(filter: { allow: string[] }) {
+            if (filter.allow.some(name => scopeLocalTools.has(name)))
+              throw new Error('tools.restrict() names unknown global tools')
             allow = new Set(filter.allow)
             return () => {
               allow = undefined
@@ -183,6 +185,8 @@ describe('hivemind playbooks', () => {
       'schedule_delete',
     ])
       tools.set(name, { name } as ToolDefinition)
+    for (const name of ['schedule_create', 'schedule_list', 'schedule_update', 'schedule_delete'])
+      scopeLocalTools.add(name)
     const assembly = {
       sections: [
         { name: 'harness:source', text: 'checkout instructions' },
@@ -213,7 +217,7 @@ describe('hivemind playbooks', () => {
         .schemas()
         .map(tool => tool.name)
         .sort(),
-    ).toEqual(['ask_user_question', 'hivemind_browser_capture', 'hivemind_capabilities', 'hivemind_meta', 'hivemind_operating_context', 'hivemind_operating_plan', 'hivemind_research_answer'])
+    ).toEqual(['ask_user_question', 'hivemind_browser_capture', 'hivemind_capabilities', 'hivemind_meta', 'hivemind_operating_context', 'hivemind_operating_plan', 'hivemind_research_answer', 'schedule_create', 'schedule_delete', 'schedule_list', 'schedule_update'])
     events.push({
       type: 'hivemind/operating-context',
       data: { runId: 'run-1', objective: 'Assess risk.', employeeCandidates: [], retrieval: {} },
@@ -256,6 +260,9 @@ describe('hivemind playbooks', () => {
       { agent, scope: agent },
       async () => assembly,
     )) as typeof assembly
+    expect(afterWorkspaceLease.tools.map(tool => tool.name)).toEqual(expect.arrayContaining([
+      'schedule_create', 'schedule_list', 'schedule_update', 'schedule_delete',
+    ]))
     expect(afterWorkspaceLease.sections.map(section => section.name)).toEqual(
       expect.arrayContaining(['harness:source', 'app:web-surface']),
     )
