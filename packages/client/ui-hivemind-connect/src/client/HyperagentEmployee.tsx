@@ -132,7 +132,7 @@ export function HyperagentPanelToggle({ sessionId, useSessions, useEmployeeEvent
   const isOsRoute = typeof window !== 'undefined' && window.location.pathname.startsWith('/hivemind/app/employee/harness/')
   const [dismissed, setDismissed] = useState(false)
   const [collision, setCollision] = useState(false)
-  const [dock, setDock] = useState({ left: 0, width: 420, revealLeft: 0 })
+  const [dock, setDock] = useState<{ left: number; width: number } | null>(null)
   const toggleRef = useRef<HTMLButtonElement>(null)
   const previewClosedFor = useRef<string | null>(null)
   useEffect(() => {
@@ -157,20 +157,20 @@ export function HyperagentPanelToggle({ sessionId, useSessions, useEmployeeEvent
       const boundary = root.getBoundingClientRect()
       const inset = Math.max(0, window.innerWidth - boundary.right)
       document.documentElement.style.setProperty('--dsh-hyperagent-chat-right-inset', `${inset}px`)
+      document.documentElement.style.setProperty('--dsh-hyperagent-header-controls-width', '92px')
       const zoom = Number.parseFloat(getComputedStyle(document.documentElement).zoom) || 1
-      const cardWidth = Math.min(420 * zoom, Math.max(0, boundary.width - 32 * zoom))
+      const cardWidth = Math.min(320 * zoom, Math.max(0, boundary.width - 32 * zoom))
       const cardLeft = boundary.right - cardWidth - 24 * zoom
       setDock((previous) => {
-        const next = { left: cardLeft / zoom, width: cardWidth / zoom, revealLeft: Math.max(0, boundary.right / zoom - 64) }
-        return Math.abs(previous.left - next.left) < 1 && Math.abs(previous.width - next.width) < 1
-          && Math.abs(previous.revealLeft - next.revealLeft) < 1
+        const next = { left: cardLeft / zoom, width: cardWidth / zoom }
+        return previous !== null && Math.abs(previous.left - next.left) < 1 && Math.abs(previous.width - next.width) < 1
           ? previous : next
       })
       const composer = root.querySelector<HTMLElement>('[data-composer-card]')
       const composerBox = composer?.getBoundingClientRect()
       const crossesComposer = composerBox !== undefined
         && cardLeft < composerBox.right - cardWidth / 4 && cardLeft + cardWidth > composerBox.left
-      const card = { left: cardLeft, right: cardLeft + cardWidth, top: 112 * zoom, bottom: 340 * zoom }
+      const card = { left: cardLeft, right: cardLeft + cardWidth, top: 108 * zoom, bottom: 300 * zoom }
       const rows = scroller.querySelectorAll<HTMLElement>('[data-chat-flow] > [data-chat-flow-key]:not(:empty):not([hidden])')
       setCollision(crossesComposer || [...rows].some((row) => {
         const box = row.getBoundingClientRect()
@@ -196,24 +196,23 @@ export function HyperagentPanelToggle({ sessionId, useSessions, useEmployeeEvent
       scroller.removeEventListener('scroll', measure)
       window.removeEventListener('resize', measure)
       document.documentElement.style.removeProperty('--dsh-hyperagent-chat-right-inset')
+      document.documentElement.style.removeProperty('--dsh-hyperagent-header-controls-width')
     }
   }, [isOsRoute, preset, dismissed])
   const showEnvironment = isOsRoute && isHyperagentPreset(preset)
   return <>
+    {showEnvironment && <button type="button" className={css.environmentTrigger} onClick={() => { setDismissed(value => !value) }} aria-label={t('employee.environment')} aria-expanded={!dismissed && !collision} title={t('employee.environment')}><svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M3 5h14M3 10h14M3 15h14" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/><circle cx="7" cy="5" r="2" fill="var(--dsw-surface-primary, #fff)" stroke="currentColor" strokeWidth="1.5"/><circle cx="13" cy="10" r="2" fill="var(--dsw-surface-primary, #fff)" stroke="currentColor" strokeWidth="1.5"/><circle cx="8" cy="15" r="2" fill="var(--dsw-surface-primary, #fff)" stroke="currentColor" strokeWidth="1.5"/></svg></button>}
     <button ref={toggleRef} type="button" className={css.panelToggle} aria-label={t('employee.toggle')} title={t('employee.toggle')} onClick={() => { swapPanel(isHyperagentPreset(preset)) }}><IconPanelLeftOutline16 className={css.panelToggleIcon} /></button>
-    {showEnvironment && createPortal(<div
+    {showEnvironment && !dismissed && !collision && dock !== null && createPortal(<div
       className={css.environmentDock}
-      style={dismissed || collision ? { left: dock.revealLeft } : { left: dock.left, width: dock.width }}
-      data-collapsed={dismissed || collision || undefined}
+      style={{ left: dock.left, width: dock.width }}
     >
-      {dismissed || collision
-        ? <button type="button" className={css.environmentReveal} onClick={() => { setDismissed(false); setCollision(false) }} aria-label={t('employee.environment')} title={t('employee.environment')}><svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M3 5h14M3 10h14M3 15h14" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/><circle cx="7" cy="5" r="2" fill="var(--dsw-surface-primary, #fff)" stroke="currentColor" strokeWidth="1.5"/><circle cx="13" cy="10" r="2" fill="var(--dsw-surface-primary, #fff)" stroke="currentColor" strokeWidth="1.5"/><circle cx="8" cy="15" r="2" fill="var(--dsw-surface-primary, #fff)" stroke="currentColor" strokeWidth="1.5"/></svg></button>
-        : <section className={css.environment} aria-label={t('employee.environment')}>
-          <header><span className={css.dots} aria-hidden="true"><span>●</span><span>●</span><span>●</span></span>{t('employee.environment')}<button type="button" onClick={() => { setDismissed(true) }}>{t('employee.hide')}</button></header>
-          <div className={css.identity}>{selected === null ? <span className={css.autoAvatar}>{t('employee.initial')}</span> : <EmployeeAvatar employee={selected} size={36} />}<span><strong>{selected?.name ?? t('employee.auto')}</strong><small>{selected?.role ?? t('employee.autoDetail')}</small></span><button type="button" className={css.settings} aria-label={t('employee.settings')} title={t('employee.settings')} onClick={() => { window.location.assign('/hivemind/app/settings') }}><IconSettingsOutline16 /></button></div>
-          <button type="button" className={css.connectApps} onClick={() => { window.location.assign('/hivemind/app/connectors') }}>{t('employee.connectApps')}<span aria-hidden="true">›</span></button>
-          <p><a href="/hivemind/app/usage">{t('employee.creditsUsed')}</a></p>
-        </section>}
+      <section className={css.environment} aria-label={t('employee.environment')}>
+        <header><span className={css.dots} aria-hidden="true"><span>●</span><span>●</span><span>●</span></span>{t('employee.environment')}<button type="button" onClick={() => { setDismissed(true) }}>{t('employee.hide')}</button></header>
+        <div className={css.identity}>{selected === null ? <span className={css.autoAvatar}>{t('employee.initial')}</span> : <EmployeeAvatar employee={selected} size={36} />}<span><strong>{selected?.name ?? t('employee.auto')}</strong><small>{selected?.role ?? t('employee.autoDetail')}</small></span><button type="button" className={css.settings} aria-label={t('employee.settings')} title={t('employee.settings')} onClick={() => { window.location.assign('/hivemind/app/settings') }}><IconSettingsOutline16 /></button></div>
+        <button type="button" className={css.connectApps} onClick={() => { window.location.assign('/hivemind/app/connectors') }}>{t('employee.connectApps')}<span aria-hidden="true">›</span></button>
+        <p><a href="/hivemind/app/usage">{t('employee.creditsUsed')}</a></p>
+      </section>
     </div>, document.body)}
   </>
 }

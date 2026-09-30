@@ -12,39 +12,29 @@
 .menu small, .identity small { color: var(--dsw-text-secondary, #71717a); }
 .menu p { margin: 7px; font-size: 12px; color: var(--dsw-text-secondary, #71717a); }
 .panel { padding: 18px; }
-.environment { border: 1px solid var(--dsw-border-subtle, #e4e4e7); border-radius: 24px; padding: 18px 20px; background: var(--dsw-surface-primary, #fff); }
-.environment header { display: flex; gap: 12px; color: var(--dsw-text-secondary, #71717a); font-size: 12px; padding-bottom: 10px; border-bottom: 1px solid var(--dsw-border-subtle, #e4e4e7); }
+.environment { border: 1px solid var(--dsw-border-subtle, #e4e4e7); border-radius: 18px; padding: 13px 16px; background: var(--dsw-surface-primary, #fff); }
+.environment header { display: flex; gap: 10px; color: var(--dsw-text-secondary, #71717a); font-size: 11px; padding-bottom: 8px; border-bottom: 1px solid var(--dsw-border-subtle, #e4e4e7); }
 .dots { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; line-height: 1; }
 .dots span:nth-child(1) { color: #ff6059; }
 .dots span:nth-child(2) { color: #ffbd2f; }
 .dots span:nth-child(3) { color: #28c840; }
-.identity { display: flex; align-items: center; gap: 10px; padding: 12px 0; }
+.identity { display: flex; align-items: center; gap: 9px; padding: 9px 0; }
 .identity .settings { margin-left: auto; display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; border: 0; border-radius: 8px; background: transparent; color: var(--dsw-text-secondary, #71717a); cursor: pointer; }
 .identity .settings:hover { background: var(--dsw-surface-muted, #f4f4f5); }
-.connectApps { display: flex; align-items: center; justify-content: space-between; width: 100%; padding: 12px 0; border: 0; border-top: 1px solid var(--dsw-border-subtle, #e4e4e7); background: transparent; color: var(--dsw-text-primary, #27272a); font: inherit; text-align: left; cursor: pointer; }
+.connectApps { display: flex; align-items: center; justify-content: space-between; width: 100%; padding: 9px 0; border: 0; border-top: 1px solid var(--dsw-border-subtle, #e4e4e7); background: transparent; color: var(--dsw-text-primary, #27272a); font: inherit; text-align: left; cursor: pointer; }
 .connectApps span { color: var(--dsw-text-secondary, #71717a); font-size: 20px; line-height: 1; }
 .environment p { margin: 0; border-top: 1px solid var(--dsw-border-subtle, #e4e4e7); padding-top: 10px; color: var(--dsw-text-secondary, #71717a); font-size: 12px; }
 .environment p a { color: inherit; text-decoration: none; }
 .environment p a:hover { text-decoration: underline; }
-.environmentDock { position: fixed; top: 112px; z-index: 29; pointer-events: auto; transition: left .2s ease, width .2s ease; }
-.environmentDock .environment { box-shadow: 0 12px 30px #0001; }
+.environmentDock { position: fixed; top: 108px; z-index: 29; pointer-events: auto; transition: left .2s ease, width .2s ease; }
+.environmentDock .environment { box-shadow: 0 10px 28px #0001; }
 .environmentDock .environment header { align-items: center; }
 .environmentDock .environment header button { margin-left: auto; padding: 0; border: 0; background: none; color: inherit; cursor: pointer; }
-.environmentDock[data-collapsed] { width: auto; }
-.environmentReveal { display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; padding: 0; border: 1px solid var(--dsw-border-subtle, #e4e4e7); border-radius: 12px; background: var(--dsw-surface-primary, #fff); color: var(--dsw-text-secondary, #71717a); box-shadow: 0 6px 18px #0001; cursor: pointer; }
+.environmentTrigger { display: inline-flex; flex: none; align-items: center; justify-content: center; width: 28px; height: 28px; padding: 4px; border: 0; border-radius: 50%; background: transparent; color: var(--dsw-alias-label-secondary, #71717a); cursor: pointer; }
+.environmentTrigger:hover { color: var(--dsw-text-primary, #27272a); }
 .panelToggle { display: inline-flex; flex: none; align-items: center; justify-content: center; width: 28px; height: 28px; border: 0; border-radius: 50%; padding: 6px; background: transparent; color: var(--dsw-alias-label-secondary, #71717a); cursor: pointer; }
-.panelToggle:hover { background: var(--dsw-alias-interactive-bg-hover, #f4f4f5); }
+.panelToggle:hover { color: var(--dsw-text-primary, #27272a); }
 .panelToggleIcon { width: 16px; height: 16px; transform: scaleX(-1); }
-
-:global(html[data-dsh-mode='hivemind-chat']) .panelToggle {
-  position: fixed;
-  top: 68px;
-  right: 14px;
-  z-index: 30;
-  width: 32px;
-  height: 32px;
-  pointer-events: auto;
-}
 
 :global(html[data-dsh-mode='hivemind-chat']:has([data-sidebar-right-open])) .panelToggle {
   display: none;

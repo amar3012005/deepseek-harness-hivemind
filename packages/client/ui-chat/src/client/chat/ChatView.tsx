@@ -7,6 +7,7 @@ import type {
 } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { SessionSeq } from '@deepseek-ai/dsh-session/types'
 import { Button, IconChevronDownOutline14, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
+import { ThinkingOrb } from 'thinking-orbs'
 import type { ChatViewSlotProps, OpenFileOptions } from '../contract/slots.ts'
 import type { ChatSnapshot } from '../contract/snapshot.ts'
 import { PendingSteeringBubble, PendingSubmissionBubble } from './MessageItem.tsx'
@@ -165,10 +166,12 @@ function runningTurnStartTime(timeline: ConversationTimelineSnapshot): number | 
 }
 
 /** Turn-level model activity label retained across first-token, tool, and streaming phases. */
-function TurnStatus({ startTime, t }: {
+function TurnStatus({ startTime, working, t }: {
   /** The running turn's logged `turn/start` time; null falls back to mount
    *  time when that boundary is outside the window. */
   startTime: number | null
+  /** A live tool call means the turn is doing work beyond model preparation. */
+  working: boolean
   /** The owning view's locale seat. */
   t: ChatViewSlotProps['t']
 }) {
@@ -190,7 +193,8 @@ function TurnStatus({ startTime, t }: {
   const showClock = elapsedMs >= 15_000
   return (
     <div className={css.turnStatus} role="status" aria-live="polite">
-      {t('chat.deepDiving')}
+      <ThinkingOrb state={working ? 'solving' : 'searching'} size={64} aria-hidden="true" />
+      <span className={css.turnStatusLabel}>{working ? t('chat.working') : t('chat.thinking')}</span>
       {showClock && (
         <span className={css.turnStatusClock} aria-hidden>
           {formatRunDuration(elapsedMs, t)}
@@ -237,6 +241,7 @@ export function ChatView({
   // Workspace root off the session list row: path summaries display relative to it.
   const cwd = useSessions(s => s.byId[sessionId]?.cwd)
   const running = useSession(s => s.running)
+  const runningCalls = useChat(s => s.legacy.runningCalls)
   const openState = useSession(s => s.openState)
   const openError = useSession(s => s.openError)
   const hasMore = useSession(s => s.hasMore)
@@ -804,7 +809,7 @@ export function ChatView({
               double-render the same wait. */}
           {/* Turn-level loading signal: rides the whole running turn (first-token
               wait, tool execution, streaming) so it never flickers per step. */}
-          {running && <TurnStatus startTime={runningTurnStart} t={t} />}
+          {running && <TurnStatus startTime={runningTurnStart} working={runningCalls.length > 0} t={t} />}
           {pendingSteering.map(item => (
             <PendingSteeringBubble
               key={item.id}

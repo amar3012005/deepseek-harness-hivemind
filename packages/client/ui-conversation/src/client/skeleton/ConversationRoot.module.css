@@ -465,9 +465,19 @@
 :global(html[data-dsh-mode='hivemind-chat']) .root .header .headerUtilities {
   position: fixed;
   top: 70px;
-  right: calc(var(--dsh-hyperagent-chat-right-inset, 0px) + 56px);
+  right: calc(var(--dsh-hyperagent-chat-right-inset, 0px) + var(--dsh-hyperagent-header-controls-width, 56px));
   z-index: 30;
   display: flex;
+  margin: 0;
+  pointer-events: auto;
+}
+
+:global(html[data-dsh-mode='hivemind-chat']) .root .header .headerCorner {
+  position: fixed;
+  top: 70px;
+  right: calc(var(--dsh-hyperagent-chat-right-inset, 0px) + 14px);
+  z-index: 30;
+  gap: 8px;
   margin: 0;
   pointer-events: auto;
 }
