@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { createAssistantMessage, createToolResultMessage, createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
-import { completedTaskMemory, pendingTaskMemories, sessionOwner, type SessionOwner } from '../src/continuity.ts'
+import { completedTaskMemory, pendingTaskMemories, sessionOwner, sessionOwnerProjection, type SessionOwner } from '../src/continuity.ts'
 
 const owner: SessionOwner = { id: 'elena', slug: 'elena', name: 'Elena', role: 'strategist' }
 const sessionId = 'session-d292efdd-4b56-4053-b61c-9cd63a7cd8ff'
@@ -20,6 +20,13 @@ function history(reason = 'completed', source = 'user'): SessionEvent[] {
 }
 
 describe('persistent employee task memory', () => {
+  it('exposes the pinned owner without requiring old chat pages', () => {
+    const foldOwner = sessionOwnerProjection.apply
+    const state = foldOwner(null, { type: 'hivemind/session-owner', data: owner } as SessionEvent)
+    expect(JSON.parse(sessionOwnerProjection.wire.view(state)!)).toMatchObject({ slug: 'elena', name: 'Elena' })
+    expect(foldOwner(state, { type: 'hivemind/session-owner', data: { ...owner, slug: 'ravi' } } as SessionEvent)).toBe(state)
+  })
+
   it('keeps the first owner across later selections and reassignment events', () => {
     const events = [
       { type: 'hivemind/session-owner', data: owner },

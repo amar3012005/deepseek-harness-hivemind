@@ -1,3 +1,5 @@
+import { z } from 'zod'
+import type { ProjectionDefinition } from '@deepseek-ai/dsh-session-projection'
 import { createHash } from 'node:crypto'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 
@@ -7,8 +9,8 @@ export interface SessionOwner {
   slug: string
   name: string
   role: string
-  persona?: string
-  avatarUrl?: string
+  persona?: string | undefined
+  avatarUrl?: string | undefined
 }
 
 /** Server-produced completion packet; models cannot supply or execute this action. */
@@ -92,3 +94,27 @@ export function completedTaskMemory(
     },
   }
 }
+
+declare module '@deepseek-ai/dsh-session-projection/types' {
+  interface SessionProjectionMap { hyperagentOwner: string | null }
+  interface SessionProjectionStateMap { hyperagentOwner: SessionOwner | null }
+}
+
+const ownerSchema = z.object({
+  id: z.string().nullable(), slug: z.string(), name: z.string(), role: z.string(),
+  persona: z.string().optional(), avatarUrl: z.string().optional(),
+}).nullable()
+
+/** Serve ownership independently of the paginated history window. */
+export const sessionOwnerProjection = {
+  key: 'hyperagentOwner', stateSchema: ownerSchema, stateVersion: 1,
+  init: () => null,
+  apply: (state, event) => state ?? (event.type === 'hivemind/session-owner' ? event.data : null),
+  wire: {
+    viewSchema: z.string().nullable(),
+    view: state => state === null ? null : JSON.stringify({
+      id: state.id, slug: state.slug, name: state.name, role: state.role,
+      ...(state.avatarUrl ? { avatarUrl: state.avatarUrl } : {}),
+    }),
+  },
+} satisfies ProjectionDefinition<'hyperagentOwner', SessionOwner | null>

@@ -25,7 +25,7 @@ import type {} from '@deepseek-ai/dsh-hivemind-execution-scope'
 import { contextPlugin } from '@deepseek-ai/dsh-hivemind-context'
 import { memoryPlugin, type EntitySearchRequest, type RecallRequest, type SaveRequest, type SaveStatusRequest } from '@deepseek-ai/dsh-hivemind-memory'
 import { hyperagentDirectory, projectHyperagentProfiles } from '@deepseek-ai/dsh-hivemind-employee-directory'
-import { completedTaskMemory, pendingTaskMemories, sessionOwner, type SessionOwner } from './continuity.ts'
+import { completedTaskMemory, pendingTaskMemories, sessionOwner, sessionOwnerProjection, type SessionOwner } from './continuity.ts'
 
 declare module '@deepseek-ai/dsh-session/types' {
   interface SessionEventMap {
@@ -53,7 +53,7 @@ export { completedExchanges, recentConversationText } from '@deepseek-ai/dsh-hiv
 export const name = 'hivemind-runtime'
 
 /** Services required to assemble context and expose progressive tools. */
-export const inject = ['tools', 'skills', 'sessions', 'hivemindIdentity', 'hivemindExecutionScope']
+export const inject = ['tools', 'skills', 'sessions', 'sessionProjections', 'hivemindIdentity', 'hivemindExecutionScope']
 
 type HivemindReadScope = 'full' | 'personal' | 'organization' | 'project'
 const PROJECT_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu
@@ -1519,6 +1519,7 @@ export function apply(ctx: Context, config: Config): void {
   })))
 
   if (config.privateMemoryEnabled) {
+    ctx.effect(() => ctx.sessionProjections.register(sessionOwnerProjection))
     if (config.authorityMode !== 'scoped-service') throw new HiveMindRuntimeError('private operating memory requires scoped-service authority')
     const ensureOwner = async (agent: Agent, signal: AbortSignal): Promise<SessionOwner> => {
       const existing = sessionOwner(agent.session.snapshotEvents())

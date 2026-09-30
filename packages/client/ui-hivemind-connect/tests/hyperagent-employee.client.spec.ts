@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { SessionEventWindow } from '@deepseek-ai/dsh-api-session-controller/client'
-import { employeeMenuHeight, employeeOwnershipLocked, isHyperagentPreset, selectedEmployee } from '../src/client/HyperagentEmployee.tsx'
+import { employeeMenuHeight, employeeOwnershipLocked, isHyperagentPreset, projectedEmployee, selectedEmployee } from '../src/client/HyperagentEmployee.tsx'
 import { workbenchSnapshot } from '../src/client/HyperagentWorkbench.tsx'
 
 function events(...rows: Array<{ id: string | null; name?: string; role?: string }>): SessionEventWindow {
@@ -25,6 +25,11 @@ describe('HyperAgents employee selection', () => {
     expect(employeeOwnershipLocked(window)).toBe(true)
     expect(employeeOwnershipLocked(events())).toBe(false)
     expect(employeeOwnershipLocked({ entries: [{ type: 'event', event: { type: 'turn/start', data: { turn: 1 } } }] } as never)).toBe(true)
+  })
+
+  it('reads the owner projection independently of the paginated event log', () => {
+    expect(projectedEmployee(JSON.stringify({ id: 'elena', name: 'Elena', role: 'strategist' }))?.name).toBe('Elena')
+    expect(projectedEmployee(JSON.stringify({ id: null, name: 'HyperAgents', role: 'Team Lead' }))).toBeNull()
   })
 
   it('bounds downward roster by remaining viewport', () => {

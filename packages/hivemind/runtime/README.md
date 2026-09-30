@@ -91,3 +91,6 @@ Implementation: `src/continuity.ts` builds response receipts and projects the
 outbox; `src/index.ts` owns Cordis lifecycle hooks, authenticated dispatch and
 retries. The native employee picker projects the durable owner event. Swarm mode
 is a separate future feature.
+
+The `hyperagentOwner` native session projection keeps ownership available even
+when the original owner event is outside the client's paginated history window.

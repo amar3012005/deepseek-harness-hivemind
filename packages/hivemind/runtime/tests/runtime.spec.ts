@@ -105,6 +105,7 @@ function mount(pluginConfig: Config, withSpill = false): HarnessMock {
       return cleanup
     },
     sessions: { flush: harness.flush },
+    sessionProjections: { register: () => () => {} },
     on(event: string, listener: (payload: unknown, next: () => Promise<unknown>) => Promise<unknown>) {
       if (event === 'agent/turn-ended') harness.turnEnded = listener as unknown as NonNullable<HarnessMock['turnEnded']>
       if (event === 'agent/pre-step') harness.preStep = listener

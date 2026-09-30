@@ -15,6 +15,21 @@ export interface EmployeeOption {
   avatarUrl?: string
 }
 
+declare module '@deepseek-ai/dsh-session-projection/types' {
+  interface SessionProjectionMap { hyperagentOwner: string | null }
+}
+
+/** The owner projection survives pagination and direct cold-session reload. */
+export function projectedEmployee(value: string | null | undefined): EmployeeOption | null {
+  if (value == null) return null
+  try {
+    const owner = JSON.parse(value) as { id: string | null; name: string; role: string; avatarUrl?: string }
+    return owner.id === null ? null : {
+      id: owner.id, name: owner.name, role: owner.role, ...(owner.avatarUrl ? { avatarUrl: owner.avatarUrl } : {}),
+    }
+  } catch { return null }
+}
+
 const laneColors: Record<string, string> = {
   strategist: '#a855f7', coordinator: '#a855f7', builder: '#117dff', skeptic: '#f59e0b',
   investigator: '#10b981', researcher: '#10b981', generalist: '#ec4899', communicator: '#ec4899',
@@ -75,14 +90,17 @@ export function HyperagentEmployeePicker({ sessionId, useSessions, useEmployeeEv
   const pickerRef = useRef<HTMLDivElement>(null)
   const preset = useSessions(state => state.byId[sessionId]?.projectionValues?.agentPreset)
   const fromLog = useEmployeeEvents(selectedEmployee)
-  const locked = useEmployeeEvents(employeeOwnershipLocked)
+  const owner = useSessions(state => state.byId[sessionId]?.projectionValues?.hyperagentOwner)
+  const started = useSessions(state => state.byId[sessionId]?.blank === false)
+  const fromEventsLocked = useEmployeeEvents(employeeOwnershipLocked)
+  const locked = owner != null || started || fromEventsLocked
   const [open, setOpen] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(false)
   const [options, setOptions] = useState<EmployeeOption[]>([])
   const [menuHeight, setMenuHeight] = useState(360)
   if (!isHyperagentPreset(preset)) return null
-  const selected = fromLog
+  const selected = owner == null ? fromLog : projectedEmployee(owner)
   const toggle = (): void => {
     if (!open) setMenuHeight(employeeMenuHeight(window.innerHeight, pickerRef.current?.getBoundingClientRect().bottom ?? 0))
     if (!open && options.length === 0) {
@@ -115,8 +133,10 @@ export function HyperagentEmployeePicker({ sessionId, useSessions, useEmployeeEv
 type PanelProps = PropsRuntime<'sidebar.right.pane.tab'> & PropsLocale<'hivemind-connect'> & Pick<EmployeeInjected, 'useEmployeeEvents'>
 
 /** Employee environment in native right-sidebar tab; previews remain native tabs. */
-export function HyperagentEmployeePanel({ useSession, useEmployeeEvents, t }: PanelProps) {
-  const selected = useEmployeeEvents(selectedEmployee)
+export function HyperagentEmployeePanel({ sessionId, useSessions, useSession, useEmployeeEvents, t }: PanelProps) {
+  const owner = useSessions(state => state.byId[sessionId]?.projectionValues?.hyperagentOwner)
+  const fromLog = useEmployeeEvents(selectedEmployee)
+  const selected = owner == null ? fromLog : projectedEmployee(owner)
   const running = useSession(state => state.running)
   return <div className={css.panel}>
     <section className={css.environment} aria-label={t('employee.environment')}>
@@ -140,7 +160,9 @@ export function HyperagentPanelToggle({ sessionId, useSessions, useEmployeeEvent
   // HyperAgents and toggles the sidebar for other presets.
   const preset = useSessions(state => state.byId[sessionId]?.projectionValues?.agentPreset)
   const blank = useSessions(state => state.byId[sessionId]?.blank)
-  const selected = useEmployeeEvents(selectedEmployee)
+  const owner = useSessions(state => state.byId[sessionId]?.projectionValues?.hyperagentOwner)
+  const fromLog = useEmployeeEvents(selectedEmployee)
+  const selected = owner == null ? fromLog : projectedEmployee(owner)
   const isOsRoute = typeof window !== 'undefined' && window.location.pathname.startsWith('/hivemind/app/employee/harness/')
   const [dismissed, setDismissed] = useState(false)
   const [collision, setCollision] = useState(false)
