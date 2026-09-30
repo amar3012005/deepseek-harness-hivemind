@@ -362,26 +362,11 @@
   margin-inline: auto;
 }
 
-/* The desktop session rail is floating chrome but the host reserves its
-   visual lane to the left of the conversation. Counter half of that lane so
-   the BRAIN hero and composer stay on the host's true centre axis (the OS
-   switch), rather than the centre of the remaining space. Compact layouts
-   hide the rail and therefore need no compensation. */
-@media (min-width: 1101px) {
-  :global(html[data-dsh-mode='hivemind-chat']) .composerSeat > .composerStack {
-    transform: translateX(-107px);
-  }
-  :global(html[data-dsh-hyperagent-os='true']) .composerStack {
-    transform: none;
-  }
-}
-
-/* The outer OS stylesheet carries a shared -120px center offset for its
-   floating room rail. Native HyperAgents already occupies the remaining chat
-   column, so that host rule must not shift either composer phase underneath
-   the rail. This route-only override wins over the host's attribute selector. */
-:global(html[data-dsh-hyperagent-os='true'][data-dsh-mode='hivemind-chat']:has([data-sidebar-right-open]) [data-os-harness-rooms] [data-hivemind-harness-surface]) .composerStack {
-  transform: none !important;
+/* The host's floating rail has a different width in BRAIN and OS. A measured
+   shift centers in the whole viewport only while the composer fits inside
+   its chat seat; opening Preview returns the axis to that seat. */
+:global(html[data-dsh-mode='hivemind-chat']) .composerSeat > .composerStack {
+  transform: translateX(var(--dsh-embedded-composer-shift, 0px)) !important;
 }
 
 /* Active phase: header is ordinary column chrome above the scrollport (not

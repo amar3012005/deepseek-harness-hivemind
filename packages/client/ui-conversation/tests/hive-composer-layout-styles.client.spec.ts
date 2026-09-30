@@ -19,24 +19,14 @@ describe('HIVE composer layout', () => {
     expect(css).toMatch(/main:has\(\[data-conversation-scroll\]\)[\s\S]*height:\s*calc\(100vh - 56px\)/s)
   })
 
-  it('centers the desktop HIVE composer on the host OS axis', () => {
-    const hostAxis = new RegExp(
-      String.raw`min-width:\s*1101px[\s\S]*data-dsh-mode='hivemind-chat'`
-      + String.raw`[\s\S]*\.composerSeat > \.composerStack\s*\{`
-      + String.raw`[^}]*transform:\s*translateX\(-107px\)`,
+  it('uses the measured shift for both HIVE modes and both composer phases', () => {
+    const measuredShift = new RegExp(
+      String.raw`data-dsh-mode='hivemind-chat'[^}]*\.composerSeat > \.composerStack\s*\{`
+      + String.raw`[^}]*transform:\s*translateX\(var\(--dsh-embedded-composer-shift, 0px\)\)\s*!important`,
       's',
     )
-    expect(css).toMatch(hostAxis)
-  })
-
-  it('centers both HyperAgents composer phases in the conversation column', () => {
-    expect(css).toMatch(/data-dsh-hyperagent-os='true'[^}]*\.composerStack\s*\{[^}]*transform:\s*none/s)
-    const hostOverride = new RegExp(
-      String.raw`data-dsh-hyperagent-os='true'[^}]*data-sidebar-right-open[^}]*data-os-harness-rooms[^}]*`
-      + String.raw`\.composerStack\s*\{[^}]*transform:\s*none\s*!important`,
-      's',
-    )
-    expect(css).toMatch(hostOverride)
+    expect(css).toMatch(measuredShift)
+    expect(css).not.toMatch(/\.composerStack\s*\{[^}]*translateX\(-(?:107|120|130)px\)/s)
     expect(css).toMatch(/data-dsh-hyperagent-os='true'[^}]*\.header \.headerUtilities\s*\{[^}]*display:\s*flex/s)
   })
 

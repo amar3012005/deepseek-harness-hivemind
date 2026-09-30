@@ -43,6 +43,19 @@ function resolveContentWidth(columnWidth: number, preference: number | null): nu
   return Math.max(680, Math.min(columnWidth * 0.64, 920))
 }
 
+/** Center in the viewport when there is room, while keeping the composer
+ * inside its conversation seat at compact widths. Preview owns the adjacent
+ * pane, so an open Preview centers the composer in the chat seat instead. */
+export function embeddedComposerShift(
+  seatLeft: number, seatWidth: number, composerWidth: number, viewportWidth: number, previewOpen: boolean,
+): number {
+  const seatCenter = seatLeft + seatWidth / 2
+  const targetCenter = previewOpen ? seatCenter : viewportWidth / 2
+  const travel = Math.max(0, (seatWidth - composerWidth) / 2 - 16)
+  if (travel === 0) return 0
+  return Math.round(Math.max(-travel, Math.min(travel, targetCenter - seatCenter)))
+}
+
 /** One transcript width handle: pointer capture + rAF-throttled symmetric
  * resize (both sides write the one centered width, so outward travel widens
  * by 2× the pointer distance). pointermove publishes the pointer's Y as a CSS
@@ -203,6 +216,37 @@ export function ConversationRoot({
     rootObserver.current.observe(root)
     publishWidths(root)
   }, [publishWidths])
+
+  useEffect(() => {
+    const root = rootEl.current
+    const stack = root?.querySelector<HTMLElement>(`.${css.composerStack}`)
+    const seat = stack?.closest<HTMLElement>('[data-composer-seat]')
+    if (root === null || !stack || !seat) return
+    const measure = () => {
+      if (document.documentElement.dataset.dshMode !== 'hivemind-chat') return
+      const seatBox = seat.getBoundingClientRect()
+      const shift = embeddedComposerShift(
+        seatBox.left, seatBox.width, stack.getBoundingClientRect().width,
+        window.innerWidth, document.querySelector('[data-sidebar-right-open]') !== null,
+      )
+      root.style.setProperty('--dsh-embedded-composer-shift', `${shift}px`)
+    }
+    const observer = new ResizeObserver(measure)
+    observer.observe(root)
+    observer.observe(stack)
+    observer.observe(seat)
+    const modeObserver = new MutationObserver(measure)
+    modeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['data-dsh-mode'] })
+    window.addEventListener('resize', measure)
+    const frame = requestAnimationFrame(measure)
+    return () => {
+      cancelAnimationFrame(frame)
+      window.removeEventListener('resize', measure)
+      modeObserver.disconnect()
+      observer.disconnect()
+      root.style.removeProperty('--dsh-embedded-composer-shift')
+    }
+  }, [])
 
   // Drag plumbing for the two width handles: onStart snapshots the resolved
   // width (grabbing a clamped column must not jump back to the raw stored
