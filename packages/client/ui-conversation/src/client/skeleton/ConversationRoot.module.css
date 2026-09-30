@@ -358,14 +358,14 @@
 /* In the embedded HIVE shell the TopBar's OS switch and conversation canvas
    share the same center axis. Keep every composer phase on that axis even
    when the session rail is visible as floating chrome. */
-:global(html[data-dsh-mode='hivemind-chat']) .composerSeat > .composerStack {
+:global(html[data-dsh-mode='hivemind-chat']) .composerSeat .composerStack {
   margin-inline: auto;
 }
 
 /* The host's floating rail has a different width in BRAIN and OS. A measured
    shift centers in the whole viewport only while the composer fits inside
    its chat seat; opening Preview returns the axis to that seat. */
-:global(html[data-dsh-mode='hivemind-chat']) .composerSeat > .composerStack {
+:global(html[data-dsh-mode='hivemind-chat']) .composerSeat .composerStack {
   transform: translateX(var(--dsh-embedded-composer-shift, 0px)) !important;
 }
 

@@ -21,7 +21,7 @@ describe('HIVE composer layout', () => {
 
   it('uses the measured shift for both HIVE modes and both composer phases', () => {
     const measuredShift = new RegExp(
-      String.raw`data-dsh-mode='hivemind-chat'[^}]*\.composerSeat > \.composerStack\s*\{`
+      String.raw`data-dsh-mode='hivemind-chat'[^}]*\.composerSeat \.composerStack\s*\{`
       + String.raw`[^}]*transform:\s*translateX\(var\(--dsh-embedded-composer-shift, 0px\)\)\s*!important`,
       's',
     )
