@@ -929,6 +929,7 @@ export class SessionManager {
         && prev.parentSessionId === entry.parentSessionId && prev.cwd === entry.cwd
         && prev.origin === entry.origin && prev.title === entry.title && prev.depth === entry.depth
         && prev.projectionValues === entry.projectionValues
+        && prev.agentPreset === entry.agentPreset
         && prev.completed === entry.completed
       ) return prev
       this.entryCache.set(entry.sessionId, entry)
@@ -969,12 +970,15 @@ function applyMutation(summaries: readonly SessionSummary[], mutation: SessionLi
         // first send) never re-hides an already-surfaced session.
         blank: existing.blank && mutation.summary.blank,
         ...(existing.cwd === undefined && mutation.summary.cwd !== undefined ? { cwd: mutation.summary.cwd } : {}),
+        ...(existing.agentPreset === undefined && mutation.summary.agentPreset !== undefined
+          ? { agentPreset: mutation.summary.agentPreset } : {}),
         ...(existing.parentSessionId === undefined && mutation.summary.parentSessionId !== undefined
           ? { parentSessionId: mutation.summary.parentSessionId } : {}),
         ...(existing.origin === undefined && mutation.summary.origin !== undefined
           ? { origin: mutation.summary.origin } : {}),
       }
-      if (filled.cwd === existing.cwd && filled.parentSessionId === existing.parentSessionId
+      if (filled.cwd === existing.cwd && filled.agentPreset === existing.agentPreset
+        && filled.parentSessionId === existing.parentSessionId
         && filled.origin === existing.origin && filled.blank === existing.blank
       ) return [...summaries]
       return summaries.map(summary => summary.sessionId === mutation.summary.sessionId ? filled : summary)

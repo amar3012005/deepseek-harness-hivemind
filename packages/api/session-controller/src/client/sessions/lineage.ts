@@ -25,6 +25,7 @@ export interface SessionListEntry {
   /** Coarse durable origin for navigation filtering; not a continuation capability. */
   origin?: 'subagent'
   cwd?: string
+  agentPreset?: string
   /** Current host-computed projection values for list consumers. */
   projectionValues?: Readonly<Partial<SessionProjectionMap>>
   /** Finished running while not selected and not yet opened — the sidebar's green "done" reminder (clears on select or the next run). */

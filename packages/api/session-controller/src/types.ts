@@ -168,6 +168,7 @@ export interface SessionSummary {
   readonly parentSessionId?: SessionId
   readonly origin?: 'subagent'
   readonly cwd?: string
+  readonly agentPreset?: string
   readonly projections?: SessionProjectionHints
 }
 

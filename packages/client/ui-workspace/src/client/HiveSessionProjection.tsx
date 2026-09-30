@@ -51,7 +51,8 @@ export function HiveSessionProjection({
   const rows = useMemo(
     () => deriveFlat(list, [], pending).filter((row) => {
       if (row.blank) return false
-      const preset = list.byId[row.id]?.projectionValues?.agentPreset
+      const summary = list.byId[row.id]
+      const preset = summary?.projectionValues?.agentPreset ?? summary?.agentPreset
       const isHyperagent = preset === 'hivemind-hyperagents'
         || preset === 'hyperagents' || preset === 'hyperagents-compressed'
       return hyperagentRoute ? isHyperagent : !isHyperagent
