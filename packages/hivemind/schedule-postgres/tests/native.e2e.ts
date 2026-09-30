@@ -8,7 +8,7 @@ import { Pool } from 'pg'
 import { chromium, type Browser, type Page } from 'playwright'
 import { beforeAll, afterAll, describe, expect, it } from 'vitest'
 import { SessionId, type SessionEvent } from '@deepseek-ai/dsh-session'
-import { LlmAdapter, ToolCallId, type GenerateOptions, type StreamChunk } from '@deepseek-ai/dsh-llm'
+import { LlmAdapter, ToolCallId, createUserMessage, type GenerateOptions, type StreamChunk } from '@deepseek-ai/dsh-llm'
 import type { HivemindPrincipal } from '@deepseek-ai/dsh-hivemind-execution-scope'
 import type { ScheduleRecord } from '@deepseek-ai/dsh-schedule'
 import { launchWebScaffold, type WebScaffold } from '../../../../apps/web/tests/scaffold.ts'
@@ -238,7 +238,7 @@ suite('tenant scheduled native composition', () => {
         agentOptions: { provider: 'tenant-canary', model: 'reply' },
       })
       handle.agent.session.append('model/selection', { provider: 'tenant-canary', model: 'reply' })
-      handle.agent.followup({ id: randomUUID(), role: 'user', content: [{ type: 'text', text: 'Prepare HQ controls for this company.' }], source: { kind: 'user', rpcId: 'hq-control-canary' } })
+      handle.agent.followup(createUserMessage({ content: [{ type: 'text', text: 'Prepare HQ controls for this company.' }], source: { kind: 'user' } }))
       await handle.agent.whenIdle()
       handle.agent.session.append('session/title', { title: 'HQ controls canary', messageSeqs: [], source: { kind: 'fallback' } })
       expect(await app.ctx.sessions.flush(handle.agent.session)).toBe(true)
