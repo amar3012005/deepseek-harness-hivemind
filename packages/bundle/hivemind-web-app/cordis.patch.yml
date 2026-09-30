@@ -238,7 +238,7 @@
         serviceSecretEnv: HIVE_HARNESS_RUNNER_SERVICE_SECRET
         databaseUrlEnv: DATABASE_URL
 
-# Host scheduling is tenant-scoped and tools attach only to HyperAgents roots.
+# Host scheduling is tenant-scoped for BRAIN and HyperAgents roots.
 - id: ui-schedule
   disabled: false
 

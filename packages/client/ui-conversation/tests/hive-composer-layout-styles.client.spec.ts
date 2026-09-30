@@ -19,15 +19,9 @@ describe('HIVE composer layout', () => {
     expect(css).toMatch(/main:has\(\[data-conversation-scroll\]\)[\s\S]*height:\s*calc\(100vh - 56px\)/s)
   })
 
-  it('uses the measured shift for both HIVE modes and both composer phases', () => {
-    const measuredShift = new RegExp(
-      String.raw`data-dsh-mode='hivemind-chat'[^}]*\.composerSeat \.composerStack\s*\{`
-      + String.raw`[^}]*transform:\s*translateX\(var\(--dsh-embedded-composer-shift, 0px\)\)\s*!important`,
-      's',
-    )
-    expect(css).toMatch(measuredShift)
-    expect(css).not.toMatch(/\.composerStack\s*\{[^}]*translateX\(-(?:107|120|130)px\)/s)
-    expect(css).toMatch(/data-dsh-hyperagent-os='true'[^}]*\.header \.headerUtilities\s*\{[^}]*display:\s*flex/s)
+  it('aligns both HIVE modes and composer phases with the chat column', () => {
+    expect(css).toMatch(/data-hivemind-harness-surface[^}]*\.composerSeat \.composerStack\s*\{[^}]*transform:\s*none\s*!important/s)
+    expect(css).toMatch(/data-dsh-mode='hivemind-chat'[^}]*\.header \.headerUtilities\s*\{[^}]*display:\s*flex/s)
   })
 
   it('keeps Chat and Trajectory as lower-left HIVE overlay controls', () => {

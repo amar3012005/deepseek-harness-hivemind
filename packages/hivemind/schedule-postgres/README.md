@@ -1,10 +1,10 @@
 # Tenant PostgreSQL Schedule provider
 
-The HyperAgents web profile loads the upstream DSH Schedule package with this external storage provider. Apply the additive `20260929233000_harness_scheduled_tasks` Prisma migration before enabling the profile. The provider uses the same PostgreSQL database and tenant identity as native Harness sessions.
+The embedded HIVE web profile loads the upstream DSH Schedule package with this external storage provider. Apply the additive `20260929233000_harness_scheduled_tasks` Prisma migration before enabling the profile. The provider uses the same PostgreSQL database and tenant identity as native Harness sessions.
 
 ## Ownership and delivery
 
-Every management operation requires the authenticated execution scope and an active organization membership. Task rows and wake rows have forced PostgreSQL row-level security for `(org_id, user_id)`. A composite foreign key binds each task to a session owned by the same identity. Only sessions whose current preset is `hivemind-hyperagents` accept tasks; HIVE chat and child agents do not receive Schedule tools. Switching a blank session commits the selected preset before creating a task.
+Every management operation requires the authenticated execution scope and an active organization membership. Task rows and wake rows have forced PostgreSQL row-level security for `(org_id, user_id)`. A composite foreign key binds each task to a session owned by the same identity. Only sessions whose current preset is `hivemind-hyperagents` or `hivemind-chat` accept tasks; child agents do not receive Schedule tools. Switching a blank session commits the selected preset before creating a task.
 
 The host timer reads only due task identities in a short transaction with a server-owned scanner flag. It restores the stored session owner, variation, and project before invoking the native session controller. Organization membership is rechecked before delivery. Closed sessions and revoked owners are deactivated. Browsers and live agents are not required for a due task to wake its session.
 
@@ -16,7 +16,7 @@ The HIVE bundle explicitly supplies `connectionStringEnv`, `schema`, `pollInterv
 
 ## Model Experience
 
-- Tools: upstream `schedule_create`, `schedule_list`, `schedule_update`, and `schedule_delete` are attached only to HyperAgents roots.
+- Tools: upstream `schedule_create`, `schedule_list`, `schedule_update`, and `schedule_delete` attach to HIVE-MIND Chat and HyperAgents roots.
 - Prompt and tokens: the provider adds no model prompt or tokens. Due work becomes a native scheduled user message with the saved instruction.
 - KV cache: management does not activate a session; due delivery changes the native conversation normally.
 

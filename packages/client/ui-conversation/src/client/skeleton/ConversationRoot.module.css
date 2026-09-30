@@ -362,11 +362,10 @@
   margin-inline: auto;
 }
 
-/* The host's floating rail has a different width in BRAIN and OS. A measured
-   shift centers in the whole viewport only while the composer fits inside
-   its chat seat; opening Preview returns the axis to that seat. */
-:global(html[data-dsh-mode='hivemind-chat']) .composerSeat .composerStack {
-  transform: translateX(var(--dsh-embedded-composer-shift, 0px)) !important;
+/* Align the composer with the transcript inside the available chat column.
+   This also overrides the host's older viewport-centering transform. */
+:global(html[data-dsh-mode='hivemind-chat']) :global([data-hivemind-harness-surface]) .composerSeat .composerStack {
+  transform: none !important;
 }
 
 /* Active phase: header is ordinary column chrome above the scrollport (not
@@ -462,9 +461,8 @@
   display: none;
 }
 
-/* HyperAgents has its own OS route; keep task management available beside the
-   top-right preview control even though the host owns the rest of the header. */
-:global(html[data-dsh-hyperagent-os='true']) .root .header .headerUtilities {
+/* Keep Schedule in the top-right corner of both embedded HIVE modes. */
+:global(html[data-dsh-mode='hivemind-chat']) .root .header .headerUtilities {
   position: fixed;
   top: 70px;
   right: calc(var(--dsh-hyperagent-chat-right-inset, 0px) + 56px);

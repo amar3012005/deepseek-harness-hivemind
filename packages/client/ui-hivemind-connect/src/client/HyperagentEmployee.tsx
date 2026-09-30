@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Avatar } from '@humation/react'
 import { humation1 } from '@humation/assets-humation-1'
-import { IconPanelLeftOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconPanelLeftOutline16, IconSettingsOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { SessionEventWindow } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { SnapshotSelectorHook } from '@deepseek-ai/dsh-client-store'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
@@ -131,7 +131,7 @@ export function HyperagentPanelToggle({ sessionId, useSessions, useEmployeeEvent
   const isOsRoute = typeof window !== 'undefined' && window.location.pathname.startsWith('/hivemind/app/employee/harness/')
   const [dismissed, setDismissed] = useState(false)
   const [collision, setCollision] = useState(false)
-  const [right, setRight] = useState(48)
+  const [dock, setDock] = useState({ left: 0, width: 420 })
   const toggleRef = useRef<HTMLButtonElement>(null)
   const previewOpenedFor = useRef<string | null>(null)
   useEffect(() => {
@@ -156,9 +156,16 @@ export function HyperagentPanelToggle({ sessionId, useSessions, useEmployeeEvent
       const boundary = root.getBoundingClientRect()
       const inset = Math.max(0, window.innerWidth - boundary.right)
       document.documentElement.style.setProperty('--dsh-hyperagent-chat-right-inset', `${inset}px`)
-      setRight(inset + 16)
+      const zoom = Number.parseFloat(getComputedStyle(document.documentElement).zoom) || 1
+      const cardWidth = Math.min(420 * zoom, Math.max(0, boundary.width - 32 * zoom))
+      const cardLeft = boundary.left + (boundary.width - cardWidth) / 2
+      setDock((previous) => {
+        const next = { left: cardLeft / zoom, width: cardWidth / zoom }
+        return Math.abs(previous.left - next.left) < 1 && Math.abs(previous.width - next.width) < 1
+          ? previous : next
+      })
       if (dismissed) return
-      const card = { left: boundary.right - 336, right: boundary.right - 16, top: 112, bottom: 316 }
+      const card = { left: cardLeft, right: cardLeft + cardWidth, top: 112 * zoom, bottom: 340 * zoom }
       const rows = scroller.querySelectorAll<HTMLElement>('[data-chat-flow] > [data-chat-flow-key]:not(:empty):not([hidden])')
       setCollision([...rows].some((row) => {
         const box = row.getBoundingClientRect()
@@ -190,14 +197,15 @@ export function HyperagentPanelToggle({ sessionId, useSessions, useEmployeeEvent
   return <>
     <button ref={toggleRef} type="button" className={css.panelToggle} aria-label={t('employee.toggle')} title={t('employee.toggle')} onClick={() => { swapPanel(isHyperagentPreset(preset)) }}><IconPanelLeftOutline16 className={css.panelToggleIcon} /></button>
     {showEnvironment && createPortal(<div
-      className={css.environmentDock} style={{ right }} data-collapsed={dismissed || collision || undefined}
+      className={css.environmentDock} style={dock} data-collapsed={dismissed || collision || undefined}
     >
       {dismissed || collision
         ? <button type="button" className={css.environmentReveal} onClick={() => { setDismissed(false); setCollision(false) }} aria-label={t('employee.environment')}>{t('employee.environment')}</button>
         : <section className={css.environment} aria-label={t('employee.environment')}>
           <header><span className={css.dots} aria-hidden="true">● ● ●</span>{t('employee.environment')}<button type="button" onClick={() => { setDismissed(true) }}>{t('employee.hide')}</button></header>
-          <div className={css.identity}>{selected === null ? <span className={css.autoAvatar}>{t('employee.initial')}</span> : <EmployeeAvatar employee={selected} size={36} />}<span><strong>{selected?.name ?? t('employee.auto')}</strong><small>{selected?.role ?? t('employee.autoDetail')}</small></span></div>
-          <p>{t('employee.ready')}</p>
+          <div className={css.identity}>{selected === null ? <span className={css.autoAvatar}>{t('employee.initial')}</span> : <EmployeeAvatar employee={selected} size={36} />}<span><strong>{selected?.name ?? t('employee.auto')}</strong><small>{selected?.role ?? t('employee.autoDetail')}</small></span><button type="button" className={css.settings} aria-label={t('employee.settings')} title={t('employee.settings')} onClick={() => { window.location.assign('/hivemind/app/settings') }}><IconSettingsOutline16 /></button></div>
+          <button type="button" className={css.connectApps} onClick={() => { window.location.assign('/hivemind/app/connectors') }}>{t('employee.connectApps')}<span aria-hidden="true">›</span></button>
+          <p><a href="/hivemind/app/usage">{t('employee.creditsUsed')}</a></p>
         </section>}
     </div>, document.body)}
   </>

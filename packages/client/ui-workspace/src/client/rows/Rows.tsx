@@ -378,7 +378,7 @@ export function SearchResultItem({ result, currentId, onOpen, t }: {
  */
 export function SessionNodeItem({
   node, currentId, now, onOpen, onRename, onFork, onArchive, onDelete, onShare, onReveal, drag, flat = false,
-  showActions = true, actionsPersistent = false, t,
+  showActions = true, actionsPersistent = false, visibleTitle, t,
 }: {
   node: SessionNode
   currentId: string | undefined
@@ -404,10 +404,12 @@ export function SessionNodeItem({
   showActions?: boolean | undefined
   /** Keep the trailing ellipsis visible instead of revealing it only on hover. */
   actionsPersistent?: boolean | undefined
+  /** Host projection may show an absolute timestamp while preserving the stored title for rename and share. */
+  visibleTitle?: string | undefined
   t: RowTranslate
 }) {
   const row = node
-  const title = displayTitle(node, t)
+  const title = visibleTitle ?? displayTitle(node, t)
   const selected = node.id === currentId
   const statuses = sessionStatuses(node, t)
   const primaryStatus = statuses[0]

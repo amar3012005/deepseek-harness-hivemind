@@ -85,7 +85,10 @@ export function ConversationSessionHeader({
   const ancestry = useSessions(s => deriveAncestry(s, sessionId), equalBreadcrumbs)
   const session = useSession(s => s)
   const conversation = useConversation(s => s)
-  const hideChrome = session.blank && conversationPhase(session, conversation) === 'blank'
+  // Both embedded modes keep header utilities available on a new session.
+  const embeddedRoute = typeof window !== 'undefined'
+    && /^\/hivemind\/app\/(?:employee\/harness|overview)\//u.test(window.location.pathname)
+  const hideChrome = !embeddedRoute && session.blank && conversationPhase(session, conversation) === 'blank'
 
   return (
     <header

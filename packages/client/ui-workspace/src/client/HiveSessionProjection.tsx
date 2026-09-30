@@ -1,4 +1,5 @@
 import { useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { Button, IconClockOutline16, IconNewChatOutline16, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { PropsLocale, PropsRenderSlots, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
@@ -19,6 +20,16 @@ type Props = PropsRuntime<'shell.sessionRail'>
   & PropsRenderSlots<'conversation.sidebar.viewTabs'>
   & HiveSessionProjectionInjected
 
+/** A stable local timestamp is a useful label for sessions without distinct titles. */
+export function sessionTimestamp(updatedAt: number, now: number, locale: string): string {
+  const date = new Date(updatedAt)
+  if (Number.isNaN(date.getTime())) return ''
+  return new Intl.DateTimeFormat(locale || 'en', {
+    ...(date.getFullYear() === new Date(now).getFullYear() ? {} : { year: 'numeric' }),
+    month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
+  }).format(date)
+}
+
 /** Native session rows projected into the host-owned HIVE canvas. */
 export function HiveSessionProjection({
   useSessions, useSessionPendingInteraction, createSession, openSession,
@@ -33,6 +44,10 @@ export function HiveSessionProjection({
   const list = useSessions(value => value)
   const pending = useSessionPendingInteraction(value => value)
   const hyperagentRoute = window.location.pathname.startsWith('/hivemind/app/employee/harness/')
+  // The OS sidebar is owned by the host frontend. Its existing first content
+  // block is a stable seat, so the runner can show sessions without a host deploy.
+  const osRail = hyperagentRoute
+    ? document.querySelector<HTMLElement>('[data-product-sidebar="os"] > div') : null
   const rows = useMemo(
     () => deriveFlat(list, [], pending).filter((row) => {
       if (row.blank) return false
@@ -79,10 +94,11 @@ export function HiveSessionProjection({
     void sharing?.catch((reason: unknown) => { console.warn('session share rejected:', reason) })
   }
   const now = Date.now()
-  return <div className={css.root}>
-    <button type="button" className={css.newSession} disabled={creating} onClick={start}>
+  const locale = document.documentElement.lang || navigator.language || 'en'
+  const content = <div className={`${css.root} ${osRail === null ? '' : css.osRoot}`}>
+    {osRail === null && <button type="button" className={css.newSession} disabled={creating} onClick={start}>
       <IconNewChatOutline16 /><span>{t('session.new')}</span>
-    </button>
+    </button>}
     <div className={css.recentHeading}>
       <IconClockOutline16 /><span>{t('section.recent')}</span>
     </div>
@@ -90,6 +106,7 @@ export function HiveSessionProjection({
       {rows.map(row => <SessionNodeItem
         key={row.id}
         node={row}
+        visibleTitle={sessionTimestamp(row.updatedAt, now, locale)}
         currentId={list.current}
         now={now}
         onOpen={openSession}
@@ -133,4 +150,5 @@ export function HiveSessionProjection({
       {renameError !== undefined && <div className={css.renameError} role="alert">{renameError}</div>}
     </Modal>
   </div>
+  return osRail === null ? content : createPortal(content, osRail)
 }

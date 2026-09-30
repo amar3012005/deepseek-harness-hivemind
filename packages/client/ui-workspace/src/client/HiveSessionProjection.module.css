@@ -6,6 +6,16 @@
   color: var(--dsw-alias-label-primary);
 }
 
+.osRoot {
+  height: auto;
+  padding: 0 2px 8px;
+  font-size: 11px;
+}
+
+.osRoot .recentHeading { margin-top: 8px; }
+.osRoot .list { max-height: min(30vh, 280px); }
+.osRoot .viewTabs { display: none; }
+
 .newSession {
   display: flex;
   min-height: 38px;

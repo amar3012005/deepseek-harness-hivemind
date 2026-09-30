@@ -95,7 +95,7 @@ export default class PostgresScheduleBackend extends Service implements Schedule
     let preset = agent.session.header.agentPreset
     for (const event of agent.session.ownEvents())
       if (event.type === 'agent-preset/selected') preset = event.data.agentPreset
-    return preset === 'hivemind-hyperagents'
+    return preset === 'hivemind-hyperagents' || preset === 'hivemind-chat'
   }
   start(wake: () => void): () => void {
     const initial = setTimeout(wake, 0)
@@ -171,7 +171,8 @@ export default class PostgresScheduleBackend extends Service implements Schedule
             [row.task_id, owner.orgId, owner.userId],
           )
           const session = bound.rows[0]
-          if (session === undefined || session.status !== 'active' || session.preset !== 'hivemind-hyperagents') {
+          if (session === undefined || session.status !== 'active'
+            || (session.preset !== 'hivemind-hyperagents' && session.preset !== 'hivemind-chat')) {
             await client.query(
               "UPDATE harness_scheduled_tasks SET status='inactive',updated_at=now() WHERE id=$1 AND org_id=$2 AND user_id=$3",
               [row.task_id, owner.orgId, owner.userId],
@@ -275,7 +276,7 @@ export default class PostgresScheduleBackend extends Service implements Schedule
       `SELECT t.* FROM harness_scheduled_tasks t JOIN harness_sessions s
       ON s.id=t.session_id AND s.org_id=t.org_id AND s.user_id=t.user_id
       WHERE t.org_id=$1 AND t.user_id=$2 AND ($3::text IS NULL OR t.session_id=$3)
-      AND ${currentPreset}='hivemind-hyperagents' ORDER BY t.created_at,t.id`,
+      AND ${currentPreset} IN ('hivemind-hyperagents','hivemind-chat') ORDER BY t.created_at,t.id`,
       [owner.orgId, owner.userId, sessionId ?? null],
     )
     const tasks = new Map<ScheduleId, ScheduleTask>(
@@ -303,10 +304,10 @@ export default class PostgresScheduleBackend extends Service implements Schedule
           throw new Error('Schedule session cannot change')
         const authorized = await client.query(
           `SELECT 1 FROM harness_sessions s WHERE s.id=$1 AND s.org_id=$2 AND s.user_id=$3
-          AND s.status='active' AND ${currentPreset}='hivemind-hyperagents'`,
+          AND s.status='active' AND ${currentPreset} IN ('hivemind-hyperagents','hivemind-chat')`,
           [task.sessionId, owner.orgId, owner.userId],
         )
-        if (authorized.rowCount !== 1) throw new Error('Schedule requires an owned HyperAgents session')
+        if (authorized.rowCount !== 1) throw new Error('Schedule requires an owned HIVE session')
         if (current === undefined && tasks.size >= this.config.maxTasksPerUser)
           throw new Error('Schedule task limit reached')
         const result = await client.query(

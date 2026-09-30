@@ -131,14 +131,12 @@ suite('tenant PostgreSQL Schedule provider', () => {
       })
     expect(await scope.run(a, () => backend.manage(async table => [...table.entries()].length))).toBe(1)
   })
-  it('rejects foreign sessions and HIVE chat mode', async () => {
+  it('rejects foreign sessions and accepts HIVE chat mode', async () => {
     await expect(
       scope.run(a, () => backend.manage(table => table.put(ScheduleId('foreign'), task('foreign', 'b-session')))),
-    ).rejects.toThrow('owned HyperAgents')
+    ).rejects.toThrow('owned HIVE')
     await admin.query('UPDATE harness_sessions SET header=\'{"agentPreset":"hivemind-chat"}\' WHERE id=\'a-session\'')
-    await expect(
-      scope.run(a, () => backend.manage(table => table.put(ScheduleId('a-task'), task()))),
-    ).rejects.toThrow('owned HyperAgents')
+    await scope.run(a, () => backend.manage(table => table.put(ScheduleId('a-task'), task())))
     await admin.query("INSERT INTO harness_session_events VALUES('a-session',$1,$2,'agent-preset/selected',$3,1)", [
       a.orgId,
       a.userId,
