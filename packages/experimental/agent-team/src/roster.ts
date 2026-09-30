@@ -371,10 +371,10 @@ export class TeamRoster {
       void progress.promise.catch(() => undefined)
       const stopEvent = this.ctx.on('session/event', (candidate) => {
         if (candidate === session) progress.resolve()
-      })
+      }, { global: true })
       const stopDisposed = this.ctx.on('session/disposed', (candidate) => {
         if (candidate === session) progress.resolve()
-      })
+      }, { global: true })
       const onAbort = (): void => {
         const reason: unknown = signal.reason
         progress.reject(reason instanceof Error

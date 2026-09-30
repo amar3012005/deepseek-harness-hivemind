@@ -59,6 +59,13 @@
   box-shadow: var(--dsw-elevation-prominent);
 }
 
+/* Embedded HIVE places this action at the right edge of the window. */
+:global(html[data-dsh-mode='hivemind-chat']) .root .panel {
+  top: calc(100% + 196px);
+  right: 0;
+  left: auto;
+}
+
 .toolbar,
 .sectionTitle,
 .taskTitle,
