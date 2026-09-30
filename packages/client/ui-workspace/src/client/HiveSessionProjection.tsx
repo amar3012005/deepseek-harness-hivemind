@@ -52,7 +52,11 @@ export function HiveSessionProjection({
     () => deriveFlat(list, [], pending).filter((row) => {
       if (row.blank) return false
       const summary = list.byId[row.id]
-      const preset = summary?.projectionValues?.agentPreset ?? summary?.agentPreset
+      // The list's tenant-scoped value includes blank-session preset changes
+      // for cold rows; an open session's live projection can be newer still.
+      const preset = row.id === list.current
+        ? summary?.projectionValues?.agentPreset ?? summary?.agentPreset
+        : summary?.agentPreset ?? summary?.projectionValues?.agentPreset
       const isHyperagent = preset === 'hivemind-hyperagents'
         || preset === 'hyperagents' || preset === 'hyperagents-compressed'
       return hyperagentRoute ? isHyperagent : !isHyperagent

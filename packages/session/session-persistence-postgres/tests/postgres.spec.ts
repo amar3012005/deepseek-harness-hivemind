@@ -82,6 +82,19 @@ integration('PostgreSQL HIVE SessionPersistence contract', () => {
     expect(await scope.run(other, () => persistence.stat(SessionId('tenant-session')))).toBeUndefined()
   })
 
+  it('lists the latest tenant-scoped preset selection for cold session navigation', async () => {
+    const id = SessionId('preset-session')
+    const writer = await scope.run(principal, () => persistence.create({ ...header(id), agentPreset: 'hivemind-chat' }))
+    await writer.append([{
+      type: 'agent-preset/selected', seq: SessionSeq(0), time: 1_788_878_400_000,
+      data: { agentPreset: 'hivemind-hyperagents' },
+    } as SessionEvent])
+    await writer.close()
+    await expect(persistence.effectivePresets([id])).rejects.toThrow(/scope is unavailable/u)
+    expect(await scope.run(principal, () => persistence.effectivePresets([id]))).toEqual(new Map([[id, 'hivemind-hyperagents']]))
+    expect(await scope.run(other, () => persistence.effectivePresets([id]))).toEqual(new Map())
+  })
+
   it('stores exact event envelopes, rejects gaps, and fences an expired writer', async () => {
     const writer = await scope.run(principal, () => persistence.create(header('fenced-session')))
     const first = start(0)

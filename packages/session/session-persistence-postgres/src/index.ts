@@ -270,6 +270,26 @@ export class PostgresSessionPersistence extends SessionPersistence {
       scopeParams(scope))
     return result.rows.map(row => this.snapshot(row))
   }
+  /** Current preset for tenant-visible sessions, including blank-session selection events. */
+  async effectivePresets(ids: readonly SessionId[], signal?: AbortSignal): Promise<ReadonlyMap<SessionId, string>> {
+    checkAbort(signal)
+    if (ids.length === 0) return new Map()
+    const scope = this.capture()
+    const result = await this.query<{ id: SessionId; preset: string | null }>(scope,
+      `SELECT s.id, COALESCE(chosen.preset,s.header->>'agentPreset') AS preset
+         FROM harness_sessions s
+         LEFT JOIN LATERAL (
+           SELECT e.payload->'data'->>'agentPreset' AS preset
+             FROM harness_session_events e
+            WHERE e.session_id=s.id AND e.org_id=s.org_id AND e.user_id=s.user_id
+              AND e.event_type='agent-preset/selected'
+            ORDER BY e.sequence DESC LIMIT 1
+         ) chosen ON true
+        WHERE s.org_id=$1 AND s.user_id=$2 AND s.id=ANY($3::varchar[])`,
+      [...scopeParams(scope), ids])
+    checkAbort(signal)
+    return new Map(result.rows.flatMap(row => row.preset === null ? [] : [[row.id, row.preset] as const]))
+  }
   private snapshot(row: SessionRow): SessionPersistenceSnapshot {
     return {
       header: materializeCreateHeader(row.header), eventCount: Number(row.event_count),
