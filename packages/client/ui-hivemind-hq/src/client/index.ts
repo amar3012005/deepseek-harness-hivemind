@@ -64,7 +64,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       return id ? createElement('div', { style: { height: '100%', overflow: 'auto' } },
         createElement(HqControlAction, { ...actions, sessionId: id, t: child.locale.bind('hivemind.hq') }),
         createElement(CompanyWorkspace, { ...workspace, sessionId: id }))
-        : createElement('section', { style: { padding: 24 } },
+        : createElement('section', { 'data-company-calendar': '', style: { padding: 24 } },
           createElement('h1', null, 'Company calendar'),
           createElement('p', null, 'Create an HQ Runtime to plan company work. Autonomous execution starts paused.'),
           createElement('button', { type: 'button', disabled: creating, onClick: () => {

@@ -138,9 +138,9 @@
 }
 
 /* Task management owns the canvas until returning to the conversation. */
-:global(html[data-dsh-mode='hivemind-chat']) .frame:has([data-automation-tasks], [data-automation-task-detail]) .sessionRailCol {
+:global(html[data-dsh-mode='hivemind-chat']) .frame:has([data-automation-tasks], [data-automation-task-detail], [data-company-calendar]) .sessionRailCol {
   display: none;
 }
-:global(html[data-dsh-mode='hivemind-chat']) .frame:has([data-automation-tasks], [data-automation-task-detail]) .centerCol {
+:global(html[data-dsh-mode='hivemind-chat']) .frame:has([data-automation-tasks], [data-automation-task-detail], [data-company-calendar]) .centerCol {
   padding-left: 0 !important;
 }

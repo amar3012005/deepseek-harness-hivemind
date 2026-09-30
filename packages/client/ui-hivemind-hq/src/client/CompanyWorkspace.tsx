@@ -205,7 +205,7 @@ export function CompanyWorkspace({
     }
   }
   return (
-    <section className={css.workspace} aria-label="Company workspace">
+    <section data-company-calendar="" className={css.workspace} aria-label="Company workspace">
       <header className={css.header}>
         <div>
           <h1>Company calendar</h1>
