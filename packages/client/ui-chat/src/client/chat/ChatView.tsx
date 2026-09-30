@@ -193,7 +193,7 @@ function TurnStatus({ startTime, working, t }: {
   const showClock = elapsedMs >= 15_000
   return (
     <div className={css.turnStatus} role="status" aria-live="polite">
-      <ThinkingOrb state={working ? 'solving' : 'searching'} size={64} aria-hidden="true" />
+      <ThinkingOrb state={working ? 'solving' : 'searching'} size={32} aria-hidden="true" />
       <span className={css.turnStatusLabel}>{working ? t('chat.working') : t('chat.thinking')}</span>
       {showClock && (
         <span className={css.turnStatusClock} aria-hidden>
