@@ -103,7 +103,8 @@ export async function jevReview(
 ): Promise<ReturnType<typeof reviewAnswers>> {
   const account = process.env['CLOUDFLARE_ACCOUNT_ID'],
     token = process.env['CLOUDFLARE_API_TOKEN']
-  if (!account || !/^[a-f0-9]{32}$/.test(account) || !token)
+  const directKey = process.env['JEV_OPENROUTER_API_KEY']
+  if (!directKey && (!account || !/^[a-f0-9]{32}$/.test(account) || !token))
     throw new Error('hq_review_provider_unconfigured')
   const questions = Object.fromEntries(
     criteria.map((criterion, index) => [
@@ -118,14 +119,17 @@ export async function jevReview(
       },
     ]),
   )
-  const response = await fetch(`https://api.cloudflare.com/client/v4/accounts/${account}/ai/run`, {
+  const model = directKey ? (process.env['JEV_MODEL'] || '~typesafe/jev-latest') : 'typesafe/jev'
+  const response = await fetch(directKey ? 'https://openrouter.ai/api/alpha/decisions'
+    : `https://api.cloudflare.com/client/v4/accounts/${account}/ai/run`, {
     method: 'POST',
-    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ model: 'typesafe/jev', input: { state, questions } }),
+    headers: { Authorization: `Bearer ${directKey || token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(directKey ? { model, state, questions } : { model, input: { state, questions } }),
     signal: AbortSignal.any([signal, AbortSignal.timeout(20000)]),
   })
   if (!response.ok) throw new Error(`hq_review_provider_http_${response.status}`)
   const envelope = object(await response.json())
+  if (directKey) return reviewAnswers(envelope, criteria.length)
   if (envelope?.['success'] !== true) throw new Error('hq_review_provider_failed')
   const result = object(envelope['result'])
   // Workers AI REST currently wraps Jev output as {state, result}; the SDK examples expose the inner value.
