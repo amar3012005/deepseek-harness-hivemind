@@ -174,6 +174,10 @@ suite('tenant PostgreSQL Schedule provider', () => {
     await admin.query("INSERT INTO harness_session_events VALUES('a-session',$1,$2,'hivemind/hq-mode',$3,1)", [
       a.orgId, a.userId, { data: { revision: 1, enabled: true, changedAt: Date.now() } },
     ])
+    // A bare enabled event is not company ownership and cannot admit a wake.
+    await admin.query("UPDATE harness_scheduled_due SET due_at=now()-interval '1 second' WHERE task_id='hq-task'")
+    await backend.dispatch(deliver)
+    expect(calls).toBe(0)
     await admin.query('INSERT INTO harness_company_hq(org_id,user_id,session_id) VALUES($1,$2,$3)', [a.orgId, a.userId, 'a-session'])
     await admin.query("UPDATE harness_scheduled_due SET due_at=now()-interval '1 second' WHERE task_id='hq-task'")
     await backend.dispatch(deliver)

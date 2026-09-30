@@ -45,6 +45,7 @@ suite('tenant scheduled native composition', () => {
     )
     await admin.query(await readFile(new URL('./sessions.sql', import.meta.url), 'utf8'))
     await admin.query(await readFile(new URL('./migration.sql', import.meta.url), 'utf8'))
+    await admin.query(await readFile(new URL('../../hq-runtime/migrations/company-hq.sql', import.meta.url), 'utf8'))
     await admin.query(
       `GRANT USAGE ON SCHEMA ${schema} TO codex_schedule_test; GRANT SELECT,INSERT,UPDATE,DELETE ON ALL TABLES IN SCHEMA ${schema} TO codex_schedule_test; GRANT USAGE,SELECT ON ALL SEQUENCES IN SCHEMA ${schema} TO codex_schedule_test`,
     )
@@ -57,6 +58,9 @@ suite('tenant scheduled native composition', () => {
       'name: HyperAgents\ndescription: Isolated Schedule canary\n',
     )
     await writeFile(join(root, 'presets', 'hivemind-hyperagents', 'agent.cordis.yml'), '[]\n')
+    await mkdir(join(root, 'presets', 'hivemind-hq'), { recursive: true })
+    await writeFile(join(root, 'presets', 'hivemind-hq', 'preset.yml'), 'name: HQ Runtime\ndescription: Native HQ control canary\n')
+    await writeFile(join(root, 'presets', 'hivemind-hq', 'agent.cordis.yml'), '[]\n')
     const localUrl = new URL(url!)
     localUrl.searchParams.set('options', `-c role=codex_schedule_test -c search_path=${schema},public`)
     process.env.DSH_SCHEDULE_CANARY_DB = localUrl.toString()
@@ -84,6 +88,18 @@ suite('tenant scheduled native composition', () => {
 - id: ui-schedule
   disabled: false
 - insert:
+    - id: agent-team
+      name: '@deepseek-ai/dsh-experimental-agent-team'
+      config: {allowedRootPresets: [hivemind-hyperagents, hivemind-hq]}
+    - id: hivemind-hq-ownership
+      name: '@deepseek-ai/dsh-hivemind-hq-runtime/ownership'
+    - id: hivemind-hq-ownership-postgres
+      name: '@deepseek-ai/dsh-hivemind-hq-runtime/ownership-postgres'
+      config: {connectionStringEnv: DSH_SCHEDULE_CANARY_DB, schema: ${schema}, maxConnections: 4, statementTimeoutMs: 15000}
+    - id: hivemind-hq-control
+      name: '@deepseek-ai/dsh-hivemind-hq-runtime/control'
+    - id: ui-hivemind-hq
+      name: '@deepseek-ai/dsh-client-ui-hivemind-hq'
     - id: hivemind-virtual-workspace
       name: '@deepseek-ai/dsh-hivemind-virtual-workspace'
     - id: hivemind-execution-scope
@@ -137,6 +153,7 @@ suite('tenant scheduled native composition', () => {
     })
     browser = await chromium.launch()
     page = await browser.newPage({ locale: 'en-US' })
+    page.on('pageerror', error => console.error('Native browser error:', error.message))
     const cookie = app.ctx.connection
       .authorizePrincipal(
         { headers: { host: new URL(app.baseUrl).host } },
@@ -151,6 +168,10 @@ suite('tenant scheduled native composition', () => {
     await page.goto(app.baseUrl)
   }, 120000)
   afterAll(async () => {
+    if (page && !page.isClosed()) {
+      await page.screenshot({ path: '/tmp/hq-native-browser-diagnostic.png', fullPage: true })
+      await writeFile('/tmp/hq-native-browser-diagnostic.txt', await page.locator('body').innerText())
+    }
     await browser?.close()
     await app?.close()
     if (admin) {
@@ -208,5 +229,40 @@ suite('tenant scheduled native composition', () => {
       expect(await app.ctx.schedule.delete({ sessionId, id: record.id })).toMatchObject({ deleted: true })
       expect(await app.ctx.schedule.catalog()).toEqual([])
     })
+  })
+  it('enables HQ from the native browser control, retains one company owner, and pauses it durably', async () => {
+    await app.ctx.hivemindExecutionScope.run(owner, async () => {
+      const handle = await app.ctx.agents.create({
+        sessionId: SessionId(`hq-${randomUUID()}`),
+        meta: { agentPreset: 'hivemind-hq', cwd: app.workspaceCwd },
+        agentOptions: { provider: 'tenant-canary', model: 'reply' },
+      })
+      handle.agent.session.append('model/selection', { provider: 'tenant-canary', model: 'reply' })
+      handle.agent.followup({ id: randomUUID(), role: 'user', content: [{ type: 'text', text: 'Prepare HQ controls for this company.' }], source: { kind: 'user', rpcId: 'hq-control-canary' } })
+      await handle.agent.whenIdle()
+      handle.agent.session.append('session/title', { title: 'HQ controls canary', messageSeqs: [], source: { kind: 'fallback' } })
+      expect(await app.ctx.sessions.flush(handle.agent.session)).toBe(true)
+      await handle.dispose()
+    })
+    await page.reload()
+    await page.getByText('Ungrouped', { exact: true }).click({ timeout: 15000 })
+    await page.getByText('HQ controls canary', { exact: true }).first().click({ timeout: 15000 })
+    await page.getByRole('button', { name: 'Enable HQ', exact: true }).click({ timeout: 15000 })
+    await page.getByRole('button', { name: 'Pause HQ', exact: true }).waitFor({ timeout: 15000 })
+    const ownership = await admin.query<{ session_id: string }>('SELECT session_id FROM harness_company_hq')
+    expect(ownership.rowCount).toBe(1)
+    const id = ownership.rows[0]?.session_id
+    expect(id).toBeTruthy()
+    expect((await admin.query("SELECT 1 FROM harness_scheduled_tasks WHERE session_id=$1 AND record->>'title'='HQ startup review'", [id])).rowCount).toBe(1)
+    await page.getByRole('button', { name: 'Pause HQ', exact: true }).click()
+    await page.getByRole('button', { name: 'Enable HQ', exact: true }).waitFor()
+    const modes = await admin.query<{ payload: { data: { enabled: boolean; revision: number } } }>(
+      "SELECT payload FROM harness_session_events WHERE session_id=$1 AND event_type='hivemind/hq-mode' ORDER BY sequence", [id])
+    expect(modes.rows.map(row => row.payload.data)).toMatchObject([
+      { enabled: true, revision: 1 }, { enabled: false, revision: 2 },
+    ])
+    await page.reload()
+    await page.getByRole('button', { name: 'Enable HQ', exact: true }).waitFor({ timeout: 15000 })
+    await page.screenshot({ path: '/tmp/hq-runtime-native-control.png', fullPage: true })
   })
 })
