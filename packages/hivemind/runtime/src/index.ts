@@ -1510,7 +1510,9 @@ export function apply(ctx: Context, config: Config): void {
       description: 'Private HyperAgents brain: task recall, verified learnings, decisions, handoffs, recovery, and the boundary with HIVEMIND company memory.',
       invocation: { modelInvocable: true, userInvocable: true },
       source: 'runtime',
-      content: `HyperAgents operating memory is your private, tenant-scoped working history. HIVEMIND is the company's shared brain.
+      content: `HyperAgents operating memory is your private, tenant-scoped working history in project slug hyper-agents. Records are stored in hivemind.hyper_agent_operating_memories, separate from the company-memory table and its Memories UI. The project record is metadata, not a company-memory entry. HIVEMIND is the company's shared brain.
+
+Schema: save supports kind learning, decision_note, or handoff, always with status recorded. Give a short title (at most 180 characters), verified summary (at most 2400 characters), and agent_slug. The parent Team Lead slug is lead; for an assigned employee, use the real directory slug. Include exact room_id, run_id, and trigger_id only when known from receipts. A successful save returns ok, project, memory id, and timestamps. Recall is bounded to this tenant and project; use a focused query and optional agent/room/run filters. A project name or an empty company Memories list does not prove this private store is empty. Memories are not automatically injected into later turns: call recall explicitly.
 
 1. For a new substantive task, call hyperagents_memory recall before planning with the actual task, assigned employee, and known room/run/trigger context. A no-match result means only that this bounded search found nothing.
 2. On continuation or recovery, inspect the durable plan, completed steps, and receipts first. Then recall private handoffs relevant to unfinished work. Never redo a completed step because a remembered summary mentions it.
@@ -1525,7 +1527,7 @@ export function apply(ctx: Context, config: Config): void {
         action: { type: 'string', required: true, enum: ['recall', 'save'], description: 'Read private operating memory or save one durable private note.' },
         query: { type: 'string', description: 'Focused task or prior decision question for recall, up to 500 characters.' },
         limit: { type: 'integer', description: 'Maximum recall results, 1 to 20.' },
-        agent_slug: { type: 'string', description: 'For save, the actual assigned employee slug; for recall, optional employee filter.' },
+        agent_slug: { type: 'string', description: 'For save, lead for the parent Team Lead, or the actual assigned employee directory slug; for recall, optional employee filter. Never guess a slug.' },
         kind: { type: 'string', enum: ['learning', 'decision_note', 'handoff'], description: 'Required for save.' },
         title: { type: 'string', description: 'Required for save; short searchable heading.' },
         summary: { type: 'string', description: 'Required for save; concise verified note with evidence or receipt reference.' },
@@ -1549,7 +1551,8 @@ export function apply(ctx: Context, config: Config): void {
             method: 'POST', body: JSON.stringify({ action, query, limit, ...(args.agent_slug ? { agent_slug: args.agent_slug } : {}), ...(args.room_id ? { room_id: args.room_id } : {}), ...(args.run_id ? { run_id: args.run_id } : {}) }),
           }, execution.signal, config), 'private memory recall')
         }
-        const agentSlug = nonEmptyString(args.agent_slug, 'assigned employee slug')
+        const agentSlug = args.agent_slug === undefined && sessionSelectedEmployee(agent) === undefined
+          ? 'lead' : nonEmptyString(args.agent_slug, 'assigned employee slug')
         const kind = nonEmptyString(args.kind, 'private memory kind')
         const title = nonEmptyString(args.title, 'private memory title')
         const summary = nonEmptyString(args.summary, 'private memory summary')

@@ -19,6 +19,12 @@
             answer directly without a plan, directory search, or skill load.
 
             hyperagents_memory is your private, persistent operating brain.
+            Its fixed private project slug is hyper-agents; records live in
+            the operating-memory store, not the company Memories list. You
+            must call recall when needed; memories are not automatically
+            injected into every future turn. For parent Team Lead saves,
+            agent_slug is lead. For an assigned employee, use that real
+            employee's directory slug, never a guessed name or role.
             For each new substantive task, recall relevant learnings, decisions,
             and completed-work handoffs before planning; include the assigned
             employee and any known room, run, or trigger context. An empty
