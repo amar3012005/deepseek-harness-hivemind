@@ -100,8 +100,22 @@ export function setupHivemindSessionRouting(
   let generation = 0
   let initialized = false
   let observedCurrent: SessionId | undefined
+  let creatingOsSession: SessionId | undefined
   let currentBase = routeBase(browser.location.pathname)
   const sessionPath = (id: SessionId): string => hivemindSessionPath(id, currentBase)
+  const rootForRoute = (state: SessionListState, id: SessionId | undefined): SessionId | undefined => {
+    if (id === undefined) return undefined
+    // The OS preset is selected just after the native blank Session is made.
+    // Keep that one newly created id on its OS URL during the short gap.
+    if (id === creatingOsSession) {
+      const summary = state.byId[id]
+      const preset = summary?.projectionValues?.agentPreset ?? summary?.agentPreset
+      if (summary?.blank !== true || preset === 'hivemind-hyperagents'
+        || preset === 'hyperagents' || preset === 'hyperagents-compressed') creatingOsSession = undefined
+      else if (currentBase === HIVE_EMPLOYEE_HARNESS_PATH && summary.origin !== 'subagent') return id
+    }
+    return rootSession(state, id, currentBase)
+  }
 
   const replace = (path: string): void => {
     if (browser.location.pathname !== path) browser.history.replaceState(browser.history.state, '', path)
@@ -121,8 +135,10 @@ export function setupHivemindSessionRouting(
       return
     }
     creating = true
+    const creatingBase = currentBase
     void sessions.create().then((sessionId) => {
       if (disposed || attempt !== generation) return
+      if (creatingBase === HIVE_EMPLOYEE_HARNESS_PATH) creatingOsSession = sessionId
       applyingRoute = true
       initialized = true
       observedCurrent = sessionId
@@ -136,7 +152,7 @@ export function setupHivemindSessionRouting(
 
   const selectExact = (state: SessionListState, sessionId: SessionId): void => {
     if (creating || resolving) return
-    if (rootSession(state, sessionId, currentBase) !== undefined) {
+    if (rootForRoute(state, sessionId) !== undefined) {
       applyingRoute = true
       initialized = true
       observedCurrent = sessionId
@@ -153,7 +169,7 @@ export function setupHivemindSessionRouting(
     void sessions.refresh().then(() => {
       if (disposed || attempt !== generation) return
       const refreshed = sessions.list.getSnapshot()
-      if (rootSession(refreshed, sessionId, currentBase) !== undefined) {
+      if (rootForRoute(refreshed, sessionId) !== undefined) {
         applyingRoute = true
         initialized = true
         observedCurrent = sessionId
@@ -203,10 +219,10 @@ export function setupHivemindSessionRouting(
       applyLocation()
       return
     }
-    const current = rootSession(state, state.current, currentBase)
+    const current = rootForRoute(state, state.current)
     if (current === undefined) {
       const route = parseHivemindSessionRoute(browser.location.pathname)
-      if (route.kind === 'session' && rootSession(state, route.sessionId, currentBase) === undefined && !resolving) {
+      if (route.kind === 'session' && rootForRoute(state, route.sessionId) === undefined && !resolving) {
         initialized = false
         observedCurrent = undefined
         replace(HIVE_OVERVIEW_PATH)
