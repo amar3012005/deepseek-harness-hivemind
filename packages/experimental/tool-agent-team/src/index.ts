@@ -3,6 +3,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type { Agent } from '@deepseek-ai/dsh-agent'
+import type {} from '@deepseek-ai/dsh-agent-presets'
 import { TeamTaskId } from '@deepseek-ai/dsh-experimental-agent-team'
 import type { TeamMemberView } from '@deepseek-ai/dsh-experimental-agent-team'
 import { defineTool } from '@deepseek-ai/dsh-tools'
@@ -409,6 +410,12 @@ export function apply(ctx: Context, config: Config = {}): void {
   // agent/session-start, which fires only once at publication. Reconcile on
   // the committed preset event as well as when a persisted Agent is restored.
   ctx.on('agent/session-start', ({ agent }) => { syncAgent(agent) }, { global: true })
+  // AgentPresets publishes this unscoped notification after a successful
+  // preset swap. Blank HIVE sessions select HyperAgents after publication.
+  ctx.on('agent-preset/selected', (sessionId) => {
+    const agent = ctx.agents.get(sessionId)
+    if (agent !== undefined) syncAgent(agent)
+  })
   ctx.on('session/event', (session, event) => {
     if (String(event.type) !== 'agent-preset/selected') return
     const agent = ctx.agents.get(session.id)
