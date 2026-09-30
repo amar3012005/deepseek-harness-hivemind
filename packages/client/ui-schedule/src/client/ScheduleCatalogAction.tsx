@@ -69,7 +69,10 @@ export function ScheduleCatalogAction({
 
   const rows = useMemo(() => orderScheduleRecords(records, now), [records, now])
 
-  if (!visible) return null
+  // Embedded HIVE uses the single Automation tasks entry for all retained tasks.
+  const embedded = typeof window !== 'undefined'
+    && /^\/hivemind\/app\/(?:employee\/harness|overview)\/session\//u.test(window.location.pathname)
+  if (!visible || embedded) return null
   // Show the entry only once it has something to open, or a failed read to
   // retry. An empty first read must not mount a chip that the authoritative
   // answer then removes, which reads as a flash in the header.
