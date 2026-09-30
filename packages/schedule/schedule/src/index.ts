@@ -51,6 +51,7 @@ export {
   foldScheduleEvents,
   isRecurringScheduleRecord,
   normalizeWeekdays,
+  parseAtInput,
   parseCronInput,
   parseWeeklyInput,
   renderReminderFraming,

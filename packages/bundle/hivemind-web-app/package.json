@@ -36,7 +36,9 @@
     "@deepseek-ai/dsh-session-persistence-postgres": "workspace:^",
     "@deepseek-ai/dsh-hivemind-schedule-postgres": "workspace:^",
     "@deepseek-ai/dsh-schedule": "workspace:^",
-    "@deepseek-ai/dsh-client-ui-schedule": "workspace:^"
+    "@deepseek-ai/dsh-client-ui-schedule": "workspace:^",
+    "@deepseek-ai/dsh-client-ui-hivemind-hq": "workspace:^",
+    "@deepseek-ai/dsh-hivemind-hq-runtime": "workspace:^"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "workspace:^"

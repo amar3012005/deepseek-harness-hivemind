@@ -639,9 +639,10 @@ describe('Task manager catalog', () => {
     expect(heading.querySelector('h1')?.textContent).toBe(en['title'])
     expect(heading.querySelector('p')).toBeNull()
     expect(heading.querySelector(`.${css.creationActions!}`)?.textContent).toBe(en['new.action'])
-    // The filter row carries the status group alone: the type chips are gone.
+    // Calendar/List selection and status filter share the existing toolbar.
     const filters = page.querySelector<HTMLElement>(`.${css.filters!}`)!
-    expect(within(filters).getAllByRole('group')).toHaveLength(1)
+    expect(within(filters).getAllByRole('group')).toHaveLength(2)
+    expect(within(filters).getByRole('group', { name: en['view.label'] })).toBeTruthy()
     const statuses = within(filters).getByRole('group', { name: en['statusFilter.label'] })
     expect(statuses.parentElement).toBe(filters)
     expect(within(statuses).getAllByRole('button')[0]?.textContent).toBe(en['statusFilter.all'])

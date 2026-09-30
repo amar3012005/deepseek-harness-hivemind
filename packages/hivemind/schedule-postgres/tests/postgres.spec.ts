@@ -131,11 +131,11 @@ suite('tenant PostgreSQL Schedule provider', () => {
       })
     expect(await scope.run(a, () => backend.manage(async table => [...table.entries()].length))).toBe(1)
   })
-  it('rejects foreign sessions and accepts HIVE chat mode', async () => {
+  it.each(['hivemind-chat', 'hivemind-hq'])('rejects foreign sessions and accepts %s mode', async (preset) => {
     await expect(
       scope.run(a, () => backend.manage(table => table.put(ScheduleId('foreign'), task('foreign', 'b-session')))),
     ).rejects.toThrow('owned HIVE')
-    await admin.query('UPDATE harness_sessions SET header=\'{"agentPreset":"hivemind-chat"}\' WHERE id=\'a-session\'')
+    await admin.query('UPDATE harness_sessions SET header=$1 WHERE id=$2', [{ agentPreset: preset }, 'a-session'])
     await scope.run(a, () => backend.manage(table => table.put(ScheduleId('a-task'), task())))
     await admin.query("INSERT INTO harness_session_events VALUES('a-session',$1,$2,'agent-preset/selected',$3,1)", [
       a.orgId,
@@ -161,6 +161,27 @@ suite('tenant PostgreSQL Schedule provider', () => {
     } finally {
       await client.end()
     }
+  })
+  it('retains paused HQ occurrences and admits them only after a committed human enable', async () => {
+    await admin.query('UPDATE harness_sessions SET header=$1 WHERE id=$2', [{ agentPreset: 'hivemind-hq' }, 'a-session'])
+    await scope.run(a, () => backend.manage(table => table.put(ScheduleId('hq-task'), task('hq-task', 'a-session', Date.now() - 1000))))
+    let calls = 0
+    const deliver = async () => { calls++ }
+    await backend.dispatch(deliver)
+    expect(calls).toBe(0)
+    expect(await scope.run(a, () => backend.manage(table => table.get(ScheduleId('hq-task'))))).toMatchObject({ status: 'active' })
+    await admin.query("INSERT INTO harness_session_events VALUES('a-session',$1,$2,'hivemind/hq-mode',$3,1)", [
+      a.orgId, a.userId, { data: { revision: 1, enabled: true, changedAt: Date.now() } },
+    ])
+    await admin.query("UPDATE harness_scheduled_due SET due_at=now()-interval '1 second' WHERE task_id='hq-task'")
+    await backend.dispatch(deliver)
+    expect(calls).toBe(1)
+    await admin.query("INSERT INTO harness_session_events VALUES('a-session',$1,$2,'hivemind/hq-mode',$3,2)", [
+      a.orgId, a.userId, { data: { revision: 2, enabled: false, changedAt: Date.now() } },
+    ])
+    await admin.query("UPDATE harness_scheduled_due SET due_at=now()-interval '1 second' WHERE task_id='hq-task'")
+    await backend.dispatch(deliver)
+    expect(calls).toBe(1)
   })
   it('commits task and wake index atomically and rolls both back on failure', async () => {
     await expect(

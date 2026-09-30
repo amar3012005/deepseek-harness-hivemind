@@ -4,11 +4,13 @@ The embedded HIVE web profile loads the upstream DSH Schedule package with this 
 
 ## Ownership and delivery
 
-Every management operation requires the authenticated execution scope and an active organization membership. Task rows and wake rows have forced PostgreSQL row-level security for `(org_id, user_id)`. A composite foreign key binds each task to a session owned by the same identity. Only sessions whose current preset is `hivemind-hyperagents` or `hivemind-chat` accept tasks; child agents do not receive Schedule tools. Switching a blank session commits the selected preset before creating a task.
+Every management operation requires the authenticated execution scope and an active organization membership. Task rows and wake rows have forced PostgreSQL row-level security for `(org_id, user_id)`. A composite foreign key binds each task to a session owned by the same identity. Only sessions whose current preset is `hivemind-hyperagents`, `hivemind-chat`, or `hivemind-hq` accept tasks; child agents do not receive Schedule tools. Switching a blank session commits the selected preset before creating a task.
 
 The host timer reads only due task identities in a short transaction with a server-owned scanner flag. It restores the stored session owner, variation, and project before invoking the native session controller. Organization membership is rechecked before delivery. Closed sessions and revoked owners are deactivated. Browsers and live agents are not required for a due task to wake its session.
 
 A PostgreSQL transaction advisory lock serializes each owner's writes and delivery across runner replicas. A runner leaves a live session's due task for the replica holding its session lease. Task state, delivery history, and the next wake target commit together. The native inbox persists a deterministic occurrence key before the task is acknowledged. A retry after that flush reuses the recorded message and recurring target. This prevents duplicate inbox insertion after an interrupted Schedule commit; it does not promise exactly-once external side effects performed by the model.
+
+HQ roots default to paused. Due delivery reads the latest tenant-scoped committed HQ mode before waking the session. While paused, the original occurrence stays active and only its scanner retry time moves forward; no model message is admitted. Enabling HQ allows normal delivery on the next scan. This control does not pause ordinary employee or company-brain chat schedules.
 
 ## Configuration
 

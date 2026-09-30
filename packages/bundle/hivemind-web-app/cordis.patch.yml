@@ -203,7 +203,7 @@
     default: hivemind-chat
     includeShippedRoot: true
     includeUserRoot: false
-    allowed: [hivemind-chat, hivemind-hyperagents]
+    allowed: [hivemind-chat, hivemind-hyperagents, hivemind-hq]
 
 - insert:
     # The existing host-side Agent Teams packages use this fork's Session and
@@ -212,7 +212,7 @@
     - id: agent-team
       name: '@deepseek-ai/dsh-experimental-agent-team'
       config:
-        allowedRootPresets: [hivemind-hyperagents]
+        allowedRootPresets: [hivemind-hyperagents, hivemind-hq]
         maxMembers: 8
         maxTasks: 256
         maxPendingMessagesPerMember: 64
@@ -227,6 +227,12 @@
 
     - id: ui-agent-team
       name: '@deepseek-ai/dsh-experimental-client-ui-agent-team'
+
+    - id: hivemind-hq-control
+      name: '@deepseek-ai/dsh-hivemind-hq-runtime/control'
+
+    - id: ui-hivemind-hq
+      name: '@deepseek-ai/dsh-client-ui-hivemind-hq'
 
     - id: hivemind-execution-scope
       name: '@deepseek-ai/dsh-hivemind-execution-scope'

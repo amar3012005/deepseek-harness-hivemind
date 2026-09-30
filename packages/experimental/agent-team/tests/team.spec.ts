@@ -19,6 +19,7 @@ import { TeamRuntimeLifecycle } from '../src/lifecycle.ts'
 import { teamProjectionDefinition } from '../src/projection.ts'
 import type { TeamMemberSnapshot, TeamMessageSnapshot, TeamTaskSnapshot } from '../src/index.ts'
 import { TestSessionQuery } from './test-session-query.ts'
+import HqControl from '../../../hivemind/hq-runtime/src/control.ts'
 
 const SIGNAL = new AbortController().signal
 const roots: string[] = []
@@ -135,6 +136,41 @@ async function waitRunning(ctx: Context, id: SessionId): Promise<Agent> {
 }
 
 describe('Team identity and provisioning', () => {
+  it('persists human HQ mode, rejects stale switches, and pauses only HQ-owned agents', async () => {
+    const { ctx, lead, teamFiber } = await setup(['hang'])
+    lead.session.append('agent-preset/selected', { agentPreset: 'hivemind-hq' })
+    const manual = await ctx.agentLoop.create(SessionId('ordinary-employee'), { provider: 'mock', model: 'mock' })
+    const fiber = await ctx.plugin(HqControl)
+    try {
+      expect(ctx.hivemindHq.mode(lead).enabled).toBe(false)
+      await expect(spawn(ctx, lead, 'researcher')).rejects.toThrow('HQ autonomous activity is paused')
+      const switches = await Promise.all([
+        ctx.hivemindHq.setMode(lead, { enabled: true, expectedRevision: 0 }),
+        ctx.hivemindHq.setMode(lead, { enabled: false, expectedRevision: 0 }),
+      ])
+      expect(switches[0]).toMatchObject({ ok: true, value: { enabled: true, revision: 1 } })
+      expect(switches[1]).toMatchObject({ ok: false, code: 'hq-mode-conflict' })
+      const child = (await spawn(ctx, lead, 'researcher')).member
+      const liveChild = await waitRunning(ctx, child.id)
+      const rootCancel = vi.spyOn(lead, 'cancel')
+      const childCancel = vi.spyOn(liveChild, 'cancel')
+      const manualCancel = vi.spyOn(manual, 'cancel')
+      await ctx.hivemindHq.setMode(lead, { enabled: false, expectedRevision: 1 })
+      expect(rootCancel).toHaveBeenCalledWith({ kind: 'user' }, { keepInbox: true })
+      expect(childCancel).toHaveBeenCalledWith({ kind: 'parent' }, { keepInbox: true })
+      expect(manualCancel).not.toHaveBeenCalled()
+      expect((await storedEvents(ctx, lead.id)).filter(event => event.type === 'hivemind/hq-mode')).toHaveLength(2)
+      await expect(ctx.agentTeams.sendMessage(lead, { target: 'researcher', content: content('More work'), signal: SIGNAL })).rejects.toThrow('HQ autonomous activity is paused')
+      await expect(ctx.hivemindHq.setMode(manual, { enabled: true, expectedRevision: 0 })).rejects.toThrow('hq_human_control_requires_hq_root')
+      await fiber.dispose()
+      // Scoped effect disposal removes the policy instead of leaking it on HMR.
+      const task = await ctx.agentTeams.createTask(lead, { subject: 'Retained work', description: 'Continue later', blockedBy: [], writeScopes: [] })
+      await expect(ctx.agentTeams.updateTask(lead, { taskId: task.id, expectedRevision: task.revision, action: 'claim' })).resolves.toMatchObject({ status: 'in_progress' })
+    } finally {
+      await fiber.dispose()
+      await teamFiber.dispose()
+    }
+  })
   it('rejects missing and failed authoritative Team projections', async () => {
     const first = await setup([])
     const journal = teamInternals(first.ctx).journal
@@ -570,6 +606,17 @@ describe('Team shared task DAG', () => {
       subject: 'cannot allocate',
       description: 'no safe numeric task id remains',
     })).rejects.toMatchObject({ code: 'TEAM_TASK_LIMIT' })
+  })
+
+  it('enforces disposable deployment task policies for direct service callers', async () => {
+    const { ctx, lead } = await setup([])
+    const task = await ctx.agentTeams.createTask(lead, { subject: 'company report', description: 'requires receipt' })
+    const claimed = await ctx.agentTeams.updateTask(lead, { taskId: task.id, expectedRevision: task.revision, action: 'claim' })
+    const dispose = ctx.agentTeams.guardTaskUpdates((_caller, request) => request.action === 'complete' ? 'artifact missing' : undefined)
+    await expect(ctx.agentTeams.updateTask(lead, { taskId: task.id, expectedRevision: claimed.revision, action: 'complete' })).rejects.toMatchObject({ code: 'TEAM_TASK_POLICY_DENIED' })
+    expect(ctx.agentTeams.getTask(lead, task.id).status).toBe('in_progress')
+    dispose()
+    expect((await ctx.agentTeams.updateTask(lead, { taskId: task.id, expectedRevision: claimed.revision, action: 'complete' })).status).toBe('completed')
   })
 
   it('bounds non-deleted tasks while retaining deleted task ids as tombstones', async () => {

@@ -9,6 +9,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import type { ScheduleCatalogEntry, ScheduleId } from '@deepseek-ai/dsh-schedule/client'
 import type { CatalogSnapshot } from './catalog-source.ts'
 import { CatalogFeedback } from './CatalogFeedback.tsx'
+import { CalendarWeek } from './CalendarWeek.tsx'
 import { TaskDetail, useTaskDetail, type TaskDetailInjected } from './TaskDetail.tsx'
 import { useRelativeClock } from './relative-clock.ts'
 import { formatScheduleFrequency, nextRunParts, taskName, zoneLabel } from './schedule-format.ts'
@@ -45,6 +46,7 @@ export function TaskManagerPage(props: TaskManagerPageProps) {
   const { records, status } = catalog
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
+  const [view, setView] = useState<'list' | 'calendar'>('list')
   const [selectedId, setSelectedId] = useState<ScheduleId | null>(null)
   // The rows state how long remains, so they read the shared ticking clock
   // rather than a value sampled at mount: a catalog refresh can move the target
@@ -123,6 +125,11 @@ export function TaskManagerPage(props: TaskManagerPageProps) {
               </div>
             </div>
             <div className={css.filters}>
+              <div className={css.filterTabs} role="group" aria-label={t('view.label')}>
+                {(['list', 'calendar'] as const).map(value => <button key={value} type="button"
+                  className={clsx(css.filterTab, view === value && css.filterTabActive)} aria-pressed={view === value}
+                  onClick={() => setView(value)}>{t(`view.${value}`)}</button>)}
+              </div>
               <div className={css.filterTabs} role="group" aria-label={t('statusFilter.label')}>
                 {(['all', 'active', 'inactive'] as const).map(value => (
                   <button
@@ -159,7 +166,9 @@ export function TaskManagerPage(props: TaskManagerPageProps) {
                   {t('empty.action')}
                 </Button>
               </div>}
-              <ul className={css.listRows} aria-label={t('list.label')} aria-busy={status === 'loading'}>
+              {view === 'calendar' && <CalendarWeek records={rows} now={now} timeZone={systemZone} selectedId={selectedId} t={t}
+                onSelect={(id, button) => { rowRef.current = button; setSelectedId(id); setTab('rule') }} />}
+              {view === 'list' && <ul className={css.listRows} aria-label={t('list.label')} aria-busy={status === 'loading'}>
                 {rows.map((record) => {
                   // One pair per row: the same absolute stamp and distance reach
                   // both halves, from one formatting call.
@@ -198,7 +207,7 @@ export function TaskManagerPage(props: TaskManagerPageProps) {
                     </li>
                   )
                 })}
-              </ul>
+              </ul>}
             </div>
           </div>
         </div>

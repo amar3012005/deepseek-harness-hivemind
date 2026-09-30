@@ -6,6 +6,8 @@ The native Harness Schedule UI uses the shared authenticated `remote.schedule` s
 
 The catalog contains active and inactive tasks with their original session identities. Search, status filtering, edit, delete, and delivery history use the same authoritative source. An edit submits the complete previously observed record so a concurrent delivery or edit returns a conflict instead of overwriting newer state. Deleting a task removes its saved delivery history while retaining the original conversation and queued work.
 
+The Calendar view projects enabled tasks onto a Monday-first week in the browser's display timezone. It uses the same live catalog and opens the same native task details. Each recurring task appears only at its next committed occurrence; the calendar does not calculate speculative future executions or interpret delivery as task completion. Rule timezones and saved UTC instants remain unchanged.
+
 Opening a catalog or task detail does not resume the session. Following its session link does. Task tabs retain their task binding across layout restoration; missing or deleted tasks display an explicit unavailable state. History displays saved instructions and occurrence times, with bounded pagination and retention notices.
 
 The HIVE profile enables the package alongside tenant PostgreSQL storage. Its session header shows only that session's active tasks. The task card opens the native right panel. The domain-backed native profile also exposes the Automation tasks sidebar page. The current fork has no upstream session-row hover contribution seats; their standalone components are retained for a later shell upgrade.

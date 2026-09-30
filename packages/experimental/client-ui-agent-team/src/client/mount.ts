@@ -73,7 +73,7 @@ function registerUi(ctx: ClientContext): void {
       },
     )
     // Ordinary DSH profiles keep the panel. HIVE Chat has no Team authority.
-    if (typeof preset === 'string' && preset.startsWith('hivemind-') && preset !== 'hivemind-hyperagents') return null
+    if (typeof preset === 'string' && preset.startsWith('hivemind-') && preset !== 'hivemind-hyperagents' && preset !== 'hivemind-hq') return null
     return createElement(TeamAction, props)
   }
 

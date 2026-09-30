@@ -1,0 +1,4 @@
+.control { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.pause { color: var(--dsw-alias-state-error-primary); border-color: var(--dsw-alias-state-error-primary); }
+.stop { width: 10px; height: 10px; border-radius: 2px; background: currentColor; }
+.error { max-width: 220px; color: var(--dsw-alias-state-error-primary); font-size: 12px; overflow-wrap: anywhere; }

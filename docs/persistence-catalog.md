@@ -638,6 +638,39 @@ Source: [`packages/hivemind/operating-workstreams/src/index.ts:94`](../packages/
 
 Source: [`packages/hivemind/artifact-renderer/src/generation.ts:85`](../packages/hivemind/artifact-renderer/src/generation.ts)
 
+<a id="hivemindhq-mode--log-only"></a>
+
+#### `hivemind/hq-mode` — log-only
+
+```ts persistence-catalog
+/** Human-only HQ autonomy switch, checkpointed before acknowledging the control. */
+'hivemind/hq-mode': HqModeState
+```
+
+Source: [`packages/hivemind/hq-runtime/src/control.ts:21`](../packages/hivemind/hq-runtime/src/control.ts)
+
+<a id="hivemindhq-task-artifacts--log-only"></a>
+
+#### `hivemind/hq-task-artifacts` — log-only
+
+```ts persistence-catalog
+/** Artifact references correlated to a native Team task. */
+'hivemind/hq-task-artifacts': TaskArtifactLinks
+```
+
+Source: [`packages/hivemind/hq-runtime/src/index.ts:18`](../packages/hivemind/hq-runtime/src/index.ts)
+
+<a id="hivemindhq-task-contract--log-only"></a>
+
+#### `hivemind/hq-task-contract` — log-only
+
+```ts persistence-catalog
+/** Immutable requirements supplementing a native Team task. */
+'hivemind/hq-task-contract': CompanyTaskContract
+```
+
+Source: [`packages/hivemind/hq-runtime/src/index.ts:16`](../packages/hivemind/hq-runtime/src/index.ts)
+
 <a id="hivemindmedia-workflow-ended--log-only"></a>
 
 #### `hivemind/media-workflow-ended` — log-only
@@ -1086,7 +1119,7 @@ Source: [`packages/sandbox/sandbox-policy/src/session-mode.ts:33`](../packages/s
 
 Types: [ScheduleChange](subsystems/schedule.md)
 
-Source: [`packages/schedule/schedule/src/types.ts:219`](../packages/schedule/schedule/src/types.ts)
+Source: [`packages/schedule/schedule/src/types.ts:358`](../packages/schedule/schedule/src/types.ts)
 
 ### `session/*`
 
@@ -1284,7 +1317,7 @@ Source: [`packages/core/session/src/types.ts:310`](../packages/core/session/src/
 
 Types: [TeamId](subsystems/agent-team.md) · [TeamMemberSnapshot](subsystems/agent-team.md)
 
-Source: [`packages/experimental/agent-team/src/types.ts:221`](../packages/experimental/agent-team/src/types.ts)
+Source: [`packages/experimental/agent-team/src/types.ts:223`](../packages/experimental/agent-team/src/types.ts)
 
 <a id="teammessagedelivered--log-only"></a>
 
@@ -1302,7 +1335,7 @@ Source: [`packages/experimental/agent-team/src/types.ts:221`](../packages/experi
 
 Types: [TeamId](subsystems/agent-team.md) · [TeamMessageId](subsystems/agent-team.md)
 
-Source: [`packages/experimental/agent-team/src/types.ts:227`](../packages/experimental/agent-team/src/types.ts)
+Source: [`packages/experimental/agent-team/src/types.ts:229`](../packages/experimental/agent-team/src/types.ts)
 
 <a id="teammessagequeued--log-only"></a>
 
@@ -1315,7 +1348,7 @@ Source: [`packages/experimental/agent-team/src/types.ts:227`](../packages/experi
 
 Types: [TeamId](subsystems/agent-team.md) · [TeamMessageSnapshot](subsystems/agent-team.md)
 
-Source: [`packages/experimental/agent-team/src/types.ts:225`](../packages/experimental/agent-team/src/types.ts)
+Source: [`packages/experimental/agent-team/src/types.ts:227`](../packages/experimental/agent-team/src/types.ts)
 
 <a id="teamtask--log-only"></a>
 
@@ -1328,7 +1361,7 @@ Source: [`packages/experimental/agent-team/src/types.ts:225`](../packages/experi
 
 Types: [TeamId](subsystems/agent-team.md) · [TeamTaskSnapshot](subsystems/agent-team.md)
 
-Source: [`packages/experimental/agent-team/src/types.ts:223`](../packages/experimental/agent-team/src/types.ts)
+Source: [`packages/experimental/agent-team/src/types.ts:225`](../packages/experimental/agent-team/src/types.ts)
 
 ### `todo/*`
 

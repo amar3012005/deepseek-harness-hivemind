@@ -41,6 +41,7 @@
     "packages/client/*/tests/**/*.host.spec.ts"
   ],
   "references": [
+    { "path": "./packages/client/ui-hivemind-hq" },
     { "path": "./packages/client/ui-hivemind-connect" },
     { "path": "./packages/client/ui-hivemind-operating-run" },
     // Producer-to-UI spill tests execute the real nested dispatch worker.
