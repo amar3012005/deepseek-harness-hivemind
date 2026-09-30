@@ -89,3 +89,8 @@
 .viewTabs {
   margin-top: auto;
 }
+
+/* OS projects history into the outer sidebar; task management hides it there too. */
+:global(html[data-dsh-mode='hivemind-chat']:has([data-automation-tasks], [data-automation-task-detail])) .osRoot {
+  display: none;
+}
