@@ -49,3 +49,12 @@ Company memory reads currently use the configured PostgreSQL store. Remote resid
 stores need their corresponding authorized read adapter before enabling Dreaming.
 
 References: `docs/subsystems/subagent.md`, `docs/subsystems/schedule.md`.
+
+## Automation tasks visibility
+
+Automation tasks includes a read-only Nightly Dreaming card. Its next run comes
+from the existing Cloudflare trigger; its history comes from the tenant-scoped
+PostgreSQL ledger. The On/Off control remains on main HIVEMIND Settings.
+Each nightly occurrence owns a new parent/child session pair. Retries resume
+that pair and checkpoint; subsequent nights use dream_history and Flashbacks
+for continuity rather than one ever-growing conversation.

@@ -1,3 +1,5 @@
+import type {} from '@deepseek-ai/dsh-client-ui-schedule/client'
+import { DreamingAutomation } from './DreamingAutomation.tsx'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import { DreamingSettings } from './DreamingSettings.tsx'
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
@@ -95,6 +97,7 @@ async function answerConnectionQuestion(
 
 /** Register the localized HIVE-MIND connection control above sidebar Settings. */
 export function apply(ctx: ClientContext): void {
+  ctx.slots.inject('schedule.manager.external', () => ctx.slots.register({ name: 'schedule.manager.external', id: 'company-dreaming', order: 0 }, DreamingAutomation))
   ctx.slots.inject('settings.general.item', () => ctx.slots.register({ name: 'settings.general.item', id: 'company-dreaming', order: 35 }, DreamingSettings))
   if (typeof window !== 'undefined' && window.location.pathname.startsWith('/hivemind/app/employee/harness/')) {
     document.documentElement.dataset.dshHyperagentOs = 'true'

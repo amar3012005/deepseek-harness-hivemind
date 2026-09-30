@@ -85,7 +85,7 @@ suite('native Dreamer workflow', () => {
       }
     }
     res.writeHead(200, { 'content-type': 'application/json' })
-    res.end('{}')
+    res.end(req.method === 'GET' ? JSON.stringify({ triggers: [{ trigger_id: 'dreaming', active: 1, version: 9, next_due_at: Date.parse('2030-01-01T01:00:00Z') }] }) : '{}')
   })
   beforeAll(async () => {
     const parsed = new URL(url!)
@@ -221,6 +221,15 @@ suite('native Dreamer workflow', () => {
     expect((await settings(true)).status).toBe(200)
     await vi.waitFor(() => expect(registrations).toHaveLength(1))
     expect((registrations[0] as { payload: unknown }).payload).toEqual({ workflow: 'dreamer-v1', revision: 1 })
+    await vi.waitFor(async () => {
+      const activityResponse = await fetch(`${app.baseUrl}/hivemind/dreamer/settings?view=activity`, { headers: { cookie } })
+      const activity = (await activityResponse.json()).activity
+      expect(activity.nextRunAt).toBe('2030-01-01T01:00:00.000Z')
+      expect(activity.scheduleState).toBe('scheduled')
+      expect(activity.runs).toEqual([])
+    })
+    expect(registrations).toHaveLength(1)
+
   })
   it('delegates to a real continuable Dreamer and saves directly into Flashbacks', async () => {
     const key = `${owner.orgId}:dreaming:1000`,

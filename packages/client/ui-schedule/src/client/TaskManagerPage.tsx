@@ -4,7 +4,7 @@ import clsx from 'clsx'
 import {
   Button, IconClockOutline16, IconCloseOutline16, IconPlusOutline16, IconSearchOutline16, Input,
 } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { HostObservable, InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
+import type { HostObservable, InjectFace, PropsLocale, PropsRuntime, PropsRenderSlots } from '@deepseek-ai/dsh-client-ui-slots'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import type { ScheduleCatalogEntry, ScheduleId } from '@deepseek-ai/dsh-schedule/client'
 import type { CatalogSnapshot } from './catalog-source.ts'
@@ -31,6 +31,7 @@ export interface TaskManagerInjected extends TaskDetailInjected {
 export type TaskManagerPageProps = PropsRuntime<'main'>
   & InjectFace<TaskManagerInjected>
   & PropsLocale<'schedule.manager'>
+  & PropsRenderSlots<'schedule.manager.external'>
 
 type StatusFilter = 'all' | ScheduleCatalogEntry['status']
 
@@ -122,6 +123,7 @@ export function TaskManagerPage(props: TaskManagerPageProps) {
                 <Button variant="primary" size="sm" className={css.newButton} icon={<IconPlusOutline16 size={13} />} onClick={onNewTask}>{t('new.action')}</Button>
               </div>
             </div>
+            {props.renderSlot?.('schedule.manager.external', {})}
             <div className={css.filters}>
               <div className={css.filterTabs} role="group" aria-label={t('statusFilter.label')}>
                 {(['all', 'active', 'inactive'] as const).map(value => (

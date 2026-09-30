@@ -140,7 +140,7 @@ export function apply(ctx: Context, config: Config): void {
       base &&
         [config.adminTokenEnv, config.dispatchTokenEnv, config.callbackTokenEnv].every(key => (process.env[key]?.length ?? 0) >= 24),
     )
-  const call = async (path: string, method: string, input?: unknown): Promise<void> => {
+  const call = async (path: string, method: string, input?: unknown): Promise<unknown> => {
     if (!ready() || !base) throw new Error('dreamer_dispatch_not_configured')
     const response = await fetch(new URL(path, base), {
       method,
@@ -153,6 +153,7 @@ export function apply(ctx: Context, config: Config): void {
       signal: AbortSignal.timeout(config.requestTimeoutMs),
     })
     if (!response.ok) throw new Error(`dreamer_dispatch_${response.status}`)
+    return method === 'GET' ? response.json() : undefined
   }
   const principal = (req: IncomingMessage): HivemindPrincipal => {
     const host = typeof req.headers['x-forwarded-host'] === 'string' ? req.headers['x-forwarded-host'] : req.headers.host
@@ -226,7 +227,28 @@ export function apply(ctx: Context, config: Config): void {
           ])
         ).rowCount === 1,
     )
+    let activity: unknown
+    if (req.method === 'GET' && new URL(req.url ?? '/', 'http://localhost').searchParams.get('view') === 'activity') {
+      let nextRunAt: string | null = null
+      let scheduleState = settings?.enabled ? ready() ? 'syncing' : 'unavailable' : 'off'
+      if (settings?.enabled && ready() && settings.synced_revision === settings.revision) {
+        try {
+          const dispatcher = z.object({ triggers: z.array(z.object({
+            trigger_id: z.string(), active: z.number(), version: z.number(), next_due_at: z.number().nullable(),
+          })) }).parse(await call(`/v1/tenants/${p.orgId}/status`, 'GET'))
+          const trigger = dispatcher.triggers.find(row => row.trigger_id === 'dreaming' && row.active === 1)
+          if (trigger?.next_due_at !== null && trigger?.next_due_at !== undefined) {
+            nextRunAt = new Date(trigger.next_due_at).toISOString()
+            scheduleState = 'scheduled'
+          }
+        } catch {
+          scheduleState = 'unavailable'
+        }
+      }
+      activity = { cron: config.cron, timezone: config.timezone, nextRunAt, scheduleState, runs: await store.previous(p) }
+    }
     reply(res, 200, {
+      ...(activity === undefined ? {} : { activity }),
       enabled: settings?.enabled ?? false,
       available: ready() && (await store.supported(p)),
       canChange: admin,

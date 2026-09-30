@@ -64,6 +64,10 @@ const MANAGER_NS = 'schedule.manager'
 const PANEL_ID = 'schedules' as MainPanelId
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
+  interface SlotMap {
+    /** Read-only projections of externally owned automations; no Schedule record is created. */
+    'schedule.manager.external': { kind: 'list'; scope: 'root' }
+  }
   interface LocaleNamespaceMap {
     /** Active Schedule catalog copy. */
     'schedule.catalog': ScheduleCatalogKey
@@ -168,6 +172,7 @@ export function apply(ctx: ClientContext): void {
     name: 'main',
     key: PANEL_ID,
     locale: MANAGER_NS,
+    children: { 'schedule.manager.external': { kind: 'list', scope: 'root' } },
     inject: (): TaskManagerInjected => ({
       ...detail,
       // The page has no creation form: a new reminder starts in a Session.

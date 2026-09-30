@@ -1,0 +1,6 @@
+.card { padding: 16px; margin: 12px 0 20px; border: 1px solid var(--dsw-alias-border-default, #e3e0db); border-radius: 14px; color: var(--dsw-alias-label-primary); background: var(--dsw-alias-bg-layer-1); }
+.heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.card p, .card li { font-size: 13px; line-height: 1.5; color: var(--dsw-alias-label-secondary); }
+.card button { border: 0; padding: 6px 0; background: transparent; color: inherit; cursor: pointer; }
+.card a { display: block; margin-top: 8px; font-size: 13px; color: var(--dsw-alias-label-link, #117dff); }
+.card ol { margin: 8px 0; padding-left: 20px; }
