@@ -41,6 +41,9 @@
     },
     {
       "path": "../../typert/protocol"
+    },
+    {
+      "path": "../execution-scope"
     }
   ]
 }

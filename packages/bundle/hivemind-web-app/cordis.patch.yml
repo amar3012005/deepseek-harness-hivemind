@@ -231,6 +231,13 @@
     - id: hivemind-hq-control
       name: '@deepseek-ai/dsh-hivemind-hq-runtime/control'
 
+    - id: hivemind-hq-ownership
+      name: '@deepseek-ai/dsh-hivemind-hq-runtime/ownership'
+
+    - id: hivemind-hq-ownership-postgres
+      name: '@deepseek-ai/dsh-hivemind-hq-runtime/ownership-postgres'
+      config: {connectionStringEnv: DATABASE_URL, schema: hivemind, maxConnections: 4, statementTimeoutMs: 15000}
+
     - id: ui-hivemind-hq
       name: '@deepseek-ai/dsh-client-ui-hivemind-hq'
 

@@ -10,7 +10,7 @@ The host timer reads only due task identities in a short transaction with a serv
 
 A PostgreSQL transaction advisory lock serializes each owner's writes and delivery across runner replicas. A runner leaves a live session's due task for the replica holding its session lease. Task state, delivery history, and the next wake target commit together. The native inbox persists a deterministic occurrence key before the task is acknowledged. A retry after that flush reuses the recorded message and recurring target. This prevents duplicate inbox insertion after an interrupted Schedule commit; it does not promise exactly-once external side effects performed by the model.
 
-HQ roots default to paused. Due delivery reads the latest tenant-scoped committed HQ mode before waking the session. While paused, the original occurrence stays active and only its scanner retry time moves forward; no model message is admitted. Enabling HQ allows normal delivery on the next scan. This control does not pause ordinary employee or company-brain chat schedules.
+HQ roots default to paused. Due delivery requires the canonical company HQ pointer and latest tenant-scoped committed HQ mode before waking the session. Apply the HQ runtime's `migrations/company-hq.sql` alongside the native session schema. While paused or noncanonical, the original occurrence stays active and only its scanner retry time moves forward; no model message is admitted. Enabling the canonical HQ allows normal delivery on the next scan. This control does not pause ordinary employee or company-brain chat schedules.
 
 ## Configuration
 

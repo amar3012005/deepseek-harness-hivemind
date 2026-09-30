@@ -254,6 +254,8 @@
       // hivemind/* folders are capability-role names rather than complete npm names.
       "@deepseek-ai/dsh-hivemind-hq-runtime": ["./packages/hivemind/hq-runtime/src"],
       "@deepseek-ai/dsh-hivemind-hq-runtime/control": ["./packages/hivemind/hq-runtime/src/control.ts"],
+      "@deepseek-ai/dsh-hivemind-hq-runtime/ownership": ["./packages/hivemind/hq-runtime/src/ownership.ts"],
+      "@deepseek-ai/dsh-hivemind-hq-runtime/ownership-postgres": ["./packages/hivemind/hq-runtime/src/ownership-postgres.ts"],
       "@deepseek-ai/dsh-client-ui-hivemind-hq": ["./packages/client/ui-hivemind-hq/src"],
       "@deepseek-ai/dsh-hivemind-context": ["./packages/hivemind/context/src"],
       "@deepseek-ai/dsh-hivemind-employee-directory": ["./packages/hivemind/employee-directory/src"],

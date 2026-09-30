@@ -20,6 +20,7 @@ import { teamProjectionDefinition } from '../src/projection.ts'
 import type { TeamMemberSnapshot, TeamMessageSnapshot, TeamTaskSnapshot } from '../src/index.ts'
 import { TestSessionQuery } from './test-session-query.ts'
 import HqControl from '../../../hivemind/hq-runtime/src/control.ts'
+import HqOwnership from '../../../hivemind/hq-runtime/src/ownership.ts'
 
 const SIGNAL = new AbortController().signal
 const roots: string[] = []
@@ -140,6 +141,9 @@ describe('Team identity and provisioning', () => {
     const { ctx, lead, teamFiber } = await setup(['hang'])
     lead.session.append('agent-preset/selected', { agentPreset: 'hivemind-hq' })
     const manual = await ctx.agentLoop.create(SessionId('ordinary-employee'), { provider: 'mock', model: 'mock' })
+    const ownershipFiber = await ctx.plugin(HqOwnership)
+    const claim = vi.fn().mockResolvedValue(undefined)
+    const unregisterOwnership = ctx.hivemindHqOwnership.register({ claim })
     const fiber = await ctx.plugin(HqControl)
     try {
       expect(ctx.hivemindHq.mode(lead).enabled).toBe(false)
@@ -150,6 +154,7 @@ describe('Team identity and provisioning', () => {
       ])
       expect(switches[0]).toMatchObject({ ok: true, value: { enabled: true, revision: 1 } })
       expect(switches[1]).toMatchObject({ ok: false, code: 'hq-mode-conflict' })
+      expect(claim).toHaveBeenCalledExactlyOnceWith(lead.id)
       const child = (await spawn(ctx, lead, 'researcher')).member
       const liveChild = await waitRunning(ctx, child.id)
       const rootCancel = vi.spyOn(lead, 'cancel')
@@ -168,6 +173,8 @@ describe('Team identity and provisioning', () => {
       await expect(ctx.agentTeams.updateTask(lead, { taskId: task.id, expectedRevision: task.revision, action: 'claim' })).resolves.toMatchObject({ status: 'in_progress' })
     } finally {
       await fiber.dispose()
+      unregisterOwnership()
+      await ownershipFiber.dispose()
       await teamFiber.dispose()
     }
   })

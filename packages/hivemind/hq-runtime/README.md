@@ -6,9 +6,11 @@ This Cordis capability extends the native Agent Teams board with immutable compa
 
 The contract capability is mounted only in the new `hivemind-hq` preset; existing employee presets retain their behavior. The host control service exposes a human-only generated Typert Remote, with persisted mode revisions and compare-and-set updates. HQ starts paused. Pausing cancels live HQ-owned agents and blocks new native Team dispatch; ordinary employee roots remain independent. The PostgreSQL Schedule provider retains paused HQ occurrences without waking the model.
 
+The HIVE deployment composes `ownership` and `ownership-postgres`. Apply `migrations/company-hq.sql` in the same schema as native sessions before mounting the provider. Its unique organization key chooses exactly one canonical HQ session across competing humans and replicas. Enabling flushes the native root, verifies current membership and effective HQ preset, claims ownership atomically, then persists the mode. A second root cannot enable. Schedule admission requires that same owner. Native session leases still own exclusive execution; the company pointer is not another agent or task loop. Ownership is retained while paused or offline; implicit takeover is prohibited.
+
 Artifact links can import committed producer receipts from an exact native Team roster member. The caller cannot supply a foreign session or invent receipt proof. The native Schedule UI projects committed occurrences onto a timezone-aware week calendar without a second schedule store.
 
-Company-wide singleton ownership, durable dispatch reconciliation, semantic acceptance review, Jev decisions, approval mediation, and authenticated browser/restart verification remain required before the complete autonomous runtime can be released. Current mode ownership is per HQ root, not company-wide.
+Durable dispatch reconciliation, semantic acceptance review, Jev decisions, approval mediation, explicit human ownership transfer, and authenticated browser/restart verification remain required before the complete autonomous runtime can be released.
 
 No invariant companion is published: metadata and receipt checks are enforced at mutation with replay tests. Native Team coordination is experimental and does not support several processes coordinating one team. Cross-session and cross-replica guarantees require further integration and verification.
 

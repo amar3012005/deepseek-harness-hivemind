@@ -188,7 +188,9 @@ export default class PostgresScheduleBackend extends Service implements Schedule
           // keep moving the retry deadline before the owning replica can poll it.
           if (session.preset === 'hivemind-hq') {
             const mode = await client.query<{ enabled: boolean | null }>(
-              `SELECT (payload->'data'->>'enabled')::boolean AS enabled FROM harness_session_events
+              `SELECT (payload->'data'->>'enabled')::boolean AND EXISTS (
+                 SELECT 1 FROM harness_company_hq WHERE org_id=$2 AND user_id=$3 AND session_id=$1
+               ) AS enabled FROM harness_session_events
                WHERE session_id=$1 AND org_id=$2 AND user_id=$3 AND event_type='hivemind/hq-mode'
                ORDER BY sequence DESC LIMIT 1`,
               [session.id, owner.orgId, owner.userId],

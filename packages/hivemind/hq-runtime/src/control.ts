@@ -6,6 +6,7 @@ import type {} from '@deepseek-ai/dsh-experimental-agent-team'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import { hqMode, type HqModeState } from './mode.ts'
 import type { HqModeUpdate, HqModeUpdateResult } from './types.ts'
+import type {} from './ownership.ts'
 export type { HqModeUpdate, HqModeUpdateResult } from './types.ts'
 
 declare module '@deepseek-ai/cordis' {
@@ -27,7 +28,7 @@ function isHq(agent: Agent): boolean {
 
 /** Native Remote service keeps human authority outside model-callable tools. */
 export class HqControl extends TypertRemoteService {
-  static inject = ['agents', 'agentTeams', 'sessions', 'sessionPersistence']
+  static inject = ['agents', 'agentTeams', 'sessions', 'sessionPersistence', 'hivemindHqOwnership']
   private readonly tails = new Map<string, Promise<void>>()
 
   /**
@@ -74,6 +75,10 @@ export class HqControl extends TypertRemoteService {
     const result = prior.then(async (): Promise<HqModeUpdateResult> => {
       const current = this.mode(root)
       if (current.revision !== request.expectedRevision) return { ok: false, code: 'hq-mode-conflict', current }
+      if (request.enabled) {
+        if (!await this.ctx.sessions.flush(root.session)) throw new Error('hq_mode_persistence_required')
+        await this.ctx.hivemindHqOwnership.claim(root.id)
+      }
       const value: HqModeState = { revision: current.revision + 1, enabled: request.enabled, changedAt: Date.now() }
       root.session.append('hivemind/hq-mode', value)
       if (!value.enabled) {
