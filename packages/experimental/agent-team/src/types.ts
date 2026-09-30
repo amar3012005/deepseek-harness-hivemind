@@ -128,6 +128,8 @@ declare module '@deepseek-ai/dsh-llm' {
 
 /** Team-service deployment limits. */
 export interface Config {
+  /** Optional root presets allowed to form Teams; omitted in ordinary DSH profiles. */
+  readonly allowedRootPresets?: string[]
   /** Maximum immutable teammate names retained by one Team. */
   readonly maxMembers?: number
   /** Maximum non-deleted tasks retained by one Team. */

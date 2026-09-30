@@ -206,6 +206,28 @@
     allowed: [hivemind-chat, hivemind-hyperagents]
 
 - insert:
+    # The existing host-side Agent Teams packages use this fork's Session and
+    # Remote contracts. The newer rc.2 browser projection API is not available
+    # here, so enable the compatible roster/task-board adapter for OS roots.
+    - id: agent-team
+      name: '@deepseek-ai/dsh-experimental-agent-team'
+      config:
+        allowedRootPresets: [hivemind-hyperagents]
+        maxMembers: 8
+        maxTasks: 256
+        maxPendingMessagesPerMember: 64
+        maxMessageBytes: 65536
+        disposalTimeoutMs: 5000
+
+    - id: tool-agent-team
+      name: '@deepseek-ai/dsh-experimental-tool-agent-team'
+      config:
+        freshProvider: spawn
+        forkProvider: fork
+
+    - id: ui-agent-team
+      name: '@deepseek-ai/dsh-experimental-client-ui-agent-team'
+
     - id: hivemind-execution-scope
       name: '@deepseek-ai/dsh-hivemind-execution-scope'
 

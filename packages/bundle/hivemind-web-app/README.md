@@ -4,6 +4,8 @@ Final bundle layer for `dsh --profile hivemind-web`. It starts from the complete
 
 The layer selects the `hivemind-chat` agent preset, replaces JSONL SessionPersistence with the tenant-scoped PostgreSQL provider, mounts embedded ticket authentication, and exposes `/health`. Standard `web` and all other shipped profiles remain unchanged.
 
+Agent Teams is composed as three existing Cordis plugins: the durable Team service, its Agent-scoped coordination tools, and the browser roster/task panel. Only roots with the `hivemind-hyperagents` preset may form a Team. The Team journal lives in that root's tenant-scoped PostgreSQL Session; child Sessions and Remote calls pass through the same authenticated principal and Session authorization boundary. HIVE Chat roots do not receive Team tools or the Team panel. This uses the fork-compatible Remote browser adapter because the upstream `0.2.0-rc.2` panel requires newer Session projection and navigation contracts that this runner does not expose. Team coordination remains process-local; it does not coordinate one Team across several runner replicas.
+
 ## Model Experience
 
 ### HIVE Web model defaults

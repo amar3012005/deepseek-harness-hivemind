@@ -6,6 +6,7 @@ import { brandString } from '@deepseek-ai/dsh-brand'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { MessageId } from '@deepseek-ai/dsh-llm'
 import type { SessionId } from '@deepseek-ai/dsh-session'
+import type {} from '@deepseek-ai/dsh-agent-presets'
 import { foldSubagentDescriptor } from '@deepseek-ai/dsh-subagent'
 import type { ContinuableStart } from '@deepseek-ai/dsh-subagent'
 import { errorMessage, TeamError } from './error.ts'
@@ -69,6 +70,7 @@ export class TeamRoster {
     private readonly journal: TeamJournal,
     private readonly lifecycle: TeamRuntimeLifecycle,
     private readonly maxMembers: number,
+    private readonly allowedRootPresets: readonly string[] = [],
   ) {}
 
   /**
@@ -92,19 +94,27 @@ export class TeamRoster {
   tryMembership(agent: Agent): TeamMembership | undefined {
     if (this.ctx.agents.get(agent.id) !== agent) return undefined
     try {
+      const rootAllowed = (root: Agent): boolean => {
+        if (this.allowedRootPresets.length === 0) return true
+        let preset = root.session.header.agentPreset
+        for (const event of root.session.ownEvents()) {
+          if (event.type === 'agent-preset/selected') preset = event.data.agentPreset
+        }
+        return preset !== undefined && this.allowedRootPresets.includes(preset)
+      }
       const parentId = agent.session.header.parentSession
       if (parentId !== undefined) {
         const root = this.ctx.agents.get(parentId)
         if (root !== undefined) {
           const member = this.journal.state(root).members.find(candidate => candidate.id === agent.id)
-          if (member?.phase === 'active' || member?.phase === 'provisioning') {
+          if (rootAllowed(root) && (member?.phase === 'active' || member?.phase === 'provisioning')) {
             return { root, id: TeamId(root.id), role: 'teammate', name: member.name }
           }
           // A direct child outside the durable roster is not a teammate. Ordinary
           // host forks are independent roots; subagent descriptors distinguish
           // provider-owned workers that must not receive a nested Team identity.
           if (this.subagentDescriptor(agent)) return undefined
-          return { root: agent, id: TeamId(agent.id), role: 'lead', name: 'lead' }
+          return rootAllowed(agent) ? { root: agent, id: TeamId(agent.id), role: 'lead', name: 'lead' } : undefined
         }
       }
       // A continuation can briefly outlive its parent during child-first teardown.
@@ -112,7 +122,7 @@ export class TeamRoster {
       // resumed ordinary fork has no descriptor in its own suffix and remains a
       // valid new root whose inherited Team records stay outside its projected Team state.
       if (this.subagentDescriptor(agent)) return undefined
-      return { root: agent, id: TeamId(agent.id), role: 'lead', name: 'lead' }
+      return rootAllowed(agent) ? { root: agent, id: TeamId(agent.id), role: 'lead', name: 'lead' } : undefined
     } catch {
       // This method is used by lifecycle observers and teardown discovery. A
       // malformed durable stream is surfaced by authoritative Team operations;

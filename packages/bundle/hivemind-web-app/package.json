@@ -26,6 +26,9 @@
     }
   },
   "dependencies": {
+    "@deepseek-ai/dsh-experimental-agent-team": "workspace:^",
+    "@deepseek-ai/dsh-experimental-tool-agent-team": "workspace:^",
+    "@deepseek-ai/dsh-experimental-client-ui-agent-team": "workspace:^",
     "@deepseek-ai/dsh-client-ui-hivemind-connect": "workspace:^",
     "@deepseek-ai/dsh-hivemind-execution-scope": "workspace:^",
     "@deepseek-ai/dsh-hivemind-web-runner": "workspace:^",

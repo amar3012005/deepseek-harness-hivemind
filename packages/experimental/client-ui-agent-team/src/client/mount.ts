@@ -9,6 +9,7 @@ import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
 import type {} from '@deepseek-ai/dsh-api-session-controller/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import { createElement, useSyncExternalStore } from 'react'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
@@ -63,6 +64,19 @@ function registerUi(ctx: ClientContext): void {
     },
   }
 
+  const ScopedTeamAction = (props: Parameters<typeof TeamAction>[0]) => {
+    const preset = useSyncExternalStore(
+      callback => sessions.list.subscribe(callback),
+      () => {
+        const lead = leadSessionId(props.sessionId)
+        return sessions.list.getSnapshot().byId[lead]?.projectionValues?.agentPreset
+      },
+    )
+    // Ordinary DSH profiles keep the panel. HIVE Chat has no Team authority.
+    if (typeof preset === 'string' && preset.startsWith('hivemind-') && preset !== 'hivemind-hyperagents') return null
+    return createElement(TeamAction, props)
+  }
+
   ctx.slots.inject(
     'conversation.session.header.actions',
     () => ctx.slots.register({
@@ -71,7 +85,7 @@ function registerUi(ctx: ClientContext): void {
       order: 20,
       locale: NS,
       inject: () => actions,
-    }, TeamAction),
+    }, ScopedTeamAction),
   )
 }
 
