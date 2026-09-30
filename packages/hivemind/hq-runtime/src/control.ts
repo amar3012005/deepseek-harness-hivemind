@@ -28,7 +28,7 @@ function isHq(agent: Agent): boolean {
 
 /** Native Remote service keeps human authority outside model-callable tools. */
 export class HqControl extends TypertRemoteService {
-  static inject = ['agents', 'agentTeams', 'sessions', 'sessionPersistence', 'hivemindHqOwnership']
+  static inject = ['agents', 'agentTeams', 'sessions', 'sessionPersistence', 'hivemindHqOwnership', 'schedule']
   private readonly tails = new Map<string, Promise<void>>()
 
   /**
@@ -75,11 +75,23 @@ export class HqControl extends TypertRemoteService {
     const result = prior.then(async (): Promise<HqModeUpdateResult> => {
       const current = this.mode(root)
       if (current.revision !== request.expectedRevision) return { ok: false, code: 'hq-mode-conflict', current }
+      if (current.enabled === request.enabled) return { ok: true, value: current }
       if (request.enabled) {
         if (!await this.ctx.sessions.flush(root.session)) throw new Error('hq_mode_persistence_required')
         await this.ctx.hivemindHqOwnership.claim(root.id)
       }
       const value: HqModeState = { revision: current.revision + 1, enabled: request.enabled, changedAt: Date.now() }
+      if (value.enabled) {
+        // The wake commits first. Until mode commits, the scheduler retains it paused.
+        // Replaying an interrupted switch reuses the same native Schedule identity.
+        await this.ctx.schedule.ensure(root.id, `hq-enable-${value.revision}`, {
+          title: 'HQ startup review', after_seconds: 1,
+          prompt: 'The human enabled HQ autonomous mode. Review approved company objectives, the native Team task board, '
+            + 'pending employee requests and committed receipts. Continue only authorized unfinished work; '
+            + 'do not duplicate assignments or widen authority. If no objective exists, ask the human for one. '
+            + 'Use native Schedule for a justified next wake and native Team waiting for active employees.',
+        })
+      }
       root.session.append('hivemind/hq-mode', value)
       if (!value.enabled) {
         // Cancellation is immediate. Pending native inbox and task state survive.

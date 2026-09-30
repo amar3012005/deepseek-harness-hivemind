@@ -144,6 +144,8 @@ describe('Team identity and provisioning', () => {
     const ownershipFiber = await ctx.plugin(HqOwnership)
     const claim = vi.fn().mockResolvedValue(undefined)
     const unregisterOwnership = ctx.hivemindHqOwnership.register({ claim })
+    const ensure = vi.fn().mockResolvedValue(undefined)
+    ctx.provide('schedule', { ensure } as never)
     const fiber = await ctx.plugin(HqControl)
     try {
       expect(ctx.hivemindHq.mode(lead).enabled).toBe(false)
@@ -155,6 +157,10 @@ describe('Team identity and provisioning', () => {
       expect(switches[0]).toMatchObject({ ok: true, value: { enabled: true, revision: 1 } })
       expect(switches[1]).toMatchObject({ ok: false, code: 'hq-mode-conflict' })
       expect(claim).toHaveBeenCalledExactlyOnceWith(lead.id)
+      expect(ensure).toHaveBeenCalledTimes(1)
+      expect(ensure.mock.calls[0]?.[0]).toBe(lead.id)
+      await expect(ctx.hivemindHq.setMode(lead, { enabled: true, expectedRevision: 1 })).resolves.toMatchObject({ value: { revision: 1 } })
+      expect(ensure).toHaveBeenCalledTimes(1)
       const child = (await spawn(ctx, lead, 'researcher')).member
       const liveChild = await waitRunning(ctx, child.id)
       const rootCancel = vi.spyOn(lead, 'cancel')

@@ -8,6 +8,8 @@ The contract capability is mounted only in the new `hivemind-hq` preset; existin
 
 The HIVE deployment composes `ownership` and `ownership-postgres`. Apply `migrations/company-hq.sql` in the same schema as native sessions before mounting the provider. Its unique organization key chooses exactly one canonical HQ session across competing humans and replicas. Enabling flushes the native root, verifies current membership and effective HQ preset, claims ownership atomically, then persists the mode. A second root cannot enable. Schedule admission requires that same owner. Native session leases still own exclusive execution; the company pointer is not another agent or task loop. Ownership is retained while paused or offline; implicit takeover is prohibited.
 
+Enablement first ensures one native Schedule startup wake, keyed by the root and mode revision, then commits the enabled event. An interrupted switch reuses that wake. Repeating the already-enabled switch is a no-op. HQ reviews approved work rather than inventing an objective; with no approved objective it must ask the human. Future wakeups use the same native Schedule capability. Delivery remains an inbox receipt, not task acceptance.
+
 Artifact links can import committed producer receipts from an exact native Team roster member. The caller cannot supply a foreign session or invent receipt proof. The native Schedule UI projects committed occurrences onto a timezone-aware week calendar without a second schedule store.
 
 Durable dispatch reconciliation, semantic acceptance review, Jev decisions, approval mediation, explicit human ownership transfer, and authenticated browser/restart verification remain required before the complete autonomous runtime can be released.
