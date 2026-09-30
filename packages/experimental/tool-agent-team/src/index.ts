@@ -394,12 +394,20 @@ export function apply(ctx: Context, config: Config = {}): void {
     forkProvider: config.forkProvider ?? 'fork',
   }
   const installed = new Map<Agent, () => void>()
-  const maybeInstall = (agent: Agent): void => {
-    if (installed.has(agent) || ctx.agentTeams.tryMembership(agent) === undefined) return
-    installed.set(agent, install(agent, ctx, resolved))
+  const syncAgent = (agent: Agent): void => {
+    const member = ctx.agentTeams.tryMembership(agent) !== undefined
+    if (!member) {
+      installed.get(agent)?.()
+      installed.delete(agent)
+    } else if (!installed.has(agent)) {
+      installed.set(agent, install(agent, ctx, resolved))
+    }
   }
-  for (const agent of ctx.agents.list()) maybeInstall(agent)
-  ctx.on('agent/created', ({ agent }) => { maybeInstall(agent) })
+  for (const agent of ctx.agents.list()) syncAgent(agent)
+  ctx.on('agent/created', ({ agent }) => { syncAgent(agent) })
+  // Blank web sessions can select HyperAgents after agent/created. Reconcile
+  // again before each turn, after the selection has been applied.
+  ctx.on('agent/session-start', ({ agent }) => { syncAgent(agent) })
   ctx.on('agent/disposed', ({ agent }) => {
     installed.get(agent)?.()
     installed.delete(agent)
