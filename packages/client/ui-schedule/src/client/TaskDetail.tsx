@@ -649,7 +649,7 @@ export function TaskDetail({
   }
 
   return <>
-    <aside ref={panelRef} className={css.detail} id={id} tabIndex={-1} aria-label={t('detail.label')}>
+    <aside data-automation-task-detail="" ref={panelRef} className={css.detail} id={id} tabIndex={-1} aria-label={t('detail.label')}>
       <div className={css.detailTabsBar}>
         <div ref={detailTabsRef} className={css.detailTabs} role="tablist" aria-label={t('detail.tabs')}>
           {(['rule', 'records'] as const).map(value => (

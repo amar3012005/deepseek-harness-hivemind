@@ -136,3 +136,11 @@
     box-sizing: border-box;
   }
 }
+
+/* Task management owns the canvas until returning to the conversation. */
+:global(html[data-dsh-mode='hivemind-chat']) .frame:has([data-automation-tasks], [data-automation-task-detail]) .sessionRailCol {
+  display: none;
+}
+:global(html[data-dsh-mode='hivemind-chat']) .frame:has([data-automation-tasks], [data-automation-task-detail]) .centerCol {
+  padding-left: 0 !important;
+}
