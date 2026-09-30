@@ -144,6 +144,9 @@ export interface Config {
 
 /** Input for creating one durable teammate. */
 export interface SpawnTeammateRequest {
+  /** Host-derived identity; native model-facing spawn tools never accept this field. */
+  readonly persona?: string
+
   readonly name: string
   readonly description: string
   readonly prompt: ContentBlock[]

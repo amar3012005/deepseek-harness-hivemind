@@ -89,6 +89,8 @@ suite('tenant scheduled native composition', () => {
 - id: ui-schedule
   disabled: false
 - insert:
+    - id: hivemind-employee-directory
+      name: '@deepseek-ai/dsh-hivemind-employee-directory'
     - id: agent-team
       name: '@deepseek-ai/dsh-experimental-agent-team'
       config: {allowedRootPresets: [hivemind-hyperagents, hivemind-hq]}
@@ -279,5 +281,31 @@ suite('tenant scheduled native composition', () => {
     await page.getByRole('button', { name: 'Calendar', exact: true }).click()
     await page.getByText('HQ task deadline: Verified company brief', { exact: true }).waitFor({ timeout: 15000 })
     await page.screenshot({ path: '/tmp/hq-runtime-native-calendar.png', fullPage: true })
+    await page.getByRole('button', { name: 'Company calendar', exact: true }).click()
+    await page.getByRole('heading', { name: 'Company calendar', exact: true }).waitFor({ timeout: 15000 })
+    await page.getByText('Add human work', { exact: true }).click()
+    await page.getByLabel('Title', { exact: true }).fill('Owner research review')
+    await page.getByLabel('Owner', { exact: true }).fill('Amar')
+    await page.getByLabel('Start', { exact: true }).fill('2026-09-30T10:00')
+    await page.getByLabel('End', { exact: true }).fill('2026-09-30T11:00')
+    await page.getByRole('button', { name: 'Save planned work', exact: true }).click()
+    await page.getByRole('heading', { name: 'Owner research review', exact: true }).waitFor()
+    await page.getByRole('button', { name: 'Daily agenda', exact: true }).click()
+    await page.getByRole('button', { name: /Verified company brief/ }).first().click()
+    await page.getByText('No linked saved artifact receipt.', { exact: true }).waitFor()
+    expect((await admin.query("SELECT 1 FROM harness_session_events WHERE session_id=$1 AND event_type='hivemind/hq-calendar-item'", [id])).rowCount).toBe(1)
+    await page.screenshot({ path: '/tmp/hq-company-workspace.png', fullPage: true })
+    await page.getByLabel('Type', { exact: true }).selectOption('assignment')
+    await page.getByLabel('Title', { exact: true }).fill('Planned verified brief')
+    await page.getByLabel('Owner', { exact: true }).fill('HQ Runtime')
+    await page.getByLabel('Start', { exact: true }).fill('2026-10-02T09:00')
+    await page.getByLabel('End', { exact: true }).fill('2026-10-02T10:00')
+    await page.getByRole('button', { name: 'Save planned work', exact: true }).click()
+    await expect.poll(async () => (await admin.query("SELECT 1 FROM harness_session_events WHERE session_id=$1 AND event_type='hivemind/hq-calendar-wake'", [id])).rowCount).toBe(1)
+    expect((await admin.query("SELECT 1 FROM harness_scheduled_tasks WHERE session_id=$1 AND record->>'title'='HQ planned work: Planned verified brief'", [id])).rowCount).toBe(1)
+    await page.getByRole('button', { name: 'Week calendar', exact: true }).click()
+    await page.getByRole('heading', { name: 'Company calendar', exact: true }).scrollIntoViewIfNeeded()
+    await page.screenshot({ path: '/tmp/hq-company-week-calendar.png', fullPage: true })
+
   })
 })

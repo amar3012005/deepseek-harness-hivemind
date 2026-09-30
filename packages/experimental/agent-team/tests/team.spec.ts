@@ -6,14 +6,18 @@ import { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
 import { mountAgentLoopTestDependencies } from '@deepseek-ai/dsh-agent-loop-testkit'
-import { createUserMessage } from '@deepseek-ai/dsh-llm'
+import * as HqRuntime from '../../../hivemind/hq-runtime/src/index.ts'
+import { ToolCallId, createUserMessage } from '@deepseek-ai/dsh-llm'
 import { SessionLogOffset, SessionId, type Session, type SessionEvent } from '@deepseek-ai/dsh-session'
 import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import SubagentService from '@deepseek-ai/dsh-subagent'
 import { deliverSubagentPrompt, type HostPromptDeliverer } from '@deepseek-ai/dsh-subagent/internal'
 import * as SubagentFork from '@deepseek-ai/dsh-subagent-fork-in-process'
 import * as SubagentSpawn from '@deepseek-ai/dsh-subagent-spawn-in-process'
-import { MockAdapter, textResponse } from '../../../core/agent-loop/tests/mock-adapter.ts'
+import { MockAdapter, textResponse, toolCallResponse } from '../../../core/agent-loop/tests/mock-adapter.ts'
+import LocalAttachmentStore from '../../../attachment/attachment-local/src/index.ts'
+import { GenerationRegistry, registerGenerationTools } from '../../../hivemind/artifact-renderer/src/generation.ts'
+import { markdownReportProvider } from '../../../hivemind/artifact-renderer/src/office-providers.ts'
 import TeamService, { TeamError, TeamId, TeamMessageId, TeamTaskId } from '../src/index.ts'
 import { TeamRuntimeLifecycle } from '../src/lifecycle.ts'
 import { teamProjectionDefinition } from '../src/projection.ts'
@@ -137,6 +141,89 @@ async function waitRunning(ctx: Context, id: SessionId): Promise<Agent> {
 }
 
 describe('Team identity and provisioning', () => {
+  it('saves a native employee deliverable, reviews its actual receipt, completes once and reloads the terminal board', async () => {
+    const { ctx, lead, storageRoot, teamFiber } = await setup([
+      toolCallResponse('employee-save', 'hivemind_generate', { format: 'markdown_report', title: 'Company decision', content: '# Company decision\n\nDecision: review public evidence before external action.' }),
+      textResponse('The Markdown report is saved. Report its receipt to HQ.'),
+    ])
+    await ctx.plugin(LocalAttachmentStore, { dshHome: storageRoot })
+    const registry = new GenerationRegistry(); registry.register(markdownReportProvider)
+    registerGenerationTools(ctx, registry, 'artifacts', 4096, true)
+    ctx.provide('schedule', { ensure: vi.fn().mockResolvedValue({ id: 'deadline' }) } as never)
+    ctx.provide('hivemindEmployeeDirectory', { profiles: vi.fn().mockResolvedValue({ profiles: [{ id: 'employee-ravi', slug: 'ravi', name: 'Ravi', role_archetype: 'Research', persona: 'Authorized research employee.' }] }) } as never)
+    const fiber = await ctx.plugin(HqRuntime)
+    const task = await ctx.agentTeams.createTask(lead, { subject: 'Saved company decision', description: 'Save a Markdown report containing an explicit decision.', writeScopes: [] })
+    const execute = (args: unknown) => ctx.tools.execute({ name: 'hivemind_hq_contract', callId: ToolCallId('company-loop'), agent: lead, signal: SIGNAL, arguments: args })
+    vi.stubEnv('CLOUDFLARE_ACCOUNT_ID', 'a'.repeat(32)); vi.stubEnv('CLOUDFLARE_API_TOKEN', 'fixture-token')
+    const provider = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({ success: true, result: { result: { model: 'jev-fixture', answers: { criterion_0: { type: 'noul', noul: 0.99 } } } } })))
+    try {
+      expect((await execute({ action: 'attach', task_id: task.id, due_at: '2026-10-02T10:00:00Z', acceptance_criteria: ['A saved Markdown report with an explicit decision.'] })).isError).not.toBe(true)
+      expect((await execute({ action: 'assign', task_id: task.id, employee_id: 'employee-ravi' })).isError).not.toBe(true)
+      const member = ctx.agentTeams.listMembers(lead).find(value => value.name === 'ravi-task-1')!
+      await vi.waitFor(async () => expect((await storedEvents(ctx, member.id)).some(event => event.type === 'hivemind/generation-created')).toBe(true))
+      const artifact = (await storedEvents(ctx, member.id)).find(event => event.type === 'hivemind/generation-created')
+      expect(artifact?.type).toBe('hivemind/generation-created')
+      if (artifact?.type !== 'hivemind/generation-created') throw new Error('fixture artifact not saved')
+      expect((await execute({ action: 'artifacts', task_id: task.id, producer: member.name, artifact_ids: [artifact.data.artifactId] })).isError).not.toBe(true)
+      const revision = ctx.agentTeams.getTask(lead, task.id).revision
+      await expect(ctx.agentTeams.updateTask(lead, { taskId: task.id, expectedRevision: revision, action: 'complete' })).rejects.toThrow('accepted review')
+      expect((await execute({ action: 'review', task_id: task.id })).isError).not.toBe(true)
+      expect((await execute({ action: 'review', task_id: task.id })).isError).not.toBe(true)
+      expect(provider).toHaveBeenCalledTimes(1)
+      expect(JSON.parse(String(provider.mock.calls[0]?.[1]?.body)).input.state.documents[0].text).toContain('Decision: review public evidence')
+      await ctx.agentTeams.updateTask(lead, { taskId: task.id, expectedRevision: revision, action: 'complete' })
+      await ctx.sessions.flush(lead.session)
+      const replay = await storedEvents(ctx, lead.id)
+      let projection = teamProjectionDefinition.init(lead.session.header)
+      for (const event of replay) projection = teamProjectionDefinition.apply(projection, event)
+      expect(projection.tasks.find(value => value.id === task.id)?.status).toBe('completed')
+      expect(replay.filter(event => event.type === 'hivemind/hq-task-review')).toHaveLength(1)
+      expect((await execute({ action: 'artifacts', task_id: task.id, artifact_ids: [artifact.data.artifactId] })).isError).toBe(true)
+    } finally { provider.mockRestore(); vi.unstubAllEnvs(); await fiber.dispose(); await teamFiber.dispose() }
+  })
+  it('repairs a lost planning acknowledgement and reschedules only its native future wake', async () => {
+    const { ctx, lead, teamFiber } = await setup([])
+    lead.session.append('agent-preset/selected', { agentPreset: 'hivemind-hq' })
+    const ownershipFiber = await ctx.plugin(HqOwnership)
+    const unregister = ctx.hivemindHqOwnership.register({ claim: async () => {} })
+    const ensure = vi.fn().mockRejectedValueOnce(new Error('native schedule temporarily unavailable')).mockResolvedValueOnce({ id: 'wake-1' }).mockResolvedValueOnce({ id: 'wake-2' })
+    const remove = vi.fn().mockResolvedValue({ deleted: true })
+    ctx.provide('schedule', { ensure, delete: remove, catalog: vi.fn().mockResolvedValue([{ id: 'wake-1', sessionId: lead.id, status: 'active' }]) } as never)
+    const control = await ctx.plugin(HqControl)
+    try {
+      const task = await ctx.agentTeams.createTask(lead, { subject: 'Research', description: 'Save report.' })
+      const item = { id: 'plan-task-1', revision: 1, kind: 'assignment' as const, title: 'Research', owner: 'Ravi', taskId: task.id, startsAt: '2026-10-02T09:00:00Z', endsAt: '2026-10-02T10:00:00Z', resolved: false }
+      await expect(ctx.hivemindHq.plan(lead, { expectedRevision: 0, item })).rejects.toThrow('temporarily unavailable')
+      expect((await storedEvents(ctx, lead.id)).filter(event => event.type === 'hivemind/hq-calendar-item')).toHaveLength(1)
+      expect(await ctx.hivemindHq.plan(lead, { expectedRevision: 0, item })).toMatchObject({ ok: true })
+      expect(await ctx.hivemindHq.plan(lead, { expectedRevision: 0, item })).toMatchObject({ ok: true })
+      expect(ensure).toHaveBeenCalledTimes(2)
+      expect(await ctx.hivemindHq.plan(lead, { expectedRevision: 1, item: { ...item, revision: 2, startsAt: '2026-10-02T09:30:00Z' } })).toMatchObject({ ok: true })
+      expect(remove).toHaveBeenCalledExactlyOnceWith({ sessionId: lead.id, id: 'wake-1' })
+      expect((await storedEvents(ctx, lead.id)).filter(event => event.type === 'hivemind/hq-calendar-wake')).toHaveLength(2)
+      expect(ctx.agentTeams.getTask(lead, task.id).status).toBe('pending')
+    } finally { await control.dispose(); unregister(); await ownershipFiber.dispose(); await teamFiber.dispose() }
+  })
+  it('binds an authenticated employee persona once and reuses the native assignment on retry', async () => {
+    const { ctx, lead, teamFiber } = await setup(['hang'])
+    ctx.provide('schedule', { ensure: vi.fn().mockResolvedValue({ id: 'deadline' }) } as never)
+    ctx.provide('hivemindEmployeeDirectory', { profiles: vi.fn().mockResolvedValue({ profiles: [{ id: 'employee-ravi', slug: 'ravi', name: 'Ravi', role_archetype: 'Research', persona: 'You are the authorized research employee.' }] }) } as never)
+    const fiber = await ctx.plugin(HqRuntime)
+    const task = await ctx.agentTeams.createTask(lead, { subject: 'Public research', description: 'Produce one sourced report.', writeScopes: [] })
+    const execute = (args: unknown) => ctx.tools.execute({ name: 'hivemind_hq_contract', callId: ToolCallId('hq-assignment-test'), agent: lead, signal: SIGNAL, arguments: args })
+    const start = vi.spyOn(ctx.subagents, 'startContinuable')
+    try {
+      expect((await execute({ action: 'attach', task_id: task.id, due_at: '2026-10-01T10:00:00Z', acceptance_criteria: ['One saved report'] })).isError).not.toBe(true)
+      expect((await execute({ action: 'assign', task_id: task.id, employee_id: 'foreign-employee' })).isError).toBe(true)
+      expect((await execute({ action: 'assign', task_id: task.id, employee_id: 'employee-ravi' })).isError).not.toBe(true)
+      expect((await execute({ action: 'assign', task_id: task.id, employee_id: 'employee-ravi' })).isError).not.toBe(true)
+      expect(start).toHaveBeenCalledTimes(1)
+      expect(start.mock.calls[0]?.[0].request.persona).toContain('authorized research employee')
+      expect(ctx.agentTeams.getTask(lead, task.id)).toMatchObject({ status: 'in_progress', ownerName: 'ravi-task-1' })
+      expect((await storedEvents(ctx, lead.id)).filter(event => event.type === 'hivemind/hq-employee-assignment')).toHaveLength(1)
+      await expect(ctx.agentTeams.updateTask(lead, { taskId: task.id, expectedRevision: ctx.agentTeams.getTask(lead, task.id).revision, action: 'complete' })).rejects.toThrow('saved artifact receipt')
+    } finally { await fiber.dispose(); await teamFiber.dispose() }
+  })
   it('persists human HQ mode, rejects stale switches, and pauses only HQ-owned agents', async () => {
     const { ctx, lead, teamFiber } = await setup(['hang'])
     lead.session.append('agent-preset/selected', { agentPreset: 'hivemind-hq' })

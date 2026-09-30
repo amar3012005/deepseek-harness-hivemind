@@ -101,3 +101,9 @@ export const webProvider: GenerationProvider = {
     }
   },
 }
+
+/** Preserve an already finished Markdown report verbatim, without a model rewrite. */
+export const markdownReportProvider: GenerationProvider = {
+  id: 'markdown-report', format: 'markdown_report', instructions: 'Provide the complete finished Markdown report. It is saved directly without another synthesis or rendering model call.',
+  async generate(request) { return { data: new TextEncoder().encode(request.content), extension: 'md', mediaType: 'text/markdown' } },
+}

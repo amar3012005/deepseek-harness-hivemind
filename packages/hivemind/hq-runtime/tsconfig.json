@@ -44,6 +44,15 @@
     },
     {
       "path": "../execution-scope"
+    },
+    {
+      "path": "../employee-directory"
+    },
+    {
+      "path": "../employee-delegation"
+    },
+    {
+      "path": "../../todo/tool-todo"
     }
   ]
 }

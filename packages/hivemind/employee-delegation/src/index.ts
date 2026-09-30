@@ -211,7 +211,7 @@ function nativeJobs(ctx: Context): EmployeeJobRegistry | undefined {
   return typeof get === 'function' ? get.call(ctx, 'jobs') as EmployeeJobRegistry | undefined : undefined
 }
 
-function profileSnapshot(profile: Record<string, JsonValue>): {
+export function profileSnapshot(profile: Record<string, JsonValue>): {
   id: string
   name: string
   role: string
@@ -226,7 +226,7 @@ function profileSnapshot(profile: Record<string, JsonValue>): {
   return { id, name, role, persona, ...(version === undefined ? {} : { version }) }
 }
 
-function employeePersona(employee: { name: string; role: string; persona: string }): string {
+export function employeePersona(employee: { name: string; role: string; persona: string }): string {
   return `You are ${employee.name}, a verified HIVE-MIND employee acting as ${employee.role}. Your employee persona is below. Work only on the assigned task, distinguish evidence from assumptions, do not claim unexecuted external actions, and return a concise handoff to the parent agent.\n\n${employee.persona}`
 }
 

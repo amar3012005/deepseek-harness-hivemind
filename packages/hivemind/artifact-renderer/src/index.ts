@@ -10,7 +10,9 @@ import type {} from '@deepseek-ai/dsh-agent'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import { defaultPageLayout, generatePdf } from '@speajus/markdown-to-pdf'
 import { GenerationRegistry, registerGenerationTools } from './generation.ts'
-import { presentationProvider, spreadsheetProvider, webProvider } from './office-providers.ts'
+import {
+  markdownReportProvider, presentationProvider, spreadsheetProvider, webProvider,
+} from './office-providers.ts'
 import { openRouterImageProvider } from './image-provider.ts'
 import { higgsfieldVideoProvider } from './higgsfield-video-provider.ts'
 import { registerMediaWorkflow } from './media-workflow.ts'
@@ -222,6 +224,7 @@ export function registerArtifactTool(ctx: Context, config: Config): void {
     },
     output: {
       schema: outputSchema,
+      presentationMeta: (_args, value) => ({ artifact_id: value.artifact_id }),
       render: (_args, value) => [
         { type: 'text', text: `Rendered ${value.title} as ${value.path}: ${value.page_count} page(s), ${value.pdf_bytes} bytes, ${value.layout_status}. Artifact ${value.artifact_id}; provider ${value.provider}. Design checks: ${value.design_quality.status}; ${value.design_quality.warnings.length ? `warnings ${value.design_quality.warnings.join(', ')}` : 'no deterministic warnings'}. chat_preview_status=${value.chat_preview_status}: the durable preview is already visible to the user even if this text-only model sees the image payload as omitted. This receipt is authoritative and terminal for a bounded single-artifact request: answer the user now. Do not render again, list files, rasterize, revalidate, or re-surface it.` },
         { type: 'image', attachment: value.preview as ImageAttachmentRef },
@@ -295,7 +298,9 @@ export function apply(ctx: Context, config: Config): void {
         maxBytes: config.videoMaxBytes ?? 150_000_000, resolution: config.videoResolution ?? '720p',
       })))
     }
-    for (const provider of [presentationProvider, spreadsheetProvider, webProvider]) rendererCtx.effect(() => registry.register(provider))
+    for (const provider of [markdownReportProvider, presentationProvider, spreadsheetProvider, webProvider]) {
+      rendererCtx.effect(() => registry.register(provider))
+    }
     rendererCtx.effect(() => registry.register({
       id: config.provider, format: 'pdf', instructions: 'Provide the finished report as Markdown. For PDF plus inline preview use hivemind_artifact_render. This generator returns the PDF file only.',
       async generate(request) {

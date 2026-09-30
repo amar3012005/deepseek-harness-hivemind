@@ -43,6 +43,21 @@
     },
     {
       "path": "../../typert/protocol"
+    },
+    {
+      "path": "../ui-layout"
+    },
+    {
+      "path": "../ui-sidebar"
+    },
+    {
+      "path": "../ui-workspace"
+    },
+    {
+      "path": "../../schedule/schedule"
+    },
+    {
+      "path": "../../util/crypto"
     }
   ]
 }
