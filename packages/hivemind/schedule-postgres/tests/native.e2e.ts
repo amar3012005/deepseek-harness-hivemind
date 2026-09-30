@@ -11,6 +11,7 @@ import { SessionId, type SessionEvent } from '@deepseek-ai/dsh-session'
 import { LlmAdapter, ToolCallId, createUserMessage, type GenerateOptions, type StreamChunk } from '@deepseek-ai/dsh-llm'
 import type { HivemindPrincipal } from '@deepseek-ai/dsh-hivemind-execution-scope'
 import type { ScheduleRecord } from '@deepseek-ai/dsh-schedule'
+import type {} from '../../hq-runtime/src/index.ts'
 import { launchWebScaffold, type WebScaffold } from '../../../../apps/web/tests/scaffold.ts'
 
 const url = process.env.DSH_SCHEDULE_TEST_URL
