@@ -31,7 +31,7 @@ export interface TaskManagerInjected extends TaskDetailInjected {
 export type TaskManagerPageProps = PropsRuntime<'main'>
   & InjectFace<TaskManagerInjected>
   & PropsLocale<'schedule.manager'>
-  & PropsRenderSlots<'schedule.manager.external'>
+  & Partial<PropsRenderSlots<'schedule.manager.external'>>
 
 type StatusFilter = 'all' | ScheduleCatalogEntry['status']
 
