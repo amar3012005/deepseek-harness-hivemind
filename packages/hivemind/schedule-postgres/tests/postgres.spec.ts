@@ -169,7 +169,7 @@ suite('tenant PostgreSQL Schedule provider', () => {
     const deliver = async () => { calls++ }
     await backend.dispatch(deliver)
     expect(calls).toBe(0)
-    expect(await scope.run(a, () => backend.manage(table => table.get(ScheduleId('hq-task'))))).toMatchObject({ status: 'active' })
+    expect(await scope.run(a, () => backend.manage(async table => table.get(ScheduleId('hq-task'))))).toMatchObject({ status: 'active' })
     await admin.query("INSERT INTO harness_session_events VALUES('a-session',$1,$2,'hivemind/hq-mode',$3,1)", [
       a.orgId, a.userId, { data: { revision: 1, enabled: true, changedAt: Date.now() } },
     ])
