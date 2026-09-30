@@ -123,6 +123,14 @@ export function AgentPresetSeat({ load, select, introduced, useAgentPresetSeat, 
   // session shares the host composition.
   if (!ready) return null
 
+  // The employee Harness route is the HyperAgents workspace. Its composition
+  // is selected as the blank session starts; the chip is context, not a mode
+  // switch back to HIVE-MIND chat.
+  if (window.location.pathname.startsWith('/hivemind/app/employee/harness/')) {
+    const hyperagents = state.options.find(option => option.id === 'hivemind-hyperagents')
+    return <span className={`${css.seat} ${css.seatFixed}`} aria-label="HyperAgents"><IconAgentPresetOutline16 className={css.seatIcon} /><span className={css.seatLabel}>{hyperagents === undefined ? 'HyperAgents' : presetDisplayText(hyperagents, t).name}</span></span>
+  }
+
   // One wrapper span: the chip is a flex row with a gap, so loose character
   // spans would each pick up the gap between them.
   const characters = Array.from(label)

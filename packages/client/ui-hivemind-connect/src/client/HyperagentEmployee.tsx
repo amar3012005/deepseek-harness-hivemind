@@ -159,17 +159,20 @@ export function HyperagentPanelToggle({ sessionId, useSessions, useEmployeeEvent
       document.documentElement.style.setProperty('--dsh-hyperagent-chat-right-inset', `${inset}px`)
       const zoom = Number.parseFloat(getComputedStyle(document.documentElement).zoom) || 1
       const cardWidth = Math.min(420 * zoom, Math.max(0, boundary.width - 32 * zoom))
-      const cardLeft = boundary.left + (boundary.width - cardWidth) / 2
+      const cardLeft = boundary.right - cardWidth - 24 * zoom
       setDock((previous) => {
-        const next = { left: cardLeft / zoom, width: cardWidth / zoom, revealLeft: Math.max(0, boundary.right / zoom - 140) }
+        const next = { left: cardLeft / zoom, width: cardWidth / zoom, revealLeft: Math.max(0, boundary.right / zoom - 64) }
         return Math.abs(previous.left - next.left) < 1 && Math.abs(previous.width - next.width) < 1
           && Math.abs(previous.revealLeft - next.revealLeft) < 1
           ? previous : next
       })
-      if (dismissed) return
+      const composer = root.querySelector<HTMLElement>('[data-composer-card]')
+      const composerBox = composer?.getBoundingClientRect()
+      const crossesComposer = composerBox !== undefined
+        && cardLeft < composerBox.right - cardWidth / 4 && cardLeft + cardWidth > composerBox.left
       const card = { left: cardLeft, right: cardLeft + cardWidth, top: 112 * zoom, bottom: 340 * zoom }
       const rows = scroller.querySelectorAll<HTMLElement>('[data-chat-flow] > [data-chat-flow-key]:not(:empty):not([hidden])')
-      setCollision([...rows].some((row) => {
+      setCollision(crossesComposer || [...rows].some((row) => {
         const box = row.getBoundingClientRect()
         return box.right > card.left && box.left < card.right && box.bottom > card.top && box.top < card.bottom
       }))
@@ -204,7 +207,7 @@ export function HyperagentPanelToggle({ sessionId, useSessions, useEmployeeEvent
       data-collapsed={dismissed || collision || undefined}
     >
       {dismissed || collision
-        ? <button type="button" className={css.environmentReveal} onClick={() => { setDismissed(false); setCollision(false) }} aria-label={t('employee.environment')}>{t('employee.environment')}</button>
+        ? <button type="button" className={css.environmentReveal} onClick={() => { setDismissed(false); setCollision(false) }} aria-label={t('employee.environment')} title={t('employee.environment')}><svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M3 5h14M3 10h14M3 15h14" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/><circle cx="7" cy="5" r="2" fill="var(--dsw-surface-primary, #fff)" stroke="currentColor" strokeWidth="1.5"/><circle cx="13" cy="10" r="2" fill="var(--dsw-surface-primary, #fff)" stroke="currentColor" strokeWidth="1.5"/><circle cx="8" cy="15" r="2" fill="var(--dsw-surface-primary, #fff)" stroke="currentColor" strokeWidth="1.5"/></svg></button>
         : <section className={css.environment} aria-label={t('employee.environment')}>
           <header><span className={css.dots} aria-hidden="true"><span>●</span><span>●</span><span>●</span></span>{t('employee.environment')}<button type="button" onClick={() => { setDismissed(true) }}>{t('employee.hide')}</button></header>
           <div className={css.identity}>{selected === null ? <span className={css.autoAvatar}>{t('employee.initial')}</span> : <EmployeeAvatar employee={selected} size={36} />}<span><strong>{selected?.name ?? t('employee.auto')}</strong><small>{selected?.role ?? t('employee.autoDetail')}</small></span><button type="button" className={css.settings} aria-label={t('employee.settings')} title={t('employee.settings')} onClick={() => { window.location.assign('/hivemind/app/settings') }}><IconSettingsOutline16 /></button></div>
