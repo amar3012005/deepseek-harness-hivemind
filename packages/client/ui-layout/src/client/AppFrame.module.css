@@ -131,7 +131,7 @@
 /* A right-side task/preview narrows the chat: reserve the floating history rail
    instead of painting transcript and composer beneath its session rows. */
 @media (min-width: 1101px) {
-  :global(html[data-dsh-mode='hivemind-chat']) .frame:has([data-sidebar-right-open]) .centerCol {
+  :global(html[data-dsh-mode='hivemind-chat']) .frame:has(.sessionRailCol nav):has([data-sidebar-right-open]) .centerCol {
     padding-left: 232px;
     box-sizing: border-box;
   }
