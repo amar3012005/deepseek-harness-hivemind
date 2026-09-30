@@ -191,7 +191,6 @@ export function HyperagentPanelToggle({ sessionId, useSessions, useEmployeeEvent
       const boundary = root.getBoundingClientRect()
       const inset = Math.max(0, window.innerWidth - boundary.right)
       document.documentElement.style.setProperty('--dsh-hyperagent-chat-right-inset', `${inset}px`)
-      document.documentElement.style.setProperty('--dsh-hyperagent-header-controls-width', '328px')
       const zoom = Number.parseFloat(getComputedStyle(document.documentElement).zoom) || 1
       const cardWidth = Math.min(320 * zoom, Math.max(0, boundary.width - 32 * zoom))
       const cardLeft = boundary.right - cardWidth - 24 * zoom
@@ -230,7 +229,6 @@ export function HyperagentPanelToggle({ sessionId, useSessions, useEmployeeEvent
       scroller.removeEventListener('scroll', measure)
       window.removeEventListener('resize', measure)
       document.documentElement.style.removeProperty('--dsh-hyperagent-chat-right-inset')
-      document.documentElement.style.removeProperty('--dsh-hyperagent-header-controls-width')
     }
   }, [isOsRoute, preset, dismissed])
   const showEnvironment = isOsRoute && isHyperagentPreset(preset)
