@@ -10,22 +10,22 @@ afterEach(() => {
 })
 
 describe('HyperAgents Preview mount', () => {
-  it('waits for the right sidebar surface before opening Preview', async () => {
+  it('waits for the right sidebar surface before closing Preview in a new session', async () => {
     window.history.replaceState({}, '', '/hivemind/app/employee/harness/session/new')
-    const ensurePreview = vi.fn().mockReturnValueOnce(false).mockReturnValue(true)
+    const closePreview = vi.fn().mockReturnValueOnce(false).mockReturnValue(true)
     const useSessions = (select: (state: unknown) => unknown) => select({
-      byId: { 'session-new': { projectionValues: { agentPreset: 'hivemind-hyperagents' } } },
+      byId: { 'session-new': { blank: true, projectionValues: { agentPreset: 'hivemind-hyperagents' } } },
     })
     const props = {
       sessionId: 'session-new',
       useSessions,
       useEmployeeEvents: () => null,
       swapPanel: vi.fn(),
-      ensurePreview,
+      closePreview,
       t: (key: string) => key,
     }
     render(<HyperagentPanelToggle {...(props as unknown as Parameters<typeof HyperagentPanelToggle>[0])} />)
-    await waitFor(() => expect(ensurePreview).toHaveBeenCalledTimes(2))
+    await waitFor(() => expect(closePreview).toHaveBeenCalledTimes(2))
     expect(document.querySelector('[class*="environmentDock"]')).not.toBeNull()
   })
 })

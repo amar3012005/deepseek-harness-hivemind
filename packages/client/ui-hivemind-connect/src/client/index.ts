@@ -271,10 +271,10 @@ export function apply(ctx: ClientContext): void {
   // its expand/collapse behavior for non-HyperAgents sessions.
   ctx.slots.inject('conversation.session.header.corner', () => ctx.slots.register({
     name: 'conversation.session.header.corner', locale: NS, priority: -1,
-    inject: sessionId => ({ hooks: { employeeEvents: employeeEvents(sessionId) }, ensurePreview: () => {
+    inject: sessionId => ({ hooks: { employeeEvents: employeeEvents(sessionId) }, closePreview: () => {
       if (rightSidebar === undefined) return false
       try {
-        rightSidebar.openTab('hivemind-workbench-preview')
+        if (rightSidebar.isExpanded()) rightSidebar.toggleExpanded()
         return true
       } catch (error) {
         if (error instanceof Error && error.message === 'sidebarRight: no session surface is mounted') return false

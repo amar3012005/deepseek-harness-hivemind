@@ -117,36 +117,37 @@ export function HyperagentEmployeePanel({ useSession, useEmployeeEvents, t }: Pa
 
 export interface PanelToggleInjected {
   swapPanel: (hyperagents: boolean) => void
-  ensurePreview: () => boolean
+  closePreview: () => boolean
   useEmployeeEvents: SnapshotSelectorHook<SessionEventWindow>
 }
 type ToggleProps = PropsRuntime<'conversation.session.header.corner'> & PropsLocale<'hivemind-connect'> & PanelToggleInjected
 
-export function HyperagentPanelToggle({ sessionId, useSessions, useEmployeeEvents, swapPanel, ensurePreview, t }: ToggleProps) {
+export function HyperagentPanelToggle({ sessionId, useSessions, useEmployeeEvents, swapPanel, closePreview, t }: ToggleProps) {
   // The HIVE app owns the conversation's far-right header seat. Keep the
   // native panel affordance there for every session; it opens Preview for
   // HyperAgents and toggles the sidebar for other presets.
   const preset = useSessions(state => state.byId[sessionId]?.projectionValues?.agentPreset)
+  const blank = useSessions(state => state.byId[sessionId]?.blank)
   const selected = useEmployeeEvents(selectedEmployee)
   const isOsRoute = typeof window !== 'undefined' && window.location.pathname.startsWith('/hivemind/app/employee/harness/')
   const [dismissed, setDismissed] = useState(false)
   const [collision, setCollision] = useState(false)
-  const [dock, setDock] = useState({ left: 0, width: 420 })
+  const [dock, setDock] = useState({ left: 0, width: 420, revealLeft: 0 })
   const toggleRef = useRef<HTMLButtonElement>(null)
-  const previewOpenedFor = useRef<string | null>(null)
+  const previewClosedFor = useRef<string | null>(null)
   useEffect(() => {
-    if (!isOsRoute || !isHyperagentPreset(preset) || previewOpenedFor.current === sessionId) return
+    if (!isOsRoute || !isHyperagentPreset(preset) || blank !== true || previewClosedFor.current === sessionId) return
     let pending: ReturnType<typeof setTimeout> | undefined
-    const openWhenMounted = () => {
-      if (ensurePreview()) {
-        previewOpenedFor.current = sessionId
+    const closeWhenMounted = () => {
+      if (closePreview()) {
+        previewClosedFor.current = sessionId
       } else {
-        pending = setTimeout(openWhenMounted, 50)
+        pending = setTimeout(closeWhenMounted, 50)
       }
     }
-    openWhenMounted()
+    closeWhenMounted()
     return () => { if (pending !== undefined) clearTimeout(pending) }
-  }, [isOsRoute, preset, sessionId, ensurePreview])
+  }, [isOsRoute, preset, blank, sessionId, closePreview])
   useEffect(() => {
     if (!isOsRoute || !isHyperagentPreset(preset)) return
     const root = toggleRef.current?.closest<HTMLElement>('[data-phase]')
@@ -160,8 +161,9 @@ export function HyperagentPanelToggle({ sessionId, useSessions, useEmployeeEvent
       const cardWidth = Math.min(420 * zoom, Math.max(0, boundary.width - 32 * zoom))
       const cardLeft = boundary.left + (boundary.width - cardWidth) / 2
       setDock((previous) => {
-        const next = { left: cardLeft / zoom, width: cardWidth / zoom }
+        const next = { left: cardLeft / zoom, width: cardWidth / zoom, revealLeft: Math.max(0, boundary.right / zoom - 140) }
         return Math.abs(previous.left - next.left) < 1 && Math.abs(previous.width - next.width) < 1
+          && Math.abs(previous.revealLeft - next.revealLeft) < 1
           ? previous : next
       })
       if (dismissed) return
@@ -197,7 +199,9 @@ export function HyperagentPanelToggle({ sessionId, useSessions, useEmployeeEvent
   return <>
     <button ref={toggleRef} type="button" className={css.panelToggle} aria-label={t('employee.toggle')} title={t('employee.toggle')} onClick={() => { swapPanel(isHyperagentPreset(preset)) }}><IconPanelLeftOutline16 className={css.panelToggleIcon} /></button>
     {showEnvironment && createPortal(<div
-      className={css.environmentDock} style={dock} data-collapsed={dismissed || collision || undefined}
+      className={css.environmentDock}
+      style={dismissed || collision ? { left: dock.revealLeft } : { left: dock.left, width: dock.width }}
+      data-collapsed={dismissed || collision || undefined}
     >
       {dismissed || collision
         ? <button type="button" className={css.environmentReveal} onClick={() => { setDismissed(false); setCollision(false) }} aria-label={t('employee.environment')}>{t('employee.environment')}</button>
