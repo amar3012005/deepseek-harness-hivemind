@@ -33,6 +33,10 @@ export interface EntitySearchRequest {
 export interface SaveRequest {
   title: string
   content: string
+  /** Trusted plugin provenance and replay key; never exposed by the model-facing save schema. */
+  metadata?: Record<string, JsonValue>
+  idempotencyKey?: string
+  derived?: boolean
   sourceType: 'text' | 'conversation' | 'documentation' | 'decision'
   tags?: string[]
   project?: string

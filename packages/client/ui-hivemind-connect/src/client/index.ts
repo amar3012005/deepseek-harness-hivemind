@@ -1,3 +1,5 @@
+import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
+import { DreamingSettings } from './DreamingSettings.tsx'
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
@@ -93,6 +95,7 @@ async function answerConnectionQuestion(
 
 /** Register the localized HIVE-MIND connection control above sidebar Settings. */
 export function apply(ctx: ClientContext): void {
+  ctx.slots.inject('settings.general.item', () => ctx.slots.register({ name: 'settings.general.item', id: 'company-dreaming', order: 35 }, DreamingSettings))
   if (typeof window !== 'undefined' && window.location.pathname.startsWith('/hivemind/app/employee/harness/')) {
     document.documentElement.dataset.dshHyperagentOs = 'true'
     ctx.effect(() => () => { delete document.documentElement.dataset.dshHyperagentOs }, 'ui-hivemind-connect: OS route layout')

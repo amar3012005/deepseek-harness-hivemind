@@ -284,3 +284,17 @@
         storage: external
         deliveryHistoryDays: 30
         deliveryHistoryRecords: 200
+
+# Tenant opt-in stays off until an administrator enables Dreaming in Settings.
+- insert:
+    - id: hivemind-dreamer
+      name: '@deepseek-ai/dsh-hivemind-dreamer'
+      config:
+        connectionStringEnv: DATABASE_URL
+        schema: hivemind
+        cron: '0 2 * * *'
+        timezone: Europe/Berlin
+        maxConcurrentRuns: 2
+        provider: spawn
+        model: !!js process.env.HIVEMIND_DREAM_MODEL
+        modelProvider: !!js process.env.HIVEMIND_DREAM_MODEL_PROVIDER

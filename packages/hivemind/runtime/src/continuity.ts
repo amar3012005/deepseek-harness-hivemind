@@ -38,8 +38,11 @@ export interface TaskMemoryRecord {
 
 declare module '@deepseek-ai/dsh-session/types' {
   interface SessionEventMap {
+    /** Persistent employee identity that owns this agent session across reloads and later turns. */
     'hivemind/session-owner': SessionOwner
+    /** Completed-task handoff awaiting its durable private HyperAgent memory receipt. */
     'hivemind/task-memory-pending': TaskMemoryRecord
+    /** Confirmed private operating-memory receipt for a completed task handoff. */
     'hivemind/task-memory-recorded': { idempotencyKey: string; memoryId: string; turn: number }
   }
 }

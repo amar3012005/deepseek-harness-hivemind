@@ -572,7 +572,18 @@ Source: [`packages/hivemind/connected-apps/src/index.ts:42`](../packages/hivemin
 }
 ```
 
-Source: [`packages/hivemind/runtime/src/index.ts:38`](../packages/hivemind/runtime/src/index.ts)
+Source: [`packages/hivemind/runtime/src/index.ts:39`](../packages/hivemind/runtime/src/index.ts)
+
+<a id="hiveminddream-source--log-only"></a>
+
+#### `hivemind/dream-source` — log-only
+
+```ts persistence-catalog
+/** Exact source memory IDs observed by the Dreamer, retained across cold recovery for evidence validation. */
+'hivemind/dream-source': { ids:string[] }
+```
+
+Source: [`packages/hivemind/dreamer/src/index.ts:34`](../packages/hivemind/dreamer/src/index.ts)
 
 <a id="hivemindemployee-delegation-end--log-only"></a>
 
@@ -614,7 +625,7 @@ Source: [`packages/hivemind/employee-delegation/src/index.ts:120`](../packages/h
 'hivemind/employee-selection': { id: string | null; name?: string; role?: string; avatarUrl?: string }
 ```
 
-Source: [`packages/hivemind/runtime/src/index.ts:34`](../packages/hivemind/runtime/src/index.ts)
+Source: [`packages/hivemind/runtime/src/index.ts:35`](../packages/hivemind/runtime/src/index.ts)
 
 <a id="hivemindevidence-gap-recorded--log-only"></a>
 
@@ -674,7 +685,7 @@ Source: [`packages/hivemind/artifact-renderer/src/media-workflow.ts:36`](../pack
 }
 ```
 
-Source: [`packages/hivemind/memory/src/index.ts:69`](../packages/hivemind/memory/src/index.ts)
+Source: [`packages/hivemind/memory/src/index.ts:73`](../packages/hivemind/memory/src/index.ts)
 
 <a id="hivemindoperating-context--log-only"></a>
 
@@ -718,7 +729,7 @@ Source: [`packages/hivemind/playbooks/src/index.ts:192`](../packages/hivemind/pl
 'hivemind/read-scope': { scope: 'full' | 'personal' | 'organization' | 'project'; project?: string }
 ```
 
-Source: [`packages/hivemind/runtime/src/index.ts:32`](../packages/hivemind/runtime/src/index.ts)
+Source: [`packages/hivemind/runtime/src/index.ts:33`](../packages/hivemind/runtime/src/index.ts)
 
 <a id="hivemindreply-language--log-only"></a>
 
@@ -729,7 +740,7 @@ Source: [`packages/hivemind/runtime/src/index.ts:32`](../packages/hivemind/runti
 'hivemind/reply-language': { language: string }
 ```
 
-Source: [`packages/hivemind/runtime/src/index.ts:36`](../packages/hivemind/runtime/src/index.ts)
+Source: [`packages/hivemind/runtime/src/index.ts:37`](../packages/hivemind/runtime/src/index.ts)
 
 <a id="hivemindrequest-assembly-budget--log-only"></a>
 
@@ -829,6 +840,39 @@ Source: [`packages/hivemind/playbooks/src/index.ts:194`](../packages/hivemind/pl
 ```
 
 Source: [`packages/hivemind/playbooks/src/index.ts:196`](../packages/hivemind/playbooks/src/index.ts)
+
+<a id="hivemindsession-owner--log-only"></a>
+
+#### `hivemind/session-owner` — log-only
+
+```ts persistence-catalog
+/** Persistent employee identity that owns this agent session across reloads and later turns. */
+  'hivemind/session-owner': SessionOwner
+```
+
+Source: [`packages/hivemind/runtime/src/continuity.ts:42`](../packages/hivemind/runtime/src/continuity.ts)
+
+<a id="hivemindtask-memory-pending--log-only"></a>
+
+#### `hivemind/task-memory-pending` — log-only
+
+```ts persistence-catalog
+/** Completed-task handoff awaiting its durable private HyperAgent memory receipt. */
+  'hivemind/task-memory-pending': TaskMemoryRecord
+```
+
+Source: [`packages/hivemind/runtime/src/continuity.ts:44`](../packages/hivemind/runtime/src/continuity.ts)
+
+<a id="hivemindtask-memory-recorded--log-only"></a>
+
+#### `hivemind/task-memory-recorded` — log-only
+
+```ts persistence-catalog
+/** Confirmed private operating-memory receipt for a completed task handoff. */
+  'hivemind/task-memory-recorded': { idempotencyKey: string; memoryId: string; turn: number }
+```
+
+Source: [`packages/hivemind/runtime/src/continuity.ts:46`](../packages/hivemind/runtime/src/continuity.ts)
 
 <a id="hivemindworkstream-approval--log-only"></a>
 
@@ -1086,7 +1130,7 @@ Source: [`packages/sandbox/sandbox-policy/src/session-mode.ts:33`](../packages/s
 
 Types: [ScheduleChange](subsystems/schedule.md)
 
-Source: [`packages/schedule/schedule/src/types.ts:219`](../packages/schedule/schedule/src/types.ts)
+Source: [`packages/schedule/schedule/src/types.ts:358`](../packages/schedule/schedule/src/types.ts)
 
 ### `session/*`
 
@@ -1284,7 +1328,7 @@ Source: [`packages/core/session/src/types.ts:310`](../packages/core/session/src/
 
 Types: [TeamId](subsystems/agent-team.md) · [TeamMemberSnapshot](subsystems/agent-team.md)
 
-Source: [`packages/experimental/agent-team/src/types.ts:221`](../packages/experimental/agent-team/src/types.ts)
+Source: [`packages/experimental/agent-team/src/types.ts:223`](../packages/experimental/agent-team/src/types.ts)
 
 <a id="teammessagedelivered--log-only"></a>
 
@@ -1302,7 +1346,7 @@ Source: [`packages/experimental/agent-team/src/types.ts:221`](../packages/experi
 
 Types: [TeamId](subsystems/agent-team.md) · [TeamMessageId](subsystems/agent-team.md)
 
-Source: [`packages/experimental/agent-team/src/types.ts:227`](../packages/experimental/agent-team/src/types.ts)
+Source: [`packages/experimental/agent-team/src/types.ts:229`](../packages/experimental/agent-team/src/types.ts)
 
 <a id="teammessagequeued--log-only"></a>
 
@@ -1315,7 +1359,7 @@ Source: [`packages/experimental/agent-team/src/types.ts:227`](../packages/experi
 
 Types: [TeamId](subsystems/agent-team.md) · [TeamMessageSnapshot](subsystems/agent-team.md)
 
-Source: [`packages/experimental/agent-team/src/types.ts:225`](../packages/experimental/agent-team/src/types.ts)
+Source: [`packages/experimental/agent-team/src/types.ts:227`](../packages/experimental/agent-team/src/types.ts)
 
 <a id="teamtask--log-only"></a>
 
@@ -1328,7 +1372,7 @@ Source: [`packages/experimental/agent-team/src/types.ts:225`](../packages/experi
 
 Types: [TeamId](subsystems/agent-team.md) · [TeamTaskSnapshot](subsystems/agent-team.md)
 
-Source: [`packages/experimental/agent-team/src/types.ts:223`](../packages/experimental/agent-team/src/types.ts)
+Source: [`packages/experimental/agent-team/src/types.ts:225`](../packages/experimental/agent-team/src/types.ts)
 
 ### `todo/*`
 

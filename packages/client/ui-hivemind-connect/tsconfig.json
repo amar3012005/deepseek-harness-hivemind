@@ -20,6 +20,7 @@
     { "path": "../ui-tool" },
     { "path": "../../interaction/user-questions" },
     { "path": "../../typert/protocol" },
-    { "path": "../../util/crypto" }
+    { "path": "../../util/crypto" },
+    { "path": "../ui-settings" }
   ]
 }

@@ -1323,7 +1323,7 @@ export function apply(ctx: Context, config: Config): void {
     async save(agent, request: SaveRequest, signal, execution) {
       const snapshot = await snapshotFor(agent, signal)
       const authority = await resolveAuthority(ctx, config)
-      const idempotencyKey = saveIdempotencyKey(snapshot, execution, request)
+      const idempotencyKey = request.idempotencyKey ?? saveIdempotencyKey(snapshot, execution, request)
       try {
         const existing = await hiveRequest(authority, `${SAVE_STATUS_PATH}?idempotency_key=${encodeURIComponent(idempotencyKey)}`, {
           method: 'GET', headers: { 'x-idempotency-key': idempotencyKey },
@@ -1342,10 +1342,14 @@ export function apply(ctx: Context, config: Config): void {
       const payload = {
         title: request.title,
         content: request.content,
-        memory_type: request.sourceType === 'decision' ? 'decision' : 'fact',
+        memory_type: request.derived === true ? 'synthesis' : request.sourceType === 'decision' ? 'decision' : 'fact',
         source_platform: 'deepseek-harness',
         tags: request.tags ?? [],
-        ...request.project === undefined ? {} : { project: request.project },
+        ...request.project === undefined ? {} : {
+          project: request.project,
+          ...(request.scope === 'project' && PROJECT_ID_PATTERN.test(request.project)
+            ? { project_id: request.project, project_ids: [request.project] } : {}),
+        },
         ...request.scope === undefined ? {} : { scope: request.scope },
         ...request.relationship === undefined ? {} : {
           relationship: {
@@ -1353,11 +1357,14 @@ export function apply(ctx: Context, config: Config): void {
             target_id: request.relatedTo,
           },
         },
-        metadata: { source_type: request.sourceType, governed: true, ...(request.scope === undefined ? {} : { scope: request.scope }) },
+        metadata: {
+          ...request.metadata, source_type: request.sourceType, governed: true,
+          ...(request.scope === undefined ? {} : { scope: request.scope }),
+        },
         idempotency_key: idempotencyKey,
         user_id: snapshot.identity.userId,
         org_id: snapshot.identity.orgId,
-        smartIngest: true,
+        smartIngest: request.derived !== true,
         sync: true,
       }
       let record: JsonRecord

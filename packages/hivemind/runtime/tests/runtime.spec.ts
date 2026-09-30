@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { chmod, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
+import type { MemoryProvider } from '@deepseek-ai/dsh-hivemind-memory'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import type { ToolDefinition } from '@deepseek-ai/dsh-tools'
@@ -13,6 +14,7 @@ import {
 } from '../src/index.ts'
 
 interface HarnessMock {
+  memory?: MemoryProvider
   tools: Map<string, ToolDefinition>
   identity?: (signal: AbortSignal) => Promise<{ userId: string; orgId: string }>
   turnEnded?: (payload: unknown) => Promise<void>
@@ -98,7 +100,7 @@ function mount(pluginConfig: Config, withSpill = false): HarnessMock {
   disposals.push(harness.dispose)
   const ctx = {
     inject() { return undefined },
-    provide() { return undefined },
+    provide(name:string,value:unknown) { if(name==='hivemindMemory')harness.memory=value as MemoryProvider; return undefined },
     effect(callback: () => (() => void) | undefined) {
       const cleanup = callback()
       if (typeof cleanup === 'function') cleanups.push(cleanup)
@@ -690,6 +692,15 @@ describe('HIVE-MIND runtime', () => {
       source_platforms: ['knowledge-upload'],
       sort: 'date_desc',
     })
+  })
+
+  it('preserves trusted Flashbacks provenance and concrete project routing without smart rewriting',async()=>{
+    const path=await authorityFile(),project='b79673b4-4578-4fc2-8144-05056983f4e1'
+    profileResponses([jsonResponse({},404),jsonResponse({ id:'memory-dream',title:'Derived insight' })])
+    const harness=mount(config(path))
+    await harness.memory!.save(agent,{ title:'Derived insight',content:'Supported inference',sourceType:'documentation',scope:'project',project,derived:true,idempotencyKey:'dream:stable-candidate',metadata:{ dreamer:{ sourceMemoryIds:['source'],derived:true } } },signal,execContext())
+    const body=JSON.parse(String(vi.mocked(fetch).mock.calls[4]?.[1]?.body))
+    expect(body).toMatchObject({ memory_type:'synthesis',project_id:project,project_ids:[project],scope:'project',smartIngest:false,idempotency_key:'dream:stable-candidate',metadata:{ governed:true,scope:'project',dreamer:{ sourceMemoryIds:['source'],derived:true } } })
   })
 
   it('saves only a bounded, profile-scoped memory and returns a compact receipt', async () => {
