@@ -205,6 +205,7 @@ const CORE_TOOLS = [
   'ask_user_question',
   'hivemind_capabilities',
   'hivemind_meta',
+  'hyperagents_memory',
   'hivemind_operating_context',
   'hivemind_operating_plan',
   'hivemind_research_answer',

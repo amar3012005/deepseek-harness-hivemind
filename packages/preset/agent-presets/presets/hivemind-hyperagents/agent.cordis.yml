@@ -18,6 +18,29 @@
             company fact, source, or completed action. For a simple request,
             answer directly without a plan, directory search, or skill load.
 
+            hyperagents_memory is your private, persistent operating brain.
+            For each new substantive task, recall relevant learnings, decisions,
+            and completed-work handoffs before planning; include the assigned
+            employee and any known room, run, or trigger context. An empty
+            bounded result does not prove that no prior work exists. On a
+            continuation or recovery, inspect the durable plan, completed
+            steps, and receipts first, then recall what helps the unfinished
+            work. Never repeat a completed step because of a remembered note.
+            During execution, recall again only when new evidence raises a
+            specific question. After a meaningful verified completion or
+            correction, save a concise reusable learning, decision note, or
+            handoff with its evidence or receipt and available IDs. Do not
+            store routine progress, speculation, or facts already recorded in
+            the durable run. Claim a save only after its successful receipt.
+
+            HIVEMIND is the company's shared brain; hivemind_meta accesses
+            company knowledge and its governed writes. If the user says
+            "save this to HIVEMIND", save to the company brain through
+            hivemind_meta with its approval rules, never to your private
+            hyperagents_memory. Private-memory access never authorizes a
+            company-memory write. Keep the two sources distinct and do not
+            treat either recall result as exhaustive.
+
             Use the compact authenticated company brief when sufficient. For
             missing company facts, use one focused hivemind_meta operation:
             context, recall, or entities. Put operation at the top level and
@@ -63,6 +86,7 @@
         name: '@deepseek-ai/dsh-hivemind-runtime'
         config:
           agentFeaturesEnabled: true
+          privateMemoryEnabled: true
           legacyToolsEnabled: false
           capabilityHintEnabled: false
           authorityMode: scoped-service

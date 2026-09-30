@@ -175,6 +175,8 @@ export interface Config {
   legacyToolsEnabled: boolean
   /** Disable the basic capability hint when a preset owns a richer router. */
   capabilityHintEnabled?: boolean
+  /** Register the private operating-memory tool and skill in HyperAgents only. */
+  privateMemoryEnabled?: boolean
   /** ICARUS JSON file holding the browser-issued HIVE-MIND credential. */
   icarusConfigPath: string
   /** Identity transport. Local mode uses ICARUS; scoped-service uses the authenticated request principal. */
@@ -212,6 +214,7 @@ export const Config: z<Config> = z.object({
   agentFeaturesEnabled: z.boolean().required(),
   legacyToolsEnabled: z.boolean().required(),
   capabilityHintEnabled: z.boolean().default(true),
+  privateMemoryEnabled: z.boolean().default(false),
   icarusConfigPath: z.string().required(),
   authorityMode: z.union(['local', 'scoped-service'] as const).default('local'),
   serviceApiBase: z.string(),
@@ -1499,6 +1502,73 @@ export function apply(ctx: Context, config: Config): void {
       throw new HiveMindRuntimeError('web search timed out; retry with a narrower query')
     },
   })))
+
+  if (config.privateMemoryEnabled) {
+    if (config.authorityMode !== 'scoped-service') throw new HiveMindRuntimeError('private operating memory requires scoped-service authority')
+    ctx.effect(() => ctx.skills.register({
+      name: 'hyperagents-operating-memory',
+      description: 'Private HyperAgents brain: task recall, verified learnings, decisions, handoffs, recovery, and the boundary with HIVEMIND company memory.',
+      invocation: { modelInvocable: true, userInvocable: true },
+      source: 'runtime',
+      content: `HyperAgents operating memory is your private, tenant-scoped working history. HIVEMIND is the company's shared brain.
+
+1. For a new substantive task, call hyperagents_memory recall before planning with the actual task, assigned employee, and known room/run/trigger context. A no-match result means only that this bounded search found nothing.
+2. On continuation or recovery, inspect the durable plan, completed steps, and receipts first. Then recall private handoffs relevant to unfinished work. Never redo a completed step because a remembered summary mentions it.
+3. During work, recall again only for a new question raised by evidence, such as a prior correction, decision, or account history. Do not repeat the same query per tool call.
+4. After a meaningful verified completion or correction, save a reusable learning, decision_note, or handoff with concise content, authoring employee, evidence or receipt reference, and available room/run/trigger IDs. Do not save routine progress, guesses, secrets, or WorkRun details already recorded durably. Report a save only after its receipt confirms it.
+5. If the user says “save this to HIVEMIND,” use hivemind_meta for company memory and follow its approval rules. Do not put that request in private operating memory. Private-memory access grants no company-memory write permission.`,
+    }))
+    ctx.effect(() => ctx.tools.register(defineTool({
+      name: 'hyperagents_memory',
+      description: 'Recall or save private HyperAgents operating memory for this authenticated tenant. This is your working brain, separate from the HIVEMIND company brain. Recall relevant learnings before substantial planning; save only verified reusable learnings, decisions, or handoffs. User requests to save to HIVEMIND belong to hivemind_meta instead.',
+      parameters: {
+        action: { type: 'string', required: true, enum: ['recall', 'save'], description: 'Read private operating memory or save one durable private note.' },
+        query: { type: 'string', description: 'Focused task or prior decision question for recall, up to 500 characters.' },
+        limit: { type: 'integer', description: 'Maximum recall results, 1 to 20.' },
+        agent_slug: { type: 'string', description: 'For save, the actual assigned employee slug; for recall, optional employee filter.' },
+        kind: { type: 'string', enum: ['learning', 'decision_note', 'handoff'], description: 'Required for save.' },
+        title: { type: 'string', description: 'Required for save; short searchable heading.' },
+        summary: { type: 'string', description: 'Required for save; concise verified note with evidence or receipt reference.' },
+        room_id: { type: 'string', description: 'Optional exact originating room UUID when known from a receipt.' },
+        run_id: { type: 'string', description: 'Optional exact WorkRun ID when known from a receipt.' },
+        trigger_id: { type: 'string', description: 'Optional exact scheduled trigger UUID when known from a receipt.' },
+        supersedes_id: { type: 'string', description: 'Optional exact prior private-memory UUID being corrected.' },
+      },
+      output: jsonOutput,
+      isConcurrencySafe: args => args.action === 'recall',
+      async execute(args, execution) {
+        const action = args.action
+        const agent = requireAgent(execution.agent)
+        const authority = await resolveAuthority(ctx, config)
+        if (action === 'recall') {
+          const query = nonEmptyString(args.query, 'private memory query')
+          if (query.length > 500) throw new HiveMindRuntimeError('private memory query exceeds 500 characters')
+          const limit = args.limit ?? 5
+          if (limit < 1 || limit > 20) throw new HiveMindRuntimeError('private memory limit must be 1 to 20')
+          return apiRecord(await hiveRequest(authority, '/v1/hyperagents/operating-memory', {
+            method: 'POST', body: JSON.stringify({ action, query, limit, ...(args.agent_slug ? { agent_slug: args.agent_slug } : {}), ...(args.room_id ? { room_id: args.room_id } : {}), ...(args.run_id ? { run_id: args.run_id } : {}) }),
+          }, execution.signal, config), 'private memory recall')
+        }
+        const agentSlug = nonEmptyString(args.agent_slug, 'assigned employee slug')
+        const kind = nonEmptyString(args.kind, 'private memory kind')
+        const title = nonEmptyString(args.title, 'private memory title')
+        const summary = nonEmptyString(args.summary, 'private memory summary')
+        if (title.length > 180 || summary.length > 2400) throw new HiveMindRuntimeError('private memory content exceeds its limit')
+        const idempotencyKey = createHash('sha256').update(`${agent.id}:${kind}:${title}:${summary}`).digest('hex')
+        const body = {
+          action, agent_slug: agentSlug, kind, title, summary, idempotency_key: idempotencyKey,
+          context: { sessionId: agent.id },
+          ...(args.room_id ? { room_id: args.room_id } : {}),
+          ...(args.run_id ? { run_id: args.run_id } : {}),
+          ...(args.trigger_id ? { trigger_id: args.trigger_id } : {}),
+          ...(args.supersedes_id ? { supersedes_id: args.supersedes_id } : {}),
+        }
+        return apiRecord(await hiveRequest(authority, '/v1/hyperagents/operating-memory', {
+          method: 'POST', body: JSON.stringify(body),
+        }, execution.signal, config), 'private memory save receipt')
+      },
+    })))
+  }
 
   if (!config.legacyToolsEnabled) return
 
