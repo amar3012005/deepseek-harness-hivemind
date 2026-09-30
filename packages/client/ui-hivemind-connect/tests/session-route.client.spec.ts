@@ -137,6 +137,20 @@ describe('HIVE native session routes', () => {
     expect(window.location.pathname).toBe(`${HIVE_OVERVIEW_PATH}/session/session-recent`)
   })
 
+  it('does not admit a blank HyperAgents session into a BRAIN route', async () => {
+    window.history.replaceState(null, '', `${HIVE_OVERVIEW_PATH}/session/session-older`)
+    const mixed = state('session-older')
+    mixed.byId[sid('session-older')] = {
+      ...mixed.byId[sid('session-older')]!, blank: true,
+      agentPreset: 'hivemind-hyperagents',
+      projectionValues: { agentPreset: 'hivemind-hyperagents' },
+    }
+    const harness = fixture(mixed)
+    install(harness.sessions)
+    await vi.waitFor(() => { expect(harness.open).toHaveBeenCalledWith('session-recent') })
+    expect(window.location.pathname).toBe(`${HIVE_OVERVIEW_PATH}/session/session-recent`)
+  })
+
   it('creates exactly once from /new and canonicalizes with replaceState', async () => {
     window.history.replaceState(null, '', `${HIVE_OVERVIEW_PATH}/new`)
     const harness = fixture({ ...state(), ids: [], byId: {} })

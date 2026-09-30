@@ -57,11 +57,14 @@ export function hivemindSessionPath(sessionId: SessionId, base = HIVE_OVERVIEW_P
 function matchesMode(state: SessionListState, sessionId: SessionId, base: string): boolean {
   const summary = state.byId[sessionId]
   if (summary === undefined) return false
-  // A fresh blank session has not persisted its mode selection yet.
-  if (summary.blank) return true
   const preset = sessionId === state.current
     ? summary.projectionValues?.agentPreset ?? summary.agentPreset
     : summary.agentPreset ?? summary.projectionValues?.agentPreset
+  // A newly opened OS blank begins with the Chat creation header until its
+  // selection event lands. A saved HyperAgents selection must still win.
+  if (summary.blank && base === HIVE_EMPLOYEE_HARNESS_PATH && sessionId === state.current
+    && preset === 'hivemind-chat' && summary.projectionValues?.agentPreset == null) return true
+  if (summary.blank && preset == null) return true
   const hyperagent = preset === 'hivemind-hyperagents'
     || preset === 'hyperagents' || preset === 'hyperagents-compressed'
   return base === HIVE_EMPLOYEE_HARNESS_PATH ? hyperagent : !hyperagent
