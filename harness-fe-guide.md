@@ -4,7 +4,7 @@ Start here for native Harness UI changes. This guide maps the runner's frontend 
 
 | Need to change | File | Main functions / responsibility |
 | --- | --- | --- |
-| Embedded route and session restoration | `packages/client/ui-hivemind-connect/src/client/session-route.ts` | `HIVE_OVERVIEW_PATH`, `HIVE_EMPLOYEE_HARNESS_PATH`; maps BRAIN and OS URLs to native session IDs and creates a session for `/new`. |
+| Embedded route and session restoration | `packages/client/ui-hivemind-connect/src/client/session-route.ts` | `HIVE_OVERVIEW_PATH`, `HIVE_EMPLOYEE_HARNESS_PATH`, `matchesMode`; maps BRAIN and OS URLs to native session IDs, keeps restored sessions in their mode, and creates a session for `/new`. |
 | HIVE integration and slot wiring | `packages/client/ui-hivemind-connect/src/client/index.ts` | `apply`; auth/bootstrap, employee picker, Preview toggle, right pane, HIVE-specific slot registrations. |
 | App columns and native session rail | `packages/client/ui-layout/src/client/AppFrame.tsx` and `AppFrame.module.css` | `AppFrame`, `CenterColumn`, `RightbarColumn`; grid, drag handles, session rail seat, Preview column. |
 | Transcript and composer | `packages/client/ui-conversation/src/client/skeleton/ConversationRoot.tsx` and `ConversationRoot.module.css` | `ConversationRoot`, `WidthHandle`; content width, composer seat, hero/active positioning, scroll area. The CSS owns native alignment in both BRAIN and OS. |

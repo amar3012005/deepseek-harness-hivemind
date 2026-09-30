@@ -54,15 +54,30 @@ export function hivemindSessionPath(sessionId: SessionId, base = HIVE_OVERVIEW_P
   return `${base}/session/${encodeURIComponent(sessionId)}`
 }
 
-function rootSession(state: SessionListState, sessionId: SessionId | undefined): SessionId | undefined {
-  if (sessionId === undefined) return undefined
+function matchesMode(state: SessionListState, sessionId: SessionId, base: string): boolean {
   const summary = state.byId[sessionId]
-  return summary !== undefined && summary.origin !== 'subagent' ? sessionId : undefined
+  if (summary === undefined) return false
+  // A fresh blank session has not persisted its mode selection yet.
+  if (summary.blank) return true
+  const preset = sessionId === state.current
+    ? summary.projectionValues?.agentPreset ?? summary.agentPreset
+    : summary.agentPreset ?? summary.projectionValues?.agentPreset
+  const hyperagent = preset === 'hivemind-hyperagents'
+    || preset === 'hyperagents' || preset === 'hyperagents-compressed'
+  return base === HIVE_EMPLOYEE_HARNESS_PATH ? hyperagent : !hyperagent
 }
 
-function newestRoot(state: SessionListState): SessionId | undefined {
-  return state.ids.find(id => state.byId[id]?.origin !== 'subagent' && state.byId[id]?.blank === false)
-    ?? state.ids.find(id => state.byId[id]?.origin !== 'subagent')
+function rootSession(state: SessionListState, sessionId: SessionId | undefined, base: string): SessionId | undefined {
+  if (sessionId === undefined) return undefined
+  const summary = state.byId[sessionId]
+  return summary !== undefined && summary.origin !== 'subagent' && matchesMode(state, sessionId, base)
+    ? sessionId : undefined
+}
+
+function newestRoot(state: SessionListState, base: string): SessionId | undefined {
+  return state.ids.find(id => state.byId[id]?.origin !== 'subagent'
+    && state.byId[id]?.blank === false && matchesMode(state, id, base))
+    ?? state.ids.find(id => state.byId[id]?.origin !== 'subagent' && matchesMode(state, id, base))
 }
 
 /**
@@ -92,7 +107,7 @@ export function setupHivemindSessionRouting(
   const selectOrCreate = (state: SessionListState, forceCreate: boolean): void => {
     if (creating) return
     const attempt = ++generation
-    const selected = forceCreate ? undefined : newestRoot(state)
+    const selected = forceCreate ? undefined : newestRoot(state, currentBase)
     if (selected !== undefined) {
       applyingRoute = true
       initialized = true
@@ -118,7 +133,7 @@ export function setupHivemindSessionRouting(
 
   const selectExact = (state: SessionListState, sessionId: SessionId): void => {
     if (creating || resolving) return
-    if (rootSession(state, sessionId) !== undefined) {
+    if (rootSession(state, sessionId, currentBase) !== undefined) {
       applyingRoute = true
       initialized = true
       observedCurrent = sessionId
@@ -135,7 +150,7 @@ export function setupHivemindSessionRouting(
     void sessions.refresh().then(() => {
       if (disposed || attempt !== generation) return
       const refreshed = sessions.list.getSnapshot()
-      if (rootSession(refreshed, sessionId) !== undefined) {
+      if (rootSession(refreshed, sessionId, currentBase) !== undefined) {
         applyingRoute = true
         initialized = true
         observedCurrent = sessionId
@@ -185,10 +200,10 @@ export function setupHivemindSessionRouting(
       applyLocation()
       return
     }
-    const current = rootSession(state, state.current)
+    const current = rootSession(state, state.current, currentBase)
     if (current === undefined) {
       const route = parseHivemindSessionRoute(browser.location.pathname)
-      if (route.kind === 'session' && rootSession(state, route.sessionId) === undefined && !resolving) {
+      if (route.kind === 'session' && rootSession(state, route.sessionId, currentBase) === undefined && !resolving) {
         initialized = false
         observedCurrent = undefined
         replace(HIVE_OVERVIEW_PATH)

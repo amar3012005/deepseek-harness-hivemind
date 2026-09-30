@@ -61,6 +61,15 @@ function state(current?: string): SessionListState {
   }
 }
 
+function hyperagentState(current?: string): SessionListState {
+  const list = state(current)
+  const byId = { ...list.byId }
+  for (const id of [sid('session-recent'), sid('session-older')]) {
+    byId[id] = { ...byId[id]!, agentPreset: 'hivemind-hyperagents' }
+  }
+  return { ...list, byId }
+}
+
 beforeEach(() => { window.history.replaceState(null, '', HIVE_OVERVIEW_PATH) })
 const disposers: Array<() => void> = []
 afterEach(() => { while (disposers.length > 0) disposers.pop()?.() })
@@ -108,12 +117,24 @@ describe('HIVE native session routes', () => {
 
   it('keeps the employee Harness URL when opening a linked session and selecting another', () => {
     window.history.replaceState(null, '', `${HIVE_EMPLOYEE_HARNESS_PATH}/session/session-older`)
-    const harness = fixture(state())
+    const harness = fixture(hyperagentState())
     install(harness.sessions)
     expect(harness.open).toHaveBeenCalledWith('session-older')
     expect(window.location.pathname).toBe(`${HIVE_EMPLOYEE_HARNESS_PATH}/session/session-older`)
-    harness.set(state('session-recent'))
+    harness.set(hyperagentState('session-recent'))
     expect(window.location.pathname).toBe(`${HIVE_EMPLOYEE_HARNESS_PATH}/session/session-recent`)
+  })
+
+  it('routes an old HyperAgents session away from BRAIN to the newest Chat session', async () => {
+    window.history.replaceState(null, '', `${HIVE_OVERVIEW_PATH}/session/session-older`)
+    const mixed = state()
+    mixed.byId[sid('session-older')] = {
+      ...mixed.byId[sid('session-older')]!, agentPreset: 'hivemind-hyperagents',
+    }
+    const harness = fixture(mixed)
+    install(harness.sessions)
+    await vi.waitFor(() => { expect(harness.open).toHaveBeenCalledWith('session-recent') })
+    expect(window.location.pathname).toBe(`${HIVE_OVERVIEW_PATH}/session/session-recent`)
   })
 
   it('creates exactly once from /new and canonicalizes with replaceState', async () => {
