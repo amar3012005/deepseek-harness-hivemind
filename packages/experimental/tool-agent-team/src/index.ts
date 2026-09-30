@@ -405,9 +405,15 @@ export function apply(ctx: Context, config: Config = {}): void {
   }
   for (const agent of ctx.agents.list()) syncAgent(agent)
   ctx.on('agent/created', ({ agent }) => { syncAgent(agent) })
-  // Blank web sessions can select HyperAgents after agent/created. Reconcile
-  // again before each turn, after the selection has been applied.
+  // Blank web sessions can select HyperAgents after agent/created and after
+  // agent/session-start, which fires only once at publication. Reconcile on
+  // the committed preset event as well as when a persisted Agent is restored.
   ctx.on('agent/session-start', ({ agent }) => { syncAgent(agent) })
+  ctx.on('session/event', (session, event) => {
+    if (String(event.type) !== 'agent-preset/selected') return
+    const agent = ctx.agents.get(session.id)
+    if (agent !== undefined) syncAgent(agent)
+  })
   ctx.on('agent/disposed', ({ agent }) => {
     installed.get(agent)?.()
     installed.delete(agent)

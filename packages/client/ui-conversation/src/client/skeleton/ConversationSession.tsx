@@ -148,14 +148,15 @@ export function ConversationSessionHeader({
                 })}
                 {ancestry.length === 0 && <span className={css.crumbCurrent}>{sessionId}</span>}
               </nav>
-              <div className={css.headerActions}>
+              {!embeddedRoute && <div className={css.headerActions}>
                 {renderSlot('conversation.session.header.actions', {})}
-              </div>
+              </div>}
             </div>
             <div className={css.headerUtilities}>
               {renderSlot('conversation.session.header.utilities', {})}
             </div>
             <div className={css.headerCorner} data-conversation-header-corner="">
+              {embeddedRoute && renderSlot('conversation.session.header.actions', {})}
               {renderSlot('conversation.session.header.corner', {})}
             </div>
           </div>
