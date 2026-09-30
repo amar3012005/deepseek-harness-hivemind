@@ -9,7 +9,7 @@ export const name = 'hivemind-hq-runtime'
 export { HqControl } from './control.ts'
 export type { HqModeUpdate, HqModeUpdateResult } from './control.ts'
 export type { HqModeState } from './mode.ts'
-export const inject = ['tools', 'agentTeams', 'sessions', 'sessionPersistence', 'agents']
+export const inject = ['tools', 'agentTeams', 'sessions', 'sessionPersistence', 'agents', 'schedule']
 declare module '@deepseek-ai/dsh-session/types' {
   interface SessionEventMap {
     /** Immutable requirements supplementing a native Team task. */
@@ -57,13 +57,23 @@ export function apply(ctx: Context): void {
       if (input.action === 'list') return { contracts: contracts.map(contract => ({ ...contract, acceptanceCriteria: [...contract.acceptanceCriteria] })), tasks: ctx.agentTeams.listTasks(agent).map(task => ({ task_id: task.id, revision: task.revision, subject: task.subject, status: task.status })) }
       if (membership.role !== 'lead') throw new Error('hq_lead_required')
       if (!input.task_id) throw new Error('hq_task_id_required')
-      ctx.agentTeams.getTask(agent, TeamTaskId(input.task_id))
+      const task = ctx.agentTeams.getTask(agent, TeamTaskId(input.task_id))
       if (input.action === 'attach') {
-        if (contracts.some(item => item.taskId === input.task_id)) throw new Error('hq_contract_exists')
         const contract = companyTaskContract({ taskId: input.task_id, dueAt: input.due_at, acceptanceCriteria: input.acceptance_criteria })
-        root.session.append('hivemind/hq-task-contract', contract)
+        const existing = contracts.find(item => item.taskId === contract.taskId)
+        if (existing && JSON.stringify(existing) !== JSON.stringify(contract)) throw new Error('hq_contract_exists')
+        if (!existing) root.session.append('hivemind/hq-task-contract', contract)
         if (!await ctx.sessions.flush(root.session)) throw new Error('hq_contract_persistence_required')
-        return { contract: { ...contract, acceptanceCriteria: [...contract.acceptanceCriteria] } }
+        // An interrupted attachment can replay this same contract and repair its
+        // native calendar wake. Schedule owns deduplication and delivery state.
+        const wake = await ctx.schedule.ensure(root.id, `hq-task-deadline-${contract.taskId}`, {
+          title: `HQ task deadline: ${task.subject}`, at: contract.dueAt,
+          prompt: `Review native Team task ${contract.taskId} and its HQ acceptance contract at its committed deadline. `
+            + 'Inspect current task status, employee messages and saved receipts before acting. '
+            + 'Do not repeat completed work. If unfinished, continue within approved authority or report the concrete blocker. '
+            + 'A deadline wake does not prove completion or grant additional authority.',
+        }, execution.signal)
+        return { contract: { ...contract, acceptanceCriteria: [...contract.acceptanceCriteria] }, schedule_id: wake.id }
       }
       if (input.action !== 'artifacts' || !contracts.some(item => item.taskId === input.task_id)) throw new Error('hq_contract_required')
       const producer = ctx.agentTeams.listMembers(agent).find(member => member.name === (input.producer ?? 'lead'))
