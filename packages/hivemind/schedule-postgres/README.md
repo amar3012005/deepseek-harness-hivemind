@@ -1,6 +1,6 @@
 # Tenant PostgreSQL Schedule provider
 
-The embedded HIVE web profile loads the upstream DSH Schedule package with this external storage provider. Apply the additive `20260929233000_harness_scheduled_tasks` Prisma migration before enabling the profile. The provider uses the same PostgreSQL database and tenant identity as native Harness sessions.
+The embedded HIVE web profile loads the upstream DSH Schedule package with this external storage provider. Apply the runner-owned additive `migrations/schedule.sql` in the configured native session schema before enabling the profile. The integration tests run this same shipped SQL; Core and Control Plane are not migration owners. The provider uses the same PostgreSQL database and tenant identity as native Harness sessions.
 
 ## Ownership and delivery
 

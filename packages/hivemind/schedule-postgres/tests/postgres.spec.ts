@@ -71,7 +71,7 @@ suite('tenant PostgreSQL Schedule provider', () => {
       CREATE POLICY tenant ON harness_sessions USING(org_id=NULLIF(current_setting('app.hivemind_org_id',true),'')::uuid AND user_id=NULLIF(current_setting('app.hivemind_user_id',true),'')::uuid);
       ALTER TABLE harness_session_events ENABLE ROW LEVEL SECURITY; ALTER TABLE harness_session_events FORCE ROW LEVEL SECURITY;
       CREATE POLICY tenant ON harness_session_events USING(org_id=NULLIF(current_setting('app.hivemind_org_id',true),'')::uuid AND user_id=NULLIF(current_setting('app.hivemind_user_id',true),'')::uuid);`)
-    await admin.query(await readFile(new URL('./migration.sql', import.meta.url), 'utf8'))
+    await admin.query(await readFile(new URL('../migrations/schedule.sql', import.meta.url), 'utf8'))
     await admin.query(await readFile(new URL('../../hq-runtime/migrations/company-hq.sql', import.meta.url), 'utf8'))
     await admin.query(
       `GRANT USAGE ON SCHEMA ${schema} TO codex_schedule_test; GRANT SELECT,INSERT,UPDATE,DELETE ON ALL TABLES IN SCHEMA ${schema} TO codex_schedule_test;`,

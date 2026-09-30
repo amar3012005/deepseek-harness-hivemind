@@ -45,7 +45,7 @@ suite('tenant scheduled native composition', () => {
       `CREATE SCHEMA ${schema}; DO $$ BEGIN IF NOT EXISTS(SELECT FROM pg_roles WHERE rolname='codex_schedule_test') THEN CREATE ROLE codex_schedule_test NOLOGIN NOSUPERUSER NOBYPASSRLS; END IF; END $$`,
     )
     await admin.query(await readFile(new URL('./sessions.sql', import.meta.url), 'utf8'))
-    await admin.query(await readFile(new URL('./migration.sql', import.meta.url), 'utf8'))
+    await admin.query(await readFile(new URL('../migrations/schedule.sql', import.meta.url), 'utf8'))
     await admin.query(await readFile(new URL('../../hq-runtime/migrations/company-hq.sql', import.meta.url), 'utf8'))
     await admin.query(
       `GRANT USAGE ON SCHEMA ${schema} TO codex_schedule_test; GRANT SELECT,INSERT,UPDATE,DELETE ON ALL TABLES IN SCHEMA ${schema} TO codex_schedule_test; GRANT USAGE,SELECT ON ALL SEQUENCES IN SCHEMA ${schema} TO codex_schedule_test`,
