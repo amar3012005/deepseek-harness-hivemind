@@ -25,6 +25,7 @@ import type {} from '@deepseek-ai/dsh-hivemind-execution-scope'
 import { contextPlugin } from '@deepseek-ai/dsh-hivemind-context'
 import { memoryPlugin, type EntitySearchRequest, type RecallRequest, type SaveRequest, type SaveStatusRequest } from '@deepseek-ai/dsh-hivemind-memory'
 import { hyperagentDirectory, projectHyperagentProfiles } from '@deepseek-ai/dsh-hivemind-employee-directory'
+import { completedTaskMemory, pendingTaskMemories, sessionOwner, type SessionOwner } from './continuity.ts'
 
 declare module '@deepseek-ai/dsh-session/types' {
   interface SessionEventMap {
@@ -52,7 +53,7 @@ export { completedExchanges, recentConversationText } from '@deepseek-ai/dsh-hiv
 export const name = 'hivemind-runtime'
 
 /** Services required to assemble context and expose progressive tools. */
-export const inject = ['tools', 'skills', 'hivemindIdentity', 'hivemindExecutionScope']
+export const inject = ['tools', 'skills', 'sessions', 'hivemindIdentity', 'hivemindExecutionScope']
 
 type HivemindReadScope = 'full' | 'personal' | 'organization' | 'project'
 const PROJECT_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu
@@ -90,6 +91,8 @@ function sessionReplyLanguage(agent: Agent): string {
 
 function sessionSelectedEmployee(agent: Agent): { id: string; name: string; role: string } | undefined {
   const events = agent.session.snapshotEvents()
+  const owner = sessionOwner(events)
+  if (owner !== undefined) return owner.id === null ? undefined : { id: owner.id, name: owner.name, role: owner.role }
   for (let index = events.length - 1; index >= 0; index -= 1) {
     const event = events[index]
     if (event?.type !== 'hivemind/employee-selection') continue
@@ -177,6 +180,8 @@ export interface Config {
   capabilityHintEnabled?: boolean
   /** Register the private operating-memory tool and skill in HyperAgents only. */
   privateMemoryEnabled?: boolean
+  /** Retry interval for the durable private task-memory outbox. */
+  privateMemoryRetryMs?: number
   /** ICARUS JSON file holding the browser-issued HIVE-MIND credential. */
   icarusConfigPath: string
   /** Identity transport. Local mode uses ICARUS; scoped-service uses the authenticated request principal. */
@@ -215,6 +220,7 @@ export const Config: z<Config> = z.object({
   legacyToolsEnabled: z.boolean().required(),
   capabilityHintEnabled: z.boolean().default(true),
   privateMemoryEnabled: z.boolean().default(false),
+  privateMemoryRetryMs: z.natural().min(1000).default(30000),
   icarusConfigPath: z.string().required(),
   authorityMode: z.union(['local', 'scoped-service'] as const).default('local'),
   serviceApiBase: z.string(),
@@ -1166,6 +1172,10 @@ export function apply(ctx: Context, config: Config): void {
         input: { hint: '<employee-id|auto>' },
         recordInput: false,
         handler: async ({ agent, rawInput, signal }) => {
+          if (config.privateMemoryEnabled && (sessionOwner(agent.session.snapshotEvents()) !== undefined
+            || agent.session.snapshotEvents().some(event => event.type === 'turn/start'))) {
+            return { kind: 'error', text: 'This session has a persistent owner. Start a new session to choose another employee.' }
+          }
           const id = rawInput.trim()
           if (id === 'auto') {
             agent.session.append('hivemind/employee-selection', { id: null })
@@ -1184,6 +1194,10 @@ export function apply(ctx: Context, config: Config): void {
           const role = typeof selected['role_archetype'] === 'string' ? selected['role_archetype'] : 'employee'
           const avatarUrl = typeof selected['avatar_url'] === 'string' && selected['avatar_url'].startsWith('https://')
             ? selected['avatar_url'] : undefined
+          // Re-check after the directory request: a concurrently admitted turn may pin ownership.
+          if (config.privateMemoryEnabled && agent.session.snapshotEvents().some(event => event.type === 'turn/start')) {
+            return { kind: 'error', text: 'The session already started. Its owner cannot change.' }
+          }
           agent.session.append('hivemind/employee-selection', { id, name, role, ...(avatarUrl === undefined ? {} : { avatarUrl }) })
           return { kind: 'success', text: `selected ${name}` }
         },
@@ -1197,7 +1211,8 @@ export function apply(ctx: Context, config: Config): void {
     turnInstruction(agent) {
       const language = sessionReplyLanguage(agent)
       const employee = sessionSelectedEmployee(agent)
-      return `Reply language for this turn: ${language}. Write the entire user-facing response and every contextual follow-up in that language. Preserve proper nouns, code, tool names, and quoted source text unless translation is requested.${employee === undefined ? '' : ` User selected ${employee.name} (${employee.role}, id ${employee.id}) for this session. Parent Harness executes inline from that employee perspective; do not spawn a child solely for identity.`}`
+      const owner = config.privateMemoryEnabled ? sessionOwner(agent.session.snapshotEvents()) : undefined
+      return `Reply language for this turn: ${language}. Write the entire user-facing response and every contextual follow-up in that language. Preserve proper nouns, code, tool names, and quoted source text unless translation is requested.${owner === undefined ? employee === undefined ? '' : ` User selected ${employee.name} (${employee.role}, id ${employee.id}) for this session.` : ` You are ${owner.name} (${owner.role}, agent slug ${owner.slug}), the persistent owner of this session. Keep this identity across tasks and stages; use specialist skills without changing employees. ${owner.persona ?? ''} The runtime records each delivered user-task response as private task_status memory with timestamps and session evidence. Do not duplicate that task record or claim external work succeeded without its tool receipt.`}`
     },
     async profileBrief(agent, signal, turn) {
       return (await snapshotFor(agent, signal, turn)).initialContext
@@ -1505,12 +1520,101 @@ export function apply(ctx: Context, config: Config): void {
 
   if (config.privateMemoryEnabled) {
     if (config.authorityMode !== 'scoped-service') throw new HiveMindRuntimeError('private operating memory requires scoped-service authority')
+    const ensureOwner = async (agent: Agent, signal: AbortSignal): Promise<SessionOwner> => {
+      const existing = sessionOwner(agent.session.snapshotEvents())
+      if (existing !== undefined) return existing
+      const selected = sessionSelectedEmployee(agent)
+      let owner: SessionOwner = { id: null, slug: 'lead', name: 'HyperAgents', role: 'Team Lead' }
+      if (selected !== undefined) {
+        const authority = await resolveAuthority(ctx, config)
+        const directory = hyperagentDirectory(await hiveRequest(authority, '/v1/hyperagents/profiles', { method: 'GET' }, signal, config))
+        const profile = directory.profiles.find(item => item['id'] === selected.id)
+        if (profile === undefined) throw new HiveMindRuntimeError('selected session owner is no longer authorized')
+        owner = {
+          id: selected.id, slug: nonEmptyString(profile['slug'], 'employee slug'), name: selected.name, role: selected.role,
+          ...(typeof profile['persona'] === 'string' ? { persona: profile['persona'].slice(0, 4000) } : {}),
+          ...(typeof profile['avatar_url'] === 'string' && profile['avatar_url'].startsWith('https://') ? { avatarUrl: profile['avatar_url'] } : {}),
+        }
+      }
+      // Only the first durable owner wins across overlapping async preparations.
+      const winner = sessionOwner(agent.session.snapshotEvents())
+      if (winner !== undefined) return winner
+      agent.session.append('hivemind/session-owner', owner)
+      await ctx.sessions.flush(agent.session)
+      return owner
+    }
+    const principals = new Map<Agent, ReturnType<typeof ctx.hivemindExecutionScope.require>>()
+    const draining = new Map<Agent, Promise<void>>()
+    const lifetime = new AbortController()
+    const enqueueTasks = (agent: Agent, owner: SessionOwner): void => {
+      const events = agent.session.snapshotEvents()
+      const ownerEvent = events.find(event => event.type === 'hivemind/session-owner')
+      const queued = new Set(events.filter(event => event.type === 'hivemind/task-memory-pending').map(event => event.data.idempotency_key))
+      for (const event of events) {
+        if (event.type !== 'turn/end' || (ownerEvent !== undefined && event.seq < ownerEvent.seq)) continue
+        const packet = completedTaskMemory(agent.id, owner, events, event.data.turn)
+        if (packet !== undefined && !queued.has(packet.idempotency_key)) agent.session.append('hivemind/task-memory-pending', packet)
+      }
+    }
+    const flushTasks = (agent: Agent): Promise<void> => {
+      const current = draining.get(agent)
+      if (current !== undefined) return current
+      const work = (async () => {
+        await ctx.sessions.flush(agent.session)
+        for (const packet of pendingTaskMemories(agent.session.snapshotEvents())) {
+          const authority = await resolveAuthority(ctx, config)
+          const receipt = apiRecord(await hiveRequest(authority, '/v1/hyperagents/operating-memory', {
+            method: 'POST', body: JSON.stringify(packet),
+          }, lifetime.signal, config), 'private task memory receipt')
+          const memory = record(receipt['memory'], 'private task memory')
+          if (receipt['ok'] !== true || memory['status'] !== 'completed' || memory['agentSlug'] !== packet.agent_slug) throw new HiveMindRuntimeError('private task memory receipt mismatch')
+          agent.session.append('hivemind/task-memory-recorded', { idempotencyKey: packet.idempotency_key, memoryId: nonEmptyString(memory['id'], 'private task memory id'), turn: packet.context.turn })
+          await ctx.sessions.flush(agent.session)
+        }
+      })()
+      draining.set(agent, work)
+      void work.finally(() => { if (draining.get(agent) === work) draining.delete(agent) }).catch(() => {})
+      return work
+    }
+    const retryTasks = async (agent: Agent): Promise<void> => {
+      try { await flushTasks(agent) } catch (error: unknown) {
+        if (!lifetime.signal.aborted) ctx.logger.warn(`private task memory remains queued for session ${agent.id}: ${String(error)}`)
+      }
+    }
+    ctx.effect(() => ctx.on('agent/pre-step', async ({ agent, signal }, next) => {
+      const owner = await ensureOwner(agent, signal)
+      principals.set(agent, ctx.hivemindExecutionScope.require())
+      enqueueTasks(agent, owner)
+      if (pendingTaskMemories(agent.session.snapshotEvents()).length > 0) await retryTasks(agent)
+      return next()
+    }, { prepend: true }))
+    ctx.effect(() => ctx.on('agent/turn-ended', async ({ agent, reason }) => {
+      const owner = sessionOwner(agent.session.snapshotEvents())
+      if (reason.kind !== 'completed' || owner === undefined) return
+      principals.set(agent, ctx.hivemindExecutionScope.require())
+      enqueueTasks(agent, owner)
+      await retryTasks(agent)
+    }))
+    ctx.effect(() => ctx.on('agent/disposed', ({ agent }) => { principals.delete(agent) }))
+    ctx.effect(() => {
+      const timer = setInterval(() => {
+        for (const [agent, principal] of principals) {
+          if (pendingTaskMemories(agent.session.snapshotEvents()).length > 0) {
+            void ctx.hivemindExecutionScope.run(principal, () => retryTasks(agent))
+          }
+        }
+      }, config.privateMemoryRetryMs ?? 30000)
+      timer.unref()
+      return async () => { clearInterval(timer); lifetime.abort(); await Promise.allSettled([...draining.values()]); principals.clear() }
+    })
     ctx.effect(() => ctx.skills.register({
       name: 'hyperagents-operating-memory',
       description: 'Private HyperAgents brain: task recall, verified learnings, decisions, handoffs, recovery, and the boundary with HIVEMIND company memory.',
       invocation: { modelInvocable: true, userInvocable: true },
       source: 'runtime',
       content: `HyperAgents operating memory is your private, tenant-scoped working history in project slug hyper-agents. Records are stored in hivemind.hyper_agent_operating_memories, separate from the company-memory table and its Memories UI. The project record is metadata, not a company-memory entry. HIVEMIND is the company's shared brain.
+
+Ownership: the authoritative session owner is pinned when the first turn starts and persists across tasks and reloads. Saves are always attributed to that owner; do not switch identities by task stage. Recall may filter any real employee slug within this tenant. The runtime automatically writes task_status/completed response records with the request, answer, requestedAt, completedAt, owner, sessionId, turn and tool receipt references. Their run_id is a deterministic DSH response-record identity, not a claim of an external WorkRun. Response completion does not certify external tool success. Do not duplicate automatic task records with handoff saves.
 
 Schema: save supports kind learning, decision_note, or handoff, always with status recorded. Give a short title (at most 180 characters), verified summary (at most 2400 characters), and agent_slug. The parent Team Lead slug is lead; for an assigned employee, use the real directory slug. Include exact room_id, run_id, and trigger_id only when known from receipts. A successful save returns ok, project, memory id, and timestamps. Recall is bounded to this tenant and project; use a focused query and optional agent/room/run filters. A project name or an empty company Memories list does not prove this private store is empty. Memories are not automatically injected into later turns: call recall explicitly.
 
@@ -1527,8 +1631,8 @@ Schema: save supports kind learning, decision_note, or handoff, always with stat
         action: { type: 'string', required: true, enum: ['recall', 'save'], description: 'Read private operating memory or save one durable private note.' },
         query: { type: 'string', description: 'Focused task or prior decision question for recall, up to 500 characters.' },
         limit: { type: 'integer', description: 'Maximum recall results, 1 to 20.' },
-        agent_slug: { type: 'string', description: 'For save, lead for the parent Team Lead, or the actual assigned employee directory slug; for recall, optional employee filter. Never guess a slug.' },
-        kind: { type: 'string', enum: ['learning', 'decision_note', 'handoff'], description: 'Required for save.' },
+        agent_slug: { type: 'string', description: 'For save, optional persistent session owner slug (a different author is rejected); for recall, optional employee filter within this organization.' },
+        kind: { type: 'string', enum: ['learning', 'decision_note', 'handoff', 'task_status', 'trigger_status'], description: 'Recall filter, or save kind learning, decision_note, handoff. Runtime owns task_status and trigger_status writes.' },
         title: { type: 'string', description: 'Required for save; short searchable heading.' },
         summary: { type: 'string', description: 'Required for save; concise verified note with evidence or receipt reference.' },
         room_id: { type: 'string', description: 'Optional exact originating room UUID when known from a receipt.' },
@@ -1548,12 +1652,14 @@ Schema: save supports kind learning, decision_note, or handoff, always with stat
           const limit = args.limit ?? 5
           if (limit < 1 || limit > 20) throw new HiveMindRuntimeError('private memory limit must be 1 to 20')
           return apiRecord(await hiveRequest(authority, '/v1/hyperagents/operating-memory', {
-            method: 'POST', body: JSON.stringify({ action, query, limit, ...(args.agent_slug ? { agent_slug: args.agent_slug } : {}), ...(args.room_id ? { room_id: args.room_id } : {}), ...(args.run_id ? { run_id: args.run_id } : {}) }),
+            method: 'POST', body: JSON.stringify({ action, query, limit, ...(args.kind ? { kind: args.kind } : {}), ...(args.agent_slug ? { agent_slug: args.agent_slug } : {}), ...(args.room_id ? { room_id: args.room_id } : {}), ...(args.run_id ? { run_id: args.run_id } : {}) }),
           }, execution.signal, config), 'private memory recall')
         }
-        const agentSlug = args.agent_slug === undefined && sessionSelectedEmployee(agent) === undefined
-          ? 'lead' : nonEmptyString(args.agent_slug, 'assigned employee slug')
+        const owner = await ensureOwner(agent, execution.signal)
+        if (args.agent_slug !== undefined && args.agent_slug !== owner.slug) throw new HiveMindRuntimeError('private memory author must match the persistent session owner')
+        const agentSlug = owner.slug
         const kind = nonEmptyString(args.kind, 'private memory kind')
+        if (!['learning', 'decision_note', 'handoff'].includes(kind)) throw new HiveMindRuntimeError('task and trigger status records are owned by runtime receipts')
         const title = nonEmptyString(args.title, 'private memory title')
         const summary = nonEmptyString(args.summary, 'private memory summary')
         if (title.length > 180 || summary.length > 2400) throw new HiveMindRuntimeError('private memory content exceeds its limit')

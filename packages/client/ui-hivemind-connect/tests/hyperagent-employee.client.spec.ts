@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { SessionEventWindow } from '@deepseek-ai/dsh-api-session-controller/client'
-import { employeeMenuHeight, isHyperagentPreset, selectedEmployee } from '../src/client/HyperagentEmployee.tsx'
+import { employeeMenuHeight, employeeOwnershipLocked, isHyperagentPreset, selectedEmployee } from '../src/client/HyperagentEmployee.tsx'
 import { workbenchSnapshot } from '../src/client/HyperagentWorkbench.tsx'
 
 function events(...rows: Array<{ id: string | null; name?: string; role?: string }>): SessionEventWindow {
@@ -17,6 +17,14 @@ describe('HyperAgents employee selection', () => {
   it('projects latest durable selection and auto reset', () => {
     expect(selectedEmployee(events({ id: '1', name: 'Ravi', role: 'researcher' }))).toEqual({ id: '1', name: 'Ravi', role: 'researcher' })
     expect(selectedEmployee(events({ id: '1', name: 'Ravi', role: 'researcher' }, { id: null }))).toBeNull()
+  })
+
+  it('keeps the persisted owner visible and locks selection after the first turn', () => {
+    const window = { entries: [{ type: 'event', event: { type: 'hivemind/session-owner', data: { id: 'elena', name: 'Elena', role: 'strategist' } } }, ...events({ id: 'ravi', name: 'Ravi', role: 'researcher' }).entries] } as unknown as SessionEventWindow
+    expect(selectedEmployee(window)?.name).toBe('Elena')
+    expect(employeeOwnershipLocked(window)).toBe(true)
+    expect(employeeOwnershipLocked(events())).toBe(false)
+    expect(employeeOwnershipLocked({ entries: [{ type: 'event', event: { type: 'turn/start', data: { turn: 1 } } }] } as never)).toBe(true)
   })
 
   it('bounds downward roster by remaining viewport', () => {

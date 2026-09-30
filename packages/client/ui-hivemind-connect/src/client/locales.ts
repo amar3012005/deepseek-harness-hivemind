@@ -9,7 +9,7 @@ export type HivemindConnectKey =
   | 'composio.continue'
   | 'composio.dismiss'
   | 'composio.connected' | 'composio.connectionVerified'
-  | 'employee.initial' | 'employee.auto' | 'employee.autoDetail' | 'employee.label' | 'employee.loading' | 'employee.unavailable'
+  | 'employee.ownerLocked' | 'employee.initial' | 'employee.auto' | 'employee.autoDetail' | 'employee.label' | 'employee.loading' | 'employee.unavailable'
   | 'employee.environment' | 'employee.hide' | 'employee.working' | 'employee.ready' | 'employee.panel' | 'employee.toggle'
   | 'employee.settings' | 'employee.connectApps' | 'employee.creditsUsed'
   | 'workbench.preview' | 'workbench.artifacts' | 'workbench.computer' | 'workbench.sources'
@@ -42,7 +42,7 @@ export const en: Record<HivemindConnectKey, string> = {
   'composio.dismiss': 'Dismiss and stop this turn',
   'composio.connected': '{app} connected',
   'composio.connectionVerified': 'Connection verified. Continuing this request.',
-  'employee.initial': 'H', 'employee.auto': 'HyperAgents', 'employee.autoDetail': 'Let Harness choose an employee',
+  'employee.initial': 'H', 'employee.auto': 'HyperAgents', 'employee.ownerLocked': 'This employee owns the session. Start a new session to choose another.', 'employee.autoDetail': 'Persistent HyperAgents Team Lead',
   'employee.label': 'Choose employee', 'employee.loading': 'Loading employees…',
   'employee.unavailable': 'Employee directory unavailable. Selection unchanged.',
   'employee.environment': 'Environment', 'employee.hide': 'Hide', 'employee.working': 'Working on this task',
@@ -85,7 +85,7 @@ export const zh: Record<HivemindConnectKey, string> = {
   'composio.dismiss': '关闭并停止本轮',
   'composio.connected': '{app} 已连接',
   'composio.connectionVerified': '连接已验证。正在继续此请求。',
-  'employee.initial': 'H', 'employee.auto': 'HyperAgents', 'employee.autoDetail': '让 Harness 选择员工',
+  'employee.initial': 'H', 'employee.auto': 'HyperAgents', 'employee.ownerLocked': '此员工负责本会话。请新建会话以选择其他员工。', 'employee.autoDetail': '持久 HyperAgents 团队负责人',
   'employee.label': '选择员工', 'employee.loading': '正在加载员工…',
   'employee.unavailable': '员工目录不可用，选择未更改。',
   'employee.environment': '工作环境', 'employee.hide': '隐藏', 'employee.working': '正在执行任务',

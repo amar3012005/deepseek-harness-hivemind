@@ -31,6 +31,13 @@ export function EmployeeAvatar({ employee, size }: { employee: EmployeeOption; s
 }
 
 export function selectedEmployee(window: SessionEventWindow): EmployeeOption | null {
+  const owner = window.entries.find(entry => entry.type === 'event' && (entry.event.type as string) === 'hivemind/session-owner')
+  if (owner?.type === 'event') {
+    const value = owner.event.data as { id: string | null; name: string; role: string; avatarUrl?: string }
+    return value.id === null ? null : {
+      id: value.id, name: value.name, role: value.role, ...(value.avatarUrl ? { avatarUrl: value.avatarUrl } : {}),
+    }
+  }
   for (let index = window.entries.length - 1; index >= 0; index -= 1) {
     const entry = window.entries[index]
     if (entry?.type !== 'event' || (entry.event.type as string) !== 'hivemind/employee-selection') continue
@@ -41,6 +48,10 @@ export function selectedEmployee(window: SessionEventWindow): EmployeeOption | n
     }
   }
   return null
+}
+
+export function employeeOwnershipLocked(window: SessionEventWindow): boolean {
+  return window.entries.some(entry => entry.type === 'event' && ['hivemind/session-owner', 'turn/start'].includes(entry.event.type as string))
 }
 
 export function isHyperagentPreset(value: unknown): boolean {
@@ -64,6 +75,7 @@ export function HyperagentEmployeePicker({ sessionId, useSessions, useEmployeeEv
   const pickerRef = useRef<HTMLDivElement>(null)
   const preset = useSessions(state => state.byId[sessionId]?.projectionValues?.agentPreset)
   const fromLog = useEmployeeEvents(selectedEmployee)
+  const locked = useEmployeeEvents(employeeOwnershipLocked)
   const [open, setOpen] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(false)
@@ -87,11 +99,11 @@ export function HyperagentEmployeePicker({ sessionId, useSessions, useEmployeeEv
     }, () => { setError(true) }).finally(() => { setLoading(false) })
   }
   return <div ref={pickerRef} className={css.picker} data-hivemind-employee-picker>
-    <button className={css.pickerButton} type="button" aria-haspopup="listbox" aria-expanded={open} onClick={toggle}>
+    <button className={css.pickerButton} type="button" aria-haspopup="listbox" aria-expanded={open && !locked} disabled={locked} title={locked ? t('employee.ownerLocked') : undefined} onClick={toggle}>
       {selected === null ? <span className={css.autoAvatar}>{t('employee.initial')}</span> : <EmployeeAvatar employee={selected} size={24} />}
       <span>{selected?.name ?? t('employee.auto')}</span><span aria-hidden="true">⌄</span>
     </button>
-    {open && <div className={css.menu} role="listbox" aria-label={t('employee.label')} style={{ maxHeight: menuHeight }}>
+    {open && !locked && <div className={css.menu} role="listbox" aria-label={t('employee.label')} style={{ maxHeight: menuHeight }}>
       <button type="button" role="option" aria-selected={selected === null} disabled={loading} onClick={() => { choose(null) }}><span className={css.autoAvatar}>{t('employee.initial')}</span><span><strong>{t('employee.auto')}</strong><small>{t('employee.autoDetail')}</small></span></button>
       {options.map(employee => <button key={employee.id} type="button" role="option" aria-selected={selected?.id === employee.id} disabled={loading} onClick={() => { choose(employee) }}><EmployeeAvatar employee={employee} size={34} /><span><strong>{employee.name}</strong><small>{employee.role}</small></span></button>)}
       {loading && <p role="status">{t('employee.loading')}</p>}

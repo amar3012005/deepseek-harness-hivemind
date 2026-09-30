@@ -1,0 +1,94 @@
+import { createHash } from 'node:crypto'
+import type { SessionEvent } from '@deepseek-ai/dsh-session'
+
+/** The first admitted turn pins this authenticated session's lead identity. */
+export interface SessionOwner {
+  id: string | null
+  slug: string
+  name: string
+  role: string
+  persona?: string
+  avatarUrl?: string
+}
+
+/** Server-produced completion packet; models cannot supply or execute this action. */
+export interface TaskMemoryRecord {
+  action: 'record_task'
+  agent_slug: string
+  title: string
+  summary: string
+  idempotency_key: string
+  run_id: string
+  context: {
+    source: 'dsh-turn'
+    completionScope: 'response'
+    sessionId: string
+    turn: number
+    ownerName: string
+    requestedAt: string
+    completedAt: string
+    requestSeqs: number[]
+    responseSeq: number
+    completionSeq: number
+    toolReceipts: Array<{ name: string; callId: string; resultSeq: number; isError: boolean }>
+  }
+}
+
+declare module '@deepseek-ai/dsh-session/types' {
+  interface SessionEventMap {
+    'hivemind/session-owner': SessionOwner
+    'hivemind/task-memory-pending': TaskMemoryRecord
+    'hivemind/task-memory-recorded': { idempotencyKey: string; memoryId: string; turn: number }
+  }
+}
+
+/** First owner wins even if a later selection or malformed reassignment exists. */
+export function sessionOwner(events: readonly SessionEvent[]): SessionOwner | undefined {
+  return events.find(event => event.type === 'hivemind/session-owner')?.data
+}
+
+/** Pending durable records are an outbox; successful receipts suppress replay. */
+export function pendingTaskMemories(events: readonly SessionEvent[]): TaskMemoryRecord[] {
+  const saved = new Set(events.filter(event => event.type === 'hivemind/task-memory-recorded').map(event => event.data.idempotencyKey))
+  return events.flatMap(event => event.type === 'hivemind/task-memory-pending' && !saved.has(event.data.idempotency_key) ? [event.data] : [])
+}
+
+/** Record the delivered response, never infer an external action from assistant prose. */
+export function completedTaskMemory(
+  sessionId: string, owner: SessionOwner, events: readonly SessionEvent[], turn: number,
+): TaskMemoryRecord | undefined {
+  const end = events.findLast(event => event.type === 'turn/end' && event.data.turn === turn)
+  const start = events.findLast(event => event.type === 'turn/start' && event.data.turn === turn)
+  if (end?.type !== 'turn/end' || end.data.reason.kind !== 'completed' || start === undefined) return undefined
+  const within = events.filter(event => event.seq > start.seq && event.seq < end.seq)
+  const requests = within.filter(event => event.type === 'user/message' && (event.data.source.kind === 'user' || String(event.data.source.kind) === 'schedule'))
+  const request = requests.map(event => event.type === 'user/message' ? event.data.content.filter(block => block.type === 'text').map(block => block.text).join('\n') : '').join('\n').trim()
+  const answer = within.findLast(event => event.type === 'assistant/message' && event.data.turn === turn && !event.data.interrupted && event.data.message.content.some(block => block.type === 'text' && block.text.trim() !== ''))
+  if (request === '' || answer?.type !== 'assistant/message') return undefined
+  const delivered = answer.data.message.content.filter(block => block.type === 'text').map(block => block.text).join('\n').trim()
+  const calls = new Map(within.filter(event => event.type === 'tool/call').map(event => [String(event.data.callId), event.data.name]))
+  const toolReceipts = within.filter(event => event.type === 'tool/result').flatMap((event) => {
+    if (event.type !== 'tool/result') return []
+    const block = event.data.message.content[0]
+    const callId = String(block.toolCallId)
+    const name = calls.get(callId)
+    return name === undefined ? [] : [{
+      name: name.slice(0, 100), callId: callId.slice(0, 100), resultSeq: Number(event.seq), isError: block.isError === true,
+    }]
+  }).slice(-16)
+  const idempotencyKey = `dsh-task:${sessionId}:${turn}:${end.seq}`
+  const hash = createHash('sha256').update(idempotencyKey).digest('hex')
+  const runId = `${hash.slice(0, 8)}-${hash.slice(8, 12)}-5${hash.slice(13, 16)}-a${hash.slice(17, 20)}-${hash.slice(20, 32)}`
+  return {
+    action: 'record_task', agent_slug: owner.slug,
+    title: `Completed response: ${request}`.slice(0, 180),
+    summary: `User requested: ${request.slice(0, 600)}\nDelivered response: ${delivered.slice(0, 1500)}\nEvidence: session ${sessionId}, turn ${turn}, response seq ${answer.seq}. This records response completion; external actions require their own successful tool receipts.`.slice(0, 2400),
+    idempotency_key: idempotencyKey, run_id: runId,
+    context: {
+      source: 'dsh-turn', completionScope: 'response', sessionId, turn, ownerName: owner.name.slice(0, 180),
+      requestedAt: new Date(requests[0]?.time ?? start.time).toISOString(), completedAt: new Date(end.time).toISOString(),
+      requestSeqs: requests.slice(-64).map(event => Number(event.seq)),
+      responseSeq: Number(answer.seq), completionSeq: Number(end.seq), toolReceipts,
+    },
+  }
+}

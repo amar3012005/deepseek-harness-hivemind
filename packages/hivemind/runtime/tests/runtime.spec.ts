@@ -15,6 +15,9 @@ import {
 interface HarnessMock {
   tools: Map<string, ToolDefinition>
   identity?: (signal: AbortSignal) => Promise<{ userId: string; orgId: string }>
+  turnEnded?: (payload: unknown) => Promise<void>
+  flush: ReturnType<typeof vi.fn>
+  dispose: () => Promise<void>
   preStep?: (payload: unknown, next: () => Promise<unknown>) => Promise<unknown>
   inboxInserted?: (payload: { agent: Agent; message: UserMessage }) => void
   turnStopping?: (payload: { agent: Agent }) => void
@@ -27,6 +30,7 @@ interface HarnessMock {
   spills: Array<{ suggestedName: string; content: string }>
 }
 
+const disposals: Array<() => Promise<void>> = []
 const roots: string[] = []
 const signal = new AbortController().signal
 const agent = {
@@ -38,6 +42,7 @@ const agent = {
 } as unknown as Agent
 
 afterEach(async () => {
+  await Promise.all(disposals.splice(0).map(dispose => dispose()))
   vi.useRealTimers()
   delete process.env.TEST_HIVE_RUNNER_SECRET
   vi.restoreAllMocks()
@@ -85,14 +90,23 @@ function mount(pluginConfig: Config, withSpill = false): HarnessMock {
     invocation?: { modelInvocable: boolean; userInvocable: boolean }
   }>()
   const spills: Array<{ suggestedName: string; content: string }> = []
-  const harness: HarnessMock = { tools, skills, spills }
+  const cleanups: Array<() => unknown> = []
+  const harness: HarnessMock = {
+    tools, skills, spills, flush: vi.fn(async () => {}),
+    dispose: async () => { await Promise.all(cleanups.map(cleanup => cleanup())) },
+  }
+  disposals.push(harness.dispose)
   const ctx = {
     inject() { return undefined },
     provide() { return undefined },
     effect(callback: () => (() => void) | undefined) {
-      return callback()
+      const cleanup = callback()
+      if (typeof cleanup === 'function') cleanups.push(cleanup)
+      return cleanup
     },
+    sessions: { flush: harness.flush },
     on(event: string, listener: (payload: unknown, next: () => Promise<unknown>) => Promise<unknown>) {
+      if (event === 'agent/turn-ended') harness.turnEnded = listener as unknown as NonNullable<HarnessMock['turnEnded']>
       if (event === 'agent/pre-step') harness.preStep = listener
       if (event === 'agent/inbox/inserted') {
         harness.inboxInserted = listener as unknown as NonNullable<HarnessMock['inboxInserted']>
@@ -134,6 +148,7 @@ function mount(pluginConfig: Config, withSpill = false): HarnessMock {
       return () => { delete harness.identity }
     } },
     hivemindExecutionScope: {
+      run: (_principal: unknown, callback: () => unknown) => callback(),
       require: () => ({
         userId: '54f5568b-4d6a-4ae1-9a33-48cb2909d59b',
         orgId: '67503d34-97e9-49a8-8c52-8ee30cc7603e',
@@ -335,11 +350,12 @@ describe('HIVE-MIND runtime', () => {
     }
     expect(next).toHaveBeenCalledOnce()
     expect(decision.startsRequestSeries).toBeUndefined()
-    expect(decision.messages).toHaveLength(2)
+    expect(decision.messages).toHaveLength(3)
+    expect(textOfForTest(decision.messages[1] as UserMessage)).toContain('Reply language for this turn: en')
     expect(textOfForTest(decision.messages[0] as UserMessage)).toContain('Authenticated HIVE-MIND profile brief')
     expect(textOfForTest(decision.messages[0] as UserMessage)).toContain('User profile version: 7')
     expect(textOfForTest(decision.messages[0] as UserMessage)).toContain('Organization profile version: 12')
-    expect(textOfForTest(decision.messages[1] as UserMessage)).toBe('hello')
+    expect(textOfForTest(decision.messages[2] as UserMessage)).toBe('hello')
   })
 
   it('keeps the compact profile brief bounded before a current mailbox request', async () => {
@@ -358,9 +374,10 @@ describe('HIVE-MIND runtime', () => {
     })) as { messages: UserMessage[]; startsRequestSeries?: true }
 
     expect(decision.startsRequestSeries).toBeUndefined()
-    expect(decision.messages).toHaveLength(2)
+    expect(decision.messages).toHaveLength(3)
+    expect(textOfForTest(decision.messages[1] as UserMessage)).toContain('Reply language for this turn: en')
     expect(textOfForTest(decision.messages[0] as UserMessage).length).toBeLessThanOrEqual(500)
-    expect(textOfForTest(decision.messages[1] as UserMessage)).toBe('When was the last email from Uwe?')
+    expect(textOfForTest(decision.messages[2] as UserMessage)).toBe('When was the last email from Uwe?')
   })
 
   it('answers an identity request from the compact brief without loading a skill', async () => {
@@ -387,10 +404,11 @@ describe('HIVE-MIND runtime', () => {
       messages: UserMessage[]
     }
 
-    expect(decision.messages).toHaveLength(2)
+    expect(decision.messages).toHaveLength(3)
+    expect(textOfForTest(decision.messages[1] as UserMessage)).toContain('Reply language for this turn: en')
     expect(textOfForTest(decision.messages[0] as UserMessage)).toContain('User: Amar')
     expect(textOfForTest(decision.messages[0] as UserMessage)).toContain('Role: Founder')
-    expect(textOfForTest(decision.messages[1] as UserMessage)).toBe('What do u know about me?')
+    expect(textOfForTest(decision.messages[2] as UserMessage)).toBe('What do u know about me?')
     expect(harness.skills.get('hivemind-company-brain')).toMatchObject({
       invocation: { modelInvocable: true, userInvocable: true },
     })
@@ -1109,4 +1127,46 @@ describe('HIVE-MIND runtime', () => {
     }
   })
 
+})
+
+
+describe('HyperAgents durable employee ownership and completion outbox', () => {
+  it('pins an authenticated employee, rejects wrong authors, and retries the same completed record once', async () => {
+    process.env.TEST_HIVE_RUNNER_SECRET = 'runner-service-secret-that-is-at-least-32-bytes'
+    const profile = { id: 'elena', slug: 'elena', name: 'Elena', role_archetype: 'strategist', persona: 'Market strategist' }
+    const packets: Record<string, unknown>[] = []
+    let unavailable = true
+    vi.stubGlobal('fetch', vi.fn(async (url: string, init: RequestInit) => {
+      if (String(url).endsWith('/v1/hyperagents/profiles')) return jsonResponse({ ok: true, contract: 'hivemind.hyperagent-profiles.v1', profiles: [profile], count: 1 })
+      const packet = JSON.parse(String(init.body)) as Record<string, unknown>
+      packets.push(packet)
+      if (unavailable) return jsonResponse({ error: 'unavailable' }, 503)
+      return jsonResponse({ ok: true, memory: { id: 'saved-memory', status: 'completed', agentSlug: 'elena' } })
+    }))
+    const harness = mount({ ...config('unused'), authorityMode: 'scoped-service', privateMemoryEnabled: true, serviceApiBase: 'http://control.test', serviceHttpOrigins: ['http://control.test'], serviceSecretEnv: 'TEST_HIVE_RUNNER_SECRET' })
+    const events = [{ seq: 0, time: 1000, type: 'hivemind/employee-selection', data: { id: 'elena', name: 'Elena', role: 'strategist' } }, { seq: 1, time: 1001, type: 'turn/start', data: { turn: 1 } }] as unknown as SessionEvent[]
+    const subject = { id: 'session-d292efdd-4b56-4053-b61c-9cd63a7cd8ff', session: { snapshotEvents: () => events, append: (type: string, data: unknown) => { events.push({ seq: events.length, time: 1000 + events.length, type, data } as SessionEvent) } } } as unknown as Agent
+    const enter = async () => ({ kind: 'enter' as const, messages: [] })
+    await harness.preStep?.({ agent: subject, turn: 1, signal }, enter)
+    const owner = events.find(event => event.type === 'hivemind/session-owner')
+    expect(owner?.data).toMatchObject({ slug: 'elena', persona: 'Market strategist' })
+    subject.session.append('hivemind/employee-selection', { id: null })
+    await harness.preStep?.({ agent: subject, turn: 1, signal }, enter)
+    expect(events.filter(event => event.type === 'hivemind/session-owner')).toHaveLength(1)
+    await expect(tool(harness, 'hyperagents_memory').execute({ action: 'save', agent_slug: 'ravi', kind: 'learning', title: 'Wrong author', summary: 'Wrong author', idempotency_key: 'wrong' }, execContext(subject))).rejects.toThrow('persistent session owner')
+    subject.session.append('user/message', user('Create a campaign blueprint'), { surfaceOp: 'append' })
+    subject.session.append('assistant/message', { turn: 1, step: 1, stream: [], message: createAssistantMessage({ content: [{ type: 'text', text: 'Campaign blueprint delivered.' }], source: { model: 'test' } as never }) }, { surfaceOp: 'append' })
+    subject.session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+    await harness.turnEnded?.({ agent: subject, turn: 1, reason: { kind: 'completed' }, signal })
+    expect(events.filter(event => event.type === 'hivemind/task-memory-pending')).toHaveLength(1)
+    expect(events.some(event => event.type === 'hivemind/task-memory-recorded')).toBe(false)
+    unavailable = false
+    await harness.preStep?.({ agent: subject, turn: 2, signal }, enter)
+    expect(packets).toHaveLength(2)
+    expect(packets[1]).toEqual(packets[0])
+    expect(events.filter(event => event.type === 'hivemind/task-memory-recorded')).toHaveLength(1)
+    await harness.preStep?.({ agent: subject, turn: 2, signal }, enter)
+    expect(packets).toHaveLength(2)
+    expect(harness.flush).toHaveBeenCalled()
+  })
 })

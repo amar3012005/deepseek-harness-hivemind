@@ -40,6 +40,14 @@ function mount(
 }
 
 describe('HIVE progressive context', () => {
+  it('retains persistent ownership instructions alongside the initial company brief', async () => {
+    const harness = mount([], async () => 'Company brief', () => 'You are Elena, persistent owner')
+    const result = await harness.preStep({ agent: harness.agent, turn: 1, signal: new AbortController().signal } as never, async () => ({ kind: 'enter' as const, messages: [user('Create blueprint')] })) as { messages: ReturnType<typeof user>[] }
+    const text = result.messages.flatMap(message => message.content.flatMap(block => block.type === 'text' ? [block.text] : [])).join('\n')
+    expect(text).toContain('Company brief')
+    expect(text).toContain('You are Elena, persistent owner')
+  })
+
   it('re-reads the authoritative turn instruction on every new turn', async () => {
     let language = 'en'
     const harness = mount([], undefined, () => `Reply language: ${language}`)

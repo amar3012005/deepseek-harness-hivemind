@@ -122,7 +122,7 @@ export function contextPlugin(config: ContextConfig): Plugin.Object<void> {
         if (first && config.profileBrief !== undefined && needsProfileBrief(withoutCatalog, turn)) {
           try {
             const brief = await config.profileBrief(agent, signal, turn)
-            if (brief !== undefined && brief.trim() !== '') messages = [profileMessage(brief), ...withoutCatalog]
+            if (brief !== undefined && brief.trim() !== '') messages = [profileMessage(brief), ...messages]
           } catch {
             // The explicit HIVE meta operation owns typed retrieval failures. A
             // missing optional brief must not prevent the user's turn.

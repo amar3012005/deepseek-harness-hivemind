@@ -26,6 +26,8 @@ describe('HyperAgents Preview mount', () => {
     }
     render(<HyperagentPanelToggle {...(props as unknown as Parameters<typeof HyperagentPanelToggle>[0])} />)
     await waitFor(() => expect(closePreview).toHaveBeenCalledTimes(2))
-    expect(document.querySelector('[class*="environmentDock"]')).not.toBeNull()
+    // Without a mounted conversation boundary the card cannot be positioned,
+    // but its integrated environment control must remain available.
+    expect(document.querySelector('[aria-label="employee.environment"]')).not.toBeNull()
   })
 })

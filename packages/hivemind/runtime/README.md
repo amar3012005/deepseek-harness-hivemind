@@ -68,3 +68,26 @@ The stable system contract and registered tool roster remain reusable. Profile e
 - The integration is read-only: employee execution and connected-application actions remain separate capabilities.
 - Browser authentication uses local ICARUS configuration and is not a hosted multi-tenant credential service.
 - Progressive recall pagination beyond the first top-five result set is deferred.
+
+## Persistent HyperAgents session ownership and task memory
+
+With `privateMemoryEnabled`, the first admitted turn pins the chosen directory
+employee (or Team Lead `lead`) in `hivemind/session-owner`. Native employee
+selection is locked after that point. Every turn receives the same owner
+instruction; specialist skills do not replace the employee identity.
+
+Completed user and scheduled responses create a durable
+`hivemind/task-memory-pending` outbox entry. The signed transport records a private
+`task_status/completed` memory with request, delivered answer, author, timestamps,
+session/turn references and bounded tool receipt references. Completion means the
+response was delivered; external actions still need successful tool receipts.
+Successful receipts append `hivemind/task-memory-recorded`. Deterministic keys
+prevent duplicates across retries/recovery; failed writes stay queued and retry
+while active or on authenticated restoration. Manual memory saves cannot change
+the session author or write runtime status. Recall can filter any employee within
+the authenticated organization. Company HIVEMIND memory remains separate.
+
+Implementation: `src/continuity.ts` builds response receipts and projects the
+outbox; `src/index.ts` owns Cordis lifecycle hooks, authenticated dispatch and
+retries. The native employee picker projects the durable owner event. Swarm mode
+is a separate future feature.
