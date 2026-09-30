@@ -13,7 +13,8 @@ export interface HqControlInjected {
   readonly load: (sessionId: SessionId) => Promise<RemoteResult<HqModeState>>
   readonly setMode: (sessionId: SessionId, request: HqModeUpdate) => Promise<RemoteResult<HqModeUpdateResult>>
 }
-export type HqControlActionProps = PropsRuntime<'conversation.session.header.actions'> & PropsLocale<'hivemind.hq'> & HqControlInjected
+export type HqControlActionProps = Pick<PropsRuntime<'conversation.session.header.actions'>, 'sessionId'>
+  & PropsLocale<'hivemind.hq'> & HqControlInjected
 
 /**
  * Render one compare-and-set control and surface uncertain or conflicting writes.
