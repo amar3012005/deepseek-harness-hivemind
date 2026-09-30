@@ -296,6 +296,7 @@ export class TeamRoster {
         request: {
           prompt: request.prompt,
           parent: root,
+          ...(request.persona === undefined ? {} : { persona: request.persona }),
         },
         signal,
       })

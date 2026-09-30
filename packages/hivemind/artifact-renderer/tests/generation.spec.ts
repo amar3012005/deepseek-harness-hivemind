@@ -2,11 +2,18 @@ import { describe, expect, it } from 'vitest'
 import ExcelJS from 'exceljs'
 import type { ToolDefinition } from '@deepseek-ai/dsh-tools'
 import { GenerationRegistry, registerGenerationTools } from '../src/generation.ts'
-import { presentationProvider, spreadsheetProvider, webProvider } from '../src/office-providers.ts'
+import { markdownReportProvider, presentationProvider, spreadsheetProvider, webProvider } from '../src/office-providers.ts'
 
 const request = (content: string) => ({ title: 'Company validation', content, cwd: '/tmp', signal: new AbortController().signal })
 
 describe('generation providers', () => {
+  it('preserves the finished Markdown report without synthesis or format substitution', async () => {
+    const markdown = '# Verified brief\n\nDecision: research public sources only.\n\nSource: https://example.com/'
+    const file = await markdownReportProvider.generate(request(markdown))
+    expect(file.extension).toBe('md')
+    expect(file.mediaType).toBe('text/markdown')
+    expect(new TextDecoder().decode(file.data)).toBe(markdown)
+  })
   it('routes a known self-contained web request directly to generation', () => {
     const tools = new Map<string, ToolDefinition>()
     const ctx = {

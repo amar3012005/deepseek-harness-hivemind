@@ -1,5 +1,5 @@
 /** Host-wide durable reminders and shared human/model management. */
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { AsyncLocalStorage } from 'node:async_hooks'
 import type { ScheduleBackend, ScheduleTaskTable } from './backend.ts'
 export type { ScheduleBackend, ScheduleTaskTable } from './backend.ts'
@@ -51,6 +51,7 @@ export {
   foldScheduleEvents,
   isRecurringScheduleRecord,
   normalizeWeekdays,
+  parseAtInput,
   parseCronInput,
   parseWeeklyInput,
   renderReminderFraming,
@@ -280,13 +281,34 @@ export class ScheduleService extends TypertRemoteService {
    * @returns The durably stored schedule. Cancellation does not roll back an in-flight write.
    */
   async create(sessionId: SessionId, request: ScheduleCreateRequest, signal?: AbortSignal): Promise<ScheduleRecord> {
+    return this.createRecord(sessionId, request, signal)
+  }
+
+  /**
+   * Ensure one Host-owned wake without duplicating it when its owning action replays.
+   * @param sessionId - native owner; authorization remains with the storage backend.
+   * @param key - non-empty bounded Host action identity, scoped to this Session.
+   * @param request - the native creation selector; first committed timing wins.
+   * @param signal - cancellation before persistence.
+   * @returns original committed record, including inactive delivered records.
+   */
+  async ensure(sessionId: SessionId, key: string, request: ScheduleCreateRequest, signal?: AbortSignal): Promise<ScheduleRecord> {
+    if (typeof key !== 'string' || !key.length || key.length > 180) throw new Error('schedule_invalid_ensure_key')
+    const id = ScheduleId(`schedule-${createHash('sha256').update(`${sessionId}\0${key}`).digest('hex')}`)
+    return this.createRecord(sessionId, request, signal, id)
+  }
+
+  /** Share the native creation path; only Host ensure supplies a deterministic identity. */
+  private async createRecord(
+    sessionId: SessionId, request: ScheduleCreateRequest, signal?: AbortSignal, stableId?: ScheduleRecord['id'],
+  ): Promise<ScheduleRecord> {
     if (Number(request.at !== undefined) + Number(request.after_seconds !== undefined)
       + Number(request.every_seconds !== undefined) + Number(request.daily !== undefined)
       + Number(request.weekly !== undefined) + Number(request.cron !== undefined) > 1) {
       throw new ScheduleInputError('invalid_selector', 'Exactly one reminder selector is required.')
     }
     const title = scheduleTitle(request.title)
-    const id = ScheduleId(`schedule-${randomUUID()}`)
+    const id = stableId ?? ScheduleId(`schedule-${randomUUID()}`)
     const now = Date.now()
     let record: ScheduleRecord
     if (request.at !== undefined) {
@@ -313,6 +335,14 @@ export class ScheduleService extends TypertRemoteService {
     return this.access(async () => {
       const tasks = await this.tasks()
       signal?.throwIfAborted()
+      const existing = stableId === undefined ? undefined : tasks.get(id)
+      if (existing !== undefined) {
+        if (existing.sessionId !== sessionId || existing.record.prompt !== record.prompt
+          || existing.record.title !== record.title || existing.record.kind !== record.kind) {
+          throw new Error('schedule_ensure_key_conflict')
+        }
+        return existing.record
+      }
       await tasks.put(id, {
         sessionId, record, status: 'active', deliveryHistory: { records: [], earlierRecordsUnavailable: false },
       })

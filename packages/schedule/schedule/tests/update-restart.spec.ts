@@ -32,6 +32,28 @@ async function setup(root: string, task?: ScheduleTask) {
   })
 }
 
+it('retains one Host wake across concurrent ensure, restart, and completed delivery state', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'dsh-schedule-ensure-'))
+  roots.push(root)
+  const first = await setup(root)
+  const sessionId = SessionId('hq-owner')
+  const request = { prompt: 'Review approved work', title: 'HQ wake', after_seconds: 60 }
+  const [a, b] = await Promise.all([
+    first.service.ensure(sessionId, 'enable-1', request), first.service.ensure(sessionId, 'enable-1', request),
+  ])
+  expect(a).toEqual(b)
+  expect(await first.service.catalog()).toHaveLength(1)
+  await first.ctx.fiber.dispose()
+  vi.setSystemTime(new Date('2026-09-16T00:10:00Z'))
+  // Restore the canonical terminal value through the real domain backend.
+  const second = await setup(root, { sessionId, record: a, status: 'inactive' })
+  expect(await second.service.ensure(sessionId, 'enable-1', request)).toEqual(a)
+  expect(await second.service.catalog()).toEqual([{ ...a, sessionId, status: 'inactive' }])
+  await expect(second.service.ensure(sessionId, 'enable-1', { ...request, prompt: 'Different work' }))
+    .rejects.toThrow('schedule_ensure_key_conflict')
+  expect((await second.service.ensure(SessionId('other-owner'), 'enable-1', request)).id).not.toBe(a.id)
+})
+
 it.each([true, false])('persists same-ID daily edits with saved history=%s without Session activation', async (withHistory) => {
   const root = await mkdtemp(join(tmpdir(), 'dsh-schedule-update-'))
   roots.push(root)

@@ -1,0 +1,58 @@
+{
+  "extends": "../../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "lib/types",
+    "tsBuildInfoFile": "lib/tsconfig.tsbuildinfo"
+  },
+  "include": [
+    "src/**/*.ts"
+  ],
+  "references": [
+    {
+      "path": "../../../vendor/cordis"
+    },
+    {
+      "path": "../../core/agent"
+    },
+    {
+      "path": "../../llm/llm"
+    },
+    {
+      "path": "../../core/session"
+    },
+    {
+      "path": "../../core/tools"
+    },
+    {
+      "path": "../../util/values"
+    },
+    {
+      "path": "../../experimental/agent-team"
+    },
+    {
+      "path": "../../schedule/schedule"
+    },
+    {
+      "path": "../../preset/agent-presets"
+    },
+    {
+      "path": "../../session/session-persistence"
+    },
+    {
+      "path": "../../typert/protocol"
+    },
+    {
+      "path": "../execution-scope"
+    },
+    {
+      "path": "../employee-directory"
+    },
+    {
+      "path": "../employee-delegation"
+    },
+    {
+      "path": "../../todo/tool-todo"
+    }
+  ]
+}

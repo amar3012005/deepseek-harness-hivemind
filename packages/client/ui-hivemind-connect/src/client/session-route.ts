@@ -65,7 +65,7 @@ function matchesMode(state: SessionListState, sessionId: SessionId, base: string
   if (summary.blank && base === HIVE_EMPLOYEE_HARNESS_PATH && sessionId === state.current
     && preset === 'hivemind-chat' && summary.projectionValues?.agentPreset == null) return true
   if (summary.blank && preset == null) return true
-  const hyperagent = preset === 'hivemind-hyperagents'
+  const hyperagent = preset === 'hivemind-hyperagents' || preset === 'hivemind-hq'
     || preset === 'hyperagents' || preset === 'hyperagents-compressed'
   return base === HIVE_EMPLOYEE_HARNESS_PATH ? hyperagent : !hyperagent
 }
@@ -110,7 +110,7 @@ export function setupHivemindSessionRouting(
     if (id === creatingOsSession) {
       const summary = state.byId[id]
       const preset = summary?.projectionValues?.agentPreset ?? summary?.agentPreset
-      if (summary?.blank !== true || preset === 'hivemind-hyperagents'
+      if (summary?.blank !== true || preset === 'hivemind-hyperagents' || preset === 'hivemind-hq'
         || preset === 'hyperagents' || preset === 'hyperagents-compressed') creatingOsSession = undefined
       else if (currentBase === HIVE_EMPLOYEE_HARNESS_PATH && summary.origin !== 'subagent') return id
     }

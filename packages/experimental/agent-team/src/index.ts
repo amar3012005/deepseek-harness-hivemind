@@ -77,6 +77,8 @@ export class TeamService extends TypertRemoteService {
   private readonly roster: TeamRoster
   private readonly mailbox: TeamMailbox
   private readonly tasks: TeamTaskBoard
+  private readonly taskGuards = new Set<(caller: Agent, request: UpdateTeamTaskRequest) => string | undefined>()
+  private readonly dispatchGuards = new Set<(caller: Agent) => string | undefined>()
 
   constructor(ctx: Context, config: Config = {}) {
     super(ctx, 'agentTeams')
@@ -153,6 +155,7 @@ export class TeamService extends TypertRemoteService {
    * @returns the active roster row.
    */
   async spawnTeammate(caller: Agent, request: SpawnTeammateRequest): Promise<SpawnTeammateResult> {
+    this.requireDispatch(caller)
     return await this.roster.spawn(caller, request)
   }
 
@@ -163,6 +166,7 @@ export class TeamService extends TypertRemoteService {
    * @returns durable message identity and immediate-delivery observation.
    */
   async sendMessage(caller: Agent, request: SendTeamMessageRequest): Promise<SendTeamMessageResult> {
+    this.requireDispatch(caller)
     return await this.mailbox.send(caller, request)
   }
 
@@ -202,7 +206,40 @@ export class TeamService extends TypertRemoteService {
    * @returns the committed next task revision.
    */
   async updateTask(caller: Agent, request: UpdateTeamTaskRequest): Promise<TeamTaskView> {
+    if (request.action === 'claim' || request.action === 'reassign') this.requireDispatch(caller)
+    for (const guard of this.taskGuards) {
+      const reason = guard(caller, request)
+      if (reason !== undefined) throw new TeamError(reason, 'TEAM_TASK_POLICY_DENIED')
+    }
     return await this.tasks.update(caller, this.roster.membership(caller), request)
+  }
+
+  /**
+   * Register a monotonic task policy applied to tool, Remote, and service callers.
+   * @param guard - returns a denial reason or leaves native authorization unchanged.
+   * @returns disposer removing this exact policy registration.
+   */
+  guardTaskUpdates(guard: (caller: Agent, request: UpdateTeamTaskRequest) => string | undefined): () => void {
+    this.taskGuards.add(guard)
+    return () => { this.taskGuards.delete(guard) }
+  }
+
+  /**
+   * Register a monotonic dispatch policy for new work and cold mailbox recovery.
+   * @param guard - denial reason or no change to native authorization.
+   * @returns disposer removing this exact policy.
+   */
+  guardDispatch(guard: (caller: Agent) => string | undefined): () => void {
+    this.dispatchGuards.add(guard)
+    return () => { this.dispatchGuards.delete(guard) }
+  }
+
+  /** Assert admission before dispatching or recovering runnable Team work. */
+  private requireDispatch(caller: Agent): void {
+    for (const guard of this.dispatchGuards) {
+      const reason = guard(caller)
+      if (reason !== undefined) throw new TeamError(reason, 'TEAM_DISPATCH_POLICY_DENIED')
+    }
   }
 
   /**
@@ -300,6 +337,8 @@ export class TeamService extends TypertRemoteService {
 
   /** Reconcile roster provisioning before retrying that member's pending mailbox. */
   private async recoverFor(agent: Agent): Promise<void> {
+    // Paused Teams retain durable work without waking a child or consuming mail.
+    for (const guard of this.dispatchGuards) if (guard(agent) !== undefined) return
     await this.roster.recoverFor(agent, this.lifecycle.signal)
     await this.mailbox.recoverFor(agent, this.lifecycle.signal)
   }

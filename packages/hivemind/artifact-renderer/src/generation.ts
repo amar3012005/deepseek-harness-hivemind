@@ -8,7 +8,7 @@ import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { DesignProfile, DesignQuality } from './design-kit.ts'
 
 /** Formats accepted by the compact generation consumer. */
-export type GenerationFormat = 'pdf' | 'presentation' | 'spreadsheet' | 'web' | 'image' | 'video'
+export type GenerationFormat = 'markdown_report' | 'pdf' | 'presentation' | 'spreadsheet' | 'web' | 'image' | 'video'
 /** Inputs already prepared by the parent runtime, without another planning model. */
 export interface GenerationRequest {
   readonly title: string
@@ -176,9 +176,9 @@ export function registerGenerationTools(
   })))
   ctx.effect(() => ctx.tools.register(defineTool({
     name: 'hivemind_generate',
-    description: 'Create a finished PDF, presentation, spreadsheet, or web file using a configured generator. For format "web", provide complete self-contained HTML directly; generator discovery is unnecessary. Image and video must use hivemind_media_generate so their long-running lifecycle is tracked. Returns a stored artifact, not a published campaign or sent message.',
+    description: 'Create a finished Markdown report, PDF, presentation, spreadsheet, or web file using a configured generator. For format "web", provide complete self-contained HTML directly; generator discovery is unnecessary. Image and video must use hivemind_media_generate so their long-running lifecycle is tracked. Returns a stored artifact, not a published campaign or sent message.',
     parameters: {
-      format: { type: 'string', required: true, enum: ['pdf', 'presentation', 'spreadsheet', 'web'] },
+      format: { type: 'string', required: true, enum: ['markdown_report', 'pdf', 'presentation', 'spreadsheet', 'web'] },
       title: { type: 'string', required: true },
       content: { type: 'string', required: true, description: 'For web, complete self-contained HTML. For another known format, provide that generator’s source content. Use discovery only when the representation is unknown.' },
       design_profile: { type: 'string', enum: ['executive', 'editorial', 'campaign', 'product', 'data'], description: 'Optional HIVE visual baseline. Use campaign for marketing, executive for leadership documents, product for product UI, data for KPI dashboards, and editorial for narrative reports. It is applied locally and recorded in the durable receipt; it never opens an external design app.' },

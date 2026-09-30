@@ -132,7 +132,7 @@ export function apply(ctx: ClientContext): void {
         if (window.location.pathname.startsWith('/hivemind/app/employee/harness/')
           && id !== undefined && session?.blank && id !== autoPresetSessionId) {
           autoPresetSessionId = id
-          if (session.projectionValues?.agentPreset !== 'hivemind-hyperagents') seat.stage('hivemind-hyperagents')
+          if (!['hivemind-hyperagents', 'hivemind-hq'].includes(session.projectionValues?.agentPreset ?? session.agentPreset ?? '')) seat.stage('hivemind-hyperagents')
         }
         void seat.apply()
       }

@@ -95,7 +95,7 @@ export default class PostgresScheduleBackend extends Service implements Schedule
     let preset = agent.session.header.agentPreset
     for (const event of agent.session.ownEvents())
       if (event.type === 'agent-preset/selected') preset = event.data.agentPreset
-    return preset === 'hivemind-hyperagents' || preset === 'hivemind-chat'
+    return preset === 'hivemind-hyperagents' || preset === 'hivemind-chat' || preset === 'hivemind-hq'
   }
   start(wake: () => void): () => void {
     const initial = setTimeout(wake, 0)
@@ -172,7 +172,7 @@ export default class PostgresScheduleBackend extends Service implements Schedule
           )
           const session = bound.rows[0]
           if (session === undefined || session.status !== 'active'
-            || (session.preset !== 'hivemind-hyperagents' && session.preset !== 'hivemind-chat')) {
+            || (session.preset !== 'hivemind-hyperagents' && session.preset !== 'hivemind-chat' && session.preset !== 'hivemind-hq')) {
             await client.query(
               "UPDATE harness_scheduled_tasks SET status='inactive',updated_at=now() WHERE id=$1 AND org_id=$2 AND user_id=$3",
               [row.task_id, owner.orgId, owner.userId],
@@ -186,6 +186,26 @@ export default class PostgresScheduleBackend extends Service implements Schedule
           }
           // Leave an owned session due for its live runner. A non-owner must not
           // keep moving the retry deadline before the owning replica can poll it.
+          if (session.preset === 'hivemind-hq') {
+            const mode = await client.query<{ enabled: boolean | null }>(
+              `SELECT (payload->'data'->>'enabled')::boolean AND EXISTS (
+                 SELECT 1 FROM harness_company_hq WHERE org_id=$2 AND user_id=$3 AND session_id=$1
+               ) AS enabled FROM harness_session_events
+               WHERE session_id=$1 AND org_id=$2 AND user_id=$3 AND event_type='hivemind/hq-mode'
+               ORDER BY sequence DESC LIMIT 1`,
+              [session.id, owner.orgId, owner.userId],
+            )
+            if (mode.rows[0]?.enabled !== true) {
+              // Keep the task and original occurrence. Moving only the scan index
+              // avoids paused HQ tasks starving other companies' due work.
+              await client.query(
+                `UPDATE harness_scheduled_due SET due_at=now()+($4::int * interval '1 millisecond')
+                 WHERE task_id=$1 AND org_id=$2 AND user_id=$3`,
+                [row.task_id, owner.orgId, owner.userId, this.config.retryIntervalMs],
+              )
+              return
+            }
+          }
           if (this.ctx.agents.get(SessionId(session.id)) === undefined) {
             const owned = await client.query(
               `SELECT 1 FROM harness_session_leases WHERE session_id=$1 AND org_id=$2 AND user_id=$3
@@ -276,7 +296,7 @@ export default class PostgresScheduleBackend extends Service implements Schedule
       `SELECT t.* FROM harness_scheduled_tasks t JOIN harness_sessions s
       ON s.id=t.session_id AND s.org_id=t.org_id AND s.user_id=t.user_id
       WHERE t.org_id=$1 AND t.user_id=$2 AND ($3::text IS NULL OR t.session_id=$3)
-      AND ${currentPreset} IN ('hivemind-hyperagents','hivemind-chat') ORDER BY t.created_at,t.id`,
+      AND ${currentPreset} IN ('hivemind-hyperagents','hivemind-chat','hivemind-hq') ORDER BY t.created_at,t.id`,
       [owner.orgId, owner.userId, sessionId ?? null],
     )
     const tasks = new Map<ScheduleId, ScheduleTask>(
@@ -304,7 +324,7 @@ export default class PostgresScheduleBackend extends Service implements Schedule
           throw new Error('Schedule session cannot change')
         const authorized = await client.query(
           `SELECT 1 FROM harness_sessions s WHERE s.id=$1 AND s.org_id=$2 AND s.user_id=$3
-          AND s.status='active' AND ${currentPreset} IN ('hivemind-hyperagents','hivemind-chat')`,
+          AND s.status='active' AND ${currentPreset} IN ('hivemind-hyperagents','hivemind-chat','hivemind-hq')`,
           [task.sessionId, owner.orgId, owner.userId],
         )
         if (authorized.rowCount !== 1) throw new Error('Schedule requires an owned HIVE session')

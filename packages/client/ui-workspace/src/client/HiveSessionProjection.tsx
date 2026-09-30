@@ -57,7 +57,7 @@ export function HiveSessionProjection({
       const preset = row.id === list.current
         ? summary?.projectionValues?.agentPreset ?? summary?.agentPreset
         : summary?.agentPreset ?? summary?.projectionValues?.agentPreset
-      const isHyperagent = preset === 'hivemind-hyperagents'
+      const isHyperagent = preset === 'hivemind-hyperagents' || preset === 'hivemind-hq'
         || preset === 'hyperagents' || preset === 'hyperagents-compressed'
       return hyperagentRoute ? isHyperagent : !isHyperagent
     }),
