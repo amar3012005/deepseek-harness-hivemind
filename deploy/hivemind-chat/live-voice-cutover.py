@@ -48,7 +48,8 @@ with os.fdopen(fd, 'w') as stream:
     json.dump(record, stream)
 os.chown(private_input, 1000, 1000)
 try:
-    code = """import fs from 'node:fs'; import {parseDocument} from 'yaml';
+    code = """import fs from 'node:fs'; import {createRequire} from 'node:module';
+const {parseDocument}=createRequire('/opt/deepseek-harness/packages/credentials/credentials-local/package.json')('yaml');
 const p='/credentials/.credentials.yaml'; const d=parseDocument(fs.readFileSync(p,'utf8'));
 if(d.errors.length) throw Error('Invalid credential document');
 if(!d.has('records'))d.set('records',{});
