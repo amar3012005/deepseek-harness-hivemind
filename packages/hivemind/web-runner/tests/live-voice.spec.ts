@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { Config } from '../src/index.ts'
-import { codexAccountId, voiceContextChunks, voiceSession, VOICE_INSTRUCTIONS } from '../src/live-voice.ts'
+import { codexAccountId, voiceContextChunks, voiceSession, VOICE_INSTRUCTIONS, VOICE_TASK_INSTRUCTIONS } from '../src/live-voice.ts'
 
 describe('HIVEMIND live voice configuration', () => {
   it('uses native client delegation and keeps authenticated context separate from instructions', () => {
@@ -10,6 +10,8 @@ describe('HIVEMIND live voice configuration', () => {
     })
     expect(VOICE_INSTRUCTIONS).toContain('confirmed backend receipt')
     expect(VOICE_INSTRUCTIONS).toContain('HyperAgent memory is private operating experience')
+    expect(VOICE_TASK_INSTRUCTIONS).toContain('{"operation":"recall","recall":{"query":"the user question","limit":1}}')
+    expect(VOICE_TASK_INSTRUCTIONS).toContain('Keep existing authorization and approval rules')
   })
   it('bounds multibyte protocol appends without losing text', () => {
     const text = '🌙中文'.repeat(300)
