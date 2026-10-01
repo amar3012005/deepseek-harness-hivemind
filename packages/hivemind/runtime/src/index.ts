@@ -1370,6 +1370,14 @@ Memory contracts: read limits are integers 1–25, with exactly one nested recal
         operation_id: idempotencyKey, status: 'executing', idempotency_key: idempotencyKey,
         ...(request.scope === undefined ? {} : { destination: request.scope }),
       })
+      // Commit the operation identity before any external side effect. A
+      // runner interruption must leave enough information to reconcile it.
+      let journalCommitted = false
+      try { journalCommitted = await ctx.sessions.flush(agent.session) } catch { /* No acknowledged journal, no write. */ }
+      if (!journalCommitted) return {
+        operation: 'save', status: 'indeterminate', idempotency_key: idempotencyKey,
+        error_code: 'MEMORY_SAVE_JOURNAL_UNAVAILABLE', retry_safe: false,
+      }
       const payload = {
         title: request.title,
         content: request.content,

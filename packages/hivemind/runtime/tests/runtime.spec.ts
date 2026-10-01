@@ -94,7 +94,7 @@ function mount(pluginConfig: Config, withSpill = false): HarnessMock {
   const spills: Array<{ suggestedName: string; content: string }> = []
   const cleanups: Array<() => unknown> = []
   const harness: HarnessMock = {
-    tools, skills, spills, flush: vi.fn(async () => {}),
+    tools, skills, spills, flush: vi.fn(async () => true),
     dispose: async () => { await Promise.all(cleanups.map(cleanup => cleanup())) },
   }
   disposals.push(harness.dispose)
@@ -716,6 +716,15 @@ describe('HIVE-MIND runtime', () => {
     const keys = vi.mocked(fetch).mock.calls.filter(([, init]) => init?.method === 'POST').map(([, init]) => JSON.parse(String(init?.body)).idempotency_key)
     expect(keys).toHaveLength(2)
     expect(keys[0]).not.toBe(keys[1])
+  })
+  it('does not write externally before its operation journal is acknowledged', async () => {
+    const path = await authorityFile()
+    profileResponses([jsonResponse({}, 404)])
+    const harness = mount(config(path))
+    harness.flush.mockResolvedValue(false)
+    const result = await harness.memory!.save(agent, { title: 'Confirmed decision', content: 'Verified outcome', sourceType: 'decision' }, signal, execContext())
+    expect(result).toMatchObject({ status: 'indeterminate', error_code: 'MEMORY_SAVE_JOURNAL_UNAVAILABLE' })
+    expect(vi.mocked(fetch).mock.calls.some(([, init]) => init?.method === 'POST')).toBe(false)
   })
 
   it('does not POST a scheduled save when an earlier interrupted write cannot be reconciled', async () => {

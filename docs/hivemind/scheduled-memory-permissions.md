@@ -14,7 +14,7 @@ Native Harness behavior shared by HIVEMIND-chat and HyperAgents.
 
 Use `{operation:"recall",recall:{query:"question",limit:25}}` or `{operation:"entities",entities:{query:"name",limit:10}}`. Limits are integers 1–25. One unambiguous duplicate read envelope is unwrapped; oversized integer read limits are capped at 25. Unknown fields, mixed envelopes, malformed values and writes retain strict validation.
 
-Scheduled company saves include the native occurrence identity in their idempotency key. Retrying the same occurrence keeps the key; separate occurrences get separate keys. Interactive keys retain their pre-upgrade format. Reconcile earlier interrupted scheduled writes through the authenticated save-status API before issuing another write. Missing recall matches do not prove that a save failed. An unavailable status endpoint returns an indeterminate result without a POST. Batch results are completed only when every item confirms a successful save.
+Every external company save first requires an acknowledged Session journal containing its operation key; a journal outage returns indeterminate without posting a write. Scheduled company saves include the native occurrence identity in their idempotency key. Retrying the same occurrence keeps the key; separate occurrences get separate keys. Interactive keys retain their pre-upgrade format. Reconcile earlier interrupted scheduled writes through the authenticated save-status API before issuing another write. Missing recall matches do not prove that a save failed. An unavailable status endpoint returns an indeterminate result without a POST. Batch results are completed only when every item confirms a successful save.
 
 ## Owners
 
@@ -26,4 +26,4 @@ Scheduled company saves include the native occurrence identity in their idempote
 
 ## Checks
 
-927 focused tests passed in Memory, Runtime, Dreamer, and Schedule packages; 14 environment-dependent tests skipped. Host and client TypeScript projects passed. The real native Schedule tool also verifies destination forwarding before activation and prevents activation when permission persistence fails. Production deployment and authenticated canary evidence are recorded separately after release.
+928 focused tests passed in Memory, Runtime, Dreamer, and Schedule packages; 14 environment-dependent tests skipped. Host and client TypeScript projects passed. The real native Schedule tool also verifies destination forwarding before activation and prevents activation when permission persistence fails. Production deployment and authenticated canary evidence are recorded separately after release.
