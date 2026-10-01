@@ -7,6 +7,7 @@ import css from './DreamingRoom.module.css'
 /** Room controls reuse the company switch and append only a future agenda. */
 export function DreamingRoom({ sessionId }: { sessionId?: string | undefined }) {
   const [open, setOpen] = useState(false)
+  const [environmentOpen, setEnvironmentOpen] = useState(true)
   const [text, setText] = useState('')
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState('')
@@ -41,15 +42,21 @@ export function DreamingRoom({ sessionId }: { sessionId?: string | undefined }) 
     finally { setBusy(false) }
   }
   return <div className={css.root} data-dreaming-room-controls>
-    <span className={css.activityButton}>🌙 Dreaming</span><DreamingSettings compact />
-    <div className={css.activity}><DreamingConnectors /><SessionCredits sessionId={sessionId} /><DreamingAutomation room />
-      <button type="button" className={css.goalButton} onClick={() => { setOpen(value => !value) }} aria-expanded={open}>Add goal for next dreams</button>
-      {open && <div className={css.agenda}><label>Agenda for future dreams<textarea maxLength={4000} value={text}
-        onChange={(event) =>{  setText(event.target.value) }} /></label>
-      <p>A suggestion for the next exploration. Saving does not start a run.</p>
-      <button type="button" disabled={busy} onClick={() => void save()}>Save agenda</button>
-      {message && <p role="status">{message}</p>}</div>}
-    </div>
+    <button className={css.environmentToggle} type="button" aria-label="Dreaming environment" aria-expanded={environmentOpen}
+      onClick={() => { setEnvironmentOpen(value => !value) }}><svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M3 5h14M3 10h14M3 15h14" stroke="currentColor" strokeWidth="1.5" /><circle cx="7" cy="5" r="2" fill="white" stroke="currentColor"/><circle cx="13" cy="10" r="2" fill="white" stroke="currentColor"/><circle cx="8" cy="15" r="2" fill="white" stroke="currentColor"/></svg></button>
+    {environmentOpen && <section className={css.environment} aria-label="Dreaming environment controls">
+      <div className={css.environmentHeading}><span className={css.dots} aria-hidden="true"><i /><i /><i /></span><span>Environment</span>
+        <button type="button" onClick={() => { setEnvironmentOpen(false) }}>Hide</button></div>
+      <div className={css.identity}><span className={css.activityButton}>🌙 Dreaming</span><DreamingSettings compact /></div>
+      <div className={css.activity}><DreamingConnectors /><SessionCredits sessionId={sessionId} /><DreamingAutomation room />
+        <button type="button" className={css.goalButton} onClick={() => { setOpen(value => !value) }} aria-expanded={open}>Add goal for next dreams</button>
+        {open && <div className={css.agenda}><label>Agenda for future dreams<textarea maxLength={4000} value={text}
+          onChange={(event) =>{  setText(event.target.value) }} /></label>
+        <p>A suggestion for the next exploration. Saving does not start a run.</p>
+        <button type="button" disabled={busy} onClick={() => void save()}>Save agenda</button>
+        {message && <p role="status">{message}</p>}</div>}
+      </div>
+    </section>}
     {message && <span role="status" className={css.status}>{message}</span>}
   </div>
 }
