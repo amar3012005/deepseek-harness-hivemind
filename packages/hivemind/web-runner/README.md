@@ -16,6 +16,8 @@ The composer waveform button starts GPT-Live over WebRTC using the server's nati
 
 Voice receives the deployment persona, a compact user/organization profile, and bounded recent conversation context. The runtime refreshes profile context on spoken user turns and before delegations. Every delegated lookup or action runs through the existing Session's agent and tools, preserving its access mode, approval rules, connector scopes, and durable receipts. Voice never creates a second Codex task agent or grants additional company-memory permissions.
 
+Ordinary conversation and general questions stay with GPT-Live. Company-memory and connected-app delegations use the exact completed user transcript, including when delegation arrives before transcription finishes; the bridge does not use the model's rewritten task. Confirmed results use the v3 `speakable` channel, while profile refreshes use `commentary` context. Missing transcripts ask the user to repeat rather than executing a guessed query.
+
 `POST /api/hivemind/voice/stop` accepts `{id}`. Ending voice or leaving the Session stops microphone tracks, closes the peer and control channel, removes event listeners, and retains completed transcripts as native context. Stopping voice leaves already accepted agent work available in the text conversation.
 
 The subscription transport is experimental. Its wire version is pinned to the Codex v3 client-delegation contract (`OpenAI-Alpha: quicksilver=v2`); voice values must be compatible with that subscription route. Changing that contract requires another actual audio/delegation probe. A successful call admission alone does not establish that audio or delegated tool execution works.

@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write packages/hivemind/web-runner/README.md
-README.md: 054034ac789a65ee2ffc44d9fce4811b996f89ba
-README.zh.md: 1023dac61b392068636468d99cc72b9c838b5b52
+README.md: 5c7c7e66878e6a1dbf3f3664392b76717461195a
+README.zh.md: f20ec1b70c264ca454aea20ffd663cfd36a21e6c

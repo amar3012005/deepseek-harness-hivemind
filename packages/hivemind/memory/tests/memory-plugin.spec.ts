@@ -5,6 +5,32 @@ import { describe, expect, it, vi } from 'vitest'
 import { memoryPlugin, saveOperationId } from '../src/index.ts'
 
 describe('hivemind-memory plugin lifecycle', () => {
+  it('omits blank optional read filters while preserving required and write validation', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SystemPrompt, {})
+    await ctx.plugin(ToolRuntime)
+    const recall = vi.fn(async () => ({ status: 'ready' }))
+    const entities = vi.fn(async () => ({ status: 'ready' }))
+    const save = vi.fn(async () => ({}))
+    const fiber = await ctx.plugin(memoryPlugin({ defaultLimit: 5 }, {
+      context: async () => ({}), entities, recall, save, profiles: async () => ({}),
+    }))
+    const meta = fiber.ctx.tools.get('hivemind_meta')!
+    const execution = { signal: new AbortController().signal } as never
+    await meta.execute({ operation: 'recall', recall: {
+      query: 'SINGULANCE', limit: 1, filename: '', valid_at: ' ', transaction_at: '', project: '', media_kind: 'all',
+    } }, execution)
+    expect(recall).toHaveBeenCalledWith({ query: 'SINGULANCE', mode: 'memory', limit: 1 }, expect.any(AbortSignal), expect.any(Object))
+    await meta.execute({ operation: 'entities', entities: { query: 'SINGULANCE', project: '' } }, execution)
+    expect(entities).toHaveBeenCalledWith({ query: 'SINGULANCE', limit: 5 }, expect.any(AbortSignal), expect.any(Object))
+    await expect(meta.execute({ operation: 'recall', recall: { query: '' } }, execution)).rejects.toThrow('query must be a non-empty string')
+    await expect(meta.execute({ operation: 'recall', recall: { query: 'test', limit: 30 } }, execution)).rejects.toThrow('recall limit')
+    await expect(meta.execute({ operation: 'save', save: { title: '', content: '' } }, {
+      signal: new AbortController().signal, agent: {},
+    } as never)).rejects.toThrow('title must be a non-empty string')
+    expect(save).not.toHaveBeenCalled()
+    await fiber.dispose()
+  })
   it('registers hivemind_meta in its Cordis effect and removes it on disposal', async () => {
     const ctx = new Context()
     await ctx.plugin(SystemPrompt, {})

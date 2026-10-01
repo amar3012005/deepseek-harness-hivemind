@@ -290,10 +290,14 @@ function saveTags(input: Record<string, unknown>): string[] | undefined {
  * strict field validation below. */
 function readInput(args: Record<string, unknown>, key: 'recall' | 'entities'): Record<string, unknown> {
   const nested = args[key]
-  if (nested !== undefined) return object(nested, key)
   const { operation: _operation, ...flat } = args
-  if (flat['query'] === undefined) return object(nested, key)
-  return flat
+  const input = nested !== undefined || flat['query'] === undefined ? object(nested, key) : flat
+  // An empty optional read filter means no filter. Required query/limit and
+  // every write field retain their existing strict validation.
+  return Object.fromEntries(Object.entries(input).filter(([field, value]) => {
+    if (['filename', 'valid_at', 'transaction_at', 'project'].includes(field) && typeof value === 'string' && value.trim() === '') return false
+    return field !== 'media_kind' || value !== 'all'
+  }))
 }
 
 /** Repair only an unambiguous single read envelope before native validation.
@@ -453,12 +457,12 @@ export function memoryPlugin(config: MemoryPluginConfig, provider: MemoryProvide
               limit: { type: 'integer' },
               tags: { type: 'array', items: { type: 'string' } },
               source_platforms: { type: 'array', items: { type: 'string' } },
-              media_kind: { type: 'string', enum: ['image', 'document'] },
-              filename: { type: 'string' },
+              media_kind: { type: 'string', enum: ['all', 'image', 'document'], description: 'Omit or use all unless the user requested an image/document filter.' },
+              filename: { type: 'string', description: 'Optional filename filter; omit unless the user named a file. Empty means no filter.' },
               entities: { type: 'array', items: { type: 'string' } },
               project: { type: 'string' },
-              valid_at: { type: 'string' },
-              transaction_at: { type: 'string' },
+              valid_at: { type: 'string', description: 'Optional historical validity filter. Omit unless requested; empty means no filter.' },
+              transaction_at: { type: 'string', description: 'Optional historical transaction filter. Omit unless requested; empty means no filter.' },
               sort: { type: 'string', enum: ['score', 'date_asc', 'date_desc'] },
               include_superseded: { type: 'boolean' },
               scope_filter: { type: 'string', enum: ['personal', 'organization', 'project'], description: 'Optional server-enforced read lens. Omit for the full authorized union.' },

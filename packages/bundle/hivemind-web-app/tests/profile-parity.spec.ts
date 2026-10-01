@@ -58,6 +58,9 @@ describe('hivemind-web native renderer parity', () => {
     expect(patch).toContain('cloudflare-openrouter-streaming:')
     expect(patch).toContain('reasoning: low')
     expect(patch).toContain('thinkingFormat: openrouter')
+    // Cloudflare's OpenRouter route accepts strict:false; the SDK's generic
+    // Cloudflare detector otherwise omits it and upstream forces all fields.
+    expect(patch.match(/supportsStrictMode: true/g)).toHaveLength(2)
     expect(patch).not.toContain('reasoningEffort: off')
     expect(patch).toContain('id: openrouter/deepseek/deepseek-v4-flash-0731')
     expect(patch).toContain('provider: cloudflare-openrouter-streaming')

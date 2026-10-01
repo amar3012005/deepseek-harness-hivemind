@@ -34,6 +34,7 @@
         # `reasoning_effort` field.
         compat:
           thinkingFormat: openrouter
+          supportsStrictMode: true
         baseURL: https://gateway.ai.cloudflare.com/v1/0dc6b9186b5a9b8985613b10c1c59f4f/hivemind-prod/compat
         headers:
           cf-aig-byok-alias: first-bundb
@@ -65,6 +66,7 @@
         reasoning: low
         compat:
           thinkingFormat: openrouter
+          supportsStrictMode: true
         baseURL: https://gateway.ai.cloudflare.com/v1/0dc6b9186b5a9b8985613b10c1c59f4f/hivemind-prod/openrouter/v1
         headers:
           cf-aig-byok-alias: first-bundb
