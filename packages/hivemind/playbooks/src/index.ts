@@ -32,6 +32,8 @@ export interface Config {
   }[]
   employeeSubagentPlanning: boolean
   progressiveToolDisclosure: boolean
+  /** Preset-owned coordination tools retained across progressive capability leases. */
+  coreTools: string[]
 }
 
 export const Config: z<Config> = z.object({
@@ -53,6 +55,7 @@ export const Config: z<Config> = z.object({
     .default([]),
   employeeSubagentPlanning: z.boolean().default(true),
   progressiveToolDisclosure: z.boolean().default(false),
+  coreTools: z.array(z.string()).max(32).default([]),
 })
 
 interface OperatingContextRecorded {
@@ -887,7 +890,7 @@ export function apply(ctx: Context, config: Partial<Config> = {}): void {
     // not a newly leased capability merely because it was absent from the
     // standing prompt assembly; only names registered later count as dynamic.
     const localBaseTools = previous?.localBaseTools ?? new Set(agent.ctx.tools.schemas().map(tool => tool.name))
-    const requested = new Set<string>(CORE_TOOLS)
+    const requested = new Set<string>([...CORE_TOOLS, ...(config.coreTools ?? [])])
     for (const capability of capabilities) {
       for (const tool of CAPABILITY_TOOLS[capability]) requested.add(tool)
     }

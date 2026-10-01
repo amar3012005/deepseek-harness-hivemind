@@ -59,7 +59,7 @@ function setup(options: { maxSearchResults?: number } = {}) {
 
 describe('hivemind playbooks', () => {
   it('keeps the standing core tools when the agent-local registry starts with only a local utility', async () => {
-    const tools = new Map<string, ToolDefinition>()
+    const tools = new Map<string, ToolDefinition>([['hivemind_hq_orientation', { name: 'hivemind_hq_orientation' } as ToolDefinition]])
     const listeners = new Map<string, (...args: unknown[]) => unknown>()
     const localTools = new Map<string, ToolDefinition>([
       ['inspect_image', { name: 'inspect_image' } as ToolDefinition],
@@ -94,7 +94,7 @@ describe('hivemind playbooks', () => {
           return () => {}
         },
       } as never,
-      { progressiveToolDisclosure: true },
+      { progressiveToolDisclosure: true, coreTools: ['hivemind_hq_orientation', 'not_registered'] },
     )
     const assembly = {
       sections: [], contexts: [], variables: {},
@@ -108,6 +108,7 @@ describe('hivemind playbooks', () => {
 
     expect(projected.tools.map(tool => tool.name).sort()).toEqual([
       'hivemind_capabilities',
+      'hivemind_hq_orientation',
       'hivemind_operating_context',
       'hivemind_operating_plan',
     ])
