@@ -28,10 +28,12 @@ import { hyperagentDirectory, projectHyperagentProfiles } from '@deepseek-ai/dsh
 
 declare module '@deepseek-ai/dsh-session/types' {
   interface SessionEventMap {
+    /** Private operating outcome outbox, committed before a background save and replayed on restore. */
+    'hivemind/operating-outcome': { turn: number; key: string; status: 'pending' | 'saved'; body: Record<string, JsonValue>; receipt?: JsonRecord }
     /** Records the active HIVE read lens and optional authorized project id. */
     'hivemind/read-scope': { scope: 'full' | 'personal' | 'organization' | 'project'; project?: string }
     /** User-selected employee identity for inline HyperAgents work. */
-    'hivemind/employee-selection': { id: string | null; name?: string; role?: string; avatarUrl?: string }
+    'hivemind/employee-selection': { id: string | null; name?: string; role?: string; avatarUrl?: string; slug?: string }
     /** Recognizes the legacy selected reply language event; new selections use command/run. */
     'hivemind/reply-language': { language: string }
     /** Legacy JEV routing audit from completed turns; retained for session replay only. */
@@ -88,15 +90,15 @@ function sessionReplyLanguage(agent: Agent): string {
   return 'en'
 }
 
-function sessionSelectedEmployee(agent: Agent): { id: string; name: string; role: string } | undefined {
+function sessionSelectedEmployee(agent: Agent): { id: string; name: string; role: string; slug?: string } | undefined {
   const events = agent.session.snapshotEvents()
   for (let index = events.length - 1; index >= 0; index -= 1) {
     const event = events[index]
     if (event?.type !== 'hivemind/employee-selection') continue
-    const value = event.data as { id: string | null; name?: string; role?: string }
+    const value = event.data as { id: string | null; name?: string; role?: string; slug?: string }
     if (value.id === null) return undefined
     if (typeof value.name === 'string' && typeof value.role === 'string') {
-      return { id: value.id, name: value.name, role: value.role }
+      return { id: value.id, name: value.name, role: value.role, ...(value.slug ? { slug: value.slug } : {}) }
     }
   }
   return undefined
@@ -1505,6 +1507,70 @@ export function apply(ctx: Context, config: Config): void {
 
   if (config.privateMemoryEnabled) {
     if (config.authorityMode !== 'scoped-service') throw new HiveMindRuntimeError('private operating memory requires scoped-service authority')
+    ctx.inject(['sessions', 'agents'], (child) => {
+      const controller = new AbortController()
+      child.effect(() => () => controller.abort())
+      const draining = new Map<string, Promise<void>>()
+      const drain = (agent: Agent): Promise<void> => {
+        const previous = draining.get(agent.id) ?? Promise.resolve()
+        const next = previous.then(async () => {
+          const pending = new Map<string, Extract<SessionEvent, { type: 'hivemind/operating-outcome' }>['data']>()
+          for (const event of agent.session.snapshotEvents()) {
+            if (event.type !== 'hivemind/operating-outcome') continue
+            if (event.data.status === 'saved') pending.delete(event.data.key)
+            else pending.set(event.data.key, event.data)
+          }
+          for (const item of pending.values()) {
+            if (!(await child.sessions.flush(agent.session))) throw new Error('operating_outcome_persistence_required')
+            const authority = await resolveAuthority(child, config)
+            const employee = sessionSelectedEmployee(agent)
+            let author = 'lead'
+            if (employee) {
+              const directory = employee.slug ? undefined : hyperagentDirectory(await hiveRequest(authority, '/v1/hyperagents/profiles', { method: 'GET' }, controller.signal, config))
+              const profile = directory?.profiles.find(value => value['id'] === employee.id)
+              const slug = employee.slug ?? profile?.['slug']
+              if (typeof slug !== 'string' || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug)) throw new Error('operating_outcome_employee_identity_unresolved')
+              author = slug
+            }
+            const receipt = apiRecord(await hiveRequest(authority, '/v1/hyperagents/operating-memory', {
+              method: 'POST', body: JSON.stringify({ ...item.body, agent_slug: author }),
+            }, controller.signal, config), 'private outcome save receipt')
+            if (receipt['ok'] !== true) throw new Error('operating_outcome_save_unconfirmed')
+            agent.session.append('hivemind/operating-outcome', { ...item, status: 'saved', receipt })
+            if (!(await child.sessions.flush(agent.session))) throw new Error('operating_outcome_persistence_required')
+          }
+        })
+        const settled = next.catch((error) => {
+          if (!controller.signal.aborted) child.logger.warn(`Private operating outcome pending: ${String(error)}`)
+        })
+        draining.set(agent.id, settled)
+        return settled
+      }
+      child.on('agent/created', ({ agent }) => { void drain(agent) })
+      child.on('session/event', (session, event) => {
+        if (event.type !== 'turn/end') return
+        const agent = child.agents.get(session.id)
+        if (!agent) return
+        const events = session.snapshotEvents()
+        const start = events.findLastIndex(value => value.type === 'turn/start' && value.data.turn === event.data.turn)
+        const turnEvents = events.slice(start + 1)
+        const tools = turnEvents.filter(value => value.type === 'tool/call').map(value => value.type === 'tool/call' ? value.data.name : '')
+        if (!tools.length) return
+        if (events.some(value => value.type === 'hivemind/operating-outcome' && value.data.turn === event.data.turn)) return
+        const key = createHash('sha256').update(`${session.id}:outcome:${event.data.turn}`).digest('hex')
+        const artifacts = (turnEvents as readonly { type: string; seq: number }[]).filter(value => value.type === 'hivemind/generation-created' || value.type === 'hivemind/artifact-created')
+          .map(value => ({ sequence: value.seq, type: value.type }))
+        const summary = JSON.stringify({ session_id: session.id, turn: event.data.turn, outcome: event.data.reason,
+          tools: [...new Set(tools)], artifact_receipts: artifacts,
+          note: 'Recorded execution outcome. Turn termination alone does not certify task acceptance; inspect the referenced run and artifact receipts.' }).slice(0,2400)
+        const body: Record<string, JsonValue> = { action: 'save', kind: 'handoff',
+          title: `Operating outcome ${session.id.slice(-36)} turn ${event.data.turn}`, summary,
+          idempotency_key: key, context: { sessionId: session.id } }
+        session.append('hivemind/operating-outcome', { turn: event.data.turn, key, status: 'pending', body })
+        void drain(agent)
+      })
+      child.effect(() => async () => { await Promise.allSettled([...draining.values()]) })
+    })
     ctx.effect(() => ctx.skills.register({
       name: 'hyperagents-operating-memory',
       description: 'Private HyperAgents brain: task recall, verified learnings, decisions, handoffs, recovery, and the boundary with HIVEMIND company memory.',
@@ -1517,7 +1583,7 @@ Schema: save supports kind learning, decision_note, or handoff, always with stat
 1. For a new substantive task, call hyperagents_memory recall before planning with the actual task, assigned employee, and known room/run/trigger context. A no-match result means only that this bounded search found nothing.
 2. On continuation or recovery, inspect the durable plan, completed steps, and receipts first. Then recall private handoffs relevant to unfinished work. Never redo a completed step because a remembered summary mentions it.
 3. During work, recall again only for a new question raised by evidence, such as a prior correction, decision, or account history. Do not repeat the same query per tool call.
-4. After a meaningful verified completion or correction, save a reusable learning, decision_note, or handoff with concise content, authoring employee, evidence or receipt reference, and available room/run/trigger IDs. Do not save routine progress, guesses, secrets, or WorkRun details already recorded durably. Report a save only after its receipt confirms it.
+4. The harness records tool-bearing turn outcomes as private handoffs with native receipt references, including failed or stopped work, and retries interrupted saves on restore. This does not certify task completion. After a meaningful verified completion or correction, save a reusable learning, decision_note, or handoff with concise content, authoring employee, evidence or receipt reference, and available room/run/trigger IDs. Do not save routine progress, guesses, secrets, or WorkRun details already recorded durably. Report a save only after its receipt confirms it.
 5. If the user says “save this to HIVEMIND,” use hivemind_meta for company memory and follow its approval rules. Do not put that request in private operating memory. Private-memory access grants no company-memory write permission.`,
     }))
     ctx.effect(() => ctx.tools.register(defineTool({

@@ -1,3 +1,8 @@
+import z from '@deepseek-ai/schemastery'
+import { createHash } from 'node:crypto'
+import { SessionId } from '@deepseek-ai/dsh-session'
+import type {} from '@deepseek-ai/dsh-api-session-controller'
+import type {} from '@deepseek-ai/dsh-hivemind-execution-scope'
 /** Host-side human controls; no model tool can enable HQ autonomy. */
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
@@ -46,6 +51,9 @@ function isHq(agent: Agent): boolean {
   return preset === 'hivemind-hq'
 }
 
+/** Deployment interval used only when HQ ends without scheduling its own next wake. */
+export interface Config { checkpointSeconds: number }
+
 /** Native Remote service keeps human authority outside model-callable tools. */
 export class HqControl extends TypertRemoteService {
   static inject = [
@@ -55,15 +63,27 @@ export class HqControl extends TypertRemoteService {
     'sessionPersistence',
     'hivemindHqOwnership',
     'schedule',
+    'sessionController',
+    'hivemindExecutionScope',
   ]
+  static Config: z<Config> = z.object({ checkpointSeconds: z.natural().min(60).required() })
   private readonly tails = new Map<string, Promise<void>>()
 
   /**
    * Mount control and enforce the persisted switch at native dispatch boundaries.
    * @param ctx - authorized native session and Team services.
    */
-  constructor(ctx: Context) {
+  constructor(ctx: Context, private readonly config: Config) {
     super(ctx, 'hivemindHq')
+    ctx.on('session/event', (session, event) => {
+      if (event.type !== 'turn/end') return
+      const agent = ctx.agents.get(session.id)
+      if (agent) return this.ensureCheckpoint(agent, event.data.turn)
+    })
+    ctx.on('agent/created', ({ agent }) => {
+      const event = agent.session.snapshotEvents().findLast(value => value.type === 'turn/end')
+      if (event?.type === 'turn/end') return this.ensureCheckpoint(agent, event.data.turn)
+    })
     ctx.effect(() =>
       ctx.agentTeams.guardDispatch((caller) => {
         const member = ctx.agentTeams.tryMembership(caller)
@@ -73,6 +93,40 @@ export class HqControl extends TypertRemoteService {
           : 'HQ autonomous activity is paused by the human.'
       }),
     )
+  }
+
+  /** Retain a durable wake if a finished activation left no future schedule. */
+  private async ensureCheckpoint(agent: Agent, turn: number): Promise<void> {
+    if (!isHq(agent) || this.ctx.agentTeams.membership(agent).role !== 'lead'
+      || !hqMode(agent.session.snapshotEvents()).enabled) return
+    const catalog = await this.ctx.schedule.catalog()
+    if (catalog.some(wake => wake.sessionId === agent.id && wake.status === 'active')) return
+    if (!hqMode(agent.session.snapshotEvents()).enabled) return
+    await this.ctx.schedule.ensure(agent.id, `hq-continuity-${turn}`, {
+      title: 'HQ continuity checkpoint', after_seconds: this.config.checkpointSeconds,
+      prompt: 'Resume your persistent HQ context. Inspect strategy and unreviewed employee outcomes, recall relevant operating memory and decide whether action is warranted. Do not repeat completed work. Persist your strategic intentions and schedule a meaningful next checkpoint within existing authority.',
+    })
+  }
+
+  /** Initialize or reopen the canonical company Runtime, preserving an explicit pause.
+   * @returns the same persistent HQ identity and committed autonomy state.
+   */
+  @Remote('start')
+  async start(): Promise<{ sessionId: SessionId; mode: HqModeState }> {
+    const existing = await this.ctx.hivemindHqOwnership.find()
+    const principal = this.ctx.hivemindExecutionScope.require()
+    const id = existing ?? SessionId(`session-hq-${createHash('sha256').update(principal.orgId).digest('hex')}`)
+    if (!existing) await this.ctx.sessionController.create({ sessionId: id, agentPreset: 'hivemind-hq' })
+    const result = await this.ctx.sessionController.resolveAgent(id)
+    if ('error' in result) throw result.error
+    const root = this.root(result.agent)
+    if (!(await this.ctx.sessions.flush(root.session))) throw new Error('hq_mode_persistence_required')
+    await this.ctx.hivemindHqOwnership.claim(id)
+    const mode = this.mode(root)
+    // Initialization is authorized by the workspace's human admission. Reloads
+    // never override a committed pause or create another startup occurrence.
+    if (mode.revision === 0) await this.setMode(root, { enabled: true, expectedRevision: 0 })
+    return { sessionId: id, mode: this.mode(root) }
   }
 
   /** Exact Remote Agent authority cannot control another or an ordinary employee root. */
@@ -381,10 +435,14 @@ export class HqControl extends TypertRemoteService {
           title: 'HQ startup review',
           after_seconds: 1,
           prompt:
-            'The human enabled HQ autonomous mode. Review approved company objectives, the native Team task board, ' +
-            'pending employee requests and committed receipts. Continue only authorized unfinished work; ' +
-            'do not duplicate assignments or widen authority. If no objective exists, ask the human for one. ' +
-            'Use native Schedule for a justified next wake and native Team waiting for active employees.',
+            'You are resuming the persistent company HQ Runtime. Inspect hivemind_hq_continuity for your strategic plan ' +
+            'and activity since your last review, including human-directed employee work. Load relevant private operating memory, ' +
+            'company context and artifact receipts progressively. Decide what deserves action within standing authority: ' +
+            'continue work, coordinate employees, revise strategy, resolve a source request, or ask the owner a necessary decision. ' +
+            'Do not require a new user prompt to observe, organize or plan authorized internal work. ' +
+            'Missing objectives are a question to resolve, not a reason to discard continuity. ' +
+            'Acknowledge reviewed activity, persist strategy, and use native Schedule for your next meaningful checkpoint. ' +
+            'Use native Team messages for employee results; do not duplicate assignments or widen authority.',
         })
       }
       root.session.append('hivemind/hq-mode', value)

@@ -66,6 +66,8 @@ async function setup(
   config: ConstructorParameters<typeof TeamService>[1] = {},
 ) {
   const ctx = new Context()
+  ctx.provide('sessionController', { create: vi.fn(), resolveAgent: vi.fn() } as never)
+  ctx.provide('hivemindExecutionScope', { require: () => ({ orgId: 'fixture-company', userId: 'fixture-owner' }) } as never)
   await mountAgentLoopTestDependencies(ctx)
   const storageRoot = mkdtempSync(join(tmpdir(), 'dsh-team-'))
   roots.push(storageRoot)
@@ -141,6 +143,72 @@ async function waitRunning(ctx: Context, id: SessionId): Promise<Agent> {
 }
 
 describe('Team identity and provisioning', () => {
+  it('starts one persistent HQ, saves strategic continuity, rejects fabricated review cursors and preserves pause on reopen', async () => {
+    const { ctx, lead, teamFiber } = await setup([])
+    lead.session.append('agent-preset/selected', { agentPreset: 'hivemind-hq' })
+    const ownershipFiber = await ctx.plugin(HqOwnership)
+    const unregister = ctx.hivemindHqOwnership.register({ claim: async () => {}, find: async () => lead.id,
+      activity: async () => ({ items: [{ sessionId: 'human-directed-employee', sequence: 42, title: 'Verified brief', time: 10,
+        outcome: { kind: 'completed' }, artifacts: [] }], hasMore: false }) })
+    const ensure = vi.fn().mockResolvedValue({ id: 'startup-wake' })
+    ctx.provide('schedule', { ensure, catalog: vi.fn().mockResolvedValue([{ sessionId: lead.id, status: 'active' }]) } as never)
+    vi.mocked(ctx.sessionController.create).mockResolvedValue({ sessionId: lead.id })
+    vi.mocked(ctx.sessionController.resolveAgent).mockResolvedValue({ agent: lead })
+    ctx.provide('hivemindEmployeeDirectory', { profiles: vi.fn() } as never)
+    const control = await ctx.plugin(HqControl, { checkpointSeconds: 3600 })
+    const capability = await ctx.plugin(HqRuntime)
+    const execute = (args: unknown) => ctx.tools.execute({ name: 'hivemind_hq_continuity', callId: ToolCallId('continuity'), agent: lead, signal: SIGNAL, arguments: args })
+    try {
+      expect(await ctx.hivemindHq.start()).toMatchObject({ sessionId: lead.id, mode: { enabled: true, revision: 1 } })
+      await ctx.hivemindHq.start()
+      expect(ensure).toHaveBeenCalledTimes(1)
+      expect(ctx.sessionController.create).not.toHaveBeenCalled()
+      const inspected = await execute({ action: 'inspect' })
+      if (inspected.isError) throw new Error(JSON.stringify(inspected))
+      expect(inspected.content.map(block => block.type === 'text' ? JSON.parse(block.text) : block)
+        .map(value => ({ ...value, batch_id: '<inspected-batch>' }))).toMatchInlineSnapshot(`
+          [
+            {
+              "activity": [
+                {
+                  "artifacts": [],
+                  "outcome": {
+                    "kind": "completed",
+                  },
+                  "sequence": 42,
+                  "sessionId": "human-directed-employee",
+                  "time": 10,
+                  "title": "Verified brief",
+                },
+              ],
+              "batch_id": "<inspected-batch>",
+              "has_more": false,
+              "reviewed": {},
+              "revision": 0,
+              "strategy": "",
+            },
+          ]
+        `)
+      const batch = lead.session.snapshotEvents().findLast(event => event.type === 'hivemind/hq-activity-batch')
+      if (batch?.type !== 'hivemind/hq-activity-batch') throw new Error('missing inspected batch')
+      expect((await execute({ action: 'save_strategy', expected_revision: 0, strategy: 'Review the employee brief, then select the next priority.' })).isError).not.toBe(true)
+      expect((await execute({ action: 'review_activity', expected_revision: 1, batch_id: 'invented' })).isError).toBe(true)
+      expect((await execute({ action: 'review_activity', expected_revision: 1, batch_id: batch.data.id })).isError).not.toBe(true)
+      const saved = (await storedEvents(ctx, lead.id)).findLast(event => event.type === 'hivemind/hq-continuity')
+      expect(saved?.data).toEqual({
+        revision: 2, strategy: 'Review the employee brief, then select the next priority.',
+        reviewed: { 'human-directed-employee': 42 },
+      })
+      await ctx.hivemindHq.setMode(lead, { enabled: false, expectedRevision: 1 })
+      expect(await ctx.hivemindHq.start()).toMatchObject({
+        sessionId: lead.id, mode: { enabled: false, revision: 2 },
+      })
+      expect(ensure).toHaveBeenCalledTimes(1)
+    } finally {
+      await capability.dispose(); await control.dispose(); unregister()
+      await ownershipFiber.dispose(); await teamFiber.dispose()
+    }
+  })
   it('saves a native employee deliverable, reviews its actual receipt, completes once and reloads the terminal board', async () => {
     const { ctx, lead, storageRoot, teamFiber } = await setup([
       toolCallResponse('employee-save', 'hivemind_generate', { format: 'markdown_report', title: 'Company decision', content: '# Company decision\n\nDecision: review public evidence before external action.' }),
@@ -189,7 +257,7 @@ describe('Team identity and provisioning', () => {
     const ensure = vi.fn().mockRejectedValueOnce(new Error('native schedule temporarily unavailable')).mockResolvedValueOnce({ id: 'wake-1' }).mockResolvedValueOnce({ id: 'wake-2' })
     const remove = vi.fn().mockResolvedValue({ deleted: true })
     ctx.provide('schedule', { ensure, delete: remove, catalog: vi.fn().mockResolvedValue([{ id: 'wake-1', sessionId: lead.id, status: 'active' }]) } as never)
-    const control = await ctx.plugin(HqControl)
+    const control = await ctx.plugin(HqControl, { checkpointSeconds: 3600 })
     try {
       const task = await ctx.agentTeams.createTask(lead, { subject: 'Research', description: 'Save report.' })
       const item = { id: 'plan-task-1', revision: 1, kind: 'assignment' as const, title: 'Research', owner: 'Ravi', taskId: task.id, startsAt: '2026-10-02T09:00:00Z', endsAt: '2026-10-02T10:00:00Z', resolved: false }
@@ -232,8 +300,8 @@ describe('Team identity and provisioning', () => {
     const claim = vi.fn().mockResolvedValue(undefined)
     const unregisterOwnership = ctx.hivemindHqOwnership.register({ claim })
     const ensure = vi.fn().mockResolvedValue(undefined)
-    ctx.provide('schedule', { ensure } as never)
-    const fiber = await ctx.plugin(HqControl)
+    ctx.provide('schedule', { ensure, catalog: vi.fn().mockResolvedValue([{ sessionId: lead.id, status: 'active' }]) } as never)
+    const fiber = await ctx.plugin(HqControl, { checkpointSeconds: 3600 })
     try {
       expect(ctx.hivemindHq.mode(lead).enabled).toBe(false)
       await expect(spawn(ctx, lead, 'researcher')).rejects.toThrow('HQ autonomous activity is paused')

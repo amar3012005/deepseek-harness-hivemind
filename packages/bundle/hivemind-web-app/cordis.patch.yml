@@ -230,6 +230,7 @@
 
     - id: hivemind-hq-control
       name: '@deepseek-ai/dsh-hivemind-hq-runtime/control'
+      config: {checkpointSeconds: 3600}
 
     - id: hivemind-hq-ownership
       name: '@deepseek-ai/dsh-hivemind-hq-runtime/ownership'

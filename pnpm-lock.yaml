@@ -6961,6 +6961,9 @@ importers:
       '@deepseek-ai/dsh-agent-presets':
         specifier: workspace:^
         version: link:../../preset/agent-presets
+      '@deepseek-ai/dsh-api-session-controller':
+        specifier: workspace:^
+        version: link:../../api/session-controller
       '@deepseek-ai/dsh-experimental-agent-team':
         specifier: workspace:^
         version: link:../../experimental/agent-team
@@ -6973,6 +6976,9 @@ importers:
       '@deepseek-ai/dsh-hivemind-execution-scope':
         specifier: workspace:^
         version: link:../execution-scope
+      '@deepseek-ai/dsh-hivemind-runtime':
+        specifier: workspace:^
+        version: link:../runtime
       '@deepseek-ai/dsh-llm':
         specifier: workspace:^
         version: link:../../llm/llm

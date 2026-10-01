@@ -53,6 +53,12 @@
     },
     {
       "path": "../../todo/tool-todo"
+    },
+    {
+      "path": "../../api/session-controller/tsconfig.host.json"
+    },
+    {
+      "path": "../runtime"
     }
   ]
 }

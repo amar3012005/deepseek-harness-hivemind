@@ -13,6 +13,8 @@ import {
 } from '../src/index.ts'
 
 interface HarnessMock {
+  outcome?: (session: Agent['session'], event: SessionEvent) => void
+  created?: (payload: { agent: Agent }) => void
   tools: Map<string, ToolDefinition>
   identity?: (signal: AbortSignal) => Promise<{ userId: string; orgId: string }>
   preStep?: (payload: unknown, next: () => Promise<unknown>) => Promise<unknown>
@@ -77,7 +79,7 @@ function config(icarusConfigPath: string): Config {
   }
 }
 
-function mount(pluginConfig: Config, withSpill = false): HarnessMock {
+function mount(pluginConfig: Config, withSpill = false, live?: Agent): HarnessMock {
   const tools = new Map<string, ToolDefinition>()
   const skills = new Map<string, {
     description: string
@@ -87,12 +89,19 @@ function mount(pluginConfig: Config, withSpill = false): HarnessMock {
   const spills: Array<{ suggestedName: string; content: string }> = []
   const harness: HarnessMock = { tools, skills, spills }
   const ctx = {
-    inject() { return undefined },
+    inject(names: string[], callback: (child: unknown) => void) {
+      if (live && names.includes('sessions') && names.includes('agents')) callback(ctx)
+      return undefined
+    },
+    sessions: { flush: vi.fn().mockResolvedValue(true) },
+    agents: { get: () => live },
     provide() { return undefined },
     effect(callback: () => (() => void) | undefined) {
       return callback()
     },
     on(event: string, listener: (payload: unknown, next: () => Promise<unknown>) => Promise<unknown>) {
+      if (event === 'session/event') harness.outcome = listener as unknown as NonNullable<HarnessMock['outcome']>
+      if (event === 'agent/created') harness.created = listener as unknown as NonNullable<HarnessMock['created']>
       if (event === 'agent/pre-step') harness.preStep = listener
       if (event === 'agent/inbox/inserted') {
         harness.inboxInserted = listener as unknown as NonNullable<HarnessMock['inboxInserted']>
@@ -1109,4 +1118,44 @@ describe('HIVE-MIND runtime', () => {
     }
   })
 
+})
+
+
+describe('private operating outcome outbox', () => {
+  it('records a receipt-backed employee handoff, retries after restoration, and deduplicates acknowledgement', async () => {
+    const events = [
+      { type: 'hivemind/employee-selection', data: { id: 'employee-verified', name: 'Ravi', role: 'Research', slug: 'ravi-patel' } },
+      { type: 'turn/start', data: { turn: 3 } },
+      { type: 'tool/call', data: { name: 'hivemind_generate' } },
+      { type: 'hivemind/generation-created', seq: 12, data: { artifactId: 'report-receipt' } },
+      { type: 'turn/end', data: { turn: 3, reason: { kind: 'completed' } } },
+    ] as unknown as SessionEvent[]
+    const subject = { id: 'session-outcome', session: { id: 'session-outcome', header: { id: 'session-outcome' },
+      snapshotEvents: () => events,
+      append(type: string, data: unknown) { events.push({ type, data } as SessionEvent) },
+    } } as unknown as Agent
+    const options = { ...config('/not-used'), authorityMode: 'scoped-service' as const, privateMemoryEnabled: true,
+      serviceApiBase: 'http://control-plane:3000', serviceHttpOrigins: ['http://control-plane:3000'], serviceSecretEnv: 'TEST_HIVE_RUNNER_SECRET' }
+    process.env.TEST_HIVE_RUNNER_SECRET = 'runner-service-secret-that-is-at-least-32-bytes'
+    const writes: Record<string, unknown>[] = []
+    const fetcher = vi.fn(async (_url: URL, init: RequestInit) => {
+      writes.push(JSON.parse(String(init.body)))
+      if (writes.length === 1) throw new Error('temporary transport failure')
+      return jsonResponse({ ok: true, id: 'confirmed-private-memory' })
+    })
+    vi.stubGlobal('fetch', fetcher)
+    const harness = mount(options, false, subject)
+    harness.outcome?.(subject.session, events[4]!)
+    await expect.poll(() => writes.length).toBe(1)
+    expect(events.filter(event => event.type === 'hivemind/operating-outcome').map(event => event.data.status)).toEqual(['pending'])
+    harness.created?.({ agent: subject })
+    await expect.poll(() => events.filter(event => event.type === 'hivemind/operating-outcome' && event.data.status === 'saved').length).toBe(1)
+    expect(writes[1]).toMatchObject({ action: 'save', kind: 'handoff', agent_slug: 'ravi-patel' })
+    expect(writes[1]?.idempotency_key).toBe(writes[0]?.idempotency_key)
+    expect(String(writes[1]?.summary)).toContain('Turn termination alone does not certify task acceptance')
+    harness.created?.({ agent: subject })
+    harness.outcome?.(subject.session, events[4]!)
+    await new Promise(resolve => setTimeout(resolve, 20))
+    expect(writes).toHaveLength(2)
+  })
 })

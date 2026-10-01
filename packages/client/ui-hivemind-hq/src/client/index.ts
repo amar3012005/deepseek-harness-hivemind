@@ -1,5 +1,5 @@
 /** Native header contribution over generated, tenant-authorized HQ Remote contracts. */
-import { createElement, useSyncExternalStore } from 'react'
+import { createElement, useEffect, useState, useSyncExternalStore } from 'react'
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
 import type {} from '@deepseek-ai/dsh-client-ui-session/client'
@@ -11,6 +11,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
 import type {} from '@deepseek-ai/dsh-client-ui-workspace/client'
 import type {} from '@deepseek-ai/dsh-schedule/client'
+import type { SessionId } from '@deepseek-ai/dsh-session'
 import type { MainPanelId } from '@deepseek-ai/dsh-client-ui-layout/client'
 import { CompanyWorkspace, type CompanyWorkspaceProps } from './CompanyWorkspace.tsx'
 import { HqControlAction, type HqControlActionProps, type HqControlInjected } from './HqControlAction.tsx'
@@ -37,6 +38,9 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
           ?? child.sessions.list.getSnapshot().byId[props.sessionId]?.agentPreset)
       return preset === 'hivemind-hq' ? createElement(HqControlAction, props) : null
     }
+    // Initialize on authenticated Harness admission, before a calendar click.
+    const runtime = child.remote.hivemindHq.start()
+    void runtime.catch(error => child.logger.warn(`HQ initialization unavailable: ${String(error)}`))
     const panel = 'hivemind-company-calendar' as MainPanelId
     const workspace: Omit<CompanyWorkspaceProps, 'sessionId'> = {
       progress: (id, taskId) => child.remote.hivemindHq.taskProgress(id, taskId),
@@ -57,12 +61,24 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     }
     const Workspace = () => {
       const list = useSyncExternalStore(listener => child.sessions.list.subscribe(listener), () => child.sessions.list.getSnapshot())
-      const hq = Object.values(list.byId).filter(item => (item.projectionValues?.agentPreset ?? item.agentPreset) === 'hivemind-hq')
-      const id = hq.find(item => item.id === list.current)?.id ?? hq[0]?.id
+      const [id, setId] = useState<SessionId>()
+      const [error, setError] = useState(false)
+      useEffect(() => {
+        let disposed = false
+        void runtime.then((result) => {
+          if (disposed) return
+          if (!result.ok) { setError(true); return }
+          setId(result.value.sessionId)
+        }, () => { if (!disposed) setError(true) })
+        return () => { disposed = true }
+      }, [])
+      // The server chooses the canonical company root, never the newest tab.
+      void list
       return id ? createElement('div', { style: { height: '100%', overflow: 'auto' } },
+        createElement('button', { onClick: () => child.uiWorkspace.openSession(id) }, child.locale.bind('hivemind.hq')('openRuntime')),
         createElement(HqControlAction, { ...actions, sessionId: id, t: child.locale.bind('hivemind.hq') }),
         createElement(CompanyWorkspace, { ...workspace, sessionId: id }))
-        : createElement('p', null, 'Open an HQ Runtime session to view authorized company work.')
+        : createElement('p', null, child.locale.bind('hivemind.hq')(error ? 'unavailable' : 'starting'))
     }
     child.slots.inject('main', () => child.slots.register({ name: 'main', key: panel, locale: 'hivemind.hq', inject: () => ({}) }, Workspace))
     child.slots.inject('sidebar.panellist', () => child.slots.register({ name: 'sidebar.panellist', id: panel, order: 11,

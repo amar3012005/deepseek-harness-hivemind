@@ -68,3 +68,8 @@ The stable system contract and registered tool roster remain reusable. Profile e
 - The integration is read-only: employee execution and connected-application actions remain separate capabilities.
 - Browser authentication uses local ICARUS configuration and is not a hosted multi-tenant credential service.
 - Progressive recall pagination beyond the first top-five result set is deferred.
+
+
+## Private operating outcome durability
+
+When private memory is enabled, tool-bearing native turns append a compact `hivemind/operating-outcome` outbox record before writing a handoff to the existing private operating-memory API. The record contains native session/turn identity, termination reason, distinct tool names, and artifact event references; termination never certifies task acceptance. A verified selected employee uses the real directory slug. Receipt-confirmed saves append an acknowledgement. Interrupted or unconfirmed writes remain pending and retry on restoration or subsequent work with the same idempotency key. Greetings without tool activity do not produce handoffs. Company-brain memory approval and model-authored reusable learnings retain their existing tools and authority.

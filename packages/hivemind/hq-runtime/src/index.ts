@@ -7,6 +7,9 @@ import {
   type HqTaskReview,
 } from './review.ts'
 import { createHash } from 'node:crypto'
+import { installContinuity } from './continuity.ts'
+import type {} from './ownership.ts'
+import type {} from '@deepseek-ai/dsh-hivemind-runtime'
 import { calendarItems } from './calendar.ts'
 import { profileSnapshot, employeePersona } from '@deepseek-ai/dsh-hivemind-employee-delegation'
 import type {} from '@deepseek-ai/dsh-hivemind-employee-directory'
@@ -55,6 +58,7 @@ declare module '@deepseek-ai/dsh-session/types' {
   }
 }
 export function apply(ctx: Context): void {
+  ctx.inject(['hivemindHqOwnership'], child => installContinuity(child))
   ctx.effect(() =>
     ctx.agentTeams.guardTaskUpdates((caller, request) => {
       if (request.action !== 'complete') return
@@ -328,6 +332,12 @@ export function apply(ctx: Context): void {
             })
             if (!(await ctx.sessions.flush(root.session)))
               throw new Error('hq_assignment_persistence_required')
+          }
+          // Persist the authenticated identity in the employee's own continuation.
+          const child = ctx.agents.get(member.id)
+          if (child && !child.session.snapshotEvents().some(event => event.type === 'hivemind/employee-selection' && event.data.id === employee.id)) {
+            child.session.append('hivemind/employee-selection', { id: employee.id, name: employee.name, role: employee.role, slug })
+            if (!(await ctx.sessions.flush(child.session))) throw new Error('hq_employee_identity_persistence_required')
           }
           const current = ctx.agentTeams.getTask(root, task.id)
           if (current.ownerName !== memberName)

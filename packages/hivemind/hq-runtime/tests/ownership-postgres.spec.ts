@@ -65,6 +65,38 @@ suite('canonical company HQ ownership', () => {
     await expect(claim(first === 'a-hq' ? a : b, first ?? '')).resolves.toBeUndefined()
     await expect(claim(c, 'c-hq')).resolves.toBeUndefined()
   })
+  it('reads paginated employee outcomes without missing later commits or leaking other tenants', async () => {
+    await claim(a, 'a-hq')
+    expect(await scope.run(a, () => ctx.hivemindHqOwnership.find())).toBe('a-hq')
+    await expect(scope.run(b, () => ctx.hivemindHqOwnership.find())).rejects.toThrow('owner_access')
+    for (const [id, principal] of [['employee-a', a], ['employee-c', c]] as const) {
+      await admin.query(`INSERT INTO harness_sessions(id,org_id,user_id,profile,variation,header)
+        VALUES($1,$2,$3,'hivemind-chat','harness',$4)`, [id, principal.orgId, principal.userId, { agentPreset: 'hivemind-hyperagents' }])
+      for (let sequence=1;sequence<=3;sequence++)
+        await admin.query(`INSERT INTO harness_session_events(session_id,org_id,user_id,sequence,event_type,payload)
+          VALUES($1,$2,$3,$4,'turn/end',$5)`, [id,principal.orgId,principal.userId,sequence,{ time: sequence, data: { turn: sequence, reason: { kind: 'completed' } } }])
+    }
+    const read = (positions: Record<string, number>, limit: number) => scope.run(a, () => ctx.hivemindHqOwnership.activity(SessionId('a-hq'), positions, limit))
+    const first = await read({},2)
+    expect(first.items.map(item => item.sessionId)).toEqual(['employee-a','employee-a'])
+    expect(first.hasMore).toBe(true)
+    const rest = await read({ 'employee-a': 2 },2)
+    expect(rest.items.map(item => item.sequence)).toEqual([3])
+    expect(rest.hasMore).toBe(false)
+    await admin.query(`INSERT INTO harness_session_events(session_id,org_id,user_id,sequence,event_type,payload)
+      VALUES('employee-a',$1,$2,4,'turn/end',$3)`,[a.orgId,a.userId,{ time: 1, data: { turn: 4, reason: { kind: 'blocked' } } }])
+    expect((await read({ 'employee-a': 3 },2)).items[0]?.outcome).toEqual({ turn: 4, reason: { kind: 'blocked' } })
+    await admin.query(`INSERT INTO harness_sessions(id,org_id,user_id,profile,variation,header)
+      VALUES('hq-child',$1,$2,'hivemind-chat','harness',$3)`,
+    [a.orgId,a.userId,{ agentPreset: 'hivemind-hq', parentSession: 'a-hq' }])
+    for (const [sequence,type,data] of [[1,'hivemind/generation-created',{ artifactId: 'verified-child-report' }],
+      [2,'turn/end',{ turn: 1, reason: { kind: 'completed' } }]] as const)
+      await admin.query(`INSERT INTO harness_session_events(session_id,org_id,user_id,sequence,event_type,payload)
+        VALUES('hq-child',$1,$2,$3,$4,$5)`,[a.orgId,a.userId,sequence,type,{ time: 5, data }])
+    const child = (await read({ 'employee-a': 4 },2)).items[0]
+    expect(child?.sessionId).toBe('hq-child')
+    expect(child?.artifacts).toEqual([{ sequence: 1, type: 'hivemind/generation-created', id: 'verified-child-report' }])
+  })
   it('rejects foreign, revoked, inactive, and non-HQ roots without storing ownership', async () => {
     await expect(claim(a, 'c-hq')).rejects.toThrow('hq_owned_active_root_required')
     await admin.query("UPDATE harness_sessions SET header='{}' WHERE id='a-hq'")

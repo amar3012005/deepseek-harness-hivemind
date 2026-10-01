@@ -101,6 +101,7 @@ suite('tenant scheduled native composition', () => {
       config: {connectionStringEnv: DSH_SCHEDULE_CANARY_DB, schema: ${schema}, maxConnections: 4, statementTimeoutMs: 15000}
     - id: hivemind-hq-control
       name: '@deepseek-ai/dsh-hivemind-hq-runtime/control'
+      config: {checkpointSeconds: 3600}
     - id: ui-hivemind-hq
       name: '@deepseek-ai/dsh-client-ui-hivemind-hq'
     - id: hivemind-virtual-workspace
@@ -230,17 +231,15 @@ suite('tenant scheduled native composition', () => {
     await page.screenshot({ path: '/tmp/hyperagents-schedule-native-preview.png', fullPage: true })
     await app.ctx.hivemindExecutionScope.run(owner, async () => {
       expect(await app.ctx.schedule.delete({ sessionId, id: record.id })).toMatchObject({ deleted: true })
-      expect(await app.ctx.schedule.catalog()).toEqual([])
+      expect((await app.ctx.schedule.catalog()).filter(item => item.sessionId === sessionId)).toEqual([])
     })
   })
   it('enables HQ from the native browser control, retains one company owner, and pauses it durably', async () => {
     await app.ctx.hivemindExecutionScope.run(owner, async () => {
-      const handle = await app.ctx.agents.create({
-        sessionId: SessionId(`hq-${randomUUID()}`),
-        meta: { agentPreset: 'hivemind-hq', cwd: app.workspaceCwd },
-        agentOptions: { provider: 'tenant-canary', model: 'reply' },
-      })
-      await app.ctx.agentPresets.select(handle.agent, 'hivemind-hq')
+      const started = await app.ctx.hivemindHq.start()
+      const resolved = await app.ctx.sessionController.resolveAgent(started.sessionId)
+      if ('error' in resolved) throw resolved.error
+      const handle = { agent: resolved.agent, dispose: async () => {} }
       handle.agent.session.append('model/selection', { provider: 'tenant-canary', model: 'reply' })
       const task = await app.ctx.agentTeams.createTask(handle.agent, { subject: 'Verified company brief', description: 'Deliver a sourced artifact.' })
       const request = { action: 'attach', task_id: task.id, due_at: new Date(Date.now() + 3600000).toISOString(), acceptance_criteria: ['One saved sourced report artifact.'] }
@@ -260,7 +259,7 @@ suite('tenant scheduled native composition', () => {
     await page.reload()
     await page.getByText('Ungrouped', { exact: true }).click({ timeout: 15000 })
     await page.getByText('HQ controls canary', { exact: true }).first().click({ timeout: 15000 })
-    await page.getByRole('button', { name: 'Enable HQ', exact: true }).click({ timeout: 15000 })
+    // Startup happened without a prompt or Enable click; the same root is reopened.
     await page.getByRole('button', { name: 'Pause HQ', exact: true }).waitFor({ timeout: 15000 })
     const ownership = await admin.query<{ session_id: string }>('SELECT session_id FROM harness_company_hq')
     expect(ownership.rowCount).toBe(1)
