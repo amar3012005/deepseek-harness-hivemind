@@ -1081,6 +1081,12 @@ export function apply(ctx: Context, config: Config): void {
     }))
   })
   ctx.effect(() => ctx.on('tools/pre-execute', async (execution, next): Promise<PreToolDecision> => {
+    const presets = ctx.get('permissionPresets') as { current(session: Agent['session']): string } | undefined
+    const fullAccess = execution.agent !== undefined && presets?.current(execution.agent.session) === 'danger-full-access'
+    if (fullAccess && [HIVE_CREATE_PROJECT_TOOL, HIVE_WEB_SEARCH_TOOL, 'web_fetch',
+      'hivemind_research_answer', 'hivemind_research_request', 'hivemind_research_gather'].includes(execution.name)) {
+      return { kind: 'allow' }
+    }
     if (execution.name === HIVE_CREATE_PROJECT_TOOL) {
       return { kind: 'ask', reason: 'Creating a HIVE-MIND project requires your approval.' }
     }

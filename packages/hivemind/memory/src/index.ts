@@ -106,6 +106,15 @@ async function approveSaveDestination(
     return { ...request, scope: prior.destination }
   }
   appendSaveEvent(execution.agent, { operation_id: operationId, status: 'prepared' })
+  const presets = ctx.get('permissionPresets') as { current(session: Agent['session']): string } | undefined
+  if (presets?.current(execution.agent.session) === 'danger-full-access') {
+    // Full access is explicit session permission; it does not change tenant ACLs.
+    // A concrete requested/prepared scope wins. Company-brain saves otherwise
+    // use the company, or the explicitly selected project.
+    const scope = request.scope ?? (request.project !== undefined ? 'project' : 'organization')
+    appendSaveEvent(execution.agent, { operation_id: operationId, status: 'approved', destination: scope })
+    return { ...request, scope }
+  }
   try {
     const userQuestions = ctx.get('userQuestions') as {
       ask(input: {
