@@ -44,7 +44,7 @@ export function DreamingSettings({ compact = false }: { compact?: boolean } = {}
   }
   return (
     <section className={`${css.root} ${compact ? css.compact : ''}`} aria-label="Company dreaming">
-      <div>
+      <div hidden={compact}>
         <strong>Dreaming</strong>
         <p hidden={compact}>Explore company memory automatically.
           Derived insights go directly to the company-visible Flashbacks project.</p>
@@ -57,11 +57,12 @@ export function DreamingSettings({ compact = false }: { compact?: boolean } = {}
         type="button"
         role="switch"
         aria-label="Enable company dreaming"
+        title={error ?? (state?.enabled ? 'Dreaming is on' : 'Dreaming is off')}
         aria-checked={state?.enabled ?? false}
         disabled={!state || busy || !state.canChange || (!state.available && !state.enabled)}
         onClick={() => void change()}
       >
-        {state?.enabled ? 'On' : 'Off'}
+        {compact ? null : state?.enabled ? 'On' : 'Off'}
       </button>
     </section>
   )
