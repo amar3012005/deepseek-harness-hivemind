@@ -3,6 +3,7 @@ import { JsonBlock } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ConversationLocationDataStore, ConversationTurnDataMap } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { ChatNodeOwnerProps, ChatViewSlotProps } from '../contract/slots.ts'
 import type { ChatNode } from '../contract/chat-nodes.ts'
+import { hasAssistantReplyContent } from '../contract/assistant-content.ts'
 import { TURN_PROCESS_INDEPENDENT_KINDS } from '../contract/turn-process.ts'
 import { storedTurnProcessEntry } from '../stores.ts'
 import { useSearchableHidden } from './searchable-hidden.ts'
@@ -95,7 +96,12 @@ export const ChatNodeSeat = memo(function ChatNodeSeat({
     && foldable
     && processPresentation.compactAnswer
     && !processOpen
-  const processHidden = controllerInactive || (foldable && processMember && !processOpen)
+  // Reports may be delivered before a later receipt/status message. Folding
+  // execution details must never discard these user-facing replies or artifacts.
+  const preserveReply = routedNode?.kind === 'assistant-step'
+    && processSpec?.dreamSynthesis !== true
+    && hasAssistantReplyContent(routedNode.data.blocks)
+  const processHidden = controllerInactive || (foldable && processMember && !processOpen && !preserveReply)
   const revealProcess = useCallback(() => {
     if (processMember) setOpen(true)
   }, [processMember, setOpen])
