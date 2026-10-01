@@ -1,6 +1,7 @@
 /** PostgreSQL run coordination. Every content query derives org/user from a stored or authenticated principal. */
 import { Pool, type PoolClient } from 'pg'
 import type { HivemindPrincipal } from '@deepseek-ai/dsh-hivemind-execution-scope'
+import type { DreamAccount, DreamGrant, DreamContract } from '@deepseek-ai/dsh-hivemind-connected-apps'
 import { candidateKey, stableId, type Candidate } from './contract.ts'
 export interface DreamSetting {
   org_id: string
@@ -55,6 +56,74 @@ export class DreamStore {
     } finally {
       db.release()
     }
+  }
+  async connectorSettings(owner: HivemindPrincipal): Promise<{ enabled: boolean; revision: number; accounts: DreamAccount[] }> {
+    return this.scoped(owner, async db => (await db.query<{ enabled: boolean; revision: number; accounts: DreamAccount[] }>(
+      'SELECT enabled,revision,accounts FROM harness_dream_connector_settings WHERE org_id=$1 AND user_id=$2', [owner.orgId, owner.userId],
+    )).rows[0] ?? { enabled: false, revision: 0, accounts: [] })
+  }
+  async setConnectors(owner: HivemindPrincipal, enabled: boolean, accounts: DreamAccount[]): Promise<void> {
+    await this.scoped(owner, async (db) => { await db.query(
+      `INSERT INTO harness_dream_connector_settings(org_id,user_id,enabled,accounts) VALUES($1,$2,$3,$4::jsonb)
+       ON CONFLICT(org_id,user_id) DO UPDATE SET enabled=$3,accounts=$4::jsonb,revision=harness_dream_connector_settings.revision+1,updated_at=now()`,
+      [owner.orgId, owner.userId, enabled, JSON.stringify(accounts)],
+    ) })
+  }
+  async connectorGrants(owner: HivemindPrincipal): Promise<DreamGrant[]> {
+    return this.scoped(owner, async (db) => {
+      const rows = (await db.query<{ user_id: string; accounts: DreamAccount[] }>(
+        `SELECT s.user_id,s.accounts FROM harness_dream_connector_settings s
+         JOIN user_organizations m ON m.org_id=s.org_id AND m.user_id=s.user_id AND m.is_active=true AND m.deactivated_at IS NULL
+         JOIN users u ON u.id=s.user_id AND u.deleted_at IS NULL
+         WHERE s.org_id=$1 AND s.enabled=true ORDER BY s.user_id`, [owner.orgId],
+      )).rows
+      return rows.flatMap(row => row.accounts.map(account => ({ ...account, userId: row.user_id })))
+    })
+  }
+  async connectorContracts(owner: HivemindPrincipal, toolkit: string, ttlMs: number): Promise<DreamContract[] | undefined> {
+    return this.scoped(owner, async db => (await db.query<{ contracts: DreamContract[] }>(
+      "SELECT contracts FROM harness_dream_connector_contracts WHERE org_id=$1 AND toolkit=$2 AND fetched_at>now()-($3::bigint*interval '1 millisecond')",
+      [owner.orgId, toolkit, ttlMs],
+    )).rows[0]?.contracts)
+  }
+  async cacheConnectorContracts(owner: HivemindPrincipal, toolkit: string, contracts: DreamContract[]): Promise<void> {
+    await this.scoped(owner, async (db) => { await db.query(
+      `INSERT INTO harness_dream_connector_contracts(org_id,toolkit,contracts) VALUES($1,$2,$3::jsonb)
+       ON CONFLICT(org_id,toolkit) DO UPDATE SET contracts=$3::jsonb,fetched_at=now()`, [owner.orgId, toolkit, JSON.stringify(contracts)],
+    ) })
+  }
+  async connectorEvidence(run: DreamRun, source: {
+    id: string
+    userId: string
+    accountId: string
+    title: string
+    content: string
+    provenance: unknown
+  }): Promise<void> {
+    await this.scoped({ orgId: run.org_id, userId: run.user_id }, async (db) => { await db.query(
+      `INSERT INTO harness_dream_connector_evidence(org_id,id,run_id,user_id,account_id,title,content,provenance) VALUES($1,$2,$3,$4,$5,$6,$7,$8::jsonb)
+       ON CONFLICT(org_id,id) DO NOTHING`, [run.org_id, source.id, run.id, source.userId, source.accountId, source.title, source.content, JSON.stringify(source.provenance)],
+    ) })
+  }
+  async readConnectorEvidence(owner: HivemindPrincipal, ids: string[]): Promise<Array<{
+    id: string
+    title: string
+    content: string
+    provenance: Record<string, unknown>
+  }>> {
+    if (!ids.length) return []
+    return this.scoped(owner, async db => (await db.query<{
+      id: string
+      title: string
+      content: string
+      provenance: Record<string, unknown>
+    }>(
+      `SELECT e.id,e.title,e.content,e.provenance FROM harness_dream_connector_evidence e
+       JOIN harness_dream_connector_settings s ON s.org_id=e.org_id AND s.user_id=e.user_id AND s.enabled=true
+       JOIN user_organizations m ON m.org_id=e.org_id AND m.user_id=e.user_id AND m.is_active=true AND m.deactivated_at IS NULL
+       JOIN users u ON u.id=e.user_id AND u.deleted_at IS NULL
+       WHERE e.org_id=$1 AND e.id=ANY($2::uuid[]) AND s.accounts @> jsonb_build_array(jsonb_build_object('id',e.account_id))`, [owner.orgId, ids],
+    )).rows)
   }
   async supported(owner: HivemindPrincipal): Promise<boolean> {
     return this.scoped(

@@ -55,6 +55,9 @@
     },
     {
       "path": "../../preset/agent-presets"
+    },
+    {
+      "path": "../connected-apps"
     }
   ]
 }

@@ -14,6 +14,7 @@ import Ajv, { type ValidateFunction } from 'ajv'
 import type { PostToolDecision, ToolExecution } from '@deepseek-ai/dsh-tools'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import type {} from '@deepseek-ai/dsh-user-questions'
+import { DreamConnectorService } from './dream-connectors.ts'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 
 interface ComposioRouterSessionEventData {
@@ -82,6 +83,9 @@ export interface Config {
   serviceSecretEnv?: string
   /** Refuse provider execution when the durable receipt service is not configured. */
   durableReceiptsRequired?: boolean
+  /** Small direct read set per approved Dreaming app. */
+  dreamToolsPerApp?: number
+  dreamSchemaMaxChars?: number
 }
 
 export const Config: z<Config> = z.object({
@@ -95,6 +99,8 @@ export const Config: z<Config> = z.object({
   serviceHttpOrigins: z.array(String).default([]),
   serviceSecretEnv: z.string(),
   durableReceiptsRequired: z.boolean().default(false),
+  dreamToolsPerApp: z.number().min(1).max(12).default(4),
+  dreamSchemaMaxChars: z.number().min(1000).max(50000).default(12000),
 })
 
 function record(value: unknown): value is Record<string, unknown> {
@@ -217,6 +223,7 @@ async function scopedServiceToken(
   ctx: Context,
   config: Config,
   execution: Pick<ToolExecution, 'signal'>,
+  identity?: { userId: string; orgId: string },
 ): Promise<{ token: string; base: URL } | undefined> {
   const base = allowedServiceBase(config.serviceApiBase, config.serviceHttpOrigins)
   if (base === undefined) return undefined
@@ -225,7 +232,7 @@ async function scopedServiceToken(
   if (typeof secret !== 'string' || Buffer.byteLength(secret, 'utf8') < 32) {
     throw new Error(`Connected receipt service secret ${envName} is unavailable or too short`)
   }
-  const principal = await ctx.hivemindIdentity.resolve(execution.signal)
+  const principal = identity ?? await ctx.hivemindIdentity.resolve(execution.signal)
   const now = Math.floor(Date.now() / 1000)
   const claims = {
     iss: 'hivemind-harness-runner', aud: 'hivemind-control-plane-harness-proxy',
@@ -242,8 +249,9 @@ async function admitHarnessCredit(
   config: Config,
   execution: Pick<ToolExecution, 'signal'> & { readonly callId: string },
   input: { readonly sessionId: string; readonly turnId: number; readonly kind: 'composio_execution' | 'no_tool_turn' | 'turn_admission'; readonly tool?: string },
+  identity?: { userId: string; orgId: string },
 ): Promise<void> {
-  const service = await scopedServiceToken(ctx, config, execution)
+  const service = await scopedServiceToken(ctx, config, execution, identity)
   if (service === undefined) return
   const response = await fetch(new URL('/internal/v1/harness-chat/credit-operations', service.base), {
     method: 'POST', headers: { authorization: `Bearer ${service.token}`, 'content-type': 'application/json', accept: 'application/json' },
@@ -1404,10 +1412,11 @@ async function saveReceipt(
     readonly allowedFields?: readonly string[]
     readonly approvedProjection?: Record<string, JsonValue>
   } = {},
+  identity?: { userId: string; orgId: string },
 ): Promise<PrivateReceiptReference | SpillRef | undefined> {
   const sessionId = execution.agent?.session.header.id
   if (sessionId === undefined) return undefined
-  const service = await scopedServiceToken(ctx, config, execution)
+  const service = await scopedServiceToken(ctx, config, execution, identity)
   if (service !== undefined) {
     let rawReceipt: JsonValue
     try { rawReceipt = JSON.parse(content) as JsonValue } catch { rawReceipt = content }
@@ -2139,6 +2148,17 @@ export function apply(ctx: Context, config: Config = {}): void {
   }))
   ctx.effect(() => ctx.on('tools/post-execute', async (execution, result, next): Promise<PostToolDecision> => {
     const decision = await next()
+    if (execution.name === 'dream_read' && !result.isError && decision.kind === 'accept') {
+      const text = plainText(decision.content ?? result.content)
+      if (text) { try {
+        const value: unknown = JSON.parse(text)
+        if (record(value) && value['connectorExecuted'] === true) {
+          const state = execution.agent ? turns.get(execution.agent) : undefined
+          if (state) state.billableCalls += 1
+        }
+      } catch { /* Other Dreaming reads have no connector operation. */ } }
+      return decision
+    }
     const isBridgeSearch = execution.name === BRIDGE_TOOL
       && record(execution.arguments)
       && execution.arguments['action'] === 'search'
@@ -2167,3 +2187,22 @@ export function apply(ctx: Context, config: Config = {}): void {
     })
   }))
 }
+
+/** Independent connector adapter for the root Dreamer plugin; never shares chat permissions. */
+export function createDreamConnectorService(
+  ctx: Context, config: Config, identity: () => { userId: string; orgId: string },
+): DreamConnectorService {
+  const apiKey = config.apiKey?.trim()
+  const composio = apiKey ? import('@composio/core').then(({ Composio }) => new Composio({ apiKey, allowTracking: false, disableVersionCheck: true })) : undefined
+  return new DreamConnectorService(composio, async (e, value, slug) => {
+    const receipt = await saveReceipt(ctx, { ...config, durableReceiptsRequired: true }, e, JSON.stringify(value), 'dream-connector-read.json', { tool: slug }, identity())
+    if (!receipt) throw new Error('Dreaming connector receipt was not saved.')
+    return privateReceiptReference(receipt) as unknown as JsonValue
+  }, (value, receipt) => compactComposioExecutionReceipt(value, receipt as unknown as PrivateReceiptReference),
+  config.dreamToolsPerApp ?? 4, config.dreamSchemaMaxChars ?? 12000, async (e, tool) => {
+    const turn = e.agent?.session.snapshotEvents().filter(event => event.type === 'turn/start').at(-1)?.data.turn ?? -1
+    await admitHarnessCredit(ctx, config, e, { sessionId: String(e.agent?.session.header.id ?? ''), turnId: turn, kind: 'composio_execution', tool }, identity())
+  })
+}
+export type { DreamAccount, DreamGrant, DreamContract, DreamContractCache } from './dream-connectors.ts'
+export { validateDreamArguments, isDreamReadTool } from './dream-connectors.ts'

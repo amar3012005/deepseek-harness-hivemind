@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { DreamingAutomation } from './DreamingAutomation.tsx'
+import { DreamingConnectors } from './DreamingConnectors.tsx'
 import { DreamingSettings } from './DreamingSettings.tsx'
 import css from './DreamingRoom.module.css'
 /** Room controls reuse the company switch and append only a future agenda. */
@@ -40,7 +41,7 @@ export function DreamingRoom() {
   }
   return <div className={css.root} data-dreaming-room-controls>
     <span className={css.activityButton}>🌙 Nightly Dreaming</span><DreamingSettings compact />
-    <div className={css.activity}><DreamingAutomation room />
+    <div className={css.activity}><DreamingAutomation room /><DreamingConnectors />
       <button type="button" className={css.goalButton} onClick={() => { setOpen(value => !value) }} aria-expanded={open}>Add goal for next dreams</button>
       {open && <div className={css.agenda}><label>Agenda for future dreams<textarea maxLength={4000} value={text}
         onChange={(event) =>{  setText(event.target.value) }} /></label>

@@ -22,3 +22,11 @@ The image launches only `dsh --profile hivemind-web`; it does not add another No
 Profile, recall, memory and employee-directory calls use the narrow tenant-scoped control-plane proxy. The runner does not mount an ICARUS config and never receives a user or HIVE master API credential.
 
 The canonical database migration is owned by HIVE-MIND. This image validates the `harness_sessions` table at startup and never creates or mutates schema. Build provenance should pin the `singulance-chat` commit rather than copying files from an external checkout.
+
+### Dreaming read-only connectors
+
+Apply `dream-connectors.sql` before releasing a runner that exposes `/hivemind/dreamer/connectors`. All grants default off. Settings and the Dreaming room show only ACTIVE accounts owned by the authenticated Composio subject; legacy company accounts are explicitly labelled. Consent is per user/account; active company membership is rechecked.
+
+The native Dreamer reuses `dream_read` with complete, version-pinned provider schemas. Positive read operations only; no model-side search, connection management, or app writes. Metadata contracts are tenant-cached for one day by default. Execution pins account/version, validates arguments, checks grants again, and stores a private full receipt plus durable excerpt/provenance before exposing an evidence ID. Flashbacks may cite those IDs alongside memory IDs. Revoking access blocks future reads/evidence use, but does not erase previously shared Flashbacks.
+
+Default configuration: four read contracts per app, 12,000-character schema/result limits; all tunable through the plugin config. Existing chat connector behavior and native nine-tool Dreamer descriptors are retained.

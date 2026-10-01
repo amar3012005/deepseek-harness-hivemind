@@ -21,6 +21,7 @@ suite('PostgreSQL Dreamer isolation and durability', () => {
     )
     await admin.query(await readFile(new URL('./fixture.sql', import.meta.url), 'utf8'))
     await admin.query((await readFile(new URL('./migration.sql', import.meta.url), 'utf8')).replaceAll('hivemind.', `${schema}.`))
+    await admin.query((await readFile(new URL('../../../../deploy/hivemind-chat/dream-connectors.sql', import.meta.url), 'utf8')).replaceAll('hivemind.', `${schema}.`).replaceAll("schemaname='hivemind'", `schemaname='${schema}'`))
     for (const p of [a, b]) {
       await admin.query('INSERT INTO organizations(id) VALUES($1)', [p.orgId])
       await admin.query('INSERT INTO users(id) VALUES($1)', [p.userId])
@@ -152,6 +153,28 @@ suite('PostgreSQL Dreamer isolation and durability', () => {
     expect(await store.supported(b)).toBe(false)
     await expect(store.setEnabled(b, true)).rejects.toThrow('residency_adapter_required')
     expect(await store.setting(b)).toBeUndefined()
+  })
+  it('persists scoped connector grants and contracts across store restart and revokes evidence', async () => {
+    const account = { id: 'ca_fixture', toolkit: 'gmail', label: 'Gmail', subject: `hivemind:${a.userId}` }
+    expect((await store.connectorSettings(a)).enabled).toBe(false)
+    await store.setConnectors(a, true, [account])
+    const restarted = new DreamStore(pool)
+    expect(await restarted.connectorGrants(a)).toEqual([{ ...account, userId: a.userId }])
+    expect(await restarted.connectorGrants(b)).toEqual([])
+    const contract = { slug: 'GMAIL_FETCH_EMAILS', toolkit: 'gmail', version: '20260915_00', description: 'Read', schema: { type: 'object' }, hash: 'fixture' }
+    await store.cacheConnectorContracts(a, 'gmail', [contract])
+    expect(await restarted.connectorContracts(a, 'gmail', 86400000)).toEqual([contract])
+    expect(await restarted.connectorContracts(b, 'gmail', 86400000)).toBeUndefined()
+    const setting = (await store.setting(a))!
+    const run = await store.accept(a.orgId, `${a.orgId}:dreaming:connector`, 'connector', 'dreaming', setting.revision)
+    const id = randomUUID()
+    await store.connectorEvidence(run, { id, userId: a.userId, accountId: account.id, title: 'Read evidence', content: 'Verified fixture', provenance: { tool: contract.slug } })
+    expect((await restarted.readConnectorEvidence(a, [id]))[0]?.id).toBe(id)
+    expect(await restarted.readConnectorEvidence(b, [id])).toEqual([])
+    await store.setConnectors(a, false, [account])
+    expect(await restarted.connectorGrants(a)).toEqual([])
+    expect(await restarted.readConnectorEvidence(a, [id])).toEqual([])
+    await admin.query("UPDATE harness_dream_runs SET status='completed' WHERE id=$1", [run.id])
   })
   it('turning off fences an active run and emits a cancellation receipt', async () => {
     const setting = (await store.setting(a))!,

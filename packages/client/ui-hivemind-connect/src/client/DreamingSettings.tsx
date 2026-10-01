@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { DreamingConnectors } from './DreamingConnectors.tsx'
 import css from './DreamingSettings.module.css'
 interface State {
   enabled: boolean
@@ -43,7 +44,7 @@ export function DreamingSettings({ compact = false }: { compact?: boolean } = {}
     }
   }
   return (
-    <section className={`${css.root} ${compact ? css.compact : ''}`} aria-label="Company dreaming">
+    <> <section className={`${css.root} ${compact ? css.compact : ''}`} aria-label="Company dreaming">
       <div hidden={compact}>
         <strong>Dreaming</strong>
         <p hidden={compact}>Explore company memory automatically.
@@ -64,6 +65,6 @@ export function DreamingSettings({ compact = false }: { compact?: boolean } = {}
       >
         {compact ? null : state?.enabled ? 'On' : 'Off'}
       </button>
-    </section>
+    </section>{!compact && <DreamingConnectors />}</>
   )
 }

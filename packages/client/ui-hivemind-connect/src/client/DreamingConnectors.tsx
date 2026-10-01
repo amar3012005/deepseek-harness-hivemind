@@ -1,0 +1,50 @@
+import { useEffect, useState } from 'react'
+import css from './DreamingConnectors.module.css'
+interface Account { id: string; toolkit: string; label: string; enabled: boolean }
+interface State { available: boolean; enabled: boolean; accounts: Account[] }
+/** Explicit per-user, per-account Dreaming consent; connecting new apps stays in Connectors. */
+export function DreamingConnectors() {
+  const [state, setState] = useState<State>()
+  const [busy, setBusy] = useState(false)
+  const [message, setMessage] = useState('')
+  useEffect(() => {
+    const controller = new AbortController()
+    void fetch('/hivemind/dreamer/connectors', { credentials: 'include', signal: controller.signal })
+      .then(async (response) => { if (!response.ok) throw new Error('load'); setState(await response.json() as State) })
+      .catch(() => { if (!controller.signal.aborted) setMessage('Connected apps could not be loaded. Reload to try again.') })
+    return () => { controller.abort() }
+  }, [])
+  async function save(enabled: boolean, accountIds: string[]) {
+    if (busy || !state) return
+    setBusy(true); setMessage('')
+    try {
+      const response = await fetch('/hivemind/dreamer/connectors', { method: 'PUT', credentials: 'include',
+        headers: { 'content-type': 'application/json' }, body: JSON.stringify({ enabled, accountIds }) })
+      const result = await response.json() as State & { error?: string }
+      if (!response.ok) throw new Error(result.error === 'read_tools_unavailable'
+        ? 'This app has no compatible read tools yet. Your previous choices are unchanged.'
+        : response.status === 401 ? 'Your session expired. Reload to continue.' : 'Access could not be saved. Please try again.')
+      setState(result); setMessage('Saved for future dreams.')
+    } catch (error) { setMessage(error instanceof Error ? error.message : 'Access could not be saved.') }
+    finally { setBusy(false) }
+  }
+  return <section className={css.root} aria-label="Dreaming connected apps">
+    <label className={css.heading}><span>Use connected apps while dreaming</span><input type="checkbox" role="switch"
+      aria-label="Use connected apps while dreaming" checked={state?.enabled ?? false} disabled={!state?.available || busy}
+      onChange={event => void save(event.target.checked,
+        state?.accounts.filter(account => account.enabled).map(account => account.id) ?? [])} /></label>
+    <p>Read-only. Choose which of your connections Dreaming may explore when useful.</p>
+    <p>Discoveries may be shared with your company in Flashbacks. Turning access off prevents future reads; saved Flashbacks remain.</p>
+    {state?.enabled && <div className={css.accounts}>
+      {!state.accounts.length && <p>No connected apps yet. Add them in Connectors.</p>}
+      {state.accounts.map(account => <label className={css.account} key={account.id}>
+        <span>{account.label}<small>Read-only</small></span><input type="checkbox" checked={account.enabled} disabled={busy}
+          aria-label={`Allow Dreaming to read ${account.label}`} onChange={event => void save(true, state.accounts
+            .filter(item => item.id === account.id ? event.target.checked : item.enabled).map(item => item.id))} />
+      </label>)}
+    </div>}
+    {!state?.available && state && <p>Connected apps are unavailable on this server.</p>}
+    {message && <p role="status">{message}</p>}
+    {busy && <p role="status">Saving access and preparing read tools…</p>}
+  </section>
+}
