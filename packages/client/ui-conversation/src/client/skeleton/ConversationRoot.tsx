@@ -355,6 +355,9 @@ export function ConversationRoot({
   )
 
   const phase = settling ? 'settling' : hero ? 'hero' : 'active'
+  const dreamingRoom = typeof window !== 'undefined' && window.location.pathname === '/hivemind/app/overview/dreaming'
+  const dreamingReady = dreamingRoom && session?.subagent?.address.childSessionId === sessionId
+    && openState === 'open' && !settling
   const composer = renderSlotChain(
     'conversation.composer',
     { sessionId, session, pendingInteraction },
@@ -372,7 +375,7 @@ export function ConversationRoot({
   )
 
   return (
-    <div ref={rootResizeRef} className={css.root} data-phase={phase}>
+    <div ref={rootResizeRef} className={css.root} data-phase={phase} data-dreaming-ready={dreamingReady || undefined}>
       {sessionId === undefined ? null : renderSlot('conversation.session.header', {})}
       <div className={css.body}>
         <div className={css.scrollBody} data-conversation-scroll="">

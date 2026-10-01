@@ -94,3 +94,6 @@
 :global(html[data-dsh-mode='hivemind-chat']:has([data-automation-tasks], [data-automation-task-detail], [data-company-calendar])) .osRoot {
   display: none;
 }
+
+/* Five full 36px Recents rows and four 2px gaps; older rows stay scrollable. */
+.root:not(.osRoot) .list { max-height: 188px; }
