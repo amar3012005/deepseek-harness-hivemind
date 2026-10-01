@@ -94,6 +94,7 @@ export function ConversationSessionHeader({
     <header
       className={clsx(css.header, hideChrome && css.headerHidden)}
       aria-hidden={hideChrome || undefined}
+      data-hivemind-employee-header={embeddedRoute && window.location.pathname.startsWith('/hivemind/app/employee/harness/') || undefined}
     >
       {!hideChrome && (
         <>

@@ -31,6 +31,16 @@ import type {
 } from './contract/input.ts'
 import type { InputSubmitMode } from './contract/composer-submission.ts'
 
+/** Persist the navbar language before admitting an embedded user message. */
+async function syncHivemindReplyLanguage(session: SessionFace): Promise<void> {
+  if (typeof document === 'undefined' || !/^\/hivemind\/app\/(?:overview|employee\/harness)(?:\/|$)/u.test(window.location.pathname)) return
+  if (session.getSnapshot().subagent !== null) return
+  const language = document.documentElement.dataset.hivemindReplyLanguage?.toLowerCase().split('-')[0]
+  if (language === undefined || !/^[a-z]{2}$/u.test(language)) return
+  const result = await session.command(`/hivemind-language ${language}`)
+  if (!result.ok) throw new Error('The selected reply language could not be saved. Please try again.')
+}
+
 /**
  * The outward conversation face (`ctx.conversation`): the scope-addressed
  * verbs and the input registry other plugins may reach — and exactly what a
@@ -207,6 +217,7 @@ export class ConversationController extends Service implements IConversation {
    */
   async send(text: string): Promise<void> {
     const session = this.scopedSession('send')
+    await syncHivemindReplyLanguage(session)
     const result = await session.prompt([{ type: 'text', text }], 'queue')
     if (!result.ok) throw new Error(`conversation.send failed: ${result.error.code}: ${result.error.message}`)
   }
@@ -260,6 +271,7 @@ export class ConversationController extends Service implements IConversation {
         ? { type: 'image' as const, ...await this.encodeImage(attachment.file) }
         : { type: 'file' as const, receiptId: uploadFor(attachment).receiptId }),
     )
+    await syncHivemindReplyLanguage(session)
     const snapshot = session.getSnapshot()
     if (snapshot.subagent !== null) {
       const uploaded = await serializeAttachments()

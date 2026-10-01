@@ -61,7 +61,7 @@ describe('hivemind-web native renderer parity', () => {
     expect(patch).not.toContain('reasoningEffort: off')
     expect(patch).toContain('id: openrouter/deepseek/deepseek-v4-flash-0731')
     expect(patch).toContain('provider: cloudflare-openrouter-streaming')
-    expect(patch).toContain('model: z-ai/glm-5.3-flash:nitro')
+    expect(patch).toContain('model: openai/gpt-6-luna')
     expect(patch).toContain('id: session-title-llm\n  disabled: true')
   })
 

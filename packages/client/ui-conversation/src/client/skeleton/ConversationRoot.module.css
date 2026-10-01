@@ -682,3 +682,10 @@
 .root[data-phase='settling'] .composerSeat {
   visibility: hidden;
 }
+
+/* Preview owns its close control. Leave only Environment in the employee header
+   while the native right pane is open, so labels cannot run behind the preview. */
+:global([data-external-chrome]:not([data-rightbar-collapsed]))
+  :global([data-hivemind-employee-header]) .headerCorner > :not(:global([data-hivemind-environment-trigger])) {
+  display: none;
+}
