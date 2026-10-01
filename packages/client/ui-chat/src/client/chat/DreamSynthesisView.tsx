@@ -11,9 +11,12 @@ declare module '@deepseek-ai/dsh-client-ui-sidebar-right/client' {
 export function DreamSynthesisView({ node, openPreview }: ChatNodeViewProps<'dream-synthesis'> & {
   openPreview: (discovery: DreamDiscovery) => void
 }) {
+  const summary = node.data.kind === 'welcome'
+    ? node.data.summary.replace(/\bnightly (?:agents|dreamers)\b/giu, 'HyperAgents')
+    : node.data.summary
   return <section className={css.root} data-dream-synthesis={node.data.runId}>
     <h2>🌙 {node.data.kind === 'welcome' ? 'Welcome to Dreaming' : 'Dream exploration'}</h2>
-    <p className={css.prose}>{node.data.summary}</p>
+    <p className={css.prose}>{summary}</p>
     {node.data.kind === 'welcome' ? null : node.data.discoveries.length === 0
       ? <p>No new supported connection was saved during this exploration.</p>
       : <><h3>Here’s what I discovered</h3>{node.data.discoveries.map((discovery, index) =>
