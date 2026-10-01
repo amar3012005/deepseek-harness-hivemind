@@ -120,7 +120,7 @@
           historyTurns: 3
           historyMaxChars: 3000
           webApprovalRequired: true
-          nativeWebSearch: true
+          nativeWebSearch: false
       - id: hivemind-capabilities
         insert:
           - id: hivemind-employee-directory

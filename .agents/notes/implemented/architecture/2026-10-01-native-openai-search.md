@@ -8,7 +8,7 @@ HIVE agents need a shared subscription-backed search provider without connector 
 
 ## Decision
 
-The HIVE web profile mounts `web-search-openai` and selects its `openai-responses` provider in `ctx.web`. Codex transport resolves the existing `llm-pi-ai/openai-codex` grant through the same pi-ai credential adapter used by the Harness LLM plugin. That adapter owns serialized refresh and atomic persistence. Public Responses transport uses a distinct externally maintained credential reference.
+The HIVE web profile includes `web-search-openai` disabled, with existing search routing preserved until the user requests activation. Activation enables the plugin, selects `openai-responses` in `ctx.web`, and enables `nativeWebSearch` on the intended presets. Codex transport resolves the existing `llm-pi-ai/openai-codex` grant through the same pi-ai credential adapter used by the Harness LLM plugin. That adapter owns serialized refresh and atomic persistence. Public Responses transport uses a distinct externally maintained credential reference.
 
 The authenticated `hivemind_web_search` tool performs native search first and returns to its existing tenant-scoped web-job service on provider failure. HIVE authority and approvals remain in that tool. A global provider never captures a tenant's authority. Cancellation stops execution; it is not a fallback signal. Completed native search output is normalized into bounded cited sources, with exact auxiliary input and route receipts recorded in Session events.
 

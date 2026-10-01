@@ -134,8 +134,16 @@ export class OpenAISearchProvider implements WebSearchProvider {
     })
     try {
       const stream = await client.responses.create(input, { signal })
+      // Codex streams completed items individually and may leave the terminal
+      // response.output empty. Keep only durably completed items, never deltas.
+      const completedItems = new Map<number, Response['output'][number]>()
       for await (const event of stream) {
-        if (event.type === 'response.completed') return searchResult(event.response, limit)
+        if (event.type === 'response.output_item.done') completedItems.set(event.output_index, event.item)
+        if (event.type === 'response.completed') {
+          event.response.output.forEach((item, index) => completedItems.set(index, item))
+          const output = [...completedItems.entries()].sort(([left], [right]) => left - right).map(([, item]) => item)
+          return searchResult({ ...event.response, output }, limit)
+        }
         if (event.type === 'response.failed' || event.type === 'response.incomplete' || event.type === 'error') {
           throw new WebError('HIVEMIND search did not complete', 'WEB_SEARCH_INCOMPLETE')
         }

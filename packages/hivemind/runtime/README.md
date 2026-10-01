@@ -49,7 +49,7 @@ The source package owns authentication-backed composition and local connection r
 
 ## Native web search
 
-`nativeWebSearch` defaults to `true`; the HIVE chat and HyperAgents presets declare it explicitly. The authenticated web-search tool first uses the selected `ctx.web` provider and returns to the existing tenant web-job service on missing credentials, provider failure, empty sources, or the primary deadline. User cancellation stops both paths. The native OpenAI provider is described in [web-search-openai](../../web/web-search-openai/README.md). Existing HIVE identity and approval rules govern both routes.
+`nativeWebSearch` defaults to `false`; the HIVE chat and HyperAgents presets explicitly keep existing search enabled. When opted in, the authenticated web-search tool first uses the selected `ctx.web` provider and returns to the existing tenant web-job service on missing credentials, provider failure, empty sources, or the primary deadline. User cancellation stops both paths. The native OpenAI provider is described in [web-search-openai](../../web/web-search-openai/README.md). Existing HIVE identity and approval rules govern both routes.
 
 ## Model Experience
 

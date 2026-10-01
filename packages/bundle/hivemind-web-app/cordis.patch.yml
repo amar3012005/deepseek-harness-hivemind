@@ -312,15 +312,11 @@
         model: !!js process.env.HIVEMIND_DREAM_MODEL
         modelProvider: !!js process.env.HIVEMIND_DREAM_MODEL_PROVIDER
 
-# Native shared web-search provider. OAuth stays on the runner; no connector UI.
-- id: web
-  config:
-    searchProvider: openai-responses
-    fetchProvider: http
-
+# Available for future activation; preserve existing search routing.
 - insert:
     - id: web-search-openai
       name: '@deepseek-ai/dsh-web-search-openai'
+      disabled: true
       config:
         transport: codex
         model: gpt-6-luna

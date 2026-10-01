@@ -1,6 +1,6 @@
 # @deepseek-ai/dsh-web-search-openai
 
-Native Cordis provider for `ctx.web`, registered as `openai-responses`. The HIVE web profile selects it globally; neither users nor agents configure a connected app. The owning subsystem is [Web](../../../docs/subsystems/web.md).
+Native Cordis provider for `ctx.web`, registered as `openai-responses`. The HIVE web profile includes it disabled until explicitly activated; neither users nor agents configure a connected app. The owning subsystem is [Web](../../../docs/subsystems/web.md).
 
 ## Configuration
 
@@ -17,7 +17,7 @@ Codex searches use the catalog transport base `https://chatgpt.com/backend-api/c
 
 ## HIVE composition and fallback
 
-`hivemind_web_search` retains its existing identity and permission policy. With `nativeWebSearch: true`, it calls the selected native provider first. Missing authorization, upstream errors, incomplete streams, empty results, or the primary deadline return control to the existing tenant-authenticated web-job service. This preserves that service's configured search backend rather than replacing it. User cancellation never starts fallback. The primary deadline leaves time inside the tool's existing 60-second budget for the fallback job.
+`hivemind_web_search` retains its existing identity and permission policy. `nativeWebSearch` defaults to `false`. Activation requires enabling the plugin and selecting `openai-responses` on `web`, then setting `nativeWebSearch: true` in the intended presets. Once enabled, it calls the selected native provider first. Missing authorization, upstream errors, incomplete streams, empty results, or the primary deadline return control to the existing tenant-authenticated web-job service. This preserves that service's configured search backend rather than replacing it. User cancellation never starts fallback. The primary deadline leaves time inside the tool's existing 60-second budget for the fallback job.
 
 Native `web_search` also uses this provider through `ctx.web`; its consumer reports provider errors normally. The tenant web-job fallback belongs to `hivemind_web_search`, because it requires authenticated HIVE authority and cannot be captured by a global provider. HyperAgent remote research jobs retain their existing durable job contract.
 

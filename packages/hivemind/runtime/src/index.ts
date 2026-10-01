@@ -242,7 +242,7 @@ export const Config: z<Config> = z.object({
   historyTurns: z.natural().min(1).required(),
   historyMaxChars: z.natural().min(1).required(),
   webApprovalRequired: z.boolean().default(true),
-  nativeWebSearch: z.boolean().default(true),
+  nativeWebSearch: z.boolean().default(false),
 })
 
 interface JsonRecord {

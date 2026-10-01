@@ -6,6 +6,7 @@ import type { MemoryProvider } from '@deepseek-ai/dsh-hivemind-memory'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import type { ToolDefinition } from '@deepseek-ai/dsh-tools'
+import type { WebRuntime } from '@deepseek-ai/dsh-web'
 import { createAssistantMessage, createToolResultMessage, createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { UserMessage } from '@deepseek-ai/dsh-llm'
 import {
@@ -84,7 +85,7 @@ function config(icarusConfigPath: string): Config {
   }
 }
 
-function mount(pluginConfig: Config, withSpill = false): HarnessMock {
+function mount(pluginConfig: Config, withSpill = false, web?: Pick<WebRuntime, 'search'>): HarnessMock {
   const tools = new Map<string, ToolDefinition>()
   const skills = new Map<string, {
     description: string
@@ -159,6 +160,7 @@ function mount(pluginConfig: Config, withSpill = false): HarnessMock {
       }),
     },
     get(name: string) {
+      if (name === 'web') return web
       if (name === 'userQuestions') {
         return {
           async ask(input: { questions: readonly { id: string }[] }) {
@@ -528,6 +530,42 @@ describe('HIVE-MIND runtime', () => {
       'http://127.0.0.1:3099/api/web/search/jobs',
       'http://127.0.0.1:3099/api/web/jobs/123e4567-e89b-12d3-a456-426614174000',
     ])
+  })
+
+  it('uses native search without submitting an existing service job', async () => {
+    const pluginConfig = { ...config(await authorityFile()), nativeWebSearch: true }
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+    const search = vi.fn(async () => ({ content: 'Finding', sources: [{ title: 'Source', url: 'https://example.com' }], truncated: false }))
+    const harness = mount(pluginConfig, false, { search })
+    await expect(tool(harness, 'hivemind_web_search').execute({ query: 'native test' }, execContext())).resolves.toMatchObject({ status: 'ready', summary: 'Finding', count: 1 })
+    expect(search).toHaveBeenCalledOnce()
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('falls back to the existing authenticated service after a native failure', async () => {
+    const pluginConfig = { ...config(await authorityFile()), nativeWebSearch: true }
+    const fetchMock = vi.fn(async (url: URL, _init?: RequestInit) => String(url).endsWith('/api/web/search/jobs')
+      ? jsonResponse({ job_id: 'fallback-job', status: 'queued' }, 202)
+      : jsonResponse({ status: 'succeeded', results: [{ title: 'Fallback', url: 'https://example.com', snippet: 'Source' }] }))
+    vi.stubGlobal('fetch', fetchMock)
+    const search = vi.fn(async () => { throw new Error('provider unavailable') })
+    const harness = mount(pluginConfig, false, { search })
+    await expect(tool(harness, 'hivemind_web_search').execute({ query: 'fallback test' }, execContext())).resolves.toMatchObject({ status: 'ready', count: 1, results: [{ title: 'Fallback' }] })
+    expect(search).toHaveBeenCalledOnce()
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(new Headers(fetchMock.mock.calls[0]?.[1]?.headers).get('authorization')).toBe('Bearer test-secret-token')
+  })
+
+  it('does not start fallback after a native search is cancelled', async () => {
+    const pluginConfig = { ...config(await authorityFile()), nativeWebSearch: true }
+    const controller = new AbortController()
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+    const search = vi.fn(async () => { controller.abort(new Error('cancelled')); throw controller.signal.reason })
+    const harness = mount(pluginConfig, false, { search })
+    await expect(tool(harness, 'hivemind_web_search').execute({ query: 'cancel test' }, { agent, signal: controller.signal } as never)).rejects.toThrow('cancelled')
+    expect(fetchMock).not.toHaveBeenCalled()
   })
 
   it('mounts connection routes without contributing model features when globally disabled', async () => {
