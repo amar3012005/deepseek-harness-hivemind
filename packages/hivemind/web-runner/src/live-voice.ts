@@ -240,7 +240,10 @@ export function liveVoicePlugin(config: LiveVoiceConfig,
                     const startSeq = agent.session.snapshotEvents().length
                     await new Promise<void>((resolve, reject) => {
                       let turn: number | undefined
+                      let finished = false
                       const finish = (error?: Error) => {
+                        if (finished) return
+                        finished = true
                         clearTimeout(timeout); dispose(); lifetime.signal.removeEventListener('abort', aborted)
                         if (error) reject(error)
                         else resolve()
@@ -252,8 +255,12 @@ export function liveVoicePlugin(config: LiveVoiceConfig,
                         if (record.type === 'turn/start' && turn === undefined) turn = record.data.turn
                         if (record.type === 'turn/end' && record.data.turn === turn) {
                           const result = session.snapshotEvents().findLast(e => e.type === 'assistant/message' && e.data.turn === turn)
-                          send(result?.type === 'assistant/message' ? textOf(result.data.message).slice(0,4000) : 'The task did not produce a confirmed answer. Please check the conversation.', delegationId)
-                          finish()
+                          dispose()
+                          void ctx.sessions.flush(session).then(() => {
+                            if (finished || closed) return
+                            send(result?.type === 'assistant/message' ? textOf(result.data.message).slice(0,4000) : 'The task did not produce a confirmed answer. Please check the conversation.', delegationId)
+                            finish()
+                          }, () => finish(new Error('session_unavailable')))
                         }
                       })
                       lifetime.signal.addEventListener('abort', aborted, { once: true })
