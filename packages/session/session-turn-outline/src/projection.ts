@@ -60,6 +60,7 @@ function preview(content: MessageContent, limit: number): string {
 
 const turnOutlineEntriesSchema: ZodType<readonly TurnOutlineEntry[]> = z.array(z.object({
   turn: z.number().int().nonnegative(),
+  time: z.number().optional(),
   seq: z.number().int().nonnegative().transform(SessionSeq),
   prompt: z.string().max(PROMPT_PREVIEW_LIMIT),
   response: z.string().max(RESPONSE_PREVIEW_LIMIT),
@@ -84,7 +85,7 @@ const EMPTY_OUTLINE: TurnOutlineState = { turns: [], draft: '' }
 /** The `turnOutline` unit registered on `ctx.sessionProjections` (exported for the unit spec). */
 export const turnOutlineProjectionDefinition = {
   key: 'turnOutline',
-  stateVersion: 2,
+  stateVersion: 3,
   stateSchema: turnOutlineStateSchema,
   init: () => EMPTY_OUTLINE,
   apply: (state, event) => {
@@ -99,7 +100,7 @@ export const turnOutlineProjectionDefinition = {
         // standing entry.
         if (last !== undefined && event.data.turn <= last.turn) return state
         return {
-          turns: [...state.turns, { turn: event.data.turn, seq: event.seq, prompt: '', response: '' }],
+          turns: [...state.turns, { turn: event.data.turn, seq: event.seq, time: event.time, prompt: '', response: '' }],
           draft: '',
         }
       }

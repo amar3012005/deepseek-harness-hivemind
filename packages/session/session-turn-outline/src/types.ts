@@ -16,6 +16,7 @@ export interface TurnOutlineEntry {
   /** Host-assigned turn number (the `turn/start` payload). */
   readonly turn: number
   /** The turn's `turn/start` event seq — paging a window back through this seq loads the whole turn. */
+  readonly time?: number | undefined
   readonly seq: SessionSeq
   /** Bounded first-human-prompt preview (one rail-card line); `''` until an eligible prompt lands. */
   readonly prompt: string

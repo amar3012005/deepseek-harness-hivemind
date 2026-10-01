@@ -80,7 +80,21 @@ function sameRailScrollState(left: RailScrollState, right: RailScrollState): boo
     && left.canScrollDown === right.canScrollDown
 }
 
-function TurnNavigatorRail({ items, activeTurn, busyTurn, onNavigate, t }: TurnNavigatorProps) {
+function TurnNavigatorRail({ items: allItems, activeTurn: originalActiveTurn, busyTurn, onNavigate, t }: TurnNavigatorProps) {
+  const dreaming = window.location.pathname === '/hivemind/app/overview/dreaming' || new URLSearchParams(window.location.search).has('dreamingParent')
+  const dayDate = (item: TurnRailItem): string | undefined => item.time === undefined
+    ? undefined : new Date(item.time).toLocaleDateString('de-DE')
+  const items = dreaming ? allItems.filter((item, index) => dayDate(item) === undefined
+    || allItems.findIndex(other => dayDate(other) === dayDate(item)) === index) : allItems
+  const activeItem = allItems.find(item => item.turn === originalActiveTurn)
+  const activeDate = activeItem === undefined ? undefined : dayDate(activeItem)
+  const activeTurn = dreaming && activeDate !== undefined
+    ? items.find(item => dayDate(item) === activeDate)?.turn ?? originalActiveTurn : originalActiveTurn
+  const dates = [...new Set(items.flatMap(item => dayDate(item) === undefined ? [] : [dayDate(item)]))]
+  const dreamLabel = (item: TurnRailItem): string => {
+    const date = dayDate(item)
+    return date === undefined ? 'Dream · Date unavailable' : `Day ${dates.indexOf(date) + 1} · ${date}`
+  }
   const [previewTurn, setPreviewTurn] = useState<number | null>(null)
   const [scrollState, setScrollState] = useState<RailScrollState>(RAIL_AT_REST)
   const scrollerRef = useRef<HTMLDivElement | null>(null)
@@ -126,7 +140,7 @@ function TurnNavigatorRail({ items, activeTurn, busyTurn, onNavigate, t }: TurnN
     syncScrollState()
   }, [activeTurn, items])
 
-  if (items.length < 2) return null
+  if (items.length < (dreaming ? 1 : 2)) return null
   const previewIndex = items.findIndex(item => item.turn === previewTurn)
   const preview = previewIndex < 0 ? undefined : items[previewIndex]
   const previewPosition = previewIndex < 0 ? undefined : itemPosition(previewIndex)
@@ -147,7 +161,7 @@ function TurnNavigatorRail({ items, activeTurn, busyTurn, onNavigate, t }: TurnN
       <nav
         className={css.frame}
         style={frameStyle(items.length, scrollState.top)}
-        aria-label={t('chat.turnNavigation.label')}
+        aria-label={dreaming ? 'Dreaming days' : t('chat.turnNavigation.label')}
         onClick={navigateAtPointer}
         onPointerMove={previewAtPointer}
         onPointerEnter={() => { pointerInsideRef.current = true }}
@@ -175,7 +189,7 @@ function TurnNavigatorRail({ items, activeTurn, busyTurn, onNavigate, t }: TurnN
                   <button
                     type="button"
                     className={classes.join(' ')}
-                    aria-label={t(
+                    aria-label={dreaming ? dreamLabel(item) : t(
                       item.anchor.kind === 'loaded' ? 'chat.turnNavigation.jump' : 'chat.turnNavigation.jumpLoad',
                       { turn: item.turn },
                     )}
@@ -197,7 +211,7 @@ function TurnNavigatorRail({ items, activeTurn, busyTurn, onNavigate, t }: TurnN
         {preview !== undefined && previewPosition !== undefined && (
           <div id={previewId} role="tooltip" className={css.preview} style={previewPosition}>
             <div className={css.previewPrompt}>
-              {preview.prompt || t('chat.turnNavigation.turn', { turn: preview.turn })}
+              {dreaming ? dreamLabel(preview) : preview.prompt || t('chat.turnNavigation.turn', { turn: preview.turn })}
             </div>
             {preview.response !== '' && <div className={css.previewResponse}>{preview.response}</div>}
           </div>

@@ -12,6 +12,7 @@ import type { TurnNavigationItem } from '../contract/snapshot.ts'
 
 /** One rail mark: a loaded Turn scrolls to its row; an unloaded one pages history through its seq first. */
 export interface TurnRailItem {
+  readonly time?: number | undefined
   readonly turn: number
   /** Bounded prompt preview (loaded window first, outline fallback). */
   readonly prompt: string
@@ -32,12 +33,19 @@ const EMPTY_ITEMS: readonly TurnRailItem[] = []
  * decorative, so a malformed one degrades to `''` and the turn stays
  * navigable by number.
  */
-function outlineEntry(value: unknown): { turn: number; seq: SessionSeq; prompt: string; response: string } | undefined {
+function outlineEntry(value: unknown): {
+  turn: number
+  seq: SessionSeq
+  time?: number | undefined
+  prompt: string
+  response: string
+} | undefined {
   if (typeof value !== 'object' || value === null) return undefined
-  const entry = value as { turn?: unknown; seq?: unknown; prompt?: unknown; response?: unknown }
+  const entry = value as { turn?: unknown; seq?: unknown; time?: unknown; prompt?: unknown; response?: unknown }
   if (typeof entry.turn !== 'number' || !Number.isSafeInteger(entry.turn) || entry.turn < 0) return undefined
   if (typeof entry.seq !== 'number' || !Number.isSafeInteger(entry.seq) || entry.seq < 0 || Object.is(entry.seq, -0)) return undefined
   return {
+    time: typeof entry.time === 'number' ? entry.time : undefined,
     turn: entry.turn,
     seq: SessionSeq(entry.seq),
     prompt: typeof entry.prompt === 'string' ? entry.prompt : '',
@@ -69,6 +77,7 @@ export function mergeTurnRailItems(
     const entry = outlineEntry(raw)
     if (entry === undefined) continue
     byTurn.set(entry.turn, {
+      time: entry.time,
       turn: entry.turn,
       prompt: entry.prompt,
       response: entry.response,
@@ -78,6 +87,7 @@ export function mergeTurnRailItems(
   for (const item of loaded) {
     const preview = byTurn.get(item.turn)
     byTurn.set(item.turn, {
+      time: item.time ?? preview?.time,
       turn: item.turn,
       prompt: item.prompt !== '' ? item.prompt : preview?.prompt ?? '',
       response: item.response !== '' ? item.response : preview?.response ?? '',

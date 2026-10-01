@@ -42,6 +42,7 @@ export interface ChatNodeStore {
 
 /** One loaded Turn projected into the compact Chat navigation rail. */
 export interface TurnNavigationItem {
+  readonly time?: number | undefined
   readonly turn: number
   /** Stable Conversation Context key the rail scrolls to. */
   readonly anchorKey: string

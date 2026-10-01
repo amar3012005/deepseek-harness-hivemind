@@ -65,7 +65,7 @@ export function sameTurnNavigationItem(
 ): boolean {
   if (left === undefined || right === undefined) return left === right
   return left.turn === right.turn && left.anchorKey === right.anchorKey
-    && left.prompt === right.prompt && left.response === right.response
+    && left.time === right.time && left.prompt === right.prompt && left.response === right.response
 }
 
 /**
@@ -89,6 +89,7 @@ export function turnNavigationItem(
   const response = loaded.findLast(node => responseText(node) !== '')
   return {
     turn,
+    time: anchor.location?.kind === 'turn' || anchor.location?.kind === 'step' ? anchor.location.turn.start?.time : undefined,
     anchorKey: anchor.key,
     prompt: user === undefined ? '' : promptText(user),
     response: response === undefined ? '' : responseText(response),

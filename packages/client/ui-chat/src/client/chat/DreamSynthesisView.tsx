@@ -16,6 +16,7 @@ export function DreamSynthesisView({ node, openPreview }: ChatNodeViewProps<'dre
     : node.data.summary
   return <section className={css.root} data-dream-synthesis={node.data.runId}>
     <h2>🌙 {node.data.kind === 'welcome' ? 'Welcome to Dreaming' : 'Dream exploration'}</h2>
+    {((node.location?.kind === 'step' || node.location?.kind === 'turn') && node.location.turn.start) && <time dateTime={new Date(node.location.turn.start.time).toISOString()}>{new Date(node.location.turn.start.time).toLocaleString('de-DE')}</time>}
     <p className={css.prose}>{summary}</p>
     {node.data.kind === 'welcome' ? null : node.data.discoveries.length === 0
       ? <p>No new supported connection was saved during this exploration.</p>
