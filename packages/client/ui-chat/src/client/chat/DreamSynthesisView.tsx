@@ -12,9 +12,9 @@ export function DreamSynthesisView({ node, openPreview }: ChatNodeViewProps<'dre
   openPreview: (discovery: DreamDiscovery) => void
 }) {
   return <section className={css.root} data-dream-synthesis={node.data.runId}>
-    <h2>🌙 Dream exploration</h2>
+    <h2>🌙 {node.data.kind === 'welcome' ? 'Welcome to Dreaming' : 'Dream exploration'}</h2>
     <p className={css.prose}>{node.data.summary}</p>
-    {node.data.discoveries.length === 0
+    {node.data.kind === 'welcome' ? null : node.data.discoveries.length === 0
       ? <p>No new supported connection was saved during this exploration.</p>
       : <><h3>Here’s what I discovered</h3>{node.data.discoveries.map((discovery, index) =>
         <article className={css.card} key={discovery.memoryId}>

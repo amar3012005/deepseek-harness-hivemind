@@ -9,7 +9,7 @@ export interface DreamDiscovery {
   uncertainty?: string | null
   sources?: Array<{ id: string; title: string; content: string }>
 }
-export interface DreamSynthesis { presentation: 'dream-synthesis-v1'; runId: string; summary: string; next: string; discoveries: DreamDiscovery[] }
+export interface DreamSynthesis { kind?: 'welcome' | 'exploration'; presentation: 'dream-synthesis-v1'; runId: string; summary: string; next: string; discoveries: DreamDiscovery[] }
 const uuid = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i
 export function readDreamSynthesis(content: readonly unknown[]): DreamSynthesis | undefined {
   for (const block of content) {
@@ -18,7 +18,8 @@ export function readDreamSynthesis(content: readonly unknown[]): DreamSynthesis 
       const value = JSON.parse(block.text)
       if (value?.presentation !== 'dream-synthesis-v1' || value.status !== 'ready_to_complete'
         || typeof value.runId !== 'string' || !uuid.test(value.runId) || typeof value.summary !== 'string'
-        || typeof value.next !== 'string' || !Array.isArray(value.discoveries)) continue
+        || typeof value.next !== 'string' || !Array.isArray(value.discoveries)
+        || (value.kind !== undefined && value.kind !== 'welcome' && value.kind !== 'exploration')) continue
       if (!value.discoveries.every((item: DreamDiscovery) => item && item.saved === true
         && typeof item.memoryId === 'string' && uuid.test(item.memoryId) && typeof item.title === 'string'
         && typeof item.content === 'string' && Array.isArray(item.sourceIds)

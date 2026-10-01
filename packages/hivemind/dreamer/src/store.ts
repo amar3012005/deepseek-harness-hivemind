@@ -199,6 +199,31 @@ export class DreamStore {
       return setting
     })
   }
+  /** An introduction is one durable occurrence per company, serialized with scheduled admission. */
+  async ensureIntroduction(owner: HivemindPrincipal): Promise<void> {
+    await this.scoped(owner, async (db) => {
+      const setting = (await db.query<DreamSetting>('SELECT * FROM harness_dream_settings WHERE org_id=$1 FOR UPDATE', [owner.orgId])).rows[0]
+      if (!setting?.enabled || !setting.project_id) return
+      const prior = await db.query('SELECT 1 FROM harness_dream_runs WHERE org_id=$1 LIMIT 1', [owner.orgId])
+      if (prior.rowCount) return
+      const address = await this.sessionAddress(owner, db)
+      const key = 'dreaming-introduction-v1'
+      await db.query(`INSERT INTO harness_dream_runs(id,org_id,user_id,revision,occurrence_key,occurrence_id,trigger_id,parent_id,child_id,project_id)
+        VALUES($1,$2,$3,$4,$5,$6,'introduction',$7,$8,$9) ON CONFLICT(org_id,occurrence_key) DO NOTHING`,
+      [stableId(`${owner.orgId}:${key}`), owner.orgId, setting.user_id, setting.revision, key, stableId(`${owner.orgId}:welcome`), address.parentSessionId, address.childSessionId, setting.project_id])
+      await db.query('UPDATE harness_dream_due SET has_work=true WHERE org_id=$1', [owner.orgId])
+    })
+  }
+  async sessionCredits(owner: HivemindPrincipal, sessionId: string): Promise<number | undefined> {
+    return this.scoped(owner, async (db) => {
+      const allowed = await db.query(`SELECT 1 FROM harness_sessions WHERE org_id=$1 AND user_id=$2 AND id=$3
+        UNION ALL SELECT 1 FROM harness_dream_runs WHERE org_id=$1 AND child_id=$3 LIMIT 1`, [owner.orgId, owner.userId, sessionId])
+      if (!allowed.rowCount) return undefined
+      const row = (await db.query<{ credits: string }>(`SELECT COALESCE(SUM(quantity),0)::text AS credits FROM usage_events
+        WHERE org_id=$1 AND metric='credits_consumed' AND state='settled' AND metadata->>'session_id'=$2`, [owner.orgId, sessionId])).rows[0]
+      return Number(row?.credits ?? 0)
+    })
+  }
   async accept(orgId: string, key: string, occurrenceId: string, triggerId: string, revision: number): Promise<DreamRun> {
     const indexed = (await this.pool.query<{ user_id: string }>('SELECT user_id FROM harness_dream_due WHERE org_id=$1', [orgId])).rows[0]
     if (!indexed) throw new Error('dreamer_disabled')

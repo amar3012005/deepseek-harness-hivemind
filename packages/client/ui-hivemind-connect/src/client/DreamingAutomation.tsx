@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import css from './DreamingAutomation.module.css'
-interface Run { id: string; status: string; created_at: string; updated_at: string; output_ids: string[] }
+interface Run { trigger_id?: string; id: string; status: string; created_at: string; updated_at: string; output_ids: string[] }
 interface Activity {
   enabled: boolean
   activity: { session?: { parentSessionId: string; childSessionId: string; mode: 'continuable' }; timezone: string; cron: string; nextRunAt: string | null; scheduleState: string; runs: Run[] }
@@ -41,7 +41,7 @@ export function DreamingAutomation({ room = false }: { room?: boolean } = {}) {
       <p>Next run: {timing.nextRunAt ? `${date(timing.nextRunAt)} (${timing.timezone})` : timing.scheduleState === 'off' ? 'Not scheduled — Dreaming is Off' : timing.scheduleState === 'unavailable' ? 'Scheduler unavailable' : 'Waiting for schedule registration'}</p>
       <p>Status: {latest && ['queued', 'running'].includes(latest.status) ? latest.status : timing.scheduleState}. {latest && !['queued', 'running'].includes(latest.status) ? `Last run: ${latest.status}.` : ''}</p>
       <button type="button" aria-expanded={open} onClick={() => { setOpen(value => !value) }}>Run history ({timing.runs.length})</button>
-      {open && <div aria-label="Dreaming run history">{timing.runs.length === 0 ? <p>No dreaming runs yet.</p> : <ol>{timing.runs.map(run => <li key={run.id}><time dateTime={run.created_at}>{date(run.created_at)}</time> · {run.status} · {run.output_ids.length} Flashbacks</li>)}</ol>}</div>}
+      {open && <div aria-label="Dreaming run history">{timing.runs.length === 0 ? <p>No dreaming runs yet.</p> : <ol>{timing.runs.map(run => <li key={run.id}><time dateTime={run.created_at}>{date(run.created_at)}</time> · {run.trigger_id === 'introduction' ? 'Welcome · ' : ''}{run.status} · {run.output_ids.length} Flashbacks</li>)}</ol>}</div>}
     </>}
     {sessionHref && !room && <a href={sessionHref}>View dreaming</a>}
     <a href="/hivemind/app/settings">Manage in Settings</a>

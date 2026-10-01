@@ -6,3 +6,24 @@
 .root input:disabled { cursor: wait; }
 .accounts { margin-top: 10px; display: flex; flex-direction: column; gap: 8px; }
 .account small { display: block; color: var(--dsw-alias-label-tertiary); font-size: 11px; margin-top: 2px; }
+
+.switch { appearance: none; width: 34px; height: 20px; border-radius: 20px; background: #b8bec7; position: relative; border: 0; transition: background .15s; }
+.switch::after { content: ''; position: absolute; width: 16px; height: 16px; left: 2px; top: 2px; background: white; border-radius: 50%; transition: transform .15s; box-shadow: 0 1px 3px #0002; }
+.switch:checked { background: #247aff; }
+.switch:checked::after { transform: translateX(14px); }
+.switch:focus-visible { outline: 2px solid #247aff; outline-offset: 3px; }
+.switch:disabled { opacity: .5; }
+.logo { width: 24px; height: 24px; object-fit: contain; border-radius: 5px; }
+.appName { flex: 1; }
+.more { display: flex; justify-content: space-between; padding: 12px 0 2px; color: #247aff; text-decoration: none; }
+
+.chatControl { position: relative; }
+.chatButton { border: 0; background: transparent; color: var(--dsw-alias-label-secondary); padding: 8px; cursor: pointer; }
+.chatPanel { position: absolute; right: 0; top: 100%; width: 300px; padding: 18px; border: 1px solid var(--dsw-alias-border-primary, #e5e5e5); border-radius: 18px; background: var(--dsw-surface-primary, white); box-shadow: 0 12px 32px #0001; z-index: 10; }
+.chatPanel a { text-decoration: none; color: inherit; }
+.heroPanel { width: min(460px, 100%); margin: 12px auto 0; padding: 16px 20px; border: 1px solid var(--dsw-alias-border-l3, #e8e8e8); border-radius: 16px; box-sizing: border-box; font-size: 13px; text-align: left; }
+.heroPanel a { text-decoration: none; color: inherit; }
+.heroPanel p { color: var(--dsw-alias-label-tertiary); font-size: 12px; }
+.heroPanel .more { color: #247aff; }
+.chatButton { display: flex; align-items: center; justify-content: center; }
+.accounts a { padding: 5px 0; }

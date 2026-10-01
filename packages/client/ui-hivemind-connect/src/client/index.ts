@@ -1,3 +1,4 @@
+import { BrainConnections } from './BrainConnections.tsx'
 import type {} from '@deepseek-ai/dsh-client-ui-schedule/client'
 import { DreamingAutomation } from './DreamingAutomation.tsx'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
@@ -28,7 +29,6 @@ import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { FileAttachmentRef, ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import { createElement } from 'react'
 import { ScopeSelect, type HivemindReadScope } from './ScopeSelect.tsx'
-import { ConnectorChips, type ConnectorChipsProps } from './ConnectorChips.tsx'
 import { createConnectorMentionSource } from './ConnectorMentions.ts'
 import { ContextualFollowUps, selectContextualFollowUps } from './ContextualFollowUps.tsx'
 import {
@@ -272,12 +272,17 @@ export function apply(ctx: ClientContext): void {
       },
     }),
   }, HyperagentEmployeePicker))
+  ctx.slots.inject('conversation.session.header.utilities', () => ctx.slots.register({
+    name: 'conversation.session.header.utilities', id: 'brain-connections', locale: NS, order: 99,
+    inject: sessionId => ({ sessionId }),
+  }, BrainConnections))
   // Put the panel/preview affordance in the conversation header's far-right
   // corner, matching the native “door” control. A higher-priority seat shadows
   // ui-sidebar-right's generic expand button; this implementation preserves
   // its expand/collapse behavior for non-HyperAgents sessions.
   ctx.slots.inject('conversation.session.header.utilities', () => ctx.slots.register({
     name: 'conversation.session.header.utilities', id: 'dreaming-room', locale: NS, order: 100,
+    inject: sessionId => ({ sessionId }),
   }, DreamingRoom))
   ctx.slots.inject('conversation.session.header.corner', () => ctx.slots.register({
     name: 'conversation.session.header.corner', locale: NS, priority: -1,
@@ -364,23 +369,7 @@ export function apply(ctx: ClientContext): void {
       name: 'conversation.hero.dock',
       id: 'hivemind-connector-suggestions',
       order: -20,
-      inject: (): ConnectorChipsProps => {
-        const sessionId = ctx.sessions.list.getSnapshot().current
-        if (sessionId === undefined) return { insertMention: () => {}, visible: false }
-        const scope = ctx.sessions.scope(sessionId)
-        if (scope === undefined) throw new Error(`HIVE-MIND connector chips: session "${sessionId}" resolved no scope`)
-        const conversation = scope.get('conversation')
-        if (conversation === undefined) throw new Error('HIVE-MIND connector chips: conversation service unavailable')
-        const input = conversation.input.for(scope)
-        return {
-          insertMention: (chip) => {
-            const snapshot = input.state.getSnapshot()
-            const end = snapshot.draft.length
-            input.insertReference(chip, { start: end, end, draftRev: snapshot.draftRev })
-          },
-        }
-      },
-    }, ConnectorChips))
+    }, props => createElement(BrainConnections, { sessionId: props.sessionId, hero: true })))
     const sendFollowUp = (prompt: string): void => {
       const sessionId = ctx.sessions.list.getSnapshot().current
       const scope = sessionId === undefined ? undefined : ctx.sessions.scope(sessionId)

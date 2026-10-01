@@ -56,3 +56,20 @@ Automation tasks includes a read-only Nightly Dreaming card. Its next run comes
 from the existing Cloudflare trigger; its history comes from the tenant-scoped
 PostgreSQL ledger. The On/Off control remains on main HIVEMIND Settings.
 Each tenant retains one native continuable Dreamer conversation. The earliest retained parent/child pair is reused, including after upgrade; occurrence rows retain separate checkpoints, output receipts and callbacks. The Nightly Dreaming title opens the native child address on the dedicated Dreaming route. Both controller and child remain excluded from Recent through native subagent classification. Cold activation mounts the Chat preset and explicitly resolves a model/provider through agentDefaultModel; a failed model turn terminates its occurrence instead of retrying indefinitely. Native compaction controls growing conversation context.
+
+## First-time welcome and usage
+
+The independent Dreaming page shows a welcome banner when the company has no
+Dreaming occurrences. Enabling queues one `introduction` occurrence with the
+existing stable parent/child IDs and tenant lease. Retries reuse that occurrence;
+companies with existing history receive no additional introduction. The welcome
+loads authenticated profile context, exposes only `dream_finish`, and writes no
+Flashbacks or connector reads. Its final receipt renders a welcome in the same
+persistent room. Future scheduled occurrences retain the full Dreamer tool set.
+Introduction occurrences do not issue dispatcher callbacks.
+
+GET `/hivemind/dreamer/credits?sessionId=...` returns actual settled credits for
+an owned chat session or this company's Dreaming session. It checks active
+membership and session authorization before summing the existing usage ledger.
+The UI displays a dash if usage cannot be confirmed. No billing mutation or
+new database migration is introduced.
