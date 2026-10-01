@@ -8,7 +8,7 @@ Native Harness behavior shared by HIVEMIND-chat and HyperAgents.
 - Declare `memory_destination` (`personal`, `organization`, `project`) and `memory_project` for project writes. The grant records the schedule ID, exact prompt hash, destination, project, and decision in the owning Session. Persistence must acknowledge it before schedule activation.
 - Declined, missing, changed-prompt, mixed-batch, or mismatched-destination grants return a canonical cancelled save result during execution. They never open a human question in an unattended scheduled turn. Stop that write without retrying.
 - Dedicated Dreamer uses `dream_save` and its tenant-scoped Flashbacks project. Legacy native Dreamer reminders explicitly requesting Flashbacks also resolve that reserved project through authenticated storage, force project scope and derived metadata, and avoid per-write approval. An arbitrary model-provided project UUID is not an approval exemption.
-- `hyperagents_memory` is private operating history, not company memory. Its existing authenticated save path needs no company-memory approval. Do not send private operating records to generic company save tools.
+- `hyperagents_memory` is private operating history, not company memory. Its existing authenticated save path needs no company-memory approval. Private-only schedules also skip the company-write creation question without receiving any company-write grant. Do not send private operating records to generic company save tools.
 
 ## Read contracts and recovery
 
@@ -26,4 +26,4 @@ Every external company save first requires an acknowledged Session journal conta
 
 ## Checks
 
-928 focused tests passed in Memory, Runtime, Dreamer, and Schedule packages; 14 environment-dependent tests skipped. Host and client TypeScript projects passed. The real native Schedule tool also verifies destination forwarding before activation and prevents activation when permission persistence fails. Production deployment and authenticated canary evidence are recorded separately after release.
+929 focused tests passed in Memory, Runtime, Dreamer, and Schedule packages; 14 environment-dependent tests skipped. Host and client TypeScript projects passed. The real native Schedule tool also verifies destination forwarding before activation and prevents activation when permission persistence fails. Production deployment and authenticated canary evidence are recorded separately after release.

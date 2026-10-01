@@ -33,6 +33,18 @@ async function fixture(selected = 'Allow') {
 }
 
 describe('scheduled company-memory permission', () => {
+  it('does not ask company-write permission for a private HyperAgent memory task', async () => {
+    const f = await fixture()
+    const prompt = 'Save reusable memories using hyperagents_memory.'
+    await f.fiber.ctx.get('hivemindScheduledMemoryPolicy')!.prepare(f.agent as never, 'schedule-1', prompt, undefined, undefined, new AbortController().signal)
+    expect(f.ask).not.toHaveBeenCalled()
+    expect(f.events).toEqual([])
+    f.due(prompt)
+    // Skipping a private-memory question never grants company-memory access.
+    expect(await f.call()).toMatchObject({ status: 'cancelled' })
+    expect(f.save).not.toHaveBeenCalled()
+    await f.fiber.dispose()
+  })
   it('captures approval before creation and reuses it during an unattended occurrence', async () => {
     const f = await fixture()
     const prompt = 'Save the confirmed decision to company memories.'

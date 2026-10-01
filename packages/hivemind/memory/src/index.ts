@@ -110,6 +110,9 @@ async function approveSaveDestination(
   request: SaveRequest,
 ): Promise<SaveRequest | undefined> {
   if (execution.agent === undefined) throw new TypeError('hivemind-memory: active agent required')
+  // Private operating history has a different schema and storage service.
+  // Never treat its reserved name as a company-memory destination.
+  if (/^hyper[-_ ]?agents$/i.test(request.project ?? '')) return undefined
   const scheduled = scheduledMemoryContext(execution.agent)
   const dreaming = scheduled !== undefined && scheduled.reminders.length > 0
     && scheduled.reminders.every(reminder => /\bdream(?:er|ing)?\b/i.test(reminder.prompt) && /\bflashbacks?\b/i.test(reminder.prompt))
@@ -440,6 +443,11 @@ export function memoryPlugin(config: MemoryPluginConfig, provider: MemoryProvide
       ctx.provide('hivemindMemory', provider)
       ctx.provide('hivemindScheduledMemoryPolicy', {
         async prepare(agent, id, prompt, requestedDestination, project, signal) {
+          const companyWrite = /hivemind|hive-mind|company (?:brain|memor)|organization/i.test(prompt)
+          const privateOnly = /^hyper[-_ ]?agents$/i.test(project ?? '')
+            || (requestedDestination === undefined && /\bhyperagents_memory\b/i.test(prompt)
+              && !companyWrite)
+          if (privateOnly) return
           const wantsWrite = requestedDestination !== undefined
             || /\b(save|write|store|persist)\b[\s\S]{0,160}\b(memor(?:y|ies)|hivemind|hive-mind|company brain)\b/i.test(prompt)
           if (!wantsWrite) return
