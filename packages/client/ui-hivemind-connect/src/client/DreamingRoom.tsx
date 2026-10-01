@@ -31,8 +31,9 @@ export function DreamingRoom() {
   }
   return <div className={css.root} data-dreaming-room-controls>
     <span className={css.activityButton}>🌙 Nightly Dreaming</span><DreamingSettings compact />
-    <button type="button" onClick={() =>{  setOpen(value => !value) }} aria-expanded={open}>Set goal</button>
-    <div className={css.activity}><DreamingAutomation room /></div>
+    <div className={css.activity}><DreamingAutomation room />
+      <button type="button" className={css.goalButton} onClick={() => { setOpen(value => !value) }} aria-expanded={open}>Add goal for next dreams</button>
+    </div>
     {open && <div className={css.agenda}><label>Agenda for future dreams<textarea maxLength={4000} value={text}
       onChange={(event) =>{  setText(event.target.value) }} /></label>
     <p>A suggestion for the next exploration. Saving does not start a run.</p>

@@ -9,7 +9,7 @@ interface Activity {
 export function DreamingAutomation({ room = false }: { room?: boolean } = {}) {
   const [state, setState] = useState<Activity>()
   const [error, setError] = useState(false)
-  const [open, setOpen] = useState(room)
+  const [open, setOpen] = useState(false)
   useEffect(() => {
     const controller = new AbortController()
     let busy = false

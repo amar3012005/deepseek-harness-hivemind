@@ -83,7 +83,7 @@ export const en: Record<SubagentKey, string> = {
   'tree.aria': 'Subagent sessions',
   'readonly.oneShot.title': 'One-shot subagent record',
   'readonly.dreaming.title': '🌙 Dreaming',
-  'readonly.dreaming.body': 'Your HIVEMIND agents explore company memories, connect ideas, and save discoveries to Flashbacks. Use Set goal above to suggest what they explore next.',
+  'readonly.dreaming.body': 'Your HIVEMIND agents explore company memories, connect ideas, and save discoveries to Flashbacks. Use Add goal for next dreams to suggest what they explore next.',
   'readonly.title': 'This subagent is read-only for now',
   'readonly.oneShot.body': 'One-shot tasks do not accept follow-ups; review the full execution record here.',
   'readonly.body': 'The parent session is offline; reopen it to continue sending messages.',

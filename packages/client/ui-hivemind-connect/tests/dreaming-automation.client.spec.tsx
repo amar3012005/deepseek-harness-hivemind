@@ -24,7 +24,10 @@ describe('Dreaming automation projection', () => {
   it('opens durable run history in the room without a redundant session link', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(response({ enabled: true, activity: { timezone: 'Europe/Berlin', nextRunAt: null, scheduleState: 'scheduled', runs: [{ id: 'r1', status: 'completed', created_at: '2030-01-01T01:00:00Z', output_ids: ['m1'] }] } })))
     render(<DreamingAutomation room />)
-    await screen.findByText(/1 Flashbacks/)
+    await screen.findByRole('button', { name: 'Run history (1)' })
+    expect(screen.queryByText(/1 Flashbacks/)).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Run history (1)' }))
+    expect(screen.getByText(/1 Flashbacks/)).toBeTruthy()
     expect(screen.queryByRole('link', { name: 'View dreaming' })).toBeNull()
     expect(screen.getByRole('button', { name: 'Run history (1)' }).getAttribute('aria-expanded')).toBe('true')
   })

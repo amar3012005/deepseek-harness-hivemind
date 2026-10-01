@@ -29,3 +29,8 @@
 /* Room activity is quiet text on the canvas, below the single control row. */
 .activity { background: transparent; box-shadow: none; border-radius: 0; }
 .activity > section { padding: 8px 12px; border: 0; border-radius: 0; background: transparent; }
+
+.root { width: 380px; box-sizing: border-box; justify-content: space-between; padding: 0 12px; min-height: 28px; }
+.activity { width: 380px; }
+.activity .goalButton { display: block; margin: 0 12px 8px; padding: 6px 0; border: 0; background: transparent; color: var(--dsw-alias-label-link, #117dff); font-size: 13px; text-align: left; }
+@media (max-width: 600px) { .root, .activity { width: min(380px, 85vw); } }
