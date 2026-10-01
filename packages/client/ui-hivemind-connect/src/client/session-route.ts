@@ -8,13 +8,14 @@ const SESSION_PATH_PREFIX = `${HIVE_OVERVIEW_PATH}/session/`
 const EMPLOYEE_SESSION_PATH_PREFIX = `${HIVE_EMPLOYEE_HARNESS_PATH}/session/`
 
 function routeBase(pathname: string): string {
-  return pathname.startsWith(EMPLOYEE_SESSION_PATH_PREFIX) || pathname === `${HIVE_EMPLOYEE_HARNESS_PATH}/new`
+  return pathname.startsWith(EMPLOYEE_SESSION_PATH_PREFIX) || (pathname === HIVE_EMPLOYEE_HARNESS_PATH || pathname === `${HIVE_EMPLOYEE_HARNESS_PATH}/new`)
     ? HIVE_EMPLOYEE_HARNESS_PATH : HIVE_OVERVIEW_PATH
 }
 
 function isHivemindRoute(pathname: string): boolean {
   return pathname.startsWith(HIVE_OVERVIEW_PATH)
     || pathname.startsWith(EMPLOYEE_SESSION_PATH_PREFIX)
+    || pathname === HIVE_EMPLOYEE_HARNESS_PATH
     || pathname === `${HIVE_EMPLOYEE_HARNESS_PATH}/new`
     || pathname === LEGACY_HIVE_OVERVIEW_PATH
 }
@@ -34,7 +35,7 @@ interface BrowserRoute {
 
 /** Parse only the public HIVE route grammar. Session ids remain opaque. */
 export function parseHivemindSessionRoute(pathname: string): Route {
-  if (pathname === HIVE_OVERVIEW_PATH || pathname === LEGACY_HIVE_OVERVIEW_PATH) return { kind: 'overview' }
+  if (pathname === HIVE_OVERVIEW_PATH || pathname === HIVE_EMPLOYEE_HARNESS_PATH || pathname === LEGACY_HIVE_OVERVIEW_PATH) return { kind: 'overview' }
   if (pathname === `${HIVE_OVERVIEW_PATH}/new` || pathname === `${HIVE_EMPLOYEE_HARNESS_PATH}/new`) return { kind: 'new' }
   const prefix = pathname.startsWith(EMPLOYEE_SESSION_PATH_PREFIX) ? EMPLOYEE_SESSION_PATH_PREFIX : SESSION_PATH_PREFIX
   if (!pathname.startsWith(prefix)) return { kind: 'invalid' }
@@ -115,6 +116,7 @@ export function setupHivemindSessionRouting(
         || preset === 'hyperagents' || preset === 'hyperagents-compressed') creatingOsSession = undefined
       else if (currentBase === HIVE_EMPLOYEE_HARNESS_PATH && summary.origin !== 'subagent') return id
     }
+    if (id === state.current && state.byId[id]?.blank === true && state.byId[id]?.origin !== 'subagent') return id
     return rootSession(state, id, currentBase)
   }
 
@@ -266,6 +268,19 @@ export function setupHivemindSessionRouting(
     }
     if (browser.location.pathname === dreamPath) return
     if (dreamingAddress()?.childSessionId === state.currentAddress?.childSessionId && state.currentAddress !== undefined) return
+    const active = state.current === undefined ? undefined : state.byId[state.current]
+    if (state.current !== undefined && active && !active.blank && active.origin !== 'subagent') {
+      const preset = active.projectionValues?.agentPreset ?? active.agentPreset
+      const nextBase = ['hivemind-hyperagents', 'hivemind-hq', 'hyperagents', 'hyperagents-compressed'].includes(preset ?? '')
+        ? HIVE_EMPLOYEE_HARNESS_PATH : HIVE_OVERVIEW_PATH
+      if (nextBase !== currentBase) {
+        currentBase = nextBase
+        observedCurrent = state.current
+        replace(sessionPath(state.current))
+        window.dispatchEvent(new PopStateEvent('popstate'))
+        return
+      }
+    }
     const current = rootForRoute(state, state.current)
     if (current === undefined) {
       const route = parseHivemindSessionRoute(browser.location.pathname)

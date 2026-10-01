@@ -41,6 +41,7 @@ export function setupSingulanceHeadline(
   subscribe?: (refresh: () => void) => () => void,
 ): () => void {
   const originals = new Map<HTMLElement, string>()
+  const transitions = new Map<HTMLElement, string>()
   const apply = (): void => {
     if (typeof document === 'undefined') return
     const preset = getPreset?.()
@@ -52,7 +53,28 @@ export function setupSingulanceHeadline(
       const title = headline?.lastElementChild?.firstElementChild
       if (!(headline instanceof HTMLElement) || !(title instanceof HTMLElement)) continue
       if (!originals.has(title)) originals.set(title, title.textContent ?? '')
-      if (title.textContent !== desired) title.textContent = desired
+      if (transitions.has(title) && transitions.get(title) !== desired) {
+        title.getAnimations().forEach(animation => animation.cancel())
+        transitions.delete(title)
+      }
+      if (title.textContent !== desired && transitions.get(title) !== desired) {
+        transitions.set(title, desired)
+        const previous = title.getAnimations()
+        previous.forEach(animation => animation.cancel())
+        if (!originals.has(title) || window.matchMedia('(prefers-reduced-motion: reduce)').matches || title.textContent === originals.get(title)) {
+          title.textContent = desired
+          transitions.delete(title)
+        } else {
+          const outgoing = title.animate([{ opacity: 1, transform: 'translateY(0) rotateX(0deg)' }, { opacity: 0, transform: 'translateY(-5px) rotateX(30deg)' }], { duration: 140, easing: 'ease-in', fill: 'forwards' })
+          void outgoing.finished.then(() => {
+            if (transitions.get(title) !== desired || !title.isConnected) return
+            title.textContent = desired
+            outgoing.cancel()
+            title.animate([{ opacity: 0, transform: 'translateY(5px) rotateX(-30deg)' }, { opacity: 1, transform: 'translateY(0) rotateX(0deg)' }], { duration: 200, easing: 'ease-out' })
+            transitions.delete(title)
+          }).catch(() => {})
+        }
+      }
       headline.setAttribute('data-hivemind-hero-headline', '')
     }
   }
@@ -63,6 +85,8 @@ export function setupSingulanceHeadline(
   return () => {
     unsubscribe?.()
     observer.disconnect()
+    transitions.clear()
+    for (const title of originals.keys()) title.getAnimations().forEach(animation => animation.cancel())
     for (const [title, original] of originals) {
       title.textContent = original
       title.closest('[data-hivemind-hero-headline]')?.removeAttribute('data-hivemind-hero-headline')

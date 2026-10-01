@@ -234,6 +234,53 @@ export function apply(ctx: ClientContext): void {
       return [{ id: profile.id, name: profile.name, role, ...(avatarUrl === undefined ? {} : { avatarUrl }) }]
     })
   }
+  const selectEmployee = async (sessionId: SessionId, id: string | null): Promise<boolean> => {
+    if (ctx.sessions.binding(sessionId) === undefined) return false
+    const switched = await ctx.remote.agentPresets.select(sessionId, id === null ? 'hivemind-chat' : 'hivemind-hyperagents')
+    if (!switched.ok) return false
+    const binding = ctx.sessions.binding(sessionId)
+    if (binding === undefined) return false
+    const events = binding.eventSource
+    const before = Math.max(0, ...events.getSnapshot().entries.map(entry => entry.event.seq))
+    let cancelWait = () => {}
+    const accepted = new Promise<boolean>((resolve) => {
+      let settled = false
+      let stop = () => {}
+      const finish = (value: boolean) => {
+        if (settled) return
+        settled = true
+        clearTimeout(timer)
+        stop()
+        resolve(value)
+      }
+      const timer = setTimeout(() => { finish(false) }, 5000)
+      cancelWait = () => { finish(false) }
+      const check = () => {
+        const snapshot = events.getSnapshot()
+        for (const entry of snapshot.entries) {
+          if (entry.event.seq <= before) continue
+          if (entry.type !== 'event' || (entry.event.type as string) !== 'hivemind/employee-selection') continue
+          if ((entry.event.data as { id: string | null }).id !== id) continue
+          finish(true)
+          return
+        }
+      }
+      stop = events.subscribe(check)
+      check()
+    })
+    const result = await binding.session.command(`/hivemind-employee ${id ?? 'auto'}`).catch(() => null)
+    if (result === null || !result.ok || !result.value.matched) { cancelWait(); return false }
+    return accepted
+  }
+  ctx.effect(() => {
+    const bridge = async (id: string | null): Promise<boolean> => {
+      const current = ctx.sessions.list.getSnapshot().current
+      return current === undefined ? false : selectEmployee(current, id)
+    }
+    const host = window as unknown as { __HIVEMIND_SELECT_AGENT__?: typeof bridge }
+    host.__HIVEMIND_SELECT_AGENT__ = bridge
+    return () => { if (host.__HIVEMIND_SELECT_AGENT__ === bridge) delete host.__HIVEMIND_SELECT_AGENT__ }
+  }, 'ui-hivemind-connect: unified composer agent selection')
   ctx.slots.inject('conversation.input.left', () => ctx.slots.register({
     name: 'conversation.input.left', id: 'hivemind-employee-picker', order: 20, locale: NS,
     inject: (sessionId): {
@@ -243,41 +290,7 @@ export function apply(ctx: ClientContext): void {
     } => ({
       hooks: { employeeEvents: employeeEvents(sessionId) },
       listEmployees,
-      selectEmployee: async (id) => {
-        const binding = ctx.sessions.binding(sessionId)
-        if (binding === undefined) return false
-        const events = binding.eventSource
-        const before = Math.max(0, ...events.getSnapshot().entries.map(entry => entry.event.seq))
-        let cancelWait = () => {}
-        const accepted = new Promise<boolean>((resolve) => {
-          let settled = false
-          let stop = () => {}
-          const finish = (value: boolean) => {
-            if (settled) return
-            settled = true
-            clearTimeout(timer)
-            stop()
-            resolve(value)
-          }
-          const timer = setTimeout(() => { finish(false) }, 5000)
-          cancelWait = () => { finish(false) }
-          const check = () => {
-            const snapshot = events.getSnapshot()
-            for (const entry of snapshot.entries) {
-              if (entry.event.seq <= before) continue
-              if (entry.type !== 'event' || (entry.event.type as string) !== 'hivemind/employee-selection') continue
-              if ((entry.event.data as { id: string | null }).id !== id) continue
-              finish(true)
-              return
-            }
-          }
-          stop = events.subscribe(check)
-          check()
-        })
-        const result = await binding.session.command(`/hivemind-employee ${id ?? 'auto'}`).catch(() => null)
-        if (result === null || !result.ok || !result.value.matched) { cancelWait(); return false }
-        return accepted
-      },
+      selectEmployee: id => selectEmployee(sessionId, id),
     }),
   }, HyperagentEmployeePicker))
   ctx.slots.inject('conversation.session.header.utilities', () => ctx.slots.register({
