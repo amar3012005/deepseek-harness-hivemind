@@ -26,4 +26,4 @@ Scheduled company saves include the native occurrence identity in their idempote
 
 ## Checks
 
-925 focused tests passed in Memory, Runtime, Dreamer, and Schedule packages; 14 environment-dependent tests skipped. Host and client TypeScript projects passed. Production deployment and authenticated canary evidence are recorded separately after release.
+927 focused tests passed in Memory, Runtime, Dreamer, and Schedule packages; 14 environment-dependent tests skipped. Host and client TypeScript projects passed. The real native Schedule tool also verifies destination forwarding before activation and prevents activation when permission persistence fails. Production deployment and authenticated canary evidence are recorded separately after release.

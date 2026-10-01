@@ -228,6 +228,8 @@ function validateCreateArgs(args: {
   daily?: DailyInput
   weekly?: WeeklyInput
   cron?: CronInput
+  memory_destination?: 'personal' | 'organization' | 'project'
+  memory_project?: string
 }): ScheduleToolError | undefined {
   const keys = Object.keys(args)
   if (keys.some(key => key !== 'prompt'
@@ -237,6 +239,8 @@ function validateCreateArgs(args: {
     && key !== 'every_seconds'
     && key !== 'daily'
     && key !== 'weekly'
+    && key !== 'memory_destination'
+    && key !== 'memory_project'
     && key !== 'cron')
     || Number(args.after_seconds !== undefined)
     + Number(args.at !== undefined)

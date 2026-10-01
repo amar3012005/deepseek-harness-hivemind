@@ -38,6 +38,28 @@ async function executeBody(test: Awaited<ReturnType<typeof setup>>, name: string
 }
 
 describe('Schedule model tools', () => {
+  it('passes declared memory destinations through the real create path before task activation', async () => {
+    const prepare = vi.fn(async () => {})
+    const test = await setup({ onContext: ctx => ctx.provide('hivemindScheduledMemoryPolicy', { prepare }) })
+    const created = await execute(test, 'schedule_create', {
+      prompt: 'Save verified decisions.', title: 'Approved memory task', after_seconds: 60,
+      memory_destination: 'project', memory_project: 'authorized-project',
+    })
+    expect(created.isError).toBe(false)
+    expect(created.value).not.toHaveProperty('code')
+    expect(prepare).toHaveBeenCalledWith(test.agent, expect.stringMatching(/^schedule-/), 'Save verified decisions.', 'project', 'authorized-project', expect.any(AbortSignal))
+    expect(await test.service.list({ sessionId: test.agent.session.id })).toHaveLength(1)
+  })
+
+  it('does not activate the schedule when the creation permission cannot be durably recorded', async () => {
+    const prepare = vi.fn(async () => { throw new Error('permission persistence failed') })
+    const test = await setup({ onContext: ctx => ctx.provide('hivemindScheduledMemoryPolicy', { prepare }) })
+    await execute(test, 'schedule_create', {
+      prompt: 'Save verified decisions.', title: 'Memory task', after_seconds: 60, memory_destination: 'organization',
+    })
+    expect(prepare).toHaveBeenCalledOnce()
+    expect(await test.service.list({ sessionId: test.agent.session.id })).toEqual([])
+  })
   it('creates and lists a lossless daily JSON rule rather than a one-shot', async () => {
     const test = await setup()
     const created = await execute(test, 'schedule_create', {
