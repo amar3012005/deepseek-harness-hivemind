@@ -217,7 +217,7 @@ async function approveSaveDestination(
       ? (error as { code?: unknown }).code
       : undefined
     if (execution.signal.aborted || code === 'ASK_ABORTED' || code === 'ASK_CANCELLED'
-      || ((scheduled !== undefined || request.idempotencyKey?.startsWith('hive-pending:')) && code === 'NO_PROVIDER')) {
+      || scheduled !== undefined || request.idempotencyKey?.startsWith('hive-pending:')) {
       appendSaveEvent(execution.agent, { operation_id: operationId, status: 'cancelled' })
       return undefined
     }

@@ -119,9 +119,9 @@ describe('scheduled company-memory permission', () => {
     expect(f.save).toHaveBeenCalledOnce()
     await f.fiber.dispose()
   })
-  it('retains an offline write and resumes its exact payload without duplicates', async () => {
+  it.each([Object.assign(new Error('Offline'), { code: 'NO_PROVIDER' }), new Error('Remote event source ended')])('retains an offline write and resumes its exact payload without duplicates: %s', async (error) => {
     const f = await fixture()
-    f.ask.mockRejectedValueOnce(Object.assign(new Error('Offline'), { code: 'NO_PROVIDER' }))
+    f.ask.mockRejectedValueOnce(error)
     f.due('Save company memories.')
     const waiting = await f.call() as { pending_id: string }
     expect(waiting).toMatchObject({ status: 'awaiting_approval' })

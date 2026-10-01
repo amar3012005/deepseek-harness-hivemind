@@ -26,6 +26,6 @@ Every external company save first requires an acknowledged Session journal conta
 
 ## Checks
 
-933 focused tests passed in Memory, Runtime, Dreamer, and Schedule packages; 14 environment-dependent tests skipped. Host and client TypeScript projects passed. The real native Schedule tool also verifies destination forwarding before activation and prevents activation when permission persistence fails. Production deployment and authenticated canary evidence are recorded separately after release.
+934 focused tests passed in Memory, Runtime, Dreamer, and Schedule packages; 14 environment-dependent tests skipped. Host and client TypeScript projects passed. The real native Schedule tool also verifies destination forwarding before activation and prevents activation when permission persistence fails. Production deployment and authenticated canary evidence are recorded separately after release.
 
 DSH references: `docs/subsystems/approval.md` (one-action fail-closed outcomes), `docs/subsystems/user-questions.md` (native waiting UI), `packages/guard/timeout-policy/src/index.ts` (undeclared tool budget means no timeout). No global approval policy is relaxed.
