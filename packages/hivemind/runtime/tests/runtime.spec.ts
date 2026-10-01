@@ -457,7 +457,7 @@ describe('HIVE-MIND runtime', () => {
     pluginConfig.legacyToolsEnabled = false
     const harness = mount(pluginConfig)
 
-    expect([...harness.tools.keys()]).toEqual(['hivemind_capabilities', 'hivemind_save_memory', 'hivemind_batch_save_memories', 'hivemind_meta', 'hivemind_list_projects', 'hivemind_create_project', 'hivemind_web_search'])
+    expect([...harness.tools.keys()]).toEqual(['hivemind_capabilities', 'hivemind_pending_memory', 'hivemind_save_memory', 'hivemind_batch_save_memories', 'hivemind_meta', 'hivemind_list_projects', 'hivemind_create_project', 'hivemind_web_search'])
     const skill = harness.skills.get('hivemind-company-brain')
     expect(skill?.description).toContain('multi-source')
     expect(skill?.content).toContain('not a workspace path')

@@ -88,6 +88,13 @@ declare module '@deepseek-ai/dsh-session/types' {
       destination?: 'personal' | 'organization' | 'project'
       idempotency_key?: string
     }
+    'hivemind/scheduled-memory-pending': {
+      pending_id: string
+      occurrence_key: string
+      requests: SaveRequest[]
+      state: 'awaiting_approval' | 'completed'
+      results?: Record<string, JsonValue>[]
+    }
     'hivemind/schedule-memory-permission': {
       schedule_id: string
       prompt_hash: string
@@ -135,24 +142,25 @@ async function approveSaveDestination(
     }
   }
   if (scheduled !== undefined) {
-    // A scheduled turn must never await a human. Only a creation-time grant
-    // matching every reminder in this occurrence can authorize the destination.
+    // A matching creation grant permits unattended writes. A non-grant asks
+    // again through the native human channel; it never authorizes by default.
     const events = execution.agent.session.snapshotEvents()
     const permissions = scheduled.reminders.map(reminder => events.findLast(event =>
       event.type === 'hivemind/schedule-memory-permission'
       && event.data.schedule_id === reminder.id && event.data.prompt_hash === promptHash(reminder.prompt)))
     const first = permissions[0]
-    if (first?.type !== 'hivemind/schedule-memory-permission' || first.data.decision !== 'approved') return undefined
-    if (permissions.some(event => event?.type !== 'hivemind/schedule-memory-permission'
-      || event.data.decision !== 'approved' || event.data.destination !== first.data.destination
-      || event.data.project !== first.data.project)) return undefined
-    if (request.scope !== undefined && request.scope !== first.data.destination) return undefined
-    if (request.project !== undefined && request.project !== first.data.project) return undefined
-    return { ...request, scope: first.data.destination, ...(first.data.project === undefined ? {} : { project: first.data.project }) }
+    if (first?.type === 'hivemind/schedule-memory-permission' && first.data.decision === 'approved'
+      && permissions.every(event => event?.type === 'hivemind/schedule-memory-permission'
+        && event.data.decision === 'approved' && event.data.destination === first.data.destination
+        && event.data.project === first.data.project)
+      && (request.scope === undefined || request.scope === first.data.destination)
+      && (request.project === undefined || request.project === first.data.project)) {
+      return { ...request, scope: first.data.destination, ...(first.data.project === undefined ? {} : { project: first.data.project }) }
+    }
   }
   const choices: Array<keyof typeof SAVE_DESTINATIONS> = ['personal', 'organization']
   if (request.project !== undefined) choices.push('project')
-  const operationId = saveOperationId(execution, request)
+  const operationId = saveOperationId(execution, request, request.idempotencyKey ?? scheduled?.key)
   const questionId = `hivemind-memory-save-destination:${operationId}`
   const prior = latestSaveEvent(execution.agent, operationId)
   if (prior?.status === 'completed' && prior.destination !== undefined) {
@@ -176,7 +184,10 @@ async function approveSaveDestination(
         }[]
       }): Promise<{ answers: readonly { id: string; selected: readonly string[] }[] }>
     } | undefined
-    if (userQuestions === undefined) throw new Error('hivemind-memory: save approval channel is unavailable')
+    if (userQuestions === undefined) {
+      if (scheduled !== undefined || request.idempotencyKey?.startsWith('hive-pending:')) return undefined
+      throw new Error('hivemind-memory: save approval channel is unavailable')
+    }
     const answer = await userQuestions.ask({
       agent: execution.agent,
       signal: execution.signal,
@@ -205,7 +216,8 @@ async function approveSaveDestination(
     const code = typeof error === 'object' && error !== null && 'code' in error
       ? (error as { code?: unknown }).code
       : undefined
-    if (execution.signal.aborted || code === 'ASK_ABORTED' || code === 'ASK_CANCELLED') {
+    if (execution.signal.aborted || code === 'ASK_ABORTED' || code === 'ASK_CANCELLED'
+      || ((scheduled !== undefined || request.idempotencyKey?.startsWith('hive-pending:')) && code === 'NO_PROVIDER')) {
       appendSaveEvent(execution.agent, { operation_id: operationId, status: 'cancelled' })
       return undefined
     }
@@ -437,6 +449,48 @@ const output = {
   render: (_args: unknown, value: JsonValue) => [{ type: 'text' as const, text: JSON.stringify(value) }],
 }
 
+/** Persist prepared scheduled writes before opening a human question. The native
+ * question waits while connected; an unavailable/disconnected answerer returns
+ * awaiting_approval, preserving the exact payload for a later human resume. */
+async function executeSaveRequests(
+  ctx: Context, provider: MemoryProvider, execution: ToolExecution, requests: SaveRequest[],
+  batch = false, resume?: { pending_id: string; occurrence_key: string },
+): Promise<Record<string, JsonValue>> {
+  const agent = execution.agent
+  if (agent === undefined) throw new TypeError('hivemind-memory: active agent required')
+  const occurrence = resume?.occurrence_key ?? scheduledMemoryContext(agent)?.key
+  const pendingId = occurrence === undefined ? undefined : resume?.pending_id ?? `pending:${createHash('sha256').update(JSON.stringify({ session: agent.session.header.id, occurrence, requests })).digest('hex')}`
+  const prior = pendingId === undefined ? undefined : agent.session.snapshotEvents().findLast(event => event.type === 'hivemind/scheduled-memory-pending' && event.data.pending_id === pendingId)
+  if (prior?.type === 'hivemind/scheduled-memory-pending' && prior.data.state === 'completed') {
+    const results = prior.data.results ?? []
+    return batch ? { operation: 'batch_save', status: 'completed', count: results.length, results } : results[0] ?? { status: 'completed' }
+  }
+  const durable = requests.map((request, index) => pendingId === undefined ? request : { ...request, idempotencyKey: `hive-pending:${createHash('sha256').update(`${pendingId}:${index}`).digest('hex')}` })
+  if (pendingId !== undefined && occurrence !== undefined && prior === undefined) {
+    agent.session.append('hivemind/scheduled-memory-pending', { pending_id: pendingId, occurrence_key: occurrence, requests: durable, state: 'awaiting_approval' })
+    if (!await ctx.get('sessions')?.flush(agent.session)) return { operation: batch ? 'batch_save' : 'save', status: 'awaiting_approval', pending_id: pendingId, reason: 'Prepared write could not be acknowledged. No memory was written; retry only after Session storage is healthy.' }
+  }
+  const first = durable[0]
+  if (first === undefined) throw new TypeError('No memory requests')
+  const approval = batch ? { ...first, title: `${durable.length} memories: ${durable.map(request => request.title).join('; ')}`, content: durable.map(request => request.content).join('\n\n') } : first
+  const approved = await approveSaveDestination(ctx, execution, approval)
+  if (approved === undefined) return { operation: batch ? 'batch_save' : 'save', status: pendingId === undefined ? 'cancelled' : 'awaiting_approval', ...(pendingId === undefined ? {} : { pending_id: pendingId }), reason: pendingId === undefined ? 'Memory save was declined.' : 'Waiting for human approval. No memory was written. Do not repeat this call; use hivemind_pending_memory list/resume when the user returns.' }
+  const results: Record<string, JsonValue>[] = []
+  for (const request of durable) results.push(await provider.save(agent, {
+    ...request, ...(approved.scope === undefined ? {} : { scope: approved.scope }),
+    ...(approved.project === undefined ? {} : { project: approved.project }),
+    ...(approved.derived === undefined ? {} : { derived: approved.derived }),
+    tags: [...new Set([...(request.tags ?? []), ...(approved.tags ?? [])])],
+    metadata: { ...request.metadata, ...approved.metadata },
+  }, execution.signal, execution))
+  const completed = results.every(result => result['status'] === 'saved' || result['status'] === 'completed')
+  if (completed && pendingId !== undefined && occurrence !== undefined) {
+    agent.session.append('hivemind/scheduled-memory-pending', { pending_id: pendingId, occurrence_key: occurrence, requests: durable, state: 'completed', results })
+    await ctx.get('sessions')?.flush(agent.session)
+  }
+  return batch ? { operation: 'batch_save', status: completed ? 'completed' : 'indeterminate', count: results.length, destination: approved.scope ?? 'organization', results } : results[0] ?? { status: 'indeterminate' }
+}
+
 /** Register the authenticated HIVE-MIND context, recall, governed save, and employee-directory router. */
 export function memoryPlugin(config: MemoryPluginConfig, provider: MemoryProvider) {
   return {
@@ -454,8 +508,8 @@ export function memoryPlugin(config: MemoryPluginConfig, provider: MemoryProvide
           const wantsWrite = requestedDestination !== undefined
             || /\b(save|write|store|persist)\b[\s\S]{0,160}\b(memor(?:y|ies)|hivemind|hive-mind|company brain)\b/i.test(prompt)
           if (!wantsWrite) return
-          if (/\bdream(?:er|ing)?\b/i.test(prompt) && /\bflashbacks?\b/i.test(prompt)
-            && await agent.ctx.get('hivemindFlashbacksDestination')?.resolve(agent, signal) !== undefined) return
+          const flashbacks = await agent.ctx.get('hivemindFlashbacksDestination')?.resolve(agent, signal)
+          if (flashbacks !== undefined && ((/\bdream(?:er|ing)?\b/i.test(prompt) && /\bflashbacks?\b/i.test(prompt)) || /^flashbacks$/i.test(project ?? '') || project === flashbacks)) return
           const destination = requestedDestination ?? 'organization'
           if (destination !== 'personal' && destination !== 'organization' && destination !== 'project') throw new TypeError('Invalid schedule memory destination')
           if (destination === 'project' && !project) throw new TypeError('Schedule project memory destination requires a project')
@@ -464,7 +518,7 @@ export function memoryPlugin(config: MemoryPluginConfig, provider: MemoryProvide
           if (questions === undefined) throw new Error('Schedule memory permission channel is unavailable')
           const result = await questions.ask({ agent, signal, questions: [{ id: questionId,
             question: `Allow this scheduled task to save memories to ${destination === 'project' ? project : destination}?`,
-            detail: 'Approval applies only to this exact task prompt and destination. If declined, unattended memory writes stop without waiting for approval.',
+            detail: 'Approval applies only to this exact task prompt and destination. If declined, the run asks again. Without a connected human, the prepared write remains awaiting approval for later resume.',
             options: [{ label: 'Allow', description: 'Authorize future occurrences of this task to save here.' }, { label: 'Do not allow', description: 'Run the task without company-memory writes.' }],
           }] })
           const selected = result.answers.find(answer => answer.id === questionId)?.selected ?? []
@@ -485,6 +539,22 @@ export function memoryPlugin(config: MemoryPluginConfig, provider: MemoryProvide
         return true
       })
       ctx.effect(() => ctx.tools.register(defineTool({
+        name: 'hivemind_pending_memory',
+        description: 'List or resume durable scheduled company-memory writes awaiting human approval in this owning session. Resume asks the user again using the saved exact payload; never invent or reconstruct a memory. Flashbacks and hyperagents_memory are exempt and do not wait here.',
+        parameters: { action: { type: 'string', required: true, enum: ['list', 'resume'] }, pending_id: { type: 'string', description: 'Exact pending ID returned by list, required for resume.' } },
+        output, isConcurrencySafe: () => false,
+        async execute(args, execution) {
+          const agent = execution.agent
+          if (agent === undefined) throw new TypeError('Active agent required')
+          const pending = new Map<string, { pending_id: string; occurrence_key: string; requests: SaveRequest[]; state: 'awaiting_approval' | 'completed' }>()
+          for (const event of agent.session.snapshotEvents()) if (event.type === 'hivemind/scheduled-memory-pending') pending.set(event.data.pending_id, event.data)
+          if (args.action === 'list') return { operation: 'pending_memory', items: [...pending.values()].filter(item => item.state === 'awaiting_approval').map(item => ({ pending_id: item.pending_id, status: item.state, titles: item.requests.map(request => request.title), count: item.requests.length })) }
+          const item = args.pending_id === undefined ? undefined : pending.get(args.pending_id)
+          if (item === undefined) return { operation: 'pending_memory', status: 'not_found' }
+          return executeSaveRequests(ctx, provider, execution, item.requests, item.requests.length > 1, item)
+        },
+      })))
+      ctx.effect(() => ctx.tools.register(defineTool({
         name: 'hivemind_save_memory',
         description: 'Durably save one confirmed, stable HIVE-MIND memory. A user-stated company decision, project direction, standing preference, role assignment, or factual correction can qualify even without the words "save this"; do not persist a proposal, question, transient remark, or speculation. Use this direct tool for a standalone fact, preference, decision, correction, relationship, or completed outcome. Before saving, extract every concrete detail that will help future recall—each named person, organization, product, project, document, system, tool, place, date or period, and distinct subject or concept—and include each once in entities; the Harness deterministically stores them as normalized entity:* tags. Do not collapse a detailed memory into only broad generic tags. A successful result must include the saved memory receipt. Never save secrets, credentials, ephemeral chat, guesses, or unverified claims.',
         parameters: {
@@ -503,10 +573,7 @@ export function memoryPlugin(config: MemoryPluginConfig, provider: MemoryProvide
         async execute(args, execution) {
           if (execution.agent === undefined) throw new TypeError('hivemind-memory: active agent required')
           const prepared = provider.prepareSave?.(execution.agent, saveRequest(args)) ?? saveRequest(args)
-          const approved = await approveSaveDestination(ctx, execution, prepared)
-          return approved === undefined
-            ? { operation: 'save', status: 'cancelled', reason: 'Memory write is not authorized. Stop this write; do not retry or wait for approval during a scheduled turn.' }
-            : provider.save(execution.agent, approved, execution.signal, execution)
+          return executeSaveRequests(ctx, provider, execution, [prepared])
         },
       })))
       ctx.effect(() => ctx.tools.register(defineTool({
@@ -549,30 +616,7 @@ export function memoryPlugin(config: MemoryPluginConfig, provider: MemoryProvide
           if (requestedScope === 'project' && projects.length !== 1) {
             throw new TypeError('hivemind-memory: project batch requires one shared project')
           }
-          const approvalRequest: SaveRequest = {
-            title: `${prepared.length} prepared memories`,
-            content: prepared.map(item => item.title).join('\n'),
-            sourceType: 'conversation',
-            ...(projects.length === 1 ? { project: projects[0] } : {}),
-            ...(requestedScope === undefined ? {} : { scope: requestedScope }),
-          }
-          const approved = await approveSaveDestination(ctx, execution, approvalRequest)
-          if (approved === undefined) return { operation: 'batch_save', status: 'cancelled', count: prepared.length, reason: 'Memory writes are not authorized. Stop this batch; do not retry or wait for approval during a scheduled turn.' }
-          if (approved.scope === undefined) throw new Error('hivemind-memory: approved batch destination is unavailable')
-          const results: Record<string, JsonValue>[] = []
-          for (const request of prepared) {
-            const finalRequest: SaveRequest = {
-              ...request, scope: approved.scope,
-              ...(approved.derived === undefined ? {} : { derived: approved.derived }),
-              ...(approved.project === undefined ? {} : { project: approved.project }),
-            }
-            if (approved.derived) {
-              finalRequest.tags = [...new Set([...(request.tags ?? []), 'flashback', 'derived'])]
-              finalRequest.metadata = { ...request.metadata, derived: true, source_memory_ids: request.relatedTo === undefined ? [] : [request.relatedTo], ...(approved.metadata?.['scheduled_occurrence'] === undefined ? {} : { scheduled_occurrence: approved.metadata['scheduled_occurrence'] }) }
-            }
-            results.push(await provider.save(agent, finalRequest, execution.signal, execution))
-          }
-          return { operation: 'batch_save', status: results.every(result => result['status'] === 'saved' || result['status'] === 'completed') ? 'completed' : 'indeterminate', count: results.length, destination: approved.scope, results }
+          return executeSaveRequests(ctx, provider, execution, prepared, true)
         },
       })))
       const metaTool = defineTool({
@@ -662,10 +706,7 @@ export function memoryPlugin(config: MemoryPluginConfig, provider: MemoryProvide
               ? args
               : object(args.save, 'save')
             const prepared = provider.prepareSave?.(execution.agent, saveRequest(rawSave)) ?? saveRequest(rawSave)
-            const approved = await approveSaveDestination(ctx, execution, prepared)
-            return approved === undefined
-              ? { operation: 'save', status: 'cancelled', reason: 'Memory write is not authorized. Stop this write; do not retry or wait for approval during a scheduled turn.' }
-              : provider.save(execution.agent, approved, execution.signal, execution)
+            return executeSaveRequests(ctx, provider, execution, [prepared])
           }
           if (operation === 'save_status') {
             const input = object(args.save_status, 'save_status')
