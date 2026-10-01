@@ -16,7 +16,7 @@ describe('HIVE composer layout', () => {
   it('keeps the native active composer bottom-docked', () => {
     expect(css).toMatch(/\.root\[data-phase='active'\] \.composerSeat\s*\{[^}]*position:\s*sticky[^}]*bottom:\s*0/s)
     expect(css).not.toMatch(/data-dsh-mode='hivemind-chat'[^}]*\.composerSeat\s*\{[^}]*transform:/s)
-    expect(css).toMatch(/main:has\(\[data-conversation-scroll\]\)[\s\S]*height:\s*calc\(100vh - 56px\)/s)
+    expect(css).toMatch(/main:has\(\[data-conversation-scroll\]\)[\s\S]*height:\s*calc\(var\(--hm-app-viewport-height, 100vh\) - 56px\)/s)
   })
 
   it('aligns both HIVE modes and composer phases with the chat column', () => {
