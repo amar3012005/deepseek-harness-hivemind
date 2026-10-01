@@ -59,9 +59,10 @@ declare module '@deepseek-ai/dsh-session/types' {
   }
 }
 export function apply(ctx: Context): void {
-  ctx.inject(['hivemindHqOwnership'], child => installContinuity(child))
-  ctx.inject(['hivemindHqOwnership', 'hivemindMemory'], child => installOrientation(child))
-  ctx.inject(['hivemindHqOwnership', 'userQuestions'], child => installStrategyReview(child))
+  ctx.inject(['hivemindHqOwnership', 'tools', 'agentTeams', 'sessions'], child => installContinuity(child))
+  ctx.inject(['hivemindHqOwnership', 'hivemindMemory', 'hivemindEmployeeDirectory', 'tools', 'agentTeams', 'sessions'],
+    child => installOrientation(child))
+  ctx.inject(['hivemindHqOwnership', 'userQuestions', 'tools', 'agentTeams', 'sessions'], child => installStrategyReview(child))
   ctx.effect(() =>
     ctx.agentTeams.guardTaskUpdates((caller, request) => {
       if (request.action !== 'complete') return
