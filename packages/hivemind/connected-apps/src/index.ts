@@ -45,7 +45,7 @@ declare module '@deepseek-ai/dsh-session/types' {
 }
 
 export const name = 'hivemind-connected-apps'
-export const inject = ['tools', 'hivemindIdentity', 'userQuestions']
+export const inject = ['tools', 'hivemindIdentity', 'userQuestions', 'sessions']
 
 const SEARCH_TOOL = 'mcp__composio__COMPOSIO_SEARCH_TOOLS'
 const COMPOSIO_TOOL_PREFIX = 'mcp__composio__'
@@ -367,6 +367,31 @@ function requestedResultFields(value: unknown): string[] {
   }))]
 }
 
+/** Admit only explicit discovery slugs, including provider-selected prerequisites. */
+function discoveredToolSlugs(item: Record<string, unknown>): string[] {
+  const apps = new Set(stringArray(item['toolkits']).map(normalizedToolkitName))
+  return [...new Set([...stringArray(item['primary_tool_slugs']), ...stringArray(item['related_tool_slugs'])
+    .filter(slug => apps.size === 0 || apps.has(normalizedToolkitName(toolkitFromToolSlug(slug) ?? '')))])]
+}
+
+/** Preserve actual resource identifiers without exposing MIME or credential trees. */
+function resourceIdentifiers(value: unknown, depth = 0): Record<string, JsonValue> {
+  if (!record(value) || depth > 6 || isMimeTransportTree(value)) return {}
+  const output: Record<string, JsonValue> = {}
+  for (const [key, item] of Object.entries(value).slice(0, 80)) {
+    if (PROVIDER_NOISE.has(key)) continue
+    const identifier = /^(?:id|documentId|fileId|messageId|threadId|document_id|file_id|message_id|thread_id|attachment_id)$/.test(key)
+      || /^(?:webViewLink|webContentLink|download_url|file_url|url)$/.test(key)
+    if (identifier
+      && typeof item === 'string' && !containsAuthenticationMaterial(item)) output[key] = compactProviderValue(item)
+    else if (record(item)) {
+      const nested = resourceIdentifiers(item, depth + 1)
+      if (Object.keys(nested).length > 0) output[key] = nested
+    }
+  }
+  return output
+}
+
 function requestedApps(value: unknown): Set<string> {
   if (!Array.isArray(value)) return new Set()
   return new Set(value.flatMap((item) => {
@@ -635,6 +660,7 @@ type ExecutionContract = {
 }
 
 type RestoredWorkflowState = {
+  workflowId?: string
   selected: Set<string>
   plannedReads: Set<string>
   contracts: Map<string, ExecutionContract>
@@ -863,11 +889,12 @@ function unfinishedWorkflow(
       pending = { ...pending, status, toolkits: toolkits.length > 0 ? toolkits : pending.toolkits }
       continue
     }
+    if (action === 'checkpoint' && record(result.value) && result.value['checkpoint_state'] === 'completed') { pending = undefined; continue }
     if (action === 'execute' && status === 'ready') {
       const pagination = paginationProjection(result.value['pagination'])
       const pages = (pending.paginationPages ?? 0) + 1
       pending = pagination === undefined || pages >= MAX_DURABLE_PAGINATION_PAGES
-        ? undefined
+        ? pending.queries.length > 1 ? { ...pending, status: 'step_completed' } : undefined
         : { ...pending, status: 'pagination_pending', pagination, paginationPages: pages }
     }
   }
@@ -887,7 +914,7 @@ function workflowContextMessage(state: UnfinishedWorkflowProjection) {
       pagination: state.pagination,
       pagination_pages: state.paginationPages,
     }),
-    next_action: waiting ? 'wait_connection' : state.pagination === undefined ? 'execute_selected_tool' : 'continue_page',
+    next_action: waiting ? 'wait_connection' : state.status === 'step_completed' ? 'resume_checkpoint_next_step' : state.pagination === undefined ? 'execute_selected_tool' : 'continue_page',
   }
   return createUserMessage({
     content: [{
@@ -1105,8 +1132,7 @@ function restoreWorkflowState(execution: Pick<ToolExecution, 'agent'>, requested
       if (Array.isArray(data['results'])) {
         for (const item of data['results']) {
           if (!record(item)) continue
-          const primary = stringArray(item['primary_tool_slugs'])[0]
-          if (primary !== undefined) selected.add(primary)
+          for (const slug of discoveredToolSlugs(item)) selected.add(slug)
         }
       }
       for (const slug of plannedReadTools(result.value)) plannedReads.add(slug)
@@ -1120,7 +1146,7 @@ function restoreWorkflowState(execution: Pick<ToolExecution, 'agent'>, requested
       selected.add(contract.tool_slug)
     }
   }
-  return foundSearch ? { selected, plannedReads, contracts: restoredContracts, resultFields: [...resultFields] } : undefined
+  return foundSearch ? { workflowId, selected, plannedReads, contracts: restoredContracts, resultFields: [...resultFields] } : undefined
 }
 
 const argumentSchemaValidator = new Ajv({ allErrors: true, strict: false, validateFormats: false })
@@ -1242,6 +1268,7 @@ export function compactComposioExecutionReceipt(
   const pagination = paginationProjection(value)
   return {
     ...(record(compact) ? compact : { result: compact }),
+    resource_identifiers: resourceIdentifiers(value),
     ...(receipt === undefined ? {} : {
       source_receipt: privateReceiptReference(receipt),
     }),
@@ -1265,7 +1292,8 @@ export function compactComposioSearchReceipt(
   const results = Array.isArray(data['results']) ? data['results'].flatMap((item) => {
     if (!record(item)) return []
     const result: Record<string, JsonValue> = {
-      primary_tool_slugs: boundedStrings(item['primary_tool_slugs'], 1, 120),
+      primary_tool_slugs: boundedStrings(item['primary_tool_slugs'], 20, 120),
+      related_tool_slugs: boundedStrings(item['related_tool_slugs'], 20, 120),
       toolkits: boundedStrings(item['toolkits'], 4, 80),
     }
     const useCase = stringValue(item['use_case'])
@@ -1304,13 +1332,7 @@ export function compactComposioSearchReceipt(
   }
   const workflowSessionId = returnedWorkflowSessionId(value)
   if (workflowSessionId !== undefined) compact['session_id'] = workflowSessionId
-  // Composio ranks primary slugs. Expose and authorize only the first bounded
-  // action of each atomic query. A different branch needs a fresh, justified
-  // discovery result rather than widening the active workflow contract.
-  const primary = new Set(results.flatMap((item) => {
-    const slug = Array.isArray(item['primary_tool_slugs']) ? item['primary_tool_slugs'][0] : undefined
-    return typeof slug === 'string' ? [slug] : []
-  }))
+  const primary = new Set(results.flatMap(item => discoveredToolSlugs(item)))
   const contracts = executionContracts(value, primary)
   if (contracts.length > 0) compact['execution_contracts'] = contracts as unknown as JsonValue
   const operations = operationReceipts(value['operations'])
@@ -1359,7 +1381,7 @@ function connectedReceiptContextMessage(receipt: ConnectedReceiptEventData) {
   return createUserMessage({
     content: [{
       type: 'text',
-      text: `## Most recent connected-app receipt\nThis compact evidence was durably retained from a prior completed connected-app operation. Use it when the current request refers to those results; do not repeat the provider read merely to reconstruct context.\n${JSON.stringify(receipt)}`,
+      text: `## Most recent connected-app receipt\nThis record was durably retained. Its status distinguishes a working checkpoint, pending intent, failure, or confirmed result; never treat a pending record as success. Use it when the current request refers to those results; do not repeat the provider read merely to reconstruct context.\n${JSON.stringify(receipt)}`,
     }],
     source: { kind: 'plugin', plugin: RECEIPT_CONTEXT_SOURCE, form: 'recall' },
   })
@@ -1648,9 +1670,9 @@ export function apply(ctx: Context, config: Config = {}): void {
 
   ctx.effect(() => ctx.tools.register(defineTool({
     name: BRIDGE_TOOL,
-    description: 'Tenant-scoped connected-app gateway. Start external-app work with atomic search queries, explicit outcomes, exact result limits, all concrete search filters in known_fields, and a top-level session: { generate_id: true }. Follow recommended_plan_steps: for an explicitly planned read tool, call schemas with its exact slug in the same session, then execute using that contract. Never execute a plan hint directly or guess tools. External writes require HIVE approval. When result_fields were requested, report projection_status and every missing_result_fields entry; never claim requested evidence was returned when projection_status is incomplete. For writes, request the stable resource identifier needed for later verification or follow-up when its exact field is known from the selected contract.',
+    description: 'Tenant-scoped connected-app gateway. Start external-app work with atomic search queries, explicit outcomes, exact result limits, all concrete search filters in known_fields, and a top-level session: { generate_id: true }. Follow recommended_plan_steps: for an explicitly planned read tool, call schemas with its exact slug in the same session, then execute using that contract. Never execute a plan hint directly or guess tools. External writes follow native permission policy. For dependent tasks save a checkpoint with the canonical report, sources, confirmed steps and next step; read_checkpoint restores it. Reuse operation_id on write retries. outcome_unknown requires destination reconciliation, never blind resend. Each successful execution completes only that step, not the whole task. When result_fields were requested, report projection_status and every missing_result_fields entry; never claim requested evidence was returned when projection_status is incomplete. For writes, request the stable resource identifier needed for later verification or follow-up when its exact field is known from the selected contract.',
     parameters: {
-      action: { type: 'string', required: true, enum: ['connection_status', 'search', 'schemas', 'manage_connection', 'wait_connection', 'execute'], description: 'Use connection_status only for a pure status check of explicitly named apps. Use search for real app work.' },
+      action: { type: 'string', required: true, enum: ['connection_status', 'search', 'schemas', 'manage_connection', 'wait_connection', 'execute', 'checkpoint', 'read_checkpoint', 'read_receipt'], description: 'Use connection_status only for a pure status check of explicitly named apps. Use search for real app work.' },
       apps: { type: 'array', items: { type: 'string' }, description: 'One to four explicit app names for connection_status. Resolved against authenticated toolkit metadata, never semantic tool search.' },
       queries: {
         type: 'array',
@@ -1685,12 +1707,46 @@ export function apply(ctx: Context, config: Config = {}): void {
       tool_slugs: { type: 'array', items: { type: 'string' }, description: 'Selected tool slugs or exact read-only slugs from recommended_plan_steps for schema loading.' },
       toolkits: { type: 'array', items: { type: 'string' }, description: 'Exact toolkits returned by search.' },
       session_id: { type: 'string', description: 'Search session id reused by later schema, connection, and execution operations.' },
+      checkpoint_state: { type: 'string', enum: ['open', 'blocked', 'completed'], description: 'Task state. completed requires successful provider receipts for every requested external action.' },
+      checkpoint_id: { type: 'string', description: 'Stable task identifier, reused across continuations.' },
+      checkpoint: { type: 'string', description: 'Durable task plan, research report, source URLs and dates, artifact identifiers, confirmed steps, and next step. Maximum 32000 characters. This is a working note, not proof of execution.' },
+      receipt_id: { type: 'string', description: 'Private Core receipt UUID returned by this session.' },
+      operation_id: { type: 'string', description: 'Stable workflow step identifier for a write. Reuse for retries; choose a new identifier only for a deliberately new operation.' },
+      result_fields: { type: 'array', items: { type: 'string' }, description: 'Exact result keys for THIS execution only. Omit for bounded default output including resource identifiers.' },
       arguments: { type: 'object', additionalProperties: true, description: 'Selected tool arguments.' },
     },
     output: { schema: { type: 'object', additionalProperties: true, properties: {} }, render: (_args, value: JsonValue) => [{ type: 'text', text: JSON.stringify(value) }] },
     async execute(args, execution) {
       if (!connectedAppsEnabled(ctx, config.enabledByDefault === true)) throw new Error('Connected tools are disabled for this turn. Enable Tools and retry.')
       const identity = await ctx.hivemindIdentity.resolve(execution.signal)
+      if (args.action === 'checkpoint' || args.action === 'read_checkpoint') {
+        const id = stringValue(args.checkpoint_id)
+        if (id === undefined || id.length > 120 || execution.agent === undefined) throw new Error('Checkpoint requires a task identifier and active session')
+        if (args.action === 'read_checkpoint') {
+          const saved = execution.agent.session.snapshotEvents().findLast(event => event.type === 'hivemind/connected-receipt'
+            && event.data.tool === 'workflow_checkpoint' && record(event.data.receipt) && event.data.receipt['checkpoint_id'] === id)
+          return saved?.type === 'hivemind/connected-receipt' ? { status: 'checkpoint_found', checkpoint: saved.data.receipt } : { status: 'not_found' }
+        }
+        const content = stringValue(args.checkpoint)
+        if (content === undefined || content.length > 32000) throw new Error('Checkpoint must contain between 1 and 32000 characters')
+        const note = { status: 'checkpoint_saved', checkpoint_state: args.checkpoint_state ?? 'open', checkpoint_id: id, checkpoint: content, evidence_policy: 'Working note only. Completed actions require successful provider receipts.' }
+        appendConnectedReceipt(execution, 'workflow_checkpoint', note, workflowSessionId(args))
+        if (!(await ctx.sessions.flush(execution.agent.session))) throw new Error('Checkpoint was not durably saved')
+        return { status: 'checkpoint_saved', checkpoint_state: args.checkpoint_state ?? 'open', checkpoint_id: id }
+      }
+      if (args.action === 'read_receipt') {
+        const receiptId = stringValue(args.receipt_id)
+        const fields = stringArray(args.result_fields)
+        if (receiptId === undefined || !/^[0-9a-f-]{36}$/i.test(receiptId) || fields.length === 0 || fields.length > 32 || execution.agent === undefined) throw new Error('Receipt read requires a receipt UUID, active session, and 1–32 approved fields')
+        const service = await scopedServiceToken(ctx, config, execution, identity)
+        if (service === undefined) throw new Error('Private receipt reader is unavailable')
+        const response = await fetch(new URL(`/internal/v1/harness-chat/receipts/${receiptId}/read`, service.base), {
+          method: 'POST', headers: { Authorization: `Bearer ${service.token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ session_id: String(execution.agent.session.header.id), fields }), signal: execution.signal,
+        })
+        if (!response.ok) throw new Error(`Private receipt read was refused (${response.status}); do not infer missing evidence`)
+        return { status: 'receipt_read', receipt: await response.json() as JsonValue }
+      }
       const session = await getSession(identity, execution)
       if (args.action === 'connection_status') {
         const apps = stringArray(args.apps)
@@ -1737,16 +1793,18 @@ export function apply(ctx: Context, config: Config = {}): void {
       if (args.action === 'search') {
         const turnState = execution.agent === undefined ? undefined : turns.get(execution.agent)
         const queries = searchQueries(args.queries)
-        const workflowSession = searchSessionFromArgs(args)
+        const explicitNew = record(args.session) && args.session['generate_id'] === true
+        const restoredWorkflow = !explicitNew && execution.agent !== undefined
+          ? restoreWorkflowState(execution, workflowSessionId(args)) : undefined
+        const recoveredId = !explicitNew ? turnState?.workflowId ?? restoredWorkflow?.workflowId : undefined
+        const requestedWorkflowId = workflowSessionId(args) ?? recoveredId
+        const workflowSession = requestedWorkflowId === undefined ? searchSessionFromArgs(args) : { id: requestedWorkflowId }
         const searchStrategy = stringValue(args.search_strategy)
         if (searchStrategy !== undefined && searchStrategy !== 'auto' && searchStrategy !== 'tool_search') throw new TypeError('Unsupported Composio search strategy')
-        const requestedWorkflowId = workflowSessionId(args)
-        if (turnState?.workflowId !== undefined && requestedWorkflowId === undefined) {
-          throw new Error('Continue progressive connected-app discovery with the returned session id')
-        }
-        if (turnState?.workflowId !== undefined && requestedWorkflowId !== turnState.workflowId) {
+        if (!explicitNew && turnState?.workflowId !== undefined && requestedWorkflowId !== turnState.workflowId) {
           throw new Error('Connected-app search session does not match the active workflow')
         }
+        if (explicitNew && turnState !== undefined) delete turnState.workflowId
         const scope = discoveryKey({ apps: [...requestedApps(args.queries)].sort(), known: queries.map(query => query.known_fields ?? '').sort() })
         const queryKey = discoveryKey({ queries, searchStrategy: searchStrategy ?? 'auto' })
         const discoveryOnly = previousUnmatchedDiscovery(
@@ -1818,8 +1876,7 @@ export function apply(ctx: Context, config: Config = {}): void {
         if (record(container) && Array.isArray(container['results'])) {
           for (const item of container['results']) {
             if (!record(item)) continue
-            const primary = stringArray(item['primary_tool_slugs'])[0]
-            if (primary !== undefined) discovered.add(primary)
+            for (const slug of discoveredToolSlugs(item)) discovered.add(slug)
           }
         }
         const returnedWorkflowId = returnedWorkflowSessionId(scopedResult)
@@ -1843,7 +1900,7 @@ export function apply(ctx: Context, config: Config = {}): void {
           const available = contracts.get(stateKey) ?? new Map<string, ExecutionContract>()
           for (const [slug, contract] of discoveredContracts) available.set(slug, contract)
           contracts.set(stateKey, available)
-          const requested = new Set(resultFields.get(stateKey) ?? [])
+          const requested = new Set<string>()
           for (const field of requestedResultFields(args.queries)) requested.add(field)
           resultFields.set(stateKey, [...requested])
         }
@@ -2049,7 +2106,7 @@ export function apply(ctx: Context, config: Config = {}): void {
         workflow: key,
         tool_slug: slug,
         arguments: executionArguments,
-        call_id: execution.callId,
+        operation_id: stringValue(args.operation_id) ?? 'default',
       })
       if (MUTATING_TOOL.test(slug) && execution.agent !== undefined) {
         const completed = completedWriteForIdempotencyKey(
@@ -2072,8 +2129,21 @@ export function apply(ctx: Context, config: Config = {}): void {
       })
       const turnState = execution.agent === undefined ? undefined : turns.get(execution.agent)
       if (turnState !== undefined) turnState.billableCalls += 1
+      if (MUTATING_TOOL.test(slug) && execution.agent !== undefined) {
+        const journal = execution.agent.session.snapshotEvents().filter(event => event.type === 'hivemind/connected-receipt')
+        const previous = journal.findLast(event => record(event.data.receipt) && event.data.receipt['idempotency_key'] === idempotencyKey)
+        if (previous !== undefined && record(previous.data.receipt) && previous.data.receipt['status'] === 'ready') return { status: 'duplicate', confirmed_receipt: previous.data.receipt }
+        if (previous !== undefined && record(previous.data.receipt) && previous.data.receipt['status'] === 'pending') {
+          return { status: 'outcome_unknown', idempotency_key: idempotencyKey,
+            next_action: 'reconcile_external_state',
+            next_action_guidance: 'This exact write was started but has no durable terminal receipt. Verify the destination with a read before any new write. Do not repeat research or blindly resend.' }
+        }
+        appendConnectedReceipt(execution, slug, { status: 'pending', idempotency_key: idempotencyKey }, workflowSessionId(args))
+        if (!(await ctx.sessions.flush(execution.agent.session))) throw new Error('Could not persist write intent; no external write was attempted')
+      }
       const providerResult = await session.execute(slug, executionArguments)
-      const fields = resultFields.get(key) ?? resultFields.get(fallbackKey) ?? []
+      const failed = providerResult.error != null || providerResult.data['successful'] === false || providerResult.data['success'] === false
+      const fields = stringArray(args.result_fields)
       const sourceReceipt = await saveReceipt(
         ctx, config, execution, JSON.stringify(providerResult), `composio-${slug.toLowerCase()}.json`, {
           tool: slug,
@@ -2088,11 +2158,12 @@ export function apply(ctx: Context, config: Config = {}): void {
           sourceReceipt,
           fields,
         ) as Record<string, JsonValue>,
-        status: 'ready',
+        status: failed ? 'failed' : 'ready',
         ...(MUTATING_TOOL.test(slug) ? { idempotency_key: idempotencyKey } : {}),
-        operations: [{ tool: slug, status: 'completed' }],
+        operations: [{ tool: slug, status: failed ? 'failed' : 'completed' }],
       } as Record<string, JsonValue>
       appendConnectedReceipt(execution, slug, compact, workflowSessionId(args))
+      if (execution.agent !== undefined && !(await ctx.sessions.flush(execution.agent.session))) throw new Error('Execution receipt persistence interrupted; reconcile before retrying a write')
       return compact
     },
   })))
@@ -2123,6 +2194,13 @@ export function apply(ctx: Context, config: Config = {}): void {
     if (unfinished !== undefined && shouldProjectWorkflow(messages)) {
       const workflowMessage = workflowContextMessage(unfinished)
       if (!hasVisiblePluginContext(visibleMessages, workflowMessage)) projections.push(workflowMessage)
+    }
+    if (shouldProjectWorkflow(messages)) {
+      const checkpoint = agent.session.snapshotEvents().findLast(event => event.type === 'hivemind/connected-receipt' && event.data.tool === 'workflow_checkpoint')
+      if (checkpoint?.type === 'hivemind/connected-receipt') {
+        const note = connectedReceiptContextMessage(checkpoint.data)
+        if (!hasVisiblePluginContext(visibleMessages, note)) projections.push(note)
+      }
     }
     const receipt = latestConnectedReceipt(agent)
     if (receipt !== undefined && !hasVisibleReceipt(visibleMessages, receipt)) {

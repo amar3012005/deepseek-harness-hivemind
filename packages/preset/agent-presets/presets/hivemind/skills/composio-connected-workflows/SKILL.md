@@ -68,3 +68,33 @@ cancellation, or an unavailable approval channel performs no external action.
 Revalidate recipients, destinations, and connection state immediately before
 execution. Report partial success per destination without retrying an already
 completed provider receipt.
+
+## Dependent tasks and recovery
+
+For research → document → export → email, discover the complete capability chain
+before starting lengthy research. Retain all provider-selected primary and related
+tools; load missing authoritative contracts instead of inventing argument fields.
+
+Save a `checkpoint` with a stable `checkpoint_id` before a dependent chain and
+after meaningful progress. Include the ordered steps, source URLs and dates,
+canonical report, exact document/export identifiers, confirmed receipts, and next
+step. Read it with `read_checkpoint` after recovery. Preserve the existing report
+and evidence; do not regenerate research merely because the next tool failed.
+A checkpoint is a working note, never evidence that a provider action succeeded.
+
+Use a stable `operation_id` for each write step and reuse it on retries. An
+`outcome_unknown` requires destination reconciliation with a read; never blindly
+repeat it or mint a new operation id to bypass recovery. A deliberately new task
+starts a new workflow session. A successful create is only the create step: verify
+content population, export to a usable artifact, and send as separate steps.
+Only claim email delivery after a successful send receipt. On an unresolved blocker,
+report the confirmed partial result and checkpoint once, then wait for new evidence.
+
+Execution `result_fields` apply only to that execution. Omit them when output keys
+are unknown. Resource identifiers are retained separately in `resource_identifiers`.
+Use `read_receipt` for approved fields from a private receipt in the same session;
+an unavailable or expired field is not proof that the external operation failed.
+
+Keep all existing native permission decisions. Full access follows its native policy;
+rejected writes do not execute. Connected-app access never grants another tenant's
+credentials or bypasses company-memory approval.
