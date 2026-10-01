@@ -30,12 +30,12 @@ export function DreamingConnectors() {
     finally { setBusy(false) }
   }
   return <section className={css.root} aria-label="Dreaming connected apps">
-    <label className={css.heading}><span>Use connected apps while dreaming</span><input className={css.switch} type="checkbox" role="switch"
+    <label className={css.heading}><span className={css.connectorLabel}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M9 3v5M15 3v5M7 8h10v4a5 5 0 0 1-5 5v4M7 8v4" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" /></svg>Connected apps</span><input className={css.switch} type="checkbox" role="switch"
       aria-label="Use connected apps while dreaming" checked={state?.enabled ?? false} disabled={!state?.available || busy}
       onChange={event => void save(event.target.checked,
         state?.accounts.filter(account => account.enabled).map(account => account.id) ?? [])} /></label>
-    <p>Read-only. Choose which of your connections Dreaming may explore when useful.</p>
-    <p>Discoveries may be shared with your company in Flashbacks. Turning access off prevents future reads; saved Flashbacks remain.</p>
+    <p>Optional, read-only access for HyperAgents.</p>
+    <p title="Turning access off prevents future reads; saved Flashbacks remain.">Insights are saved to company Flashbacks.</p>
     {state?.enabled && <div className={css.accounts}>
       {!state.accounts.length && <p>No connected apps yet. Add them in Connectors.</p>}
       {state.accounts.map(account => <label className={css.account} key={account.id}>

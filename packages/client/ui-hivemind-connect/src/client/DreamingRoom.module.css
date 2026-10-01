@@ -36,3 +36,9 @@
 @media (max-width: 600px) { .root, .activity { width: min(380px, 85vw); } }
 
 .activity .agenda { position: static; width: auto; margin: 0 12px 12px; padding: 12px; box-shadow: none; }
+
+.root, .activity { width: 300px; }
+.root { padding: 0 12px; font-size: 13px; }
+.activity { max-height: min(560px, 75vh); }
+.activity > section { padding: 10px 12px; }
+@media (max-width: 600px) { .root, .activity { width: min(300px, 85vw); } }

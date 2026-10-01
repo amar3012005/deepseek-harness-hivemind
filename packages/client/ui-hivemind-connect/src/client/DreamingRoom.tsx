@@ -41,7 +41,7 @@ export function DreamingRoom({ sessionId }: { sessionId?: string | undefined }) 
     finally { setBusy(false) }
   }
   return <div className={css.root} data-dreaming-room-controls>
-    <span className={css.activityButton}>🌙 Nightly Dreaming</span><DreamingSettings compact />
+    <span className={css.activityButton}>🌙 Dreaming</span><DreamingSettings compact />
     <div className={css.activity}><DreamingConnectors /><SessionCredits sessionId={sessionId} /><DreamingAutomation room />
       <button type="button" className={css.goalButton} onClick={() => { setOpen(value => !value) }} aria-expanded={open}>Add goal for next dreams</button>
       {open && <div className={css.agenda}><label>Agenda for future dreams<textarea maxLength={4000} value={text}

@@ -149,7 +149,7 @@
    transcript cannot scroll behind them. Other conversation layouts are unchanged. */
 .centerCol:has(:global([data-dreaming-room-controls])) {
   padding-top: 48px;
-  padding-right: 400px;
+  padding-right: 320px;
   box-sizing: border-box;
 }
 @media (max-width: 1100px) {

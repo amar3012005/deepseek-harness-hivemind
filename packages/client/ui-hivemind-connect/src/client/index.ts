@@ -365,11 +365,6 @@ export function apply(ctx: ClientContext): void {
     }
   })
   ctx.inject(['conversation'], () => {
-    ctx.slots.inject('conversation.hero.dock', () => ctx.slots.register({
-      name: 'conversation.hero.dock',
-      id: 'hivemind-connector-suggestions',
-      order: -20,
-    }, props => createElement(BrainConnections, { sessionId: props.sessionId, hero: true })))
     const sendFollowUp = (prompt: string): void => {
       const sessionId = ctx.sessions.list.getSnapshot().current
       const scope = sessionId === undefined ? undefined : ctx.sessions.scope(sessionId)

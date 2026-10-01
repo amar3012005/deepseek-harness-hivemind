@@ -116,6 +116,14 @@ export const ChatNodeSeat = memo(function ChatNodeSeat({
     loadImage, renderMessageImages, fileMentions, turnProcess,
   ])
   if (routedNode === undefined || owner === null) return null
+  // Keep internal instructions in durable history and inspection, not the room transcript.
+  const dreaming = window.location.pathname.endsWith('/dreaming')
+    || new URLSearchParams(window.location.search).has('dreamingParent')
+  if (dreaming && (routedNode.kind === 'system-prompt' || routedNode.kind === 'context')) return null
+  if (dreaming && (routedNode.kind === 'user' || routedNode.kind === 'steering')
+    && routedNode.data.content.some(block => block.type === 'text'
+      && (block.text.startsWith("This is the user's FIRST Dreaming introduction")
+        || block.text.startsWith('Perform autonomous company dreaming.')))) return null
   const turnData = turnDataOf(routedNode)
   // Runtime dispatch owns the correlation: every Node's discriminant is the
   // keyed-slot entry passed alongside that same Node. TypeScript does not

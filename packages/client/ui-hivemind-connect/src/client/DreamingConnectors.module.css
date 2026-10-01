@@ -27,3 +27,24 @@
 .heroPanel .more { color: #247aff; }
 .chatButton { display: flex; align-items: center; justify-content: center; }
 .accounts a { padding: 5px 0; }
+
+/* Compact environment shared by BRAIN and Dreaming. */
+.switch { width: 28px; height: 16px; margin: 0; }
+.switch::after { width: 12px; height: 12px; }
+.switch:checked::after { transform: translateX(12px); }
+.logo { width: 18px; height: 18px; border-radius: 3px; }
+.accounts { gap: 6px; }
+.connectorLabel { display: inline-flex; align-items: center; gap: 7px; }
+.chatPanel { width: 270px; padding: 14px 16px; font-size: 12px; }
+.environmentHeading { display: flex; align-items: center; gap: 9px; padding-bottom: 12px; border-bottom: 1px solid #8882; color: var(--dsw-alias-label-tertiary, #777); }
+.environmentHeading button { margin-left: auto; border: 0; padding: 0; color: inherit; background: transparent; cursor: pointer; font: inherit; }
+.dots { display: flex; gap: 5px; }
+.dots i { width: 7px; height: 7px; border-radius: 50%; background: #ff6058; }
+.dots i:nth-child(2) { background: #ffbd2e; }
+.dots i:nth-child(3) { background: #28c840; }
+.identity { display: flex; align-items: center; gap: 10px; padding: 14px 0; border-bottom: 1px solid #8882; }
+.identity strong { font-size: 15px; }
+.identity small { display: block; margin-top: 3px; color: var(--dsw-alias-label-tertiary, #777); }
+.avatar { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 50%; background: #e9efff; color: #247aff; font-weight: 600; font-size: 16px; }
+.connectorHeading { display: flex; align-items: center; gap: 8px; width: 100%; padding: 13px 0; border: 0; border-bottom: 1px solid #8882; background: transparent; color: inherit; font: inherit; cursor: pointer; text-align: left; }
+.connectorHeading span:last-child { margin-left: auto; }
