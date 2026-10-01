@@ -62,6 +62,24 @@ import type { ResolvedPiAiProviderProfile } from './config.ts'
 import { toPiContext } from './context.ts'
 import { toStreamChunks } from './stream.ts'
 
+/** Preserve optional Harness arguments on the Codex Responses transport.
+ * Its default `strict: null` lets the server require every property, causing
+ * the model to fabricate empty filters. Local tool validation remains active.
+ * @param payload - Provider request body before transmission.
+ * @returns The request with explicit non-strict function schemas.
+ */
+export function preserveOptionalToolArguments(payload: unknown): unknown {
+  if (typeof payload !== 'object' || payload === null || !('tools' in payload)) return payload
+  if (!Array.isArray(payload.tools)) return payload
+  return {
+    ...payload,
+    tools: payload.tools.map((tool: unknown) => {
+      if (typeof tool !== 'object' || tool === null || !('type' in tool) || tool.type !== 'function') return tool
+      return { ...tool, strict: false }
+    }),
+  }
+}
+
 /** One resolution's frozen view: the profiles and the collection built from them. */
 interface PiAiSnapshot {
   /** The resolved profiles this collection was built from, used as its identity. */
@@ -386,6 +404,7 @@ export class PiAiAdapter extends LlmAdapter {
         // Profile headers are deployment-owned; attribution names are
         // Harness-owned and therefore win collisions.
         headers: requestHeaders(profile.headers),
+        ...model.api === 'openai-codex-responses' ? { onPayload: preserveOptionalToolArguments } : {},
       })
       const iterator = toStreamChunks(events, model.contextWindow, options.signal, model.id)[Symbol.asyncIterator]()
       let exhausted = false
