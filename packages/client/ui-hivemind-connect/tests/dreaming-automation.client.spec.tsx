@@ -14,6 +14,7 @@ describe('Dreaming automation projection', () => {
     render(<DreamingAutomation />)
     await screen.findByText(/Europe\/Berlin/)
     expect(screen.getByRole('link', { name: 'Nightly Dreaming' }).getAttribute('href')).toBe('/hivemind/app/overview/session/session-child?dreamingParent=session-parent')
+    expect(screen.getByRole('link', { name: 'View dreaming' }).getAttribute('href')).toBe('/hivemind/app/overview/session/session-child?dreamingParent=session-parent')
     fireEvent.click(screen.getByRole('button', { name: 'Run history (1)' }))
     expect(screen.getByText(/2 Flashbacks/)).toBeTruthy()
     expect(request.mock.calls[0]![0]).toBe('/hivemind/dreamer/settings?view=activity')
