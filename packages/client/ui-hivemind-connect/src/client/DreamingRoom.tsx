@@ -24,9 +24,19 @@ export function DreamingRoom() {
     try {
       const response = await fetch('/hivemind/dreamer/agenda', { method: 'PUT', credentials: 'include',
         headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text }) })
-      if (!response.ok) throw new Error('save')
+      if (!response.ok) {
+        const value = await response.json().catch(() => ({})) as { error?: string }
+        const reason = value.error?.includes('already owned') ? 'Dreaming is busy. Your draft is kept; try again shortly.'
+          : response.status === 401 ? 'Your session expired. Reload Dreaming and try again.'
+            : `Agenda could not be saved (request ${response.status}). Please try again.`
+        console.warn('Dreaming agenda save rejected', response.status, value.error)
+        throw new Error(reason)
+      }
+      const value = await response.json() as { text: string }
+      setText(value.text)
+      window.dispatchEvent(new CustomEvent('hivemind:dream-agenda-saved', { detail: { text: value.text } }))
       setMessage('Saved for the next dream.'); setOpen(false)
-    } catch { setMessage('Agenda could not be saved. Please try again.') }
+    } catch (error) { setMessage(error instanceof Error ? error.message : 'Agenda could not be saved. Please try again.') }
     finally { setBusy(false) }
   }
   return <div className={css.root} data-dreaming-room-controls>

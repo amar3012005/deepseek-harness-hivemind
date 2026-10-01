@@ -18,3 +18,7 @@
   color: var(--dsw-alias-label-primary);
   font-weight: 510;
 }
+
+.checkpoint { margin: 12px 24px; padding: 12px 16px; border-left: 2px solid #88a8e8; color: var(--dsw-alias-label-secondary); font-size: 13px; line-height: 1.5; }
+.checkpoint p { margin: 6px 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.checkpoint span { color: var(--dsw-alias-label-tertiary); font-size: 12px; }

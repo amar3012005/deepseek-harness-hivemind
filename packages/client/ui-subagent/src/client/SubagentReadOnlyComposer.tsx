@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import { NS } from './locales.ts'
 import css from './SubagentReadOnlyComposer.module.css'
@@ -22,12 +23,27 @@ export function SubagentReadOnlyComposer({
   const oneShot = matched.reason === 'one-shot'
   const dreaming = typeof window !== 'undefined' && (window.location.pathname === '/hivemind/app/overview/dreaming'
     || new URLSearchParams(window.location.search).has('dreamingParent'))
-  return (
+  const [agenda, setAgenda] = useState('')
+  useEffect(() => {
+    if (!dreaming) return
+    const controller = new AbortController()
+    const update = (event: Event) => { setAgenda((event as CustomEvent<{ text: string }>).detail.text) }
+    window.addEventListener('hivemind:dream-agenda-saved', update)
+    void fetch('/hivemind/dreamer/agenda', { credentials: 'include', signal: controller.signal })
+      .then(async (response) => { if (response.ok) setAgenda((await response.json() as { text: string }).text) })
+      .catch(() => undefined)
+    return () => { controller.abort(); window.removeEventListener('hivemind:dream-agenda-saved', update) }
+  }, [dreaming])
+  return (<div>
+    {dreaming && agenda && <aside className={css.checkpoint} aria-label="Saved dream agenda">
+      <strong>🌙 Agenda saved for the next dream</strong><p>{agenda}</p>
+      <span>A suggestion for the next exploration. No run has been started.</span>
+    </aside>}
     <div className={css.frame} role="status">
       <strong>{t(dreaming ? 'readonly.dreaming.title' : oneShot ? 'readonly.oneShot.title' : 'readonly.title')}</strong>
       <span>
         {t(dreaming ? 'readonly.dreaming.body' : oneShot ? 'readonly.oneShot.body' : 'readonly.body')}
       </span>
-    </div>
+    </div></div>
   )
 }
