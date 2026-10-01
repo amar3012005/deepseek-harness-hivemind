@@ -276,7 +276,9 @@ export function apply(ctx: ClientContext): void {
   // corner, matching the native “door” control. A higher-priority seat shadows
   // ui-sidebar-right's generic expand button; this implementation preserves
   // its expand/collapse behavior for non-HyperAgents sessions.
-  ctx.slots.register({ name: 'conversation.session.header.utilities', id: 'dreaming-room', locale: NS, order: 100 }, DreamingRoom)
+  ctx.slots.inject('conversation.session.header.utilities', () => ctx.slots.register({
+    name: 'conversation.session.header.utilities', id: 'dreaming-room', locale: NS, order: 100,
+  }, DreamingRoom))
   ctx.slots.inject('conversation.session.header.corner', () => ctx.slots.register({
     name: 'conversation.session.header.corner', locale: NS, priority: -1,
     inject: sessionId => ({ hooks: { employeeEvents: employeeEvents(sessionId) }, closePreview: () => {
