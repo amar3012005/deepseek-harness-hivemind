@@ -24,6 +24,8 @@ export interface SystemPromptRowProps {
  */
 export function SystemPromptRow({ text, update = false, t }: SystemPromptRowProps) {
   const [open, setOpen] = useState(false)
+  // Presentation only: durable prompt/context events remain available for future inspection.
+  if (typeof document !== 'undefined' && document.documentElement.dataset.dshMode === 'hivemind-chat') return null
   return (
     <DisclosureRow
       className={css.root}

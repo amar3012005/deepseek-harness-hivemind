@@ -30,6 +30,8 @@ export interface ContextInjectionRowProps {
  */
 export function ContextInjectionRow({ content, source, provenance, form, t }: ContextInjectionRowProps) {
   const [open, setOpen] = useState(false)
+  // Presentation only: durable prompt/context events remain available for future inspection.
+  if (typeof document !== 'undefined' && document.documentElement.dataset.dshMode === 'hivemind-chat') return null
   // Resolved rather than declared: a form whose fields are unreadable renders
   // the opaque body, and the marker must say what the row actually shows.
   const { rendered, summary, body } = contextBody(form, { content, source, t })
