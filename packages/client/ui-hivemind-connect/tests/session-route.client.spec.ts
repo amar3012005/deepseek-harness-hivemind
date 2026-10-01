@@ -217,22 +217,41 @@ describe('HIVE native session routes', () => {
 })
 
 describe('dedicated Dreaming conversation route', () => {
-  it('opens the native child address without creating or selecting a regular session', () => {
+  it('opens the native child address without creating or selecting a regular session', async () => {
     window.history.replaceState(null, '', `${HIVE_OVERVIEW_PATH}/session/session-child?dreamingParent=session-parent`)
     const f = fixture(state())
     const child = vi.fn()
     f.sessions.openSubagent = child
+    f.sessions.refreshSubagents = vi.fn().mockResolvedValue(undefined)
     const dispose = setupHivemindSessionRouting(f.sessions)
     disposers.push(dispose)
+    await Promise.resolve()
+    expect(f.sessions.refreshSubagents).toHaveBeenCalledWith('session-parent')
     expect(child).toHaveBeenCalledWith({ parentSessionId: 'session-parent', childSessionId: 'session-child', mode: 'continuable' })
     expect(f.open).not.toHaveBeenCalled()
     expect(f.create).not.toHaveBeenCalled()
     expect(window.location.search).toBe('?dreamingParent=session-parent')
   })
+  it('preserves the Dreaming route while the native child catalog is loading', async () => {
+    window.history.replaceState(null, '', `${HIVE_OVERVIEW_PATH}/session/session-child?dreamingParent=session-parent`)
+    const f = fixture(state())
+    let resolve!: () => void
+    f.sessions.refreshSubagents = vi.fn(() => new Promise<void>((done) => { resolve = done }))
+    f.sessions.openSubagent = vi.fn()
+    disposers.push(setupHivemindSessionRouting(f.sessions))
+    f.set(state('session-recent'))
+    expect(window.location.search).toBe('?dreamingParent=session-parent')
+    expect(f.create).not.toHaveBeenCalled()
+    expect(f.open).not.toHaveBeenCalled()
+    resolve()
+    await Promise.resolve()
+    expect(f.sessions.openSubagent).toHaveBeenCalled()
+  })
   it('keeps the child address on subsequent list notifications', () => {
     window.history.replaceState(null, '', `${HIVE_OVERVIEW_PATH}/session/session-child?dreamingParent=session-parent`)
     const f = fixture(state())
     f.sessions.openSubagent = vi.fn()
+    f.sessions.refreshSubagents = vi.fn().mockResolvedValue(undefined)
     disposers.push(setupHivemindSessionRouting(f.sessions))
     f.set({ ...state('session-child'), currentAddress: { parentSessionId: sid('session-parent'), childSessionId: sid('session-child'), mode: 'continuable' } })
     expect(f.open).not.toHaveBeenCalled()

@@ -9,6 +9,7 @@ import { fileURLToPath } from 'node:url'
 import { Pool } from 'pg'
 import { beforeAll, afterAll, describe, it, expect, vi } from 'vitest'
 import { LlmAdapter, ToolCallId, type GenerateOptions, type StreamChunk } from '@deepseek-ai/dsh-llm'
+import type { Context } from '@deepseek-ai/cordis'
 import type { HivemindPrincipal } from '@deepseek-ai/dsh-hivemind-execution-scope'
 import { launchWebScaffold, type WebScaffold } from '../../../../apps/web/tests/scaffold.ts'
 const url = process.env.DSH_DREAM_TEST_URL
@@ -164,29 +165,31 @@ suite('native Dreamer workflow', () => {
     })
     app.ctx.effect(() => app.ctx.llm.registerAdapter(['dream-canary'], model))
     await app.ctx.agentDefaultModel.saveSelection({ provider: 'dream-canary', model: 'dream' })
-    app.ctx.provide('hivemindMemory', {
-      context: async () => ({}),
-      profiles: async () => ({}),
-      entities: async () => ({}),
-      recall: async () => ({}),
-      save: async (_agent, request) => {
-        expect(request.scope).toBe('project')
-        expect(request.derived).toBe(true)
-        expect(request.metadata?.dreamer).toBeDefined()
-        expect(request.idempotencyKey).toMatch(/^dream:/)
-        const id = randomUUID()
-        await admin.query("INSERT INTO memories(id,org_id,user_id,title,content,scope,project_id) VALUES($1,$2,$3,$4,$5,'project',$6)", [
-          id,
-          owner.orgId,
-          owner.userId,
-          request.title,
-          request.content,
-          request.project,
-        ])
-        await admin.query('INSERT INTO source_metadata(memory_id,metadata) VALUES($1,$2::jsonb)', [id, JSON.stringify(request.metadata)])
-        return { status: 'saved', memory_id: id }
-      },
-    })
+    app.ctx.plugin({ name: 'dream-test-memory-provider', apply(memoryCtx: Context) {
+      memoryCtx.provide('hivemindMemory', {
+        context: async () => ({}),
+        profiles: async () => ({}),
+        entities: async () => ({}),
+        recall: async () => ({}),
+        save: async (_agent, request) => {
+          expect(request.scope).toBe('project')
+          expect(request.derived).toBe(true)
+          expect(request.metadata?.dreamer).toBeDefined()
+          expect(request.idempotencyKey).toMatch(/^dream:/)
+          const id = randomUUID()
+          await admin.query("INSERT INTO memories(id,org_id,user_id,title,content,scope,project_id) VALUES($1,$2,$3,$4,$5,'project',$6)", [
+            id,
+            owner.orgId,
+            owner.userId,
+            request.title,
+            request.content,
+            request.project,
+          ])
+          await admin.query('INSERT INTO source_metadata(memory_id,metadata) VALUES($1,$2::jsonb)', [id, JSON.stringify(request.metadata)])
+          return { status: 'saved', memory_id: id }
+        },
+      })
+    } })
     cookie = app.ctx.connection
       .authorizePrincipal(
         { headers: { host: new URL(app.baseUrl).host } },

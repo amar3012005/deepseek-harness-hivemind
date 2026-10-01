@@ -97,6 +97,7 @@ export function setupHivemindSessionRouting(
   let applyingRoute = false
   let creating = false
   let resolving = false
+  let resolvingDream = false
   let generation = 0
   let initialized = false
   let observedCurrent: SessionId | undefined
@@ -201,7 +202,15 @@ export function setupHivemindSessionRouting(
     if (dreaming !== undefined) {
       initialized = true
       observedCurrent = dreaming.childSessionId
-      sessions.openSubagent(dreaming)
+      if (resolvingDream) return
+      resolvingDream = true
+      const attempt = ++generation
+      void sessions.refreshSubagents(dreaming.parentSessionId).then(() => {
+        if (disposed || attempt !== generation) return
+        sessions.openSubagent(dreaming)
+      }).catch(() => {
+        // Keep the dedicated address; never create a root on discovery failure.
+      }).finally(() => { resolvingDream = false })
       return
     }
     if (route.kind === 'session') {
@@ -227,7 +236,7 @@ export function setupHivemindSessionRouting(
     if (!isHivemindRoute(browser.location.pathname)) return
     currentBase = routeBase(browser.location.pathname)
     const state = sessions.list.getSnapshot()
-    if (applyingRoute) return
+    if (applyingRoute || resolvingDream) return
     if (!initialized) {
       applyLocation()
       return
