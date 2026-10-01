@@ -164,7 +164,7 @@ export function HyperagentPanelToggle({ sessionId, useSessions, useEmployeeEvent
   const owner = useSessions(state => state.byId[sessionId]?.projectionValues?.hyperagentOwner)
   const fromLog = useEmployeeEvents(selectedEmployee)
   const selected = owner == null ? fromLog : projectedEmployee(owner)
-  const isOsRoute = typeof window !== 'undefined' && window.location.pathname.startsWith('/hivemind/app/employee/harness/')
+  const isOsRoute = isHyperagentPreset(preset) || (typeof window !== 'undefined' && window.location.pathname.startsWith('/hivemind/app/employee/harness/'))
   const [dismissed, setDismissed] = useState(false)
   const [collision, setCollision] = useState(false)
   const [dock, setDock] = useState<{ left: number; width: number } | null>(null)
