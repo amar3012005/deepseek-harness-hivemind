@@ -3,12 +3,20 @@
   "compilerOptions": { "rootDir": "src", "outDir": "lib/types", "tsBuildInfoFile": "lib/tsconfig.tsbuildinfo" },
   "include": ["src/**/*.ts"],
   "references": [
-    { "path": "../../../vendor/cordis" },
-    { "path": "../../../vendor/schemastery" },
-    { "path": "../../client/connection/tsconfig.host.json" },
-    { "path": "../../host/webserver" },
-    { "path": "../../session/session-persistence" },
-    { "path": "../execution-scope" },
-    { "path": "../employee-directory" }
+    {"path": "../../../vendor/cordis"},
+    {"path": "../../../vendor/schemastery"},
+    {"path": "../../client/connection/tsconfig.host.json"},
+    {"path": "../../host/webserver"},
+    {"path": "../../session/session-persistence"},
+    {"path": "../execution-scope"},
+    {"path": "../employee-directory"},
+    {"path": "../../core/agent"},
+    {"path": "../../core/system-prompt"},
+    {"path": "../../api/session-controller/tsconfig.host.json"},
+    {"path": "../../llm/llm"},
+    {"path": "../../llm/llm-pi-ai"},
+    {"path": "../runtime"},
+    {"path": "../../typert/registry"},
+    {"path": "../../session-query/session-query"}
   ]
 }

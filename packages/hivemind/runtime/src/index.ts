@@ -9,6 +9,7 @@ import z from '@deepseek-ai/schemastery'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { PreToolDecision } from '@deepseek-ai/dsh-tools'
 import type { Agent } from '@deepseek-ai/dsh-agent'
+import type { Scoped } from '@deepseek-ai/dsh-scope'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import type { SaveTextSpill, SpillRef } from '@deepseek-ai/dsh-spill'
 import type { ToolExecution } from '@deepseek-ai/dsh-tools'
@@ -28,6 +29,17 @@ import { contextPlugin } from '@deepseek-ai/dsh-hivemind-context'
 import { memoryPlugin, type EntitySearchRequest, type RecallRequest, type SaveRequest, type SaveStatusRequest } from '@deepseek-ai/dsh-hivemind-memory'
 import { hyperagentDirectory, projectHyperagentProfiles } from '@deepseek-ai/dsh-hivemind-employee-directory'
 import { completedTaskMemory, pendingTaskMemories, sessionOwner, sessionOwnerProjection, type SessionOwner } from './continuity.ts'
+
+declare module '@deepseek-ai/cordis' {
+  interface Events {
+    /** Load the same authenticated compact profile for a live voice session.
+     * Scope-filtered dispatch uses the requesting Agent identity.
+     * @param input - Agent and cancellation signal for authenticated profile loading.
+     * @mode serial
+     */
+    'hivemind/voice-context'(this: Scoped<Agent>, input: { agent: Agent; signal: AbortSignal }): Promise<string>
+  }
+}
 
 declare module '@deepseek-ai/dsh-session/types' {
   interface SessionEventMap {
@@ -1217,6 +1229,8 @@ export function apply(ctx: Context, config: Config): void {
       }))
     })
   }
+  ctx.on('hivemind/voice-context', async ({ agent, signal }) =>
+    (await snapshotFor(agent, signal, undefined, true)).initialContext)
   ctx.plugin(contextPlugin({
     historyTurns: config.historyTurns,
     historyMaxChars: config.historyMaxChars,

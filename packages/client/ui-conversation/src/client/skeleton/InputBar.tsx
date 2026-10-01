@@ -524,11 +524,11 @@ export const InputBar = memo(function InputBar({
               : renderSlot('conversation.input.left', {})}
           </div>
           <div className={css.trailing}>
+            {sessionId === undefined ? null : renderSlot('conversation.input.model', { locked: modelSeatLocked })}
+            <ContextMeter useProjection={useProjection} t={t} />
             {input === undefined || sessionId === undefined
               ? null
               : renderSlot('conversation.input.right', {})}
-            {sessionId === undefined ? null : renderSlot('conversation.input.model', { locked: modelSeatLocked })}
-            <ContextMeter useProjection={useProjection} t={t} />
             {interruptible && (
               <Tooltip label={t('input.stop')} side="top" delayMs={500} disabled={stop === undefined}>
                 <button
@@ -549,6 +549,7 @@ export const InputBar = memo(function InputBar({
               <button
                 type="button"
                 className={css.primary}
+                data-empty-send={empty && !primaryStops || undefined}
                 aria-label={primaryLabel}
                 disabled={primaryDisabled}
                 onMouseDown={keepFocus}

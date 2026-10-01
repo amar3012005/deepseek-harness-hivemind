@@ -12,6 +12,7 @@ import type {} from '@deepseek-ai/dsh-hivemind-execution-scope'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { projectHyperagentProfiles } from '@deepseek-ai/dsh-hivemind-employee-directory'
+import { liveVoicePlugin, type LiveVoiceConfig } from './live-voice.ts'
 
 export const name = 'hivemind-web-runner'
 export const inject = ['webServer', 'connection', 'sessionPersistence', 'hivemindExecutionScope']
@@ -53,6 +54,8 @@ export interface Config {
   serviceHttpOrigins: string[]
   /** Environment variable holding the runner-to-control-plane signing secret. */
   serviceSecretEnv: string
+  /** Native voice capability; authorization is resolved on the server. */
+  liveVoice: LiveVoiceConfig
 }
 
 export const Config: z<Config> = z.object({
@@ -64,6 +67,14 @@ export const Config: z<Config> = z.object({
   serviceApiBase: z.string().required(),
   serviceHttpOrigins: z.array(String).default([]),
   serviceSecretEnv: z.string().required(),
+  liveVoice: z.object({
+    enabled: z.boolean().default(true),
+    model: z.string().default('gpt-live-1-codex'),
+    voice: z.string().default('cove'),
+    timeoutMs: z.natural().min(1000).max(60000).default(25000),
+    maxDurationMs: z.natural().min(60000).max(3600000).default(900000),
+    maxConnections: z.natural().min(1).max(1000).default(20),
+  }).default({ enabled: true, model: 'gpt-live-1-codex', voice: 'cove', timeoutMs: 25000, maxDurationMs: 900000, maxConnections: 20 }),
 })
 
 export interface TicketClaims {
@@ -258,6 +269,15 @@ function compactProjects(value: unknown): Array<{ id: string; name: string; slug
 
 /** Mount the one-time ticket exchange and health routes. */
 export async function apply(ctx: Context, config: Config): Promise<void> {
+  ctx.plugin(liveVoicePlugin(config.liveVoice, (req) => {
+    const principal = ctx.connection.principal({ headers: {
+      host: publicHost(req) || req.headers.host, cookie: req.headers.cookie,
+    } })
+    if (principal?.profile !== 'hivemind-chat' || !nonEmpty(principal.user_id)
+      || !nonEmpty(principal.org_id) || !nonEmpty(principal.variation)) return undefined
+    return { orgId: principal.org_id, userId: principal.user_id, profile: 'hivemind-chat',
+      variation: principal.variation, ...(principal.project_id ? { projectId: principal.project_id } : {}) }
+  }))
   const secret = env(config.ticketSecretEnv)
   if (Buffer.byteLength(secret, 'utf8') < 32) throw new Error('hivemind-web-runner: ticket secret must be at least 32 bytes')
   const parentOrigins = config.parentOrigins.map((value) => {

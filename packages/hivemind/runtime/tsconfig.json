@@ -21,6 +21,7 @@
     { "path": "../../skill/skill" },
     { "path": "../../spill/spill" },
     { "path": "../../util/values" },
-    { "path": "../../web/web" }
+    { "path": "../../web/web" },
+    { "path": "../../core/scope" }
   ]
 }

@@ -29,6 +29,7 @@ import { createWorkspaceViewStore } from './stores.ts'
 import { WorkspaceBrowser } from './rows/WorkspaceBrowser.tsx'
 import { WorkspacePicker } from './WorkspacePicker.tsx'
 import { HiveSessionProjection, type HiveSessionProjectionInjected } from './HiveSessionProjection.tsx'
+import { HiveLiveVoiceButton } from './HiveLiveVoiceButton.tsx'
 import { HiveDictationButton } from './HiveDictationButton.tsx'
 import { en, zh, type WorkspaceKey } from './locales.ts'
 
@@ -171,6 +172,9 @@ export function apply(ctx: Context): void {
     order: -20,
     locale: NS,
   }, HiveDictationButton))
+  ctx.slots.inject('conversation.input.right', () => ctx.slots.register({
+    name: 'conversation.input.right', id: 'hivemind-live-voice', order: 100, locale: NS,
+  }, HiveLiveVoiceButton))
   ctx.slots.inject('shell.sessionRail', () => ctx.slots.register({
     name: 'shell.sessionRail',
     children: { 'conversation.sidebar.viewTabs': { kind: 'single', scope: 'session' } },

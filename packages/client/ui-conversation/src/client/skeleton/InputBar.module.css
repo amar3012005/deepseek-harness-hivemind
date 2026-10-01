@@ -361,3 +361,6 @@
   font-size: 12px;
   cursor: pointer;
 }
+
+/* The native voice control occupies the empty composer's send seat. */
+.trailing:has([data-hivemind-live-voice]) [data-empty-send] { display: none; }
