@@ -187,6 +187,7 @@
         historyTurns: 3
         historyMaxChars: 3000
         webApprovalRequired: true
+        nativeWebSearch: true
     - id: hivemind-connected-apps
       name: '@deepseek-ai/dsh-hivemind-connected-apps'
       config:

@@ -311,3 +311,17 @@
         provider: spawn
         model: !!js process.env.HIVEMIND_DREAM_MODEL
         modelProvider: !!js process.env.HIVEMIND_DREAM_MODEL_PROVIDER
+
+# Native shared web-search provider. OAuth stays on the runner; no connector UI.
+- id: web
+  config:
+    searchProvider: openai-responses
+    fetchProvider: http
+
+- insert:
+    - id: web-search-openai
+      name: '@deepseek-ai/dsh-web-search-openai'
+      config:
+        transport: codex
+        model: gpt-6-luna
+        timeoutMs: 12000

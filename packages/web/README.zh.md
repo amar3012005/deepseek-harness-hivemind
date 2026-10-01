@@ -30,6 +30,7 @@ kind: "package-group"
 | [`web-search-exa/`](web-search-exa/README.zh.md) | 通过 Exa 搜索 web | 注册到 `ctx.web` |
 | [`web-search-perplexity/`](web-search-perplexity/README.zh.md) | 通过 Perplexity 搜索 web | 注册到 `ctx.web` |
 | [`web-search-deepseek/`](web-search-deepseek/README.zh.md) | 通过 DeepSeek 原生搜索搜索 web | 注册到 `ctx.web` |
+| [`web-search-openai/`](web-search-openai/README.md) | 使用 Codex 订阅身份验证通过 OpenAI Responses 搜索 | 在 `ctx.web` 上注册 |
 | [`web-fetch-http/`](web-fetch-http/README.zh.md) | 匿名抓取公共 HTTP(S) 页面 | 注册到 `ctx.web` |
 | [`tool-web/`](tool-web/README.zh.md) | 向模型公开 `web_search` 与 `web_fetch` | 注册到 `ctx.tools` |
 

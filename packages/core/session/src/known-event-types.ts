@@ -79,6 +79,7 @@ export const KNOWN_SESSION_EVENT_TYPES: ReadonlySet<string> = new Set([
   'hivemind/session-owner',
   'hivemind/task-memory-pending',
   'hivemind/task-memory-recorded',
+  'hivemind/web-search-route',
   'hivemind/workstream-approval',
   'hivemind/workstream-completed',
   'hivemind/workstream-failed',
@@ -122,4 +123,5 @@ export const KNOWN_SESSION_EVENT_TYPES: ReadonlySet<string> = new Set([
   'turn/start',
   'user/message',
   'web/deepseek-search-llm-request',
+  'web/openai-search-request',
 ])

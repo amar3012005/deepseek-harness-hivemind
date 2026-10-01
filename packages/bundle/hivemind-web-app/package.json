@@ -39,7 +39,8 @@
     "@deepseek-ai/dsh-client-ui-schedule": "workspace:^",
     "@deepseek-ai/dsh-hivemind-dreamer": "workspace:^",
     "@deepseek-ai/dsh-client-ui-hivemind-hq": "workspace:^",
-    "@deepseek-ai/dsh-hivemind-hq-runtime": "workspace:^"
+    "@deepseek-ai/dsh-hivemind-hq-runtime": "workspace:^",
+    "@deepseek-ai/dsh-web-search-openai": "workspace:^"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "workspace:^"

@@ -543,7 +543,7 @@ Source: [`packages/hivemind/playbooks/src/index.ts:200`](../packages/hivemind/pl
 'hivemind/composio-session': ComposioRouterSessionEventData
 ```
 
-Source: [`packages/hivemind/connected-apps/src/index.ts:40`](../packages/hivemind/connected-apps/src/index.ts)
+Source: [`packages/hivemind/connected-apps/src/index.ts:41`](../packages/hivemind/connected-apps/src/index.ts)
 
 <a id="hivemindconnected-receipt--log-only"></a>
 
@@ -554,7 +554,7 @@ Source: [`packages/hivemind/connected-apps/src/index.ts:40`](../packages/hivemin
 'hivemind/connected-receipt': ConnectedReceiptEventData
 ```
 
-Source: [`packages/hivemind/connected-apps/src/index.ts:42`](../packages/hivemind/connected-apps/src/index.ts)
+Source: [`packages/hivemind/connected-apps/src/index.ts:43`](../packages/hivemind/connected-apps/src/index.ts)
 
 <a id="hiveminddecision--log-only"></a>
 
@@ -572,7 +572,7 @@ Source: [`packages/hivemind/connected-apps/src/index.ts:42`](../packages/hivemin
 }
 ```
 
-Source: [`packages/hivemind/runtime/src/index.ts:39`](../packages/hivemind/runtime/src/index.ts)
+Source: [`packages/hivemind/runtime/src/index.ts:43`](../packages/hivemind/runtime/src/index.ts)
 
 <a id="hiveminddream-agenda--log-only"></a>
 
@@ -583,7 +583,7 @@ Source: [`packages/hivemind/runtime/src/index.ts:39`](../packages/hivemind/runti
 'hivemind/dream-agenda': { text: string; userId: string }
 ```
 
-Source: [`packages/hivemind/dreamer/src/index.ts:94`](../packages/hivemind/dreamer/src/index.ts)
+Source: [`packages/hivemind/dreamer/src/index.ts:105`](../packages/hivemind/dreamer/src/index.ts)
 
 <a id="hiveminddream-source--log-only"></a>
 
@@ -594,7 +594,7 @@ Source: [`packages/hivemind/dreamer/src/index.ts:94`](../packages/hivemind/dream
 'hivemind/dream-source': { ids: string[] }
 ```
 
-Source: [`packages/hivemind/dreamer/src/index.ts:92`](../packages/hivemind/dreamer/src/index.ts)
+Source: [`packages/hivemind/dreamer/src/index.ts:103`](../packages/hivemind/dreamer/src/index.ts)
 
 <a id="hivemindemployee-delegation-end--log-only"></a>
 
@@ -636,7 +636,7 @@ Source: [`packages/hivemind/employee-delegation/src/index.ts:120`](../packages/h
 'hivemind/employee-selection': { id: string | null; name?: string; role?: string; avatarUrl?: string }
 ```
 
-Source: [`packages/hivemind/runtime/src/index.ts:35`](../packages/hivemind/runtime/src/index.ts)
+Source: [`packages/hivemind/runtime/src/index.ts:39`](../packages/hivemind/runtime/src/index.ts)
 
 <a id="hivemindevidence-gap-recorded--log-only"></a>
 
@@ -823,7 +823,7 @@ Source: [`packages/hivemind/playbooks/src/index.ts:192`](../packages/hivemind/pl
 'hivemind/read-scope': { scope: 'full' | 'personal' | 'organization' | 'project'; project?: string }
 ```
 
-Source: [`packages/hivemind/runtime/src/index.ts:33`](../packages/hivemind/runtime/src/index.ts)
+Source: [`packages/hivemind/runtime/src/index.ts:35`](../packages/hivemind/runtime/src/index.ts)
 
 <a id="hivemindreply-language--log-only"></a>
 
@@ -834,7 +834,7 @@ Source: [`packages/hivemind/runtime/src/index.ts:33`](../packages/hivemind/runti
 'hivemind/reply-language': { language: string }
 ```
 
-Source: [`packages/hivemind/runtime/src/index.ts:37`](../packages/hivemind/runtime/src/index.ts)
+Source: [`packages/hivemind/runtime/src/index.ts:41`](../packages/hivemind/runtime/src/index.ts)
 
 <a id="hivemindrequest-assembly-budget--log-only"></a>
 
@@ -967,6 +967,17 @@ Source: [`packages/hivemind/runtime/src/continuity.ts:44`](../packages/hivemind/
 ```
 
 Source: [`packages/hivemind/runtime/src/continuity.ts:46`](../packages/hivemind/runtime/src/continuity.ts)
+
+<a id="hivemindweb-search-route--log-only"></a>
+
+#### `hivemind/web-search-route` — log-only
+
+```ts persistence-catalog
+/** Search routing receipt, containing no credentials or raw upstream errors. */
+'hivemind/web-search-route': { provider: 'native' | 'existing'; fallback: boolean }
+```
+
+Source: [`packages/hivemind/runtime/src/index.ts:37`](../packages/hivemind/runtime/src/index.ts)
 
 <a id="hivemindworkstream-approval--log-only"></a>
 
@@ -1705,3 +1716,14 @@ Source: [`packages/core/session/src/types.ts:297`](../packages/core/session/src/
 ```
 
 Source: [`packages/web/web-search-deepseek/src/provider.ts:83`](../packages/web/web-search-deepseek/src/provider.ts)
+
+<a id="webopenai-search-request--log-only"></a>
+
+#### `web/openai-search-request` — log-only
+
+```ts persistence-catalog
+/** Auxiliary search input; never contains OAuth tokens or request headers. */
+'web/openai-search-request': OpenAISearchRequest
+```
+
+Source: [`packages/web/web-search-openai/src/provider.ts:20`](../packages/web/web-search-openai/src/provider.ts)

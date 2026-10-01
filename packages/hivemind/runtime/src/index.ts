@@ -15,6 +15,8 @@ import type { ToolExecution } from '@deepseek-ai/dsh-tools'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import type {} from '@deepseek-ai/dsh-host-webserver'
 import type {} from '@deepseek-ai/dsh-skill'
+import type {} from '@deepseek-ai/dsh-web'
+import { setTimeout as delay } from 'node:timers/promises'
 import { homedir } from 'node:os'
 import { isAbsolute, dirname, join } from 'node:path'
 import { lstat, readFile, rename, writeFile } from 'node:fs/promises'
@@ -31,6 +33,8 @@ declare module '@deepseek-ai/dsh-session/types' {
   interface SessionEventMap {
     /** Records the active HIVE read lens and optional authorized project id. */
     'hivemind/read-scope': { scope: 'full' | 'personal' | 'organization' | 'project'; project?: string }
+    /** Search routing receipt, containing no credentials or raw upstream errors. */
+    'hivemind/web-search-route': { provider: 'native' | 'existing'; fallback: boolean }
     /** User-selected employee identity for inline HyperAgents work. */
     'hivemind/employee-selection': { id: string | null; name?: string; role?: string; avatarUrl?: string }
     /** Recognizes the legacy selected reply language event; new selections use command/run. */
@@ -212,6 +216,8 @@ export interface Config {
   historyMaxChars: number
   /** Whether HIVE requires one native approval before each web read. */
   webApprovalRequired: boolean
+  /** Prefer the native web provider; preserve the authenticated web service as fallback. */
+  nativeWebSearch?: boolean
 }
 
 /** Schemastery validation for {@link Config}. */
@@ -236,6 +242,7 @@ export const Config: z<Config> = z.object({
   historyTurns: z.natural().min(1).required(),
   historyMaxChars: z.natural().min(1).required(),
   webApprovalRequired: z.boolean().default(true),
+  nativeWebSearch: z.boolean().default(true),
 })
 
 interface JsonRecord {
@@ -1498,18 +1505,30 @@ export function apply(ctx: Context, config: Config): void {
       const requestedLimit = typeof args.limit === 'number' && Number.isInteger(args.limit) ? args.limit : 5
       const limit = Math.max(1, Math.min(requestedLimit, 8))
       const authority = await resolveAuthority(ctx, config)
+      const web = config.nativeWebSearch ? ctx.get('web') : undefined
+      if (web) {
+        try {
+          const found = await web.search({ query, maxResults: limit }, execution.signal)
+          if (found.sources.length > 0) {
+            execution.agent?.session.append('hivemind/web-search-route', { provider: 'native', fallback: false })
+            const results = found.sources.map(source => ({ title: source.title ?? '', url: source.url,
+              excerpt: source.snippet?.slice(0, 800) ?? '', ...(source.publishedAt ? { date: source.publishedAt } : {}) }))
+            return { status: 'ready', operation: 'web_search', query, results, count: results.length,
+              ...(found.content ? { summary: found.content } : {}) }
+          }
+        } catch {
+          // Cancellation is user intent; only provider failures invoke fallback.
+          execution.signal.throwIfAborted()
+        }
+      }
+      execution.signal.throwIfAborted()
+      execution.agent?.session.append('hivemind/web-search-route', { provider: 'existing', fallback: Boolean(web) })
       const queued = apiRecord(await hiveRequest(authority, WEB_SEARCH_JOBS_PATH, {
         method: 'POST', body: JSON.stringify({ query, limit }),
       }, execution.signal, config), 'web search submission')
       const jobId = nonEmptyString(queued['job_id'], 'web search job id')
       for (let attempt = 0; attempt < 24; attempt += 1) {
-        await new Promise<void>((resolve, reject) => {
-          const timer = setTimeout(resolve, 1_000)
-          execution.signal.addEventListener('abort', () => {
-            clearTimeout(timer)
-            reject(execution.signal.reason)
-          }, { once: true })
-        })
+        await delay(1_000, undefined, { signal: execution.signal })
         const job = apiRecord(await hiveRequest(authority, `${WEB_JOBS_PATH}/${encodeURIComponent(jobId)}`, {
           method: 'GET',
         }, execution.signal, config), 'web search job')
