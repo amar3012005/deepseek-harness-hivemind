@@ -324,6 +324,23 @@ export class ScheduleService extends TypertRemoteService {
     else if (request.weekly !== undefined) record = createWeeklyScheduleRecord(id, request.prompt, request.weekly, now, title)
     else if (request.cron !== undefined) record = createCronScheduleRecord(id, request.prompt, request.cron, now, title)
     else throw new ScheduleInputError('invalid_selector', 'Exactly one reminder selector is required.')
+    // Optional profile-owned policy. Host-owned ensure wakes are already
+    // governed by their workflow and do not create interactive approval cards.
+    if (stableId === undefined) {
+      const agent = this.ctx.agents.get(sessionId)
+      const policy = agent?.ctx.get('hivemindScheduledMemoryPolicy') as {
+        prepare(
+          owner: NonNullable<typeof agent>, id: string, prompt: string,
+          destination: string | undefined, project: string | undefined, signal: AbortSignal,
+        ): Promise<void>
+      } | undefined
+      if (agent !== undefined && policy !== undefined) {
+        await policy.prepare(
+          agent, String(id), request.prompt, request.memory_destination,
+          request.memory_project, signal ?? new AbortController().signal,
+        )
+      }
+    }
     // A blank Session may have selected HyperAgents after its creation header.
     // Commit that selection before the external provider checks the stored mode.
     if (this.backend !== undefined) {

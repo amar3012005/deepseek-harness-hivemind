@@ -703,6 +703,35 @@ describe('HIVE-MIND runtime', () => {
     expect(body).toMatchObject({ memory_type:'synthesis',project_id:project,project_ids:[project],scope:'project',smartIngest:false,idempotency_key:'dream:stable-candidate',metadata:{ governed:true,scope:'project',dreamer:{ sourceMemoryIds:['source'],derived:true } } })
   })
 
+  it('gives separate scheduled occurrences separate save keys while preserving retry identity', async () => {
+    const path = await authorityFile()
+    profileResponses([jsonResponse({}, 404), jsonResponse({ id: 'first-memory' }), jsonResponse({}, 404), jsonResponse({ id: 'second-memory' })])
+    const harness = mount(config(path))
+    const message = { seq: 2, type: 'user/message', data: { source: { kind: 'schedule', deliveryKey: 'occurrence-1' }, content: [{ type: 'text', text: 'reminders_json: [{"schedule_id":"schedule-1","reminder_prompt":"Save decisions"}]' }] } }
+    const subject = { session: { header: { id: 'session-scheduled' }, snapshotEvents: () => [{ seq: 1, type: 'turn/start', data: { turn: 1 } }, message], append: vi.fn() } } as unknown as Agent
+    const request = { title: 'Daily decision', content: 'Confirmed outcome', sourceType: 'decision' as const, scope: 'organization' as const }
+    await harness.memory!.save(subject, request, signal, execContext(subject))
+    message.data.source.deliveryKey = 'occurrence-2'
+    await harness.memory!.save(subject, request, signal, execContext(subject))
+    const keys = vi.mocked(fetch).mock.calls.filter(([, init]) => init?.method === 'POST').map(([, init]) => JSON.parse(String(init?.body)).idempotency_key)
+    expect(keys).toHaveLength(2)
+    expect(keys[0]).not.toBe(keys[1])
+  })
+
+  it('does not POST a scheduled save when an earlier interrupted write cannot be reconciled', async () => {
+    const path = await authorityFile()
+    profileResponses([jsonResponse({}, 503)])
+    const harness = mount(config(path))
+    const subject = { session: { header: { id: 'session-scheduled' }, snapshotEvents: () => [
+      { seq: 0, type: 'hivemind/memory-save', data: { operation_id: 'hive-save:previous', status: 'executing' } },
+      { seq: 1, type: 'turn/start', data: { turn: 1 } },
+      { seq: 2, type: 'user/message', data: { source: { kind: 'schedule', deliveryKey: 'occurrence-1' }, content: [{ type: 'text', text: 'reminders_json: []' }] } },
+    ], append: vi.fn() } } as unknown as Agent
+    const result = await harness.memory!.save(subject, { title: 'Next insight', content: 'Verified insight', sourceType: 'decision' }, signal, execContext(subject))
+    expect(result).toMatchObject({ status: 'indeterminate', idempotency_key: 'hive-save:previous', retry_safe: false })
+    expect(vi.mocked(fetch).mock.calls.some(([, init]) => init?.method === 'POST')).toBe(false)
+  })
+
   it('saves only a bounded, profile-scoped memory and returns a compact receipt', async () => {
     const path = await authorityFile()
     profileResponses([jsonResponse({}, 404), jsonResponse({

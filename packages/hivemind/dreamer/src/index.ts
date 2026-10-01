@@ -122,6 +122,21 @@ export function apply(ctx: Context, config: Config): void {
     options: `-c search_path=${config.schema},public -c statement_timeout=15000`,
   })
   const store = new DreamStore(pool)
+  ctx.provide('hivemindFlashbacksDestination', {
+    async resolve(agent, signal) {
+      signal.throwIfAborted()
+      const scope = agent.ctx.get('hivemindExecutionScope')
+      if (scope === undefined) throw new Error('dreamer_authenticated_scope_required')
+      const owner = scope.require()
+      return store.scoped(owner, async (db) => {
+        const result = await db.query<{ id: string }>(
+          "SELECT id FROM projects WHERE org_id=$1 AND slug='flashbacks' AND name='Flashbacks' AND policy='org_visible' AND status='active' AND description LIKE 'DSH Dreamer derived%'",
+          [owner.orgId],
+        )
+        return result.rows[0]?.id
+      })
+    },
+  })
   const active = new Map<
     string,
     { run: DreamRun; parent: AgentHandle | undefined; completion: boolean; finished: boolean; settled: Promise<void>; settle: () => void }

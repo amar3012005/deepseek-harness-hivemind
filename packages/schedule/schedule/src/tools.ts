@@ -432,6 +432,8 @@ export function registerScheduleTools(
           description: 'Delay in whole seconds.',
         },
         ...SELECTOR_PARAMETERS,
+        memory_destination: { type: 'string', enum: ['personal', 'organization', 'project'], description: 'Declare this when the scheduled work will save company memories. Permission is requested now, never during unattended execution. Flashbacks Dreamer and private hyperagents_memory use their dedicated paths.' },
+        memory_project: { type: 'string', description: 'Exact authorized project identifier for a project memory destination.' },
       },
       output: { schema: CREATE_OUTPUT_SCHEMA, render: renderValue },
       async execute(args, exec): Promise<ScheduleCreateValue> {

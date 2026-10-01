@@ -62,7 +62,16 @@ export interface MemoryProvider {
 }
 
 declare module '@deepseek-ai/cordis' {
-  interface Context { hivemindMemory: MemoryProvider }
+  interface Context {
+    hivemindMemory: MemoryProvider
+    hivemindFlashbacksDestination: { resolve(agent: Agent, signal: AbortSignal): Promise<string | undefined> }
+    hivemindScheduledMemoryPolicy: {
+      prepare(
+        agent: Agent, id: string, prompt: string, destination: string | undefined,
+        project: string | undefined, signal: AbortSignal,
+      ): Promise<void>
+    }
+  }
 }
 
 export interface MemoryPluginConfig { defaultLimit: number }
@@ -75,6 +84,13 @@ declare module '@deepseek-ai/dsh-session/types' {
       status: 'prepared' | 'approved' | 'executing' | 'completed' | 'cancelled'
       destination?: 'personal' | 'organization' | 'project'
       idempotency_key?: string
+    }
+    'hivemind/schedule-memory-permission': {
+      schedule_id: string
+      prompt_hash: string
+      decision: 'approved' | 'denied'
+      destination: 'personal' | 'organization' | 'project'
+      project?: string
     }
   }
 }
@@ -94,6 +110,40 @@ async function approveSaveDestination(
   request: SaveRequest,
 ): Promise<SaveRequest | undefined> {
   if (execution.agent === undefined) throw new TypeError('hivemind-memory: active agent required')
+  const scheduled = scheduledMemoryContext(execution.agent)
+  const dreaming = scheduled !== undefined && scheduled.reminders.length > 0
+    && scheduled.reminders.every(reminder => /\bdream(?:er|ing)?\b/i.test(reminder.prompt) && /\bflashbacks?\b/i.test(reminder.prompt))
+  if (dreaming || request.project !== undefined) {
+    const project = await execution.agent.ctx.get('hivemindFlashbacksDestination')?.resolve(execution.agent, execution.signal)
+    // Resolve the reserved project through tenant-authenticated storage, never
+    // accept a model-supplied UUID as an approval exemption.
+    if (dreaming || /^(flashbacks)$/i.test(request.project ?? '') || request.project === project) {
+      if (project === undefined) return undefined
+      return { ...request, scope: 'project', project, derived: true,
+        tags: [...new Set([...(request.tags ?? []), 'flashback', 'derived'])],
+        metadata: { ...request.metadata, derived: true,
+          source_memory_ids: request.relatedTo === undefined ? [] : [request.relatedTo],
+          ...(scheduled === undefined ? {} : { scheduled_occurrence: scheduled.key }),
+        },
+      }
+    }
+  }
+  if (scheduled !== undefined) {
+    // A scheduled turn must never await a human. Only a creation-time grant
+    // matching every reminder in this occurrence can authorize the destination.
+    const events = execution.agent.session.snapshotEvents()
+    const permissions = scheduled.reminders.map(reminder => events.findLast(event =>
+      event.type === 'hivemind/schedule-memory-permission'
+      && event.data.schedule_id === reminder.id && event.data.prompt_hash === promptHash(reminder.prompt)))
+    const first = permissions[0]
+    if (first?.type !== 'hivemind/schedule-memory-permission' || first.data.decision !== 'approved') return undefined
+    if (permissions.some(event => event?.type !== 'hivemind/schedule-memory-permission'
+      || event.data.decision !== 'approved' || event.data.destination !== first.data.destination
+      || event.data.project !== first.data.project)) return undefined
+    if (request.scope !== undefined && request.scope !== first.data.destination) return undefined
+    if (request.project !== undefined && request.project !== first.data.project) return undefined
+    return { ...request, scope: first.data.destination, ...(first.data.project === undefined ? {} : { project: first.data.project }) }
+  }
   const choices: Array<keyof typeof SAVE_DESTINATIONS> = ['personal', 'organization']
   if (request.project !== undefined) choices.push('project')
   const operationId = saveOperationId(execution, request)
@@ -166,10 +216,11 @@ interface SaveEventData {
   idempotency_key?: string
 }
 
-export function saveOperationId(execution: ToolExecution, request: SaveRequest): string {
+export function saveOperationId(execution: ToolExecution, request: SaveRequest, occurrence?: string): string {
   const sessionId = execution.agent?.session?.header.id || 'session-unavailable'
   const canonical = JSON.stringify({
     session_id: sessionId,
+    ...(occurrence === undefined ? {} : { occurrence }),
     title: request.title,
     content: request.content,
     source_type: request.sourceType,
@@ -179,6 +230,46 @@ export function saveOperationId(execution: ToolExecution, request: SaveRequest):
     related_to: request.relatedTo ?? null,
   })
   return `saveop:${createHash('sha256').update(canonical).digest('hex')}`
+}
+
+function promptHash(prompt: string): string {
+  return createHash('sha256').update(prompt).digest('hex')
+}
+
+/** Read only native scheduled messages belonging to the current turn. Text
+ * supplied by a human or model cannot grant scheduled write authority. */
+export function scheduledMemoryContext(agent: Agent): { key: string; reminders: { id: string; prompt: string }[] } | undefined {
+  const events = agent.session.snapshotEvents()
+  const start = events.findLast(event => event.type === 'turn/start')
+  if (start === undefined) return undefined
+  const messages = events.filter(event => event.seq > start.seq && event.type === 'user/message')
+  if (!messages.some(event => event.type === 'user/message' && String(event.data.source.kind) === 'schedule')) return undefined
+  const reminders: { id: string; prompt: string }[] = []
+  const keys: string[] = []
+  for (const event of messages) {
+    if (event.type !== 'user/message' || String(event.data.source.kind) !== 'schedule') continue
+    const text = event.data.content.filter(block => block.type === 'text').map(block => block.text).join('\n')
+    const source = event.data.source as unknown as { deliveryKey?: string; occurrenceAt?: number }
+    keys.push(source.deliveryKey ?? `${event.seq}:${source.occurrenceAt ?? ''}`)
+    try {
+      const batch = text.split('\n').find(line => line.startsWith('reminders_json: '))
+      if (batch !== undefined) {
+        const rows: unknown = JSON.parse(batch.slice('reminders_json: '.length))
+        if (Array.isArray(rows)) for (const row of rows) {
+          if (typeof row === 'object' && row !== null && typeof row.schedule_id === 'string' && typeof row.reminder_prompt === 'string') reminders.push({ id: row.schedule_id, prompt: row.reminder_prompt })
+        }
+      } else {
+        const id = text.split('\n').find(line => line.startsWith('schedule_id_json: '))
+        const prompt = text.split('\n').find(line => line.startsWith('reminder_prompt_json: '))
+        if (id !== undefined && prompt !== undefined) {
+          const parsedId: unknown = JSON.parse(id.slice('schedule_id_json: '.length))
+          const parsedPrompt: unknown = JSON.parse(prompt.slice('reminder_prompt_json: '.length))
+          if (typeof parsedId === 'string' && typeof parsedPrompt === 'string') reminders.push({ id: parsedId, prompt: parsedPrompt })
+        }
+      }
+    } catch { /* Malformed native framing has no write grant. */ }
+  }
+  return { key: keys.join('|'), reminders }
 }
 
 function appendSaveEvent(agent: Agent, data: SaveEventData): void {
@@ -292,12 +383,21 @@ function readInput(args: Record<string, unknown>, key: 'recall' | 'entities'): R
 function repairMissingReadOperation(args: unknown): unknown {
   if (typeof args !== 'object' || args === null || Array.isArray(args)) return args
   const input = args as Record<string, unknown>
-  if (Object.hasOwn(input, 'operation')) return args
   const keys = Object.keys(input)
-  if (keys.length !== 1 || (keys[0] !== 'entities' && keys[0] !== 'recall')) return args
-  const nested = input[keys[0]]
+  const operation = input['operation'] ?? (keys.length === 1 ? keys[0] : undefined)
+  if (operation !== 'entities' && operation !== 'recall') return args
+  if (!Object.hasOwn(input, 'operation') && keys.length !== 1) return args
+  let nested = input[operation]
+  if (nested === undefined && typeof input['query'] === 'string') nested = readInput(input, operation)
   if (typeof nested !== 'object' || nested === null || Array.isArray(nested)) return args
-  return { ...input, operation: keys[0] }
+  const envelope = nested as Record<string, unknown>
+  if (Object.keys(envelope).length === 1 && Object.hasOwn(envelope, operation)) nested = envelope[operation]
+  if (typeof nested !== 'object' || nested === null || Array.isArray(nested)) return args
+  const read = { ...nested as Record<string, unknown> }
+  // Bounded read recovery never changes a write or drops an unknown field.
+  if (Number.isInteger(read['limit']) && Number(read['limit']) > 25) read['limit'] = 25
+  if (input[operation] === undefined) return { ...input, operation, ...read }
+  return { ...input, operation, [operation]: read }
 }
 
 /** Parse the one canonical shape accepted by both the compatibility gateway and save tool. */
@@ -338,6 +438,33 @@ export function memoryPlugin(config: MemoryPluginConfig, provider: MemoryProvide
     inject: ['tools'],
     apply(ctx: Context): void {
       ctx.provide('hivemindMemory', provider)
+      ctx.provide('hivemindScheduledMemoryPolicy', {
+        async prepare(agent, id, prompt, requestedDestination, project, signal) {
+          const wantsWrite = requestedDestination !== undefined
+            || /\b(save|write|store|persist)\b[\s\S]{0,160}\b(memor(?:y|ies)|hivemind|hive-mind|company brain)\b/i.test(prompt)
+          if (!wantsWrite) return
+          if (/\bdream(?:er|ing)?\b/i.test(prompt) && /\bflashbacks?\b/i.test(prompt)
+            && await agent.ctx.get('hivemindFlashbacksDestination')?.resolve(agent, signal) !== undefined) return
+          const destination = requestedDestination ?? 'organization'
+          if (destination !== 'personal' && destination !== 'organization' && destination !== 'project') throw new TypeError('Invalid schedule memory destination')
+          if (destination === 'project' && !project) throw new TypeError('Schedule project memory destination requires a project')
+          const questionId = `hivemind-schedule-memory:${id}`
+          const questions = ctx.get('userQuestions') as { ask(input: { agent: Agent; signal: AbortSignal; questions: { id: string; question: string; detail: string; options: { label: string; description: string }[] }[] }): Promise<{ answers: { id: string; selected: string[] }[] }> } | undefined
+          if (questions === undefined) throw new Error('Schedule memory permission channel is unavailable')
+          const result = await questions.ask({ agent, signal, questions: [{ id: questionId,
+            question: `Allow this scheduled task to save memories to ${destination === 'project' ? project : destination}?`,
+            detail: 'Approval applies only to this exact task prompt and destination. If declined, unattended memory writes stop without waiting for approval.',
+            options: [{ label: 'Allow', description: 'Authorize future occurrences of this task to save here.' }, { label: 'Do not allow', description: 'Run the task without company-memory writes.' }],
+          }] })
+          const selected = result.answers.find(answer => answer.id === questionId)?.selected ?? []
+          const approved = selected.length === 1 && selected[0] === 'Allow'
+          agent.session.append('hivemind/schedule-memory-permission', {
+            schedule_id: id, prompt_hash: promptHash(prompt), decision: approved ? 'approved' : 'denied',
+            destination, ...(project === undefined ? {} : { project }),
+          })
+          if (!await agent.ctx.get('sessions')?.flush(agent.session)) throw new Error('Schedule memory permission was not durably acknowledged')
+        },
+      })
       ctx.effect(() => ctx.tools.register(defineTool({
         name: 'hivemind_save_memory',
         description: 'Durably save one confirmed, stable HIVE-MIND memory. A user-stated company decision, project direction, standing preference, role assignment, or factual correction can qualify even without the words "save this"; do not persist a proposal, question, transient remark, or speculation. Use this direct tool for a standalone fact, preference, decision, correction, relationship, or completed outcome. Before saving, extract every concrete detail that will help future recall—each named person, organization, product, project, document, system, tool, place, date or period, and distinct subject or concept—and include each once in entities; the Harness deterministically stores them as normalized entity:* tags. Do not collapse a detailed memory into only broad generic tags. A successful result must include the saved memory receipt. Never save secrets, credentials, ephemeral chat, guesses, or unverified claims.',
@@ -359,7 +486,7 @@ export function memoryPlugin(config: MemoryPluginConfig, provider: MemoryProvide
           const prepared = provider.prepareSave?.(execution.agent, saveRequest(args)) ?? saveRequest(args)
           const approved = await approveSaveDestination(ctx, execution, prepared)
           return approved === undefined
-            ? { operation: 'save', status: 'cancelled' }
+            ? { operation: 'save', status: 'cancelled', reason: 'Memory write is not authorized. Stop this write; do not retry or wait for approval during a scheduled turn.' }
             : provider.save(execution.agent, approved, execution.signal, execution)
         },
       })))
@@ -411,18 +538,27 @@ export function memoryPlugin(config: MemoryPluginConfig, provider: MemoryProvide
             ...(requestedScope === undefined ? {} : { scope: requestedScope }),
           }
           const approved = await approveSaveDestination(ctx, execution, approvalRequest)
-          if (approved === undefined) return { operation: 'batch_save', status: 'cancelled', count: prepared.length }
+          if (approved === undefined) return { operation: 'batch_save', status: 'cancelled', count: prepared.length, reason: 'Memory writes are not authorized. Stop this batch; do not retry or wait for approval during a scheduled turn.' }
           if (approved.scope === undefined) throw new Error('hivemind-memory: approved batch destination is unavailable')
           const results: Record<string, JsonValue>[] = []
           for (const request of prepared) {
-            results.push(await provider.save(agent, { ...request, scope: approved.scope }, execution.signal, execution))
+            const finalRequest: SaveRequest = {
+              ...request, scope: approved.scope,
+              ...(approved.derived === undefined ? {} : { derived: approved.derived }),
+              ...(approved.project === undefined ? {} : { project: approved.project }),
+            }
+            if (approved.derived) {
+              finalRequest.tags = [...new Set([...(request.tags ?? []), 'flashback', 'derived'])]
+              finalRequest.metadata = { ...request.metadata, derived: true, source_memory_ids: request.relatedTo === undefined ? [] : [request.relatedTo], ...(approved.metadata?.['scheduled_occurrence'] === undefined ? {} : { scheduled_occurrence: approved.metadata['scheduled_occurrence'] }) }
+            }
+            results.push(await provider.save(agent, finalRequest, execution.signal, execution))
           }
-          return { operation: 'batch_save', status: 'completed', count: results.length, destination: approved.scope, results }
+          return { operation: 'batch_save', status: results.every(result => result['status'] === 'saved' || result['status'] === 'completed') ? 'completed' : 'indeterminate', count: results.length, destination: approved.scope, results }
         },
       })))
       const metaTool = defineTool({
         name: 'hivemind_meta',
-        description: 'HIVE-MIND gateway. REQUIRED top-level operation: "context", "entities", "recall", "save", "save_status", or "profiles". Put entity-search arguments under entities and memory-search arguments under recall. An unambiguous omitted read operation is repaired once before dispatch; mixed forms and writes are rejected. For questions about a named person, organization, topic, project, or document, call {operation:"recall",recall:{query:"exact user question"}} directly; append recent conversation context only to resolve an ambiguous reference, never an inferred profile identity. Entity search is optional, not a prerequisite. For an explicit entity-search request, call {operation:"entities",entities:{query:"name"}} and report actual matches only. Empty entity matches are not evidence of absent memories. Do not merge same-name people or personal and company facts without an evidence-backed identity link. Use context for the caller or company profile. Proactively save a confirmed stable preference, decision, project direction, role assignment, correction, or completed outcome, but never a proposal, question, transient remark, guess, secret, or credential. Add every concrete named detail to save.entities. Tenant scope comes from the current credential.',
+        description: 'HIVE-MIND gateway. REQUIRED top-level operation: "context", "entities", "recall", "save", "save_status", or "profiles". Put entity-search arguments under entities and memory-search arguments under recall. An unambiguous omitted read operation is repaired once before dispatch; mixed forms and writes are rejected. For questions about a named person, organization, topic, project, or document, call {operation:"recall",recall:{query:"exact user question"}} directly; append recent conversation context only to resolve an ambiguous reference, never an inferred profile identity. Entity search is optional, not a prerequisite. For an explicit entity-search request, call {operation:"entities",entities:{query:"name"}} and report actual matches only. Empty entity matches are not evidence of absent memories. Do not merge same-name people or personal and company facts without an evidence-backed identity link. Use context for the caller or company profile. Proactively save a confirmed stable preference, decision, project direction, role assignment, correction, or completed outcome, but never a proposal, question, transient remark, guess, secret, or credential. Add every concrete named detail to save.entities. Read limits are integers from 1 to 25. Never nest entities inside entities or recall inside recall. An unknown write outcome must be reconciled using save_status and its idempotency_key; empty recall is not proof that the save failed. When creating a schedule that saves company memories, declare memory_destination and memory_project on schedule_create; creation captures permission. Cancelled scheduled writes must stop without retrying or requesting approval. Dream outputs use the dedicated Flashbacks project. Private agent operating memories use hyperagents_memory, not company save tools. Tenant scope comes from the current credential.',
         parameters: {
           operation: { type: 'string', required: true, enum: ['context', 'entities', 'recall', 'save', 'save_status', 'profiles'], description: 'REQUIRED at the top level on every call. Do not place it inside entities or recall. If validation reports a missing operation, correct the next call once; do not repeat the malformed call.' },
           entities: {
@@ -430,7 +566,7 @@ export function memoryPlugin(config: MemoryPluginConfig, provider: MemoryProvide
             additionalProperties: false,
             properties: {
               query: { type: 'string', required: true, description: 'Exact named subject to match against canonical names and aliases.' },
-              limit: { type: 'integer', description: 'Maximum canonical matches to return.' },
+              limit: { type: 'integer', description: 'Maximum canonical matches, an integer from 1 to 25. Larger read limits are capped at 25.' },
               scope_filter: { type: 'string', enum: ['personal', 'organization', 'project'], description: 'Optional server-enforced read lens. Omit for the full authorized union.' },
               project: { type: 'string', description: 'Authorized project identifier when using project scope.' },
             },
@@ -441,7 +577,7 @@ export function memoryPlugin(config: MemoryPluginConfig, provider: MemoryProvide
             properties: {
               query: { type: 'string', required: true, description: 'Use the full user question verbatim. Only append a referent from recent completed conversation when a pronoun or "this topic" needs resolution. Do not inject profile names or inferred identity. A name is a soft query hint, not an entity ID requirement.' },
               mode: { type: 'string', enum: ['memory', 'auto', 'hybrid', 'evidence'] },
-              limit: { type: 'integer' },
+              limit: { type: 'integer', description: 'Maximum results, an integer from 1 to 25. Larger read limits are capped at 25.' },
               tags: { type: 'array', items: { type: 'string' } },
               source_platforms: { type: 'array', items: { type: 'string' } },
               media_kind: { type: 'string', enum: ['image', 'document'] },
@@ -509,7 +645,7 @@ export function memoryPlugin(config: MemoryPluginConfig, provider: MemoryProvide
             const prepared = provider.prepareSave?.(execution.agent, saveRequest(rawSave)) ?? saveRequest(rawSave)
             const approved = await approveSaveDestination(ctx, execution, prepared)
             return approved === undefined
-              ? { operation: 'save', status: 'cancelled' }
+              ? { operation: 'save', status: 'cancelled', reason: 'Memory write is not authorized. Stop this write; do not retry or wait for approval during a scheduled turn.' }
               : provider.save(execution.agent, approved, execution.signal, execution)
           }
           if (operation === 'save_status') {

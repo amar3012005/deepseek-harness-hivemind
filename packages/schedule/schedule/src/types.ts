@@ -361,6 +361,10 @@ declare module '@deepseek-ai/dsh-session/types' {
 
 /** Reminder creation selector, shared by the model consumer and Host service. */
 export interface ScheduleCreateRequest {
+  /** Intended company-memory destination; HIVE asks permission before activation. */
+  memory_destination?: 'personal' | 'organization' | 'project'
+  /** Exact project bound to a project destination. */
+  memory_project?: string
   /** Non-empty reminder text. */
   prompt: string
   /** Required task name of at most 120 characters, non-empty after trimming; names the card, detail heading, and task lists. */

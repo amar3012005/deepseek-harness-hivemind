@@ -23,7 +23,7 @@ import { createHash, createHmac, randomUUID } from 'node:crypto'
 import type {} from '@deepseek-ai/dsh-hivemind-identity'
 import type {} from '@deepseek-ai/dsh-hivemind-execution-scope'
 import { contextPlugin } from '@deepseek-ai/dsh-hivemind-context'
-import { memoryPlugin, type EntitySearchRequest, type RecallRequest, type SaveRequest, type SaveStatusRequest } from '@deepseek-ai/dsh-hivemind-memory'
+import { memoryPlugin, scheduledMemoryContext, type EntitySearchRequest, type RecallRequest, type SaveRequest, type SaveStatusRequest } from '@deepseek-ai/dsh-hivemind-memory'
 import { hyperagentDirectory, projectHyperagentProfiles } from '@deepseek-ai/dsh-hivemind-employee-directory'
 import { completedTaskMemory, pendingTaskMemories, sessionOwner, sessionOwnerProjection, type SessionOwner } from './continuity.ts'
 
@@ -846,10 +846,12 @@ function compactSaveReceipt(
   return receipt
 }
 
-function saveIdempotencyKey(snapshot: ProfileSnapshot, execution: ToolExecution, request: SaveRequest): string {
+function saveIdempotencyKey(snapshot: ProfileSnapshot, execution: ToolExecution, request: SaveRequest, includeOccurrence = true): string {
   const sessionId = execution.agent?.session?.header.id || 'session-unavailable'
+  const occurrence = includeOccurrence && execution.agent !== undefined ? scheduledMemoryContext(execution.agent)?.key : undefined
   const canonical = JSON.stringify({
     org_id: snapshot.identity.orgId, user_id: snapshot.identity.userId, session_id: sessionId,
+    ...(occurrence === undefined ? {} : { occurrence }),
     title: request.title, content: request.content, source_type: request.sourceType,
     tags: [...(request.tags ?? [])].sort(), project: request.project ?? null,
     relationship: request.relationship ?? null, related_to: request.relatedTo ?? null,
@@ -1105,6 +1107,8 @@ export function apply(ctx: Context, config: Config): void {
     source: 'runtime',
     content: `Use this skill only for a question about the authenticated user's organization, internal memories, files, documents, evidence, decisions, people, projects, or HyperAgents. HIVE-MIND should be considered automatically for such work, but do not load this skill or call recall for greetings, general knowledge, simple transformations, or a fact already established by a recent completed answer.
 
+Memory contracts: read limits are integers 1–25, with exactly one nested recall or entities object. HIVE-MIND means the company brain; private operating memory uses hyperagents_memory. Before creating an automatic task with company-memory writes, declare memory_destination and, for project writes, memory_project in schedule_create so the user can approve that exact destination during creation. Without approval, stop the scheduled write when its result is cancelled; never wait for a human or retry it. Dream insights go directly to the tenant Flashbacks project, with source provenance and successful receipts, without per-dream approval. Empty recall never proves an interrupted write failed: use save_status and its idempotency_key before retrying.
+
 1. First decide whether company history is actually needed. Simple profile, entity lookup, one-shot recall, exact HyperAgent-directory requests, and a stable single-fact save do not need this skill: call \`hivemind_meta\` directly from its registered schema. Use this playbook only when the request requires multi-source retrieval, temporal reconstruction, or conflict reconciliation. Every \`hivemind_meta\` call requires top-level \`operation\`; put entity arguments under \`entities\` and memory arguments under \`recall\`. For “what do you know about me?”, “tell me about myself”, “my profile”, or a company-profile question, call \`hivemind_meta\` with \`operation: "context"\` before answering; if the request also asks for stored preferences, decisions, projects, or past activity, make one focused \`recall\` call after context. For another named person, topic, project, organization, document, or subject, call \`recall\` directly with the full user question and resolved recent conversation context. The name is a soft hint, not an entity-ID prerequisite. Optional entity lookup may enrich the answer but empty or failed lookup never blocks recall and is not memory evidence. Only an explicit entity-search request needs \`entities\`; report its actual matches without substituting recall results. Keep similarly named people distinct unless evidence links them. For other requests, use a sufficient compact organization brief or recent completed answer directly. Otherwise call \`hivemind_meta\` with exactly one operation:
    - \`context\`: load the full onboarding-derived user and organization profile.
    - \`entities\`: find canonical names and aliases across the authorized organization.
@@ -1323,7 +1327,29 @@ export function apply(ctx: Context, config: Config): void {
     async save(agent, request: SaveRequest, signal, execution) {
       const snapshot = await snapshotFor(agent, signal)
       const authority = await resolveAuthority(ctx, config)
-      const idempotencyKey = request.idempotencyKey ?? saveIdempotencyKey(snapshot, execution, request)
+      const legacyKey = saveIdempotencyKey(snapshot, execution, request, false)
+      const legacyEvent = agent.session.snapshotEvents().findLast(event => event.type === 'hivemind/memory-save' && event.data.operation_id === legacyKey)
+      // Reconcile an interrupted pre-upgrade write before assigning a new
+      // occurrence key; unknown outcomes must not produce a duplicate write.
+      const pendingLegacy = legacyEvent?.type === 'hivemind/memory-save' && legacyEvent.data.status === 'executing'
+      const idempotencyKey = request.idempotencyKey ?? (pendingLegacy ? legacyKey : saveIdempotencyKey(snapshot, execution, request))
+      if (scheduledMemoryContext(agent) !== undefined) {
+        const prior = new Map<string, string>()
+        for (const event of agent.session.snapshotEvents()) if (event.type === 'hivemind/memory-save' && event.data.operation_id.startsWith('hive-save:')) prior.set(event.data.operation_id, event.data.status)
+        for (const [key, status] of prior) {
+          if (status !== 'executing' || key === idempotencyKey) continue
+          try {
+            const durable = apiRecord(await hiveRequest(authority, `${SAVE_STATUS_PATH}?idempotency_key=${encodeURIComponent(key)}`, { method: 'GET', headers: { 'x-idempotency-key': key } }, signal, config), 'interrupted save status')
+            if (durable['status'] === 'completed' && durable['receipt'] && typeof durable['receipt'] === 'object'
+              && compactSaveReceipt(durable['receipt'] as JsonRecord, key).status === 'saved') {
+              agent.session.append('hivemind/memory-save', { operation_id: key, idempotency_key: key, status: 'completed' })
+              continue
+            }
+          } catch { /* Absence of a receipt is not proof that a write failed. */ }
+          return { operation: 'save', status: 'indeterminate', idempotency_key: key, retry_safe: false,
+            error_code: 'PRIOR_MEMORY_SAVE_OUTCOME_UNKNOWN', message: 'Stop this scheduled write until the earlier interrupted save has a confirmed receipt.' }
+        }
+      }
       try {
         const existing = await hiveRequest(authority, `${SAVE_STATUS_PATH}?idempotency_key=${encodeURIComponent(idempotencyKey)}`, {
           method: 'GET', headers: { 'x-idempotency-key': idempotencyKey },
@@ -1332,8 +1358,13 @@ export function apply(ctx: Context, config: Config): void {
         if (durable['status'] === 'completed' && durable['receipt'] && typeof durable['receipt'] === 'object') {
           return compactSaveReceipt({ ...(durable['receipt'] as JsonRecord), replayed: true }, idempotencyKey)
         }
-      } catch {
-        // A missing durable row is the first-write path.
+      } catch (error: unknown) {
+        // Only a confirmed absent row is the first-write path. A status outage
+        // must not be treated as permission to issue an uncertain write.
+        if (!(error instanceof HiveMindRuntimeError && error.status === 404)) {
+          return { operation: 'save', status: 'indeterminate', idempotency_key: idempotencyKey,
+            error_code: 'MEMORY_SAVE_STATUS_UNAVAILABLE', retry_safe: false }
+        }
       }
       execution.agent?.session.append('hivemind/memory-save', {
         operation_id: idempotencyKey, status: 'executing', idempotency_key: idempotencyKey,
