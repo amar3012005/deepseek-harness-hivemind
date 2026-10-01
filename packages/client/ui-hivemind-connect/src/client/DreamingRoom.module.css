@@ -25,3 +25,7 @@
 @media (max-width: 1100px) {
   .activity { max-height: 270px; }
 }
+
+/* Room activity is quiet text on the canvas, below the single control row. */
+.activity { background: transparent; box-shadow: none; border-radius: 0; }
+.activity > section { padding: 8px 12px; border: 0; border-radius: 0; background: transparent; }

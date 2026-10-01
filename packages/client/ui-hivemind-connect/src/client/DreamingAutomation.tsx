@@ -34,7 +34,7 @@ export function DreamingAutomation({ room = false }: { room?: boolean } = {}) {
   const latest = timing?.runs[0]
   const sessionHref = timing?.session ? '/hivemind/app/overview/dreaming' : undefined
   return <section className={css.card} aria-label="Nightly Dreaming">
-    <div className={css.heading}>{room ? <strong>Nightly Dreaming</strong> : <a className={css.sessionLink} href={sessionHref}>Nightly Dreaming</a>}<span>{state ? state.enabled ? 'On' : 'Off' : 'Loading…'}</span></div>
+    {!room && <div className={css.heading}><a className={css.sessionLink} href={sessionHref}>Nightly Dreaming</a><span>{state ? state.enabled ? 'On' : 'Off' : 'Loading…'}</span></div>}
     <p>Company memory exploration → Flashbacks</p>
     {error && <p role="alert">Dreaming activity could not be refreshed. Displayed details may be stale.</p>}
     {timing && <>
