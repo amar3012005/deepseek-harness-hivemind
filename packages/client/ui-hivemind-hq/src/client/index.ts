@@ -17,7 +17,7 @@ import { CompanyWorkspace, type CompanyWorkspaceProps } from './CompanyWorkspace
 import { HqControlAction, type HqControlActionProps, type HqControlInjected } from './HqControlAction.tsx'
 import { en, zh, type HqKey } from './locales.ts'
 declare module '@deepseek-ai/dsh-client-ui-slots' { interface LocaleNamespaceMap { 'hivemind.hq': HqKey } }
-export const inject = ['sessions', 'remote', 'slots', 'locale', 'layout']
+export const inject = ['sessions', 'remote', 'slots', 'locale']
 
 /**
  * Mount the generated native HQ namespace and its human-only header controls.
@@ -26,31 +26,43 @@ export const inject = ['sessions', 'remote', 'slots', 'locale', 'layout']
  */
 export async function apply(ctx: Context): Promise<() => Promise<void>> {
   const disposeRemote = await ctx.remote.$mount(hqRemote)
-  const ui = ctx.inject(['sessions', 'remote.hivemindHq', 'slots', 'locale', 'layout'], (child) => {
+  const ui = ctx.inject(['sessions', 'remote.hivemindHq', 'slots', 'locale'], (child) => {
     child.effect(() => child.locale.register('hivemind.hq', { en, zh }))
     const actions: HqControlInjected = {
       load: sessionId => child.remote.hivemindHq.mode(sessionId),
       setMode: (sessionId, request) => child.remote.hivemindHq.setMode(sessionId, request),
     }
     const ScopedControl = (props: HqControlActionProps) => {
+      const [canonical, setCanonical] = useState<SessionId>()
+      useEffect(() => {
+        let disposed = false
+        void runtime.then((result) => {
+          if (!disposed && result.ok) setCanonical(result.value.sessionId)
+        }, () => {})
+        return () => { disposed = true }
+      }, [])
       const preset = useSyncExternalStore(listener => child.sessions.list.subscribe(listener),
         () => child.sessions.list.getSnapshot().byId[props.sessionId]?.projectionValues?.agentPreset
           ?? child.sessions.list.getSnapshot().byId[props.sessionId]?.agentPreset)
-      return preset === 'hivemind-hq' ? createElement(HqControlAction, props) : null
+      return props.sessionId === canonical || preset === 'hivemind-hq' ? createElement(HqControlAction, props) : null
     }
     // Initialize on authenticated Harness admission, before a calendar click.
     const runtime = child.remote.hivemindHq.start()
     void runtime.catch(error => child.logger.warn(`HQ initialization unavailable: ${String(error)}`))
-    // HQ admission and controls do not depend on the optional workspace navigator.
-    // Calendar navigation mounts only when that native capability is available.
-    const calendarMount = child.inject(['sessions', 'remote.hivemindHq', 'slots', 'locale', 'layout', 'uiWorkspace'], (calendar) => {
+    // HQ admission is independent of optional navigation. Calendar uses the
+    // native session and layout services, without requiring directory picking.
+    const calendarMount = child.inject(['sessions', 'remote.hivemindHq', 'slots', 'locale', 'layout'], (calendar) => {
       const panel = 'hivemind-company-calendar' as MainPanelId
+      const openSession = (id: SessionId) => {
+        calendar.sessions.open(id)
+        calendar.layout.selectPanel(null)
+      }
       const workspace: Omit<CompanyWorkspaceProps, 'sessionId'> = {
         progress: (id, taskId) => calendar.remote.hivemindHq.taskProgress(id, taskId),
         history: (id, wakeId) => calendar.remote.hivemindHq.wakeHistory(id, wakeId),
         load: id => calendar.remote.hivemindHq.workspace(id),
         plan: (id, request) => calendar.remote.hivemindHq.plan(id, request),
-        openSession: id => calendar.uiWorkspace.openSession(id),
+        openSession,
         subscribe: (id, callback) => {
           // A burst of native events invalidates one projection, not one Remote
           // read per streamed token. Conversation streaming stays independent.
@@ -79,7 +91,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
         // The server chooses the canonical company root, never the newest tab.
         void list
         return id ? createElement('div', { style: { height: '100%', overflow: 'auto' } },
-          createElement('button', { onClick: () => calendar.uiWorkspace.openSession(id) }, calendar.locale.bind('hivemind.hq')('openRuntime')),
+          createElement('button', { onClick: () => openSession(id) }, calendar.locale.bind('hivemind.hq')('openRuntime')),
           createElement(HqControlAction, { ...actions, sessionId: id, t: calendar.locale.bind('hivemind.hq') }),
           createElement(CompanyWorkspace, { ...workspace, sessionId: id }))
           : createElement('p', null, calendar.locale.bind('hivemind.hq')(error ? 'unavailable' : 'starting'))
@@ -88,6 +100,10 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       calendar.slots.inject('sidebar.panellist', () => calendar.slots.register({ name: 'sidebar.panellist', id: panel, order: 11,
         locale: 'hivemind.hq', label: () => 'Company calendar',
       }, () => createElement('span', { 'aria-hidden': true }, '▦')))
+      calendar.slots.inject('conversation.session.header.actions', () => calendar.slots.register({
+        name: 'conversation.session.header.actions', id: 'hivemind.company-calendar', order: 16,
+        locale: 'hivemind.hq', inject: () => ({}),
+      }, () => createElement('button', { onClick: () => calendar.layout.selectPanel(panel) }, 'Company calendar')))
     })
     child.effect(() => () => calendarMount.dispose())
     child.slots.inject('conversation.session.header.actions', () => child.slots.register({

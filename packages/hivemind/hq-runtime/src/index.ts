@@ -96,7 +96,7 @@ export function apply(ctx: Context): void {
     defineTool({
       name: 'hivemind_hq_contract',
       description:
-        'Coordinate existing native Team tasks: list contracts, attach immutable deadline/acceptance criteria, assign an authenticated employee persona, link saved producer artifacts, or review those saved inputs with Jev. Native Team tools own task lifecycle and dependencies. Completion requires linked receipts and an accepted review of the current revision. This tool never grants authority.',
+        'Coordinate existing native Team tasks: list contracts, attach immutable deadline/acceptance criteria, assign an authenticated employee persona, link saved producer artifacts, or review those saved inputs with Jev. Assign a pending contracted task directly; do not claim delegated work as lead first. Release your own claim before delegation; never replace another employee’s running work. Native Team tools own task lifecycle and dependencies. Completion requires linked receipts and an accepted review of the current revision. This tool never grants authority.',
       parameters: {
         action: {
           type: 'string',

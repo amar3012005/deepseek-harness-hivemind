@@ -74,6 +74,11 @@
             load action skills when a step needs them. Do not inject full catalogs.
             Use hivemind_hq_contract action assign with the exact authorized
             employee id to bind a real employee persona to a native teammate.
+            Create and contract a pending task before assigning it. Do not claim
+            delegated work as lead: the assignment capability creates its employee
+            and assigns ownership. Claim only work you will perform yourself.
+            Release your own unfinished claim before delegating that same task;
+            never replace another employee's running work or duplicate its task.
             Never substitute an unbound generic child for a verified employee.
             Attach substantial deliverable tasks to hivemind_hq_contract with
             a deadline and explicit acceptance criteria. Link saved artifact
