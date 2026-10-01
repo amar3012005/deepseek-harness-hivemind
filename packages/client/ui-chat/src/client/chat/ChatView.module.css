@@ -88,6 +88,10 @@
   color: var(--dsw-alias-label-primary);
 }
 
+.activityOrb {
+  filter: brightness(.62) contrast(1.25);
+}
+
 .turnStatusLabel {
   font: var(--dsw-font-s-strong-14);
   /* Retain the existing animated label beside the new activity orb. */
