@@ -5,7 +5,7 @@ import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots
 import css from './HiveDictationButton.module.css'
 
 type DictationState = 'idle' | 'recording' | 'transcribing'
-type Props = Pick<PropsRuntime<'conversation.input.left'>, 'useInput' | 'inputActions'>
+type Props = Pick<PropsRuntime<'conversation.input.right'>, 'useInput' | 'inputActions'>
   & PropsLocale<'workspace'>
 
 declare global {
@@ -97,7 +97,7 @@ export function HiveDictationButton({ useInput, inputActions, t }: Props) {
     : state === 'transcribing' ? t('dictation.transcribing') : t('dictation.start')
   )
 
-  if (state !== 'idle') return <div className={css.recorder} role="status" aria-label={label}>
+  if (state !== 'idle') return <div className={css.recorder} data-hivemind-dictation role="status" aria-label={label}>
     <button type="button" className={css.cancel} aria-label={t('dictation.cancel')} onClick={cancel}>
       <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden>
         <path d="m4 4 8 8M12 4l-8 8" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
@@ -120,6 +120,7 @@ export function HiveDictationButton({ useInput, inputActions, t }: Props) {
     <button
       type="button"
       className={css.button}
+      data-hivemind-dictation
       aria-label={label}
       aria-pressed={false}
       onClick={() => { void toggle() }}

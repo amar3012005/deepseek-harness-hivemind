@@ -534,6 +534,7 @@ export const InputBar = memo(function InputBar({
                 <button
                   type="button"
                   className={css.primary}
+                  data-native-composer-primary
                   aria-label={t('input.stop')}
                   disabled={stop === undefined}
                   onMouseDown={keepFocus}
@@ -549,6 +550,7 @@ export const InputBar = memo(function InputBar({
               <button
                 type="button"
                 className={css.primary}
+                data-native-composer-primary
                 data-empty-send={empty && !primaryStops || undefined}
                 aria-label={primaryLabel}
                 disabled={primaryDisabled}

@@ -122,3 +122,5 @@ None.
 </details>
 
 **Runtime invariant:** No companion is published. A pure-consumer plugin registering presentational components into two host-declared slots plus its locale dictionaries — its inject face is stateless RPC wrappers plus a create-and-open call; it emits no cordis events and owns no cross-plugin mutable state.
+
+Live voice uses the composer’s right controls: dictation and waveform when idle, speaker mute, microphone mute, and close during a call. Transcription captions remain available in code but are hidden. The active call hides the text-run stop control; ending voice restores it.

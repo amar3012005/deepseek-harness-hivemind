@@ -364,3 +364,8 @@
 
 /* The native voice control occupies the empty composer's send seat. */
 .trailing:has([data-hivemind-live-voice]) [data-empty-send] { display: none; }
+
+/* Active voice owns the close action; retain text stop and dictation for text mode. */
+.trailing:has([data-voice-active]) [data-native-composer-primary],
+.trailing:has([data-voice-active]) [data-hivemind-dictation],
+.trailing:has([data-voice-active]) [data-composer-context-meter] { display: none; }

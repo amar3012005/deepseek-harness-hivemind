@@ -166,8 +166,8 @@ export function apply(ctx: Context): void {
     },
     WorkspacePicker,
   ))
-  ctx.slots.inject('conversation.input.left', () => ctx.slots.register({
-    name: 'conversation.input.left',
+  ctx.slots.inject('conversation.input.right', () => ctx.slots.register({
+    name: 'conversation.input.right',
     id: 'hivemind-dictation',
     order: -20,
     locale: NS,
