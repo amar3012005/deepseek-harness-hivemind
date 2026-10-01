@@ -34,3 +34,5 @@
 .activity { width: 380px; }
 .activity .goalButton { display: block; margin: 0 12px 8px; padding: 6px 0; border: 0; background: transparent; color: var(--dsw-alias-label-link, #117dff); font-size: 13px; text-align: left; }
 @media (max-width: 600px) { .root, .activity { width: min(380px, 85vw); } }
+
+.activity .agenda { position: static; width: auto; margin: 0 12px 12px; padding: 12px; box-shadow: none; }

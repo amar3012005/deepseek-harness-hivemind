@@ -33,12 +33,12 @@ export function DreamingRoom() {
     <span className={css.activityButton}>🌙 Nightly Dreaming</span><DreamingSettings compact />
     <div className={css.activity}><DreamingAutomation room />
       <button type="button" className={css.goalButton} onClick={() => { setOpen(value => !value) }} aria-expanded={open}>Add goal for next dreams</button>
+      {open && <div className={css.agenda}><label>Agenda for future dreams<textarea maxLength={4000} value={text}
+        onChange={(event) =>{  setText(event.target.value) }} /></label>
+      <p>A suggestion for the next exploration. Saving does not start a run.</p>
+      <button type="button" disabled={busy} onClick={() => void save()}>Save agenda</button>
+      {message && <p role="status">{message}</p>}</div>}
     </div>
-    {open && <div className={css.agenda}><label>Agenda for future dreams<textarea maxLength={4000} value={text}
-      onChange={(event) =>{  setText(event.target.value) }} /></label>
-    <p>A suggestion for the next exploration. Saving does not start a run.</p>
-    <button type="button" disabled={busy} onClick={() => void save()}>Save agenda</button>
-    {message && <p role="status">{message}</p>}</div>}
     {message && <span role="status" className={css.status}>{message}</span>}
   </div>
 }
