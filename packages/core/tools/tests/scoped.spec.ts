@@ -183,9 +183,10 @@ describe('restrict()', () => {
 
   it('fails loud on an unscoped call, an empty filter, and names it does not inherit', async () => {
     const ctx = await mount()
-    const { scope } = await mintAgentScope(ctx, 'a')
+    const { scope, key } = await mintAgentScope(ctx, 'a')
     ctx.tools.register(tool('real'))
     scope.ctx.tools.register(tool('local'))
+    expect([...scope.ctx.tools.restrictableNames(key)]).toEqual(['real'])
     expect(() => ctx.tools.restrict({ deny: ['real'] })).toThrow(/requires a scoped context/)
     expect(() => scope.ctx.tools.restrict({})).toThrow(/no-op/)
     // A scope's own registration is exempt from its own filter, so naming it

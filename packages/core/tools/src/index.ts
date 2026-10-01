@@ -1216,6 +1216,16 @@ export class ToolRuntime extends Service {
   }
 
   /**
+   * Names inherited by a scope which its native restriction may filter.
+   * A scope's own tools remain executable and must never enter this allow-list.
+   * @param scope - the agent whose inherited capability surface is requested.
+   * @returns a detached set, independent of currently applied restrictions.
+   */
+  restrictableNames(scope?: ScopeKey): ReadonlySet<string> {
+    return new Set(this.view(scope).restrictableNames)
+  }
+
+  /**
    * Project visible definitions onto the allowlisted model-facing schema fields,
    * excluding execution and presentation callbacks.
    * @param scope - the viewing scope (the agent); omitted = the global view.

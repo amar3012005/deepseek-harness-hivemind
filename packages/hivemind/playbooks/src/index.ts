@@ -216,12 +216,6 @@ const CORE_TOOLS = [
   'hivemind_read_attachment',
 ] as const
 
-// Schedule registers in each eligible Agent scope. Scoped registrations are
-// always exempt from tools.restrict(), whose allow-list accepts global names.
-const AGENT_LOCAL_AUTOMATION_TOOLS = new Set([
-  'schedule_create', 'schedule_list', 'schedule_update', 'schedule_delete',
-])
-
 const CAPABILITY_TOOLS: Readonly<Record<CapabilityLane, readonly string[]>> = {
   connected: ['hivemind_connected_task'],
   research: ['hivemind_research_answer', 'hivemind_research_gather', 'hivemind_research_request', 'hivemind_research_status'],
@@ -903,7 +897,7 @@ export function apply(ctx: Context, config: Partial<Config> = {}): void {
     const visibleTools = new Set(
       [...requested].filter(tool => availableTools.has(tool) && !hardSuppressed.has(tool)),
     )
-    const lift = agent.ctx.tools.restrict({ allow: [...visibleTools].filter(tool => !AGENT_LOCAL_AUTOMATION_TOOLS.has(tool)) })
+    const lift = agent.ctx.tools.restrict({ allow: [...visibleTools].filter(tool => agent.ctx.tools.restrictableNames(agent).has(tool)) })
     capabilityStateByAgent.set(agent, { capabilities: new Set(capabilities), availableTools, localBaseTools, visibleTools, lift })
     const receipt: CapabilityLeaseRecorded = {
       operation,
@@ -974,7 +968,9 @@ export function apply(ctx: Context, config: Partial<Config> = {}): void {
       // `restrict()` only accepts inherited global names. Scope-local MCP
       // registrations survive that mask automatically, so keep them out of
       // this allow-list while still projecting their schemas below.
-      const effectiveLift = agent.ctx.tools.restrict({ allow: [...visibleTools].filter(tool => !AGENT_LOCAL_AUTOMATION_TOOLS.has(tool)) })
+      const effectiveLift = agent.ctx.tools.restrict({
+        allow: [...visibleTools].filter(tool => agent.ctx.tools.restrictableNames(agent).has(tool)),
+      })
       capabilityStateByAgent.set(agent, { ...state, lift: effectiveLift })
       const activeSections = new Set(
         [...state.capabilities].flatMap(capability => CAPABILITY_SECTIONS[capability] ?? []),

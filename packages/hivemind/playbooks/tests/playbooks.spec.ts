@@ -76,6 +76,7 @@ describe('hivemind playbooks', () => {
           // advertise only inspect_image after the lease had retained the
           // HIVE operating core.
           schemas() { return [...localTools.values()] },
+          restrictableNames() { return new Set(tools.keys()) },
           restrict() { return () => {} },
         },
       },
@@ -137,6 +138,7 @@ describe('hivemind playbooks', () => {
               tool => allow === undefined || allow.has(tool.name) || scopeLocalTools.has(tool.name),
             )
           },
+          restrictableNames() { return new Set([...tools.keys()].filter(name => !scopeLocalTools.has(name))) },
           restrict(filter: { allow: string[] }) {
             if (filter.allow.some(name => scopeLocalTools.has(name)))
               throw new Error('tools.restrict() names unknown global tools')
@@ -428,6 +430,7 @@ describe('hivemind playbooks', () => {
       ctx: {
         tools: {
           schemas() { return [...tools.values()].filter(tool => allow === undefined || allow.has(tool.name)) },
+          restrictableNames() { return new Set(tools.keys()) },
           restrict(filter: { allow: string[] }) {
             allow = new Set(filter.allow)
             return () => { allow = undefined }
@@ -490,7 +493,11 @@ describe('hivemind playbooks', () => {
     const listeners = new Map<string, (...args: unknown[]) => unknown>()
     const agent = {
       session: { append() {}, snapshotEvents() { return [] } },
-      ctx: { tools: { schemas() { return [...tools.values()] }, restrict() { return () => {} } } },
+      ctx: { tools: {
+        schemas() { return [...tools.values()] },
+        restrictableNames() { return new Set(tools.keys()) },
+        restrict() { return () => {} },
+      } },
     } as unknown as Agent
     apply({
       tools: { register(tool: ToolDefinition) { tools.set(tool.name, tool); return () => {} } },
@@ -521,6 +528,7 @@ describe('hivemind playbooks', () => {
           schemas() {
             return [...tools.values()]
           },
+          restrictableNames() { return new Set(tools.keys()) },
           restrict() {
             return () => {}
           },
@@ -1387,6 +1395,7 @@ describe('hivemind playbooks', () => {
           schemas() {
             return [...tools.values()].filter(tool => allow === undefined || allow.has(tool.name))
           },
+          restrictableNames() { return new Set(tools.keys()) },
           restrict(filter: { allow: string[] }) {
             allow = new Set(filter.allow)
             return () => {
@@ -1510,6 +1519,7 @@ describe('hivemind playbooks', () => {
           schemas() {
             return [...tools.values()]
           },
+          restrictableNames() { return new Set(tools.keys()) },
           restrict() {
             return () => {}
           },
@@ -1633,6 +1643,7 @@ describe('hivemind playbooks', () => {
           schemas() {
             return [...tools.values()]
           },
+          restrictableNames() { return new Set(tools.keys()) },
           restrict() {
             return () => {}
           },
@@ -1713,6 +1724,7 @@ describe('hivemind playbooks', () => {
           schemas() {
             return [...tools.values()]
           },
+          restrictableNames() { return new Set(tools.keys()) },
           restrict() {
             return () => {}
           },
