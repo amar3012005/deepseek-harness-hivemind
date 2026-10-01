@@ -6,6 +6,7 @@ import type {
 } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { isAppendSurfaceEvent } from '@deepseek-ai/dsh-session/surface'
 import type {} from '@deepseek-ai/dsh-tools/types'
+import { hasAssistantReplyContent } from '../contract/assistant-content.ts'
 import type { ToolChatData } from '../contract/chat-nodes.ts'
 import { CHAT_SYNTHETIC_SEQ_OFFSETS, chatNode } from './common.ts'
 
@@ -263,7 +264,17 @@ export const toolDefinition: ConversationNodeDefinition<ToolState> = {
       ?? ('kind' in state.root ? state.root.seq : context.matches[0]?.event.seq ?? 0)
     if ('kind' in projected && projected.kind === 'tool-result' && !projected.isError && projected.call?.name === 'dream_finish') {
       const synthesis = readDreamSynthesis(projected.content)
-      if (synthesis) return chatNode(context, 'dream-synthesis', anchor, synthesis)
+      if (synthesis) {
+        const location = context.start?.location
+        const turn = location?.kind === 'step' || location?.kind === 'turn' ? location.turn : undefined
+        // The streamed welcome is the final answer. Its durable receipt is not
+        // a second welcome; legacy receipt-only runs still have a fallback.
+        if (synthesis.kind === 'welcome' && turn?.steps.some((step) => {
+          const reply = step.data.get('assistant-step')
+          return reply && hasAssistantReplyContent(reply.blocks)
+        })) return null
+        return chatNode(context, 'dream-synthesis', anchor, synthesis)
+      }
     }
     return chatNode(context, 'tool-call', anchor, { root: projected } satisfies ToolChatData)
   },

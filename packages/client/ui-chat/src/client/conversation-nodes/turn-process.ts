@@ -30,7 +30,7 @@ declare module '@deepseek-ai/dsh-client-ui-conversation/client' {
 
 interface TurnProcessState {
   readonly turn: number
-  readonly dreamFinish?: { callId: string; seq: number; step: number; confirmed?: boolean }
+  readonly dreamFinish?: { callId: string; seq: number; step: number; confirmed?: boolean; welcome?: boolean }
   readonly assistantStartByStep: ReadonlyMap<number, number>
   readonly messageCountByStep: ReadonlyMap<number, number>
   readonly otherStartSeq?: number
@@ -126,9 +126,13 @@ function latestAnswer(turn: TurnLocation): Readonly<FinalAssistantChatData> | nu
 function processSpec(state: TurnProcessState, turn: TurnLocation): TurnProcessSpec | null {
   const controlAnchorSeq = state.controlAnchorSeq
   if (controlAnchorSeq === undefined) return null
+  const welcomeAnswer = state.dreamFinish?.welcome
+    ? [...turn.steps].reverse().map(step => step.data.get('assistant-step'))
+      .find(data => isFinalAssistant(data) && hasAssistantReplyContent(data.blocks))
+    : undefined
   if (state.dreamFinish?.confirmed) return {
     dreamSynthesis: true, turn: turn.turn, controlAnchorSeq, processStartSeq: turn.start?.seq ?? controlAnchorSeq,
-    answerAnchorSeq: state.dreamFinish.seq, answerStep: state.dreamFinish.step,
+    answerAnchorSeq: welcomeAnswer?.finalNode?.seq ?? state.dreamFinish.seq, answerStep: welcomeAnswer?.step ?? state.dreamFinish.step,
     inlineReasoning: false, messageCount: state.messageCount, toolCallCount: state.toolCallCount,
     subagentCount: state.subagentCount,
   }
@@ -182,8 +186,9 @@ function updateProcessState(state: TurnProcessState, event: ConversationEvent): 
   }
   if (event.type === 'tool/result' && current.dreamFinish?.callId === String(event.data.message.source.callId)) {
     const result = event.data.message.content[0]
-    if (!result.isError && readDreamSynthesis(result.content)) current = {
-      ...current, dreamFinish: { ...current.dreamFinish, confirmed: true },
+    const synthesis = !result.isError ? readDreamSynthesis(result.content) : undefined
+    if (synthesis) current = {
+      ...current, dreamFinish: { ...current.dreamFinish, confirmed: true, welcome: synthesis.kind === 'welcome' },
     }
   }
   if (event.type === 'assistant/message'
