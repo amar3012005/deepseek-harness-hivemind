@@ -65,7 +65,7 @@ export const ChatNodeSeat = memo(function ChatNodeSeat({
     && processSpec.answerAnchorSeq !== null
     && processPresentation.turn === processSpec.turn
     && processPresentation.turnClosed
-    && !historyIncomplete
+    && (!historyIncomplete || processSpec.dreamSynthesis === true)
   const processMember = routedNode !== undefined
     && processWindowReady
     && (!TURN_PROCESS_INDEPENDENT_KINDS.has(routedNode.kind) || (routedNode.kind === 'system-prompt' && processSpec.dreamSynthesis === true))
