@@ -819,6 +819,15 @@ describe('SubagentHeaderLineage', () => {
 })
 
 describe('SubagentReadOnlyComposer', () => {
+  it('explains Dreaming without parent-runtime terminology', () => {
+    const previous = window.location.href
+    window.history.replaceState({}, '', '/hivemind/app/overview/dreaming')
+    try {
+      render(<SubagentReadOnlyComposer matched={{ reason: 'parent-unavailable' }} t={t} />)
+      expect(screen.getByRole('status').textContent).toContain('Flashbacks')
+      expect(screen.getByRole('status').textContent).not.toContain('父会话')
+    } finally { window.history.replaceState({}, '', previous) }
+  })
   it('explains the exact missing-parent recovery path', () => {
     render(<SubagentReadOnlyComposer matched={{ reason: 'parent-unavailable' }} t={t} />)
     expect(screen.getByRole('status').textContent).toContain('父会话当前不在线')
