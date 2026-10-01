@@ -235,7 +235,7 @@ export function apply(ctx: ClientContext): void {
     })
   }
   const selectEmployee = async (sessionId: SessionId, id: string | null): Promise<boolean> => {
-    if (ctx.sessions.binding(sessionId) === undefined) return false
+    if (ctx.sessions.binding(sessionId) === undefined) throw new Error('Session is not ready. Please reopen it.')
     const targetPreset = id === null ? 'hivemind-chat' : 'hivemind-hyperagents'
     const summary = ctx.sessions.list.getSnapshot().byId[sessionId]
     if ((summary?.projectionValues?.agentPreset ?? summary?.agentPreset) !== targetPreset) {
@@ -254,7 +254,7 @@ export function apply(ctx: ClientContext): void {
       }
       await new Promise(resolve => setTimeout(resolve, 100))
     }
-    if (!commandReady) return false
+    if (!commandReady) throw new Error('Agent selection is still loading. Please try again.')
     const binding = ctx.sessions.binding(sessionId)
     if (binding === undefined) return false
     const events = binding.eventSource
@@ -286,7 +286,7 @@ export function apply(ctx: ClientContext): void {
       check()
     })
     const result = await binding.session.command(`/hivemind-employee ${id ?? 'auto'}`).catch(() => null)
-    if (result === null || !result.ok || !result.value.matched) { cancelWait(); return false }
+    if (result === null || !result.ok || !result.value.matched) { cancelWait(); throw new Error(result !== null && !result.ok ? `Agent selection could not be admitted (${result.error.code}).` : 'Agent selection command is not available.') }
     return accepted
   }
   ctx.effect(() => {

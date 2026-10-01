@@ -96,7 +96,7 @@ export function HyperagentEmployeePicker({ sessionId, useSessions, useEmployeeEv
   const locked = owner != null || started || fromEventsLocked
   const [open, setOpen] = useState(false)
   const [loading, setLoading] = useState(false)
-  const [error, setError] = useState(false)
+  const [error, setError] = useState<boolean | string>(false)
   const [options, setOptions] = useState<EmployeeOption[]>([])
   const [menuHeight, setMenuHeight] = useState(360)
   if (!isHyperagentPreset(preset) && locked) return null
@@ -114,7 +114,7 @@ export function HyperagentEmployeePicker({ sessionId, useSessions, useEmployeeEv
     void selectEmployee(employee?.id ?? null).then((ok) => {
       if (ok) { setOpen(false); setError(false) }
       else setError(true)
-    }, () => { setError(true) }).finally(() => { setLoading(false) })
+    }, (reason: unknown) => { setError(reason instanceof Error ? reason.message : true) }).finally(() => { setLoading(false) })
   }
   return <div ref={pickerRef} className={css.picker} data-hivemind-employee-picker>
     <button className={css.pickerButton} type="button" aria-haspopup="listbox" aria-expanded={open && !locked} disabled={locked} title={locked ? t('employee.ownerLocked') : undefined} onClick={toggle}>
@@ -126,7 +126,7 @@ export function HyperagentEmployeePicker({ sessionId, useSessions, useEmployeeEv
 
       {options.map(employee => <button key={employee.id} type="button" role="option" aria-selected={selected?.id === employee.id} disabled={loading} onClick={() => { choose(employee) }}><EmployeeAvatar employee={employee} size={34} /><span><strong>{employee.name}</strong><small>{employee.role}</small></span></button>)}
       {loading && <p role="status">{t('employee.loading')}</p>}
-      {error && <p role="alert">{t('employee.unavailable')}</p>}
+      {error && <p role="alert">{typeof error === 'string' ? error : t('employee.unavailable')}</p>}
     </div>}
   </div>
 }
