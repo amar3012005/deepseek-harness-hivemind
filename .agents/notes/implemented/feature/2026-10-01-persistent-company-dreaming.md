@@ -7,3 +7,5 @@ Headless creation must mount the preset in the agent factory setup and pass expl
 References: docs/subsystems/subagent.md and packages/hivemind/dreamer/README.md.
 
 Load the direct-parent child catalog before opening Dreaming; protect the URL while discovery is pending. Dreamer memory tools consume the provider through a child-scoped Cordis injection, including cold children. Native tests provide memory from a plugin fiber to cover production service resolution.
+
+Recents in BRAIN and OS now use stored session titles, compact rounded rows, hover-only actions, and full local date/time on hover. Untitled legacy deepseek-harness rows retain a timestamp fallback instead of repeated generic titles. No session data is rewritten.

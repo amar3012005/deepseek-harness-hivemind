@@ -296,14 +296,14 @@ function ActiveScheduleIndicator({ t, search = false }: { t: RowTranslate; searc
 }
 
 /** Hover-card body: full title, relative time, and every relevant live status. */
-function SessionHoverContent({ node, now, t }: { node: SessionNode; now: number; t: RowTranslate }) {
+function SessionHoverContent({ node, now, t, timestamp }: { node: SessionNode; now: number; t: RowTranslate; timestamp?: string }) {
   const statuses = sessionStatuses(node, t)
   return (
     <div className={css.hoverContent}>
       <div className={css.hoverTitle}>{displayTitle(node, t)}</div>
       {/* Same placeholder rule as the row's trailing cell: no timestamp
           before the first prompt. */}
-      {!node.blank && <div className={css.hoverTime}>{hoverTimeLabel(node.updatedAt, now, t)}</div>}
+      {!node.blank && <div className={css.hoverTime}>{timestamp ?? hoverTimeLabel(node.updatedAt, now, t)}</div>}
       {statuses.map(status => (
         <div className={css.hoverStatus} key={status.label}>
           <StateDot state={status.state} />
@@ -378,7 +378,7 @@ export function SearchResultItem({ result, currentId, onOpen, t }: {
  */
 export function SessionNodeItem({
   node, currentId, now, onOpen, onRename, onFork, onArchive, onDelete, onShare, onReveal, drag, flat = false,
-  showActions = true, actionsPersistent = false, visibleTitle, t,
+  showActions = true, actionsPersistent = false, visibleTitle, hoverTimestamp, recent = false, t,
 }: {
   node: SessionNode
   currentId: string | undefined
@@ -406,6 +406,10 @@ export function SessionNodeItem({
   actionsPersistent?: boolean | undefined
   /** Host projection may show an absolute timestamp while preserving the stored title for rename and share. */
   visibleTitle?: string | undefined
+  /** Full local date and time in the session hover card. */
+  hoverTimestamp?: string | undefined
+  /** Compact HIVE recent list with title-first rows and hover-only dates. */
+  recent?: boolean | undefined
   t: RowTranslate
 }) {
   const row = node
@@ -438,13 +442,14 @@ export function SessionNodeItem({
     <div
       ref={rowRef}
       className={clsx(
-        css.sessionRow, selected && css.selected, menuOpen && css.menuOpen,
+        css.sessionRow, recent && css.recentRow, selected && css.selected, menuOpen && css.menuOpen,
         actionsPersistent && css.actionsPersistent,
         flat && !showStatus && css.flatSessionRowWithoutStatus,
         drag?.marker === 'before' && css.dropBefore, drag?.marker === 'after' && css.dropAfter,
       )}
       role="treeitem"
       aria-selected={selected}
+      title={hoverTimestamp}
       onClick={() => { onOpen(node.id) }}
       draggable={drag !== undefined}
       onDragStart={drag === undefined
@@ -485,7 +490,7 @@ export function SessionNodeItem({
           happened in it yet, so a "now" timestamp and the row verbs
           (rename/fork/archive) would all act on content that does not
           exist — both trailing cells stay off until the first prompt. */}
-      {!row.blank && <span className={css.time}>{timeLabel(row.updatedAt, now, t)}</span>}
+      {!row.blank && !recent && <span className={css.time}>{timeLabel(row.updatedAt, now, t)}</span>}
       {!row.blank && showActions && (
         <span className={css.rowActions}>
           <Menu
@@ -520,7 +525,7 @@ export function SessionNodeItem({
   return (
     <HoverCard
       anchor={ownRow}
-      content={<SessionHoverContent node={node} now={now} t={t} />}
+      content={<SessionHoverContent node={node} now={now} t={t} timestamp={hoverTimestamp} />}
       disabled={menuOpen || drag?.active === true}
       copyText={row.blank ? undefined : row.title}
       copyLabel={t('copy')}

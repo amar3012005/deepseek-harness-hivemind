@@ -1,6 +1,6 @@
 import { useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { Button, IconClockOutline16, IconNewChatOutline16, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button, IconNewChatOutline16, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { PropsLocale, PropsRenderSlots, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import { deriveFlat } from './tree.ts'
@@ -105,13 +105,15 @@ export function HiveSessionProjection({
       <IconNewChatOutline16 /><span>{t('session.new')}</span>
     </button>}
     <div className={css.recentHeading}>
-      <IconClockOutline16 /><span>{t('section.recent')}</span>
+      <span>{t('section.recent')}</span>
     </div>
     <nav className={css.list} aria-label={t('section.sessions')}>
       {rows.map(row => <SessionNodeItem
         key={row.id}
         node={row}
-        visibleTitle={sessionTimestamp(row.updatedAt, now, locale)}
+        visibleTitle={row.title.trim() && row.title !== 'deepseek-harness' ? row.title : sessionTimestamp(row.updatedAt, now, locale)}
+        hoverTimestamp={new Intl.DateTimeFormat(locale, { dateStyle: 'full', timeStyle: 'long' }).format(row.updatedAt)}
+        recent
         currentId={list.current}
         now={now}
         onOpen={openSession}
@@ -121,7 +123,6 @@ export function HiveSessionProjection({
         onDelete={(id) => { void deleteSession(id) }}
         onShare={shareSession}
         flat
-        actionsPersistent
         t={t}
       />)}
     </nav>

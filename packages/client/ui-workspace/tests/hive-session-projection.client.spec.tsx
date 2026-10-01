@@ -146,3 +146,28 @@ describe('HIVE native session projection', () => {
     expect(deleteSession).toHaveBeenCalledWith(sid('delete-me'))
   })
 })
+
+
+describe('title-first HIVE Recents', () => {
+  it.each([
+    ['/hivemind/app/overview', 'hivemind-chat'],
+    ['/hivemind/app/employee/harness/new', 'hivemind-hyperagents'],
+  ])('shows titles and full hover timestamps in %s', (path, preset) => {
+    const before = window.location.href
+    window.history.replaceState(null, '', path)
+    const at = new Date('2026-10-01T08:00:00Z').getTime()
+    const sessions = list(summary('market-research', at, { displayTitle: 'Market research blueprint', agentPreset: preset }))
+    try {
+      render(<HiveSessionProjection
+        {...runtime} renderSlot={renderSlot} SessionProvider={SessionProvider}
+        useSessions={selector => selector(sessions)} useSessionPendingInteraction={selector => selector(noAttention)}
+        createSession={vi.fn()} openSession={vi.fn()} {...actions} t={t}
+      />)
+      const row = screen.getByRole('treeitem')
+      expect(row.textContent).toContain('Market research blueprint')
+      expect(row.getAttribute('title')).toMatch(/2026/)
+      expect(row.getAttribute('title')).toMatch(/GMT|UTC/)
+      expect(row.className).toContain('recentRow')
+    } finally { window.history.replaceState(null, '', before) }
+  })
+})

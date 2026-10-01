@@ -370,3 +370,10 @@
     transition: none;
   }
 }
+
+/* Title-first Recents shared by BRAIN and OS. */
+.recentRow { min-height: 36px; border-radius: 12px; padding: 0 10px; }
+.recentRow .title { order: 1; font-size: 14px; line-height: 22px; }
+.recentRow .scheduleIndicator { order: 2; }
+.recentRow .slot { order: 3; }
+.recentRow .rowActions { order: 4; }

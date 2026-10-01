@@ -9,7 +9,7 @@
 .osRoot {
   height: auto;
   padding: 0 2px 8px;
-  font-size: 11px;
+  font-size: 14px;
 }
 
 .osRoot .recentHeading { margin-top: 8px; }
@@ -49,7 +49,7 @@
   margin: 20px 8px 8px;
   color: var(--dsw-alias-label-tertiary);
   font-size: 13px;
-  font-weight: 600;
+  font-weight: 400;
 }
 
 .list {
@@ -57,7 +57,7 @@
   min-height: 0;
   flex-direction: column;
   gap: 2px;
-  max-height: 178px;
+  max-height: min(60vh, 640px);
   overflow-x: hidden;
   overflow-y: auto;
   scrollbar-color: var(--dsw-alias-border-l4) transparent;
