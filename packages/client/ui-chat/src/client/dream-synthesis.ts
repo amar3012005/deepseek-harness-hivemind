@@ -32,3 +32,16 @@ export function readDreamSynthesis(content: readonly unknown[]): DreamSynthesis 
   }
   return undefined
 }
+
+/** Keep section labels readable when a model puts all three sections in one text field. */
+export function discoverySections(discovery: DreamDiscovery): { finding: string; meaning?: string; uncertainty?: string } {
+  const text = discovery.content.replace(/^Finding:\s*/i, '')
+  const meaningAt = text.search(/What it means:\s*/i)
+  const uncertaintyAt = text.search(/What remains uncertain:\s*/i)
+  const findingEnd = Math.min(...[meaningAt, uncertaintyAt].filter(index => index >= 0), text.length)
+  const meaning = discovery.meaning ?? (meaningAt < 0 ? undefined
+    : text.slice(meaningAt, uncertaintyAt > meaningAt ? uncertaintyAt : undefined).replace(/^What it means:\s*/i, '').trim())
+  const uncertainty = discovery.uncertainty ?? (uncertaintyAt < 0 ? undefined
+    : text.slice(uncertaintyAt).replace(/^What remains uncertain:\s*/i, '').trim())
+  return { finding: text.slice(0, findingEnd).trim(), ...(meaning ? { meaning } : {}), ...(uncertainty ? { uncertainty } : {}) }
+}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { readDreamSynthesis } from '../src/client/dream-synthesis.ts'
+import { discoverySections, readDreamSynthesis } from '../src/client/dream-synthesis.ts'
 const id = '11111111-1111-4111-a111-111111111111'
 const value = { status: 'ready_to_complete', presentation: 'dream-synthesis-v1', runId: id,
   summary: 'I explored fundraising conversations.', next: '', discoveries: [{ memoryId: id, title: 'Investor questions can improve documents', content: 'A possible connection.', sourceIds: [id], saved: true }] }
@@ -16,4 +16,11 @@ describe('Dreamer final presentation', () => {
     expect(readDreamSynthesis([{ type: 'text', text: '{' }])).toBeUndefined()
     expect(readDreamSynthesis([null, {}, { type: 'image' }])).toBeUndefined()
   })
+})
+
+
+it('renders inline finding, meaning and uncertainty as separate sections', () => {
+  expect(discoverySections({ ...value.discoveries[0], saved: true,
+    content: 'Finding: Investor questions repeat. What it means: Update the data room. What remains uncertain: No approved roadmap.' }))
+    .toEqual({ finding: 'Investor questions repeat.', meaning: 'Update the data room.', uncertainty: 'No approved roadmap.' })
 })

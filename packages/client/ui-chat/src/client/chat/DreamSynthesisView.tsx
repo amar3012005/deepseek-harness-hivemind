@@ -1,6 +1,6 @@
 import type { PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ChatNodeViewProps } from '../contract/slots.ts'
-import type { DreamDiscovery } from '../dream-synthesis.ts'
+import { discoverySections, type DreamDiscovery } from '../dream-synthesis.ts'
 import css from './DreamSynthesisView.module.css'
 
 declare module '@deepseek-ai/dsh-client-ui-sidebar-right/client' {
@@ -32,9 +32,10 @@ export function DreamSynthesisView({ node, openPreview }: ChatNodeViewProps<'dre
   </section>
 }
 function DiscoveryContent({ discovery }: { discovery: DreamDiscovery }) {
-  return <><p className={css.prose}>{discovery.content}</p>
-    {discovery.meaning && <p><strong>What it means: </strong>{discovery.meaning}</p>}
-    {discovery.uncertainty && <p><strong>What remains uncertain: </strong>{discovery.uncertainty}</p>}</>
+  const sections = discoverySections(discovery)
+  return <><p className={css.prose}>{sections.finding}</p>
+    {sections.meaning && <p><strong>What it means: </strong>{sections.meaning}</p>}
+    {sections.uncertainty && <p><strong>What remains uncertain: </strong>{sections.uncertainty}</p>}</>
 }
 function SourceList({ discovery }: { discovery: DreamDiscovery }) {
   return <details><summary>Supporting sources ({discovery.sourceIds.length})</summary>
