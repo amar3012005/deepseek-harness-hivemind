@@ -20,9 +20,11 @@ describe('HQ company baseline', () => {
   it('mounts HQ coordination inside the effective private company realm without skipped include patches', () => {
     const parse = (name: string) => load(readFileSync(new URL(`../../../preset/agent-presets/presets/${name}/agent.cordis.yml`, import.meta.url), 'utf8'), { schema: entryListSchema }) as EntryOptions[]
     const hq = parse('hivemind-hq')
-    expect(hq[0].config.path).toBe('../hivemind-chat/agent.cordis.yml')
+    const include = hq[0]
+    if (!include) throw new Error('HQ composition include missing')
+    expect(include.config.path).toBe('../hivemind-chat/agent.cordis.yml')
     const warnings: string[] = []
-    const effective = applyEntryPatches(parse('hivemind-chat'), hq[0].config.patches, message => warnings.push(message))
+    const effective = applyEntryPatches(parse('hivemind-chat'), include.config.patches, message => warnings.push(message))
     expect(warnings).toEqual([])
     const rows: EntryOptions[] = []
     const visit = (entries: EntryOptions[]) => {
@@ -33,10 +35,15 @@ describe('HQ company baseline', () => {
     }
     visit(effective)
     expect(rows.filter(row => row.id === 'hivemind-hq-runtime')).toHaveLength(1)
-    expect(rows.find(row => row.id === 'persona').config.prefix).toContain('chief of staff')
-    expect(rows.find(row => row.id === 'hivemind-capabilities').isolate.hivemindMemory).toBe(true)
+    const entry = (id: string) => {
+      const value = rows.find(row => row.id === id)
+      if (!value) throw new Error(`Missing effective HQ entry: ${id}`)
+      return value
+    }
+    expect(entry('persona').config.prefix).toContain('chief of staff')
+    expect(entry('hivemind-capabilities').isolate?.hivemindMemory).toBe(true)
     for (const id of ['hivemind-runtime', 'hivemind-employee-directory', 'hivemind-research', 'hivemind-progressive-browser', 'hivemind-artifact-renderer']) expect(rows.some(row => row.id === id)).toBe(true)
-    const disclosure = rows.find(row => row.id === 'hivemind-playbooks').config
+    const disclosure = entry('hivemind-playbooks').config
     expect(disclosure.progressiveToolDisclosure).toBe(true)
     expect(disclosure.coreTools).toEqual(expect.arrayContaining(['hivemind_hq_orientation', 'hivemind_hq_continuity', 'hivemind_hq_contract', 'team_task_create', 'schedule_create']))
   })
