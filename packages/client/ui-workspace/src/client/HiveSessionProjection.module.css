@@ -97,3 +97,14 @@
 
 /* Five full 36px Recents rows and four 2px gaps; older rows stay scrollable. */
 .root:not(.osRoot) .list { max-height: 188px; }
+
+.scrollHint {
+  padding: 5px 0 3px;
+  color: var(--dsw-alias-text-tertiary);
+  font-size: 11px;
+  line-height: 16px;
+  text-align: center;
+  opacity: 0.6;
+  pointer-events: none;
+  user-select: none;
+}

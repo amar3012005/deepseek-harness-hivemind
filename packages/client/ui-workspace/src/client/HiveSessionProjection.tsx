@@ -36,6 +36,7 @@ export function HiveSessionProjection({
   renameSession, forkSession, deleteSession, renderSlot, t,
 }: Props) {
   const [creating, setCreating] = useState(false)
+  const [recentsAtEnd, setRecentsAtEnd] = useState(false)
   const [renameTarget, setRenameTarget] = useState<{ id: SessionId; title: string }>()
   const [renameDraft, setRenameDraft] = useState('')
   const [renaming, setRenaming] = useState(false)
@@ -107,7 +108,10 @@ export function HiveSessionProjection({
     <div className={css.recentHeading}>
       <span>{t('section.recent')}</span>
     </div>
-    <nav className={css.list} aria-label={t('section.sessions')}>
+    <nav className={css.list} aria-label={t('section.sessions')} onScroll={(event) => {
+      const listElement = event.currentTarget
+      setRecentsAtEnd(listElement.scrollTop + listElement.clientHeight >= listElement.scrollHeight - 2)
+    }}>
       {rows.map(row => <SessionNodeItem
         key={row.id}
         node={row}
@@ -126,6 +130,7 @@ export function HiveSessionProjection({
         t={t}
       />)}
     </nav>
+    {osRail === null && rows.length > 5 && !recentsAtEnd && <div className={css.scrollHint}>Scroll more ↓</div>}
     {list.current !== undefined && <div className={css.viewTabs}>
       {renderSlot('conversation.sidebar.viewTabs', {}, { fallback: null })}
     </div>}
