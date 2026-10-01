@@ -277,6 +277,8 @@ suite('native Dreamer workflow', () => {
     app.ctx.subagents.interrupt(before.child_id as never, { kind: 'ancestor', agent: parent })
     await vi.waitFor(() => expect(app.ctx.agents.get(before.child_id as never)).toBeUndefined(), { timeout: 5000 })
     await app.close()
+    // Legacy children omitted the model identity; deployment selection must repair cold activation.
+    await admin.query("UPDATE harness_session_events SET payload=payload #- '{data,agentModel}' #- '{data,agentProvider}' WHERE session_id=$1 AND event_type='subagent/descriptor'", [before.child_id])
     await admin.query("UPDATE harness_dream_runs SET lease_until=now()-interval '1 second' WHERE id=$1", [result.runId])
     await admin.query("UPDATE harness_dream_due SET lease_until=now()-interval '1 second' WHERE org_id=$1", [owner.orgId])
     await boot()

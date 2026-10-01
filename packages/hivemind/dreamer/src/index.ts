@@ -4,7 +4,7 @@ import Schema from '@deepseek-ai/schemastery'
 import { Pool } from 'pg'
 import { z } from 'zod'
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import type { Agent, AgentHandle } from '@deepseek-ai/dsh-agent'
+import { installModelSelection, type Agent, type AgentHandle } from '@deepseek-ai/dsh-agent'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import { defineTool } from '@deepseek-ai/dsh-tools'
@@ -578,15 +578,11 @@ export function apply(ctx: Context, config: Config): void {
       },
     }),
   )
-  ctx.on('agent/request', async ({ agent }, next) => {
-    const request = await next()
-    if (!active.has(agent.session.header.id)) return request
-    const defaults = ctx.agentDefaultModel.currentSelection()
-    return { ...request, provider: config.modelProvider ?? request.provider ?? defaults.provider,
-      model: config.model ?? request.model ?? defaults.model }
-  })
   ctx.on('agent/created', ({ agent }) => {
     if (active.has(agent.session.header.id)) {
+      const defaults = ctx.agentDefaultModel.currentSelection()
+      installModelSelection(agent.ctx, { current: { provider: config.modelProvider ?? defaults.provider,
+        model: config.model ?? defaults.model }, assembled: undefined })
       for (const definition of definitions) agent.ctx.tools.register(definition)
     } else agent.ctx.tools.restrict({ deny: DREAM_TOOLS })
   })
