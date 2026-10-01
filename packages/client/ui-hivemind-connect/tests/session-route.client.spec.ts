@@ -230,7 +230,23 @@ describe('dedicated Dreaming conversation route', () => {
     expect(child).toHaveBeenCalledWith({ parentSessionId: 'session-parent', childSessionId: 'session-child', mode: 'continuable' })
     expect(f.open).not.toHaveBeenCalled()
     expect(f.create).not.toHaveBeenCalled()
-    expect(window.location.search).toBe('?dreamingParent=session-parent')
+    expect(window.location.pathname).toBe(`${HIVE_OVERVIEW_PATH}/dreaming`)
+    expect(window.location.search).toBe('')
+  })
+  it('resolves the direct room through the authenticated tenant activity', async () => {
+    window.history.replaceState(null, '', `${HIVE_OVERVIEW_PATH}/dreaming`)
+    const f = fixture(state())
+    f.sessions.openSubagent = vi.fn()
+    f.sessions.refreshSubagents = vi.fn().mockResolvedValue(undefined)
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: async () => ({ activity: { session: {
+      parentSessionId: 'session-parent', childSessionId: 'session-child', mode: 'continuable',
+    } } }) }))
+    disposers.push(setupHivemindSessionRouting(f.sessions))
+    await vi.waitFor(() =>{  expect(f.sessions.openSubagent).toHaveBeenCalled() })
+    expect(f.create).not.toHaveBeenCalled()
+    expect(f.open).not.toHaveBeenCalled()
+    expect(window.location.pathname).toBe(`${HIVE_OVERVIEW_PATH}/dreaming`)
+    vi.unstubAllGlobals()
   })
   it('preserves the Dreaming route while the native child catalog is loading', async () => {
     window.history.replaceState(null, '', `${HIVE_OVERVIEW_PATH}/session/session-child?dreamingParent=session-parent`)

@@ -20,7 +20,7 @@ describe('Dreamer final presentation', () => {
 
 
 it('renders inline finding, meaning and uncertainty as separate sections', () => {
-  expect(discoverySections({ ...value.discoveries[0], saved: true,
+  expect(discoverySections({ ...value.discoveries[0]!, saved: true,
     content: 'Finding: Investor questions repeat. What it means: Update the data room. What remains uncertain: No approved roadmap.' }))
     .toEqual({ finding: 'Investor questions repeat.', meaning: 'Update the data room.', uncertainty: 'No approved roadmap.' })
 })

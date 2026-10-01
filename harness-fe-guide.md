@@ -35,3 +35,5 @@ For the full development and release workflow, read [harness-development-playboo
 - `packages/client/ui-chat/src/client/dream-synthesis.ts`: validates the versioned final presentation.
 - `packages/client/ui-chat/src/client/chat/DreamSynthesisView.tsx`: final synthesis, Flashback cards, and native right sidebar preview.
 - `packages/client/ui-chat/src/client/conversation-nodes/turn-process.ts`: completed Dreamer receipt creates the per-run Exploration details boundary, including after reload.
+
+Dreaming room: `ui-hivemind-connect/src/client/DreamingRoom.tsx` owns the company toggle and future agenda; `session-route.ts` resolves `/hivemind/app/overview/dreaming` through the authenticated activity endpoint. Dreamer stores agenda in the persistent parent Session log and includes it in subsequent subagent prompts. `ui-layout/AppFrame.tsx` hides Recents in the room.

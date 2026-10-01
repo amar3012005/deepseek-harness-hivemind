@@ -140,7 +140,9 @@ export function AppFrame({
   // visibility. Profile booleans remain accepted for configuration parity,
   // but can never leak embedded layout into native mode or suppress it in HIVE.
   const hostOwnsChrome = hiveMode
-  const showSessionRail = hiveMode
+  const dreamingRoom = typeof window !== 'undefined' && (window.location.pathname === '/hivemind/app/overview/dreaming'
+    || new URLSearchParams(window.location.search).has('dreamingParent'))
+  const showSessionRail = hiveMode && !dreamingRoom
   const layoutInfo = useStore(state => state.layoutInfo)
   const frameRef = useRef<HTMLDivElement | null>(null)
   const viewport = layoutInfo.viewportWidth

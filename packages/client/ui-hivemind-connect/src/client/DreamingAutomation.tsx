@@ -32,7 +32,7 @@ export function DreamingAutomation() {
   const timing = state?.activity
   const date = (value: string) => new Date(value).toLocaleString(undefined, { timeZone: timing?.timezone, dateStyle: 'medium', timeStyle: 'short' })
   const latest = timing?.runs[0]
-  const sessionHref = timing?.session ? `/hivemind/app/overview/session/${encodeURIComponent(timing.session.childSessionId)}?dreamingParent=${encodeURIComponent(timing.session.parentSessionId)}` : undefined
+  const sessionHref = timing?.session ? '/hivemind/app/overview/dreaming' : undefined
   return <section className={css.card} aria-label="Nightly Dreaming">
     <div className={css.heading}><a className={css.sessionLink} href={sessionHref}>Nightly Dreaming</a><span>{state ? state.enabled ? 'On' : 'Off' : 'Loading…'}</span></div>
     <p>Company memory exploration → Flashbacks</p>

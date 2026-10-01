@@ -239,6 +239,14 @@ export function apply(ctx) {
       expect(activity.runs).toEqual([])
     })
     expect(registrations).toHaveLength(1)
+    const agendaUrl = `${app.baseUrl}/hivemind/dreamer/agenda`
+    const agenda = await fetch(agendaUrl, { method: 'PUT', headers: { cookie, origin: app.baseUrl,
+      'content-type': 'application/json' }, body: JSON.stringify({ text: 'Explore fundraising questions.' }) })
+    expect(agenda.status).toBe(200)
+    expect((await (await fetch(agendaUrl, { headers: { cookie } })).json()).text).toBe('Explore fundraising questions.')
+    const denied = await fetch(agendaUrl, { method: 'PUT', headers: { cookie, origin: 'https://wrong.example',
+      'content-type': 'application/json' }, body: JSON.stringify({ text: 'Replace agenda' }) })
+    expect(denied.status).toBe(403)
 
   })
   it('delegates to a real continuable Dreamer and saves directly into Flashbacks', async () => {

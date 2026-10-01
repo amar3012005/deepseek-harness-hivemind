@@ -7,7 +7,7 @@ interface State {
   synced: boolean
 }
 /** One organization switch. The server derives tenant and checks administrator membership. */
-export function DreamingSettings() {
+export function DreamingSettings({ compact = false }: { compact?: boolean } = {}) {
   const [state, setState] = useState<State>(),
     [busy, setBusy] = useState(false),
     [error, setError] = useState<string>()
@@ -21,7 +21,7 @@ export function DreamingSettings() {
       .catch(() => {
         if (!controller.signal.aborted) setError('Dreaming settings are unavailable.')
       })
-    return () => controller.abort()
+    return () =>{  controller.abort() }
   }, [])
   async function change(): Promise<void> {
     if (!state || busy) return
@@ -43,11 +43,12 @@ export function DreamingSettings() {
     }
   }
   return (
-    <section className={css.root} aria-label="Company dreaming">
+    <section className={`${css.root} ${compact ? css.compact : ''}`} aria-label="Company dreaming">
       <div>
         <strong>Dreaming</strong>
-        <p>Explore company memory automatically. Derived insights go directly to the company-visible Flashbacks project.</p>
-        <p>Turning this on authorizes scheduled exploration and saves to Flashbacks without per-dream approval.</p>
+        <p hidden={compact}>Explore company memory automatically.
+          Derived insights go directly to the company-visible Flashbacks project.</p>
+        <p hidden={compact}>Turning this on authorizes scheduled exploration and saves to Flashbacks without per-dream approval.</p>
         {state && !state.canChange && <small>Only company administrators can change this setting.</small>}
         {state && !state.available && <small>Dreaming is not configured on this server yet.</small>}
         {error && <p role="alert">{error}</p>}

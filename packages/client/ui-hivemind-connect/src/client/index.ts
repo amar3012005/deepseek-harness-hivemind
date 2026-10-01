@@ -1,6 +1,7 @@
 import type {} from '@deepseek-ai/dsh-client-ui-schedule/client'
 import { DreamingAutomation } from './DreamingAutomation.tsx'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
+import { DreamingRoom } from './DreamingRoom.tsx'
 import { DreamingSettings } from './DreamingSettings.tsx'
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
@@ -275,6 +276,7 @@ export function apply(ctx: ClientContext): void {
   // corner, matching the native “door” control. A higher-priority seat shadows
   // ui-sidebar-right's generic expand button; this implementation preserves
   // its expand/collapse behavior for non-HyperAgents sessions.
+  ctx.slots.register({ name: 'conversation.session.header.utilities', id: 'dreaming-room', locale: NS, order: 100 }, DreamingRoom)
   ctx.slots.inject('conversation.session.header.corner', () => ctx.slots.register({
     name: 'conversation.session.header.corner', locale: NS, priority: -1,
     inject: sessionId => ({ hooks: { employeeEvents: employeeEvents(sessionId) }, closePreview: () => {

@@ -186,7 +186,10 @@ export function setupHivemindSessionRouting(
     }).finally(() => { resolving = false })
   }
 
+  let directDream: { parentSessionId: SessionId; childSessionId: SessionId; mode: 'continuable' } | undefined
+  const dreamPath = `${HIVE_OVERVIEW_PATH}/dreaming`
   const dreamingAddress = () => {
+    if (browser.location.pathname === dreamPath) return directDream
     const parent = new URLSearchParams(browser.location.search ?? '').get('dreamingParent')
     const route = parseHivemindSessionRoute(browser.location.pathname)
     if (route.kind !== 'session' || parent === null || !/^session-[a-z0-9-]+$/u.test(parent)) return undefined
@@ -198,6 +201,24 @@ export function setupHivemindSessionRouting(
     const state = sessions.list.getSnapshot()
     if (state.phase !== 'ready') return
     const route = parseHivemindSessionRoute(browser.location.pathname)
+    if (browser.location.pathname === dreamPath && directDream === undefined) {
+      initialized = true
+      if (resolvingDream) return
+      resolvingDream = true
+      const attempt = ++generation
+      void fetch('/hivemind/dreamer/settings?view=activity', { credentials: 'include' }).then(async (response) => {
+        if (!response.ok) throw new Error('dreaming_unavailable')
+        const value = await response.json() as { activity?: { session?: typeof directDream } }
+        const address = value.activity?.session
+        if (!address || (address as { mode: string }).mode !== 'continuable' || !/^session-[a-z0-9-]+$/u.test(address.parentSessionId)
+          || !/^session-[a-z0-9-]+$/u.test(address.childSessionId)) throw new Error('dreaming_address_invalid')
+        if (!disposed && attempt === generation) directDream = address
+      }).catch(() => { /* Keep the independent room; never create a root here. */ }).finally(() => {
+        resolvingDream = false
+        if (!disposed && attempt === generation && directDream) applyLocation()
+      })
+      return
+    }
     const dreaming = dreamingAddress()
     if (dreaming !== undefined) {
       initialized = true
@@ -208,6 +229,8 @@ export function setupHivemindSessionRouting(
       void sessions.refreshSubagents(dreaming.parentSessionId).then(() => {
         if (disposed || attempt !== generation) return
         sessions.openSubagent(dreaming)
+        directDream = dreaming
+        replace(dreamPath)
       }).catch(() => {
         // Keep the dedicated address; never create a root on discovery failure.
       }).finally(() => { resolvingDream = false })
@@ -241,6 +264,7 @@ export function setupHivemindSessionRouting(
       applyLocation()
       return
     }
+    if (browser.location.pathname === dreamPath && directDream === undefined) return
     if (dreamingAddress()?.childSessionId === state.currentAddress?.childSessionId && state.currentAddress !== undefined) return
     const current = rootForRoute(state, state.current)
     if (current === undefined) {

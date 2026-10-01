@@ -6,7 +6,7 @@ import { z } from 'zod'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { installModelSelection, type Agent, type AgentHandle } from '@deepseek-ai/dsh-agent'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
-import { SessionId } from '@deepseek-ai/dsh-session'
+import { SessionId, Session } from '@deepseek-ai/dsh-session'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { ToolRunContext } from '@deepseek-ai/dsh-tools'
 import type { HivemindPrincipal } from '@deepseek-ai/dsh-hivemind-execution-scope'
@@ -90,6 +90,8 @@ declare module '@deepseek-ai/dsh-session/types' {
   interface SessionEventMap {
     /** Exact source memory IDs observed by the Dreamer, retained across cold recovery for evidence validation. */
     'hivemind/dream-source': { ids: string[] }
+    /** User suggestion for future exploration; not a command to execute immediately. */
+    'hivemind/dream-agenda': { text: string; userId: string }
   }
 }
 function owner(run: DreamRun): HivemindPrincipal {
@@ -114,7 +116,7 @@ function receiptId(value: unknown): string | undefined {
   if (!value || typeof value !== 'object') return undefined
   const record = value as Record<string, unknown>
   for (const key of ['memory_id', 'memoryId', 'id'])
-    if (typeof record[key] === 'string' && UUID.safeParse(record[key]).success) return record[key] as string
+    if (typeof record[key] === 'string' && UUID.safeParse(record[key]).success) return record[key]
   for (const key of ['memory', 'receipt', 'result']) {
     const id = receiptId(record[key])
     if (id) return id
@@ -207,6 +209,54 @@ export function apply(ctx: Context, config: Config): void {
         }),
       `dreamer: ${path}`,
     )
+  register('/hivemind/dreamer/agenda', async (req, res) => {
+    const p = principal(req)
+    const address = await store.sessionAddress(p)
+    const id = SessionId(address.parentSessionId)
+    if (req.method === 'GET') {
+      await ctx.hivemindExecutionScope.run(p, async () => {
+        const handle = await ctx.sessionPersistence.stat(id) ? await ctx.sessionPersistence.open(id, 'read') : undefined
+        try {
+          const events = handle ? (await handle.read()).events : []
+          const agenda = events.filter(event => event.type === 'hivemind/dream-agenda').at(-1)
+          reply(res, 200, { text: agenda?.data.text ?? '' })
+        } finally { await handle?.close() }
+      })
+      return
+    }
+    if (req.method !== 'PUT') { reply(res, 405, { error: 'method_not_allowed' }); return }
+    const host = typeof req.headers['x-forwarded-host'] === 'string' ? req.headers['x-forwarded-host'] : req.headers.host
+    if (!req.headers.origin || new URL(req.headers.origin).host !== host
+      || req.headers['content-type']?.split(';')[0] !== 'application/json') {
+      reply(res, 403, { error: 'origin_denied' }); return
+    }
+    const input = z.object({ text: z.string().trim().max(4000) }).strict().parse(await body(req))
+    await ctx.hivemindExecutionScope.run(p, async () => {
+      const live = ctx.sessions.get(id)
+      if (live) {
+        live.append('hivemind/dream-agenda', { text: input.text, userId: p.userId })
+        await ctx.sessions.flush(live)
+      } else {
+        const handle = await ctx.sessionPersistence.stat(id) ? await ctx.sessionPersistence.open(id, 'write') : undefined
+        if (handle) {
+          try {
+            const log = await handle.read()
+            const session = Session.fromRestore(id, [...log.events], handle.header, handle.inheritedEventCount, log.eventState)
+            const event = session.append('hivemind/dream-agenda', { text: input.text, userId: p.userId })
+            await handle.append([event]); await handle.flush()
+          } finally { await handle.close() }
+        } else {
+          const session = ctx.sessions.prepare(id, { meta: { agentPreset: 'hivemind-chat', origin: 'subagent' } })
+          const created = await ctx.sessionPersistence.create(session.header)
+          try {
+            session.append('hivemind/dream-agenda', { text: input.text, userId: p.userId })
+            await created.append(session.snapshotEvents()); await created.flush()
+          } finally { await created.close() }
+        }
+      }
+    })
+    reply(res, 200, { text: input.text })
+  })
   register('/hivemind/dreamer/settings', async (req, res) => {
     if (!['GET', 'PUT'].includes(req.method ?? '')) {
       reply(res, 405, { error: 'method_not_allowed' })
@@ -670,7 +720,7 @@ export function apply(ctx: Context, config: Config): void {
         completion: false,
         finished: false,
         settled: completion.promise,
-        settle: () => completion.resolve(),
+        settle: () =>{  completion.resolve() },
       }
     active.set(run.child_id, entry)
     const selection = ctx.agentDefaultModel.currentSelection()
@@ -702,10 +752,11 @@ export function apply(ctx: Context, config: Config): void {
         )
         heartbeat.unref()
         const persisted = await ctx.sessionPersistence.stat(childId)
+        const agenda = parent.agent.session.snapshotEvents().filter(event => event.type === 'hivemind/dream-agenda').at(-1)?.data.text
         const prompt = [
           {
             type: 'text' as const,
-            text: `Perform autonomous company dreaming. First inspect dream_history. Resume checkpoint: ${JSON.stringify(run.checkpoint)}. Discover your own topics and entity paths. Save useful evidence-backed derived insights directly into Flashbacks. Finish with dream_finish.`,
+            text: `Perform autonomous company dreaming. First inspect dream_history. Resume checkpoint: ${JSON.stringify(run.checkpoint)}. Discover your own topics and entity paths. Save useful evidence-backed derived insights directly into Flashbacks. Finish with dream_finish.${agenda ? ` User agenda for future dreams (a suggestion, not overriding evidence or safety): ${agenda}` : ''}`,
           },
         ]
         if (persisted) {

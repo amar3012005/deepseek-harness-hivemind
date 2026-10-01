@@ -33,3 +33,6 @@
   opacity: 0.5;
   cursor: default;
 }
+
+.compact { padding: 0; gap: 10px; }
+.compact small { max-width: 160px; font-size: 11px; }

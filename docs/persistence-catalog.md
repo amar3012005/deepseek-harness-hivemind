@@ -475,7 +475,7 @@ Source: [`packages/goal/goal/src/domain.ts:66`](../packages/goal/goal/src/domain
 'hivemind/artifact-created': ArtifactCreated
 ```
 
-Source: [`packages/hivemind/artifact-renderer/src/index.ts:113`](../packages/hivemind/artifact-renderer/src/index.ts)
+Source: [`packages/hivemind/artifact-renderer/src/index.ts:115`](../packages/hivemind/artifact-renderer/src/index.ts)
 
 <a id="hivemindbrowser-capability-lease--log-only"></a>
 
@@ -574,16 +574,27 @@ Source: [`packages/hivemind/connected-apps/src/index.ts:42`](../packages/hivemin
 
 Source: [`packages/hivemind/runtime/src/index.ts:39`](../packages/hivemind/runtime/src/index.ts)
 
+<a id="hiveminddream-agenda--log-only"></a>
+
+#### `hivemind/dream-agenda` — log-only
+
+```ts persistence-catalog
+/** User suggestion for future exploration; not a command to execute immediately. */
+'hivemind/dream-agenda': { text: string; userId: string }
+```
+
+Source: [`packages/hivemind/dreamer/src/index.ts:94`](../packages/hivemind/dreamer/src/index.ts)
+
 <a id="hiveminddream-source--log-only"></a>
 
 #### `hivemind/dream-source` — log-only
 
 ```ts persistence-catalog
 /** Exact source memory IDs observed by the Dreamer, retained across cold recovery for evidence validation. */
-'hivemind/dream-source': { ids:string[] }
+'hivemind/dream-source': { ids: string[] }
 ```
 
-Source: [`packages/hivemind/dreamer/src/index.ts:34`](../packages/hivemind/dreamer/src/index.ts)
+Source: [`packages/hivemind/dreamer/src/index.ts:92`](../packages/hivemind/dreamer/src/index.ts)
 
 <a id="hivemindemployee-delegation-end--log-only"></a>
 
@@ -658,7 +669,7 @@ Source: [`packages/hivemind/artifact-renderer/src/generation.ts:85`](../packages
 'hivemind/hq-calendar-item': HqCalendarItem
 ```
 
-Source: [`packages/hivemind/hq-runtime/src/control.ts:26`](../packages/hivemind/hq-runtime/src/control.ts)
+Source: [`packages/hivemind/hq-runtime/src/control.ts:35`](../packages/hivemind/hq-runtime/src/control.ts)
 
 <a id="hivemindhq-calendar-wake--log-only"></a>
 
@@ -669,7 +680,7 @@ Source: [`packages/hivemind/hq-runtime/src/control.ts:26`](../packages/hivemind/
 'hivemind/hq-calendar-wake': { itemId: string; revision: number; scheduleId: string }
 ```
 
-Source: [`packages/hivemind/hq-runtime/src/control.ts:28`](../packages/hivemind/hq-runtime/src/control.ts)
+Source: [`packages/hivemind/hq-runtime/src/control.ts:37`](../packages/hivemind/hq-runtime/src/control.ts)
 
 <a id="hivemindhq-employee-assignment--log-only"></a>
 
@@ -677,10 +688,16 @@ Source: [`packages/hivemind/hq-runtime/src/control.ts:28`](../packages/hivemind/
 
 ```ts persistence-catalog
 /** Frozen authorized employee identity and native roster session for one assignment. */
-'hivemind/hq-employee-assignment': { taskId: string; employeeId: string; memberName: string; sessionId: string; personaSha256: string }
+'hivemind/hq-employee-assignment': {
+  taskId: string
+  employeeId: string
+  memberName: string
+  sessionId: string
+  personaSha256: string
+}
 ```
 
-Source: [`packages/hivemind/hq-runtime/src/index.ts:27`](../packages/hivemind/hq-runtime/src/index.ts)
+Source: [`packages/hivemind/hq-runtime/src/index.ts:48`](../packages/hivemind/hq-runtime/src/index.ts)
 
 <a id="hivemindhq-mode--log-only"></a>
 
@@ -691,7 +708,7 @@ Source: [`packages/hivemind/hq-runtime/src/index.ts:27`](../packages/hivemind/hq
 'hivemind/hq-mode': HqModeState
 ```
 
-Source: [`packages/hivemind/hq-runtime/src/control.ts:24`](../packages/hivemind/hq-runtime/src/control.ts)
+Source: [`packages/hivemind/hq-runtime/src/control.ts:33`](../packages/hivemind/hq-runtime/src/control.ts)
 
 <a id="hivemindhq-task-artifacts--log-only"></a>
 
@@ -702,7 +719,7 @@ Source: [`packages/hivemind/hq-runtime/src/control.ts:24`](../packages/hivemind/
 'hivemind/hq-task-artifacts': TaskArtifactLinks
 ```
 
-Source: [`packages/hivemind/hq-runtime/src/index.ts:25`](../packages/hivemind/hq-runtime/src/index.ts)
+Source: [`packages/hivemind/hq-runtime/src/index.ts:46`](../packages/hivemind/hq-runtime/src/index.ts)
 
 <a id="hivemindhq-task-contract--log-only"></a>
 
@@ -713,7 +730,7 @@ Source: [`packages/hivemind/hq-runtime/src/index.ts:25`](../packages/hivemind/hq
 'hivemind/hq-task-contract': CompanyTaskContract
 ```
 
-Source: [`packages/hivemind/hq-runtime/src/index.ts:21`](../packages/hivemind/hq-runtime/src/index.ts)
+Source: [`packages/hivemind/hq-runtime/src/index.ts:42`](../packages/hivemind/hq-runtime/src/index.ts)
 
 <a id="hivemindhq-task-review--log-only"></a>
 
@@ -724,7 +741,7 @@ Source: [`packages/hivemind/hq-runtime/src/index.ts:21`](../packages/hivemind/hq
 'hivemind/hq-task-review': HqTaskReview
 ```
 
-Source: [`packages/hivemind/hq-runtime/src/index.ts:23`](../packages/hivemind/hq-runtime/src/index.ts)
+Source: [`packages/hivemind/hq-runtime/src/index.ts:44`](../packages/hivemind/hq-runtime/src/index.ts)
 
 <a id="hivemindmedia-workflow-ended--log-only"></a>
 
@@ -924,7 +941,7 @@ Source: [`packages/hivemind/playbooks/src/index.ts:196`](../packages/hivemind/pl
 
 ```ts persistence-catalog
 /** Persistent employee identity that owns this agent session across reloads and later turns. */
-  'hivemind/session-owner': SessionOwner
+'hivemind/session-owner': SessionOwner
 ```
 
 Source: [`packages/hivemind/runtime/src/continuity.ts:42`](../packages/hivemind/runtime/src/continuity.ts)
@@ -935,7 +952,7 @@ Source: [`packages/hivemind/runtime/src/continuity.ts:42`](../packages/hivemind/
 
 ```ts persistence-catalog
 /** Completed-task handoff awaiting its durable private HyperAgent memory receipt. */
-  'hivemind/task-memory-pending': TaskMemoryRecord
+'hivemind/task-memory-pending': TaskMemoryRecord
 ```
 
 Source: [`packages/hivemind/runtime/src/continuity.ts:44`](../packages/hivemind/runtime/src/continuity.ts)
@@ -946,7 +963,7 @@ Source: [`packages/hivemind/runtime/src/continuity.ts:44`](../packages/hivemind/
 
 ```ts persistence-catalog
 /** Confirmed private operating-memory receipt for a completed task handoff. */
-  'hivemind/task-memory-recorded': { idempotencyKey: string; memoryId: string; turn: number }
+'hivemind/task-memory-recorded': { idempotencyKey: string; memoryId: string; turn: number }
 ```
 
 Source: [`packages/hivemind/runtime/src/continuity.ts:46`](../packages/hivemind/runtime/src/continuity.ts)
