@@ -44,7 +44,7 @@ export function HiveSessionProjection({
   const composing = useRef(false)
   const list = useSessions(value => value)
   const pending = useSessionPendingInteraction(value => value)
-  const hyperagentRoute = window.location.pathname.startsWith('/hivemind/app/employee/harness/')
+  const hyperagentRoute = window.location.pathname.startsWith('/hivemind/app/employee/harness')
   // The OS sidebar is owned by the host frontend. Its existing first content
   // block is a stable seat, so the runner can show sessions without a host deploy.
   const osRail = hyperagentRoute
@@ -105,8 +105,9 @@ export function HiveSessionProjection({
     {osRail === null && <button type="button" className={css.newSession} disabled={creating} onClick={start}>
       <IconNewChatOutline16 /><span>{t('session.new')}</span>
     </button>}
+    {hyperagentRoute && <a href="/hivemind/app/employees" className={css.newSession}>Company workspace ↗</a>}
     <div className={css.recentHeading}>
-      <span>{t('section.recent')}</span>
+      <span>{hyperagentRoute ? 'Your agent tasks' : t('section.recent')}</span>
     </div>
     <nav className={css.list} aria-label={t('section.sessions')} onScroll={(event) => {
       const listElement = event.currentTarget

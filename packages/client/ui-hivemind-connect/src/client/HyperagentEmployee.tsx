@@ -99,7 +99,7 @@ export function HyperagentEmployeePicker({ sessionId, useSessions, useEmployeeEv
   const [error, setError] = useState(false)
   const [options, setOptions] = useState<EmployeeOption[]>([])
   const [menuHeight, setMenuHeight] = useState(360)
-  if (!isHyperagentPreset(preset)) return null
+  if (!isHyperagentPreset(preset) && locked) return null
   const selected = owner == null ? fromLog : projectedEmployee(owner)
   const toggle = (): void => {
     if (!open) setMenuHeight(employeeMenuHeight(window.innerHeight, pickerRef.current?.getBoundingClientRect().bottom ?? 0))
@@ -119,10 +119,11 @@ export function HyperagentEmployeePicker({ sessionId, useSessions, useEmployeeEv
   return <div ref={pickerRef} className={css.picker} data-hivemind-employee-picker>
     <button className={css.pickerButton} type="button" aria-haspopup="listbox" aria-expanded={open && !locked} disabled={locked} title={locked ? t('employee.ownerLocked') : undefined} onClick={toggle}>
       {selected === null ? <span className={css.autoAvatar}>{t('employee.initial')}</span> : <EmployeeAvatar employee={selected} size={24} />}
-      <span>{selected?.name ?? t('employee.auto')}</span><span aria-hidden="true">⌄</span>
+      <span>{selected?.name ?? (isHyperagentPreset(preset) ? t('employee.auto') : 'HIVEMIND')}</span><span aria-hidden="true">⌄</span>
     </button>
     {open && !locked && <div className={css.menu} role="listbox" aria-label={t('employee.label')} style={{ maxHeight: menuHeight }}>
-      <button type="button" role="option" aria-selected={selected === null} disabled={loading} onClick={() => { choose(null) }}><span className={css.autoAvatar}>{t('employee.initial')}</span><span><strong>{t('employee.auto')}</strong><small>{t('employee.autoDetail')}</small></span></button>
+      <button type="button" role="option" onClick={() => { choose(null) }} disabled={loading}><span className={css.autoAvatar}>H</span><span><strong>HIVEMIND</strong><small>Ask your company brain</small></span></button>
+
       {options.map(employee => <button key={employee.id} type="button" role="option" aria-selected={selected?.id === employee.id} disabled={loading} onClick={() => { choose(employee) }}><EmployeeAvatar employee={employee} size={34} /><span><strong>{employee.name}</strong><small>{employee.role}</small></span></button>)}
       {loading && <p role="status">{t('employee.loading')}</p>}
       {error && <p role="alert">{t('employee.unavailable')}</p>}
