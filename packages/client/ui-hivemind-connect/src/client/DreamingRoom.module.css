@@ -16,3 +16,7 @@
 :global([data-conversation-header-corner]):has(.root) > :global([data-slot='conversation.session.header.utilities']) > :not(.root) {
   display: none !important;
 }
+
+.activity { position: absolute; right: 0; top: calc(100% + 12px); width: min(380px, 85vw); max-height: min(540px, 70vh); overflow-y: auto; border-radius: 14px; background: var(--dsw-alias-bg-base, white); box-shadow: 0 8px 24px #0001; z-index: 20; }
+.activity > section { margin: 0; }
+.root > .activityButton { color: var(--dsw-alias-label-primary); }

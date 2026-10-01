@@ -6,10 +6,10 @@ interface Activity {
   activity: { session?: { parentSessionId: string; childSessionId: string; mode: 'continuable' }; timezone: string; cron: string; nextRunAt: string | null; scheduleState: string; runs: Run[] }
 }
 /** Read-only view of the existing dispatcher and durable tenant ledger, never a second schedule. */
-export function DreamingAutomation() {
+export function DreamingAutomation({ room = false }: { room?: boolean } = {}) {
   const [state, setState] = useState<Activity>()
   const [error, setError] = useState(false)
-  const [open, setOpen] = useState(false)
+  const [open, setOpen] = useState(room)
   useEffect(() => {
     const controller = new AbortController()
     let busy = false
@@ -34,7 +34,7 @@ export function DreamingAutomation() {
   const latest = timing?.runs[0]
   const sessionHref = timing?.session ? '/hivemind/app/overview/dreaming' : undefined
   return <section className={css.card} aria-label="Nightly Dreaming">
-    <div className={css.heading}><a className={css.sessionLink} href={sessionHref}>Nightly Dreaming</a><span>{state ? state.enabled ? 'On' : 'Off' : 'Loading…'}</span></div>
+    <div className={css.heading}>{room ? <strong>Nightly Dreaming</strong> : <a className={css.sessionLink} href={sessionHref}>Nightly Dreaming</a>}<span>{state ? state.enabled ? 'On' : 'Off' : 'Loading…'}</span></div>
     <p>Company memory exploration → Flashbacks</p>
     {error && <p role="alert">Dreaming activity could not be refreshed. Displayed details may be stale.</p>}
     {timing && <>
@@ -43,7 +43,7 @@ export function DreamingAutomation() {
       <button type="button" aria-expanded={open} onClick={() => { setOpen(value => !value) }}>Run history ({timing.runs.length})</button>
       {open && <div aria-label="Dreaming run history">{timing.runs.length === 0 ? <p>No dreaming runs yet.</p> : <ol>{timing.runs.map(run => <li key={run.id}><time dateTime={run.created_at}>{date(run.created_at)}</time> · {run.status} · {run.output_ids.length} Flashbacks</li>)}</ol>}</div>}
     </>}
-    {sessionHref && <a href={sessionHref}>View dreaming</a>}
+    {sessionHref && !room && <a href={sessionHref}>View dreaming</a>}
     <a href="/hivemind/app/settings">Manage in Settings</a>
   </section>
 }

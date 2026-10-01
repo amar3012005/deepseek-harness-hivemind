@@ -20,11 +20,13 @@ export function SubagentReadOnlyComposer({
   matched, t,
 }: Pick<SubagentReadOnlyComposerProps, 'matched' | 't'>) {
   const oneShot = matched.reason === 'one-shot'
+  const dreaming = typeof window !== 'undefined' && (window.location.pathname === '/hivemind/app/overview/dreaming'
+    || new URLSearchParams(window.location.search).has('dreamingParent'))
   return (
     <div className={css.frame} role="status">
-      <strong>{t(oneShot ? 'readonly.oneShot.title' : 'readonly.title')}</strong>
+      <strong>{t(dreaming ? 'readonly.dreaming.title' : oneShot ? 'readonly.oneShot.title' : 'readonly.title')}</strong>
       <span>
-        {t(oneShot ? 'readonly.oneShot.body' : 'readonly.body')}
+        {t(dreaming ? 'readonly.dreaming.body' : oneShot ? 'readonly.oneShot.body' : 'readonly.body')}
       </span>
     </div>
   )
