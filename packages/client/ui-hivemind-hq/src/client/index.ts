@@ -25,7 +25,7 @@ export const inject = ['sessions', 'remote', 'slots', 'locale', 'layout', 'uiWor
  */
 export async function apply(ctx: Context): Promise<() => Promise<void>> {
   const disposeRemote = await ctx.remote.$mount(hqRemote)
-  const ui = ctx.inject(['sessions', 'remote.hivemindHq', 'slots', 'locale', 'layout', 'uiWorkspace'], (child) => {
+  const ui = ctx.inject(['sessions', 'remote.hivemindHq', 'remote.agentPresets', 'slots', 'locale', 'layout', 'uiWorkspace'], (child) => {
     child.effect(() => child.locale.register('hivemind.hq', { en, zh }))
     const actions: HqControlInjected = {
       load: sessionId => child.remote.hivemindHq.mode(sessionId),
