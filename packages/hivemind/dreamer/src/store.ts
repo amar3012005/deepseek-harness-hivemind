@@ -254,8 +254,10 @@ export class DreamStore {
       const first = (await connection.query<{ parent_id: string; child_id: string }>(
         'SELECT parent_id,child_id FROM harness_dream_runs WHERE org_id=$1 ORDER BY created_at,id LIMIT 1', [owner.orgId],
       )).rows[0]
-      return { parentSessionId: first?.parent_id ?? `session-${stableId(`dream-parent:${owner.orgId}`)}`,
-        childSessionId: first?.child_id ?? `session-${stableId(`dream-child:${owner.orgId}`)}`, mode: 'continuable' as const }
+      const revision = first ? 0 : (await connection.query<{ revision: number }>(
+        'SELECT revision FROM harness_dream_settings WHERE org_id=$1', [owner.orgId])).rows[0]?.revision ?? 0
+      return { parentSessionId: first?.parent_id ?? `session-${stableId(`dream-parent:${owner.orgId}:${revision}`)}`,
+        childSessionId: first?.child_id ?? `session-${stableId(`dream-child:${owner.orgId}:${revision}`)}`, mode: 'continuable' as const }
     }
     return db ? read(db) : this.scoped(owner, read)
   }
