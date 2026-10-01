@@ -16,7 +16,7 @@ import type {} from '@deepseek-ai/dsh-subagent'
 import type {} from '@deepseek-ai/dsh-agent-default-model'
 import type {} from '@deepseek-ai/dsh-agent-presets'
 import type {} from '@deepseek-ai/dsh-session-persistence'
-import type { MemoryProvider } from '@deepseek-ai/dsh-hivemind-memory'
+import type {} from '@deepseek-ai/dsh-hivemind-memory'
 import type {} from '@deepseek-ai/dsh-skill'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import { bearer, candidateSchema, checkpointSchema, triggerSchema, UUID, VERSION } from './contract.ts'
@@ -136,7 +136,6 @@ export function apply(ctx: Context, config: Config): void {
       completion: boolean
       finished: boolean
       failure?: string
-      memory?: MemoryProvider
       settled: Promise<void>
       settle: () => void
     }
@@ -405,7 +404,7 @@ export function apply(ctx: Context, config: Config): void {
       output,
       async execute(args, e) {
         const { agent } = await guard(e)
-        const memory = active.get(agent.session.header.id)?.memory
+        const memory = ctx.agentPresets.serviceFor(agent, 'hivemindMemory')
         if (!memory) throw new Error('dream_memory_service_unavailable')
         return memory.entities(
           { query: String(args.query), limit: Math.min(100, Math.max(1, Number(args.limit ?? 20))), scopeFilter: 'organization' },
@@ -423,7 +422,7 @@ export function apply(ctx: Context, config: Config): void {
       output,
       async execute(args, e) {
         const { agent } = await guard(e)
-        const memory = active.get(agent.session.header.id)?.memory
+        const memory = ctx.agentPresets.serviceFor(agent, 'hivemindMemory')
         if (!memory) throw new Error('dream_memory_service_unavailable')
         return memory.recall(
           {
@@ -519,7 +518,7 @@ export function apply(ctx: Context, config: Config): void {
           return jsonValue(reserved.receipt)
         }
         await ctx.sessions.flush(agent.session)
-        const memory = active.get(agent.session.header.id)?.memory
+        const memory = ctx.agentPresets.serviceFor(agent, 'hivemindMemory')
         if (!memory) throw new Error('dream_memory_service_unavailable')
         const receipt = await memory.save(
           agent,
@@ -590,12 +589,7 @@ export function apply(ctx: Context, config: Config): void {
       const defaults = ctx.agentDefaultModel.currentSelection()
       installModelSelection(agent.ctx, { current: { provider: config.modelProvider ?? defaults.provider,
         model: config.model ?? defaults.model }, assembled: undefined })
-      agent.ctx.inject(['hivemindMemory', 'tools'], (memoryCtx) => {
-        const entry = active.get(agent.session.header.id)
-        if (!entry) return
-        entry.memory = memoryCtx.hivemindMemory
-        for (const definition of definitions) memoryCtx.tools.register(definition)
-      })
+      for (const definition of definitions) agent.ctx.tools.register(definition)
     } else agent.ctx.tools.restrict({ deny: DREAM_TOOLS })
   })
   ctx.skills.register({

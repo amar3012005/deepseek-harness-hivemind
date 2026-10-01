@@ -249,7 +249,9 @@ export class SessionHistoryController {
         signal,
         projectionMode: withProjections || address.kind === 'subagent' ? 'all' : 'none',
       })
-      if (observation.header.cwd === undefined) {
+      // Headless continuable children have no filesystem workspace. Their durable
+      // descriptor and direct-parent lineage below remain the authorization gate.
+      if (observation.header.cwd === undefined && address.kind === 'session') {
         observation[Symbol.dispose]()
         rejectNotFound(address)
       }

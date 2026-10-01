@@ -296,7 +296,12 @@ function ActiveScheduleIndicator({ t, search = false }: { t: RowTranslate; searc
 }
 
 /** Hover-card body: full title, relative time, and every relevant live status. */
-function SessionHoverContent({ node, now, t, timestamp }: { node: SessionNode; now: number; t: RowTranslate; timestamp?: string }) {
+function SessionHoverContent({ node, now, t, timestamp }: {
+  node: SessionNode
+  now: number
+  t: RowTranslate
+  timestamp?: string | undefined
+}) {
   const statuses = sessionStatuses(node, t)
   return (
     <div className={css.hoverContent}>

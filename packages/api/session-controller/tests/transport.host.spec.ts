@@ -667,6 +667,17 @@ describe('SessionHistoryController', () => {
     await ctx.fiber.dispose()
   })
 
+  it('reads headless children through their validated direct-parent address', async () => {
+    const { ctx, transport } = await setup()
+    const parentSessionId = SessionId('dream-parent'), childSessionId = SessionId('dream-child')
+    const child = ctx.sessions.create(childSessionId, { meta: { origin: 'subagent', parentSession: parentSessionId } })
+    child.append('subagent/descriptor', snapshotSubagentDescriptor({ mode: 'continuable', provider: 'test', label: 'Dreamer' }))
+    const address = { kind: 'subagent' as const, parentSessionId, childSessionId, mode: 'continuable' as const }
+    expect((await transport.page({ address, throughSeq: 0 }, signal())).records.length).toBeGreaterThan(0)
+    await expect(transport.page({ address: { ...address, parentSessionId: SessionId('wrong-parent') }, throughSeq: 0 }, signal()))
+      .rejects.toMatchObject({ code: 'subagent/unauthorized' })
+  })
+
   it('keeps pages projection-free and computes projections only for child authorization', async () => {
     const ordinary = await setup()
     const session = ordinary.ctx.sessions.create(SessionId('projected'), { meta: { cwd: '/workspace' } })
