@@ -290,6 +290,19 @@ export class PostgresSessionPersistence extends SessionPersistence {
     checkAbort(signal)
     return new Map(result.rows.flatMap(row => row.preset === null ? [] : [[row.id, row.preset] as const]))
   }
+  /** Durable conversation starts; configuration/open events do not count. */
+  async startedSessions(ids: readonly SessionId[], signal?: AbortSignal): Promise<ReadonlySet<SessionId>> {
+    checkAbort(signal)
+    if (ids.length === 0) return new Set()
+    const scope = this.capture()
+    const result = await this.query<{ id: SessionId }>(scope,
+      `SELECT s.id FROM harness_sessions s WHERE s.org_id=$1 AND s.user_id=$2 AND s.id=ANY($3::varchar[])
+       AND EXISTS (SELECT 1 FROM harness_session_events e WHERE e.session_id=s.id AND e.org_id=s.org_id AND e.user_id=s.user_id
+         AND (e.event_type='turn/start' OR (e.event_type='user/message' AND e.payload->'data'->'source'->>'kind'='user')))`,
+      [...scopeParams(scope), ids])
+    checkAbort(signal)
+    return new Set(result.rows.map(row => row.id))
+  }
   private snapshot(row: SessionRow): SessionPersistenceSnapshot {
     return {
       header: materializeCreateHeader(row.header), eventCount: Number(row.event_count),

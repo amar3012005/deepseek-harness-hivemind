@@ -93,6 +93,9 @@ integration('PostgreSQL HIVE SessionPersistence contract', () => {
     await expect(persistence.effectivePresets([id])).rejects.toThrow(/scope is unavailable/u)
     expect(await scope.run(principal, () => persistence.effectivePresets([id]))).toEqual(new Map([[id, 'hivemind-hyperagents']]))
     expect(await scope.run(other, () => persistence.effectivePresets([id]))).toEqual(new Map())
+    expect(await scope.run(principal, () => persistence.startedSessions([id]))).toEqual(new Set())
+    await expect(persistence.startedSessions([id])).rejects.toThrow(/scope is unavailable/u)
+    expect(await scope.run(other, () => persistence.startedSessions([id]))).toEqual(new Set())
   })
 
   it('stores exact event envelopes, rejects gaps, and fences an expired writer', async () => {

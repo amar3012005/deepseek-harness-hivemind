@@ -128,9 +128,11 @@ export class ApiSessionList {
     const records = await this.ctx.sessionQuery.listSessions(signal)
     signal?.throwIfAborted()
     const persistence = this.ctx.get('sessionPersistence') as {
+      startedSessions?: (ids: readonly SessionId[], signal?: AbortSignal) => Promise<ReadonlySet<SessionId>>
       effectivePresets?: (ids: readonly SessionId[], signal?: AbortSignal) => Promise<ReadonlyMap<SessionId, string>>
     } | undefined
     const effectivePresets = await persistence?.effectivePresets?.(records.map(record => record.header.id), signal)
+    const started = await persistence?.startedSessions?.(records.map(record => record.header.id), signal)
     signal?.throwIfAborted()
     const items: SessionSummary[] = []
     const cold: SessionHeader[] = []
@@ -146,7 +148,8 @@ export class ApiSessionList {
       cold.push(record.header)
     }
     for (const header of cold) {
-      const summary = this.summarizeCold(header)
+      const projected = this.summarizeCold(header)
+      const summary = started === undefined ? projected : { ...projected, blank: !started.has(header.id) }
       const selected = effectivePresets?.get(header.id)
       items.push(selected === undefined ? summary : { ...summary, agentPreset: selected })
     }
