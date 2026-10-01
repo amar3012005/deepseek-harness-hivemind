@@ -61,14 +61,14 @@ export const ChatNodeSeat = memo(function ChatNodeSeat({
   }, [actions, processSpec])
   const processWindowReady = processSpec !== undefined
     && processPresentation !== undefined
-    && compactTranscript
+    && (compactTranscript || processSpec.dreamSynthesis === true)
     && processSpec.answerAnchorSeq !== null
     && processPresentation.turn === processSpec.turn
     && processPresentation.turnClosed
     && !historyIncomplete
   const processMember = routedNode !== undefined
     && processWindowReady
-    && !TURN_PROCESS_INDEPENDENT_KINDS.has(routedNode.kind)
+    && (!TURN_PROCESS_INDEPENDENT_KINDS.has(routedNode.kind) || (routedNode.kind === 'system-prompt' && processSpec.dreamSynthesis === true))
     && routedNode.anchorSeq >= processSpec.processStartSeq
     && routedNode.anchorSeq < processSpec.answerAnchorSeq
   const processAnswer = routedNode !== undefined

@@ -11,6 +11,8 @@ export const candidateSchema = z
   .object({
     title: z.string().trim().min(1).max(180),
     content: z.string().trim().min(1).max(12000),
+    meaning: z.string().trim().min(1).max(4000).optional(),
+    uncertainty: z.string().trim().min(1).max(4000).optional(),
     sourceIds: z.array(UUID).min(1).max(100),
     entities: z.array(z.string().trim().min(1).max(180)).max(100),
     reasoningType: z.enum(['temporal', 'cause_effect', 'contradiction', 'pattern', 'unresolved_thread', 'intersection', 'consequence']),

@@ -1,3 +1,4 @@
+import { readDreamSynthesis, type DreamSynthesis } from '../dream-synthesis.ts'
 import type { Context } from '@deepseek-ai/cordis'
 import type {
   ConversationMatch, ConversationNodeContext, ConversationNodeDefinition, RunningToolCall,
@@ -12,6 +13,7 @@ declare module '../contract/chat-nodes.ts' {
   interface ChatNodeDataMap {
     /** Root Tool lifecycle with recursively nested subcalls. */
     'tool-call': ToolChatData
+    'dream-synthesis': DreamSynthesis
   }
 }
 
@@ -259,6 +261,10 @@ export const toolDefinition: ConversationNodeDefinition<ToolState> = {
     const projected = projectBlock(state.root, state, interruption(context))
     const anchor = context.start?.event.seq
       ?? ('kind' in state.root ? state.root.seq : context.matches[0]?.event.seq ?? 0)
+    if ('kind' in projected && projected.kind === 'tool-result' && !projected.isError && projected.call?.name === 'dream_finish') {
+      const synthesis = readDreamSynthesis(projected.content)
+      if (synthesis) return chatNode(context, 'dream-synthesis', anchor, synthesis)
+    }
     return chatNode(context, 'tool-call', anchor, { root: projected } satisfies ToolChatData)
   },
 }

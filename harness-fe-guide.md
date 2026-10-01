@@ -28,3 +28,10 @@ Start here for native Harness UI changes. This guide maps the runner's frontend 
 4. Run focused package tests and TypeScript checks, then `pnpm run build`. The production deploy unit is one cached `linux/amd64` runner image from an exact pushed SHA. Verify it with `deploy/hivemind-chat/verify-image.sh`, replace only `harness-runner`, and check the authenticated route. The release procedure is in the playbook below; inspect the live manifest chain rather than copying a historical handoff.
 
 For the full development and release workflow, read [harness-development-playbook.md](harness-development-playbook.md).
+
+### Dream run final synthesis
+
+- `packages/hivemind/dreamer/src/index.ts`: `dream_finish` persists the checkpoint and returns confirmed Flashback receipts; `dream_save` keeps readable content and structured provenance.
+- `packages/client/ui-chat/src/client/dream-synthesis.ts`: validates the versioned final presentation.
+- `packages/client/ui-chat/src/client/chat/DreamSynthesisView.tsx`: final synthesis, Flashback cards, and native right sidebar preview.
+- `packages/client/ui-chat/src/client/conversation-nodes/turn-process.ts`: completed Dreamer receipt creates the per-run Exploration details boundary, including after reload.

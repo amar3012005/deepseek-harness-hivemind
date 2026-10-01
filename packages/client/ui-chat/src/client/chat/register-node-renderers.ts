@@ -1,3 +1,4 @@
+import { DreamSynthesisView, DreamFlashbackPreview } from './DreamSynthesisView.tsx'
 import type { Context } from '@deepseek-ai/cordis'
 import { NS } from '../locale.ts'
 import { AssistantNodeView } from './AssistantNodeView.tsx'
@@ -15,6 +16,17 @@ import { TurnTailNodeView } from './TurnTailNodeView.tsx'
  * @param ctx - owning UI Conversation context.
  */
 export function registerChatNodeRenderers(ctx: Context): void {
+  ctx.inject(['sidebarRightTabs'], (scoped) => {
+    scoped.sidebarRightTabs.register({ id: 'hivemind-dream-flashback', kind: 'dream-flashback', priority: 'builtin', title: () => 'Flashback' })
+  })
+  ctx.slots.inject('sidebar.right.pane.tab', () => ctx.slots.register({
+    name: 'sidebar.right.pane.tab', key: 'hivemind-dream-flashback',
+  }, DreamFlashbackPreview))
+  ctx.slots.inject('conversation.chat.node', () => ctx.slots.register({
+    name: 'conversation.chat.node', key: 'dream-synthesis', locale: NS,
+    inject: () => ({ openPreview: (discovery: import('../dream-synthesis.ts').DreamDiscovery) =>
+      ctx.sidebarRight.openTab('dream-flashback', { params: discovery }) }),
+  }, DreamSynthesisView))
   ctx.slots.inject('conversation.chat.node', () => ctx.slots.register(
     { name: 'conversation.chat.node', key: 'user', locale: NS }, UserMessageNodeView))
   ctx.slots.inject('conversation.chat.node', () => ctx.slots.register(

@@ -2462,3 +2462,23 @@ describe('built-in conversation node Definitions', () => {
     })
   })
 })
+
+
+describe('Dreamer synthesis boundary', () => {
+  it('restores a receipt-backed final card and its per-run disclosure from durable events', () => {
+    const payload = { status: 'ready_to_complete', presentation: 'dream-synthesis-v1',
+      runId: '11111111-1111-4111-a111-111111111111', summary: 'I explored fundraising.', next: '', discoveries: [] }
+    const entries = [at(1, 'turn/start', { turn: 1 }), at(2, 'step/start', { turn: 1, step: 1 }),
+      at(3, 'tool/call', { turn: 1, step: 1, callId: 'finish', name: 'dream_finish', arguments: '{}' }),
+      at(4, 'tool/result', { turn: 1, step: 1, message: toolResult('finish', JSON.stringify(payload)) }, { surfaceOp: 'append' }),
+      at(5, 'step/end', { turn: 1, step: 1 }), at(6, 'turn/end', { turn: 1, reason: { kind: 'stop' } })]
+    const restored = snapshot(assembler(entries))
+    expect(node(restored, 'dream-synthesis')).toBeDefined()
+    expect(restored.timeline.turns.get(1)?.data.get('turn-process')).toMatchObject({
+      dreamSynthesis: true, answerAnchorSeq: 3, answerStep: 1,
+    })
+    const interrupted = snapshot(assembler(entries.slice(0, 3)))
+    expect(node(interrupted, 'dream-synthesis')).toBeUndefined()
+    expect(interrupted.timeline.turns.get(1)?.data.get('turn-process')?.answerAnchorSeq).toBeNull()
+  })
+})

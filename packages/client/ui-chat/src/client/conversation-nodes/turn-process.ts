@@ -1,3 +1,4 @@
+import { readDreamSynthesis } from '../dream-synthesis.ts'
 import type { Context } from '@deepseek-ai/cordis'
 import type {
   ConversationLocation, ConversationNodeContext, ConversationNodeDefinition, TurnLocation,
@@ -29,6 +30,7 @@ declare module '@deepseek-ai/dsh-client-ui-conversation/client' {
 
 interface TurnProcessState {
   readonly turn: number
+  readonly dreamFinish?: { callId: string; seq: number; step: number; confirmed?: boolean }
   readonly assistantStartByStep: ReadonlyMap<number, number>
   readonly messageCountByStep: ReadonlyMap<number, number>
   readonly otherStartSeq?: number
@@ -124,6 +126,12 @@ function latestAnswer(turn: TurnLocation): Readonly<FinalAssistantChatData> | nu
 function processSpec(state: TurnProcessState, turn: TurnLocation): TurnProcessSpec | null {
   const controlAnchorSeq = state.controlAnchorSeq
   if (controlAnchorSeq === undefined) return null
+  if (state.dreamFinish?.confirmed) return {
+    dreamSynthesis: true, turn: turn.turn, controlAnchorSeq, processStartSeq: turn.start?.seq ?? controlAnchorSeq,
+    answerAnchorSeq: state.dreamFinish.seq, answerStep: state.dreamFinish.step,
+    inlineReasoning: false, messageCount: state.messageCount, toolCallCount: state.toolCallCount,
+    subagentCount: state.subagentCount,
+  }
   const answer = latestAnswer(turn)
   const counts = {
     messageCount: answer === null
@@ -169,6 +177,15 @@ function processSpec(state: TurnProcessState, turn: TurnLocation): TurnProcessSp
 
 function updateProcessState(state: TurnProcessState, event: ConversationEvent): TurnProcessState {
   let current = state
+  if (event.type === 'tool/call' && event.data.name === 'dream_finish') current = {
+    ...current, dreamFinish: { callId: String(event.data.callId), seq: event.seq, step: event.data.step },
+  }
+  if (event.type === 'tool/result' && current.dreamFinish?.callId === String(event.data.message.source.callId)) {
+    const result = event.data.message.content[0]
+    if (!result.isError && readDreamSynthesis(result.content)) current = {
+      ...current, dreamFinish: { ...current.dreamFinish, confirmed: true },
+    }
+  }
   if (event.type === 'assistant/message'
     && event.surfaceOp === 'append'
     && hasAssistantReplyContent(toAssistantBlocks(event.data.message.content))) {

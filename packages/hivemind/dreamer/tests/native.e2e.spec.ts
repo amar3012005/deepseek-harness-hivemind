@@ -250,8 +250,8 @@ export function apply(ctx) {
     expect((await duplicate.json()).runId).toBe(result.runId)
     await vi.waitFor(
       async () => {
-        const rows = await admin.query('SELECT status,output_ids FROM harness_dream_runs WHERE id=$1', [result.runId])
-        expect(rows.rows[0].status).toBe('completed')
+        const rows = await admin.query('SELECT status,output_ids,child_id FROM harness_dream_runs WHERE id=$1', [result.runId])
+        expect(rows.rows[0].status, JSON.stringify(app.ctx.agents.get(rows.rows[0].child_id)?.session.snapshotEvents().filter(event => event.type === 'tool/result').slice(-2))).toBe('completed')
         expect(rows.rows[0].output_ids).toHaveLength(1)
       },
       { timeout: 20000 },
@@ -264,7 +264,7 @@ export function apply(ctx) {
     ).rows
     expect(memories[0].name).toBe('Flashbacks')
     expect(memories[0].policy).toBe('org_visible')
-    expect(memories[0].content).toContain('DERIVED FLASHBACK')
+    expect(memories[0].content).toBe('A supported canary inference.')
     const events = await admin.query('SELECT event_type FROM harness_session_events WHERE session_id=$1', [run.child_id])
     expect(events.rows.some(row => row.event_type === 'subagent/descriptor')).toBe(true)
     await vi.waitFor(() => expect(callbacks).toHaveLength(1))
