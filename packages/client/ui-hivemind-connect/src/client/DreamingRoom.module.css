@@ -8,3 +8,11 @@
 .agenda p { font-size: 12px; color: var(--color-text-secondary, #777); }
 .agenda button { border: 1px solid #8883; border-radius: 8px; padding: 6px 10px; background: #8881; color: inherit; }
 .status { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+
+/* This dedicated room has one toolbar owner; ordinary session utilities remain
+   available in the other rooms. Use public slot markers, never bundle class names. */
+:global([data-conversation-header-corner]):has(.root) > :global([data-slot='conversation.session.header.actions']),
+:global([data-conversation-header-corner]):has(.root) > :global([data-slot='conversation.session.header.corner']),
+:global([data-conversation-header-corner]):has(.root) > :global([data-slot='conversation.session.header.utilities']) > :not(.root) {
+  display: none !important;
+}
