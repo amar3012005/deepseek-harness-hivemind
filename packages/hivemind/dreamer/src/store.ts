@@ -21,6 +21,7 @@ export interface DreamRun {
   parent_id: string
   child_id: string
   status: string
+  attempts: number
   checkpoint: { summary?: string; next?: string; complete?: boolean }
   lease_token: string | null
   output_ids: string[]
@@ -138,9 +139,10 @@ export class DreamStore {
       if (prior) return prior
       const settings = (await db.query<DreamSetting>('SELECT * FROM harness_dream_settings WHERE org_id=$1 FOR UPDATE', [orgId])).rows[0]
       if (!settings?.enabled || settings.revision !== revision || !settings.project_id) throw new Error('dreamer_disabled_or_stale')
+      const session = await this.sessionAddress({ orgId, userId: settings.user_id }, db)
       const id = stableId(`${orgId}:${key}`),
-        parent = `session-${stableId(`dream-parent:${id}`)}`,
-        child = `session-${stableId(`dream-child:${id}`)}`
+        parent = session.parentSessionId,
+        child = session.childSessionId
       await db.query('UPDATE harness_dream_due SET has_work=true WHERE org_id=$1', [orgId])
       const accepted = (
         await db.query<DreamRun>(
@@ -151,6 +153,17 @@ export class DreamStore {
       if (!accepted) throw new Error('dreamer_run_not_accepted')
       return accepted
     })
+  }
+  /** Reuse the earliest retained tenant conversation; occurrence receipts remain separate. */
+  async sessionAddress(owner: Pick<HivemindPrincipal, 'orgId' | 'userId'>, db?: PoolClient): Promise<{ parentSessionId: string; childSessionId: string; mode: 'continuable' }> {
+    const read = async (connection: PoolClient) => {
+      const first = (await connection.query<{ parent_id: string; child_id: string }>(
+        'SELECT parent_id,child_id FROM harness_dream_runs WHERE org_id=$1 ORDER BY created_at,id LIMIT 1', [owner.orgId],
+      )).rows[0]
+      return { parentSessionId: first?.parent_id ?? `session-${stableId(`dream-parent:${owner.orgId}`)}`,
+        childSessionId: first?.child_id ?? `session-${stableId(`dream-child:${owner.orgId}`)}`, mode: 'continuable' as const }
+    }
+    return db ? read(db) : this.scoped(owner, read)
   }
   async get(owner: HivemindPrincipal, id: string): Promise<DreamRun | undefined> {
     return this.scoped(
@@ -195,10 +208,11 @@ export class DreamStore {
         await db.query('COMMIT')
         return undefined
       }
+      const session = await this.sessionAddress({ orgId: row.org_id, userId: row.user_id }, db)
       const token = stableId(`${run.id}:${Date.now()}:${Math.random()}`)
       await db.query(
-        "UPDATE harness_dream_runs SET status='running',lease_token=$2,lease_until=now()+($3::int*interval '1 millisecond'),attempts=attempts+1 WHERE id=$1",
-        [run.id, token, leaseMs],
+        "UPDATE harness_dream_runs SET status='running',lease_token=$2,lease_until=now()+($3::int*interval '1 millisecond'),attempts=attempts+1,parent_id=$4,child_id=$5 WHERE id=$1",
+        [run.id, token, leaseMs, session.parentSessionId, session.childSessionId],
       )
       await db.query("UPDATE harness_dream_due SET lease_token=$2,lease_until=now()+($3::int*interval '1 millisecond') WHERE org_id=$1", [
         row.org_id,
@@ -206,7 +220,7 @@ export class DreamStore {
         leaseMs,
       ])
       await db.query('COMMIT')
-      return { ...run, status: 'running', lease_token: token }
+      return { ...run, parent_id: session.parentSessionId, child_id: session.childSessionId, status: 'running', attempts: run.attempts + 1, lease_token: token }
     } catch (error) {
       await db.query('ROLLBACK')
       throw error
@@ -256,7 +270,7 @@ export class DreamStore {
       async db =>
         (
           await db.query(
-            'SELECT id,status,checkpoint,output_ids,created_at,updated_at FROM harness_dream_runs WHERE org_id=$1 ORDER BY created_at DESC LIMIT 10',
+            'SELECT id,status,checkpoint,output_ids,created_at,updated_at,error_code,parent_id,child_id FROM harness_dream_runs WHERE org_id=$1 ORDER BY created_at DESC LIMIT 10',
             [owner.orgId],
           )
         ).rows,

@@ -49,6 +49,12 @@
     },
     {
       "path": "../../util/values"
+    },
+    {
+      "path": "../../core/agent-default-model"
+    },
+    {
+      "path": "../../preset/agent-presets"
     }
   ]
 }

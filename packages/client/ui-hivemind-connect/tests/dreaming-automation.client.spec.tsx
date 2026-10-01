@@ -7,12 +7,13 @@ const response = (value: unknown) => new Response(JSON.stringify(value))
 describe('Dreaming automation projection', () => {
   it('shows the existing next run and durable history without creating another schedule', async () => {
     const request = vi.fn().mockResolvedValue(response({ enabled: true, activity: {
-      cron: '0 2 * * *', timezone: 'Europe/Berlin', nextRunAt: '2030-01-01T01:00:00Z', scheduleState: 'scheduled',
+      session: { parentSessionId: 'session-parent', childSessionId: 'session-child', mode: 'continuable' }, cron: '0 2 * * *', timezone: 'Europe/Berlin', nextRunAt: '2030-01-01T01:00:00Z', scheduleState: 'scheduled',
       runs: [{ id: 'run-1', status: 'completed', created_at: '2029-12-31T01:00:00Z', updated_at: '2029-12-31T01:05:00Z', output_ids: ['m1', 'm2'] }],
     } }))
     vi.stubGlobal('fetch', request)
     render(<DreamingAutomation />)
     await screen.findByText(/Europe\/Berlin/)
+    expect(screen.getByRole('link', { name: 'Nightly Dreaming' }).getAttribute('href')).toBe('/hivemind/app/overview/session/session-child?dreamingParent=session-parent')
     fireEvent.click(screen.getByRole('button', { name: 'Run history (1)' }))
     expect(screen.getByText(/2 Flashbacks/)).toBeTruthy()
     expect(request.mock.calls[0]![0]).toBe('/hivemind/dreamer/settings?view=activity')

@@ -66,6 +66,18 @@ suite('PostgreSQL Dreamer isolation and durability', () => {
     expect(runs[0]!.id).toBe(runs[1]!.id)
     expect(await store.get(b, runs[0]!.id)).toBeUndefined()
   })
+  it('keeps one tenant session across nightly occurrences and separates tenants', async () => {
+    const setting = (await store.setting(a))!
+    const first = await store.accept(a.orgId, `${a.orgId}:dreaming:901`, '901', 'dreaming', setting.revision)
+    const second = await store.accept(a.orgId, `${a.orgId}:dreaming:902`, '902', 'dreaming', setting.revision)
+    expect(first.id).not.toBe(second.id)
+    expect(first.parent_id).toBe(second.parent_id)
+    expect(first.child_id).toBe(second.child_id)
+    expect((await store.sessionAddress(a)).childSessionId).toBe(first.child_id)
+    expect((await store.sessionAddress(b)).childSessionId).not.toBe(first.child_id)
+    // These future occurrences must not change the admission fixture below.
+    await admin.query("UPDATE harness_dream_runs SET status='completed' WHERE id=ANY($1::uuid[])", [[first.id,second.id]])
+  })
   it('globally limits admission, keeps a single lease per tenant, and fences stale workers', async () => {
     const run = await store.claim(1, 10000)
     expect(run).toBeDefined()

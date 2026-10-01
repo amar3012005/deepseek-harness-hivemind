@@ -142,7 +142,7 @@ suite('native Dreamer workflow', () => {
       config: { connectionStringEnv: DREAM_CANARY_DB, schema: ${schema}, leaseTtlMs: 30000, maxConnections: 4 }
     - id: hivemind-dreamer
       name: '@deepseek-ai/dsh-hivemind-dreamer'
-      config: { connectionStringEnv: DREAM_CANARY_DB, schema: ${schema}, dispatchBaseEnv: DREAM_CANARY_DISPATCH, adminTokenEnv: DREAM_CANARY_TOKEN, dispatchTokenEnv: DREAM_CANARY_TOKEN, callbackTokenEnv: DREAM_CANARY_TOKEN, pollMs: 100, modelProvider: dream-canary, model: dream }
+      config: { connectionStringEnv: DREAM_CANARY_DB, schema: ${schema}, dispatchBaseEnv: DREAM_CANARY_DISPATCH, adminTokenEnv: DREAM_CANARY_TOKEN, dispatchTokenEnv: DREAM_CANARY_TOKEN, callbackTokenEnv: DREAM_CANARY_TOKEN, pollMs: 100 }
 `,
     )
     await boot()
@@ -163,6 +163,7 @@ suite('native Dreamer workflow', () => {
       agentPresets: { includeShippedRoot: false, roots: [{ path: join(root, 'presets'), trust: 'system' }], default: 'hivemind-chat' },
     })
     app.ctx.effect(() => app.ctx.llm.registerAdapter(['dream-canary'], model))
+    await app.ctx.agentDefaultModel.saveSelection({ provider: 'dream-canary', model: 'dream' })
     app.ctx.provide('hivemindMemory', {
       context: async () => ({}),
       profiles: async () => ({}),
@@ -268,6 +269,9 @@ suite('native Dreamer workflow', () => {
     const result = (await response.json()) as { runId: string }
     await model.paused.promise
     const before = (await admin.query('SELECT * FROM harness_dream_runs WHERE id=$1', [result.runId])).rows[0]
+    const first = (await admin.query('SELECT child_id,parent_id FROM harness_dream_runs ORDER BY created_at LIMIT 1')).rows[0]
+    expect(before.child_id).toBe(first.child_id)
+    expect(before.parent_id).toBe(first.parent_id)
     expect(before.checkpoint.summary).toBe('Read source, ready to derive.')
     const parent = app.ctx.agents.get(before.parent_id as never)!
     app.ctx.subagents.interrupt(before.child_id as never, { kind: 'ancestor', agent: parent })

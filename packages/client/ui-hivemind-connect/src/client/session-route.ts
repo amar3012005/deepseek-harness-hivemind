@@ -26,7 +26,7 @@ type Route =
   | { readonly kind: 'invalid' }
 
 interface BrowserRoute {
-  readonly location: Pick<Location, 'pathname'>
+  readonly location: Pick<Location, 'pathname'> & { readonly search?: string }
   readonly history: Pick<History, 'pushState' | 'replaceState' | 'state'>
   addEventListener(type: 'popstate', listener: () => void): void
   removeEventListener(type: 'popstate', listener: () => void): void
@@ -185,12 +185,25 @@ export function setupHivemindSessionRouting(
     }).finally(() => { resolving = false })
   }
 
+  const dreamingAddress = () => {
+    const parent = new URLSearchParams(browser.location.search ?? '').get('dreamingParent')
+    const route = parseHivemindSessionRoute(browser.location.pathname)
+    if (route.kind !== 'session' || parent === null || !/^session-[a-z0-9-]+$/u.test(parent)) return undefined
+    return { parentSessionId: parent as SessionId, childSessionId: route.sessionId, mode: 'continuable' as const }
+  }
   const applyLocation = (): void => {
     if (!isHivemindRoute(browser.location.pathname)) return
     currentBase = routeBase(browser.location.pathname)
     const state = sessions.list.getSnapshot()
     if (state.phase !== 'ready') return
     const route = parseHivemindSessionRoute(browser.location.pathname)
+    const dreaming = dreamingAddress()
+    if (dreaming !== undefined) {
+      initialized = true
+      observedCurrent = dreaming.childSessionId
+      sessions.openSubagent(dreaming)
+      return
+    }
     if (route.kind === 'session') {
       const knownSubagent = state.byId[route.sessionId]?.origin === 'subagent'
       if (!knownSubagent) {
@@ -219,6 +232,7 @@ export function setupHivemindSessionRouting(
       applyLocation()
       return
     }
+    if (dreamingAddress()?.childSessionId === state.currentAddress?.childSessionId && state.currentAddress !== undefined) return
     const current = rootForRoute(state, state.current)
     if (current === undefined) {
       const route = parseHivemindSessionRoute(browser.location.pathname)

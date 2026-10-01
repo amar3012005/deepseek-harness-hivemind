@@ -55,6 +55,4 @@ References: `docs/subsystems/subagent.md`, `docs/subsystems/schedule.md`.
 Automation tasks includes a read-only Nightly Dreaming card. Its next run comes
 from the existing Cloudflare trigger; its history comes from the tenant-scoped
 PostgreSQL ledger. The On/Off control remains on main HIVEMIND Settings.
-Each nightly occurrence owns a new parent/child session pair. Retries resume
-that pair and checkpoint; subsequent nights use dream_history and Flashbacks
-for continuity rather than one ever-growing conversation.
+Each tenant retains one native continuable Dreamer conversation. The earliest retained parent/child pair is reused, including after upgrade; occurrence rows retain separate checkpoints, output receipts and callbacks. The Nightly Dreaming title opens the native child address on the dedicated Dreaming route. Both controller and child remain excluded from Recent through native subagent classification. Cold activation mounts the Chat preset and explicitly resolves a model/provider through agentDefaultModel; a failed model turn terminates its occurrence instead of retrying indefinitely. Native compaction controls growing conversation context.

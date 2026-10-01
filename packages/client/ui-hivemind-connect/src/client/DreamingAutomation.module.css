@@ -4,3 +4,5 @@
 .card button { border: 0; padding: 6px 0; background: transparent; color: inherit; cursor: pointer; }
 .card a { display: block; margin-top: 8px; font-size: 13px; color: var(--dsw-alias-label-link, #117dff); }
 .card ol { margin: 8px 0; padding-left: 20px; }
+
+.heading .sessionLink { margin: 0; font-size: inherit; font-weight: 600; color: inherit; }

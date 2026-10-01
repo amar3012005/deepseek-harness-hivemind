@@ -215,3 +215,27 @@ describe('HIVE native session routes', () => {
     expect(window.location.pathname).toBe(`${HIVE_OVERVIEW_PATH}/session/session-recent`)
   })
 })
+
+describe('dedicated Dreaming conversation route', () => {
+  it('opens the native child address without creating or selecting a regular session', () => {
+    window.history.replaceState(null, '', `${HIVE_OVERVIEW_PATH}/session/session-child?dreamingParent=session-parent`)
+    const f = fixture(state())
+    const child = vi.fn()
+    f.sessions.openSubagent = child
+    const dispose = setupHivemindSessionRouting(f.sessions)
+    disposers.push(dispose)
+    expect(child).toHaveBeenCalledWith({ parentSessionId: 'session-parent', childSessionId: 'session-child', mode: 'continuable' })
+    expect(f.open).not.toHaveBeenCalled()
+    expect(f.create).not.toHaveBeenCalled()
+    expect(window.location.search).toBe('?dreamingParent=session-parent')
+  })
+  it('keeps the child address on subsequent list notifications', () => {
+    window.history.replaceState(null, '', `${HIVE_OVERVIEW_PATH}/session/session-child?dreamingParent=session-parent`)
+    const f = fixture(state())
+    f.sessions.openSubagent = vi.fn()
+    disposers.push(setupHivemindSessionRouting(f.sessions))
+    f.set({ ...state('session-child'), currentAddress: { parentSessionId: sid('session-parent'), childSessionId: sid('session-child'), mode: 'continuable' } })
+    expect(f.open).not.toHaveBeenCalled()
+    expect(window.location.search).toBe('?dreamingParent=session-parent')
+  })
+})

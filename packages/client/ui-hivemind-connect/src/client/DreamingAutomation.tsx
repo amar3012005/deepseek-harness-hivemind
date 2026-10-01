@@ -3,7 +3,7 @@ import css from './DreamingAutomation.module.css'
 interface Run { id: string; status: string; created_at: string; updated_at: string; output_ids: string[] }
 interface Activity {
   enabled: boolean
-  activity: { timezone: string; cron: string; nextRunAt: string | null; scheduleState: string; runs: Run[] }
+  activity: { session?: { parentSessionId: string; childSessionId: string; mode: 'continuable' }; timezone: string; cron: string; nextRunAt: string | null; scheduleState: string; runs: Run[] }
 }
 /** Read-only view of the existing dispatcher and durable tenant ledger, never a second schedule. */
 export function DreamingAutomation() {
@@ -33,7 +33,7 @@ export function DreamingAutomation() {
   const date = (value: string) => new Date(value).toLocaleString(undefined, { timeZone: timing?.timezone, dateStyle: 'medium', timeStyle: 'short' })
   const latest = timing?.runs[0]
   return <section className={css.card} aria-label="Nightly Dreaming">
-    <div className={css.heading}><strong>Nightly Dreaming</strong><span>{state ? state.enabled ? 'On' : 'Off' : 'Loading…'}</span></div>
+    <div className={css.heading}><a className={css.sessionLink} href={timing?.session ? `/hivemind/app/overview/session/${encodeURIComponent(timing.session.childSessionId)}?dreamingParent=${encodeURIComponent(timing.session.parentSessionId)}` : undefined}>Nightly Dreaming</a><span>{state ? state.enabled ? 'On' : 'Off' : 'Loading…'}</span></div>
     <p>Company memory exploration → Flashbacks</p>
     {error && <p role="alert">Dreaming activity could not be refreshed. Displayed details may be stale.</p>}
     {timing && <>

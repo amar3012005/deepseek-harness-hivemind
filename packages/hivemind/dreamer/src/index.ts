@@ -13,6 +13,8 @@ import type { HivemindPrincipal } from '@deepseek-ai/dsh-hivemind-execution-scop
 import type {} from '@deepseek-ai/dsh-host-webserver'
 import type {} from '@deepseek-ai/dsh-client-connection'
 import type {} from '@deepseek-ai/dsh-subagent'
+import type {} from '@deepseek-ai/dsh-agent-default-model'
+import type {} from '@deepseek-ai/dsh-agent-presets'
 import type {} from '@deepseek-ai/dsh-session-persistence'
 import type {} from '@deepseek-ai/dsh-hivemind-memory'
 import type {} from '@deepseek-ai/dsh-skill'
@@ -23,6 +25,8 @@ export const name = 'hivemind-dreamer'
 export const inject = [
   'agents',
   'subagents',
+  'agentDefaultModel',
+  'agentPresets',
   'sessions',
   'sessionPersistence',
   'tools',
@@ -44,6 +48,7 @@ export interface Config {
   pollMs: number
   leaseMs: number
   requestTimeoutMs: number
+  maxRecoveryAttempts: number
   provider: string
   model?: string
   modelProvider?: string
@@ -62,6 +67,7 @@ export const Config: Schema<Config> = Schema.object({
   maxConcurrentRuns: Schema.natural().min(1).max(100).default(2),
   pollMs: Schema.natural().min(100).default(5000),
   leaseMs: Schema.natural().min(10000).default(60000),
+  maxRecoveryAttempts: Schema.natural().min(1).max(20).default(3),
   requestTimeoutMs: Schema.natural().min(1000).default(15000),
   provider: Schema.string().default('spawn'),
   model: Schema.string(),
@@ -124,7 +130,15 @@ export function apply(ctx: Context, config: Config): void {
   const store = new DreamStore(pool)
   const active = new Map<
     string,
-    { run: DreamRun; parent: AgentHandle | undefined; completion: boolean; finished: boolean; settled: Promise<void>; settle: () => void }
+    {
+      run: DreamRun
+      parent: AgentHandle | undefined
+      completion: boolean
+      finished: boolean
+      failure?: string
+      settled: Promise<void>
+      settle: () => void
+    }
   >()
   const tasks = new Set<Promise<void>>()
   let disposed = false,
@@ -245,7 +259,8 @@ export function apply(ctx: Context, config: Config): void {
           scheduleState = 'unavailable'
         }
       }
-      activity = { cron: config.cron, timezone: config.timezone, nextRunAt, scheduleState, runs: await store.previous(p) }
+      activity = { session: await store.sessionAddress(p), cron: config.cron, timezone: config.timezone,
+        nextRunAt, scheduleState, runs: await store.previous(p) }
     }
     reply(res, 200, {
       ...(activity === undefined ? {} : { activity }),
@@ -563,6 +578,13 @@ export function apply(ctx: Context, config: Config): void {
       },
     }),
   )
+  ctx.on('agent/request', async ({ agent }, next) => {
+    const request = await next()
+    if (!active.has(agent.session.header.id)) return request
+    const defaults = ctx.agentDefaultModel.currentSelection()
+    return { ...request, provider: config.modelProvider ?? request.provider ?? defaults.provider,
+      model: config.model ?? request.model ?? defaults.model }
+  })
   ctx.on('agent/created', ({ agent }) => {
     if (active.has(agent.session.header.id)) {
       for (const definition of definitions) agent.ctx.tools.register(definition)
@@ -577,6 +599,7 @@ export function apply(ctx: Context, config: Config): void {
   ctx.on(
     'agent/pre-step',
     async ({ agent }, next) => {
+      if ([...active.values()].some(value => value.parent?.agent === agent)) agent.cancel({ kind: 'hook', reason: 'dreamer-controller' })
       const decision = await next(),
         entry = active.get(agent.session.header.id)
       if (!entry || decision.kind !== 'enter') return decision
@@ -603,6 +626,8 @@ export function apply(ctx: Context, config: Config): void {
     const entry = active.get(agent.session.header.id)
     if (!entry) return
     await ctx.sessions.flush(agent.session)
+    if (reason.kind === 'error') entry.failure = reason.error.message
+    if (reason.kind === 'completed' && !entry.completion) entry.failure = 'dream_finish_missing'
     if (reason.kind === 'completed' && entry.completion) {
       await store.update(entry.run, { status: 'completed' })
       entry.finished = true
@@ -614,7 +639,7 @@ export function apply(ctx: Context, config: Config): void {
   const execute = async (run: DreamRun): Promise<void> => {
     const completion = Promise.withResolvers<void>()
     const p = owner(run),
-      entry = {
+      entry: NonNullable<ReturnType<typeof active.get>> = {
         run,
         parent: undefined as AgentHandle | undefined,
         completion: false,
@@ -623,6 +648,8 @@ export function apply(ctx: Context, config: Config): void {
         settle: () => completion.resolve(),
       }
     active.set(run.child_id, entry)
+    const selection = ctx.agentDefaultModel.currentSelection()
+    const agentOptions = { provider: config.modelProvider ?? selection.provider, model: config.model ?? selection.model }
     let heartbeat: ReturnType<typeof setInterval> | undefined
     try {
       await ctx.hivemindExecutionScope.run(p, async () => {
@@ -631,8 +658,8 @@ export function apply(ctx: Context, config: Config): void {
           childId = SessionId(run.child_id)
         const existed = await ctx.sessionPersistence.stat(parentId)
         entry.parent = existed
-          ? await ctx.agents.resume({ resumeSessionId: parentId })
-          : await ctx.agents.create({ sessionId: parentId, meta: { agentPreset: 'hivemind-chat', origin: 'subagent' } })
+          ? await ctx.agents.resume({ resumeSessionId: parentId, agentOptions, setup: async (agentCtx) => { await ctx.agentPresets.mount(agentCtx, 'hivemind-chat') } })
+          : await ctx.agents.create({ agentOptions, sessionId: parentId, meta: { agentPreset: 'hivemind-chat', origin: 'subagent' }, setup: async (agentCtx) => { await ctx.agentPresets.mount(agentCtx, 'hivemind-chat') } })
         const parent = entry.parent
         await ctx.sessions.flush(parent.agent.session)
         heartbeat = setInterval(
@@ -673,21 +700,24 @@ export function apply(ctx: Context, config: Config): void {
               prompt,
               persona: DREAM_PERSONA,
               toolFilter: { allow: DREAM_TOOLS },
-              ...(config.model
-                ? { agentOptions: { model: config.model, ...(config.modelProvider ? { provider: config.modelProvider } : {}) } }
-                : {}),
+              agentOptions,
             },
             signal: new AbortController().signal,
           })
         await ctx.sessions.flush(entry.parent.agent.session)
         // The child has its own durable Session; continuation manager drives and tears it down.
         await entry.settled
-        if (!entry.finished && !disposed) await store.update(run, { status: 'queued', error: 'continuation_needed' })
+        if (!entry.finished && !disposed) {
+          // A failed model turn is terminal for this occurrence, never an unbounded paid retry.
+          await store.update(run, entry.failure
+            ? { status: 'failed', error: 'dream_turn_failed' }
+            : { status: 'queued', error: 'continuation_needed' })
+        }
       })
     } catch (error) {
       if (!disposed) {
         try {
-          await store.update(run, { status: 'queued', error: error instanceof Error ? error.name : 'execution_error' })
+          await store.update(run, { status: run.attempts >= config.maxRecoveryAttempts ? 'failed' : 'queued', error: error instanceof Error ? error.name : 'execution_error' })
         } catch {
           /* lost lease stays recoverable */
         }
