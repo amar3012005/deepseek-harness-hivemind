@@ -236,8 +236,25 @@ export function apply(ctx: ClientContext): void {
   }
   const selectEmployee = async (sessionId: SessionId, id: string | null): Promise<boolean> => {
     if (ctx.sessions.binding(sessionId) === undefined) return false
-    const switched = await ctx.remote.agentPresets.select(sessionId, id === null ? 'hivemind-chat' : 'hivemind-hyperagents')
-    if (!switched.ok) return false
+    const targetPreset = id === null ? 'hivemind-chat' : 'hivemind-hyperagents'
+    const summary = ctx.sessions.list.getSnapshot().byId[sessionId]
+    if ((summary?.projectionValues?.agentPreset ?? summary?.agentPreset) !== targetPreset) {
+      const switched = await ctx.remote.agentPresets.select(sessionId, targetPreset)
+      if (!switched.ok) return false
+    }
+    // Composition commit precedes asynchronous plugin activation. Read the
+    // native command catalog until the existing selection command is ready;
+    // never replay the state-changing selection command speculatively.
+    let commandReady = false
+    for (let attempt = 0; attempt < 30; attempt += 1) {
+      const catalog = await ctx.remote.commands.list(sessionId).catch(() => null)
+      if (catalog?.ok && catalog.value.some(command => command.name === 'hivemind-employee')) {
+        commandReady = true
+        break
+      }
+      await new Promise(resolve => setTimeout(resolve, 100))
+    }
+    if (!commandReady) return false
     const binding = ctx.sessions.binding(sessionId)
     if (binding === undefined) return false
     const events = binding.eventSource
