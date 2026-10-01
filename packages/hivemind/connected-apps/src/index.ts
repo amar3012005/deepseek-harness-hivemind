@@ -731,6 +731,40 @@ function bridgeResult(event: unknown): { callId: string; value: Record<string, u
   return undefined
 }
 
+/** Restore projections for the selected atomic query, never another workflow step. */
+function executionResultFields(execution: Pick<ToolExecution, 'agent'>, slug: string, workflowId?: string): string[] {
+  const events = execution.agent?.session.snapshotEvents() ?? []
+  const calls = new Map<string, Record<string, unknown>>()
+  for (const event of events) {
+    const call = bridgeCall(event)
+    if (call !== undefined) calls.set(call.callId, call.args)
+  }
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const result = bridgeResult(events[index])
+    if (result === undefined) continue
+    const args = calls.get(result.callId)
+    if (args?.['action'] !== 'search') continue
+    if (workflowId !== undefined && (returnedWorkflowSessionId(result.value) ?? workflowSessionId(args)) !== workflowId) continue
+    const data = record(result.value['result']) ? result.value['result'] : result.value
+    const container = record(data['data']) ? data['data'] : data
+    const queries = Array.isArray(args['queries']) ? args['queries'] : []
+    const results = Array.isArray(container['results']) ? container['results'] : []
+    const match = results.find(item => record(item) && discoveredToolSlugs(item).includes(slug))
+    if (!record(match)) continue
+    const candidates = queries.filter(query => record(query) && query['use_case'] === match['use_case'])
+    const query = candidates.length === 1 ? candidates[0] : queries.length === 1 ? queries[0] : undefined
+    return record(query) ? stringArray(query['result_fields']) : []
+  }
+  return []
+}
+
+/** Canonicalize object keys so retry identity does not depend on JSON key order. */
+function canonicalOperation(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(canonicalOperation)
+  if (!record(value)) return value
+  return Object.fromEntries(Object.keys(value).sort().map(key => [key, canonicalOperation(value[key])]))
+}
+
 /** A completed governed write is terminal for the same native retry identity. */
 function completedWriteForIdempotencyKey(
   events: readonly unknown[],
@@ -2105,7 +2139,7 @@ export function apply(ctx: Context, config: Config = {}): void {
       const idempotencyKey = discoveryKey({
         workflow: key,
         tool_slug: slug,
-        arguments: executionArguments,
+        arguments: canonicalOperation(executionArguments),
         operation_id: stringValue(args.operation_id) ?? 'default',
       })
       if (MUTATING_TOOL.test(slug) && execution.agent !== undefined) {
@@ -2143,7 +2177,9 @@ export function apply(ctx: Context, config: Config = {}): void {
       }
       const providerResult = await session.execute(slug, executionArguments)
       const failed = providerResult.error != null || providerResult.data['successful'] === false || providerResult.data['success'] === false
-      const fields = stringArray(args.result_fields)
+      const fields = args.result_fields === undefined
+        ? executionResultFields(execution, slug, workflowSessionId(args))
+        : stringArray(args.result_fields)
       const sourceReceipt = await saveReceipt(
         ctx, config, execution, JSON.stringify(providerResult), `composio-${slug.toLowerCase()}.json`, {
           tool: slug,
