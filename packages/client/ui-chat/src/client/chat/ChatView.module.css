@@ -220,3 +220,9 @@
 .modalAction {
   min-width: 72px;
 }
+
+/* Session selection stays inside the resident chat. Keep fetch status accessible
+   without flashing implementation text over the conversation canvas. */
+:global(html[data-dsh-mode='hivemind-chat']) :global([data-chat-history-status]) {
+  position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap;
+}

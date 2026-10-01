@@ -507,7 +507,7 @@
    only when it contains the semantic Harness scroll root. */
 :global(html[data-dsh-mode='hivemind-chat']) :global(main:has([data-conversation-scroll])),
 :global(html[data-dsh-mode='hivemind-chat']) :global(section:has([data-conversation-scroll])) {
-  height: calc(100vh - 56px) !important;
+  height: calc(var(--hm-app-viewport-height, 100vh) - 56px) !important;
   max-height: none;
   overflow: hidden;
 }

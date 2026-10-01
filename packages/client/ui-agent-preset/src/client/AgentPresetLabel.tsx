@@ -55,7 +55,7 @@ export function AgentPresetLabel({
     if (preset !== undefined) void load()
   }, [preset, load])
 
-  if (preset === undefined) return null
+  if (preset === undefined || preset === 'hivemind-chat') return null
 
   const option = options.find(entry => entry.id === preset)
   const text = option === undefined ? undefined : presetDisplayText(option, t)
