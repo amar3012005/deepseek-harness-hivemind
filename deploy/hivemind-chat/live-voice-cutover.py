@@ -8,6 +8,19 @@ import pathlib
 import subprocess
 import sys
 
+def home_export_filter(member, destination):
+    # Cordis creates runtime package links in profiles/node_modules. Preserve
+    # only that known image-rooted link family; all other paths use data rules.
+    target = pathlib.PurePosixPath(member.linkname)
+    if (member.issym() and member.name.removeprefix('./').startswith('profiles/node_modules/')
+            and member.linkname.startswith('/opt/deepseek-harness/') and '..' not in target.parts):
+        safe = copy.copy(member)
+        safe.linkname = '.'
+        safe = tarfile.data_filter(safe, destination)
+        safe.linkname = member.linkname
+        return safe
+    return tarfile.data_filter(member, destination)
+
 container, service, expected, image, sha, release = sys.argv[1:]
 assert len(sha) == 40 and all(c in '0123456789abcdef' for c in sha)
 assert release and '/' not in release and '..' not in release
@@ -41,7 +54,7 @@ os.chmod(home.parent, 0o700)
 home.mkdir(mode=0o700)
 archive = subprocess.check_output(['docker', 'exec', container, 'tar', '-C', '/tmp/dsh', '-cf', '-', '.'])
 with tarfile.open(fileobj=io.BytesIO(archive)) as bundle:
-    bundle.extractall(home, filter='data')
+    bundle.extractall(home, filter=home_export_filter)
 for entry in home.rglob('*'):
     os.chown(entry, 1000, 1000, follow_symlinks=False)
 os.chown(home, 1000, 1000)
