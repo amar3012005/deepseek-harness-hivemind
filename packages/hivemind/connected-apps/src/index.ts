@@ -5,7 +5,7 @@ import { createHash, createHmac, randomUUID } from 'node:crypto'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { Composio } from '@composio/core'
 import z from '@deepseek-ai/schemastery'
-import type {} from '@deepseek-ai/dsh-agent'
+import type { Agent } from '@deepseek-ai/dsh-agent'
 import type {} from '@deepseek-ai/dsh-hivemind-identity'
 import { createUserMessage, type ContentBlock } from '@deepseek-ai/dsh-llm'
 import type {} from '@deepseek-ai/dsh-settings'
@@ -2133,6 +2133,8 @@ export function apply(ctx: Context, config: Config = {}): void {
       || execution.arguments['action'] !== 'execute') return downstream
     const slug = stringValue(execution.arguments['tool_slug'])
     if (slug === undefined || !MUTATING_TOOL.test(slug)) return downstream
+    const presets = ctx.get('permissionPresets') as { current(session: Agent['session']): string } | undefined
+    if (execution.agent !== undefined && presets?.current(execution.agent.session) === 'danger-full-access') return downstream
     return { kind: 'ask', reason: `Approve this ${slug} action once. The provider will run only after approval.` }
   }))
   ctx.effect(() => ctx.on('tools/post-execute', async (execution, result, next): Promise<PostToolDecision> => {

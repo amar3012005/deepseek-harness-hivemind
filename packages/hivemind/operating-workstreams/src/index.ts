@@ -682,7 +682,9 @@ export function apply(ctx: Context, config: Partial<Config> = {}): void {
           updateWorkstreamTodo(execution.agent.session as unknown as SessionLike, workstreamId, 'in_progress')
         }
         const reason = text(input['approval_reason'], 'approval_reason', maxSummaryChars)
-        const outcome = await ctx.approval.request({ agent: execution.agent, toolName: 'hivemind_workstream', reason, signal: execution.signal })
+        const presets = ctx.get('permissionPresets') as { current(session: Agent['session']): string } | undefined
+        const outcome = presets?.current(execution.agent.session) === 'danger-full-access' ? 'allowed-once' as const
+          : await ctx.approval.request({ agent: execution.agent, toolName: 'hivemind_workstream', reason, signal: execution.signal })
         execution.agent.session.append('hivemind/workstream-approval', { ...coordinates, workstreamId, outcome, reason })
         return { status: outcome === 'allowed-once' ? 'approved' : 'not_approved', outcome, plan_id: coordinates.planId, workstream_id: workstreamId }
       }
