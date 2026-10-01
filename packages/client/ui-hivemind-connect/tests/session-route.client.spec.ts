@@ -246,6 +246,8 @@ describe('dedicated Dreaming conversation route', () => {
     expect(f.create).not.toHaveBeenCalled()
     expect(f.open).not.toHaveBeenCalled()
     expect(window.location.pathname).toBe(`${HIVE_OVERVIEW_PATH}/dreaming`)
+    f.set(state('session-recent'))
+    expect(window.location.pathname).toBe(`${HIVE_OVERVIEW_PATH}/dreaming`)
     vi.unstubAllGlobals()
   })
   it('preserves the Dreaming route while the native child catalog is loading', async () => {

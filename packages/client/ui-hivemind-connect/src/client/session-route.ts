@@ -264,7 +264,7 @@ export function setupHivemindSessionRouting(
       applyLocation()
       return
     }
-    if (browser.location.pathname === dreamPath && directDream === undefined) return
+    if (browser.location.pathname === dreamPath) return
     if (dreamingAddress()?.childSessionId === state.currentAddress?.childSessionId && state.currentAddress !== undefined) return
     const current = rootForRoute(state, state.current)
     if (current === undefined) {
