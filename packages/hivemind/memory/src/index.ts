@@ -62,6 +62,9 @@ export interface MemoryProvider {
 }
 
 declare module '@deepseek-ai/cordis' {
+  interface Events {
+    'schedule/prepare-create'(agent: Agent, id: string, prompt: string, destination: string | undefined, project: string | undefined, signal: AbortSignal, next: () => Promise<boolean>): Promise<boolean>
+  }
   interface Context {
     hivemindMemory: MemoryProvider
     hivemindFlashbacksDestination: { resolve(agent: Agent, signal: AbortSignal): Promise<string | undefined> }
@@ -472,6 +475,14 @@ export function memoryPlugin(config: MemoryPluginConfig, provider: MemoryProvide
           })
           if (!await agent.ctx.get('sessions')?.flush(agent.session)) throw new Error('Schedule memory permission was not durably acknowledged')
         },
+      })
+      // The policy lives in the agent's capability group, outside agent.ctx's service lens.
+      // Scoped Cordis events reach the owning group without exposing another tenant's policy.
+      ctx.on('schedule/prepare-create', async (agent, id, prompt, destination, project, signal) => {
+        const policy = ctx.get('hivemindScheduledMemoryPolicy')
+        if (policy === undefined) throw new Error('Schedule memory permission policy is unavailable')
+        await policy.prepare(agent, id, prompt, destination, project, signal)
+        return true
       })
       ctx.effect(() => ctx.tools.register(defineTool({
         name: 'hivemind_save_memory',

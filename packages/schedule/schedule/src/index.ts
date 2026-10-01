@@ -4,6 +4,8 @@ import { AsyncLocalStorage } from 'node:async_hooks'
 import type { ScheduleBackend, ScheduleTaskTable } from './backend.ts'
 export type { ScheduleBackend, ScheduleTaskTable } from './backend.ts'
 import z from '@deepseek-ai/schemastery'
+import { scopeTarget } from '@deepseek-ai/dsh-scope'
+import type { Agent } from '@deepseek-ai/dsh-agent'
 import { Context, Service } from '@deepseek-ai/cordis'
 import { TypertRemoteService, Remote } from '@deepseek-ai/dsh-typert-protocol'
 import type { Domain } from '@deepseek-ai/dsh-storage-domain'
@@ -68,6 +70,9 @@ export {
 
 
 declare module '@deepseek-ai/cordis' {
+  interface Events {
+    'schedule/prepare-create'(agent: Agent, id: string, prompt: string, destination: string | undefined, project: string | undefined, signal: AbortSignal, next: () => Promise<boolean>): Promise<boolean>
+  }
   interface Context {
     /** Durable Host-wide reminder management. */
     schedule: ScheduleService
@@ -328,17 +333,13 @@ export class ScheduleService extends TypertRemoteService {
     // governed by their workflow and do not create interactive approval cards.
     if (stableId === undefined) {
       const agent = this.ctx.agents.get(sessionId)
-      const policy = agent?.ctx.get('hivemindScheduledMemoryPolicy') as {
-        prepare(
-          owner: NonNullable<typeof agent>, id: string, prompt: string,
-          destination: string | undefined, project: string | undefined, signal: AbortSignal,
-        ): Promise<void>
-      } | undefined
-      if (agent !== undefined && policy !== undefined) {
-        await policy.prepare(
+      if (agent !== undefined) {
+        const prepared = await this.ctx.waterfall(
+          scopeTarget(this, agent), 'schedule/prepare-create',
           agent, String(id), request.prompt, request.memory_destination,
-          request.memory_project, signal ?? new AbortController().signal,
+          request.memory_project, signal ?? new AbortController().signal, async () => false,
         )
+        if (request.memory_destination !== undefined && !prepared) throw new Error('Schedule memory permission policy is unavailable')
       }
     }
     // A blank Session may have selected HyperAgents after its creation header.

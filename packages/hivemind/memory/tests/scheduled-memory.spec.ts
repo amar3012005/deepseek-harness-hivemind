@@ -13,7 +13,7 @@ async function fixture(selected = 'Allow') {
   const save = vi.fn(async () => ({ status: 'saved', memory_id: 'confirmed-receipt' }))
   const recall = vi.fn(async () => ({ status: 'ready' }))
   const entities = vi.fn(async () => ({ status: 'ready' }))
-  const fiber = await ctx.plugin(memoryPlugin({ defaultLimit: 5 }, {
+  const fiber = await ctx.isolate('hivemindScheduledMemoryPolicy').plugin(memoryPlugin({ defaultLimit: 5 }, {
     context: async () => ({}), entities, recall, save, profiles: async () => ({}),
   }))
   const events: { seq: number; type: string; data: unknown }[] = []
@@ -33,6 +33,16 @@ async function fixture(selected = 'Allow') {
 }
 
 describe('scheduled company-memory permission', () => {
+  it('prepares creation through a scoped event when the Agent root cannot see the capability service', async () => {
+    const f = await fixture('Do not allow')
+    expect(f.ctx.get('hivemindScheduledMemoryPolicy')).toBeUndefined()
+    await f.ctx.waterfall('schedule/prepare-create', f.agent as never, 'schedule-1', 'Save company memories.', 'organization', undefined, new AbortController().signal, async () => false)
+    expect(f.ask).toHaveBeenCalledOnce()
+    f.due('Save company memories.')
+    expect(await f.call()).toMatchObject({ status: 'cancelled' })
+    expect(f.save).not.toHaveBeenCalled()
+    await f.fiber.dispose()
+  })
   it('does not ask company-write permission for a private HyperAgent memory task', async () => {
     const f = await fixture()
     const prompt = 'Save reusable memories using hyperagents_memory.'
