@@ -59,6 +59,10 @@ export function CompanyWorkspace({
   const [taskProgress, setTaskProgress] = useState<HqTaskProgress | null>(null)
   const [wakeHistory, setWakeHistory] = useState<HqWakeHistory | null>(null)
   const [tab, setTab] = useState<'week' | 'agenda'>('week')
+  const [creating, setCreating] = useState(false)
+  const [visibleKinds, setVisibleKinds] = useState({ human: true, task: true, wake: true })
+  const [now, setNow] = useState(() => new Date())
+  useEffect(() => { const timer = setInterval(() => setNow(new Date()), 60000); return () => clearInterval(timer) }, [])
   const generation = useRef(0)
   const draftId = useRef<string | null>(null)
   const formRef = useRef<HTMLFormElement | null>(null)
@@ -75,6 +79,7 @@ export function CompanyWorkspace({
         setUncertainWrite(false)
         if (draftId.current && result.value.calendar.some(item => item.id === draftId.current)) {
           select(draftId.current)
+          setCreating(false)
           draftId.current = null
           formRef.current?.reset()
         }
@@ -194,6 +199,7 @@ export function CompanyWorkspace({
       else {
         draftId.current = null
         form.reset()
+        setCreating(false)
         await refresh()
         select(item.taskId ?? item.id)
       }
@@ -207,50 +213,41 @@ export function CompanyWorkspace({
   return (
     <section data-company-calendar="" className={css.workspace} aria-label="Company workspace">
       <header className={css.header}>
-        <div>
-          <h1>Company calendar</h1>
-          <p>{zone} · Planned time is separate from execution</p>
+        <div className={css.brand}><span aria-hidden="true" className={css.calendarIcon}>{Number(today.slice(-2))}</span><h1>Calendar</h1></div>
+        <button className={css.todayButton} onClick={() => setAnchor(today)}>Today</button>
+        <button className={css.iconButton} aria-label="Previous week" onClick={() => setAnchor(shift(anchor, -7))}>‹</button>
+        <button className={css.iconButton} aria-label="Next week" onClick={() => setAnchor(shift(anchor, 7))}>›</button>
+        <h2 className={css.period}>{new Intl.DateTimeFormat(undefined, { month: 'long', year: 'numeric', timeZone: 'UTC' }).format(new Date(`${anchor}T12:00:00Z`))}</h2>
+        <div className={css.headerActions}>
+          <button className={css.iconButton} aria-label="Refresh workspace" title="Refresh workspace" onClick={() => { void refresh() }}>↻</button>
+          <select aria-label="Calendar view" value={tab} onChange={event => setTab(event.target.value as 'week' | 'agenda')}><option value="week">Week</option><option value="agenda">Agenda</option></select>
         </div>
-        <button
-          onClick={() => {
-            void refresh()
-          }}
-        >
-          Refresh workspace
-        </button>
       </header>
-      {error && <p role="alert">{error}</p>}
-      {!data ? (
-        <p role="status">Loading authorized company work…</p>
-      ) : (
+      {error && <p className={css.error} role="alert">{error}</p>}
+      {!data ? <p role="status">Loading authorized company work…</p> : (
         <>
-          <p className={css.banner}>
-            Autonomous mode {data.mode.enabled ? 'enabled' : 'paused'} · {data.tasks.length} native
-            assignments
-          </p>
-          <nav className={css.toolbar}>
-            <button onClick={() => setTab('week')} aria-pressed={tab === 'week'}>
-              Week calendar
-            </button>
-            <button onClick={() => setTab('agenda')} aria-pressed={tab === 'agenda'}>
-              Daily agenda
-            </button>
-            <button onClick={() => setAnchor(shift(anchor, -7))}>Previous week</button>
-            <button onClick={() => setAnchor(today)}>Today</button>
-            <button onClick={() => setAnchor(shift(anchor, 7))}>Next week</button>
-            <span>
-              {days[0]} — {days[6]}
-            </span>
-          </nav>
           <div className={css.body}>
-            <main>
+            <aside className={css.sidebar} aria-label="Calendar navigation">
+              <button className={css.createButton} onClick={() => { select(null); setCreating(true) }}><span aria-hidden="true">＋</span>Create</button>
+              <h3>{new Intl.DateTimeFormat(undefined, { month:'long',year:'numeric',timeZone:'UTC' }).format(new Date(`${anchor}T12:00:00Z`))}</h3>
+              <div className={css.miniMonth}>
+                {['M','T','W','T','F','S','S'].map((label,index) => <span key={index} className={css.miniWeekday}>{label}</span>)}
+                {(() => { const first = `${anchor.slice(0,7)}-01`; const offset = (new Date(`${first}T12:00:00Z`).getUTCDay()+6)%7; return Array.from({ length:42 },(_,index) => { const day=shift(first,index-offset); return <button key={day} aria-label={`Go to ${day}`} aria-pressed={day===anchor} className={`${day===today?css.miniToday:''} ${day.slice(0,7)!==anchor.slice(0,7)?css.muted:''}`} onClick={() => setAnchor(day)}>{Number(day.slice(-2))}</button> }) })()}
+              </div>
+              <h3>My calendars</h3>
+              {([['human','Human work'],['task','Agent assignments'],['wake','Scheduled tasks']] as const).map(([kind,label]) => <label key={kind} className={css.filter}><input type="checkbox" checked={visibleKinds[kind]} style={{ accentColor:kind==='human'?'#7b83cc':kind==='task'?'#1a73e8':'#188038' }} onChange={event => setVisibleKinds({ ...visibleKinds,[kind]:event.target.checked })}/>{label}</label>)}
+              <div className={css.sidebarFooter}><span className={css.statusDot} />Autonomous mode {data.mode.enabled ? 'enabled' : 'paused'} · {data.tasks.length} native assignments<p>{zone}</p></div>
+            </aside>
+            <main className={css.calendarSurface}>
+              <div className={css.viewTabs}><button onClick={() => setTab('week')} aria-pressed={tab==='week'}>Week calendar</button><button onClick={() => setTab('agenda')} aria-pressed={tab==='agenda'}>Daily agenda</button></div>
+
               {tab === 'week' ? (
                 <div ref={timelineRef} className={css.timelineViewport}>
                   <div className={css.week}>
                     <section className={css.hours}>
-                      <h2>Time</h2>
+                      <h2 title={zone}>{new Intl.DateTimeFormat('en', { timeZone:zone,timeZoneName:'shortOffset' }).formatToParts(now).find(part => part.type==='timeZoneName')?.value}</h2>
                       {Array.from({ length: 24 }, (_, hour) => (
-                        <div key={hour}>{String(hour).padStart(2, '0')}:00</div>
+                        <div key={hour}>{hour === 0 ? '12 AM' : hour < 12 ? `${hour} AM` : hour === 12 ? '12 PM' : `${hour-12} PM`}</div>
                       ))}
                     </section>
                     {days.map((day) => {
@@ -315,6 +312,7 @@ export function CompanyWorkspace({
                             : 60
                           return { ...item, minute, duration }
                         })
+                        .filter(item => visibleKinds[item.kind as keyof typeof visibleKinds])
                         .sort((left, right) => left.minute - right.minute)
                       const ends: number[] = []
                       const lanes = cards.map((item) => {
@@ -325,8 +323,9 @@ export function CompanyWorkspace({
                       })
                       return (
                         <section key={day} className={day === today ? css.today : undefined}>
-                          <h2>{day}</h2>
+                          <h2 className={css.dayHeading}><span>{new Intl.DateTimeFormat('en', { weekday:'short',timeZone:'UTC' }).format(new Date(`${day}T12:00:00Z`))}</span><strong>{Number(day.slice(-2))}</strong></h2>
                           <div className={css.gridDay}>
+                            {day === today && <div className={css.nowLine} style={{ top:`${(Number(new Intl.DateTimeFormat('en-GB',{ timeZone:zone,hour:'2-digit',hourCycle:'h23' }).format(now))*60+Number(new Intl.DateTimeFormat('en-GB',{ timeZone:zone,minute:'2-digit' }).format(now)))*44/60}px` }} aria-label="Current time"/>}
                             {cards.map((item, index) => (
                               <button
                                 key={item.id}
@@ -405,58 +404,8 @@ export function CompanyWorkspace({
                     ))}
                 </section>
               )}
-              <details>
-                <summary>Add human work</summary>
-                <form
-                  ref={formRef}
-                  className={css.form}
-                  onSubmit={(event) => {
-                    event.preventDefault()
-                    void createHuman(event.currentTarget)
-                  }}
-                >
-                  <label>
-                    Type
-                    <select name="kind" aria-label="Type">
-                      <option value="meeting">Meeting</option>
-                      <option value="decision">Owner decision</option>
-                      <option value="source_request">Source request</option>
-                      <option value="assignment">Assignment planning window</option>
-                    </select>
-                  </label>
-                  <label>
-                    Assignment (planning windows only)
-                    <select name="taskId" aria-label="Assignment">
-                      {data.tasks
-                        .filter(item => item.status === 'pending')
-                        .map(item => (
-                          <option key={item.id} value={item.id}>
-                            {item.title}
-                          </option>
-                        ))}
-                    </select>
-                  </label>
-                  <label>
-                    Title
-                    <input name="title" required maxLength={200} />
-                  </label>
-                  <label>
-                    Owner
-                    <input name="owner" required maxLength={100} />
-                  </label>
-                  <label>
-                    Start
-                    <input name="start" type="datetime-local" required />
-                  </label>
-                  <label>
-                    End
-                    <input name="end" type="datetime-local" required />
-                  </label>
-                  <button disabled={saving || uncertainWrite}>Save planned work</button>
-                </form>
-              </details>
             </main>
-            <aside className={css.drawer} aria-label="Task details">
+            {selected && <aside className={css.drawer} aria-label="Task details"><button className={css.drawerClose} aria-label="Close task details" onClick={() => select(null)}>×</button>
               {task ? (
                 <>
                   <h2>{task.title}</h2>
@@ -584,8 +533,61 @@ export function CompanyWorkspace({
                     {item.title} · delivered {item.deliveredAt}
                   </p>
                 ))}
-            </aside>
+            </aside>}
           </div>
+          {creating && (              <div className={css.modalBackdrop} onClick={() => { if(!saving) setCreating(false) }}>
+            <section className={css.eventDialog} role="dialog" aria-modal="true" aria-label="Create calendar event" onClick={event => event.stopPropagation()}>
+              <header><h2>Add human work</h2><button type="button" aria-label="Close event form" disabled={saving} onClick={() => setCreating(false)}>×</button></header>
+              <form
+                ref={formRef}
+                className={css.form}
+                onSubmit={(event) => {
+                  event.preventDefault()
+                  void createHuman(event.currentTarget)
+                }}
+              >
+                <label>
+                    Type
+                  <select name="kind" aria-label="Type">
+                    <option value="meeting">Meeting</option>
+                    <option value="decision">Owner decision</option>
+                    <option value="source_request">Source request</option>
+                    <option value="assignment">Assignment planning window</option>
+                  </select>
+                </label>
+                <label>
+                    Assignment (planning windows only)
+                  <select name="taskId" aria-label="Assignment">
+                    {data.tasks
+                      .filter(item => item.status === 'pending')
+                      .map(item => (
+                        <option key={item.id} value={item.id}>
+                          {item.title}
+                        </option>
+                      ))}
+                  </select>
+                </label>
+                <label>
+                    Title
+                  <input name="title" required maxLength={200} />
+                </label>
+                <label>
+                    Owner
+                  <input name="owner" required maxLength={100} />
+                </label>
+                <label>
+                    Start
+                  <input name="start" type="datetime-local" required />
+                </label>
+                <label>
+                    End
+                  <input name="end" type="datetime-local" required />
+                </label>
+                <button disabled={saving || uncertainWrite}>Save planned work</button>
+              </form>
+            </section>
+          </div>
+          )}
         </>
       )}
     </section>

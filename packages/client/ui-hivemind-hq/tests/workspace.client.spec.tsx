@@ -27,7 +27,7 @@ it('does not create a duplicate planning item after a lost acknowledgement', asy
   const plan = vi.fn().mockRejectedValue(new Error('ack lost'))
   render(<CompanyWorkspace sessionId={'hq' as SessionId} load={load} plan={plan} history={vi.fn()} progress={vi.fn().mockResolvedValue({ ok: true, value: { taskId: 'task-1', sessionId: null, todos: [] } })} subscribe={() => () => {}} openSession={vi.fn()} />)
   await screen.findByText('Autonomous mode paused · 0 native assignments')
-  fireEvent.click(screen.getByText('Add human work'))
+  fireEvent.click(screen.getByRole('button', { name: 'Create' }))
   fireEvent.change(screen.getByLabelText('Title'), { target: { value: 'Owner review' } })
   fireEvent.change(screen.getByLabelText('Owner'), { target: { value: 'Amar' } })
   fireEvent.change(screen.getByLabelText('Start'), { target: { value: '2026-10-01T10:00' } })
@@ -40,4 +40,17 @@ it('does not create a duplicate planning item after a lost acknowledgement', asy
   fireEvent.click(screen.getByRole('button', { name: 'Refresh workspace' }))
   await screen.findByRole('heading', { name: 'Owner review' })
   expect(plan).toHaveBeenCalledTimes(1)
+})
+
+it('keeps the week uncluttered and opens creation only on demand', async () => {
+  const empty = { mode: { enabled: false, revision: 0, changedAt: 0 }, tasks: [], wakes: [], calendar: [] }
+  render(<CompanyWorkspace sessionId={'hq' as SessionId} load={vi.fn().mockResolvedValue({ ok:true,value:empty })} plan={vi.fn()} history={vi.fn()} progress={vi.fn()} subscribe={() => () => {}} openSession={vi.fn()} />)
+  await screen.findByRole('button', { name:'Create' })
+  expect(screen.queryByRole('dialog')).toBeNull()
+  expect(screen.queryByLabelText('Task details')).toBeNull()
+  expect(screen.getByRole('checkbox', { name:'Agent assignments' })).toBeTruthy()
+  fireEvent.click(screen.getByRole('button', { name:'Create' }))
+  expect(screen.getByRole('dialog', { name:'Create calendar event' })).toBeTruthy()
+  fireEvent.click(screen.getByRole('button', { name:'Close event form' }))
+  expect(screen.queryByRole('dialog')).toBeNull()
 })
