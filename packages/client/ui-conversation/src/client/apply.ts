@@ -452,9 +452,9 @@ export function apply(ctx: Context, config: Config = Config({})): void {
     yield registerComposerBar()
   })
 
-  // The HIVE rail owns the child declaration. Waiting on that root slot keeps
-  // standard Harness profiles free of a HIVE-only sidebar dependency.
-  slots.inject('shell.sessionRail', () => registerConversationSidebarViewTabs())
+  // Wait for the actual child capability, not merely its parent rail. Older
+  // or alternative rails can exist without declaring the view-tabs seat.
+  slots.inject('conversation.sidebar.viewTabs', () => registerConversationSidebarViewTabs())
 
   ctx.plugin(ConversationController, {
     input: inputHub,
