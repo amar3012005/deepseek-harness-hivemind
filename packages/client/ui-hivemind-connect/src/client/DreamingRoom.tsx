@@ -28,7 +28,7 @@ export function DreamingRoom() {
     } catch { setMessage('Agenda could not be saved. Please try again.') }
     finally { setBusy(false) }
   }
-  return <div className={css.root}><span className={css.label}>🌙</span><DreamingSettings compact />
+  return <div className={css.root} data-dreaming-room-controls><span className={css.label}>🌙</span><DreamingSettings compact />
     <button type="button" onClick={() =>{  setOpen(value => !value) }} aria-expanded={open}>Set goal</button>
     {open && <div className={css.agenda}><label>Agenda for future dreams<textarea maxLength={4000} value={text}
       onChange={(event) =>{  setText(event.target.value) }} /></label>

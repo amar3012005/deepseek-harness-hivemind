@@ -144,3 +144,10 @@
 :global(html[data-dsh-mode='hivemind-chat']) .frame:has([data-automation-tasks], [data-automation-task-detail], [data-company-calendar]) .centerCol {
   padding-left: 0 !important;
 }
+
+/* Dreaming has fixed upper-right utilities; reserve their own row so the
+   transcript cannot scroll behind them. Other conversation layouts are unchanged. */
+.centerCol:has(:global([data-dreaming-room-controls])) {
+  padding-top: 48px;
+  box-sizing: border-box;
+}
