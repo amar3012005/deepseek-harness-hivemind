@@ -104,7 +104,6 @@ export function HiveSessionProjection({
     {osRail === null && <button type="button" className={css.newSession} disabled={creating} onClick={start}>
       <IconNewChatOutline16 /><span>{t('session.new')}</span>
     </button>}
-    <a className={css.newSession} href="/hivemind/app/overview/dreaming">🌙 Dreaming</a>
     <div className={css.recentHeading}>
       <span>{t('section.recent')}</span>
     </div>
