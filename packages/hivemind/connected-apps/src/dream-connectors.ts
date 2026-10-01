@@ -62,7 +62,8 @@ export class DreamConnectorService {
           const value = item as unknown as Record<string, unknown>
           const toolkit = record(value.toolkit) ? String(value.toolkit.slug ?? '') : String(value.toolkit ?? value.toolkit_slug ?? '')
           const id = typeof value.id === 'string' ? value.id : ''
-          if (!id || !/^[a-z0-9_]+$/i.test(toolkit) || !/^(ACTIVE|CONNECTED)$/i.test(String(value.status))) continue
+          if (!id || value.isDisabled === true || !/^[a-z0-9_]+$/i.test(toolkit)
+            || !/^(ACTIVE|CONNECTED)$/i.test(String(value.status))) continue
           const label = toolkit.replace(/_/g, ' ').replace(/\b\w/g, char => char.toUpperCase())
           found.push({ id, toolkit, subject, label: `${label}${company ? ' · company connection' : ''} · ${id.slice(-6)}` })
         }

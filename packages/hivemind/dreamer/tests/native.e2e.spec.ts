@@ -15,6 +15,8 @@ const url = process.env.DSH_DREAM_TEST_URL
 const suite = url ? describe : describe.skip
 class DreamModel extends LlmAdapter {
   requests: GenerateOptions[] = []
+  connector = false
+  connectorSource?: () => Promise<string>
   pause = false
   paused = Promise.withResolvers<undefined>()
   constructor(readonly source: string) {
@@ -34,14 +36,14 @@ class DreamModel extends LlmAdapter {
     this.requests.push(options)
     const calls = [
       ['dream_history', {}],
-      ['dream_read', { ids: [this.source] }],
+      ['dream_read', this.connector ? { connector: { accountId: 'ca_canary', tool: 'GMAIL_FETCH_EMAILS', arguments: { query: 'fixture', max_results: 1 } } } : { ids: [this.source] }],
       ['dream_checkpoint', { summary: 'Read source, ready to derive.', next: 'Save connection' }],
       [
         'dream_save',
         {
           title: 'Canary derived connection',
           content: 'A supported canary inference.',
-          sourceIds: [this.source],
+          sourceIds: [this.connector && this.connectorSource ? await this.connectorSource() : this.source],
           entities: ['Canary'],
           reasoningType: 'pattern',
           confidence: 0.6,
@@ -70,6 +72,28 @@ suite('native Dreamer workflow', () => {
   const dispatcher = createServer(async (req, res) => {
     let text = ''
     for await (const chunk of req) text += String(chunk)
+    const route = new URL(req.url ?? '/', 'http://localhost').pathname
+    const tool = { slug: 'GMAIL_FETCH_EMAILS', name: 'Fetch emails', description: 'Read test emails',
+      version: '20260915_00', tags: ['readOnlyHint'], toolkit: { slug: 'gmail', name: 'gmail' },
+      input_parameters: { type: 'object', additionalProperties: false, required: ['query'],
+        properties: { query: { type: 'string' }, max_results: { type: 'integer', minimum: 1, maximum: 25 } } } }
+    let mock: unknown
+    if (route === '/api/v3.1/connected_accounts') mock = { items: [{ id: 'ca_canary', status: 'ACTIVE', toolkit: { slug: 'gmail' },
+      auth_config: { id: 'ac_canary', auth_scheme: 'OAUTH2', is_composio_managed: true, is_disabled: false },
+      is_disabled: false, status_reason: null, created_at: new Date().toISOString(), updated_at: new Date().toISOString() }],
+    total_pages: 1, next_cursor: null }
+    if (route === '/api/v3.1/tools') mock = { items: [tool], total_pages: 1, next_cursor: null }
+    if (route === '/api/v3.1/tools/GMAIL_FETCH_EMAILS') mock = tool
+    if (route === '/api/v3.1/tools/execute/GMAIL_FETCH_EMAILS') {
+      const request = JSON.parse(text)
+      expect(request.connected_account_id).toBe('ca_canary')
+      expect(request.version).toBe('20260915_00')
+      expect(request.arguments).toEqual({ query: 'fixture', max_results: 1 })
+      mock = { successful: true, data: { messages: [{ id: 'fixture-email', subject: 'Supported canary context', body: 'Fixture read evidence.' }] }, error: null }
+    }
+    if (route === '/internal/v1/harness-chat/credit-operations') mock = { admitted: true }
+    if (route === '/internal/v1/harness-chat/receipts') mock = { receipt_id: randomUUID(), bytes: text.length }
+    if (mock) { res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify(mock)); return }
     if (req.method === 'POST' && req.url === '/test-memory') {
       const request = JSON.parse(text)
       expect(request.scope).toBe('project')
@@ -114,6 +138,7 @@ suite('native Dreamer workflow', () => {
     await admin.query(`CREATE SCHEMA ${schema}`)
     await admin.query(await readFile(new URL('./fixture.sql', import.meta.url), 'utf8'))
     await admin.query((await readFile(new URL('./migration.sql', import.meta.url), 'utf8')).replaceAll('hivemind.', `${schema}.`))
+    await admin.query((await readFile(new URL('../../../../deploy/hivemind-chat/dream-connectors.sql', import.meta.url), 'utf8')).replaceAll('hivemind.', `${schema}.`).replaceAll("schemaname='hivemind'", `schemaname='${schema}'`))
     await admin.query('INSERT INTO organizations(id) VALUES($1)', [owner.orgId])
     await admin.query('INSERT INTO users(id) VALUES($1)', [owner.userId])
     await admin.query('INSERT INTO user_organizations(user_id,org_id) VALUES($1,$2)', [owner.userId, owner.orgId])
@@ -124,6 +149,11 @@ suite('native Dreamer workflow', () => {
     await new Promise<void>(resolve => dispatcher.listen(0, '127.0.0.1', resolve))
     const port = (dispatcher.address() as { port: number }).port
     base = `http://127.0.0.1:${port}`
+    vi.stubEnv('COMPOSIO_API_KEY', 'composio-disposable-canary-key')
+    vi.stubEnv('COMPOSIO_BASE_URL', base)
+    vi.stubEnv('HIVEMIND_CONTROL_PLANE_URL', base)
+    vi.stubEnv('HIVEMIND_SERVICE_HTTP_ORIGINS', base)
+    vi.stubEnv('HIVE_HARNESS_RUNNER_SERVICE_SECRET', 'disposable-canary-service-secret-1234567890')
     process.env.DREAM_CANARY_DB = url!
     process.env.DREAM_CANARY_DISPATCH = base
     process.env.DREAM_CANARY_TOKEN = token
@@ -187,6 +217,7 @@ export function apply(ctx) {
       await admin.end()
     }
     if (root) await rm(root, { recursive: true, force: true })
+    vi.unstubAllEnvs()
   }, 30000)
   async function boot() {
     app = await launchWebScaffold({
@@ -237,7 +268,7 @@ export function apply(ctx) {
       expect(activity.nextRunAt).toBe('2030-01-01T01:00:00.000Z')
       expect(activity.scheduleState).toBe('scheduled')
       expect(activity.runs).toEqual([])
-    })
+    }, { timeout: 10000 })
     expect(registrations).toHaveLength(1)
     const agendaUrl = `${app.baseUrl}/hivemind/dreamer/agenda`
     const agenda = await fetch(agendaUrl, { method: 'PUT', headers: { cookie, origin: app.baseUrl,
@@ -402,10 +433,36 @@ export function apply(ctx) {
     },
     60000,
   )
+  it('executes an exact approved connector read in the native Dreamer and saves cited evidence', async () => {
+    const endpoint = `${app.baseUrl}/hivemind/dreamer/connectors`
+    const headers = { cookie, origin: app.baseUrl, 'content-type': 'application/json' }
+    expect((await (await fetch(endpoint, { headers })).json()).enabled).toBe(false)
+    const approved = await fetch(endpoint, { method: 'PUT', headers, body: JSON.stringify({ enabled: true, accountIds: ['ca_canary'] }) })
+    expect(approved.status, await approved.clone().text()).toBe(200)
+    model.connector = true
+    model.connectorSource = async () => (await admin.query('SELECT id FROM harness_dream_connector_evidence ORDER BY created_at DESC LIMIT 1')).rows[0]?.id
+    const response = await trigger(`${owner.orgId}:dreaming:1800`)
+    expect(response.status).toBe(202)
+    const { runId } = await response.json()
+    await vi.waitFor(async () => {
+      const run = (await admin.query('SELECT status,output_ids FROM harness_dream_runs WHERE id=$1', [runId])).rows[0]
+      expect(run.status).toBe('completed')
+      expect(run.output_ids).toHaveLength(1)
+    }, { timeout: 25000 })
+    const evidence = (await admin.query('SELECT * FROM harness_dream_connector_evidence WHERE run_id=$1', [runId])).rows[0]
+    expect(evidence.provenance.version).toBe('20260915_00')
+    expect(evidence.provenance.authorizingUserId).toBe(owner.userId)
+    expect(evidence.content).toContain('fixture-email')
+    const saved = (await admin.query("SELECT metadata FROM source_metadata WHERE metadata->'dreamer'->'connectorSources' IS NOT NULL ORDER BY memory_id")).rows
+    expect(JSON.stringify(saved)).toContain(evidence.id)
+    const revoked = await fetch(endpoint, { method: 'PUT', headers, body: JSON.stringify({ enabled: false, accountIds: [] }) })
+    expect(revoked.status).toBe(200)
+    model.connector = false
+  }, 30000)
   it('switches off without deleting prior Flashbacks', async () => {
     expect((await settings(false)).status).toBe(200)
     expect((await (await settings()).json()).enabled).toBe(false)
     expect((await trigger(`${owner.orgId}:dreaming:2000`)).status).toBe(409)
-    expect((await admin.query("SELECT 1 FROM memories WHERE title='Canary derived connection'")).rowCount).toBe(1)
+    expect((await admin.query("SELECT 1 FROM memories WHERE title='Canary derived connection'")).rowCount).toBe(2)
   })
 })
