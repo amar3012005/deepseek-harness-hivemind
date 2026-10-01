@@ -29,6 +29,7 @@ suite('canonical company HQ ownership', () => {
         CREATE ROLE codex_schedule_test NOLOGIN NOSUPERUSER NOBYPASSRLS; END IF; END $$`)
     await admin.query(await readFile(new URL('../../schedule-postgres/tests/sessions.sql', import.meta.url), 'utf8'))
     await admin.query(await readFile(new URL('../migrations/company-hq.sql', import.meta.url), 'utf8'))
+    await admin.query('CREATE TABLE source_artifacts(id uuid PRIMARY KEY,org_id uuid,user_id uuid,source_platform text,source_url text,created_at timestamptz,version integer,payload jsonb)')
     await admin.query(`GRANT USAGE ON SCHEMA ${schema} TO codex_schedule_test;
       GRANT SELECT,INSERT,UPDATE,DELETE ON ALL TABLES IN SCHEMA ${schema} TO codex_schedule_test;
       GRANT USAGE,SELECT ON ALL SEQUENCES IN SCHEMA ${schema} TO codex_schedule_test`)
@@ -41,7 +42,7 @@ suite('canonical company HQ ownership', () => {
     close = await backend[Service.init]()
   })
   beforeEach(async () => {
-    await admin.query('TRUNCATE harness_company_hq,harness_session_events,harness_sessions,user_organizations,users CASCADE')
+    await admin.query('TRUNCATE source_artifacts,harness_company_hq,harness_session_events,harness_sessions,user_organizations,users CASCADE')
     for (const [principal, id] of [[a, 'a-hq'], [b, 'b-hq'], [c, 'c-hq']] as const) {
       await admin.query('INSERT INTO users(id) VALUES($1)', [principal.userId])
       await admin.query('INSERT INTO user_organizations(user_id,org_id) VALUES($1,$2)', [principal.userId, principal.orgId])
@@ -54,6 +55,18 @@ suite('canonical company HQ ownership', () => {
     if (admin) { await admin.query(`DROP SCHEMA ${schema} CASCADE`); await admin.end() }
   })
   const claim = (principal: HivemindPrincipal, id: string) => scope.run(principal, () => ctx.hivemindHqOwnership.claim(SessionId(id)))
+  it('discovers existing company baseline references and reads only the owning tenant evidence', async () => {
+    await claim(a, 'a-hq')
+    const own = randomUUID(), foreign = randomUUID()
+    for (const [id, principal, name] of [[own, a, 'Singulance'], [foreign, c, 'Another tenant']] as const)
+      await admin.query("INSERT INTO source_artifacts VALUES($1,$2,$3,'company_baseline','https://example.com/',now(),1,$4)", [id, principal.orgId, principal.userId, { company: name, website: { screenshot_url: 'https://example.com/screenshot.png' } }])
+    const list = await scope.run(a, () => ctx.hivemindHqOwnership.companyEvidence(SessionId('a-hq')))
+    expect(list).toMatchObject({ status: 'ready', artifacts: [{ id: own, kind: 'company_baseline' }] })
+    expect(JSON.stringify(list)).not.toContain('screenshot_url')
+    expect(await scope.run(a, () => ctx.hivemindHqOwnership.companyEvidence(SessionId('a-hq'), own))).toMatchObject({ artifacts: [{ payload: { company: 'Singulance' } }] })
+    expect(await scope.run(a, () => ctx.hivemindHqOwnership.companyEvidence(SessionId('a-hq'), foreign))).toMatchObject({ artifacts: [] })
+    await expect(scope.run(c, () => ctx.hivemindHqOwnership.companyEvidence(SessionId('a-hq')))).rejects.toThrow('hq_canonical_runtime_required')
+  })
   it('allows exactly one of two company members to claim concurrently and replays its ownership', async () => {
     const outcomes = await Promise.allSettled([claim(a, 'a-hq'), claim(b, 'b-hq')])
     expect(outcomes.filter(item => item.status === 'fulfilled')).toHaveLength(1)

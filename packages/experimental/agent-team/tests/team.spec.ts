@@ -143,6 +143,70 @@ async function waitRunning(ctx: Context, id: SessionId): Promise<Agent> {
 }
 
 describe('Team identity and provisioning', () => {
+  it('orients from authenticated evidence, persists a baseline and reviews the exact strategy without granting action authority', async () => {
+    const { ctx, lead, teamFiber } = await setup([])
+    const owner = await ctx.plugin(HqOwnership)
+    const unregister = ctx.hivemindHqOwnership.register({ claim: async () => {}, find: async () => lead.id, companyEvidence: async () => ({ status: 'ready', artifacts: [] }) })
+    ctx.provide('hivemindMemory', { context: vi.fn().mockResolvedValue({ status: 'ready', context: 'Company: Singulance Labs; website https://singulancelabs.com' }) } as never)
+    ctx.provide('hivemindEmployeeDirectory', { profiles: vi.fn().mockResolvedValue({ status: 'ready', contract: 'hivemind.hyperagent-profiles.v1', count: 1, profiles: [{ id: 'ravi', name: 'Ravi Patel', role: 'Research' }] }) } as never)
+    ctx.provide('schedule', { ensure: vi.fn() } as never)
+    const ask = vi.fn().mockImplementation(async request => ({ answers: [{ id: request.questions[0].id, selected: ['Approve strategy'] }] }))
+    ctx.provide('userQuestions', { ask } as never)
+    const capability = await ctx.plugin(HqRuntime)
+    const run = (name: string, args: unknown) => ctx.tools.execute({ name, callId: ToolCallId('orientation'), agent: lead, signal: SIGNAL, arguments: args })
+    const value = (result: Awaited<ReturnType<typeof run>>) => JSON.parse(result.content.find(block => block.type === 'text')!.text)
+    try {
+      const inspected = await run('hivemind_hq_orientation', { action: 'inspect' })
+      if (inspected.isError) throw new Error(JSON.stringify(inspected))
+      expect(value(inspected)).toMatchInlineSnapshot(`
+        {
+          "baseline": null,
+          "baseline_revision": 0,
+          "company": {
+            "context": "Company: Singulance Labs; website https://singulancelabs.com",
+            "status": "ready",
+          },
+          "company_evidence": {
+            "artifacts": [],
+            "status": "ready",
+          },
+          "employees": {
+            "contract": "hivemind.hyperagent-profiles.v1",
+            "count": 1,
+            "profiles": [
+              {
+                "id": "ravi",
+                "name": "Ravi Patel",
+                "role": "Research",
+              },
+            ],
+            "status": "ready",
+          },
+          "evidence_receipts": [],
+          "guidance": "Reuse relevant evidence. Retrieve available screenshots/documents through company recall and artifact tools; unavailable evidence is a gap. Delegate justified missing assessments through verified employee assignments. No fixed orientation sequence is required on later wakes.",
+          "strategy": "",
+          "strategy_decision": null,
+          "strategy_revision": 0,
+        }
+      `)
+      expect((await run('hivemind_hq_orientation', { action: 'save_baseline', expected_revision: 0, summary: 'Known company, website, one researcher. Social activity remains unknown.', evidence_sequences: [999] })).isError).toBe(true)
+      // The live loop commits a successful read receipt before its following tool step.
+      lead.session.append('tool/result', { turn: 0, step: 0, message: { role: 'user', id: 'receipt' as never, source: { kind: 'tool', callId: ToolCallId('orientation') } as never, content: [{ type: 'tool-result', toolCallId: ToolCallId('orientation'), content: inspected.content }] } }, { surfaceOp: 'append' })
+      const seq = lead.session.snapshotEvents().findLast(event => event.type === 'tool/result')!.seq
+      expect((await run('hivemind_hq_orientation', { action: 'save_baseline', expected_revision: 0, summary: 'Known company and researcher; social evidence unavailable.', evidence_sequences: [seq] })).isError).not.toBe(true)
+      expect((await run('hivemind_hq_continuity', { action: 'save_strategy', expected_revision: 0, strategy: 'Have Ravi assess existing public website evidence; present findings before adopting new objectives. No contact or company-memory writes.' })).isError).not.toBe(true)
+      const reviewed = await run('hivemind_hq_review_strategy', { expected_revision: 1 })
+      expect(reviewed.isError).not.toBe(true)
+      expect(value(reviewed)).toMatchObject({ status: 'approved', strategyRevision: 1, authority_granted: false })
+      expect(ask.mock.calls[0]![0].questions[0].intent).toEqual({ kind: 'plan-review', approve: 'Approve strategy' })
+      expect(value(await run('hivemind_hq_review_strategy', { expected_revision: 1 })).reused).toBe(true)
+      expect(ask).toHaveBeenCalledTimes(1)
+      await run('hivemind_hq_continuity', { action: 'save_strategy', expected_revision: 1, strategy: 'Revised scope requires a new review.' })
+      expect((await run('hivemind_hq_review_strategy', { expected_revision: 1 })).isError).toBe(true)
+      expect((await storedEvents(ctx, lead.id)).filter(event => event.type === 'hivemind/hq-baseline')).toHaveLength(1)
+    } finally { await capability.dispose(); unregister(); await owner.dispose(); await teamFiber.dispose() }
+  })
+
   it('starts one persistent HQ, saves strategic continuity, rejects fabricated review cursors and preserves pause on reopen', async () => {
     const { ctx, lead, teamFiber } = await setup([])
     lead.session.append('agent-preset/selected', { agentPreset: 'hivemind-hq' })

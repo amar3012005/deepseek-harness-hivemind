@@ -59,6 +59,12 @@
     },
     {
       "path": "../runtime"
+    },
+    {
+      "path": "../memory"
+    },
+    {
+      "path": "../../interaction/user-questions"
     }
   ]
 }

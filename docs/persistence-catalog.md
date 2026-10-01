@@ -475,7 +475,7 @@ Source: [`packages/goal/goal/src/domain.ts:66`](../packages/goal/goal/src/domain
 'hivemind/artifact-created': ArtifactCreated
 ```
 
-Source: [`packages/hivemind/artifact-renderer/src/index.ts:113`](../packages/hivemind/artifact-renderer/src/index.ts)
+Source: [`packages/hivemind/artifact-renderer/src/index.ts:115`](../packages/hivemind/artifact-renderer/src/index.ts)
 
 <a id="hivemindbrowser-capability-lease--log-only"></a>
 
@@ -572,7 +572,7 @@ Source: [`packages/hivemind/connected-apps/src/index.ts:42`](../packages/hivemin
 }
 ```
 
-Source: [`packages/hivemind/runtime/src/index.ts:38`](../packages/hivemind/runtime/src/index.ts)
+Source: [`packages/hivemind/runtime/src/index.ts:40`](../packages/hivemind/runtime/src/index.ts)
 
 <a id="hivemindemployee-delegation-end--log-only"></a>
 
@@ -611,10 +611,10 @@ Source: [`packages/hivemind/employee-delegation/src/index.ts:120`](../packages/h
 
 ```ts persistence-catalog
 /** User-selected employee identity for inline HyperAgents work. */
-'hivemind/employee-selection': { id: string | null; name?: string; role?: string; avatarUrl?: string }
+'hivemind/employee-selection': { id: string | null; name?: string; role?: string; avatarUrl?: string; slug?: string }
 ```
 
-Source: [`packages/hivemind/runtime/src/index.ts:34`](../packages/hivemind/runtime/src/index.ts)
+Source: [`packages/hivemind/runtime/src/index.ts:36`](../packages/hivemind/runtime/src/index.ts)
 
 <a id="hivemindevidence-gap-recorded--log-only"></a>
 
@@ -638,6 +638,28 @@ Source: [`packages/hivemind/operating-workstreams/src/index.ts:94`](../packages/
 
 Source: [`packages/hivemind/artifact-renderer/src/generation.ts:85`](../packages/hivemind/artifact-renderer/src/generation.ts)
 
+<a id="hivemindhq-activity-batch--log-only"></a>
+
+#### `hivemind/hq-activity-batch` — log-only
+
+```ts persistence-catalog
+/** Exact activity batch shown to HQ, authorizing only those review positions. */
+'hivemind/hq-activity-batch': { id: string; positions: Record<string, number> }
+```
+
+Source: [`packages/hivemind/hq-runtime/src/continuity.ts:28`](../packages/hivemind/hq-runtime/src/continuity.ts)
+
+<a id="hivemindhq-baseline--log-only"></a>
+
+#### `hivemind/hq-baseline` — log-only
+
+```ts persistence-catalog
+/** Versioned company understanding with references to successful native tool receipts. */
+'hivemind/hq-baseline': HqBaseline
+```
+
+Source: [`packages/hivemind/hq-runtime/src/orientation.ts:26`](../packages/hivemind/hq-runtime/src/orientation.ts)
+
 <a id="hivemindhq-calendar-item--log-only"></a>
 
 #### `hivemind/hq-calendar-item` — log-only
@@ -647,7 +669,7 @@ Source: [`packages/hivemind/artifact-renderer/src/generation.ts:85`](../packages
 'hivemind/hq-calendar-item': HqCalendarItem
 ```
 
-Source: [`packages/hivemind/hq-runtime/src/control.ts:26`](../packages/hivemind/hq-runtime/src/control.ts)
+Source: [`packages/hivemind/hq-runtime/src/control.ts:40`](../packages/hivemind/hq-runtime/src/control.ts)
 
 <a id="hivemindhq-calendar-wake--log-only"></a>
 
@@ -658,7 +680,18 @@ Source: [`packages/hivemind/hq-runtime/src/control.ts:26`](../packages/hivemind/
 'hivemind/hq-calendar-wake': { itemId: string; revision: number; scheduleId: string }
 ```
 
-Source: [`packages/hivemind/hq-runtime/src/control.ts:28`](../packages/hivemind/hq-runtime/src/control.ts)
+Source: [`packages/hivemind/hq-runtime/src/control.ts:42`](../packages/hivemind/hq-runtime/src/control.ts)
+
+<a id="hivemindhq-continuity--log-only"></a>
+
+#### `hivemind/hq-continuity` — log-only
+
+```ts persistence-catalog
+/** Persisted strategy and reviewed positions; execution remains owned by native tasks. */
+'hivemind/hq-continuity': HqContinuity
+```
+
+Source: [`packages/hivemind/hq-runtime/src/continuity.ts:26`](../packages/hivemind/hq-runtime/src/continuity.ts)
 
 <a id="hivemindhq-employee-assignment--log-only"></a>
 
@@ -666,10 +699,16 @@ Source: [`packages/hivemind/hq-runtime/src/control.ts:28`](../packages/hivemind/
 
 ```ts persistence-catalog
 /** Frozen authorized employee identity and native roster session for one assignment. */
-'hivemind/hq-employee-assignment': { taskId: string; employeeId: string; memberName: string; sessionId: string; personaSha256: string }
+'hivemind/hq-employee-assignment': {
+  taskId: string
+  employeeId: string
+  memberName: string
+  sessionId: string
+  personaSha256: string
+}
 ```
 
-Source: [`packages/hivemind/hq-runtime/src/index.ts:27`](../packages/hivemind/hq-runtime/src/index.ts)
+Source: [`packages/hivemind/hq-runtime/src/index.ts:52`](../packages/hivemind/hq-runtime/src/index.ts)
 
 <a id="hivemindhq-mode--log-only"></a>
 
@@ -680,7 +719,18 @@ Source: [`packages/hivemind/hq-runtime/src/index.ts:27`](../packages/hivemind/hq
 'hivemind/hq-mode': HqModeState
 ```
 
-Source: [`packages/hivemind/hq-runtime/src/control.ts:24`](../packages/hivemind/hq-runtime/src/control.ts)
+Source: [`packages/hivemind/hq-runtime/src/control.ts:38`](../packages/hivemind/hq-runtime/src/control.ts)
+
+<a id="hivemindhq-strategy-decision--log-only"></a>
+
+#### `hivemind/hq-strategy-decision` — log-only
+
+```ts persistence-catalog
+/** Owner's review of an exact immutable strategic proposal. */
+'hivemind/hq-strategy-decision': HqStrategyDecision
+```
+
+Source: [`packages/hivemind/hq-runtime/src/orientation.ts:28`](../packages/hivemind/hq-runtime/src/orientation.ts)
 
 <a id="hivemindhq-task-artifacts--log-only"></a>
 
@@ -691,7 +741,7 @@ Source: [`packages/hivemind/hq-runtime/src/control.ts:24`](../packages/hivemind/
 'hivemind/hq-task-artifacts': TaskArtifactLinks
 ```
 
-Source: [`packages/hivemind/hq-runtime/src/index.ts:25`](../packages/hivemind/hq-runtime/src/index.ts)
+Source: [`packages/hivemind/hq-runtime/src/index.ts:50`](../packages/hivemind/hq-runtime/src/index.ts)
 
 <a id="hivemindhq-task-contract--log-only"></a>
 
@@ -702,7 +752,7 @@ Source: [`packages/hivemind/hq-runtime/src/index.ts:25`](../packages/hivemind/hq
 'hivemind/hq-task-contract': CompanyTaskContract
 ```
 
-Source: [`packages/hivemind/hq-runtime/src/index.ts:21`](../packages/hivemind/hq-runtime/src/index.ts)
+Source: [`packages/hivemind/hq-runtime/src/index.ts:46`](../packages/hivemind/hq-runtime/src/index.ts)
 
 <a id="hivemindhq-task-review--log-only"></a>
 
@@ -713,7 +763,7 @@ Source: [`packages/hivemind/hq-runtime/src/index.ts:21`](../packages/hivemind/hq
 'hivemind/hq-task-review': HqTaskReview
 ```
 
-Source: [`packages/hivemind/hq-runtime/src/index.ts:23`](../packages/hivemind/hq-runtime/src/index.ts)
+Source: [`packages/hivemind/hq-runtime/src/index.ts:48`](../packages/hivemind/hq-runtime/src/index.ts)
 
 <a id="hivemindmedia-workflow-ended--log-only"></a>
 
@@ -764,6 +814,17 @@ Source: [`packages/hivemind/memory/src/index.ts:69`](../packages/hivemind/memory
 
 Source: [`packages/hivemind/playbooks/src/index.ts:190`](../packages/hivemind/playbooks/src/index.ts)
 
+<a id="hivemindoperating-outcome--log-only"></a>
+
+#### `hivemind/operating-outcome` — log-only
+
+```ts persistence-catalog
+/** Private operating outcome outbox, committed before a background save and replayed on restore. */
+'hivemind/operating-outcome': { turn: number; key: string; status: 'pending' | 'saved'; body: Record<string, JsonValue>; receipt?: JsonRecord }
+```
+
+Source: [`packages/hivemind/runtime/src/index.ts:32`](../packages/hivemind/runtime/src/index.ts)
+
 <a id="hivemindoperating-receipt--log-only"></a>
 
 #### `hivemind/operating-receipt` — log-only
@@ -795,7 +856,7 @@ Source: [`packages/hivemind/playbooks/src/index.ts:192`](../packages/hivemind/pl
 'hivemind/read-scope': { scope: 'full' | 'personal' | 'organization' | 'project'; project?: string }
 ```
 
-Source: [`packages/hivemind/runtime/src/index.ts:32`](../packages/hivemind/runtime/src/index.ts)
+Source: [`packages/hivemind/runtime/src/index.ts:34`](../packages/hivemind/runtime/src/index.ts)
 
 <a id="hivemindreply-language--log-only"></a>
 
@@ -806,7 +867,7 @@ Source: [`packages/hivemind/runtime/src/index.ts:32`](../packages/hivemind/runti
 'hivemind/reply-language': { language: string }
 ```
 
-Source: [`packages/hivemind/runtime/src/index.ts:36`](../packages/hivemind/runtime/src/index.ts)
+Source: [`packages/hivemind/runtime/src/index.ts:38`](../packages/hivemind/runtime/src/index.ts)
 
 <a id="hivemindrequest-assembly-budget--log-only"></a>
 

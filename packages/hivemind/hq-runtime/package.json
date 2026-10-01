@@ -78,7 +78,9 @@
     "@deepseek-ai/dsh-hivemind-employee-delegation": "workspace:^",
     "@deepseek-ai/dsh-tool-todo": "workspace:^",
     "@deepseek-ai/dsh-api-session-controller": "workspace:^",
-    "@deepseek-ai/dsh-hivemind-runtime": "workspace:^"
+    "@deepseek-ai/dsh-hivemind-runtime": "workspace:^",
+    "@deepseek-ai/dsh-hivemind-memory": "workspace:^",
+    "@deepseek-ai/dsh-user-questions": "workspace:^"
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "workspace:^",
@@ -99,7 +101,9 @@
     "@deepseek-ai/dsh-hivemind-employee-delegation": "workspace:^",
     "@deepseek-ai/dsh-tool-todo": "workspace:^",
     "@deepseek-ai/dsh-api-session-controller": "workspace:^",
-    "@deepseek-ai/dsh-hivemind-runtime": "workspace:^"
+    "@deepseek-ai/dsh-hivemind-runtime": "workspace:^",
+    "@deepseek-ai/dsh-hivemind-memory": "workspace:^",
+    "@deepseek-ai/dsh-user-questions": "workspace:^"
   },
   "dependencies": {
     "pg": "^8.13.1",

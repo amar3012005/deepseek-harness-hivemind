@@ -7,6 +7,7 @@ import {
   type HqTaskReview,
 } from './review.ts'
 import { createHash } from 'node:crypto'
+import { installOrientation, installStrategyReview } from './orientation.ts'
 import { installContinuity } from './continuity.ts'
 import type {} from './ownership.ts'
 import type {} from '@deepseek-ai/dsh-hivemind-runtime'
@@ -59,6 +60,8 @@ declare module '@deepseek-ai/dsh-session/types' {
 }
 export function apply(ctx: Context): void {
   ctx.inject(['hivemindHqOwnership'], child => installContinuity(child))
+  ctx.inject(['hivemindHqOwnership', 'hivemindMemory'], child => installOrientation(child))
+  ctx.inject(['hivemindHqOwnership', 'userQuestions'], child => installStrategyReview(child))
   ctx.effect(() =>
     ctx.agentTeams.guardTaskUpdates((caller, request) => {
       if (request.action !== 'complete') return
