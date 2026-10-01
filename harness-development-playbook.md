@@ -37,3 +37,7 @@ For the parent platform, follow its `.hivemind` release owner: the Ops Gateway i
 Check both authenticated modes after a native UI change: new and old session, direct reload, correct preset, timestamped mode-specific history, composer position, Schedule control, and Preview/Environment when affected. For Schedule changes also prove tenant isolation and cold wake with focused integration coverage. A healthy container alone does not prove the browser received the new bundle.
 
 Record source SHA, image ID, live revision, health, canary result, and rollback image. After success remove only unused historical `hivemind/harness-chat` tags, preserving the live image and one working rollback; an image referenced by any container must remain. Avoid global Docker prune because it can affect other services.
+
+## Fast frontend release skill
+
+For compatible incremental runner images and UI proof, read [harness-fe-deploy](skills/harness-fe-deploy/SKILL.md).
