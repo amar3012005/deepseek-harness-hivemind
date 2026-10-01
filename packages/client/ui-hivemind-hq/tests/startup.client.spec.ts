@@ -2,6 +2,7 @@
 import { Context } from '@deepseek-ai/cordis'
 import { expect, it, vi } from 'vitest'
 import { apply, inject } from '../src/client/index.ts'
+import manifest from '../package.json'
 
 it('initializes HQ and installs human controls without waiting for the calendar navigator', async () => {
   const ctx = new Context()
@@ -15,6 +16,7 @@ it('initializes HQ and installs human controls without waiting for the calendar 
   ctx.provide('locale', { register: () => () => {} } as never)
   expect(inject).not.toContain('uiWorkspace')
   expect(inject).not.toContain('layout')
+  expect(manifest.dsh.client.inject).not.toContain('@deepseek-ai/dsh-client-ui-workspace')
   const dispose = await apply(ctx)
   try {
     expect(start).toHaveBeenCalledOnce()
