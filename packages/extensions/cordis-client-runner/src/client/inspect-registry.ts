@@ -1,3 +1,4 @@
+import { clientError } from './diagnostics.ts'
 /** Browser registry for read-only Cordis capability providers. */
 
 import type { Context } from '@deepseek-ai/cordis'
@@ -39,6 +40,7 @@ export interface ClientCordisInspectHost {
 export class ClientCordisInspectRegistry {
   private readonly providers = new Map<string, ClientCordisInspectProviderRegistration>()
   private readonly active = new Map<CordisInspectRequestId, AbortController>()
+  private disposed = false
   private publishQueued = false
   private syncChain = Promise.resolve()
 
@@ -72,17 +74,26 @@ export class ClientCordisInspectRegistry {
     }
   }
 
+  /** Stop queued publications and active queries before the Connection is disposed. */
+  dispose(): void {
+    this.disposed = true
+    for (const controller of this.active.values()) controller.abort()
+    this.active.clear()
+    this.providers.clear()
+  }
+
   /** Publish the current complete manifest, including after reconnect. */
   publish(): void {
-    if (this.publishQueued) return
+    if (this.disposed || this.publishQueued) return
     this.publishQueued = true
     queueMicrotask(() => {
       this.publishQueued = false
+      if (this.disposed) return
       const manifests = [...this.providers.values()].map(provider => provider.manifest)
       this.syncChain = this.syncChain.then(async () => {
-        await this.host.sync(manifests)
+        if (!this.disposed) await this.host.sync(manifests)
       }).catch((error: unknown) => {
-        console.error('[cordis-client-runner] syncing inspect providers failed:', error)
+        if (!this.disposed) clientError('[cordis-client-runner] syncing inspect providers failed:', error)
       })
     })
   }

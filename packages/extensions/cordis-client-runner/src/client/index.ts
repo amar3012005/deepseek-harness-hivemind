@@ -1,3 +1,4 @@
+import { clientError } from './diagnostics.ts'
 /**
  * Dynamic-package runner, browser half: the load engine that turns one browser
  * half's source into a live cordis plugin (closure → guard → module table →
@@ -197,6 +198,7 @@ export function apply(ctx: Context): void {
       if (!answered.ok) throw new Error(`${answered.error.code}: ${answered.error.message}`)
     },
   })
+  ctx.effect(() => () => { inspect.dispose() }, 'client inspect lifecycle')
   provideClientCordisInspect(ctx, inspect)
   for (const provider of clientInspectProviders(ctx)) {
     ctx.effect(() => inspect.register(provider), `cordis-client-runner: inspect ${provider.manifest.id}`)
@@ -229,19 +231,19 @@ export function apply(ctx: Context): void {
     reportRenderFailure: (agentId, pluginId, pluginRunId, failure) => {
       void ctx.remote.dynamicCordisRunner.reportRenderFailure(agentId, pluginId, pluginRunId, failure).then((result) => {
         if (!result.ok) {
-          console.error(`[cordis-client-runner] reporting a render failure of ${pluginId} failed:`, result.error)
+          clientError(`[cordis-client-runner] reporting a render failure of ${pluginId} failed:`, result.error)
         }
       }, (error: unknown) => {
-        console.error(`[cordis-client-runner] reporting a render failure of ${pluginId} failed:`, error)
+        clientError(`[cordis-client-runner] reporting a render failure of ${pluginId} failed:`, error)
       })
     },
     reportGuardFailure: (agentId, pluginId, pluginRunId, failure) => {
       void ctx.remote.dynamicCordisRunner.reportClientGuardFailure(agentId, pluginId, pluginRunId, failure).then((result) => {
         if (!result.ok) {
-          console.error(`[cordis-client-runner] reporting a guard failure of ${pluginId} failed:`, result.error)
+          clientError(`[cordis-client-runner] reporting a guard failure of ${pluginId} failed:`, result.error)
         }
       }, (error: unknown) => {
-        console.error(`[cordis-client-runner] reporting a guard failure of ${pluginId} failed:`, error)
+        clientError(`[cordis-client-runner] reporting a guard failure of ${pluginId} failed:`, error)
       })
     },
   })
@@ -302,7 +304,7 @@ export function apply(ctx: Context): void {
   })
   ctx.remote.$on('cordis/inspect-query', (request) => {
     void inspect.query(request).catch((error: unknown) => {
-      console.error(`[cordis-client-runner] inspect query ${request.provider}.${request.method} failed:`, error)
+      clientError(`[cordis-client-runner] inspect query ${request.provider}.${request.method} failed:`, error)
     })
   })
   ctx.remote.$on('cordis/inspect-query-resolved', (resolved) => { inspect.close(resolved.requestId) })

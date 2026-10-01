@@ -1,3 +1,4 @@
+import { clientError } from './diagnostics.ts'
 /**
  * Page-side run orchestration for model approvals and direct panel gestures.
  * Host activation always precedes Client loading. The same Plugin-keyed state
@@ -157,7 +158,7 @@ export class CordisRunOrchestrator {
         requestId: request.requestId,
         hasClientHalf: true,
       }).catch((error: unknown) => {
-        console.error(`[cordis-client-runner] automatic activation ${request.requestId} failed:`, error)
+        clientError(`[cordis-client-runner] automatic activation ${request.requestId} failed:`, error)
       })
       return
     }
@@ -403,7 +404,7 @@ export class CordisRunOrchestrator {
     failure: CordisErrorDetails,
     originalError?: unknown,
   ): Promise<void> {
-    console.error(
+    clientError(
       `[cordis-client-runner] Client activation ${plan.pluginId}/${plan.packageId} (${pluginRunId}) failed:`,
       originalError ?? failure,
     )
@@ -432,7 +433,7 @@ export class CordisRunOrchestrator {
     try {
       await this.env.host.resolveRequestRun(requestId, resolution)
     } catch (error) {
-      console.error(`[cordis-client-runner] answering run request ${requestId} failed:`, error)
+      clientError(`[cordis-client-runner] answering run request ${requestId} failed:`, error)
     }
   }
 

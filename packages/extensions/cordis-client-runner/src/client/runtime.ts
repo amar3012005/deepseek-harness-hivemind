@@ -1,3 +1,4 @@
+import { clientError } from './diagnostics.ts'
 /**
  * Per-package browser lifecycle: evaluate the closure, wrap `apply` in the guard
  * facade, seat a ready-made factory in the module table, and create a loader
@@ -350,7 +351,7 @@ export class DynamicCordisPackageRunner {
         noteError: (message) => {
           // A loaded package's own console.error: a page-local diagnostic with
           // no wire carrier (the run round trip settled long before).
-          console.error(`[cordis-client-runner] ${half.pluginId} logged an error:`, message)
+          clientError(`[cordis-client-runner] ${half.pluginId} logged an error:`, message)
         },
       }, styles)
     } catch (error) {

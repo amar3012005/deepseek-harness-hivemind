@@ -54,10 +54,11 @@ export function WelcomeNotice(props: WelcomeNoticeProps): ReactNode {
   const acknowledge = async (): Promise<void> => {
     if (await controller.acknowledge()) finish()
   }
-  const paragraphs = t('welcomeBody').split('\n\n')
+  const hive = typeof document !== 'undefined' && document.documentElement.dataset.dshMode === 'hivemind-chat'
+  const paragraphs = hive ? ['Welcome to HIVEMIND. Connect your company knowledge and work with your agents in one secure workspace.'] : t('welcomeBody').split('\n\n')
 
   return (
-    <OnboardingModal title={t('welcomeTitle')} focusTitle>
+    <OnboardingModal title={hive ? 'Welcome to HIVEMIND' : t('welcomeTitle')} focusTitle>
       <div className={css.copy}>
         {paragraphs.map(paragraph => <p key={paragraph}>{paragraph}</p>)}
       </div>

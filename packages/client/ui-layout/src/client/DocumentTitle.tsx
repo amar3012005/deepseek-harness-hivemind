@@ -21,7 +21,10 @@ export function DocumentTitle({ useSessions, usePanelInfo, productTitle }: Docum
     return !showSessionTitle || current === undefined ? undefined : state.byId[current]?.title
   })
   useEffect(() => {
-    document.title = title === undefined ? productTitle : `${title} — ${productTitle}`
+    const hive = document.documentElement.dataset.dshMode === 'hivemind-chat'
+    const visibleTitle = hive && (title === 'deepseek-harness' || title === 'DeepSeek Harness') ? undefined : title
+    const brand = hive ? 'HIVEMIND' : productTitle
+    document.title = visibleTitle === undefined ? brand : `${visibleTitle} — ${brand}`
     return () => { document.title = productTitle }
   }, [productTitle, title])
   return null

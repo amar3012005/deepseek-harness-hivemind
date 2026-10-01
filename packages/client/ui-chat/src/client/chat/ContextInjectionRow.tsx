@@ -48,7 +48,8 @@ export function ContextInjectionRow({ content, source, provenance, form, t }: Co
            name shape. A source that names no producer drops the dot with it. */
         <>
           <span className={css.sep} aria-hidden />
-          <span className={css.source} data-context-source>{provenance.label}</span>
+          <span className={css.source} data-context-source>{typeof document !== 'undefined' && document.documentElement.dataset.dshMode === 'hivemind-chat'
+            ? provenance.label.replace(/^dsh-hivemind-runtime\/turn$/u, 'HIVEMIND context').replace(/DeepSeek Harness|deepseek-harness|\bDSH\b|\bdsh-/gu, 'HIVEMIND ') : provenance.label}</span>
           {summary !== null && (
             <>
               <span className={css.sep} aria-hidden />
