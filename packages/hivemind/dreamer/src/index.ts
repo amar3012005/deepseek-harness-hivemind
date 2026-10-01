@@ -242,8 +242,10 @@ export function apply(ctx: Context, config: Config): void {
           try {
             const log = await handle.read()
             const session = Session.fromRestore(id, [...log.events], handle.header, handle.inheritedEventCount, log.eventState)
-            const event = session.append('hivemind/dream-agenda', { text: input.text, userId: p.userId })
-            await handle.append([event]); await handle.flush()
+            session.append('hivemind/dream-agenda', { text: input.text, userId: p.userId })
+            // Restoration may append recovery events. Persist the entire new suffix
+            // so the agenda cannot skip their durable sequence numbers.
+            await handle.append(session.snapshotEvents().slice(log.events.length)); await handle.flush()
           } finally { await handle.close() }
         } else {
           const session = ctx.sessions.prepare(id, { meta: { agentPreset: 'hivemind-chat', origin: 'subagent' } })

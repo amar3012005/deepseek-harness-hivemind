@@ -29,7 +29,6 @@ export function DreamingRoom() {
         const reason = value.error?.includes('already owned') ? 'Dreaming is busy. Your draft is kept; try again shortly.'
           : response.status === 401 ? 'Your session expired. Reload Dreaming and try again.'
             : `Agenda could not be saved (request ${response.status}). Please try again.`
-        console.warn('Dreaming agenda save rejected', response.status, value.error)
         throw new Error(reason)
       }
       const value = await response.json() as { text: string }
