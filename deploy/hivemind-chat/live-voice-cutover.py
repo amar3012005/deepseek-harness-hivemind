@@ -1,6 +1,8 @@
 """Runner-only immutable voice release; credential input is private JSON on stdin."""
 import copy
 import json
+import io
+import tarfile
 import os
 import pathlib
 import subprocess
@@ -37,7 +39,11 @@ assert not home.exists(), 'Credential home already exists; reconcile explicitly'
 home.parent.mkdir(parents=True, exist_ok=True)
 os.chmod(home.parent, 0o700)
 home.mkdir(mode=0o700)
-subprocess.run(['docker', 'cp', f'{container}:/tmp/dsh/.', str(home)], check=True)
+archive = subprocess.check_output(['docker', 'exec', container, 'tar', '-C', '/tmp/dsh', '-cf', '-', '.'])
+with tarfile.open(fileobj=io.BytesIO(archive)) as bundle:
+    bundle.extractall(home, filter='data')
+for entry in home.rglob('*'):
+    os.chown(entry, 1000, 1000, follow_symlinks=False)
 os.chown(home, 1000, 1000)
 os.chmod(home, 0o700)
 record = json.load(sys.stdin)
