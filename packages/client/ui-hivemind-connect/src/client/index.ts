@@ -122,7 +122,10 @@ export function apply(ctx: ClientContext): void {
       const match = typeof value === 'string' ? value.toLowerCase().match(/^[a-z]{2}/u) : null
       return match?.[0] ?? 'en'
     }
-    let selected = normalize(localeFace.getSnapshot?.().active ?? document.documentElement.lang)
+    const readLanguage = (): string => normalize(
+      document.documentElement.dataset.hivemindReplyLanguage ?? document.documentElement.lang ?? localeFace.getSnapshot?.().active,
+    )
+    let selected = readLanguage()
     const sync = (): void => {
       if (disposed) return
       const sessionId = ctx.sessions.list.getSnapshot().current
@@ -135,16 +138,21 @@ export function apply(ctx: ClientContext): void {
       void session.command(`/hivemind-language ${selected}`).catch(() => { sent.delete(sessionId) })
     }
     const onLanguage = (): void => {
-      selected = normalize(localeFace.getSnapshot?.().active ?? document.documentElement.lang)
+      selected = readLanguage()
       sync()
     }
     const stop = ctx.sessions.list.subscribe(sync)
     const stopLanguage = localeFace.subscribe?.(onLanguage) ?? (() => {})
+    window.addEventListener('hivemind:ui-language', onLanguage)
+    const languageObserver = new MutationObserver(onLanguage)
+    languageObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['data-hivemind-reply-language'] })
     sync()
     return () => {
       disposed = true
       stop()
       stopLanguage()
+      window.removeEventListener('hivemind:ui-language', onLanguage)
+      languageObserver.disconnect()
     }
   }, 'ui-hivemind-connect: navbar reply language')
   // Language synchronization is durable session state, not user-authored chat.
