@@ -322,7 +322,7 @@ export class DreamStore {
       if (owned.rowCount !== 1) throw new Error('dreamer_lease_lost')
       const key = candidateKey(run.org_id, candidate)
       await db.query(
-        'INSERT INTO harness_dream_outputs(org_id,idempotency_key,run_id,candidate) VALUES($1,$2,$3,$4::jsonb) ON CONFLICT(org_id,idempotency_key) DO NOTHING',
+        'INSERT INTO harness_dream_outputs(org_id,idempotency_key,run_id,candidate) VALUES($1,$2,$3,$4::jsonb) ON CONFLICT(org_id,idempotency_key) DO UPDATE SET run_id=EXCLUDED.run_id WHERE harness_dream_outputs.receipt IS NULL',
         [run.org_id, key, run.id, JSON.stringify(candidate)],
       )
       const row = (

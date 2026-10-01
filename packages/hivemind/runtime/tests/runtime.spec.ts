@@ -870,6 +870,18 @@ describe('HIVE-MIND runtime', () => {
     expect(saveBody.relationship).toEqual({ type: 'Updates', target_id: 'e0b4a5e9-6ae3-45e0-8c15-5e0a300d7e23' })
   })
 
+  it('sends sourceIds rather than target_id for derived relationships', async () => {
+    const path = await authorityFile()
+    profileResponses([jsonResponse({}, 404), jsonResponse({ id: 'derived-id' })])
+    const harness = mount(config(path))
+    const source = 'e0b4a5e9-6ae3-45e0-8c15-5e0a300d7e23'
+    await tool(harness, 'hivemind_meta').execute({ operation: 'save',
+      save: { title: 'Inference', content: 'Supported inference.', relationship: 'derive', related_to: source },
+    }, execContext())
+    const body = JSON.parse(String(vi.mocked(fetch).mock.calls[4]?.[1]?.body))
+    expect(body.relationship).toEqual({ type: 'Derives', sourceIds: [source] })
+  })
+
   it('refuses a correction that substitutes text for a recalled memory id', async () => {
     const harness = mount(config(await authorityFile()))
     await expect(tool(harness, 'hivemind_meta').execute({

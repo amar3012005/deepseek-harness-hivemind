@@ -1354,7 +1354,10 @@ export function apply(ctx: Context, config: Config): void {
         ...request.relationship === undefined ? {} : {
           relationship: {
             type: { update: 'Updates', extend: 'Extends', derive: 'Derives' }[request.relationship],
-            target_id: request.relatedTo,
+            ...(request.relationship === 'derive'
+              ? { sourceIds: Array.isArray((request.metadata?.['dreamer'] as JsonRecord | undefined)?.['sourceMemoryIds'])
+                ? (request.metadata?.['dreamer'] as JsonRecord | undefined)?.['sourceMemoryIds'] : [request.relatedTo] }
+              : { target_id: request.relatedTo }),
           },
         },
         metadata: {

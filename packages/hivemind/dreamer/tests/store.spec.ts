@@ -129,6 +129,12 @@ suite('PostgreSQL Dreamer isolation and durability', () => {
       confidence: 0.6,
     }
     const reserved = await store.reserveOutput(run, candidate)
+    // A retry can encounter the same unsaved candidate owned by an older occurrence.
+    const older = await store.accept(a.orgId, `${a.orgId}:dreaming:older-output`, 'older-output', 'dreaming', setting.revision)
+    await admin.query('UPDATE harness_dream_outputs SET run_id=$1 WHERE org_id=$2 AND idempotency_key=$3', [older.id, a.orgId, reserved.key])
+    await store.reserveOutput(run, candidate)
+    expect((await admin.query('SELECT run_id FROM harness_dream_outputs WHERE org_id=$1 AND idempotency_key=$2', [a.orgId, reserved.key])).rows[0].run_id).toBe(run.id)
+    await admin.query("UPDATE harness_dream_runs SET status='failed' WHERE id=$1", [older.id])
     await store.outputSaved(run, reserved.key, source, { status: 'saved', memory_id: source })
     await admin.query("UPDATE harness_dream_runs SET lease_until=now()-interval '1 second' WHERE id=$1", [run.id])
     await admin.query("UPDATE harness_dream_due SET lease_until=now()-interval '1 second' WHERE org_id=$1", [a.orgId])
