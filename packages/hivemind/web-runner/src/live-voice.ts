@@ -180,6 +180,7 @@ export function liveVoicePlugin(config: LiveVoiceConfig,
               const sdp = await response.text()
               const socket = new WebSocket(`wss://api.openai.com/v1/live/${encodeURIComponent(callId)}`, { headers, handshakeTimeout: config.timeoutMs, maxPayload: 1_000_000 })
               const roomId = randomUUID()
+              let lastCompact = compact
               let closed = false; let busy = false; const seen = new Set<string>(); const transcript: string[] = []
               const lifetime = new AbortController()
               const send = (text: string, delegationId?: string, channel: 'thinking' | 'commentary' = 'commentary') => {
@@ -220,7 +221,7 @@ export function liveVoicePlugin(config: LiveVoiceConfig,
                   if (event.turn.role === 'user') void ctx.hivemindExecutionScope.run(p, async () => {
                     try {
                       const updated = await agentEvents(ctx, agent).serial('hivemind/voice-context', { signal: AbortSignal.any([lifetime.signal, AbortSignal.timeout(config.timeoutMs)]) })
-                      if (!closed && updated) send(updated, undefined, 'thinking')
+                      if (!closed && updated && updated !== lastCompact) { lastCompact = updated; send(updated, undefined, 'thinking') }
                     } catch { close() }
                   })
                 }

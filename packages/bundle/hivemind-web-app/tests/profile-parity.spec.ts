@@ -11,7 +11,7 @@ const connectPackage = JSON.parse(readFileSync(
 describe('hivemind-web native renderer parity', () => {
   it('allows authenticated chat and company work without changing the default', () => {
     expect(patch).toContain('default: hivemind-chat')
-    expect(patch).toContain('allowed: [hivemind-chat, hivemind-hyperagents]')
+    expect(patch).toContain('allowed: [hivemind-chat, hivemind-hyperagents, hivemind-hq]')
   })
 
   it('omits developer prompt contributions without replacing native tool guidance', () => {
