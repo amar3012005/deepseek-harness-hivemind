@@ -50,6 +50,7 @@ export interface Config {
   redisJtiPrefix: string
   sessionMaxAgeSeconds: number
   /** Control-plane origin for the scoped project catalog. */
+  onboardingServiceApiBase?: string
   serviceApiBase: string
   /** Additional HTTP origins allowed only for local/Compose development. */
   serviceHttpOrigins: string[]
@@ -65,6 +66,7 @@ export const Config: z<Config> = z.object({
   redisUrlEnv: z.string().required(),
   redisJtiPrefix: z.string().required(),
   sessionMaxAgeSeconds: z.natural().min(60).max(86400).required(),
+  onboardingServiceApiBase: z.string(),
   serviceApiBase: z.string().required(),
   serviceHttpOrigins: z.array(String).default([]),
   serviceSecretEnv: z.string().required(),
@@ -468,7 +470,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
       const principal = ctx.connection.principal({ headers: { host: publicHost(req) || req.headers.host, cookie: req.headers.cookie } })
       if (principal?.profile !== 'hivemind-chat' || !nonEmpty(principal.user_id) || !nonEmpty(principal.org_id)) { json(res, 401, { diagnostic: 'authentication_required' }); return }
       try {
-        const response = await fetch(new URL('/internal/v1/harness-chat/core/v1/hyperagents/onboarding/homepage-screenshot', projectCatalogBase), {
+        const response = await fetch(new URL('/internal/v1/harness-chat/core/v1/hyperagents/onboarding/homepage-screenshot', serviceBase(config.onboardingServiceApiBase ?? config.serviceApiBase, config.serviceHttpOrigins)), {
           headers: { accept: 'application/json', authorization: `Bearer ${serviceToken(principal, projectCatalogSecret)}` },
           redirect: 'manual', signal: AbortSignal.timeout(10_000),
         })

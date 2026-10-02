@@ -134,8 +134,9 @@
           capabilityHintEnabled: false
           authorityMode: scoped-service
           icarusConfigPath: !!js process.env.HIVEMIND_ICARUS_CONFIG_PATH ?? `${process.env.HOME}/.icarus/config.json`
+          onboardingServiceApiBase: !!js process.env.HIVEMIND_ONBOARDING_SERVICE_URL ?? 'http://core:3000'
           serviceApiBase: !!js process.env.HIVEMIND_CONNECTED_RECEIPT_SERVICE_URL
-          serviceHttpOrigins: !!js (process.env.HIVEMIND_SERVICE_HTTP_ORIGINS ?? '').split(',').map(value => value.trim()).filter(Boolean)
+          serviceHttpOrigins: !!js [...(process.env.HIVEMIND_SERVICE_HTTP_ORIGINS ?? '').split(',').map(value => value.trim()).filter(Boolean), process.env.HIVEMIND_ONBOARDING_SERVICE_URL ?? 'http://core:3000']
           serviceSecretEnv: HIVE_HARNESS_RUNNER_SERVICE_SECRET
           durableReceiptsRequired: !!js process.env.HIVEMIND_CONNECTED_RECEIPTS_REQUIRED === 'true'
           requestTimeoutMs: 20000

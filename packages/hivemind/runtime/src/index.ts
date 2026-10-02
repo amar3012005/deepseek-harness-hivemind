@@ -206,6 +206,7 @@ export interface Config {
   /** Identity transport. Local mode uses ICARUS; scoped-service uses the authenticated request principal. */
   authorityMode?: 'local' | 'scoped-service'
   /** HIVE control-plane origin used only by the scoped production transport. */
+  onboardingServiceApiBase?: string
   serviceApiBase?: string
   /** Extra http origins allowed for runner-to-control-plane calls (Compose DNS). */
   serviceHttpOrigins?: string[]
@@ -244,6 +245,7 @@ export const Config: z<Config> = z.object({
   privateMemoryRetryMs: z.natural().min(1000).default(30000),
   icarusConfigPath: z.string().required(),
   authorityMode: z.union(['local', 'scoped-service'] as const).default('local'),
+  onboardingServiceApiBase: z.string(),
   serviceApiBase: z.string(),
   serviceHttpOrigins: z.array(String).default([]),
   serviceSecretEnv: z.string(),
@@ -1488,7 +1490,10 @@ export function apply(ctx: Context, config: Config): void {
         const authority = await resolveAuthority(attachmentCtx, config)
         const id = args.operation === 'inspect' ? nonEmptyString(args.source_id, 'onboarding source ID') : undefined
         if (id && !/^[A-Za-z0-9-]{1,80}$/.test(id)) throw new HiveMindRuntimeError('invalid onboarding source ID')
-        const result = apiRecord(await hiveRequest(authority, '/v1/hyperagents/onboarding' + (id ? '/' + id : ''), { method: 'GET' }, execution.signal, config), 'retained onboarding evidence')
+        const onboardingAuthority = config.onboardingServiceApiBase
+          ? { ...authority, apiBase: allowedServiceBase(config.onboardingServiceApiBase, config.serviceHttpOrigins) }
+          : authority
+        const result = apiRecord(await hiveRequest(onboardingAuthority, '/v1/hyperagents/onboarding' + (id ? '/' + id : ''), { method: 'GET' }, execution.signal, config), 'retained onboarding evidence')
         if (typeof result.base64 !== 'string') return result
         if (!execution.agent) throw new HiveMindRuntimeError('onboarding image requires an agent')
         const mediaType = result.media_type
