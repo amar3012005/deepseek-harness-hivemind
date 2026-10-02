@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-10-02-native-image-direct-tool.md
+2026-10-02-native-image-direct-tool.md: ad550f6e96a2988a8bdadaf653add9090244d342
+2026-10-02-native-image-direct-tool.zh.md: 909667fd8657e6612f299dfa43edc2ce3b4566ac

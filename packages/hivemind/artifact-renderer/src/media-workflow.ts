@@ -117,7 +117,7 @@ export function registerMediaWorkflow(
   })
   ctx.tools.register(defineTool({
     name: 'hivemind_media_generate',
-    description: 'Start reliable image or video creation as a durable background job. Use one complete brief; the workflow validates inputs, uses the configured provider, stores the artifact, and wakes this session on completion. Track the returned job_id with native job tools. Reuse operation_id on recovery. Set resume_operation only to reconcile an interrupted operation; do not change the ID to blindly regenerate. The completion artifact and preview are already visible; answer without generating again.',
+    description: 'Generate or edit an image directly with a complete creative brief; no capability discovery or lease is required. Video also uses this native background job tool. Use one complete brief; the workflow validates inputs, uses the configured provider, stores the artifact, and wakes this session on completion. Track the returned job_id with native job tools. Reuse operation_id on recovery. Set resume_operation only to reconcile an interrupted operation; do not change the ID to blindly regenerate. The completion artifact and preview are already visible; answer without generating again.',
     parameters: {
       kind: { type: 'string', required: true, enum: ['image', 'video'] },
       title: { type: 'string', required: true },
