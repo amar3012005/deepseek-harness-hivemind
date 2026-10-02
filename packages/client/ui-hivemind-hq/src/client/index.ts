@@ -1,3 +1,5 @@
+import type {} from '@deepseek-ai/dsh-client-ui-chat/client'
+import { RuntimePlanSummary } from './RuntimePlanSummary.tsx'
 /** Native header contribution over generated, tenant-authorized HQ Remote contracts. */
 import { createElement, useState, useSyncExternalStore } from 'react'
 import type { Context } from '@deepseek-ai/cordis'
@@ -39,6 +41,16 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
           ?? child.sessions.list.getSnapshot().byId[props.sessionId]?.agentPreset)
       return preset === 'hivemind-hq' ? createElement(HqControlAction, props) : null
     }
+    child.slots.inject('conversation.chat.turnTail', () => child.slots.register({
+      name: 'conversation.chat.turnTail', priority: 36,
+      select: owner => owner.turn.turn,
+      inject: sessionId => ({
+        sessionId, events: child.sessions.binding(sessionId)?.eventSource,
+        load: (id: typeof sessionId) => child.remote.hivemindHq.workspace(id),
+        cancel: (id: typeof sessionId, request: { taskId: string; expectedRevision: number }) =>
+          child.remote.hivemindHq.cancelScheduledTask(id, request),
+      }),
+    }, ({ matched, events, ...props }) => events ? createElement(RuntimePlanSummary, { ...props, events, turn: matched }) : null))
     const panel = 'hivemind-company-calendar' as MainPanelId
     const workspace: Omit<CompanyWorkspaceProps, 'sessionId'> = {
       progress: (id, taskId) => child.remote.hivemindHq.taskProgress(id, taskId),

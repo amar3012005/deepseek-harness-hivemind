@@ -29,6 +29,15 @@ export function HiveLiveVoiceButton({ sessionId, useInput, t }: Props) {
     setState('idle'); setCaption(''); setSpeakerMuted(false); setMicMuted(false)
   }, [])
   useEffect(() => () => { stop() }, [sessionId, stop])
+  const toggleRef = useRef<() => Promise<void>>()
+  useEffect(() => {
+    const start = (event: Event) => {
+      const detail = (event as CustomEvent<{ sessionId: string }>).detail
+      if (detail?.sessionId === sessionId) void toggleRef.current?.()
+    }
+    window.addEventListener('hivemind:start-room-call', start)
+    return () => { window.removeEventListener('hivemind:start-room-call', start) }
+  }, [sessionId])
   const toggle = async () => {
     if (state !== 'idle') { stop(); return }
     const ticket = ++generation.current
@@ -78,6 +87,7 @@ export function HiveLiveVoiceButton({ sessionId, useInput, t }: Props) {
       else { local?.stream.getTracks().forEach(track => track.stop()); local?.peer.close() }
     }
   }
+  toggleRef.current = toggle
   // A typed draft retains the ordinary upward send arrow; ongoing voice keeps its end control.
   if (draft.trim() && state === 'idle') return null
   const label = busy ? t('voice.busy') : error ? t('voice.retry') : state === 'connecting' ? t('voice.connecting') : state === 'live' ? t('voice.end') : t('voice.start')

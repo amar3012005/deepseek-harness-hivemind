@@ -203,10 +203,18 @@ export function liveVoicePlugin(config: LiveVoiceConfig,
               if (!compact) throw new Error('profile_unavailable')
               const assembly = await ctx.systemPrompt.assemble(assembleContextFor(agent, signal))
               const persona = renderPrompt({ ...assembly, sections: assembly.sections.filter(section => section.name === 'deployment:persona-prefix') })
-              const prompt = `${persona}\n\n${VOICE_INSTRUCTIONS}`
+              const preset = agent.session.header.agentPreset
+              const runtime = preset === 'hivemind-hq'
+              const voiceIdentity = runtime
+                ? 'You are Runtime, this company’s AI Chief of Staff, speaking in your persistent Runtime room. Discuss the investigated company, evidence-backed strategy and actual scheduled tasks from the room context. Ask about the user’s current agenda and listen to corrections. Do not call yourself HIVEMIND or Tara. Handle conversation naturally; route plan changes, approvals and actions to the same Runtime agent using the spoken request verbatim. Never claim a change before its native receipt. Do not read tool names or hidden reasoning aloud.'
+                : VOICE_INSTRUCTIONS
+              const prompt = `${persona}\n\n${voiceIdentity}`
               const history = agent.session.snapshotEvents().flatMap(event => event.type === 'user/message' && event.data.source.kind === 'user'
-                ? [`User: ${textOf(event.data)}`] : event.type === 'assistant/message' ? [`HIVEMIND: ${textOf(event.data.message)}`] : []).slice(-12).join('\n').slice(-12000)
-              const context = `${compact}\n\nRecent conversation:\n${history}`
+                ? [`User: ${textOf(event.data)}`] : event.type === 'assistant/message' ? [`${runtime ? 'Runtime' : 'HIVEMIND'}: ${textOf(event.data.message)}`] : []).slice(-12).join('\n').slice(-12000)
+              const investigation = runtime ? agent.session.snapshotEvents().filter(event =>
+                ['hivemind/hq-awakening-checkpoint', 'hivemind/hq-calendar-item', 'hivemind/hq-calendar-wake'].includes(String(event.type)))
+                .slice(-24).map(event => JSON.stringify(event.data)).join('\n').slice(-16000) : ''
+              const context = `${compact}\n\nRecent conversation:\n${history}\n\nSaved Runtime investigation and scheduled work:\n${investigation}`
               const grant = await models.getAuth('openai-codex', { signal })
               const token = grant?.auth.apiKey
               if (!token) throw new Error('voice_authorization_unavailable')

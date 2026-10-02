@@ -134,12 +134,12 @@ export function apply(ctx: Context): void {
     defineTool({
       name: 'hivemind_hq_contract',
       description:
-        'Coordinate existing native Team tasks: list contracts, attach immutable deadline/acceptance criteria, assign an authenticated employee persona, link saved producer artifacts, or review those saved inputs with Jev. Native Team tools own task lifecycle and dependencies. Completion requires linked receipts and an accepted review of the current revision. This tool never grants authority.',
+        'Coordinate existing native Team tasks: list contracts, attach immutable deadline/acceptance criteria, assign an authenticated employee persona, schedule contracted pending tasks for verified employees, link saved producer artifacts, or review those saved inputs with Jev. Native Team tools own task lifecycle and dependencies. Completion requires linked receipts and an accepted review of the current revision. This tool never grants authority.',
       parameters: {
         action: {
           type: 'string',
           required: true,
-          enum: ['list', 'attach', 'artifacts', 'assign', 'review'],
+          enum: ['list', 'attach', 'artifacts', 'assign', 'review', 'schedule'],
         },
         employee_id: {
           type: 'string',
@@ -148,6 +148,8 @@ export function apply(ctx: Context): void {
         },
         task_id: { type: 'string' },
         due_at: { type: 'string', description: 'RFC3339 instant with explicit timezone.' },
+        starts_at: { type: 'string', description: 'Future RFC3339 start with timezone for schedule.' },
+        ends_at: { type: 'string', description: 'RFC3339 end after starts_at for schedule.' },
         acceptance_criteria: { type: 'array', items: { type: 'string' } },
         artifact_ids: { type: 'array', items: { type: 'string' } },
         producer: {
@@ -168,6 +170,8 @@ export function apply(ctx: Context): void {
           action: string
           task_id?: string
           employee_id?: string
+          starts_at?: string
+          ends_at?: string
           due_at?: string
           acceptance_criteria?: string[]
           artifact_ids?: string[]
@@ -206,6 +210,25 @@ export function apply(ctx: Context): void {
         if (membership.role !== 'lead') throw new Error('hq_lead_required')
         if (!input.task_id) throw new Error('hq_task_id_required')
         const task = ctx.agentTeams.getTask(agent, TeamTaskId(input.task_id))
+        if (input.action === 'schedule') {
+          if (!contracts.some(value => value.taskId === task.id) || !input.employee_id || !input.starts_at || !input.ends_at)
+            throw new Error('hq_schedule_requires_contract_employee_and_times')
+          const directory = await ctx.hivemindEmployeeDirectory.profiles(execution.signal)
+          if (!directory.profiles.some(profile => profile['id'] === input.employee_id)) throw new Error('hq_employee_not_found')
+          const existing = calendarItems(events).find(item => item.taskId === task.id)
+          if (!existing && Date.parse(input.starts_at) <= Date.now()) throw new Error('hq_schedule_start_must_be_future')
+          const result = await ctx.hivemindHq.plan(root, {
+            expectedRevision: existing ? existing.revision - 1 : 0,
+            item: existing ?? { id: `initial-${task.id}`, revision: 1, kind: 'assignment', title: task.subject,
+              owner: input.employee_id, taskId: task.id, startsAt: input.starts_at, endsAt: input.ends_at, resolved: false },
+          })
+          if (!result.ok) throw new Error('hq_calendar_conflict')
+          const workspace = await ctx.hivemindHq.workspace(root)
+          const wake = workspace.wakes.find(item => item.taskId === task.id && item.status === 'active')
+          if (!wake) throw new Error('hq_schedule_receipt_unavailable')
+          return { status: 'scheduled', task_id: task.id, employee_id: result.value.owner, starts_at: result.value.startsAt,
+            ends_at: result.value.endsAt, schedule_id: wake.id, effective_trigger_at: wake.scheduledAt }
+        }
         if (input.action === 'review') {
           const contract = contracts.find(value => value.taskId === task.id)
           if (!contract) throw new Error('hq_contract_required')

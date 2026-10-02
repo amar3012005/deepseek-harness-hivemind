@@ -326,7 +326,7 @@ export class HqControl extends TypertRemoteService {
           `Review planned native Team task ${item.taskId}, calendar item ${item.id}, revision ${item.revision}. ` +
           'Read the current calendar revision, task status, dependencies, acceptance contract and employee receipts first. ' +
           'If this revision was superseded or the task is already running or terminal, do not dispatch it again. ' +
-          'Otherwise assign its authenticated employee within existing authority. Missing employee, contract or authority must be resolved before dispatch. ' +
+          `Otherwise assign authenticated employee ${item.owner} within existing authority. Missing employee, contract or authority must be resolved before dispatch. ` +
           'This wake grants no new permissions; completion requires saved deliverable receipts and HQ review.',
       })
       root.session.append('hivemind/hq-calendar-wake', {
@@ -355,6 +355,22 @@ export class HqControl extends TypertRemoteService {
           id: ScheduleId(binding.data.scheduleId),
         })
       }
+  }
+
+  /** Cancel pending scheduled work through native Team state before removing its wake. */
+  @Remote('cancelScheduledTask')
+  async cancelScheduledTask(agent: Agent, request: { taskId: string; expectedRevision: number }): Promise<{ cancelled: boolean }> {
+    const root = this.root(agent)
+    const task = this.ctx.agentTeams.getTask(root, TeamTaskId(request.taskId))
+    if (!['pending', 'deleted'].includes(task.status)) throw new Error('hq_only_pending_work_can_be_cancelled')
+    if (task.status === 'pending') await this.ctx.agentTeams.updateTask(root, { taskId: task.id, expectedRevision: request.expectedRevision, action: 'delete' })
+    const events = root.session.snapshotEvents()
+    const itemIds = new Set(calendarItems(events).filter(item => item.taskId === task.id).map(item => item.id))
+    for (const event of events) {
+      if (event.type !== 'hivemind/hq-calendar-wake' || !itemIds.has(event.data.itemId)) continue
+      await this.ctx.schedule.delete({ sessionId: root.id, id: ScheduleId(event.data.scheduleId) })
+    }
+    return { cancelled: true }
   }
 
   /**
