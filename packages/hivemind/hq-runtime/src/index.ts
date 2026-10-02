@@ -77,13 +77,20 @@ export function apply(ctx: Context): void {
     if (preset !== 'hivemind-hq') return decision
     await recoverRest(ctx, agent, signal)
     await acknowledgeRestNotes(ctx, agent)
-    if (briefed.get(agent) === turn) return decision
+    const awakening = await awakeningContext(ctx, agent, turn, decision.messages)
+    if (briefed.get(agent) === turn) {
+      if (!awakening) return decision
+      return { ...decision, messages: [...decision.messages, createUserMessage({
+        source: { kind: 'plugin', plugin: 'hivemind-hq/first-awakening', form: 'snapshot',
+          sections: [{ name: 'hq-first-awakening', text: awakening }] },
+        content: [{ type: 'text', text: awakening }],
+      })] }
+    }
     // The admitted message is durable native context: inject once per turn,
     // and reread on cold restoration rather than adding a copy per tool step.
     const workspace = await ctx.hivemindHq.workspace(agent)
     briefed.set(agent, turn)
     const rest = restBriefing(agent, decision.messages)
-    const awakening = await awakeningContext(ctx, agent, turn, decision.messages)
     const briefing = createUserMessage({
       source: { kind: 'plugin', plugin: 'hivemind-hq/wake-briefing', form: 'recall', sections: [rest.section] },
       content: [{ type: 'text', text: `${wakeBriefing(workspace, agent.session.snapshotEvents(), agent.id)}\n${awakening ? '' : rest.text}` }],

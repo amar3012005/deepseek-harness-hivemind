@@ -1607,10 +1607,23 @@ export function apply(ctx: Context, config: Config): void {
     ctx.effect(() => ctx.sessionProjections.register(employeeLatestMessageProjection))
     if (config.authorityMode !== 'scoped-service') throw new HiveMindRuntimeError('private operating memory requires scoped-service authority')
     const ensureOwner = async (agent: Agent, signal: AbortSignal): Promise<SessionOwner> => {
-      const existing = sessionOwner(agent.session.snapshotEvents())
+      const events = agent.session.snapshotEvents()
+      const existing = sessionOwner(events)
+      let preset = agent.session.header.agentPreset
+      for (const event of events) if (String(event.type) === 'agent-preset/selected')
+        preset = (event.data as { agentPreset: string }).agentPreset
+      const runtime = preset === 'hivemind-hq'
+      if (runtime && existing?.id === null && existing.slug === 'lead') {
+        const owner: SessionOwner = { id: null, slug: 'runtime', name: 'Runtime', role: 'AI Chief of Staff' }
+        agent.session.append('hivemind/session-owner', owner)
+        if (!await ctx.sessions.flush(agent.session)) throw new HiveMindRuntimeError('Runtime owner persistence required')
+        return owner
+      }
       if (existing !== undefined) return existing
       const selected = sessionSelectedEmployee(agent)
-      let owner: SessionOwner = { id: null, slug: 'lead', name: 'HyperAgents', role: 'Team Lead' }
+      let owner: SessionOwner = runtime
+        ? { id: null, slug: 'runtime', name: 'Runtime', role: 'AI Chief of Staff' }
+        : { id: null, slug: 'lead', name: 'HyperAgents', role: 'Team Lead' }
       if (selected !== undefined) {
         const authority = await resolveAuthority(ctx, config)
         const directory = hyperagentDirectory(await hiveRequest(authority, '/v1/hyperagents/profiles', { method: 'GET' }, signal, config))
@@ -1736,7 +1749,7 @@ export function apply(ctx: Context, config: Config): void {
 
 Ownership: the authoritative session owner is pinned when the first turn starts and persists across tasks and reloads. Saves are always attributed to that owner; do not switch identities by task stage. Recall may filter any real employee slug within this tenant. The runtime automatically writes task_status/completed response records with the request, answer, requestedAt, completedAt, owner, sessionId, turn and tool receipt references. Their run_id is a deterministic DSH response-record identity, not a claim of an external WorkRun. Response completion does not certify external tool success. Do not duplicate automatic task records with handoff saves.
 
-Schema: save supports kind learning, decision_note, or handoff, always with status recorded. Give a short title (at most 180 characters), verified summary (at most 2400 characters), and agent_slug. The parent Team Lead slug is lead; for an assigned employee, use the real directory slug. Include exact room_id, run_id, and trigger_id only when known from receipts. A successful save returns ok, project, memory id, and timestamps. Recall is bounded to this tenant and project; use a focused query and optional agent/room/run filters. A project name or an empty company Memories list does not prove this private store is empty. HQ Runtime receives one bounded private recall at the start of each turn, including scheduled wakes. Other employees call recall explicitly; HQ recalls again only when new evidence needs a more focused query.
+Schema: save supports kind learning, decision_note, or handoff, always with status recorded. Give a short title (at most 180 characters), verified summary (at most 2400 characters), and agent_slug. HQ Runtime uses slug runtime; historical HQ notes may use lead. The ordinary parent Team Lead slug is lead; for an assigned employee, use the real directory slug. Include exact room_id, run_id, and trigger_id only when known from receipts. A successful save returns ok, project, memory id, and timestamps. Recall is bounded to this tenant and project; use a focused query and optional agent/room/run filters. A project name or an empty company Memories list does not prove this private store is empty. HQ Runtime receives one bounded private recall at the start of each turn, including scheduled wakes. Other employees call recall explicitly; HQ recalls again only when new evidence needs a more focused query.
 
 1. For a new substantive task, use the automatic HQ recall when supplied, otherwise call hyperagents_memory recall before planning with the actual task, assigned employee, and known room/run/trigger context. A no-match result means only that this bounded search found nothing.
 2. On continuation or recovery, inspect the durable plan, completed steps, and receipts first. Then recall private handoffs relevant to unfinished work. Never redo a completed step because a remembered summary mentions it.
