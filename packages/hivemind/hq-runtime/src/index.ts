@@ -84,10 +84,15 @@ export function apply(ctx: Context): void {
     briefed.set(agent, turn)
     const rest = restBriefing(agent, decision.messages)
     const awakening = await awakeningContext(ctx, agent, turn, decision.messages)
-    return { ...decision, messages: [createUserMessage({
+    const briefing = createUserMessage({
       source: { kind: 'plugin', plugin: 'hivemind-hq/wake-briefing', form: 'recall', sections: [rest.section] },
-      content: [{ type: 'text', text: `${wakeBriefing(workspace, agent.session.snapshotEvents(), agent.id)}\n${rest.text}\n${awakening}` }],
-    }), ...decision.messages] }
+      content: [{ type: 'text', text: `${wakeBriefing(workspace, agent.session.snapshotEvents(), agent.id)}\n${awakening ? '' : rest.text}` }],
+    })
+    if (awakening) return { ...decision, messages: [briefing, ...decision.messages, createUserMessage({
+      source: { kind: 'plugin', plugin: 'hivemind-hq/first-awakening', form: 'snapshot' },
+      content: [{ type: 'text', text: awakening }],
+    })] }
+    return { ...decision, messages: [briefing, ...decision.messages] }
   }, { prepend: true }))
   ctx.effect(() =>
     ctx.agentTeams.guardTaskUpdates((caller, request) => {
