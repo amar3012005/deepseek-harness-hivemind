@@ -62,3 +62,27 @@
 .workbench > nav button[aria-current='page'] { background: var(--dsw-text-primary, #27272a); color: var(--dsw-surface-primary, #fff); }
 .workbench h2 { font-size: 19px; margin: 12px 0 18px; }
 .workbenchPdf { min-height: 320px; height: 65dvh; }
+
+.galleryHeader { display: flex; gap: 8px; align-items: center; padding: 18px 0; }
+.galleryHeader strong { flex: 1; font-size: 16px; }
+.galleryHeader select, .galleryHeader button { max-width: 130px; border: 1px solid var(--dsw-border-subtle, #e4e4e7); border-radius: 10px; padding: 7px 9px; background: transparent; color: inherit; font: inherit; font-size: 12px; }
+.artifactGallery { display: grid; gap: 12px; padding: 0 0 20px; }
+.artifactCard { position: relative; display: block; width: 100%; padding: 0; text-align: left; overflow: hidden; border: 1px solid var(--dsw-border-subtle, #e4e4e7); border-radius: 18px; background: var(--dsw-surface-primary, #fff); color: inherit; cursor: pointer; box-shadow: 0 5px 16px #0000000c; transition: transform 180ms ease, box-shadow 180ms ease; }
+.artifactCard:focus-visible { outline: 2px solid #117dff; outline-offset: 3px; }
+.artifactCover { display: grid; position: relative; place-items: center; height: 210px; overflow: hidden; background: var(--dsw-alias-interactive-bg-hover, #f4f4f5); }
+.artifactCover .workbenchImage { width: 100%; height: 100%; object-fit: contain; border: 0; border-radius: 0; margin: 0; }
+.artifactFormat { font-size: 36px; font-weight: 600; opacity: .5; }
+.artifactCaption { display: grid; gap: 5px; padding: 14px; }
+.artifactCaption strong { font-size: 13px; overflow-wrap: anywhere; }
+.artifactCaption small { color: var(--dsw-text-secondary, #71717a); font-size: 11px; overflow-wrap: anywhere; }
+.lastViewed { position: absolute; top: 12px; left: 12px; padding: 6px 10px; border-radius: 999px; background: #171717c9; color: #fff; font-size: 11px; }
+.artifactGallery[data-view='stack'] .artifactCard:not(:first-child) { margin-top: -150px; width: calc(100% - 12px); justify-self: center; }
+.artifactGallery[data-view='stack'] .artifactCard:hover, .artifactGallery[data-view='stack'] .artifactCard:focus-visible { z-index: 100 !important; transform: translateY(-8px); box-shadow: 0 12px 30px #00000026; }
+.artifactGallery[data-view='grid'] { grid-template-columns: repeat(auto-fit, minmax(min(210px, 100%), 1fr)); }
+@media (prefers-reduced-motion: reduce) { .artifactCard { transition: none; } }
+
+/* Keep the selected file centered in the available preview canvas. */
+.workbench[data-hivemind-workbench='preview'] { min-height: 100%; display: flex; flex-direction: column; justify-content: center; }
+.workbench[data-hivemind-workbench='preview'] > article { width: 100%; margin: auto; }
+.workbench[data-hivemind-workbench='preview'] .workbenchImage { max-height: 70dvh; object-fit: contain; margin-inline: auto; }
+.workbench[data-hivemind-workbench='preview'] .workbenchActions { justify-content: flex-end; }

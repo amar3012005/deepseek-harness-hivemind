@@ -5,6 +5,13 @@ import type { SnapshotSelectorHook } from '@deepseek-ai/dsh-client-store'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import css from './HyperagentEmployee.module.css'
 
+declare module '@deepseek-ai/dsh-client-ui-sidebar-right/client' {
+  interface SidebarRightTabParamsMap {
+    'hivemind-workbench-preview': { artifactId: string }
+  }
+}
+const lastViewedArtifacts = new Map<string, string>()
+
 type Kind = 'preview' | 'artifacts' | 'computer' | 'sources'
 
 interface Artifact {
@@ -74,6 +81,7 @@ type WorkbenchProps = PropsRuntime<'sidebar.right.pane.tab'> & PropsLocale<'hive
   loadPdf: (ref: FileAttachmentRef) => Promise<Blob>
   openArtifact: (artifact: Artifact, disposition?: 'open' | 'download') => void
   openWorkbench: (kind: Kind) => void
+  selectArtifact: (id: string) => void
 }
 
 function ReceiptImage({ attachment, loadImage }: { attachment: ImageAttachmentRef | undefined; loadImage: WorkbenchProps['loadImage'] }) {
@@ -116,22 +124,35 @@ function PdfReceipt({ artifact, loadPdf, loadImage, t }: { artifact: Artifact; l
 
 /** Shared native workbench backed by the current session log. */
 export function HyperagentWorkbench({
-  kind, sessionId, useEmployeeEvents, loadImage, loadPdf, openArtifact, t,
+  kind, sessionId, useTabInfo, useEmployeeEvents, loadImage, loadPdf, openArtifact, selectArtifact, t,
 }: WorkbenchProps) {
   const data = useEmployeeEvents(workbenchSnapshot)
+  const info = useTabInfo()
+  const requested = (info.tab.navigation.params as { artifactId?: string } | undefined)?.artifactId
+  const [view, setView] = useState<'stack' | 'grid'>('stack')
+  const [filter, setFilter] = useState('all')
+  const [latestViewed, setLatestViewed] = useState(lastViewedArtifacts.get(sessionId))
+  const choose = (artifact: Artifact) => {
+    lastViewedArtifacts.set(sessionId, artifact.id)
+    setLatestViewed(artifact.id)
+    selectArtifact(artifact.id)
+  }
   const [selectedSource, setSelectedSource] = useState<Source | null>(null)
   useEffect(() => { setSelectedSource(null) }, [sessionId])
-  const lastArtifact = data.artifacts.at(-1)
+  const lastArtifact = data.artifacts.find(artifact => artifact.id === requested) ?? data.artifacts.at(-1)
   const lastCapture = data.captures.at(-1)
   return <div className={css.workbench} data-hivemind-workbench={kind}>
     {kind === 'preview' && (lastArtifact === undefined
       ? <p className={css.workbenchEmpty}>{t('workbench.emptyPreview')}</p>
       : <article><span className={css.workbenchEyebrow}>{lastArtifact.mediaType}</span><h2>{lastArtifact.title}</h2>{lastArtifact.mediaType === 'application/pdf' && lastArtifact.file !== undefined
         ? <PdfReceipt artifact={lastArtifact} loadPdf={loadPdf} loadImage={loadImage} t={t} />
-        : <><div className={css.workbenchActions}><button type="button" className={css.workbenchOpen} disabled={lastArtifact.file === undefined} onClick={() => { openArtifact(lastArtifact) }}>{t('workbench.open')}</button><button type="button" className={css.workbenchOpen} disabled={lastArtifact.file === undefined} onClick={() => { openArtifact(lastArtifact, 'download') }}>{t('workbench.download')}</button></div><ReceiptImage attachment={lastArtifact.preview} loadImage={loadImage} /></>}</article>)}
-    {kind === 'artifacts' && (data.artifacts.length === 0
-      ? <p className={css.workbenchEmpty}>{t('workbench.emptyArtifacts')}</p>
-      : <ul className={css.workbenchList}>{[...data.artifacts].reverse().map(artifact => <li key={artifact.id}><button type="button" disabled={artifact.file === undefined} onClick={() => { openArtifact(artifact) }}>{artifact.title}</button><small>{artifact.mediaType} · {artifact.path.split('/').at(-1)}</small></li>)}</ul>)}
+        : <><div className={css.workbenchActions}><button type="button" className={css.workbenchOpen} disabled={lastArtifact.file === undefined} onClick={() => { openArtifact(lastArtifact, 'download') }}>{t('workbench.download')}</button></div><ReceiptImage attachment={lastArtifact.preview} loadImage={loadImage} /></>}</article>)}
+    {kind === 'artifacts' && <>
+      <header className={css.galleryHeader}><strong>{t('workbench.artifacts')}</strong><select aria-label={t('workbench.filter')} value={filter} onChange={(event) => { setFilter(event.target.value) }}><option value="all">{t('workbench.all')}</option>{[...new Set(data.artifacts.map(artifact => artifact.mediaType))].map(type => <option key={type} value={type}>{type}</option>)}</select><button type="button" onClick={() => { setView(view === 'stack' ? 'grid' : 'stack') }}>{t(view === 'stack' ? 'workbench.grid' : 'workbench.stack')}</button></header>
+      {data.artifacts.length === 0 ? <p className={css.workbenchEmpty}>{t('workbench.emptyArtifacts')}</p> : <div className={css.artifactGallery} data-view={view}>{[...data.artifacts].reverse().filter(artifact => filter === 'all' || artifact.mediaType === filter).map((artifact, index) => <button key={artifact.id} type="button" className={css.artifactCard} style={{ zIndex: data.artifacts.length - index }} onClick={() => { choose(artifact) }} aria-label={`${t('workbench.open')}: ${artifact.title}`}>
+        <div className={css.artifactCover}>{artifact.preview ? <ReceiptImage attachment={artifact.preview} loadImage={loadImage} /> : <span className={css.artifactFormat}>{artifact.mediaType === 'application/pdf' ? 'PDF' : /\.pptx?$/i.test(artifact.path) ? 'PPTX' : /\.docx?$/i.test(artifact.path) ? 'DOC' : artifact.mediaType === 'text/markdown' ? 'MD' : artifact.mediaType.split('/').at(-1)?.toUpperCase()}</span>}{latestViewed === artifact.id && <span className={css.lastViewed}>{t('workbench.lastViewed')}</span>}</div><span className={css.artifactCaption}><strong>{artifact.title}</strong><small>{artifact.path.split('/').at(-1)}</small></span>
+      </button>)}</div>}
+    </>}
     {kind === 'computer' && (lastCapture === undefined
       ? <p className={css.workbenchEmpty}>{t('workbench.emptyComputer')}</p>
       : <article><span className={css.workbenchEyebrow}>{t('workbench.browserCapture')} {lastCapture.status ?? ''}</span><h2>{lastCapture.title}</h2><ReceiptImage attachment={lastCapture.preview} loadImage={loadImage} /><a href={lastCapture.url} target="_blank" rel="noopener noreferrer">{lastCapture.url}</a></article>)}
