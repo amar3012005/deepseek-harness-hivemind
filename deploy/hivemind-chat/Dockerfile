@@ -33,6 +33,7 @@ RUN set -eu; \
   done
 
 FROM node:24-bookworm-slim AS runtime
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates && rm -rf /var/lib/apt/lists/*
 ARG DSH_CLIENT_COMMIT_HASH
 LABEL org.opencontainers.image.revision=${DSH_CLIENT_COMMIT_HASH}
 LABEL com.singulance.service=harness-runner

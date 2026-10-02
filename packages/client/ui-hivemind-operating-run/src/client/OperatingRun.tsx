@@ -20,6 +20,7 @@ import type {} from '@deepseek-ai/dsh-api-remotes/client'
 import { Avatar } from '@humation/react'
 import { humation1 } from '@humation/assets-humation-1'
 import { type ReactNode, useState } from 'react'
+import { ImageProgress } from './ImageProgress.tsx'
 import { fileArtifactBlob, saveArtifact } from './download.ts'
 import css from './OperatingRun.module.css'
 import { en, NS, type OperatingRunKey, zh } from './locales.ts'
@@ -126,6 +127,7 @@ interface ArtifactData {
 }
 
 interface MediaWorkflowData {
+  readonly startedAt?: number
   readonly kind: string
   readonly title: string
   readonly provider: string
@@ -782,6 +784,7 @@ function mediaWorkflowData(event: SessionEventLike, previous?: MediaWorkflowData
   const rawStatus = string(data['status'])
   const diagnostic = string(data['diagnostic'])
   return {
+    ...(typeof data['startedAt'] === 'number' ? { startedAt: data['startedAt'] } : {}),
     kind: string(data['kind']) ?? previous?.kind ?? 'media',
     title: string(data['title']) ?? previous?.title ?? '',
     provider: string(data['provider']) ?? previous?.provider ?? '',
@@ -1127,6 +1130,8 @@ function MediaWorkflowPanel({ node, t }: PanelProps<'hivemind-media-workflow'>) 
   return (
     <Card title={t('media.title')} state={node.data.status} statusText={t(`state.${node.data.status}` as OperatingRunKey)}>
       <div className={css.objective}>{node.data.title || t('media.title')}</div>
+      {node.data.kind === 'image' && node.data.status === 'running'
+        ? <ImageProgress startedAt={node.data.startedAt} label={t('media.progress')} /> : null}
       <div className={css.meta}>
         <span className={css.chip}>{node.data.kind.toUpperCase()}</span>
         <span>{node.data.provider || t('media.providerUnknown')}</span>

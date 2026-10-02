@@ -78,6 +78,7 @@ External packages installed for runtime use or distributed inside the prebuilt b
 | [`eventsource-parser`](https://github.com/rexxars/eventsource-parser) | MIT |
 | [`exceljs`](https://github.com/exceljs/exceljs) | MIT |
 | [`fflate`](https://github.com/101arrowz/fflate) | MIT |
+| [`img-fx`](https://github.com/Jakubantalik/img-fx) | MIT |
 | [`immer`](https://github.com/immerjs/immer) | MIT |
 | [`ipaddr.js`](https://github.com/whitequark/ipaddr.js) | MIT |
 | [`js-yaml`](https://github.com/nodeca/js-yaml) | MIT |
@@ -116,6 +117,7 @@ External packages installed for runtime use or distributed inside the prebuilt b
 | [`shiki`](https://github.com/shikijs/shiki) | MIT |
 | [`supports-color`](https://github.com/chalk/supports-color) | MIT |
 | [`thinking-orbs`](https://github.com/Jakubantalik/Libraries.dev) | MIT |
+| [`three`](https://github.com/mrdoob/three.js) | MIT |
 | [`tsx`](https://github.com/privatenumber/tsx) | MIT |
 | [`turndown`](https://github.com/mixmark-io/turndown) | MIT |
 | [`typescript`](https://github.com/microsoft/TypeScript) | Apache-2.0 |

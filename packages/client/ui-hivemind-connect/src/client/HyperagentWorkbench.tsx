@@ -74,6 +74,7 @@ type WorkbenchProps = PropsRuntime<'sidebar.right.pane.tab'> & PropsLocale<'hive
   loadImage: (ref: ImageAttachmentRef) => Promise<string>
   loadPdf: (ref: FileAttachmentRef) => Promise<Blob>
   openArtifact: (artifact: Artifact, disposition?: 'open' | 'download') => void
+  openWorkbench: (kind: Kind) => void
 }
 
 function ReceiptImage({ attachment, loadImage }: { attachment: ImageAttachmentRef | undefined; loadImage: WorkbenchProps['loadImage'] }) {
@@ -111,12 +112,12 @@ function PdfReceipt({ artifact, loadPdf, loadImage, t }: { artifact: Artifact; l
   }, [artifact.file?.attachmentId])
   return url === undefined
     ? <>{failed && <p className={css.workbenchPath} role="status">{t('workbench.pdfUnavailable')}</p>}<ReceiptImage attachment={artifact.preview} loadImage={loadImage} /></>
-    : <iframe className={css.workbenchPdf} src={url} title={artifact.title} />
+    : <><a className={css.workbenchOpen} href={url} download={artifact.file?.name}>{t('workbench.downloadPdf')}</a><iframe className={css.workbenchPdf} src={url} title={artifact.title} /></>
 }
 
 /** HyperAgents-only native sidebar body backed by one session log. */
 export function HyperagentWorkbench({
-  kind, sessionId, useSessions, useEmployeeEvents, loadImage, loadPdf, openArtifact, t,
+  kind, sessionId, useSessions, useEmployeeEvents, loadImage, loadPdf, openArtifact, openWorkbench, t,
 }: WorkbenchProps) {
   const preset = useSessions(state => state.byId[sessionId]?.projectionValues?.agentPreset)
   const data = useEmployeeEvents(workbenchSnapshot)
@@ -126,10 +127,13 @@ export function HyperagentWorkbench({
   const lastArtifact = data.artifacts.at(-1)
   const lastCapture = data.captures.at(-1)
   return <div className={css.workbench} data-hivemind-workbench={kind}>
+    <nav className={css.workbenchActions} aria-label={t('workbench.preview')}>
+      {(['preview', 'artifacts', 'computer', 'sources'] as const).map(tab => <button key={tab} type="button" className={css.workbenchOpen} aria-current={kind === tab ? 'page' : undefined} onClick={() => { openWorkbench(tab) }}>{t(`workbench.${tab}`)}</button>)}
+    </nav>
     {kind === 'preview' && (lastArtifact === undefined
       ? <p className={css.workbenchEmpty}>{t('workbench.emptyPreview')}</p>
       : <article><span className={css.workbenchEyebrow}>{lastArtifact.mediaType}</span><h2>{lastArtifact.title}</h2>{lastArtifact.mediaType === 'application/pdf' && lastArtifact.file !== undefined
-        ? <><div className={css.workbenchActions}><button type="button" className={css.workbenchOpen} onClick={() => { openArtifact(lastArtifact, 'download') }}>{t('workbench.downloadPdf')}</button></div><PdfReceipt artifact={lastArtifact} loadPdf={loadPdf} loadImage={loadImage} t={t} /></>
+        ? <PdfReceipt artifact={lastArtifact} loadPdf={loadPdf} loadImage={loadImage} t={t} />
         : <><div className={css.workbenchActions}><button type="button" className={css.workbenchOpen} disabled={lastArtifact.file === undefined} onClick={() => { openArtifact(lastArtifact) }}>{t('workbench.open')}</button><button type="button" className={css.workbenchOpen} disabled={lastArtifact.file === undefined} onClick={() => { openArtifact(lastArtifact, 'download') }}>{t('workbench.download')}</button></div><ReceiptImage attachment={lastArtifact.preview} loadImage={loadImage} /></>}</article>)}
     {kind === 'artifacts' && (data.artifacts.length === 0
       ? <p className={css.workbenchEmpty}>{t('workbench.emptyArtifacts')}</p>

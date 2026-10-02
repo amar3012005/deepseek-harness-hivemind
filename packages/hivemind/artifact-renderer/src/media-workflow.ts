@@ -100,6 +100,21 @@ export function registerMediaWorkflow(
   },
 ): void {
   const activeOperations = new Set<string>()
+  ctx.on('agent/created', async ({ agent }) => {
+    const events = agent.session.snapshotEvents()
+    const ended = new Set(events.filter(item => item.type === 'hivemind/media-workflow-ended')
+      .map(item => item.data.workflowId))
+    const jobs = new Set(ctx.jobs.list(agent).map(job => String(job.id)))
+    let changed = false
+    for (const event of events) {
+      if (event.type !== 'hivemind/media-workflow-started' || ended.has(event.data.workflowId)
+        || jobs.has(event.data.jobId)) continue
+      agent.session.append('hivemind/media-workflow-ended', { ...event.data, status: 'killed', attempts: 0,
+        finishedAt: Date.now(), diagnostic: 'This image or video run was interrupted. Its outcome is unconfirmed; reconcile the saved operation before retrying.' })
+      changed = true
+    }
+    if (changed) await ctx.sessions.flush(agent.session)
+  })
   ctx.tools.register(defineTool({
     name: 'hivemind_media_generate',
     description: 'Start reliable image or video creation as a durable background job. Use one complete brief; the workflow validates inputs, uses the configured provider, stores the artifact, and wakes this session on completion. Track the returned job_id with native job tools. Reuse operation_id on recovery. Set resume_operation only to reconcile an interrupted operation; do not change the ID to blindly regenerate. The completion artifact and preview are already visible; answer without generating again.',
