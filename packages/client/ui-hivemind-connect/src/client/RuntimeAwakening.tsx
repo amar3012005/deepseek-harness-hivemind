@@ -28,10 +28,8 @@ export function RuntimeAwakening({ events, turn }: { events: EventSource; turn: 
     return item.turn === turn ? [{ ...item, seq: entry.event.seq }] : []
   })
   if (!checkpoints.length) return null
-  const stages = [...new Set(checkpoints.map(item => item.stage))].map((stage) => {
-    const items = checkpoints.filter(item => item.stage === stage)
-    return { ...items.findLast(item => item.stage === stage), cards: items.flatMap(item => item.cards) }
-  })
+  const stages = checkpoints.filter((item, index) => checkpoints.findIndex(other => other.stage === item.stage) === index)
+    .map(item => ({ ...item, cards: checkpoints.filter(other => other.stage === item.stage).flatMap(other => other.cards) }))
   return <section className={css.root} aria-label="Runtime investigation">
     {stages.map(item => <section key={item.seq} className={css.stage}>
       <header><strong>{titles[item.stage] ?? item.stage}</strong>{item.blocked && <span>Needs attention</span>}</header>
