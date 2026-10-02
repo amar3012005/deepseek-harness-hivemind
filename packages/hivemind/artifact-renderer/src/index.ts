@@ -75,6 +75,12 @@ export interface Config {
   videoTimeoutMs?: number
   videoMaxBytes?: number
   videoResolution?: string
+  mediaRequireOwner?: boolean
+  mediaAdmissionPath?: string
+  mediaGlobalConcurrency?: number
+  mediaTenantConcurrency?: number
+  mediaMaxQueued?: number
+  mediaDailyUserLimit?: number
   mediaMaxBriefChars?: number
   mediaImageAttempts?: number
   mediaRetryBaseDelayMs?: number
@@ -99,6 +105,12 @@ export const Config: z<Config> = z.object({
   videoTimeoutMs: z.natural().min(1).max(3_600_000).default(1_200_000),
   videoMaxBytes: z.natural().min(1_000_000).max(500_000_000).default(150_000_000),
   videoResolution: z.string().default('720p'),
+  mediaRequireOwner: z.boolean().default(false),
+  mediaAdmissionPath: z.string().default('/tmp/dsh/storages/media-admission.sqlite'),
+  mediaGlobalConcurrency: z.natural().min(1).max(64).default(4),
+  mediaTenantConcurrency: z.natural().min(1).max(16).default(1),
+  mediaMaxQueued: z.natural().min(1).max(1000).default(100),
+  mediaDailyUserLimit: z.natural().min(1).max(10000).default(50),
   mediaMaxBriefChars: z.natural().min(100).max(40_000).default(12_000),
   mediaImageAttempts: z.natural().min(1).max(5).default(3),
   mediaRetryBaseDelayMs: z.natural().min(10).max(10_000).default(500),
@@ -334,6 +346,8 @@ export function apply(ctx: Context, config: Config): void {
     }))
     registerGenerationTools(rendererCtx, registry, config.outputDirectory, config.maxMarkdownChars, config.attachmentOnly)
     registerMediaWorkflow(rendererCtx, registry, config.outputDirectory, {
+      requireOwner: config.mediaRequireOwner === true,
+      ...(config.mediaRequireOwner ? { admission: { path: config.mediaAdmissionPath ?? '/tmp/dsh/storages/media-admission.sqlite', globalConcurrency: config.mediaGlobalConcurrency ?? 4, tenantConcurrency: config.mediaTenantConcurrency ?? 1, maxQueued: config.mediaMaxQueued ?? 100, dailyUserLimit: config.mediaDailyUserLimit ?? 50 } } : {}),
       maxBriefChars: config.mediaMaxBriefChars ?? 12_000,
       imageAttempts: config.mediaImageAttempts ?? 3,
       retryBaseDelayMs: config.mediaRetryBaseDelayMs ?? 500,

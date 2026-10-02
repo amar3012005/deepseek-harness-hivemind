@@ -2,9 +2,10 @@
 import { spawn } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { createHash } from 'node:crypto'
-import { mkdir, readFile, writeFile, rename, realpath, stat } from 'node:fs/promises'
+import { mkdir, readFile, writeFile, rename, realpath, stat, open } from 'node:fs/promises'
 import { join, relative, isAbsolute } from 'node:path'
 import { createInterface } from 'node:readline'
+import type { MediaOwner } from './media-admission.ts'
 import type { GenerationProvider, GenerationRequest, GeneratedFile } from './generation.ts'
 
 /** Host-only OAuth grant: never returned as tool content or persisted in a session. */
@@ -26,8 +27,8 @@ declare module '@deepseek-ai/cordis' {
     'hivemind/codex-image-auth'(input: { signal: AbortSignal }): Promise<CodexImageAuth | undefined>
   }
 }
-interface State { status: 'pending' | 'completed'; threadId?: string; turnId?: string; filename?: string }
-const active = new Map<string, Promise<GeneratedFile>>()
+interface State { owner?: MediaOwner; status: 'pending' | 'completed'; threadId?: string; turnId?: string; filename?: string }
+const active = new Map<string, { owner: MediaOwner | undefined; run: Promise<GeneratedFile> }>()
 function object(value: unknown): value is Record<string, unknown> { return value !== null && typeof value === 'object' && !Array.isArray(value) }
 
 /** Small stdio RPC transport; refuses shell, MCP, and approval requests from the image worker. */
@@ -102,8 +103,11 @@ class ImageWire {
 
 async function saveState(root: string, state: State): Promise<void> {
   const temp = join(root, 'operation.tmp')
-  await writeFile(temp, JSON.stringify(state), { mode: 0o600 })
+  const file = await open(temp, 'w', 0o600)
+  try { await file.writeFile(JSON.stringify(state)); await file.sync() } finally { await file.close() }
   await rename(temp, join(root, 'operation.json'))
+  const directory = await open(root, 'r')
+  try { await directory.sync() } finally { await directory.close() }
 }
 async function storedOutput(root: string, filename: string): Promise<GeneratedFile> {
   const path = await realpath(filename)
@@ -134,9 +138,12 @@ export function codexImageProvider(config: CodexImageConfig): GenerationProvider
       if (request.referenceImages?.length) throw new Error('Codex image references must be session-owned artifacts, not remote URLs')
       const root = join(config.stateDirectory, createHash('sha256').update(request.operationId).digest('hex'))
       const prior = active.get(root)
-      if (prior) return prior
+      if (prior) {
+        if (JSON.stringify(prior.owner) !== JSON.stringify(request.owner)) throw new Error('Image operation ownership mismatch')
+        return prior.run
+      }
       const run = runImage(config, root, request)
-      active.set(root, run)
+      active.set(root, { owner: request.owner, run })
       try { return await run } finally { active.delete(root) }
     },
   }
@@ -146,6 +153,9 @@ async function runImage(config: CodexImageConfig, root: string, request: Generat
   let state: State | undefined
   try { state = JSON.parse(await readFile(join(root, 'operation.json'), 'utf8')) as State }
   catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw new Error('Image operation state cannot be read safely') }
+  if (state?.owner && !request.owner) throw new Error('Image operation ownership is required')
+  if (state && request.owner && (!state.owner || state.owner.orgId !== request.owner.orgId || state.owner.userId !== request.owner.userId || state.owner.sessionId !== request.owner.sessionId)) throw new Error('Image operation ownership mismatch')
+  if (!state && request.reconcileOnly) throw new Error('Previous image submission has no confirmed provider receipt; it was not regenerated')
   if (state?.status === 'completed' && state.filename) return storedOutput(root, state.filename)
   const signal = AbortSignal.any([request.signal, AbortSignal.timeout(config.timeoutMs)])
   const auth = await config.auth(signal)
@@ -173,10 +183,11 @@ async function runImage(config: CodexImageConfig, root: string, request: Generat
       }
       throw new Error('Previous image outcome is unknown. This operation was not regenerated; inspect its existing run before starting a new operation.')
     }
+    await saveState(root, { ...(request.owner ? { owner: request.owner } : {}), status: 'pending' })
     const thread = await wire.request('thread/start', { cwd: root, model: config.model, approvalPolicy: 'never', sandbox: 'read-only', ephemeral: false,
       baseInstructions: 'You produce exactly one image using image_gen.imagegen. Do not use shell, research, MCP, or other tools. Do not answer with prose in place of generation. Reference paths are authorized inputs. Use the native image tool once.' })
     if (!object(thread) || !object(thread.thread) || typeof thread.thread.id !== 'string') throw new Error('Codex image thread was not accepted')
-    state = { status: 'pending', threadId: thread.thread.id }
+    state = { ...(request.owner ? { owner: request.owner } : {}), status: 'pending', threadId: thread.thread.id }
     await saveState(root, state)
     let image: Record<string, unknown> | undefined
     let turnError: string | undefined
