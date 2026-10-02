@@ -20,7 +20,10 @@ function fixture() {
   }
   const caller = agent('hq', 'hivemind-hq')
   const ravi = agent('ravi')
-  const ctx = { agents: { get: (id: string) => agents.get(id) }, sessions: { flush: vi.fn(() => Promise.resolve()) } } as unknown as Context
+  const ctx = {
+    agents: { get: (id: string) => agents.get(id) },
+    sessions: { flush: vi.fn(() => Promise.resolve(true)) },
+  } as unknown as Context
   const open = vi.fn((key: string) => Promise.resolve(key === 'runtime' ? caller : ravi))
   const messaging = new RoomMessaging(ctx, open)
   const request = { key: 'test-1', target: 'employee-ravi', targetProfile: { id: 'employee-ravi', name: 'Ravi', role: 'Research' }, kind: 'question' as const, text: 'What is the requested title?' }
@@ -67,6 +70,13 @@ describe('Persistent agent room messaging', () => {
     const { ctx, caller, ravi, messaging, request } = fixture()
     vi.mocked(ctx.sessions.flush).mockImplementationOnce(() => Promise.resolve(true)).mockRejectedValueOnce(new Error('flush failed'))
     await expect(messaging.send(caller, request, signal)).rejects.toThrow('flush failed')
+    await messaging.send(caller, request, signal)
+    expect(ravi.steer).toHaveBeenCalledTimes(1)
+  })
+  it('does not confirm a false checkpoint and repairs the same accepted inbox on retry', async () => {
+    const { ctx, caller, ravi, messaging, request } = fixture()
+    vi.mocked(ctx.sessions.flush).mockResolvedValueOnce(true).mockResolvedValueOnce(false)
+    await expect(messaging.send(caller, request, signal)).rejects.toThrow('persistence_required')
     await messaging.send(caller, request, signal)
     expect(ravi.steer).toHaveBeenCalledTimes(1)
   })
