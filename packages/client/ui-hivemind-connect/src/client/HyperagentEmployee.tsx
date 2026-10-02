@@ -46,7 +46,7 @@ const laneColors: Record<string, string> = {
 /** The same animated Runtime portrait used by the outer sidebar. */
 export function RuntimeAvatar({ size }: { size: number }) {
   return <img src="/assets/runtime-computer-c2305f5b.webp?v=c2305f5b" alt="Runtime" width={size} height={size}
-    style={{ width: size, height: size, objectFit: 'contain', flexShrink: 0, borderRadius: 12 }} />
+    style={{ width: size, height: size, objectFit: 'contain', flexShrink: 0, mixBlendMode: 'multiply', filter: 'brightness(1.08)' }} />
 }
 
 /** Reuse production FE Humation seed, asset and role-color mapping. */
