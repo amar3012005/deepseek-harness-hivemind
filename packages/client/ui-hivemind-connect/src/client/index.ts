@@ -232,7 +232,7 @@ export function apply(ctx: ClientContext): void {
       if (typeof profile.id !== 'string' || typeof profile.name !== 'string') return []
       const role = typeof profile.role_archetype === 'string' ? profile.role_archetype : 'employee'
       const avatarUrl = typeof profile.avatar_url === 'string' ? profile.avatar_url : undefined
-      return [{ id: profile.id, name: profile.name, role, ...(avatarUrl === undefined ? {} : { avatarUrl }) }]
+      return [{ id: profile.id, name: profile.name, role, ...(typeof profile.persona === 'string' ? { persona: profile.persona } : {}), ...(typeof profile.created_at === 'string' ? { createdAt: profile.created_at } : {}), ...(avatarUrl === undefined ? {} : { avatarUrl }) }]
     })
   }
   ctx.inject(['remote.commands', 'remote.agentPresets'], (ctx: ClientContext) => {
@@ -345,14 +345,14 @@ export function apply(ctx: ClientContext): void {
         const state = ctx.sessions.list.getSnapshot()
         const current = state.current
         const row = current === undefined ? undefined : state.byId[current]
-        const owner = projectedEmployee(row?.projectionValues?.hyperagentOwner)
+        const owner = projectedEmployee((row?.projectionValues?.hyperagentOwner ?? row?.projectionValues?.hyperagentSelection))
         const events = current === undefined ? undefined : ctx.sessions.binding(current)?.eventSource.getSnapshot()
         const selection = events === undefined ? null : selectedEmployee(events)
         window.dispatchEvent(new CustomEvent('hivemind:agent-selected', { detail: { id: owner?.id ?? selection?.id ?? null } }))
         const rooms = state.ids.flatMap((id) => {
           const row = state.byId[id]
           if (!row || row.origin === 'subagent' || (row.projectionValues?.agentPreset ?? row.agentPreset) !== 'hivemind-hyperagents') return []
-          const employee = projectedEmployee(row.projectionValues?.hyperagentOwner)
+          const employee = projectedEmployee((row.projectionValues?.hyperagentOwner ?? row.projectionValues?.hyperagentSelection))
           const message = (row.projectionValues as { hyperagentLatestMessage?: string | null } | undefined)?.hyperagentLatestMessage
           let preview = ''
           try { preview = message ? (JSON.parse(message) as { text: string }).text : '' } catch { /* Missing legacy projection. */ }
@@ -480,6 +480,7 @@ export function apply(ctx: ClientContext): void {
           hooks: { employeeEvents: employeeEvents(sessionId) },
           openSession: (id: string) => { scope.sessions.open(id as SessionId) },
           selectArtifact: (artifactId: string) => { scope.sidebarRight.openTabIn(sessionId, 'hivemind-workbench-preview', { params: { artifactId } }) },
+          listEmployees,
           listRoutines: async () => {
             const result = await scope.remote.schedule.catalog()
             if (!result.ok) throw new Error('Routine list unavailable')

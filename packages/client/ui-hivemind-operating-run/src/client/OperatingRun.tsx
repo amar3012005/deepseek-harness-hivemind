@@ -19,7 +19,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
 import { Avatar } from '@humation/react'
 import { humation1 } from '@humation/assets-humation-1'
-import { type ReactNode, useEffect, useState } from 'react'
+import { type ReactNode, useEffect, useRef, useState } from 'react'
 import { ImageProgress } from './ImageProgress.tsx'
 import { fileArtifactBlob, saveArtifact } from './download.ts'
 import css from './OperatingRun.module.css'
@@ -1088,7 +1088,27 @@ function ArtifactTypeIcon({ mediaType, name }: { mediaType: string; name: string
 
 const presentedArtifacts = new Set<string>()
 
-function ArtifactPanel({ sessionId, node, renderMessageImages, t, read, openPreview }: PanelProps<'hivemind-artifact'> & { read: (id: FileAttachmentRef['attachmentId']) => Promise<{ ok: boolean; value?: { attachment: FileAttachmentRef; data: string } }> ; openPreview: () => void }) {
+function ArtifactThumbnail({ attachment, load, title, unavailable }: {
+  attachment: ImageAttachmentRef
+  load: (ref: ImageAttachmentRef) => Promise<string>
+  title: string
+  unavailable: string
+}) {
+  const [url, setUrl] = useState<string>()
+  const [failed, setFailed] = useState(false)
+  const loadRef = useRef(load)
+  loadRef.current = load
+  useEffect(() => {
+    let active = true
+    setUrl(undefined); setFailed(false)
+    void loadRef.current(attachment).then((value) => { if (active) setUrl(value) }, () => { if (active) setFailed(true) })
+    return () => { active = false }
+  }, [attachment.attachmentId])
+  if (failed) return <p role="status">{unavailable}</p>
+  return url ? <img src={url} alt={title} style={{ width: '100%', height: 'auto' }} onError={() => { setFailed(true) }} /> : null
+}
+
+function ArtifactPanel({ sessionId, node, t, read, loadImage, openPreview }: PanelProps<'hivemind-artifact'> & { read: (id: FileAttachmentRef['attachmentId']) => Promise<{ ok: boolean; value?: { attachment: FileAttachmentRef; data: string } }> ; loadImage: (ref: ImageAttachmentRef) => Promise<string>; openPreview: () => void }) {
   const [busy, setBusy] = useState(false)
   const [failed, setFailed] = useState(false)
   useEffect(() => {
@@ -1100,7 +1120,7 @@ function ArtifactPanel({ sessionId, node, renderMessageImages, t, read, openPrev
   }, [sessionId, node.id, node.data.file?.attachmentId, openPreview])
   return (
     <div className={css.artifactResult}>
-      {node.data.preview === undefined ? null : <div className={css.artifactHeroImage}>{renderMessageImages({ images: [{ attachment: node.data.preview }], align: 'start' })}</div>}
+      {node.data.preview === undefined ? null : <div className={css.artifactHeroImage}><ArtifactThumbnail attachment={node.data.preview} load={loadImage} title={node.data.title} unavailable={t('artifact.thumbnailUnavailable')} /></div>}
       <div className={css.artifactFileRow}>
         <button type="button" className={css.artifactFilePreview} onClick={openPreview} disabled={node.data.file === undefined}>
           <ArtifactTypeIcon mediaType={node.data.mediaType} name={node.data.file?.name ?? node.data.title} />
@@ -1233,6 +1253,7 @@ export function apply(ctx: ClientContext): void {
       <ArtifactPanel
         {...props}
         read={attachmentId => ctx.remote.session.fileAttachment({ sessionId: props.sessionId, attachmentId })}
+        loadImage={ref => ctx.uiConversation.imageUrl(props.sessionId, ref)}
         openPreview={() => ctx.sidebarRight.openResourceIn(props.sessionId, `dsh-resource://hivemind-artifact/${props.node.id}`, { params: { artifact: props.node.data } })}
       />
     )),

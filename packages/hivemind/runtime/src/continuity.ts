@@ -99,8 +99,16 @@ export function completedTaskMemory(
 }
 
 declare module '@deepseek-ai/dsh-session-projection/types' {
-  interface SessionProjectionMap { hyperagentOwner: string | null; hyperagentLatestMessage: string | null }
-  interface SessionProjectionStateMap { hyperagentOwner: SessionOwner | null; hyperagentLatestMessage: string | null }
+  interface SessionProjectionMap {
+    hyperagentOwner: string | null
+    hyperagentSelection: string | null
+    hyperagentLatestMessage: string | null
+  }
+  interface SessionProjectionStateMap {
+    hyperagentOwner: SessionOwner | null
+    hyperagentSelection: string | null
+    hyperagentLatestMessage: string | null
+  }
 }
 
 const ownerSchema = z.object({
@@ -133,3 +141,11 @@ export const employeeLatestMessageProjection = {
   },
   wire: { viewSchema: z.string().nullable(), view: state => state },
 } satisfies ProjectionDefinition<'hyperagentLatestMessage', string | null>
+
+/** Editable employee selection for blank rooms, separate from pinned ownership. */
+export const employeeSelectionProjection = {
+  key: 'hyperagentSelection', stateSchema: z.string().nullable(), stateVersion: 1,
+  init: () => null,
+  apply: (state, event) => event.type === 'hivemind/employee-selection' ? JSON.stringify(event.data) : state,
+  wire: { viewSchema: z.string().nullable(), view: state => state },
+} satisfies ProjectionDefinition<'hyperagentSelection', string | null>

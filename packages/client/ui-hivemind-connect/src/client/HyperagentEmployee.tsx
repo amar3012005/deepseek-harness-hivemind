@@ -14,10 +14,16 @@ export interface EmployeeOption {
   name: string
   role: string
   avatarUrl?: string
+  persona?: string
+  createdAt?: string
 }
 
 declare module '@deepseek-ai/dsh-session-projection/types' {
-  interface SessionProjectionMap { hyperagentOwner: string | null }
+  interface SessionProjectionMap {
+    hyperagentOwner: string | null
+    hyperagentSelection: string | null
+    hyperagentLatestMessage: string | null
+  }
 }
 
 /** The owner projection survives pagination and direct cold-session reload. */
@@ -91,7 +97,8 @@ export function HyperagentEmployeePicker({ sessionId, useSessions, useEmployeeEv
   const pickerRef = useRef<HTMLDivElement>(null)
   const preset = useSessions(state => state.byId[sessionId]?.projectionValues?.agentPreset)
   const fromLog = useEmployeeEvents(selectedEmployee)
-  const owner = useSessions(state => state.byId[sessionId]?.projectionValues?.hyperagentOwner)
+  const owner = useSessions(state =>
+    (state.byId[sessionId]?.projectionValues?.hyperagentOwner ?? state.byId[sessionId]?.projectionValues?.hyperagentSelection))
   const started = useSessions(state => state.byId[sessionId]?.blank === false)
   const fromEventsLocked = useEmployeeEvents(employeeOwnershipLocked)
   // Switching now navigates to the other employee's room; it never reassigns this owner.
@@ -143,6 +150,7 @@ export interface AgentRoutine {
   toggle: (active: boolean) => Promise<void>
 }
 type PanelProps = PropsRuntime<'sidebar.right.pane.tab'> & PropsLocale<'hivemind-connect'> & Pick<EmployeeInjected, 'useEmployeeEvents'> & {
+  listEmployees: () => Promise<EmployeeOption[]>
   listRoutines: () => Promise<AgentRoutine[]>
   selectArtifact: (id: string) => void
   openSession: (id: string) => void
@@ -150,9 +158,10 @@ type PanelProps = PropsRuntime<'sidebar.right.pane.tab'> & PropsLocale<'hivemind
 
 /** Real session-owned work and files, using existing native management APIs. */
 export function HyperagentEmployeePanel({
-  sessionId, useSessions, useSession, useEmployeeEvents, listRoutines, selectArtifact, openSession,
+  sessionId, useSessions, useSession, useEmployeeEvents, listRoutines, listEmployees, selectArtifact, openSession,
 }: PanelProps) {
-  const owner = useSessions(state => state.byId[sessionId]?.projectionValues?.hyperagentOwner)
+  const owner = useSessions(state =>
+    (state.byId[sessionId]?.projectionValues?.hyperagentOwner ?? state.byId[sessionId]?.projectionValues?.hyperagentSelection))
   const fromLog = useEmployeeEvents(selectedEmployee)
   const selected = projectedEmployee(owner) ?? fromLog
   const running = useSession(state => state.running)
@@ -161,10 +170,21 @@ export function HyperagentEmployeePanel({
     if (id === sessionId) return []
     const row = state.byId[id]
     if ((row?.projectionValues?.agentPreset ?? row?.agentPreset) !== 'hivemind-hyperagents') return []
-    if (projectedEmployee(row?.projectionValues?.hyperagentOwner)?.id !== selected?.id) return []
+    if (projectedEmployee(
+      (row?.projectionValues?.hyperagentOwner ?? row?.projectionValues?.hyperagentSelection))?.id !== selected?.id) return []
     return [{ id, title: row?.title ?? row?.displayTitle ?? 'Earlier conversation' }]
   }))
   const files = useEmployeeEvents(workbenchSnapshot).artifacts
+  const [profile, setProfile] = useState<EmployeeOption>()
+  const latest = useSessions(state => state.byId[sessionId]?.projectionValues?.hyperagentLatestMessage)
+  let latestText: string | undefined
+  try { if (latest) latestText = (JSON.parse(latest) as { text?: string }).text } catch { /* No saved preview. */ }
+  useEffect(() => {
+    let active = true
+    setProfile(undefined)
+    void listEmployees().then((rows) => { if (active) setProfile(rows.find(row => row.id === selected?.id)) }, () => {})
+    return () => { active = false }
+  }, [selected?.id, listEmployees])
   const [routines, setRoutines] = useState<AgentRoutine[]>([])
   const [accounts, setAccounts] = useState<{ id: string; toolkit: string }[]>([])
   const [error, setError] = useState('')
@@ -187,11 +207,12 @@ export function HyperagentEmployeePanel({
     finally { setPending(undefined) }
   }
   return <aside className={css.agentDetails} aria-label="Agent details">
-    <div className={css.identity}>{selected ? <EmployeeAvatar employee={selected} size={52} /> : <span className={css.autoAvatar}>R</span>}<span><strong>{selected?.name ?? 'Run Time'}</strong><small>{running ? 'Working' : 'Ready'}</small></span></div>
-    <section><h3>Role and responsibilities</h3><p>{selected?.role ?? 'Coordinates company work and the team.'}</p></section>
+    <div className={css.agentBiography}>{selected ? <EmployeeAvatar employee={selected} size={112} /> : <span className={css.autoAvatar}>R</span>}<span><strong>{selected?.name ?? 'Run Time'}</strong><small>{running ? 'Working' : 'Ready'}</small></span></div>
+    <section><h3>Biography</h3>{profile?.persona && <p className={css.personaText}>{profile.persona}</p>}{profile?.createdAt && <p>Joined {new Date(profile.createdAt).toLocaleDateString()}</p>}<p>{selected?.role ?? 'Coordinates company work and the team.'}</p></section>
     <section><h3>Active tasks</h3>{running && <p>Working on your latest request</p>}{jobs.filter(job => job.status === 'running' || job.status === 'stopping').map(job => <p key={job.id}>{job.label ?? job.status}</p>)}{!running && !jobs.some(job => job.status === 'running' || job.status === 'stopping') && <p>No active work</p>}{routines.filter(task => task.kind === 'at' && task.active).map(task => <p key={task.id}>{task.title}</p>)}</section>
     <section><h3>Routines</h3>{routines.filter(task => task.kind !== 'at').map(task => <label className={css.routineRow} key={task.id}><span>{task.title}<small>{new Date(task.next).toLocaleString()}</small></span><input type="checkbox" role="switch" checked={task.active} disabled={pending !== undefined} onChange={(event) => { void toggle(task, event.target.checked) }} aria-label={task.title} /></label>)}{!routines.some(task => task.kind !== 'at') && <p>No routines yet</p>}</section>
     <section><h3>Connected apps and permissions</h3>{accounts.map(account => <a className={css.detailFile} key={account.id} href="/hivemind/app/connectors"><img src={`https://logos.composio.dev/api/${encodeURIComponent(account.toolkit)}`} width="20" height="20" alt="" />{account.toolkit}<small>Manage permissions ↗</small></a>)}{accounts.length === 0 && <a href="/hivemind/app/connectors">Connect an app</a>}</section>
+    <section><h3>Latest work</h3><p>{latestText ?? 'No completed work in this room yet'}</p></section>
     <section><h3>Files and deliverables</h3>{files.map(file => <button className={css.detailFile} type="button" key={file.id} onClick={() => { selectArtifact(file.id) }}>▧ {file.title}</button>)}{files.length === 0 && <p>No files in the loaded conversation</p>}</section>
     {history.length > 0 && <details><summary>Earlier conversations</summary>{history.map(room => <button className={css.detailFile} type="button" key={room.id} onClick={() => { openSession(room.id) }}>{room.title}</button>)}</details>}
     {error && <p role="alert">{error}</p>}
@@ -211,7 +232,8 @@ export function HyperagentPanelToggle({ sessionId, useSessions, useEmployeeEvent
   // HyperAgents and toggles the sidebar for other presets.
   const preset = useSessions(state => state.byId[sessionId]?.projectionValues?.agentPreset)
   const blank = useSessions(state => state.byId[sessionId]?.blank)
-  const owner = useSessions(state => state.byId[sessionId]?.projectionValues?.hyperagentOwner)
+  const owner = useSessions(state =>
+    (state.byId[sessionId]?.projectionValues?.hyperagentOwner ?? state.byId[sessionId]?.projectionValues?.hyperagentSelection))
   const fromLog = useEmployeeEvents(selectedEmployee)
   const selected = owner == null ? fromLog : projectedEmployee(owner)
   const isOsRoute = isHyperagentPreset(preset) || (typeof window !== 'undefined' && window.location.pathname.startsWith('/hivemind/app/employee/harness/'))
@@ -304,7 +326,8 @@ export function HyperagentPanelToggle({ sessionId, useSessions, useEmployeeEvent
 
 /** A teammate identity above the conversation; opening details never starts a task. */
 export function AgentRoomHeading({ sessionId, useSessions, useSession, useEmployeeEvents, showDetails }: PropsRuntime<'conversation.room.header'> & Pick<EmployeeInjected, 'useEmployeeEvents'> & { showDetails: () => void }) {
-  const value = useSessions(state => state.byId[sessionId]?.projectionValues?.hyperagentOwner)
+  const value = useSessions(state =>
+    (state.byId[sessionId]?.projectionValues?.hyperagentOwner ?? state.byId[sessionId]?.projectionValues?.hyperagentSelection))
   const fromLog = useEmployeeEvents(selectedEmployee)
   const employee = projectedEmployee(value) ?? fromLog
   const running = useSession(state => state.running)

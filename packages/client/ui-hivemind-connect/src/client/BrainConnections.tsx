@@ -6,7 +6,8 @@ import { EmployeeAvatar, projectedEmployee } from './HyperagentEmployee.tsx'
 const names: Record<string, string> = { gmail: 'Gmail', slack: 'Slack', googledocs: 'Google Docs', googledrive: 'Google Drive', github: 'GitHub', notion: 'Notion', outlook: 'Outlook' }
 export function BrainConnections({ sessionId, useSessions, environmentActivity, showDetails, hero = false }: PropsRuntime<'conversation.session.header.utilities'> & { hero?: boolean; showDetails: () => void }) {
   const preset = useSessions(state => state.byId[sessionId]?.projectionValues?.agentPreset ?? state.byId[sessionId]?.agentPreset)
-  const employee = useSessions(state => projectedEmployee(state.byId[sessionId]?.projectionValues?.hyperagentOwner))
+  const employee = useSessions(state => projectedEmployee(
+    (state.byId[sessionId]?.projectionValues?.hyperagentOwner ?? state.byId[sessionId]?.projectionValues?.hyperagentSelection)))
   const busy = useSessions(state => (state.jobsBySession[sessionId] ?? []).some(job => job.status === 'running' || job.status === 'stopping'))
   const running = useSessions(state => state.byId[sessionId]?.running === true)
   const [open, setOpen] = useState(true)
