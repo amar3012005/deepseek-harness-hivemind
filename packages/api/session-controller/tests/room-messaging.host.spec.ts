@@ -65,7 +65,7 @@ describe('Persistent agent room messaging', () => {
   })
   it('does not repeat admission when receiver flush failed after its inbox accepted', async () => {
     const { ctx, caller, ravi, messaging, request } = fixture()
-    vi.mocked(ctx.sessions.flush).mockImplementationOnce(() => Promise.resolve()).mockRejectedValueOnce(new Error('flush failed'))
+    vi.mocked(ctx.sessions.flush).mockImplementationOnce(() => Promise.resolve(true)).mockRejectedValueOnce(new Error('flush failed'))
     await expect(messaging.send(caller, request, signal)).rejects.toThrow('flush failed')
     await messaging.send(caller, request, signal)
     expect(ravi.steer).toHaveBeenCalledTimes(1)
