@@ -1,14 +1,16 @@
+import type { PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import { useEffect, useState } from 'react'
 import { SessionCredits } from './SessionCredits.tsx'
 import css from './DreamingConnectors.module.css'
 const names: Record<string, string> = { gmail: 'Gmail', slack: 'Slack', googledocs: 'Google Docs', googledrive: 'Google Drive', github: 'GitHub', notion: 'Notion', outlook: 'Outlook' }
-export function BrainConnections({ sessionId, hero = false }: { sessionId?: string | undefined; hero?: boolean }) {
+export function BrainConnections({ sessionId, useSessions, hero = false }: PropsRuntime<'conversation.session.header.utilities'> & { hero?: boolean }) {
+  const preset = useSessions(state => state.byId[sessionId]?.projectionValues?.agentPreset ?? state.byId[sessionId]?.agentPreset)
   const [open, setOpen] = useState(true)
   const [appsOpen, setAppsOpen] = useState(false)
   const [accounts, setAccounts] = useState<{ id: string; toolkit: string }[]>()
   const [error, setError] = useState(false)
   const dreaming = window.location.pathname.endsWith('/dreaming') || new URLSearchParams(window.location.search).has('dreamingParent')
-  const brain = document.documentElement.dataset.dshMode === 'hivemind-chat'
+  const brain = preset === 'hivemind-chat' || (preset == null && document.documentElement.dataset.dshMode === 'hivemind-chat')
   useEffect(() => {
     if (!brain || dreaming) return
     const controller = new AbortController()

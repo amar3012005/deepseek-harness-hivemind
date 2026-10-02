@@ -33,7 +33,7 @@ import { createConnectorMentionSource } from './ConnectorMentions.ts'
 import { ContextualFollowUps, selectContextualFollowUps } from './ContextualFollowUps.tsx'
 import {
   HyperagentEmployeePicker, HyperagentEmployeePanel, HyperagentPanelToggle,
-  type EmployeeOption,
+  type EmployeeOption, selectedEmployee, projectedEmployee, EmployeeAvatar,
 } from './HyperagentEmployee.tsx'
 import { HyperagentWorkbench } from './HyperagentWorkbench.tsx'
 
@@ -214,6 +214,7 @@ export function apply(ctx: ClientContext): void {
   }, ({ sessionId, locked }: { sessionId?: SessionId | undefined; locked: boolean }) => {
     return sessionId === undefined ? null : renderScopeSelect(sessionId, locked)
   }))
+  ctx.slots.inject('shell.sessionRail.avatar', () => ctx.slots.register({ name: 'shell.sessionRail.avatar' }, (employee: EmployeeOption) => createElement(EmployeeAvatar, { employee, size: 24 })))
   const employeeTab = '@deepseek-ai/dsh-client-ui-hivemind-connect/employee'
   const workbenchKinds = ['preview', 'artifacts', 'computer', 'sources'] as const
   let rightSidebar: ClientContext['sidebarRight'] | undefined
@@ -234,65 +235,119 @@ export function apply(ctx: ClientContext): void {
       return [{ id: profile.id, name: profile.name, role, ...(avatarUrl === undefined ? {} : { avatarUrl }) }]
     })
   }
-  const selectEmployee = async (sessionId: SessionId, id: string | null): Promise<boolean> => {
-    if (ctx.sessions.binding(sessionId) === undefined) return false
-    const switched = await ctx.remote.agentPresets.select(sessionId, id === null ? 'hivemind-chat' : 'hivemind-hyperagents')
-    if (!switched.ok) return false
-    const binding = ctx.sessions.binding(sessionId)
-    if (binding === undefined) return false
-    const events = binding.eventSource
-    const before = Math.max(0, ...events.getSnapshot().entries.map(entry => entry.event.seq))
-    let cancelWait = () => {}
-    const accepted = new Promise<boolean>((resolve) => {
-      let settled = false
-      let stop = () => {}
-      const finish = (value: boolean) => {
-        if (settled) return
-        settled = true
-        clearTimeout(timer)
-        stop()
-        resolve(value)
+  ctx.inject(['remote.commands', 'remote.agentPresets'], (ctx: ClientContext) => {
+    const selectEmployee = async (sessionId: SessionId, id: string | null): Promise<boolean> => {
+      if (ctx.sessions.binding(sessionId) === undefined) throw new Error('Session is not ready. Please reopen it.')
+      const targetPreset = id === null ? 'hivemind-chat' : 'hivemind-hyperagents'
+      const summary = ctx.sessions.list.getSnapshot().byId[sessionId]
+      if ((summary?.projectionValues?.agentPreset ?? summary?.agentPreset) !== targetPreset) {
+        const switched = await ctx.remote.agentPresets.select(sessionId, targetPreset)
+        if (!switched.ok) return false
       }
-      const timer = setTimeout(() => { finish(false) }, 5000)
-      cancelWait = () => { finish(false) }
-      const check = () => {
-        const snapshot = events.getSnapshot()
-        for (const entry of snapshot.entries) {
-          if (entry.event.seq <= before) continue
-          if (entry.type !== 'event' || (entry.event.type as string) !== 'hivemind/employee-selection') continue
-          if ((entry.event.data as { id: string | null }).id !== id) continue
-          finish(true)
-          return
+      // Composition commit precedes asynchronous plugin activation. Read the
+      // native command catalog until the existing selection command is ready;
+      // never replay the state-changing selection command speculatively.
+      let commandReady = false
+      for (let attempt = 0; attempt < 30; attempt += 1) {
+        const catalog = await ctx.remote.commands.list(sessionId).catch(() => null)
+        if (catalog?.ok && catalog.value.some(command => command.name === 'hivemind-employee')) {
+          commandReady = true
+          break
         }
+        await new Promise(resolve => setTimeout(resolve, 100))
       }
-      stop = events.subscribe(check)
-      check()
-    })
-    const result = await binding.session.command(`/hivemind-employee ${id ?? 'auto'}`).catch(() => null)
-    if (result === null || !result.ok || !result.value.matched) { cancelWait(); return false }
-    return accepted
-  }
-  ctx.effect(() => {
-    const bridge = async (id: string | null): Promise<boolean> => {
-      const current = ctx.sessions.list.getSnapshot().current
-      return current === undefined ? false : selectEmployee(current, id)
+      if (!commandReady) throw new Error('Agent selection is still loading. Please try again.')
+      const binding = ctx.sessions.binding(sessionId)
+      if (binding === undefined) return false
+      const events = binding.eventSource
+      const before = Math.max(0, ...events.getSnapshot().entries.map(entry => entry.event.seq))
+      let cancelWait = () => {}
+      const accepted = new Promise<boolean>((resolve) => {
+        let settled = false
+        let stop = () => {}
+        const finish = (value: boolean) => {
+          if (settled) return
+          settled = true
+          clearTimeout(timer)
+          stop()
+          resolve(value)
+        }
+        const timer = setTimeout(() => { finish(false) }, 5000)
+        cancelWait = () => { finish(false) }
+        const check = () => {
+          const snapshot = events.getSnapshot()
+          for (const entry of snapshot.entries) {
+            if (entry.event.seq <= before) continue
+            if (entry.type !== 'event' || (entry.event.type as string) !== 'hivemind/employee-selection') continue
+            if ((entry.event.data as { id: string | null }).id !== id) continue
+            finish(true)
+            return
+          }
+        }
+        stop = events.subscribe(check)
+        check()
+      })
+      const result = await binding.session.command(`/hivemind-employee ${id ?? 'auto'}`).catch(() => null)
+      if (result === null || !result.ok || !result.value.matched) { cancelWait(); throw new Error(result !== null && !result.ok ? `Agent selection could not be admitted (${result.error.code}).` : 'Agent selection command is not available.') }
+      const ok = await accepted
+      if (ok) window.dispatchEvent(new CustomEvent('hivemind:agent-selected', { detail: { id } }))
+      return ok
     }
-    const host = window as unknown as { __HIVEMIND_SELECT_AGENT__?: typeof bridge }
-    host.__HIVEMIND_SELECT_AGENT__ = bridge
-    return () => { if (host.__HIVEMIND_SELECT_AGENT__ === bridge) delete host.__HIVEMIND_SELECT_AGENT__ }
-  }, 'ui-hivemind-connect: unified composer agent selection')
-  ctx.slots.inject('conversation.input.left', () => ctx.slots.register({
-    name: 'conversation.input.left', id: 'hivemind-employee-picker', order: 20, locale: NS,
-    inject: (sessionId): {
-      hooks: { employeeEvents: ReturnType<typeof employeeEvents> }
-      listEmployees: typeof listEmployees
-      selectEmployee: (id: string | null) => Promise<boolean>
-    } => ({
-      hooks: { employeeEvents: employeeEvents(sessionId) },
-      listEmployees,
-      selectEmployee: id => selectEmployee(sessionId, id),
-    }),
-  }, HyperagentEmployeePicker))
+    ctx.effect(() => {
+      const bridge = async (id: string | null): Promise<boolean> => {
+        const current = ctx.sessions.list.getSnapshot().current
+        return current === undefined ? false : selectEmployee(current, id)
+      }
+      const start = async (id: string): Promise<boolean> => {
+        const sessionId = await ctx.sessions.create()
+        ctx.sessions.open(sessionId)
+        const session = ctx.sessions.binding(sessionId)?.session
+        if (session === undefined) return false
+        await new Promise<void>((resolve, reject) => {
+          let stop = () => {}
+          const timer = setTimeout(() => { stop(); reject(new Error('The new session is still opening. Please try again.')) }, 10000)
+          const check = () => {
+            if (session.getSnapshot().openState !== 'open') return
+            clearTimeout(timer); stop(); resolve()
+          }
+          stop = session.subscribe(check)
+          check()
+        })
+        return selectEmployee(sessionId, id)
+      }
+      const publish = () => {
+        const state = ctx.sessions.list.getSnapshot()
+        const current = state.current
+        const row = current === undefined ? undefined : state.byId[current]
+        const owner = projectedEmployee(row?.projectionValues?.hyperagentOwner)
+        const events = current === undefined ? undefined : ctx.sessions.binding(current)?.eventSource.getSnapshot()
+        const selection = events === undefined ? null : selectedEmployee(events)
+        window.dispatchEvent(new CustomEvent('hivemind:agent-selected', { detail: { id: owner?.id ?? selection?.id ?? null } }))
+      }
+      const stop = ctx.sessions.list.subscribe(publish)
+      publish()
+      const host = window as unknown as { __HIVEMIND_SELECT_AGENT__?: typeof bridge; __HIVEMIND_START_AGENT__?: typeof start }
+      host.__HIVEMIND_SELECT_AGENT__ = bridge
+      host.__HIVEMIND_START_AGENT__ = start
+      return () => {
+        stop()
+        if (host.__HIVEMIND_SELECT_AGENT__ === bridge) delete host.__HIVEMIND_SELECT_AGENT__
+        if (host.__HIVEMIND_START_AGENT__ === start) delete host.__HIVEMIND_START_AGENT__
+      }
+    }, 'ui-hivemind-connect: unified composer agent selection')
+    ctx.slots.inject('conversation.input.left', () => ctx.slots.register({
+      name: 'conversation.input.left', id: 'hivemind-employee-picker', order: 20, locale: NS,
+      inject: (sessionId): {
+        hooks: { employeeEvents: ReturnType<typeof employeeEvents> }
+        listEmployees: typeof listEmployees
+        selectEmployee: (id: string | null) => Promise<boolean>
+      } => ({
+        hooks: { employeeEvents: employeeEvents(sessionId) },
+        listEmployees,
+        selectEmployee: id => selectEmployee(sessionId, id),
+      }),
+    }, HyperagentEmployeePicker))
+  })
   ctx.slots.inject('conversation.session.header.utilities', () => ctx.slots.register({
     name: 'conversation.session.header.utilities', id: 'brain-connections', locale: NS, order: 99,
     inject: sessionId => ({ sessionId }),

@@ -91,6 +91,7 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
     'shell.overlay': { kind: 'list'; scope: 'root' }
     /** Host-embedded, sessions-only navigation beside the conversation. */
     'shell.sessionRail': { kind: 'single'; scope: 'root' }
+    'shell.sessionRail.avatar': { kind: 'single'; scope: 'root'; owner: { id: string; name: string; role: string; avatarUrl?: string } }
   }
 }
 
