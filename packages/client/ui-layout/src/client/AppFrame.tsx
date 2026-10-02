@@ -188,7 +188,10 @@ export function AppFrame({
     : sidebarCollapsed
       ? 0
       : layoutInfo.sidebar === 0 ? SIDEBAR_DEFAULT : layoutInfo.sidebar
-  const rightbarPreference = layoutInfo.rightbar ?? viewport * RIGHTBAR_DEFAULT_RATIO
+  // Both embedded chat modes share a screen-relative preview limit.
+  const screenWidth = hiveMode && typeof window !== 'undefined' ? window.innerWidth : viewport
+  const previewMax = screenWidth * 0.5
+  const rightbarPreference = Math.min(layoutInfo.rightbar ?? viewport * RIGHTBAR_DEFAULT_RATIO, previewMax)
   // Opening on a narrow frame collapses the left sidebar. Eligibility must
   // include that space before the occupant's first shown report arrives.
   // The embedding host already supplies navigation, so its measured frame is
@@ -199,6 +202,11 @@ export function AppFrame({
   const solved = computeColumns(solverViewport, sidebarPreference, layoutInfo.rightbarTrack ? rightbarPreference : 0)
   const normal = hostOwnsChrome ? { ...normalSolved, sidebar: 0 } : normalSolved
   const cols = hostOwnsChrome ? { ...solved, sidebar: 0 } : solved
+  useEffect(() => {
+    if (hiveMode && layoutInfo.rightbarShown && normal.rightbar > screenWidth * 0.35) {
+      window.dispatchEvent(new CustomEvent('hivemind:close-sidebar'))
+    }
+  }, [hiveMode, layoutInfo.rightbarShown, normal.rightbar, screenWidth])
   const colsRef = useRef(cols)
   colsRef.current = cols
   const rightbarWidth = useRef(normal.rightbar)
@@ -219,8 +227,8 @@ export function AppFrame({
   }, [actions])
   const onRightbarStart = useCallback(() => { rightbarBase.current = rightbarWidth.current; setDragging(true) }, [])
   const onRightbarDrag = useCallback((dx: number) => {
-    actions.setRightbar(rightbarBase.current - dx)
-  }, [actions])
+    actions.setRightbar(Math.min(rightbarBase.current - dx, previewMax))
+  }, [actions, previewMax])
   const productTitle = process.env.DSH_CLIENT_TITLE ?? t('brand.localBuild')
   const sidebar = useMemo(() => hostOwnsChrome ? null : renderSlot('sidebar', {
     collapsed: sidebarCollapsed,
