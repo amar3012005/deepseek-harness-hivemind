@@ -1,12 +1,11 @@
-- id: hq-hyperagents-base
+# HQ composes the shared HIVE Chat realm directly: include patches cannot
+# cross another include boundary. Keep shared operating plugins in parity
+# with HyperAgents; only persona, HQ coordination, and actor policy differ.
+- id: hivemind-chat-base
   name: cordis:include
   config:
-    path: ../hivemind-hyperagents/agent.cordis.yml
+    path: ../hivemind-chat/agent.cordis.yml
     patches:
-      - id: hivemind-playbooks
-        config:
-          employeeSubagentPlanning: true
-          nativeTeamCoordination: true
       - id: persona
         name: '@deepseek-ai/dsh-persona'
         config:
@@ -71,6 +70,72 @@
             is suppressed, inspect its receipt and revise the operating plan
             when appropriate; do not report a missing Team merely from a lease.
       - id: hivemind-capabilities
+        name: cordis:group
+        isolate:
+          hivemindIdentity: true
+          hivemindMemory: true
+          hivemindEmployeeDirectory: true
+          hivemindOperatingRuns: true
+          hivemindArtifactRenderer: true
+      - id: hivemind-runtime
+        name: '@deepseek-ai/dsh-hivemind-runtime'
+        config:
+          agentFeaturesEnabled: true
+          privateMemoryEnabled: true
+          legacyToolsEnabled: false
+          capabilityHintEnabled: false
+          authorityMode: scoped-service
+          icarusConfigPath: !!js process.env.HIVEMIND_ICARUS_CONFIG_PATH ?? `${process.env.HOME}/.icarus/config.json`
+          serviceApiBase: !!js process.env.HIVEMIND_CONNECTED_RECEIPT_SERVICE_URL
+          serviceHttpOrigins: !!js (process.env.HIVEMIND_SERVICE_HTTP_ORIGINS ?? '').split(',').map(value => value.trim()).filter(Boolean)
+          serviceSecretEnv: HIVE_HARNESS_RUNNER_SERVICE_SECRET
+          durableReceiptsRequired: !!js process.env.HIVEMIND_CONNECTED_RECEIPTS_REQUIRED === 'true'
+          requestTimeoutMs: 20000
+          responseMaxBytes: 2097152
+          profileContextMaxChars: 12000
+          profileBriefMaxChars: 1200
+          recallResultLimit: 3
+          entityResultLimit: 10
+          recallItemMaxChars: 1200
+          historyTurns: 3
+          historyMaxChars: 3000
+          webApprovalRequired: true
+          nativeWebSearch: false
+      - id: hivemind-capabilities
         insert:
           - id: hivemind-hq-runtime
             name: '@deepseek-ai/dsh-hivemind-hq-runtime'
+          - id: hivemind-employee-directory
+            name: '@deepseek-ai/dsh-hivemind-employee-directory'
+          - id: hivemind-playbooks
+            name: '@deepseek-ai/dsh-hivemind-playbooks'
+            config:
+              progressiveToolDisclosure: true
+              employeeSubagentPlanning: true
+              nativeTeamCoordination: true
+          - id: hivemind-progressive-skills
+            name: '@deepseek-ai/dsh-hivemind-progressive-skills'
+          - id: hivemind-operating-workstreams
+            name: '@deepseek-ai/dsh-hivemind-operating-workstreams'
+          - id: hivemind-research
+            name: '@deepseek-ai/dsh-hivemind-research'
+            config:
+              executionMode: remote
+              authorityMode: scoped-service
+              exposeAdvancedTools: false
+              serviceApiBase: !!js process.env.HIVEMIND_CONNECTED_RECEIPT_SERVICE_URL
+              serviceSecretEnv: HIVE_HARNESS_RUNNER_SERVICE_SECRET
+          - id: hivemind-progressive-browser
+            name: '@deepseek-ai/dsh-hivemind-progressive-browser'
+            config:
+              url: !!js process.env.HIVEMIND_PLAYWRIGHT_MCP_URL ?? 'https://playwright-mcp.singulancelabs.com/mcp'
+              headers: !!js >-
+                ({ Authorization: process.env.PLAYWRIGHT_EXTERNAL_MCP_TOKEN ? `Bearer ${process.env.PLAYWRIGHT_EXTERNAL_MCP_TOKEN}` : '' })
+              cloudflareUrl: !!js process.env.HIVEMIND_CLOUDFLARE_BROWSER_MCP_URL ?? ''
+              cloudflareHeaders: !!js >-
+                ({ Authorization: process.env.CLOUDFLARE_BROWSER_RUN_MCP_TOKEN ? `Bearer ${process.env.CLOUDFLARE_BROWSER_RUN_MCP_TOKEN}` : '' })
+      - insert:
+          - id: tool-todo
+            name: '@deepseek-ai/dsh-tool-todo'
+            config:
+              allowParallelInProgress: true

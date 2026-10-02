@@ -168,6 +168,28 @@ describe('the shipped preset root', () => {
     expect(findEntry(hivemind, 'tool-skill')?.disabled).not.toBe(true)
   })
 
+  it('mounts HQ policy at the actual HIVE Chat include boundary with shared plugin parity', async () => {
+    const [hq] = await shippedEntries('hivemind-hq') as Array<{
+      config: { path: string; patches: Parameters<typeof applyEntryPatches>[1] }
+    }>
+    const [employee] = await shippedEntries('hivemind-hyperagents') as typeof hq[]
+    expect(hq!.config.path).toBe('../hivemind-chat/agent.cordis.yml')
+    const chat = await shippedEntries('hivemind-chat') as EntryOptions[]
+    const warnings: string[] = []
+    const composed = applyEntryPatches(chat, hq!.config.patches, message => warnings.push(message))
+    const ordinary = applyEntryPatches(chat, employee!.config.patches, () => {})
+    expect(warnings).toEqual([])
+    expect(findEntry(composed, 'persona')?.config).toMatchObject({ prefix: expect.stringContaining('chief of staff') })
+    expect(findEntry(composed, 'hivemind-hq-runtime')).toBeDefined()
+    expect(findEntry(composed, 'hivemind-playbooks')?.config).toMatchObject({
+      progressiveToolDisclosure: true, employeeSubagentPlanning: true, nativeTeamCoordination: true,
+    })
+    for (const id of ['hivemind-runtime', 'hivemind-connected-apps', 'hivemind-progressive-skills',
+      'hivemind-operating-workstreams', 'hivemind-research', 'hivemind-progressive-browser', 'tool-todo']) {
+      expect(findEntry(composed, id)).toEqual(findEntry(ordinary, id))
+    }
+  })
+
   it('composes HyperAgents from tenant-scoped HIVE chat without host file or shell tools', async () => {
     const [included] = await shippedEntries('hivemind-hyperagents') as Array<{
       config: { path: string; patches: Parameters<typeof applyEntryPatches>[1] }
