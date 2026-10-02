@@ -19,7 +19,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
 import { Avatar } from '@humation/react'
 import { humation1 } from '@humation/assets-humation-1'
-import { type ReactNode, useState } from 'react'
+import { type ReactNode, useEffect, useState } from 'react'
 import { ImageProgress } from './ImageProgress.tsx'
 import { fileArtifactBlob, saveArtifact } from './download.ts'
 import css from './OperatingRun.module.css'
@@ -1078,55 +1078,44 @@ function ArtifactPanel({ node, renderMessageImages, t, read, openPreview }: Pane
   const [busy, setBusy] = useState(false)
   const [failed, setFailed] = useState(false)
   return (
-    <Card title={t('artifact.title')} state="completed" statusText={t('state.completed')}>
-      <div className={css.objective}>{node.data.title}</div>
+    <div className={css.artifactResult}>
+      <div className={css.artifactFileRow}>
+        <button type="button" className={css.artifactFilePreview} onClick={openPreview} disabled={node.data.file === undefined}>
+          <span className={css.artifactFileIcon} aria-hidden="true">▤</span>
+          <span><strong>{node.data.file?.name ?? node.data.title}</strong><small>{t('artifact.preview')}</small></span>
+        </button>
+        <button
+          type="button"
+          className={css.artifactAction}
+          disabled={busy || node.data.file === undefined}
+          onClick={async () => {
+            setBusy(true)
+            setFailed(false)
+            try {
+              if (node.data.file === undefined) throw new Error('Artifact file receipt missing')
+              const result = await read(node.data.file.attachmentId)
+              if (!result.ok || result.value?.attachment.attachmentId !== node.data.file.attachmentId) throw new Error('Artifact download failed')
+              saveArtifact(fileArtifactBlob(result.value.data, node.data.mediaType, node.data.file.bytes), node.data.file.name)
+            } catch {
+              setFailed(true)
+            } finally {
+              setBusy(false)
+            }
+          }}
+        >
+          {t(busy ? 'artifact.downloading' : 'artifact.open')}
+        </button>
+      </div>
       {node.data.preview === undefined
         ? null
         : renderMessageImages({ images: [{ attachment: node.data.preview }], align: 'start' })}
-      <div className={css.meta}>
-        <span className={css.chip}>
-          {node.data.mediaType === 'application/pdf'
-            ? t('artifact.pdf', { pageSize: node.data.pageSize })
-            : node.data.mediaType.toUpperCase()}
-          {node.data.pageCount > 0
-            ? ` · ${t(node.data.pageCount === 1 ? 'artifact.page' : 'artifact.pages', { count: node.data.pageCount })}`
-            : ''}
-        </span>
-        {node.data.pdfBytes > 0 ? <span>{Math.ceil(node.data.pdfBytes / 1024)} KB</span> : null}
-        <span>{node.data.provider}</span>
-      </div>
-      <button
-        type="button"
-        className={css.artifactAction}
-        disabled={busy || node.data.file === undefined}
-        onClick={async () => {
-          setBusy(true)
-          setFailed(false)
-          try {
-            if (node.data.file === undefined) throw new Error('Artifact file receipt missing')
-            const result = await read(node.data.file.attachmentId)
-            if (!result.ok || result.value?.attachment.attachmentId !== node.data.file.attachmentId) throw new Error('Artifact download failed')
-            saveArtifact(fileArtifactBlob(result.value.data, node.data.mediaType, node.data.file.bytes), node.data.file.name)
-          } catch {
-            setFailed(true)
-          } finally {
-            setBusy(false)
-          }
-        }}
-      >
-        {t(busy ? 'artifact.downloading' : 'artifact.open')}
-      </button>
-      {node.data.mediaType === 'application/pdf' && node.data.file !== undefined ? (
-        <button type="button" className={css.artifactAction} onClick={openPreview}>
-          {t('artifact.preview')}
-        </button>
-      ) : null}
       {failed ? <div role="alert">{t('artifact.failed')}</div> : null}
-    </Card>
+    </div>
   )
 }
 
 function MediaWorkflowPanel({ node, t }: PanelProps<'hivemind-media-workflow'>) {
+  if (node.data.status === 'completed') return null
   return (
     <Card title={t('media.title')} state={node.data.status} statusText={t(`state.${node.data.status}` as OperatingRunKey)}>
       <div className={css.objective}>{node.data.title || t('media.title')}</div>
@@ -1142,11 +1131,59 @@ function MediaWorkflowPanel({ node, t }: PanelProps<'hivemind-media-workflow'>) 
   )
 }
 
+declare module '@deepseek-ai/dsh-client-ui-sidebar-right/client' {
+  interface SidebarRightResourceParamsMap {
+    'hivemind-artifact': { artifact: ArtifactData }
+  }
+}
+
+function ArtifactPreview({ useTabInfo, t, read }: PropsRuntime<'sidebar.right.pane.tab'> & PropsLocale<typeof NS> & {
+  read: (id: FileAttachmentRef['attachmentId']) => Promise<{ ok: boolean; value?: { attachment: FileAttachmentRef; data: string } }>
+}) {
+  const info = useTabInfo()
+  const params = info.tab.navigation.params as { artifact: ArtifactData } | undefined
+  const artifact = params?.artifact
+  const [url, setUrl] = useState<string>()
+  const [text, setText] = useState<string>()
+  const [failed, setFailed] = useState(false)
+  const file = artifact?.file
+  useEffect(() => {
+    let active = true
+    let created: string | undefined
+    setUrl(undefined); setText(undefined); setFailed(false)
+    if (file) void read(file.attachmentId).then(async (result) => {
+      if (!result.ok || result.value?.attachment.attachmentId !== file.attachmentId) throw new Error('Artifact unavailable')
+      const blob = fileArtifactBlob(result.value.data, artifact?.mediaType ?? 'application/octet-stream', file.bytes)
+      if (artifact?.mediaType.startsWith('text/') && artifact.mediaType !== 'text/html') {
+        const value = await blob.text()
+        if (active) setText(value)
+      } else {
+        created = URL.createObjectURL(blob)
+        if (active) setUrl(created)
+        else URL.revokeObjectURL(created)
+      }
+    }).catch(() => { if (active) setFailed(true) })
+    return () => { active = false; if (created) URL.revokeObjectURL(created) }
+  }, [file?.attachmentId])
+  if (!artifact) return null
+  return <div className={css.artifactPreviewBody}><h3>{artifact.title}</h3>
+    {failed ? <p role="alert">{t('artifact.failed')}</p> : null}
+    {text !== undefined ? <pre>{text}</pre> : null}
+    {url && artifact.mediaType.startsWith('image/') ? <img src={url} alt={artifact.title} />
+      : url && artifact.mediaType.startsWith('video/') ? <video src={url} controls />
+        : url && (artifact.mediaType === 'application/pdf' || artifact.mediaType === 'text/html') ? <iframe src={url} title={artifact.title} sandbox="" /> : null}
+    {url ? <a href={url} download={file?.name}>{t('artifact.open')}</a> : null}
+  </div>
+}
+
 /** Required browser services for operating-run Definitions and native Chat renderers. */
-export const inject = ['uiConversation', 'slots', 'locale', 'remote', 'remote.session', 'sidebarRight']
+export const inject = ['sidebarRightTabs', 'uiConversation', 'slots', 'locale', 'remote', 'remote.session', 'sidebarRight']
 
 /** Register durable event projections; sessions lacking HIVE events produce no nodes. */
 export function apply(ctx: ClientContext): void {
+  const previewKey = 'hivemind-artifact-preview'
+  ctx.effect(() => ctx.sidebarRightTabs.register({ id: previewKey, kind: previewKey, patterns: ['dsh-resource://hivemind-artifact/**'], title: () => ctx.locale.bind(NS)('artifact.preview') }))
+  ctx.slots.inject('sidebar.right.pane.tab', () => ctx.slots.register({ name: 'sidebar.right.pane.tab', key: previewKey, locale: NS }, props => <ArtifactPreview {...props} read={attachmentId => ctx.remote.session.fileAttachment({ sessionId: props.sessionId, attachmentId })} />))
   for (const definition of operatingRunDefinitions) ctx.uiConversation.events.register(definition)
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-hivemind-operating-run: dictionaries')
   ctx.slots.inject('conversation.chat.node', () => [
@@ -1177,7 +1214,7 @@ export function apply(ctx: ClientContext): void {
       <ArtifactPanel
         {...props}
         read={attachmentId => ctx.remote.session.fileAttachment({ sessionId: props.sessionId, attachmentId })}
-        openPreview={() => ctx.sidebarRight.openTabIn(props.sessionId, 'hivemind-workbench-preview')}
+        openPreview={() => ctx.sidebarRight.openResourceIn(props.sessionId, `dsh-resource://hivemind-artifact/${props.node.id}`, { params: { artifact: props.node.data } })}
       />
     )),
     ctx.slots.register({ name: 'conversation.chat.node', key: 'hivemind-media-workflow', locale: NS }, MediaWorkflowPanel),
