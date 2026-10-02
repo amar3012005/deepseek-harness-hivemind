@@ -23,7 +23,7 @@ const titles: Record<string, string> = { company: 'Understanding your company', 
 export function RuntimeAwakening({ events, turn }: { events: EventSource; turn: number }) {
   const window = useSyncExternalStore(listener => events.subscribe(listener), () => events.getSnapshot())
   const checkpoints = window.entries.flatMap((entry) => {
-    if (entry.type !== 'event' || entry.event.type !== 'hivemind/hq-awakening-checkpoint') return []
+    if (entry.type !== 'event' || String(entry.event.type) !== 'hivemind/hq-awakening-checkpoint') return []
     const item = entry.event.data as unknown as Checkpoint
     return item.turn === turn ? [{ ...item, seq: entry.event.seq }] : []
   })
