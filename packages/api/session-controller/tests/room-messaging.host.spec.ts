@@ -41,6 +41,18 @@ describe('Persistent agent room messaging', () => {
     expect(ravi.session.snapshotEvents().filter(e => e.type === 'hivemind/room-message-received')).toHaveLength(1)
     expect(ravi.session.snapshotEvents().find(e => e.type === 'hivemind/employee-selection')?.data).toEqual(request.targetProfile)
   })
+  it('deduplicates JSONB reordered receipts after restart', async () => {
+    const { caller, ravi, messaging, request } = fixture()
+    await messaging.send(caller, request, signal)
+    for (const event of caller.session.snapshotEvents()) {
+      if (event.type === 'hivemind/room-message-queued') {
+        event.data = Object.fromEntries(Object.entries(JSON.parse(JSON.stringify(event.data))).reverse()) as typeof event.data
+      }
+    }
+    await messaging.send(caller, request, signal)
+    expect(ravi.steer).toHaveBeenCalledTimes(1)
+    await expect(messaging.send(caller, { ...request, text: 'different' }, signal)).rejects.toThrow('key_conflict')
+  })
   it('records a quiet notice without starting or queuing a model turn', async () => {
     const { caller, ravi, messaging, request } = fixture()
     await messaging.send(caller, { ...request, kind: 'update', text: 'Artifact generated; task remains open.' }, signal)

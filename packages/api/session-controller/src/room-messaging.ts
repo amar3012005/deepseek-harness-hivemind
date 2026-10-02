@@ -1,5 +1,6 @@
 /** Scoped persistent-room messages use native Agent admission and Session receipts. */
 import { createHash } from 'node:crypto'
+import { isDeepStrictEqual } from 'node:util'
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
@@ -91,7 +92,7 @@ export class RoomMessaging {
       if (artifactFiles.length > 8) throw new Error('agent_message_artifact_limit')
       const message: RoomMessage = { id, senderId: caller.id, senderName: preset === 'hivemind-hq' ? 'Run Time' : owner?.name ?? 'Employee', senderEmployee: preset === 'hivemind-hq' ? 'runtime' : owner?.id ?? '', targetId: target.id, kind: input.kind, text: input.text, hops, artifactIds: input.artifactIds ?? [], ...(input.taskId === undefined ? {} : { taskId: input.taskId }), ...(input.replyTo === undefined ? {} : { replyTo: input.replyTo }) }
       const old = events.find(e => e.type === 'hivemind/room-message-queued' && e.data.id === id)
-      if (old?.type === 'hivemind/room-message-queued' && JSON.stringify(old.data) !== JSON.stringify(message)) throw new Error('agent_message_key_conflict')
+      if (old?.type === 'hivemind/room-message-queued' &&  !isDeepStrictEqual(JSON.parse(JSON.stringify(old.data)), JSON.parse(JSON.stringify(message)))) throw new Error('agent_message_key_conflict')
       if (old === undefined) caller.session.append('hivemind/room-message-queued', message)
       await this.persist(caller)
       return await (async () => {
