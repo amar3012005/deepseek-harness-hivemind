@@ -46,7 +46,7 @@ describe('Persistent agent room messaging', () => {
     await messaging.send(caller, request, signal)
     for (const event of caller.session.snapshotEvents()) {
       if (event.type === 'hivemind/room-message-queued') {
-        event.data = Object.fromEntries(Object.entries(JSON.parse(JSON.stringify(event.data))).reverse()) as typeof event.data
+        event.data = Object.fromEntries(Object.entries(JSON.parse(JSON.stringify(event.data))).reverse()) as unknown as typeof event.data
       }
     }
     await messaging.send(caller, request, signal)
