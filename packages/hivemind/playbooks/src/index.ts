@@ -219,10 +219,12 @@ const CORE_TOOLS = [
   'job_kill',
 ] as const
 
-// Schedule registers in each eligible Agent scope. Scoped registrations are
+// Schedule and Team register in each eligible Agent scope. Scoped registrations are
 // always exempt from tools.restrict(), whose allow-list accepts global names.
-const AGENT_LOCAL_AUTOMATION_TOOLS = new Set([
+const AGENT_LOCAL_TOOLS = new Set([
   'schedule_create', 'schedule_list', 'schedule_update', 'schedule_delete',
+  'spawn_teammate', 'list_agents', 'send_message', 'wait_agent', 'interrupt_agent',
+  'team_task_create', 'team_task_list', 'team_task_get', 'team_task_update',
 ])
 
 const CAPABILITY_TOOLS: Readonly<Record<CapabilityLane, readonly string[]>> = {
@@ -917,7 +919,7 @@ export function apply(ctx: Context, config: Partial<Config> = {}): void {
     const visibleTools = new Set(
       [...requested].filter(tool => availableTools.has(tool) && !hardSuppressed.has(tool)),
     )
-    const lift = agent.ctx.tools.restrict({ allow: [...visibleTools].filter(tool => !AGENT_LOCAL_AUTOMATION_TOOLS.has(tool)) })
+    const lift = agent.ctx.tools.restrict({ allow: [...visibleTools].filter(tool => !AGENT_LOCAL_TOOLS.has(tool)) })
     capabilityStateByAgent.set(agent, { capabilities: new Set(capabilities), availableTools, localBaseTools, visibleTools, lift })
     const receipt: CapabilityLeaseRecorded = {
       operation,
@@ -988,7 +990,7 @@ export function apply(ctx: Context, config: Partial<Config> = {}): void {
       // `restrict()` only accepts inherited global names. Scope-local MCP
       // registrations survive that mask automatically, so keep them out of
       // this allow-list while still projecting their schemas below.
-      const effectiveLift = agent.ctx.tools.restrict({ allow: [...visibleTools].filter(tool => !AGENT_LOCAL_AUTOMATION_TOOLS.has(tool)) })
+      const effectiveLift = agent.ctx.tools.restrict({ allow: [...visibleTools].filter(tool => !AGENT_LOCAL_TOOLS.has(tool)) })
       capabilityStateByAgent.set(agent, { ...state, lift: effectiveLift })
       const activeSections = new Set(
         [...state.capabilities].flatMap(capability => CAPABILITY_SECTIONS[capability] ?? []),

@@ -121,10 +121,15 @@ describe('hivemind playbooks', () => {
       type: 'hivemind/run-plan', data: { planId: 'old-inline', revision: 1,
         workstreams: [{ id: 'review', actor: { kind: 'inline_employee', employeeId: 'marta' } }] },
     }]
+    const scopeLocal = new Set(['team_task_list', 'team_task_get', 'team_task_create', 'team_task_update',
+      'list_agents', 'send_message', 'wait_agent', 'interrupt_agent'])
     let allow: Set<string> | undefined
     const agent = { session: { append(type: string, data: unknown) { events.push({ type, data }) }, snapshotEvents() { return events } },
-      ctx: { tools: { schemas() { return [...tools.values()].filter(tool => !allow || allow.has(tool.name)) },
-        restrict(filter: { allow: string[] }) { allow = new Set(filter.allow); return () => { allow = undefined } },
+      ctx: { tools: { schemas() { return [...tools.values()].filter(tool => !allow || allow.has(tool.name) || scopeLocal.has(tool.name)) },
+        restrict(filter: { allow: string[] }) {
+          if (filter.allow.some(name => scopeLocal.has(name))) throw new Error('unknown global Team tool')
+          allow = new Set(filter.allow); return () => { allow = undefined }
+        },
       } } } as unknown as Agent
     apply({ tools: { register(tool: ToolDefinition) { tools.set(tool.name, tool); return () => {} } },
       hivemindMemory: {},
