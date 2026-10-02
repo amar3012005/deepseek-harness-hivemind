@@ -22,10 +22,11 @@ function fixture() {
   }>()
   const tools = new Map<string, ToolDefinition>()
   let agent: Agent
+  const prompt = vi.fn()
   const makeAgent = () => ({ id: 'root', session: { header: { agentPreset: 'hivemind-hq' }, snapshotEvents: () => events,
     ownEvents: () => events, append: (type: string, data: unknown) => {
       events.push({ seq: events.length, time: Date.now(), type, data } as SessionEvent)
-    } }, prompt: vi.fn() }) as unknown as Agent
+    } }, prompt }) as unknown as Agent
   agent = makeAgent()
   const flush = vi.fn(async () => { durable = structuredClone(events); return true })
   type WakeInput = { at?: string; after_seconds?: number; prompt: string; title: string }
@@ -43,7 +44,7 @@ function fixture() {
   } as unknown as Context
   installRest(ctx)
   const execute = (args = request) => tools.get('hivemind_hq_rest')!.execute(args, { agent, signal: new AbortController().signal } as never)
-  return { ctx, get agent() { return agent }, get events() { return events }, schedules, ensure, flush, execute,
+  return { ctx, get agent() { return agent }, get events() { return events }, schedules, ensure, flush, execute, prompt,
     crash: () => { events = structuredClone(durable); agent = makeAgent(); return agent } }
 }
 afterEach(() => vi.useRealTimers())
@@ -92,7 +93,9 @@ describe('native Runtime voluntary rest', () => {
     await Promise.all([f.execute(), f.execute()])
     expect(f.ensure).toHaveBeenCalledTimes(1)
     await Promise.all([f.execute({ ...request, handoff_id: 'newer-a', summary: 'First newer plan' }), f.execute({ ...request, handoff_id: 'newer', summary: 'Newer plan' })])
-    f.schedules.get(restScheduleId('root', 'rest-test')).status = 'inactive'
+    const oldWake = f.schedules.get(restScheduleId('root', 'rest-test'))
+    if (!oldWake) throw new Error('test wake missing')
+    oldWake.status = 'inactive'
     const old = await f.execute()
     expect(old).toMatchObject({ superseded: true, handoffId: 'rest-test', wakeStatus: 'inactive' })
     const message = createUserMessage({ content: [{ type: 'text', text: 'HQ_REST_WAKE[rest-test]' }], source: { kind: 'schedule' } as never })
@@ -123,7 +126,7 @@ describe('human quiet note admission', () => {
     const f = fixture(); await f.execute()
     await leaveRestNote(f.ctx, f.agent, { id: 'note-one', text: 'Inspect this on the next wake' })
     await leaveRestNote(f.ctx, f.agent, { id: 'note-one', text: 'Inspect this on the next wake' })
-    expect(f.agent.prompt).not.toHaveBeenCalled()
+    expect(f.prompt).not.toHaveBeenCalled()
     expect(f.ensure).toHaveBeenCalledTimes(1)
     expect(f.events.filter(event => event.type === 'hivemind/hq-rest-note')).toHaveLength(1)
     await expect(leaveRestNote(f.ctx, f.agent, { id: 'note-one', text: 'Changed text' })).rejects.toThrow('hq_rest_note_identity_conflict')
@@ -134,7 +137,7 @@ describe('human quiet note admission', () => {
     await leaveRestNote(f.ctx, f.agent, { id: 'note-one', text: 'Evidence only' })
     const projection = restBriefing(f.agent, [])
     expect((await restState(f.ctx, f.agent)).notes[0]?.status).toBe('pending')
-    f.agent.session.append('user/message', createUserMessage({ content: [{ type: 'text', text: projection.text }], source: { kind: 'plugin', plugin: 'hivemind-hq/wake-briefing', form: 'recall', sections: [projection.section] } }))
+    f.agent.session.append('user/message', createUserMessage({ content: [{ type: 'text', text: projection.text }], source: { kind: 'plugin', plugin: 'hivemind-hq/wake-briefing', form: 'recall', sections: [projection.section] } }), { surfaceOp: 'none' } as never)
     f.flush.mockResolvedValueOnce(false)
     await expect(acknowledgeRestNotes(f.ctx, f.agent)).rejects.toThrow('hq_rest_persistence_required')
     expect((await restState(f.ctx, f.agent)).notes[0]?.status).toBe('pending')
