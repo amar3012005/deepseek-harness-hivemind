@@ -157,8 +157,9 @@ export function ConversationSessionHeader({
               {!embeddedRoute && renderSlot('conversation.session.header.utilities', {})}
             </div>
             <div className={css.headerCorner} data-conversation-header-corner="">
-              {embeddedRoute && renderSlot('conversation.session.header.utilities', {})}
-              {embeddedRoute && renderSlot('conversation.session.header.actions', {})}
+              {embeddedRoute && renderSlot('conversation.session.header.utilities', {}, { only: 'brain-connections' })}
+              {embeddedRoute && renderSlot('conversation.session.header.utilities', {}, { only: 'dreaming-room' })}
+
               {renderSlot('conversation.session.header.corner', {})}
             </div>
           </div>

@@ -357,6 +357,7 @@ export function apply(ctx: ClientContext): void {
   })
   ctx.slots.inject('conversation.session.header.utilities', () => ctx.slots.register({
     name: 'conversation.session.header.utilities', id: 'brain-connections', locale: NS, order: 99,
+    children: { 'conversation.session.header.utilities': { kind: 'list', scope: 'session' }, 'conversation.session.header.actions': { kind: 'list', scope: 'session' } },
     inject: sessionId => ({ sessionId }),
   }, BrainConnections))
   // Put the panel/preview affordance in the conversation header's far-right

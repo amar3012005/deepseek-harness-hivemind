@@ -48,3 +48,11 @@
 .avatar { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 50%; background: #e9efff; color: #247aff; font-weight: 600; font-size: 16px; }
 .connectorHeading { display: flex; align-items: center; gap: 8px; width: 100%; padding: 13px 0; border: 0; border-bottom: 1px solid #8882; background: transparent; color: inherit; font: inherit; cursor: pointer; text-align: left; }
 .connectorHeading span:last-child { margin-left: auto; }
+
+.activity { border-top: 1px solid #8882; margin-top: 12px; padding-top: 10px; text-align: left; }
+.activity > small { display: block; color: var(--dsw-alias-label-tertiary); margin-bottom: 6px; }
+.activityRow { display: flex; align-items: center; justify-content: space-between; min-height: 32px; gap: 8px; }
+.activity summary { cursor: pointer; }
+.activityDot { position: absolute; right: 5px; top: 5px; width: 6px; height: 6px; border-radius: 50%; background: #247aff; }
+.chatButton { position: relative; }
+.chatPanel { max-width: calc(100vw - 32px); max-height: calc(100dvh - 150px); overflow-y: auto; }
