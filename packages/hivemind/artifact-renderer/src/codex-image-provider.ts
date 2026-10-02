@@ -179,6 +179,7 @@ async function runImage(config: CodexImageConfig, root: string, request: Generat
     state = { status: 'pending', threadId: thread.thread.id }
     await saveState(root, state)
     let image: Record<string, unknown> | undefined
+    let turnError: string | undefined
     let finish!: () => void
     const done = new Promise<void>((resolve) => { finish = resolve })
     const stop = wire.listen((message) => {
@@ -186,7 +187,15 @@ async function runImage(config: CodexImageConfig, root: string, request: Generat
       if (!object(message.params) || message.params.threadId !== state?.threadId) return
       const item = message.params.item
       if (message.method === 'item/completed' && object(item) && item.type === 'imageGeneration') image = item
-      if (message.method === 'turn/completed') finish()
+      if (message.method === 'turn/completed') {
+        const turn = message.params.turn
+        if (object(turn) && object(turn.error) && typeof turn.error.message === 'string') {
+          turnError = turn.error.message.includes('not supported when using Codex with a ChatGPT account')
+            ? 'The configured image worker model is not supported by this ChatGPT account. Select a model from the authenticated Codex model catalog.'
+            : 'Codex image turn failed before confirmed output; inspect the private provider trace.'
+        }
+        finish()
+      }
     })
     try {
       const paths: string[] = []
@@ -200,6 +209,7 @@ async function runImage(config: CodexImageConfig, root: string, request: Generat
       state = { ...state, turnId: turn.turn.id }; await saveState(root, state)
       await done
       signal.throwIfAborted()
+      if (turnError) throw new Error(turnError)
       if (!image || image.status !== 'completed' || typeof image.savedPath !== 'string' || image.failure) throw new Error('Codex returned no confirmed image output')
       const output = await storedOutput(root, image.savedPath)
       await saveState(root, { ...state, status: 'completed', filename: image.savedPath })

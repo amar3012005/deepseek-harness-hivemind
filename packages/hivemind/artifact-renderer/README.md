@@ -38,7 +38,7 @@ README and other Markdown documents use the same lane: the native file tool read
 
 ## Native Codex images
 
-Both HIVEMIND presets select `imageProvider: codex` on the shared renderer. The native app-server image tool uses the existing protected Codex OAuth store through a host-only credential resolver. It does not use the plan-sharing Responses endpoint or silently fall back to separately billed API generation. Server configuration controls the executable, model, private state directory, and timeout.
+Both HIVEMIND presets select `imageProvider: codex` on the shared renderer. The native app-server image tool uses the existing protected Codex OAuth store through a host-only credential resolver. It does not use the plan-sharing Responses endpoint or silently fall back to separately billed API generation. Server configuration controls the executable, model, private state directory, and timeout. The worker defaults to `gpt-5.6-luna`, listed by the authenticated Codex model catalog; the image backend remains native image generation. Account model availability can differ from API availability.
 
 The HIVE capability projection exposes image generation and native job tracking without discovery or leasing. The Codex worker retains its built-in OAuth provider configuration; only documented feature switches are applied.
 
