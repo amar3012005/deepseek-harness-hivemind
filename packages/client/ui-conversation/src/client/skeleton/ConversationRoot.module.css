@@ -690,16 +690,16 @@
   display: none;
 }
 
-.dreamingIntro { max-width: 660px; padding: 4px 0 10px; }
-.dreamingIntro h1 { margin: 0 0 6px; font-size: 24px; font-weight: 560; line-height: 1.3; color: var(--dsw-alias-label-primary); }
-.dreamingIntro p { margin: 0; font-size: 14px; line-height: 1.6; color: var(--dsw-alias-label-secondary); }
+.dreamingIntro { display: flex; align-items: baseline; gap: 16px; min-width: 0; padding: 0; }
+.dreamingIntro h1 { flex-shrink: 0; margin: 0; font-size: 24px; font-weight: 560; line-height: 1.3; color: var(--dsw-alias-label-primary); }
+.dreamingIntro p { margin: 0; white-space: nowrap; overflow-x: auto; font-size: 14px; line-height: 1.6; color: var(--dsw-alias-label-secondary); }
 
 /* Dreaming has its own orientation above the read-only conversation. */
 :global(html[data-dsh-mode='hivemind-chat']) .root .header[data-dreaming-header]:not(.headerHidden) {
   position: relative;
   bottom: auto;
   left: auto;
-  padding: 14px 24px 8px;
+  padding: 10px 24px;
   pointer-events: auto;
 }
 
@@ -716,4 +716,9 @@
   position: fixed;
   bottom: 18px;
   left: 18px;
+}
+
+/* Fill half of each unused side margin in the Dreaming reading column. */
+.root:has(.header[data-dreaming-header]) {
+  --dsh-chat-content-width: min(1180px, 82%);
 }

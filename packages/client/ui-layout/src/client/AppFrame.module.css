@@ -148,7 +148,7 @@
 /* Dreaming has fixed upper-right utilities; reserve their own row so the
    transcript cannot scroll behind them. Other conversation layouts are unchanged. */
 .centerCol:has(:global([data-dreaming-room-controls])) {
-  padding-top: 48px;
+  padding-top: 0;
   padding-right: 320px;
   box-sizing: border-box;
 }

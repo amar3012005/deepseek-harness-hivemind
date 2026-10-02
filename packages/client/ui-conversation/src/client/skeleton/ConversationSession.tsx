@@ -105,8 +105,7 @@ export function ConversationSessionHeader({
             <div className={css.titleCluster}>
               {dreaming && <section className={css.dreamingIntro} aria-label="About Dreaming">
                 <h1>Dreaming</h1>
-                <p>While you’re away, the agents inside HIVEMIND revisit your company’s memories,
-                  follow unexpected connections, and bring back discoveries for you to explore.</p>
+                <p>While you’re away, agents explore your company’s memories and bring back new discoveries.</p>
               </section>}
               {!dreaming && <nav className={css.crumbs} aria-label={t('session.hierarchy')}>
                 {ancestry.map((summary, index) => {
