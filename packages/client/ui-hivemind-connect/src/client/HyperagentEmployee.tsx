@@ -133,12 +133,13 @@ export function HyperagentEmployeePicker({ sessionId, useSessions, useEmployeeEv
       else setError(true)
     }, (reason: unknown) => { setError(reason instanceof Error ? reason.message : true) }).finally(() => { setLoading(false) })
   }
+  if (preset === 'hivemind-hq') return null
   return <div ref={pickerRef} className={css.picker} data-hivemind-employee-picker>
     <button className={css.pickerButton} type="button" aria-haspopup="listbox" aria-expanded={open && !locked} disabled={locked} title={locked ? t('employee.ownerLocked') : undefined} onClick={toggle}>
       {selected === null
-        ? preset === 'hivemind-hq' ? <RuntimeAvatar size={24} /> : <span className={css.autoAvatar}>{t('employee.initial')}</span>
+        ? <span className={css.autoAvatar}>{t('employee.initial')}</span>
         : <EmployeeAvatar employee={selected} size={24} />}
-      <span>{selected?.name ?? (preset === 'hivemind-hq' ? 'Runtime' : isHyperagentPreset(preset) ? t('employee.auto') : 'HIVEMIND')}</span><span aria-hidden="true">⌄</span>
+      <span>{selected?.name ?? (isHyperagentPreset(preset) ? t('employee.auto') : 'HIVEMIND')}</span><span aria-hidden="true">⌄</span>
     </button>
     {open && !locked && <div className={css.menu} role="listbox" aria-label={t('employee.label')} style={{ maxHeight: menuHeight }}>
       <button type="button" role="option" onClick={() => { choose(null) }} disabled={loading}><span className={css.autoAvatar}>H</span><span><strong>HIVEMIND</strong><small>Ask your company brain</small></span></button>
