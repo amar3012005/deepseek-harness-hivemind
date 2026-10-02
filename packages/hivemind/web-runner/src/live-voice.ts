@@ -174,7 +174,7 @@ export function liveVoicePlugin(config: LiveVoiceConfig,
         if (req.method !== 'POST' || !sameOrigin || req.headers['content-type']?.split(';')[0] !== 'application/json') {
           reply(res, 403, { error: 'invalid_request' }); return
         }
-        const owner = `${p.orgId}:${p.userId}`
+        const owner = p.orgId
         try {
           const input = await body(req)
           if (req.url?.split('?')[0] === '/api/hivemind/voice/stop') {
@@ -188,8 +188,8 @@ export function liveVoicePlugin(config: LiveVoiceConfig,
             reply(res, 400, { error: 'invalid_request' }); return
           }
           if (starting.has(owner)
-            || [...rooms.values()].some(room => room.principal.orgId === p.orgId && room.principal.userId === p.userId)
-            || starting.size + rooms.size >= config.maxConnections) { reply(res, 409, { error: 'voice_already_active' }); return }
+            || [...rooms.values()].some(room => room.principal.orgId === p.orgId)
+            || starting.size + rooms.size >= config.maxConnections) { reply(res, 409, { error: 'voice_already_active', message: 'Voice is already in use in your workspace. Please wait for the current conversation to finish.' }); return }
           starting.add(owner)
           try {
             await ctx.hivemindExecutionScope.run(p, async () => {

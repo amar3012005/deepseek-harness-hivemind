@@ -12,6 +12,7 @@ export function HiveLiveVoiceButton({ sessionId, useInput, t }: Props) {
   const draft = useInput(value => value?.draft ?? '')
   const [state, setState] = useState<'idle' | 'connecting' | 'live'>('idle')
   const [error, setError] = useState(false)
+  const [busy, setBusy] = useState(false)
   const [caption, setCaption] = useState('')
   const [speakerMuted, setSpeakerMuted] = useState(false)
   const [micMuted, setMicMuted] = useState(false)
@@ -31,7 +32,7 @@ export function HiveLiveVoiceButton({ sessionId, useInput, t }: Props) {
   const toggle = async () => {
     if (state !== 'idle') { stop(); return }
     const ticket = ++generation.current
-    setState('connecting'); setError(false)
+    setState('connecting'); setError(false); setBusy(false)
     let local: VoiceConnection | undefined
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
@@ -63,7 +64,8 @@ export function HiveLiveVoiceButton({ sessionId, useInput, t }: Props) {
       await peer.setLocalDescription(await peer.createOffer())
       const response = await fetch('/api/hivemind/voice/start', { method: 'POST', credentials: 'include',
         headers: { 'content-type': 'application/json' }, body: JSON.stringify({ sessionId, sdp: peer.localDescription?.sdp }), signal: AbortSignal.timeout(35000) })
-      const value = await response.json() as { id?: string; sdp?: string }
+      const value = await response.json() as { id?: string; sdp?: string; error?: string }
+      if (response.status === 409 && value.error === 'voice_already_active') setBusy(true)
       if (!response.ok || !value.id || !value.sdp) throw new Error('voice_unavailable')
       local.id = value.id
       if (generation.current !== ticket) {
@@ -78,7 +80,7 @@ export function HiveLiveVoiceButton({ sessionId, useInput, t }: Props) {
   }
   // A typed draft retains the ordinary upward send arrow; ongoing voice keeps its end control.
   if (draft.trim() && state === 'idle') return null
-  const label = error ? t('voice.retry') : state === 'connecting' ? t('voice.connecting') : state === 'live' ? t('voice.end') : t('voice.start')
+  const label = busy ? t('voice.busy') : error ? t('voice.retry') : state === 'connecting' ? t('voice.connecting') : state === 'live' ? t('voice.end') : t('voice.start')
   return <div className={css.control} data-hivemind-live-voice data-voice-active={state !== 'idle' || undefined}>
     {state !== 'idle' && <>
       <button type="button" className={css.utility} disabled={state !== 'live'} aria-label={t(speakerMuted ? 'voice.unmuteSpeaker' : 'voice.muteSpeaker')} aria-pressed={speakerMuted} onClick={() => {
@@ -93,6 +95,7 @@ export function HiveLiveVoiceButton({ sessionId, useInput, t }: Props) {
         {state !== 'idle' ? <svg width="20" height="20" viewBox="0 0 20 20" aria-hidden><path d="m5 5 10 10M15 5 5 15" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /></svg> : <svg width="20" height="20" viewBox="0 0 20 20" aria-hidden><path d="M3 8v4m3-7v10m4-13v16m4-13v10m3-7v4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" /></svg>}
       </button>
     </Tooltip>
+    {busy && <span role="status">{t('voice.busy')}</span>}
     {state !== 'idle' && <span className={css.caption} hidden>{caption || t(state === 'connecting' ? 'voice.connecting' : 'voice.listening')}</span>}
   </div>
 }

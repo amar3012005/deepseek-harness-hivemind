@@ -288,7 +288,10 @@ export function registerMediaWorkflow(
         if (!(await ctx.sessions.flush(agent.session))) throw new Error('Image intent could not be persisted; generation was not started')
         admit()
       } catch (error) { refuse(error instanceof Error ? error : new Error('Image intent persistence failed')); throw error }
-      return { workflow_id: workflowId, job_id: jobId, status: 'running', provider: provider.id, attempt_limit: attemptLimit, next: 'Continue independent work or use job_output with this job_id when blocked.' }
+      const queued = owner && admission?.status(owner, operationId) === 'queued'
+      return { workflow_id: workflowId, job_id: jobId, status: 'running', provider: provider.id, attempt_limit: attemptLimit,
+        ...(queued ? { queue_status: 'queued', message: 'Your image request is waiting for the current generation to finish.' } : {}),
+        next: 'Continue independent work or use job_output with this job_id when blocked.' }
     },
     presentCall: args => ({ card: 'generic', title: `Generate ${String(args.kind ?? 'media')}`, kind: 'read', rawInput: String(args.title ?? '') }),
   })
