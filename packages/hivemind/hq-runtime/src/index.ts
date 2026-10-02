@@ -8,6 +8,7 @@ import {
 } from './review.ts'
 import { createHash } from 'node:crypto'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
+import { installRest, recoverRest, acknowledgeRestNotes, restBriefing } from './rest.ts'
 import { wakeBriefing } from './wake-briefing.ts'
 import type {} from './control.ts'
 import { calendarItems } from './calendar.ts'
@@ -61,8 +62,9 @@ declare module '@deepseek-ai/dsh-session/types' {
   }
 }
 export function apply(ctx: Context): void {
+  installRest(ctx)
   const briefed = new WeakMap<object, number>()
-  ctx.effect(() => ctx.on('agent/pre-step', async ({ agent, turn }, next) => {
+  ctx.effect(() => ctx.on('agent/pre-step', async ({ agent, turn, signal }, next) => {
     const decision = await next()
     if (decision.kind === 'reject') return decision
     const member = ctx.agentTeams.tryMembership(agent)
@@ -71,14 +73,17 @@ export function apply(ctx: Context): void {
     for (const event of agent.session.ownEvents())
       if (event.type === 'agent-preset/selected') preset = event.data.agentPreset
     if (preset !== 'hivemind-hq') return decision
+    await recoverRest(ctx, agent, signal)
+    await acknowledgeRestNotes(ctx, agent)
     if (briefed.get(agent) === turn) return decision
     // The admitted message is durable native context: inject once per turn,
     // and reread on cold restoration rather than adding a copy per tool step.
     const workspace = await ctx.hivemindHq.workspace(agent)
     briefed.set(agent, turn)
+    const rest = restBriefing(agent, decision.messages)
     return { ...decision, messages: [createUserMessage({
-      source: { kind: 'plugin', plugin: 'hivemind-hq/wake-briefing', form: 'recall' },
-      content: [{ type: 'text', text: wakeBriefing(workspace, agent.session.snapshotEvents(), agent.id) }],
+      source: { kind: 'plugin', plugin: 'hivemind-hq/wake-briefing', form: 'recall', sections: [rest.section] },
+      content: [{ type: 'text', text: `${wakeBriefing(workspace, agent.session.snapshotEvents(), agent.id)}\n${rest.text}` }],
     }), ...decision.messages] }
   }, { prepend: true }))
   ctx.effect(() =>

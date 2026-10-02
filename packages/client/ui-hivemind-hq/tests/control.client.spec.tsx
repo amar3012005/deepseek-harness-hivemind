@@ -8,7 +8,10 @@ import { en } from '../src/client/locales.ts'
 
 afterEach(cleanup)
 const mode = { revision: 1, enabled: true, changedAt: 1 }
-const base = { sessionId: 'hq' as SessionId, t: makeTranslate(en) }
+const base = { sessionId: 'hq' as SessionId, t: makeTranslate(en),
+  restState: vi.fn().mockResolvedValue({ ok: true, value: { latest: null, notes: [] } }),
+  leaveRestNote: vi.fn(),
+}
 
 it('uses committed revisions and reconciles a conflicting human switch', async () => {
   const load = vi.fn().mockResolvedValue({ ok: true, value: mode })
@@ -49,4 +52,33 @@ it('shows Wake up only for the first paused revision and preserves human control
   fireEvent.click(wake)
   await screen.findByRole('button', { name: en.pause })
   expect(setMode).toHaveBeenCalledWith('hq', { enabled: true, expectedRevision: 0 })
+})
+
+it('saves a quiet instruction without mode changes and preserves text and identity on uncertain retry', async () => {
+  const load = vi.fn().mockResolvedValue({ ok: true, value: { ...mode, enabled: false } })
+  const setMode = vi.fn()
+  const leaveRestNote = vi.fn().mockRejectedValueOnce(new Error('lost response'))
+    .mockImplementationOnce(async (_id, request) => ({ ok: true, value: { note: { ...request, createdAt: '2026-10-02T18:00:00Z', status: 'pending', presentedAt: null } } }))
+  render(<HqControlAction {...base} load={load} setMode={setMode} leaveRestNote={leaveRestNote} />)
+  fireEvent.click(screen.getByRole('button', { name: en.leaveInstruction }))
+  const input = screen.getByRole('textbox', { name: en.instruction }) as HTMLTextAreaElement
+  fireEvent.change(input, { target: { value: 'Read current task receipts only.' } })
+  fireEvent.click(screen.getByRole('button', { name: en.saveInstruction }))
+  await screen.findByText(en.noteUnavailable)
+  expect(input.value).toBe('Read current task receipts only.')
+  fireEvent.click(screen.getByRole('button', { name: en.saveInstruction }))
+  await screen.findByText(en.noteSaved)
+  expect(leaveRestNote.mock.calls[1]).toEqual(leaveRestNote.mock.calls[0])
+  expect(input.value).toBe('')
+  expect(setMode).not.toHaveBeenCalled()
+})
+
+it('labels inactive rest wakes without claiming an upcoming wake', async () => {
+  const restState = vi.fn().mockResolvedValue({ ok: true, value: { latest: {
+    handoffId: 'rest-1', summary: 'Checkpoint', requestedWakeAt: '2026-10-02T18:00:00Z',
+    effectiveWakeAt: '2026-10-02T18:00:00Z', scheduleId: 'wake-1', wakeStatus: 'inactive', ready: true,
+  }, notes: [] } })
+  render(<HqControlAction {...base} restState={restState} load={vi.fn().mockResolvedValue({ ok: true, value: mode })} setMode={vi.fn()} />)
+  await screen.findByText(new RegExp(en.wakeInactive))
+  expect(screen.queryByText(new RegExp(en.nextWake))).toBeNull()
 })

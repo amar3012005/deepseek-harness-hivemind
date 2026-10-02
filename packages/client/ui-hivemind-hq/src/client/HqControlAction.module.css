@@ -2,3 +2,9 @@
 .pause { color: var(--dsw-alias-state-error-primary); border-color: var(--dsw-alias-state-error-primary); }
 .stop { width: 10px; height: 10px; border-radius: 2px; background: currentColor; }
 .error { max-width: 220px; color: var(--dsw-alias-state-error-primary); font-size: 12px; overflow-wrap: anywhere; }
+
+.restStatus { flex-basis: 100%; font-size: 12px; overflow-wrap: anywhere; }
+.noteBox { flex-basis: 100%; display: flex; flex-direction: column; align-items: flex-start; gap: 6px; min-width: 0; }
+.noteHint, .noteItem { margin: 0; font-size: 12px; overflow-wrap: anywhere; }
+.noteItem span { opacity: .7; }
+.noteInput { box-sizing: border-box; width: 100%; min-width: 0; resize: vertical; font: inherit; color: inherit; background: transparent; border: 1px solid currentColor; border-radius: 6px; padding: 8px; }

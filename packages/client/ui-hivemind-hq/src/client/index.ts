@@ -28,6 +28,8 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
   const ui = ctx.inject(['sessions', 'remote.hivemindHq', 'remote.agentPresets', 'slots', 'locale', 'layout', 'uiWorkspace'], (child) => {
     child.effect(() => child.locale.register('hivemind.hq', { en, zh }))
     const actions: HqControlInjected = {
+      restState: sessionId => child.remote.hivemindHq.restState(sessionId),
+      leaveRestNote: (sessionId, request) => child.remote.hivemindHq.leaveRestNote(sessionId, request),
       load: sessionId => child.remote.hivemindHq.mode(sessionId),
       setMode: (sessionId, request) => child.remote.hivemindHq.setMode(sessionId, request),
     }

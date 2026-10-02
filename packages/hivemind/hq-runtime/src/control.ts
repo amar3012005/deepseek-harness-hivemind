@@ -4,6 +4,8 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
 import type {} from '@deepseek-ai/dsh-agent-presets'
 import type {} from '@deepseek-ai/dsh-experimental-agent-team'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
+import { restState as loadRestState, leaveRestNote as saveRestNote } from './rest.ts'
+import type { HqRestState, HqRestNoteRequest, HqRestNoteResult } from './types.ts'
 import { hqMode, type HqModeState } from './mode.ts'
 import { taskContracts, type TaskArtifactLinks } from './ledger.ts'
 import { calendarItems, validateCalendarItem } from './calendar.ts'
@@ -75,10 +77,22 @@ export class HqControl extends TypertRemoteService {
     )
   }
 
+  /** Human inspection of checkpointed rest intent and quiet notes; never wakes. */
+  @Remote('restState')
+  async restState(agent: Agent): Promise<HqRestState> {
+    return loadRestState(this.ctx, this.root(agent))
+  }
+
+  /** Human-only authorized quiet note; native persistence, no Agent inbox insertion. */
+  @Remote('leaveRestNote')
+  async leaveRestNote(agent: Agent, request: HqRestNoteRequest): Promise<HqRestNoteResult> {
+    return saveRestNote(this.ctx, this.root(agent), request)
+  }
+
   /** Exact Remote Agent authority cannot control another or an ordinary employee root. */
   private root(agent: Agent): Agent {
     const member = this.ctx.agentTeams.membership(agent)
-    if (member.role !== 'lead' || !isHq(member.root))
+    if (member.role !== 'lead' || member.root !== agent || !isHq(member.root))
       throw new Error('hq_human_control_requires_hq_root')
     return member.root
   }

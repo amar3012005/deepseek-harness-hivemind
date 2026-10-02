@@ -51,3 +51,31 @@ identical link without appending another record. Root persistence is still
 required on replay. Artifact/producer changes retain their ordinary new-link
 semantics and receipt validation; array order remains significant. Contract
 replay already uses validated canonical requirements after cold restoration.
+
+## Voluntary rest and quiet human instructions
+
+When HQ chooses to wait until a future time, `hivemind_hq_rest` checkpoints an
+immutable identity, requested wake time, summary, next steps, blockers and a
+host-derived task/review/artifact snapshot. It then ensures one native Schedule
+wake and checkpoints its binding before returning `rest_ready`. This is a
+planned-rest receipt, not a forced cancellation: ordinary idle after the turn
+is actual rest. Normal replies need no rest cycle, and paused autonomy remains
+paused. Arbitrary crashes do not imply a handoff was saved.
+
+Retry uses the same handoff ID and identical normalized content. Existing wake
+lookup precedes native timing validation, so a delivered past wake is reused.
+Inactive wakes are reported inactive rather than promised as future wakes.
+Missing binding after a saved intent or committed Schedule operation repairs
+on the next admitted HQ turn; overdue unscheduled latest intents wake promptly
+and retain their original requested time. Older superseded partial intents do
+not create wakes. A deliberately removed committed wake is never recreated.
+
+Human-only `leaveRestNote` persists a quiet note without inbox insertion or
+wakeup. The Environment panel exposes this separately from normal Send. Note
+identity/content replay is stable; at most 20 pending notes of 2000 characters
+are accepted, with explicit capacity errors. On the next native turn, exact
+referenced wake handoffs are presented alongside the latest handoff, current
+work, and pending notes. Notes become `presented` only after the native briefing
+message's persistence is confirmed; this does not mean applied or fulfilled and
+grants no additional authority. Presented history is bounded with an explicit
+omitted count.
