@@ -1652,7 +1652,7 @@ export function apply(ctx: Context, config: Config): void {
       if (recalled?.turn !== turn) {
         // One authenticated bounded read per turn; a cold resumed Agent rereads.
         // A failed recall is explicit, never evidence that the store is empty.
-        const request = agent.session.snapshotEvents().findLast(event => event.type === 'user/message')
+        const request = agent.session.snapshotEvents().findLast(event => event.type === 'user/message' && event.data.source.kind !== 'plugin')
         const query = request?.type === 'user/message'
           ? request.data.content.filter(block => block.type === 'text')
             .map(block => block.type === 'text' ? block.text : '').join(' ').slice(0, 420) : ''

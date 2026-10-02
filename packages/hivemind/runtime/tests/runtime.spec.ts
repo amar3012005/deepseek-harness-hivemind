@@ -1242,13 +1242,17 @@ describe('HQ automatic private wake recall', () => {
     const harness = mount({ ...config('unused'), authorityMode: 'scoped-service', privateMemoryEnabled: true, serviceApiBase: 'http://control.test', serviceHttpOrigins: ['http://control.test'], serviceSecretEnv: 'TEST_HIVE_RUNNER_SECRET' })
     const events = [{ type: 'hivemind/session-owner', data: { id: null, slug: 'lead', name: 'HyperAgents', role: 'Team Lead' } }, { type: 'user/message', data: user('Review the saved crawler report') }] as unknown as SessionEvent[]
     const subject = () => ({ id: 'session-d292efdd-4b56-4053-b61c-9cd63a7cd8ff', session: { header: { agentPreset: 'hivemind-hq' }, snapshotEvents: () => events } }) as unknown as Agent
+    events.push({ type: 'user/message', data: createUserMessage({ content: [{ type: 'text', text: 'Old projected history' }], source: { kind: 'plugin', plugin: 'history', form: 'recall' } }) } as SessionEvent)
     const agent = subject()
     const enter = async () => ({ kind: 'enter' as const, messages: [] })
     const first = await harness.preStep?.({ agent, turn: 1, signal }, enter)
     expect(JSON.stringify(first)).toContain('Ravi saved a report')
     await harness.preStep?.({ agent, turn: 1, signal }, enter)
     expect(fetchMock).toHaveBeenCalledTimes(1)
-    expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).not.toHaveProperty('agent_slug')
+    const packet = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))
+    expect(packet).not.toHaveProperty('agent_slug')
+    expect(packet.query).toContain('Review the saved crawler report')
+    expect(packet.query).not.toContain('Old projected history')
     await harness.preStep?.({ agent: subject(), turn: 1, signal }, enter)
     expect(fetchMock).toHaveBeenCalledTimes(2)
     await harness.preStep?.({ agent, turn: 2, signal }, enter)
