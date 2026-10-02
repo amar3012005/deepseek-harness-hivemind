@@ -232,6 +232,8 @@ export interface HeroDockOwnerProps {
 
 /** Header actions derive their state from standard Session props. */
 export interface ConversationHeaderActionOwnerProps {
+  /** Existing header controls composed by the embedded shell for Environment. */
+  environmentActivity?: ReactNode
   /** Marker field: entries receive no owner-specific values. */
   children?: never
 }

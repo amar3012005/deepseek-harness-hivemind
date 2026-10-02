@@ -157,7 +157,16 @@ export function ConversationSessionHeader({
               {!embeddedRoute && renderSlot('conversation.session.header.utilities', {})}
             </div>
             <div className={css.headerCorner} data-conversation-header-corner="">
-              {embeddedRoute && renderSlot('conversation.session.header.utilities', {}, { only: 'brain-connections' })}
+              {embeddedRoute && renderSlot('conversation.session.header.utilities', { environmentActivity: <>
+                <div style={{ borderTop: '1px solid #8882', marginTop: 12, paddingTop: 10, textAlign: 'left' }}>
+                  <small style={{ display: 'block', marginBottom: 6 }}>Activity</small>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', minHeight: 32 }}><span>Background jobs</span>{renderSlot('conversation.session.header.actions', {}, { only: 'job-list' })}</div>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', minHeight: 32 }}><span>Automated tasks</span>{renderSlot('conversation.session.header.utilities', {}, { only: 'schedule-manager' })}</div>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', minHeight: 32 }}><span>Calendar</span>{renderSlot('conversation.session.header.utilities', {}, { only: 'hivemind.company-calendar' })}</div>
+                  {renderSlot('conversation.session.header.utilities', {}, { only: 'schedule-catalog' })}
+                </div>
+                <details style={{ borderTop: '1px solid #8882', marginTop: 12, paddingTop: 10, textAlign: 'left' }}><summary>More</summary>{renderSlot('conversation.session.header.utilities', {}, { only: 'session-log-download' })}{renderSlot('conversation.session.header.utilities', {}, { only: 'open-in-app' })}</details>
+              </> }, { only: 'brain-connections' })}
               {embeddedRoute && renderSlot('conversation.session.header.utilities', {}, { only: 'dreaming-room' })}
 
               {renderSlot('conversation.session.header.corner', {})}

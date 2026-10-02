@@ -1,10 +1,10 @@
-import type { PropsRenderSlots, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
+import type { PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import { useEffect, useState } from 'react'
 import { SessionCredits } from './SessionCredits.tsx'
 import css from './DreamingConnectors.module.css'
 import { EmployeeAvatar, projectedEmployee } from './HyperagentEmployee.tsx'
 const names: Record<string, string> = { gmail: 'Gmail', slack: 'Slack', googledocs: 'Google Docs', googledrive: 'Google Drive', github: 'GitHub', notion: 'Notion', outlook: 'Outlook' }
-export function BrainConnections({ sessionId, useSessions, renderSlot, hero = false }: PropsRuntime<'conversation.session.header.utilities'> & PropsRenderSlots<'conversation.session.header.utilities' | 'conversation.session.header.actions'> & { hero?: boolean }) {
+export function BrainConnections({ sessionId, useSessions, environmentActivity, hero = false }: PropsRuntime<'conversation.session.header.utilities'> & { hero?: boolean }) {
   const preset = useSessions(state => state.byId[sessionId]?.projectionValues?.agentPreset ?? state.byId[sessionId]?.agentPreset)
   const employee = useSessions(state => projectedEmployee(state.byId[sessionId]?.projectionValues?.hyperagentOwner))
   const busy = useSessions(state => (state.jobsBySession[sessionId] ?? []).some(job => job.status === 'running' || job.status === 'stopping'))
@@ -39,13 +39,7 @@ export function BrainConnections({ sessionId, useSessions, renderSlot, hero = fa
         </a>) : ['gmail', 'slack', 'googledocs'].map(toolkit => <a className={css.account} key={toolkit} href="/hivemind/app/connectors"><img className={css.logo} src={`https://logos.composio.dev/api/${toolkit}`} alt="" /><span className={css.appName}>{names[toolkit]}</span><span>Connect ›</span></a>)}</div>}
       <a className={css.more} href="/hivemind/app/connectors">More apps <span aria-hidden="true">›</span></a>
     </>}
-    <div className={css.activity}><small>Activity</small>
-      <div className={css.activityRow}><span>Background jobs</span>{renderSlot('conversation.session.header.actions', {}, { only: 'job-list', fallback: <span>No active jobs</span> })}</div>
-      <div className={css.activityRow}><span>Automated tasks</span>{renderSlot('conversation.session.header.utilities', {}, { only: 'schedule-manager' })}</div>
-      <div className={css.activityRow}><span>Calendar</span>{renderSlot('conversation.session.header.utilities', {}, { only: 'hivemind.company-calendar' })}</div>
-      {renderSlot('conversation.session.header.utilities', {}, { only: 'schedule-catalog' })}
-    </div>
-    <details className={css.activity}><summary>More</summary>{renderSlot('conversation.session.header.utilities', {}, { only: 'session-log-download' })}{renderSlot('conversation.session.header.utilities', {}, { only: 'open-in-app' })}</details>
+    {environmentActivity}
     <SessionCredits sessionId={sessionId} />
   </>
   if (hero) return null
