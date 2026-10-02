@@ -301,6 +301,18 @@ export function apply(ctx: ClientContext): void {
       const start = async (id: string): Promise<boolean> => {
         const sessionId = await ctx.sessions.create()
         ctx.sessions.open(sessionId)
+        const session = ctx.sessions.binding(sessionId)?.session
+        if (session === undefined) return false
+        await new Promise<void>((resolve, reject) => {
+          let stop = () => {}
+          const timer = setTimeout(() => { stop(); reject(new Error('The new session is still opening. Please try again.')) }, 10000)
+          const check = () => {
+            if (session.getSnapshot().openState !== 'open') return
+            clearTimeout(timer); stop(); resolve()
+          }
+          stop = session.subscribe(check)
+          check()
+        })
         return selectEmployee(sessionId, id)
       }
       const publish = () => {
