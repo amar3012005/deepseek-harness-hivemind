@@ -17,7 +17,7 @@ export interface HiveSessionProjectionInjected {
 
 type Props = PropsRuntime<'shell.sessionRail'>
   & PropsLocale<'workspace'>
-  & PropsRenderSlots<'conversation.sidebar.viewTabs'>
+  & PropsRenderSlots<'conversation.sidebar.viewTabs' | 'shell.sessionRail.avatar'>
   & HiveSessionProjectionInjected
 
 /** A stable local timestamp is a useful label for sessions without distinct titles. */
@@ -118,23 +118,34 @@ export function HiveSessionProjection({
       const listElement = event.currentTarget
       setRecentsAtEnd(listElement.scrollTop + listElement.clientHeight >= listElement.scrollHeight - 2)
     }}>
-      {rows.map(row => <SessionNodeItem
-        key={row.id}
-        node={row}
-        visibleTitle={row.title.trim() && row.title !== 'deepseek-harness' ? row.title : sessionTimestamp(row.updatedAt, now, locale)}
-        hoverTimestamp={new Intl.DateTimeFormat(locale, { dateStyle: 'full', timeStyle: 'long' }).format(row.updatedAt)}
-        recent
-        currentId={list.current}
-        now={now}
-        onOpen={openSession}
-        onRename={requestRename}
-        onFork={forkSession}
-        onArchive={() => {}}
-        onDelete={(id) => { void deleteSession(id) }}
-        onShare={shareSession}
-        flat
-        t={t}
-      />)}
+      {rows.map((row) => {
+        let agent: { id: string; name: string; role: string; avatarUrl?: string } | undefined
+        if (hyperagentRoute) {
+          try {
+            const projection = list.byId[row.id]?.projectionValues as { hyperagentOwner?: string | null } | undefined
+            const value = JSON.parse(projection?.hyperagentOwner ?? 'null') as { id?: unknown; name?: unknown; role?: unknown; avatarUrl?: unknown } | null
+            if (value && typeof value.id === 'string' && typeof value.name === 'string') agent = { id: value.id, name: value.name, role: typeof value.role === 'string' ? value.role : 'employee', ...(typeof value.avatarUrl === 'string' ? { avatarUrl: value.avatarUrl } : {}) }
+          } catch { /* Legacy sessions can lack an owner projection. */ }
+        }
+        return <SessionNodeItem
+          key={row.id}
+          node={row}
+          leading={agent === undefined ? undefined : renderSlot('shell.sessionRail.avatar', agent, { fallback: null })}
+          visibleTitle={hyperagentRoute ? agent?.name ?? 'Run Time' : row.title.trim() && row.title !== 'deepseek-harness' ? row.title : sessionTimestamp(row.updatedAt, now, locale)}
+          hoverTimestamp={new Intl.DateTimeFormat(locale, { dateStyle: 'full', timeStyle: 'long' }).format(row.updatedAt)}
+          hoverTitle={hyperagentRoute ? row.title : undefined}
+          recent
+          currentId={list.current}
+          now={now}
+          onOpen={openSession}
+          onRename={requestRename}
+          onFork={forkSession}
+          onArchive={() => {}}
+          onDelete={(id) => { void deleteSession(id) }}
+          onShare={shareSession}
+          flat
+          t={t}
+        />})}
     </nav>
     {osRail === null && rows.length > 5 && !recentsAtEnd && <div className={css.scrollHint}>Scroll more ↓</div>}
     {list.current !== undefined && <div className={css.viewTabs}>

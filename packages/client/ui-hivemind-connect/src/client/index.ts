@@ -33,7 +33,7 @@ import { createConnectorMentionSource } from './ConnectorMentions.ts'
 import { ContextualFollowUps, selectContextualFollowUps } from './ContextualFollowUps.tsx'
 import {
   HyperagentEmployeePicker, HyperagentEmployeePanel, HyperagentPanelToggle,
-  type EmployeeOption,
+  type EmployeeOption, selectedEmployee, projectedEmployee, EmployeeAvatar,
 } from './HyperagentEmployee.tsx'
 import { HyperagentWorkbench } from './HyperagentWorkbench.tsx'
 
@@ -214,6 +214,7 @@ export function apply(ctx: ClientContext): void {
   }, ({ sessionId, locked }: { sessionId?: SessionId | undefined; locked: boolean }) => {
     return sessionId === undefined ? null : renderScopeSelect(sessionId, locked)
   }))
+  ctx.slots.inject('shell.sessionRail.avatar', () => ctx.slots.register({ name: 'shell.sessionRail.avatar' }, (employee: EmployeeOption) => createElement(EmployeeAvatar, { employee, size: 24 })))
   const employeeTab = '@deepseek-ai/dsh-client-ui-hivemind-connect/employee'
   const workbenchKinds = ['preview', 'artifacts', 'computer', 'sources'] as const
   let rightSidebar: ClientContext['sidebarRight'] | undefined
@@ -288,16 +289,39 @@ export function apply(ctx: ClientContext): void {
       })
       const result = await binding.session.command(`/hivemind-employee ${id ?? 'auto'}`).catch(() => null)
       if (result === null || !result.ok || !result.value.matched) { cancelWait(); throw new Error(result !== null && !result.ok ? `Agent selection could not be admitted (${result.error.code}).` : 'Agent selection command is not available.') }
-      return accepted
+      const ok = await accepted
+      if (ok) window.dispatchEvent(new CustomEvent('hivemind:agent-selected', { detail: { id } }))
+      return ok
     }
     ctx.effect(() => {
       const bridge = async (id: string | null): Promise<boolean> => {
         const current = ctx.sessions.list.getSnapshot().current
         return current === undefined ? false : selectEmployee(current, id)
       }
-      const host = window as unknown as { __HIVEMIND_SELECT_AGENT__?: typeof bridge }
+      const start = async (id: string): Promise<boolean> => {
+        const sessionId = await ctx.sessions.create()
+        ctx.sessions.open(sessionId)
+        return selectEmployee(sessionId, id)
+      }
+      const publish = () => {
+        const state = ctx.sessions.list.getSnapshot()
+        const current = state.current
+        const row = current === undefined ? undefined : state.byId[current]
+        const owner = projectedEmployee(row?.projectionValues?.hyperagentOwner)
+        const events = current === undefined ? undefined : ctx.sessions.binding(current)?.eventSource.getSnapshot()
+        const selection = events === undefined ? null : selectedEmployee(events)
+        window.dispatchEvent(new CustomEvent('hivemind:agent-selected', { detail: { id: owner?.id ?? selection?.id ?? null } }))
+      }
+      const stop = ctx.sessions.list.subscribe(publish)
+      publish()
+      const host = window as unknown as { __HIVEMIND_SELECT_AGENT__?: typeof bridge; __HIVEMIND_START_AGENT__?: typeof start }
       host.__HIVEMIND_SELECT_AGENT__ = bridge
-      return () => { if (host.__HIVEMIND_SELECT_AGENT__ === bridge) delete host.__HIVEMIND_SELECT_AGENT__ }
+      host.__HIVEMIND_START_AGENT__ = start
+      return () => {
+        stop()
+        if (host.__HIVEMIND_SELECT_AGENT__ === bridge) delete host.__HIVEMIND_SELECT_AGENT__
+        if (host.__HIVEMIND_START_AGENT__ === start) delete host.__HIVEMIND_START_AGENT__
+      }
     }, 'ui-hivemind-connect: unified composer agent selection')
     ctx.slots.inject('conversation.input.left', () => ctx.slots.register({
       name: 'conversation.input.left', id: 'hivemind-employee-picker', order: 20, locale: NS,

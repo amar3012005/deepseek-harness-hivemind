@@ -377,3 +377,5 @@
 .recentRow .scheduleIndicator { order: 2; }
 .recentRow .slot { order: 3; }
 .recentRow .rowActions { order: 4; }
+
+.identityAvatar { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; flex-shrink: 0; margin-right: 6px; }

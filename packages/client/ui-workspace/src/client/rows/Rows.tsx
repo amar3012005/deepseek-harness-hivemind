@@ -5,6 +5,7 @@
  * except workspace Rename/Delete and session Rename/Fork/Archive; the session
  * and workspace hover cards are suppressed while a menu is open.
  */
+import type { ReactNode } from 'react'
 import { useEffect, useRef, useState } from 'react'
 import clsx from 'clsx'
 import {
@@ -383,7 +384,7 @@ export function SearchResultItem({ result, currentId, onOpen, t }: {
  */
 export function SessionNodeItem({
   node, currentId, now, onOpen, onRename, onFork, onArchive, onDelete, onShare, onReveal, drag, flat = false,
-  showActions = true, actionsPersistent = false, visibleTitle, hoverTimestamp, recent = false, t,
+  showActions = true, actionsPersistent = false, visibleTitle, hoverTimestamp, hoverTitle, leading, recent = false, t,
 }: {
   node: SessionNode
   currentId: string | undefined
@@ -411,6 +412,8 @@ export function SessionNodeItem({
   actionsPersistent?: boolean | undefined
   /** Host projection may show an absolute timestamp while preserving the stored title for rename and share. */
   visibleTitle?: string | undefined
+  leading?: ReactNode
+  hoverTitle?: string | undefined
   /** Full local date and time in the session hover card. */
   hoverTimestamp?: string | undefined
   /** Compact HIVE recent list with title-first rows and hover-only dates. */
@@ -454,7 +457,7 @@ export function SessionNodeItem({
       )}
       role="treeitem"
       aria-selected={selected}
-      title={hoverTimestamp}
+      title={hoverTitle ?? hoverTimestamp}
       onClick={() => { onOpen(node.id) }}
       draggable={drag !== undefined}
       onDragStart={drag === undefined
@@ -489,6 +492,7 @@ export function SessionNodeItem({
           {showStatus && <SessionStatusDots statuses={statuses} />}
         </span>
       )}
+      {leading && <span className={css.identityAvatar}>{leading}</span>}
       <span className={css.title}>{title}</span>
       {row.hasActiveSchedule && <ActiveScheduleIndicator t={t} />}
       {/* A blank New Session row is a provisional placeholder: nothing has
