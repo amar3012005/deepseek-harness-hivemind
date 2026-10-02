@@ -115,7 +115,7 @@ export class SessionCommandController {
         sessionId,
         cwd,
         request.sessionId !== undefined || roomId !== undefined,
-        room === undefined ? request.agentPreset : 'hivemind-hyperagents',
+        room === undefined ? request.agentPreset : room === 'runtime' ? 'hivemind-hq' : 'hivemind-hyperagents',
       )
     } catch (error) {
       this.rejectCreation(sessionId, error)

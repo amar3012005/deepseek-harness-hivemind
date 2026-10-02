@@ -330,7 +330,7 @@ export function apply(ctx: ClientContext): void {
             entry.type === 'event' && ['turn/start', 'hivemind/session-owner'].includes(entry.event.type as string)) === true
           // Authenticated room lookup already selected this employee's room.
           // A restored persistent owner must never be assigned again.
-          const selected = alreadyUsed || roomOwner?.id === id
+          const selected = id === 'runtime' || alreadyUsed || roomOwner?.id === id
             || await selectEmployee(sessionId, id === 'runtime' ? null : id, id === 'runtime')
           if (selected) {
           // Team navigation opens an agent workspace even while its first
@@ -351,7 +351,7 @@ export function apply(ctx: ClientContext): void {
         window.dispatchEvent(new CustomEvent('hivemind:agent-selected', { detail: { id: owner?.id ?? selection?.id ?? null } }))
         const rooms = state.ids.flatMap((id) => {
           const row = state.byId[id]
-          if (!row || row.origin === 'subagent' || (row.projectionValues?.agentPreset ?? row.agentPreset) !== 'hivemind-hyperagents') return []
+          if (!row || row.origin === 'subagent' || !['hivemind-hyperagents', 'hivemind-hq'].includes(row.projectionValues?.agentPreset ?? row.agentPreset ?? '')) return []
           const employee = projectedEmployee((row.projectionValues?.hyperagentOwner ?? row.projectionValues?.hyperagentSelection))
           const message = (row.projectionValues as { hyperagentLatestMessage?: string | null } | undefined)?.hyperagentLatestMessage
           let preview = ''

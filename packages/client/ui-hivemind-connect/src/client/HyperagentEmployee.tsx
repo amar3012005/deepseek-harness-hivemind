@@ -78,7 +78,7 @@ export function employeeOwnershipLocked(window: SessionEventWindow): boolean {
 }
 
 export function isHyperagentPreset(value: unknown): boolean {
-  return value === 'hivemind-hyperagents' || value === 'hyperagents' || value === 'hyperagents-compressed'
+  return value === 'hivemind-hq' || value === 'hivemind-hyperagents' || value === 'hyperagents' || value === 'hyperagents-compressed'
 }
 
 export function employeeMenuHeight(viewportHeight: number, triggerBottom: number): number {

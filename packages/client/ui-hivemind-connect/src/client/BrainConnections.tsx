@@ -15,7 +15,7 @@ export function BrainConnections({ sessionId, useSessions, environmentActivity, 
   const [accounts, setAccounts] = useState<{ id: string; toolkit: string }[]>()
   const [error, setError] = useState(false)
   const dreaming = window.location.pathname.endsWith('/dreaming') || new URLSearchParams(window.location.search).has('dreamingParent')
-  const hyperagents = preset === 'hivemind-hyperagents' || preset === 'hyperagents' || preset === 'hyperagents-compressed' || window.location.pathname.startsWith('/hivemind/app/employee/harness')
+  const hyperagents = preset === 'hivemind-hq' || preset === 'hivemind-hyperagents' || preset === 'hyperagents' || preset === 'hyperagents-compressed' || window.location.pathname.startsWith('/hivemind/app/employee/harness')
   const brain = preset === 'hivemind-chat' || (preset == null && document.documentElement.dataset.dshMode === 'hivemind-chat')
   useEffect(() => {
     if ((!brain && !hyperagents) || dreaming) return

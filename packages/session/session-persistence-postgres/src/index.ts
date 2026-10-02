@@ -276,6 +276,21 @@ export class PostgresSessionPersistence extends SessionPersistence {
    */
   async employeeRoomId(key: string): Promise<SessionId> {
     const scope = this.capture()
+    if (key === 'runtime') {
+      const owner = await this.query<{ session_id: SessionId; user_id: string }>(scope,
+        'SELECT session_id,user_id FROM harness_company_hq WHERE org_id=$1', [scope.orgId])
+      if (owner.rows[0]) {
+        if (owner.rows[0].user_id !== scope.userId) throw new Error('HQ Runtime belongs to another company member. Ownership transfer is required.')
+        if (await this.row(scope, owner.rows[0].session_id) === undefined) throw new Error('Canonical HQ Runtime is unavailable.')
+        return owner.rows[0].session_id
+      }
+      const hq = await this.query<{ id: SessionId }>(scope, `SELECT s.id FROM harness_sessions s
+        WHERE s.org_id=$1 AND s.user_id=$2 AND s.status='active' AND s.header->>'parentSession' IS NULL
+        AND COALESCE((SELECT e.payload->'data'->>'agentPreset' FROM harness_session_events e
+          WHERE e.session_id=s.id AND e.event_type='agent-preset/selected' ORDER BY e.sequence DESC LIMIT 1),s.header->>'agentPreset')='hivemind-hq'
+        ORDER BY (s.header->>'createdAt')::bigint,s.id LIMIT 1`, scopeParams(scope))
+      return hq.rows[0]?.id ?? `session-${createHash('sha256').update(JSON.stringify([scope.orgId, scope.userId, 'hq-runtime'])).digest('hex').slice(0, 32)}` as SessionId
+    }
     const stable = `session-${createHash('sha256').update(JSON.stringify([scope.orgId, scope.userId, key])).digest('hex').slice(0, 32)}` as SessionId
     const existing = await this.row(scope, stable)
     if (existing !== undefined) return stable
