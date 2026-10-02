@@ -165,6 +165,8 @@ export function HyperagentPanelToggle({ sessionId, useSessions, useEmployeeEvent
   const fromLog = useEmployeeEvents(selectedEmployee)
   const selected = owner == null ? fromLog : projectedEmployee(owner)
   const isOsRoute = isHyperagentPreset(preset) || (typeof window !== 'undefined' && window.location.pathname.startsWith('/hivemind/app/employee/harness/'))
+  // Embedded app sessions use BrainConnections as the single Environment owner.
+  const sharedEnvironment = typeof window !== 'undefined' && window.location.pathname.startsWith('/hivemind/app/')
   const [dismissed, setDismissed] = useState(false)
   const [collision, setCollision] = useState(false)
   const [dock, setDock] = useState<{ left: number; width: number } | null>(null)
@@ -184,7 +186,7 @@ export function HyperagentPanelToggle({ sessionId, useSessions, useEmployeeEvent
     return () => { if (pending !== undefined) clearTimeout(pending) }
   }, [isOsRoute, preset, blank, sessionId, closePreview])
   useEffect(() => {
-    if (!isOsRoute || !isHyperagentPreset(preset)) return
+    if (sharedEnvironment || !isOsRoute || !isHyperagentPreset(preset)) return
     const root = toggleRef.current?.closest<HTMLElement>('[data-phase]')
     const scroller = root?.querySelector<HTMLElement>('[data-conversation-scroll]')
     if (!root || !scroller) return
@@ -231,8 +233,8 @@ export function HyperagentPanelToggle({ sessionId, useSessions, useEmployeeEvent
       window.removeEventListener('resize', measure)
       document.documentElement.style.removeProperty('--dsh-hyperagent-chat-right-inset')
     }
-  }, [isOsRoute, preset, dismissed])
-  const showEnvironment = isOsRoute && isHyperagentPreset(preset)
+  }, [sharedEnvironment, isOsRoute, preset, dismissed])
+  const showEnvironment = !sharedEnvironment && isOsRoute && isHyperagentPreset(preset)
   return <>
     {showEnvironment && <button type="button" className={css.environmentTrigger} data-hivemind-environment-trigger="" onClick={() => { setDismissed(value => !value) }} aria-label={t('employee.environment')} aria-expanded={!dismissed && !collision} title={t('employee.environment')}><svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M3 5h14M3 10h14M3 15h14" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/><circle cx="7" cy="5" r="2" fill="var(--dsw-surface-primary, #fff)" stroke="currentColor" strokeWidth="1.5"/><circle cx="13" cy="10" r="2" fill="var(--dsw-surface-primary, #fff)" stroke="currentColor" strokeWidth="1.5"/><circle cx="8" cy="15" r="2" fill="var(--dsw-surface-primary, #fff)" stroke="currentColor" strokeWidth="1.5"/></svg></button>}
     <button ref={toggleRef} type="button" className={css.panelToggle} aria-label={t('employee.toggle')} title={t('employee.toggle')} onClick={() => { swapPanel(isHyperagentPreset(preset)) }}><IconPanelLeftOutline16 className={css.panelToggleIcon} /></button>
