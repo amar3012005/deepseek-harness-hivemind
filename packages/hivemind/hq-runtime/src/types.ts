@@ -76,3 +76,28 @@ export interface HqTaskProgress {
   readonly sessionId: string | null
   readonly todos: readonly { readonly content: string; readonly status: string }[]
 }
+
+/** Quiet human note; presentation is not application or fulfillment. */
+export interface HqRestNote {
+  readonly id: string
+  readonly text: string
+  readonly createdAt: string
+  readonly status: 'pending' | 'presented'
+  readonly presentedAt: string | null
+}
+export interface HqRestNoteRequest { readonly id: string; readonly text: string }
+export interface HqRestNoteResult { readonly note: HqRestNote }
+/** Current exact handoff identity and native wake receipt for human inspection. */
+export interface HqRestState {
+  readonly latest: {
+    readonly handoffId: string
+    readonly summary: string
+    readonly requestedWakeAt: string
+    readonly effectiveWakeAt: string | null
+    readonly scheduleId: string | null
+    readonly wakeStatus: 'active' | 'inactive' | null
+    readonly ready: boolean
+  } | null
+  readonly notes: readonly HqRestNote[]
+  readonly omittedPresentedNotes?: number
+}
