@@ -10,7 +10,7 @@ The contract capability is mounted only in the new `hivemind-hq` preset; existin
 
 The HIVE deployment composes `ownership` and `ownership-postgres`. Apply `migrations/company-hq.sql` in the same schema as native sessions before mounting the provider. Its unique organization key chooses exactly one canonical HQ session across competing humans and replicas. Enabling flushes the native root, verifies current membership and effective HQ preset, claims ownership atomically, then persists the mode. A second root cannot enable. Schedule admission requires that same owner. Native session leases still own exclusive execution; the company pointer is not another agent or task loop. Ownership is retained while paused or offline; implicit takeover is prohibited.
 
-Enablement first ensures one native Schedule startup wake, keyed by the root and mode revision, then commits the enabled event. An interrupted switch reuses that wake. Repeating the already-enabled switch is a no-op. HQ reviews approved work rather than inventing an objective; with no approved objective it must ask the human. Future wakeups use the same native Schedule capability. Delivery remains an inbox receipt, not task acceptance.
+Enablement first ensures one native Schedule startup wake, keyed by the root and mode revision, then commits the enabled event. An interrupted switch reuses that wake. Repeating the already-enabled switch is a no-op. HQ reviews approved work rather than inventing an objective; with no approved objective or due work it remains quiet. Future wakeups use the same native Schedule capability. Delivery remains an inbox receipt, not task acceptance.
 
 Artifact links can import committed producer receipts from an exact native Team roster member. The caller cannot supply a foreign session or invent receipt proof. The native Schedule UI projects committed occurrences onto a timezone-aware week calendar without a second schedule store.
 
@@ -39,7 +39,7 @@ The browser canary proves persisted human calendar entries and the real built wo
 The HQ plugin admits a compact native context message projecting the authenticated root's current native task board,
 calendar, Schedule delivery state, artifact/review links, recent Team messages
 and persistent-room notices once at the start of each HQ turn, including a cold wake. It uses existing durable
-records and adds no event or scheduler. Quiet employee updates become visible
+records and persists its briefing through native user/message admission; it adds no custom event ledger or scheduler. Quiet employee updates become visible
 on the next turn without waking Runtime. The HIVE runtime supplies one bounded
 private operating-memory read per HQ turn; failure is an explicit retrieval gap.
 Private response records and delivered schedules remain distinct from verified
