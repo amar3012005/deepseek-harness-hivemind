@@ -55,7 +55,7 @@ describe('durable media workflow', () => {
     const harness = await setup(async () => ({ data: Uint8Array.of(1), extension: 'png', mediaType: 'image/png' }), undefined, true)
     try {
       await start(harness); await harness.hooks().done
-      expect(harness.requests[0].owner).toEqual({ orgId: 'org-a', userId: 'user-a', sessionId: 'session' })
+      expect(harness.requests[0]?.owner).toEqual({ orgId: 'org-a', userId: 'user-a', sessionId: 'session' })
       const initial = harness.events[0]!.data as StartReceipt
       expect(initial.request).toContain('A complete visual brief.')
       expect(harness.events[1]!.data).toMatchObject({ owner: initial.owner })
@@ -63,9 +63,9 @@ describe('durable media workflow', () => {
       harness.events.splice(1)
       await harness.listeners.get('agent/created')!({ agent: harness.agent })
       await harness.hooks().done
-      expect(harness.requests[1].reconcileOnly).toBe(true)
+      expect(harness.requests[1]?.reconcileOnly).toBe(true)
       expect((harness.events[1]!.data as StartReceipt).workflowId).toBe(initial.workflowId)
-      expect(harness.requests[1].operationId).toBe(harness.requests[0].operationId)
+      expect(harness.requests[1]?.operationId).toBe(harness.requests[0]?.operationId)
     } finally { harness.dispose(); await rm(harness.cwd, { recursive: true, force: true }) }
   })
 
