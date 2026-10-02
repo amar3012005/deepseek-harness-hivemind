@@ -4,6 +4,7 @@
  * @module @deepseek-ai/dsh-hivemind-runtime
  */
 
+import { installAgentMessaging } from './agent-messaging.ts'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { defineTool } from '@deepseek-ai/dsh-tools'
@@ -1060,6 +1061,7 @@ function registerWebConnectRoutes(ctx: Context, config: Config): void {
  * @returns Nothing; Cordis owns the registered effects.
  */
 export function apply(ctx: Context, config: Config): void {
+  if (config.privateMemoryEnabled) installAgentMessaging(ctx)
   ctx.effect(() => ctx.hivemindIdentity.register({
     async identity(signal) {
       if (config.authorityMode === 'scoped-service') {

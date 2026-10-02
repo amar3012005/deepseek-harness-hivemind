@@ -16,6 +16,8 @@ import {
   type ApiSessionAgentResult,
 } from './agent.ts'
 import { SessionCommandController } from './commands.ts'
+import { RoomMessaging, type RoomMessageRequest } from './room-messaging.ts'
+import type { Agent } from '@deepseek-ai/dsh-agent'
 import { SessionControlController } from './control.ts'
 import { SessionHistoryController } from './history.ts'
 import { SessionFileReferences } from './file-references.ts'
@@ -106,6 +108,7 @@ export class SessionController extends TypertRemoteService {
 
   private readonly agents: ApiSessionAgentController
   private readonly commands: SessionCommandController
+  private readonly roomMessaging: RoomMessaging
   private readonly controlState: SessionControlController
   private readonly history: SessionHistoryController
   private readonly listState: ApiSessionList
@@ -124,6 +127,12 @@ export class SessionController extends TypertRemoteService {
     installModelSelectionProjection(ctx)
     this.agents = new ApiSessionAgentController(ctx)
     this.commands = new SessionCommandController(ctx, this.agents, process.cwd())
+    this.roomMessaging = new RoomMessaging(ctx, async (key) => {
+      const room = await this.commands.create({ hyperagentRoom: key })
+      const agent = ctx.agents.get(room.sessionId)
+      if (!agent) throw new Error('agent_message_room_unavailable')
+      return agent
+    })
     ctx.effect(() => ctx.fileUploads.registerAgentResolver(async (sessionId) => {
       const result = await this.agents.resolveAgent(sessionId)
       if ('error' in result) throw result.error
@@ -344,6 +353,11 @@ export class SessionController extends TypertRemoteService {
    * @param signal - caller cancellation before prompt admission begins.
    * @returns acknowledgement that the Agent accepted the prompt.
    */
+  /** Trusted plugin-only room delivery; never exposed as a browser RPC. */
+  deliverAgentMessage(caller: Agent, input: RoomMessageRequest, signal: AbortSignal) {
+    return this.roomMessaging.send(caller, input, signal)
+  }
+
   @Remote('prompt')
   prompt(request: SessionPromptRequest, signal: AbortSignal): Promise<SessionPromptValue> {
     signal.throwIfAborted()

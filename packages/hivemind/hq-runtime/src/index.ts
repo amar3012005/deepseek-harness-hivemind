@@ -285,16 +285,16 @@ export function apply(ctx: Context): void {
           let memberName = prior?.type === 'hivemind/hq-employee-assignment'
             ? prior.data.memberName : `${slug}-${task.id}`
           let member = ctx.agentTeams.listMembers(root).find(value => value.name === memberName)
-          if (member?.status === 'failed' && prior === undefined) {
-            // Reconcile the persisted failed prefix before one deterministic native retry.
-            // Accepted or uncertain work is never automatically dispatched again.
+          // Two bounded admission-only retries cover independently repaired service images.
+          // Each failed prefix must prove that no model/tool/artifact work was accepted.
+          for (let attempt = 0; attempt < 2 && member?.status === 'failed' && prior === undefined; attempt++) {
             const handle = await ctx.sessionPersistence.open(member.id, 'read', { signal: execution.signal })
             try {
               const stored = await handle.read(0, undefined, { signal: execution.signal })
               if (!admissionFailedBeforeWork(stored.events))
                 throw new Error('hq_employee_provisioning_requires_reconciliation')
             } finally { await handle.close() }
-            memberName = `${slug}-${task.id}-admission-retry`
+            memberName = `${slug}-${task.id}-admission-retry${attempt === 0 ? '' : '-2'}`
             member = ctx.agentTeams.listMembers(root).find(value => value.name === memberName)
           }
           if (member?.status === 'failed' || member?.status === 'provisioning')

@@ -208,6 +208,7 @@ const CORE_TOOLS = [
   'hivemind_capabilities',
   'hivemind_meta',
   'hyperagents_memory',
+  'hivemind_agent_message',
   'hivemind_operating_context',
   'hivemind_operating_plan',
   'hivemind_research_answer',
