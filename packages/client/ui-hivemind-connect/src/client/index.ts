@@ -519,7 +519,10 @@ export function apply(ctx: ClientContext): void {
   ] as const
   ctx.inject(['inputTriggers', 'conversation'], (scope: ClientContext) => {
     const inputTriggers = scope.get('inputTriggers') as {
-      registerSource(source: ReturnType<typeof createConnectorMentionSource> & { lexicon?: () => readonly string[] }): () => void
+      registerSource(source: Omit<ReturnType<typeof createConnectorMentionSource>, 'onPick'> & {
+        lexicon?: () => readonly string[]
+        onPick(input: { candidate: Parameters<ReturnType<typeof createConnectorMentionSource>['onPick']>[0]['candidate']; session: { sessionId: SessionId } }): ReturnType<ReturnType<typeof createConnectorMentionSource>['onPick']> | 'handled'
+      }): () => void
     } | undefined
     if (inputTriggers === undefined) return
     ctx.effect(() => inputTriggers.registerSource(createConnectorMentionSource()), 'ui-hivemind-connect: lazy connector @ source')
