@@ -2,7 +2,7 @@ import type { PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import { useEffect, useState } from 'react'
 import { SessionCredits } from './SessionCredits.tsx'
 import css from './DreamingConnectors.module.css'
-import { EmployeeAvatar, projectedEmployee } from './HyperagentEmployee.tsx'
+import { EmployeeAvatar, RuntimeAvatar, projectedEmployee } from './HyperagentEmployee.tsx'
 const names: Record<string, string> = { gmail: 'Gmail', slack: 'Slack', googledocs: 'Google Docs', googledrive: 'Google Drive', github: 'GitHub', notion: 'Notion', outlook: 'Outlook' }
 export function BrainConnections({ sessionId, useSessions, environmentActivity, showDetails, hero = false }: PropsRuntime<'conversation.session.header.utilities'> & { hero?: boolean; showDetails: () => void }) {
   const preset = useSessions(state => state.byId[sessionId]?.projectionValues?.agentPreset ?? state.byId[sessionId]?.agentPreset)
@@ -31,8 +31,10 @@ export function BrainConnections({ sessionId, useSessions, environmentActivity, 
   if ((!brain && !hyperagents) || dreaming) return null
   const content = <>
     <div className={css.environmentHeading}><span className={css.dots} aria-hidden="true"><i /><i /><i /></span><span>Environment</span><button type="button" onClick={() => { setOpen(false) }}>Hide</button></div>
-    <div className={css.identity}>{employee ? <EmployeeAvatar employee={employee} size={32} /> : <span className={css.avatar}>H</span>}
-      <span><strong>{employee?.name ?? (hyperagents ? 'Run Time' : 'HIVEMIND-Chat')}</strong><small>{employee?.role ?? (hyperagents ? 'Your agent workspace' : 'Your company brain')}</small>{hyperagents && <small className={css.agentStatus}><i className={running || busy ? css.workingDot : css.readyDot} aria-hidden="true" />{running || busy ? 'Working' : 'Ready'}</small>}</span></div>
+    <div className={css.identity}>
+      {employee ? <EmployeeAvatar employee={employee} size={40} />
+        : hyperagents ? <RuntimeAvatar size={52} /> : <span className={css.avatar}>H</span>}
+      <span><strong>{employee?.name ?? (hyperagents ? 'Run Time' : 'HIVEMIND-Chat')}</strong><small>{employee?.role ?? (hyperagents ? 'AI Chief of Staff' : 'Your company brain')}</small>{hyperagents && <small className={css.agentStatus}><i className={running || busy ? css.workingDot : css.readyDot} aria-hidden="true" />{running || busy ? 'Working' : 'Ready'}</small>}</span></div>
     <button type="button" className={css.connectorHeading} aria-expanded={appsOpen} onClick={() => { setAppsOpen(value => !value) }}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M9 3v5M15 3v5M7 8h10v4a5 5 0 0 1-5 5v4M7 8v4" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" /></svg><span>Connect apps</span><span aria-hidden="true">{appsOpen ? '⌄' : '›'}</span></button>
     {appsOpen && <>
       {error ? <p role="status">Apps could not be loaded. Reopen this page to try again.</p> : accounts === undefined ? <p>Loading connected apps…</p> :

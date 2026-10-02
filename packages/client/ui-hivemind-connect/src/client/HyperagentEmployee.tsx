@@ -43,6 +43,12 @@ const laneColors: Record<string, string> = {
   investigator: '#10b981', researcher: '#10b981', generalist: '#ec4899', communicator: '#ec4899',
 }
 
+/** The same animated Runtime portrait used by the outer sidebar. */
+export function RuntimeAvatar({ size }: { size: number }) {
+  return <img src="/assets/runtime-computer-c2305f5b.webp?v=c2305f5b" alt="Runtime" width={size} height={size}
+    style={{ width: size, height: size, objectFit: 'contain', flexShrink: 0, borderRadius: 12 }} />
+}
+
 /** Reuse production FE Humation seed, asset and role-color mapping. */
 export function EmployeeAvatar({ employee, size }: { employee: EmployeeOption; size: number }) {
   const color = laneColors[employee.role.toLowerCase()] ?? '#ec4899'
@@ -208,7 +214,7 @@ export function HyperagentEmployeePanel({
     finally { setPending(undefined) }
   }
   return <aside className={css.agentDetails} aria-label="Agent details">
-    <div className={css.agentBiography}><EmployeeAvatar employee={selected ?? { id: 'runtime', name: 'Run Time', role: 'coordinator' }} size={112} /><span><strong>{selected?.name ?? 'Run Time'}</strong><small>{running ? 'Working' : 'Ready'}</small></span></div>
+    <div className={css.agentBiography}>{selected ? <EmployeeAvatar employee={selected} size={112} /> : <RuntimeAvatar size={112} />}<span><strong>{selected?.name ?? 'Run Time'}</strong>{!selected && <small>AI Chief of Staff</small>}<small>{running ? 'Working' : 'Ready'}</small></span></div>
     <section><h3>Biography</h3>{profile?.persona && <p className={css.personaText}>{profile.persona}</p>}{profile?.createdAt && <p>Joined {new Date(profile.createdAt).toLocaleDateString()}</p>}<p>{selected?.role ?? 'Coordinates company work and the team.'}</p></section>
     <section><h3>Active tasks</h3>{running && <p>Working on your latest request</p>}{jobs.filter(job => job.status === 'running' || job.status === 'stopping').map(job => <p key={job.id}>{job.label ?? job.status}</p>)}{!running && !jobs.some(job => job.status === 'running' || job.status === 'stopping') && <p>No active work</p>}{routines.filter(task => task.kind === 'at' && task.active).map(task => <p key={task.id}>{task.title}</p>)}</section>
     <section><h3>Routines</h3>{routines.filter(task => task.kind !== 'at').map(task => <label className={css.routineRow} key={task.id}><span>{task.title}<small>{new Date(task.next).toLocaleString()}</small></span><input type="checkbox" role="switch" checked={task.active} disabled={pending !== undefined} onChange={(event) => { void toggle(task, event.target.checked) }} aria-label={task.title} /></label>)}{!routines.some(task => task.kind !== 'at') && <p>No routines yet</p>}</section>
