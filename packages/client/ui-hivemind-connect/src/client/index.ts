@@ -232,7 +232,7 @@ export function apply(ctx: ClientContext): void {
       if (typeof profile.id !== 'string' || typeof profile.name !== 'string') return []
       const role = typeof profile.role_archetype === 'string' ? profile.role_archetype : 'employee'
       const avatarUrl = typeof profile.avatar_url === 'string' ? profile.avatar_url : undefined
-      return [{ id: profile.id, name: profile.name, role, ...(typeof profile.persona === 'string' ? { persona: profile.persona } : {}), ...(Array.isArray(profile.tools) ? { allowedTools: profile.tools.filter((tool): tool is string => typeof tool === 'string') } : {}), ...(typeof profile.created_at === 'string' ? { createdAt: profile.created_at } : {}), ...(avatarUrl === undefined ? {} : { avatarUrl }) }]
+      return [{ id: profile.id, name: profile.name, role, ...(typeof profile.persona === 'string' ? { persona: profile.persona } : {}), ...(Array.isArray(profile.tools) && profile.tools.every(tool => typeof tool === 'string') ? { allowedTools: profile.tools.filter((tool): tool is string => typeof tool === 'string') } : {}), ...(typeof profile.created_at === 'string' ? { createdAt: profile.created_at } : {}), ...(avatarUrl === undefined ? {} : { avatarUrl }) }]
     })
   }
   ctx.inject(['remote.commands', 'remote.agentPresets'], (ctx: ClientContext) => {
