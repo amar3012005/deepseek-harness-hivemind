@@ -59,7 +59,7 @@ export function workbenchSnapshot(window: SessionEventWindow): Workbench {
     } else if (type === 'hivemind/research-receipt') {
       for (const row of Array.isArray(data.sources) ? data.sources : []) {
         const source = object(row)
-        if (typeof source?.url !== 'string' || seenSources.has(source.url)) continue
+        if (typeof source?.url !== 'string' || !/^https?:\/\//i.test(source.url) || seenSources.has(source.url)) continue
         seenSources.add(source.url)
         sources.push({ url: source.url, title: typeof source.title === 'string' ? source.title : source.url })
       }
@@ -120,6 +120,8 @@ export function HyperagentWorkbench({
 }: WorkbenchProps) {
   const preset = useSessions(state => state.byId[sessionId]?.projectionValues?.agentPreset)
   const data = useEmployeeEvents(workbenchSnapshot)
+  const [selectedSource, setSelectedSource] = useState<Source | null>(null)
+  useEffect(() => { setSelectedSource(null) }, [sessionId])
   if (!isHyperagentPreset(preset)) return null
   const lastArtifact = data.artifacts.at(-1)
   const lastCapture = data.captures.at(-1)
@@ -137,6 +139,6 @@ export function HyperagentWorkbench({
       : <article><span className={css.workbenchEyebrow}>{t('workbench.browserCapture')} {lastCapture.status ?? ''}</span><h2>{lastCapture.title}</h2><ReceiptImage attachment={lastCapture.preview} loadImage={loadImage} /><a href={lastCapture.url} target="_blank" rel="noopener noreferrer">{lastCapture.url}</a></article>)}
     {kind === 'sources' && (data.sources.length === 0
       ? <p className={css.workbenchEmpty}>{t('workbench.emptySources')}</p>
-      : <ul className={css.workbenchList}>{data.sources.map(source => <li key={source.url}><a href={source.url} target="_blank" rel="noopener noreferrer">{source.title}</a><small>{source.url}</small></li>)}</ul>)}
+      : <><ul className={css.workbenchList}>{data.sources.map(source => <li key={source.url}><button type="button" onClick={() => { setSelectedSource(source) }}>{source.title}</button><small>{source.url}</small></li>)}</ul>{selectedSource !== null && <article><h2>{selectedSource.title}</h2><a href={selectedSource.url} target="_blank" rel="noopener noreferrer">{selectedSource.url}</a><iframe className={css.workbenchPdf} title={selectedSource.title} src={selectedSource.url} sandbox="allow-scripts" referrerPolicy="no-referrer" /></article>}</>)}
   </div>
 }

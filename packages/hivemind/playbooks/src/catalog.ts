@@ -1,5 +1,7 @@
 /** Built-in HyperAgents operating playbooks. @module @deepseek-ai/dsh-hivemind-playbooks/catalog */
 
+import { THINK_PLAYBOOKS } from './think-catalog.ts'
+
 export type PlaybookLevel = 'global' | 'local'
 
 /** One progressively loadable operating method. */
@@ -20,6 +22,7 @@ export interface Playbook {
 }
 
 export const PLAYBOOKS: readonly Playbook[] = [
+  ...THINK_PLAYBOOKS,
   {
     id: 'campaign-launch', version: '1.0.0', level: 'local', title: 'Brand campaign production and launch',
     description: 'Produce and optionally launch a brand-aware campaign with assets, review, connected publishing and measurement.',

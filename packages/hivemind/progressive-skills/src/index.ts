@@ -7,6 +7,8 @@ import { isModelInvocable } from '@deepseek-ai/dsh-skill'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 
+import { THINK_SKILLS } from './think-skills.ts'
+
 export const name = 'hivemind-progressive-skills'
 export const inject = ['tools', 'skills']
 
@@ -78,9 +80,9 @@ export function apply(ctx: Context, config: Partial<Config> = {}): void {
         const snapshot = await ctx.skills.snapshot(options)
         if (!snapshot.complete) return { status: 'unavailable', operation: 'search', reason: 'skill discovery is incomplete; retry once' }
         const query = terms(queryText)
-        const candidates = snapshot.skills
-          .filter(isModelInvocable)
-          .map(skill => ({ skill, relevance: relevance(query, `${skill.name} ${skill.description} ${skill.whenToUse ?? ''}`) }))
+        const nativeSkills = snapshot.skills.filter(isModelInvocable)
+        const candidates = [...nativeSkills, ...THINK_SKILLS.filter(skill => !nativeSkills.some(native => native.name === skill.name))]
+          .map(skill => ({ skill, relevance: relevance(query, `${skill.name} ${skill.description} ${'whenToUse' in skill ? skill.whenToUse ?? '' : ''}`) }))
           .filter(candidate => candidate.relevance > 0)
           .sort((left, right) => right.relevance - left.relevance || left.skill.name.localeCompare(right.skill.name))
           .slice(0, requestedLimit as number)
@@ -89,9 +91,10 @@ export function apply(ctx: Context, config: Partial<Config> = {}): void {
       }
       if (operation !== 'load') throw new TypeError('hivemind-progressive-skills: unsupported operation')
       const skillName = text(input.name, 'name', 200)
-      const skill = await ctx.skills.get(skillName, options)
-      if (skill === undefined || !isModelInvocable(skill)) throw new TypeError(`hivemind-progressive-skills: unavailable skill ${skillName}`)
-      return { status: 'ready', operation: 'load', skill: { name: skill.name, description: skill.description, content: skill.content, resource_base: skill.resourceBase } }
+      const nativeSkill = await ctx.skills.get(skillName, options)
+      const skill = nativeSkill ?? THINK_SKILLS.find(candidate => candidate.name === skillName)
+      if (skill === undefined || (nativeSkill !== undefined && !isModelInvocable(nativeSkill))) throw new TypeError(`hivemind-progressive-skills: unavailable skill ${skillName}`)
+      return { status: 'ready', operation: 'load', skill: { name: skill.name, description: skill.description, content: skill.content, resource_base: 'resourceBase' in skill ? skill.resourceBase : undefined } }
     },
     presentCall(args) { return { card: 'generic', title: 'Use a specialized skill', kind: 'read', rawInput: String(args.operation ?? '') } },
   }))
