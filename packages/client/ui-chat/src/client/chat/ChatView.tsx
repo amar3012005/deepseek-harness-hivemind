@@ -206,10 +206,11 @@ function TurnStatus({ startTime, working, t }: {
 
 type ChatNodeListProps = Omit<ComponentProps<typeof ChatNodeSeat>, 'nodeKey'> & {
   readonly order: readonly string[]
+  readonly useChat: ChatViewSlotProps['useChat']
 }
 
-const ChatNodeList = memo(function ChatNodeList({ order, ...seatProps }: ChatNodeListProps) {
-  const snapshot = seatProps.useChat(s => s)
+const ChatNodeList = memo(function ChatNodeList({ order, useChat, ...seatProps }: ChatNodeListProps) {
+  const snapshot = useChat(s => s)
   // Keep durable file receipts immediately before their own turn's actions,
   // including when the answer streams after the artifact receipt.
   const artifacts = new Map<number, string[]>()
@@ -813,6 +814,7 @@ export function ChatView({
             </div>
           )}
           <ChatNodeList
+            useChat={useChat}
             order={order}
             useChatNode={useChatNode}
             useChatNodeProcess={useChatNodeProcess}

@@ -1158,8 +1158,9 @@ declare module '@deepseek-ai/dsh-client-ui-sidebar-right/client' {
   }
 }
 
-function ArtifactPreview({ useTabInfo, t, read }: PropsRuntime<'sidebar.right.pane.tab'> & PropsLocale<typeof NS> & {
+function ArtifactPreview({ useTabInfo, t, read, openSection }: PropsRuntime<'sidebar.right.pane.tab'> & PropsLocale<typeof NS> & {
   read: (id: FileAttachmentRef['attachmentId']) => Promise<{ ok: boolean; value?: { attachment: FileAttachmentRef; data: string } }>
+  openSection: (kind: 'artifacts' | 'computer' | 'sources') => void
 }) {
   const info = useTabInfo()
   const params = info.tab.navigation.params as { artifact: ArtifactData } | undefined
@@ -1187,7 +1188,7 @@ function ArtifactPreview({ useTabInfo, t, read }: PropsRuntime<'sidebar.right.pa
     return () => { active = false; if (created) URL.revokeObjectURL(created) }
   }, [file?.attachmentId])
   if (!artifact) return null
-  return <div className={css.artifactPreviewBody}><h3>{artifact.title}</h3>
+  return <div className={css.artifactPreviewBody}><nav className={css.previewSections} aria-label={t('preview.preview')}><span aria-current="page">{t('preview.preview')}</span>{(['artifacts', 'computer', 'sources'] as const).map(kind => <button key={kind} onClick={() => { openSection(kind) }}>{t(`preview.${kind}`)}</button>)}</nav><h3>{artifact.title}</h3>
     {failed ? <p role="alert">{t('artifact.failed')}</p> : null}
     {text !== undefined ? <pre>{text}</pre> : null}
     {url && artifact.mediaType.startsWith('image/') ? <img src={url} alt={artifact.title} />
@@ -1204,7 +1205,7 @@ export const inject = ['sidebarRightTabs', 'uiConversation', 'slots', 'locale', 
 export function apply(ctx: ClientContext): void {
   const previewKey = 'hivemind-artifact-preview'
   ctx.effect(() => ctx.sidebarRightTabs.register({ id: previewKey, kind: previewKey, patterns: ['dsh-resource://hivemind-artifact/**'], title: () => ctx.locale.bind(NS)('artifact.preview') }))
-  ctx.slots.inject('sidebar.right.pane.tab', () => ctx.slots.register({ name: 'sidebar.right.pane.tab', key: previewKey, locale: NS }, props => <ArtifactPreview {...props} read={attachmentId => ctx.remote.session.fileAttachment({ sessionId: props.sessionId, attachmentId })} />))
+  ctx.slots.inject('sidebar.right.pane.tab', () => ctx.slots.register({ name: 'sidebar.right.pane.tab', key: previewKey, locale: NS }, props => <ArtifactPreview {...props} openSection={kind => ctx.sidebarRight.openTabIn(props.sessionId, `hivemind-workbench-${kind}`)} read={attachmentId => ctx.remote.session.fileAttachment({ sessionId: props.sessionId, attachmentId })} />))
   for (const definition of operatingRunDefinitions) ctx.uiConversation.events.register(definition)
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-hivemind-operating-run: dictionaries')
   ctx.slots.inject('conversation.chat.node', () => [
