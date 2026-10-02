@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import css from './DreamingConnectors.module.css'
-const appNames: Record<string, string> = { gmail: 'Gmail', slack: 'Slack', googledocs: 'Google Docs', googledrive: 'Google Drive', github: 'GitHub', outlook: 'Outlook', notion: 'Notion' }
+const appNames: Record<string, string> = { googlecalendar: 'Google Calendar', gmail: 'Gmail', slack: 'Slack', googledocs: 'Google Docs', googledrive: 'Google Drive', github: 'GitHub', outlook: 'Outlook', notion: 'Notion' }
 interface Account { id: string; toolkit: string; label: string; enabled: boolean }
 interface State { available: boolean; enabled: boolean; accounts: Account[] }
 /** Explicit per-user, per-account Dreaming consent; connecting new apps stays in Connectors. */
@@ -39,12 +39,12 @@ export function DreamingConnectors() {
     {state?.enabled && <div className={css.accounts}>
       {!state.accounts.length && <p>No connected apps yet. Add them in Connectors.</p>}
       {state.accounts.map(account => <label className={css.account} key={account.id}>
-        <img className={css.logo} src={`https://logos.composio.dev/api/${encodeURIComponent(account.toolkit)}`} alt="" loading="lazy" /><span className={css.appName}>{appNames[account.toolkit.toLowerCase()] ?? account.toolkit}<small>Read-only · {account.id.slice(-6)}</small></span><input className={css.switch} role="switch" type="checkbox" checked={account.enabled} disabled={busy}
-          aria-label={`Allow Dreaming to read ${account.label}`} onChange={event => void save(true, state.accounts
+        <img className={css.logo} src={`https://logos.composio.dev/api/${encodeURIComponent(account.toolkit)}`} alt="" loading="lazy" /><span className={css.appName}>{appNames[account.toolkit.toLowerCase()] ?? account.toolkit}<small>Read-only</small></span><input className={css.switch} role="switch" type="checkbox" checked={account.enabled} disabled={busy}
+          aria-label={`Allow Dreaming to read ${appNames[account.toolkit.toLowerCase()] ?? account.toolkit}`} onChange={event => void save(true, state.accounts
             .filter(item => item.id === account.id ? event.target.checked : item.enabled).map(item => item.id))} />
       </label>)}
     </div>}
-    <a className={css.more} href="/hivemind/app/connectors">More apps <span aria-hidden="true">›</span></a>
+    <a className={css.more} href="/hivemind/app/connectors">Manage apps <span aria-hidden="true">›</span></a>
     {!state?.available && state && <p>Connected apps are unavailable on this server.</p>}
     {message && <p role="status">{message}</p>}
     {busy && <p role="status">Saving access and preparing read tools…</p>}

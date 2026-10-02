@@ -88,6 +88,8 @@ export function ConversationSessionHeader({
   // Both embedded modes keep header utilities available on a new session.
   const embeddedRoute = typeof window !== 'undefined'
     && /^\/hivemind\/app\/(?:employee\/harness|overview)\//u.test(window.location.pathname)
+  const dreaming = typeof window !== 'undefined' && (window.location.pathname === '/hivemind/app/overview/dreaming'
+    || new URLSearchParams(window.location.search).has('dreamingParent'))
   const hideChrome = !embeddedRoute && session.blank && conversationPhase(session, conversation) === 'blank'
 
   return (
@@ -100,7 +102,12 @@ export function ConversationSessionHeader({
         <>
           <div className={css.titleRow}>
             <div className={css.titleCluster}>
-              <nav className={css.crumbs} aria-label={t('session.hierarchy')}>
+              {dreaming && <section className={css.dreamingIntro} aria-label="About Dreaming">
+                <h1>Dreaming</h1>
+                <p>While you’re away, the agents inside HIVEMIND revisit your company’s memories,
+                  follow unexpected connections, and bring back discoveries for you to explore.</p>
+              </section>}
+              {!dreaming && <nav className={css.crumbs} aria-label={t('session.hierarchy')}>
                 {ancestry.map((summary, index) => {
                   const last = index === ancestry.length - 1
                   const title = (
@@ -148,7 +155,7 @@ export function ConversationSessionHeader({
                   )
                 })}
                 {ancestry.length === 0 && <span className={css.crumbCurrent}>{sessionId}</span>}
-              </nav>
+              </nav>}
               {!embeddedRoute && <div className={css.headerActions}>
                 {renderSlot('conversation.session.header.actions', {})}
               </div>}
