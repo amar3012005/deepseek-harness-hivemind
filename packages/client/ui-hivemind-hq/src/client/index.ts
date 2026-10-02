@@ -70,9 +70,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
           createElement('button', { type: 'button', disabled: creating, onClick: () => {
             setCreating(true); setError(undefined)
             void (async () => {
-              const id = await child.sessions.create()
-              const selected = await child.remote.agentPresets.select(id, 'hivemind-hq')
-              if (!selected.ok) throw new Error(selected.error.message)
+              const id = await child.sessions.create({ hyperagentRoom: 'runtime' })
               child.uiWorkspace.openSession(id)
               child.layout.selectPanel(panel)
             })().catch((reason: unknown) => setError(reason instanceof Error ? reason.message : String(reason)))
