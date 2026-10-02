@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { companyTaskContract, requireArtifactReceipts, taskContracts, verifiedArtifactLinks } from '../src/ledger.ts'
+import { admissionFailedBeforeWork, companyTaskContract, requireArtifactReceipts, taskContracts, verifiedArtifactLinks } from '../src/ledger.ts'
 const contract = () => companyTaskContract({ taskId: 'task-1', acceptanceCriteria: ['One saved report'], dueAt: '2026-10-01T10:00:00+02:00' })
 describe('HQ metadata over native Team tasks', () => {
   it('restores immutable requirements without another task lifecycle', () => {
@@ -34,5 +34,22 @@ describe('HQ metadata over native Team tasks', () => {
       expect(() => requireArtifactReceipts([saved, link], 'task-1')).toThrow('hq_artifact_receipt_required')
     }
     expect(() => requireArtifactReceipts([{ type: 'hivemind/generation-created', data: null }], 'task-1')).toThrow('hq_artifact_receipt_required')
+  })
+})
+
+
+describe('HQ reconciles admission failure without replaying accepted effects', () => {
+  const failed = { type: 'turn/end', data: { reason: { kind: 'error', error: { message: 'Harness credit admission failed: Invalid credit operation identity' } } } }
+  const queued = { type: 'agent/inbox/spliced', data: { target: 'next-turn', start: 0, inserted: [{ id: 'initial' }] } }
+  const consumed = { type: 'agent/inbox/spliced', data: { target: 'next-turn', start: 0, removedCount: 1, inserted: [] } }
+  it('allows a bounded retry only after admission failed before acceptance', () => {
+    expect(admissionFailedBeforeWork([queued, consumed, failed])).toBe(true)
+    expect(admissionFailedBeforeWork([queued, failed])).toBe(false)
+    expect(admissionFailedBeforeWork([])).toBe(false)
+  })
+  it('never retries model-visible messages, tool effects, or artifacts', () => {
+    for (const type of ['user/message', 'assistant/message', 'tool/call', 'tool/result', 'hivemind/artifact-created'])
+      expect(admissionFailedBeforeWork([queued, consumed, { type, data: {} }, failed])).toBe(false)
+    expect(admissionFailedBeforeWork([{ ...failed, data: { reason: { kind: 'error', error: { message: 'unknown' } } } }])).toBe(false)
   })
 })

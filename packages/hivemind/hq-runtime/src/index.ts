@@ -16,6 +16,7 @@ import { defineTool } from '@deepseek-ai/dsh-tools'
 import type {} from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-session-persistence'
 import {
+  admissionFailedBeforeWork,
   companyTaskContract,
   requireArtifactReceipts,
   taskContracts,
@@ -281,8 +282,21 @@ export function apply(ctx: Context): void {
           const slug = raw['slug']
           if (typeof slug !== 'string' || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug))
             throw new Error('hq_employee_slug_invalid')
-          const memberName = `${slug}-${task.id}`
+          let memberName = prior?.type === 'hivemind/hq-employee-assignment'
+            ? prior.data.memberName : `${slug}-${task.id}`
           let member = ctx.agentTeams.listMembers(root).find(value => value.name === memberName)
+          if (member?.status === 'failed' && prior === undefined) {
+            // Reconcile the persisted failed prefix before one deterministic native retry.
+            // Accepted or uncertain work is never automatically dispatched again.
+            const handle = await ctx.sessionPersistence.open(member.id, 'read', { signal: execution.signal })
+            try {
+              const stored = await handle.read(0, undefined, { signal: execution.signal })
+              if (!admissionFailedBeforeWork(stored.events))
+                throw new Error('hq_employee_provisioning_requires_reconciliation')
+            } finally { await handle.close() }
+            memberName = `${slug}-${task.id}-admission-retry`
+            member = ctx.agentTeams.listMembers(root).find(value => value.name === memberName)
+          }
           if (member?.status === 'failed' || member?.status === 'provisioning')
             throw new Error('hq_employee_provisioning_requires_reconciliation')
           if (!member) {
