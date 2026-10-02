@@ -118,3 +118,13 @@
   z-index: 60;
   pointer-events: none;
 }
+
+.windowMark { display: flex; align-items: center; gap: 6px; flex: none; height: 26px; padding: 0 14px; background: var(--dsw-alias-bg-base); border-bottom: 0.5px solid var(--dsw-alias-border-l4); }
+.windowMark i { width: 8px; height: 8px; border-radius: 50%; background: #ff5f57; }
+.windowMark i:nth-child(2) { background: #febc2e; }
+.windowMark i:nth-child(3) { background: #28c840; }
+
+.windowMark { height: auto; min-height: 40px; flex-wrap: wrap; gap: 4px; padding: 6px 12px; }
+.windowDots { display: flex; gap: 6px; margin-right: 10px; align-items: center; }
+.windowMark button { border: 0; border-radius: 999px; padding: 7px 10px; color: inherit; background: transparent; cursor: pointer; font: inherit; font-size: 12px; }
+.windowMark button:hover, .windowMark button:focus-visible { background: var(--dsw-alias-interactive-bg-hover); }

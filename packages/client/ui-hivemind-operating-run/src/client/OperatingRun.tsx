@@ -771,7 +771,11 @@ const artifactDefinition: ConversationNodeDefinition<ArtifactData> = {
         id: context.id,
         target: 'chat',
         processDisclosure: 'independent',
-        anchorSeq: context.start.event.seq,
+        anchorSeq: (() => {
+          const location = context.start.location
+          const closing = location.kind === 'turn' || location.kind === 'step' ? location.turn.data.get('turn-tail')?.closing : undefined
+          return closing ? closing.finalNode.seq + 0.075 : context.start.event.seq
+        })(),
         location: context.start.location,
         visibility: 'visible',
         data: context.state,
@@ -1074,14 +1078,32 @@ function EvaluationPanel({ node, t }: PanelProps<'hivemind-operating-evaluation'
   )
 }
 
-function ArtifactPanel({ node, renderMessageImages, t, read, openPreview }: PanelProps<'hivemind-artifact'> & { read: (id: FileAttachmentRef['attachmentId']) => Promise<{ ok: boolean; value?: { attachment: FileAttachmentRef; data: string } }> ; openPreview: () => void }) {
+function ArtifactTypeIcon({ mediaType, name }: { mediaType: string; name: string }) {
+  const image = mediaType.startsWith('image/')
+  const label = image ? 'Image' : mediaType === 'application/pdf' ? 'PDF' : /\.pptx?$/i.test(name) ? 'Presentation' : /\.docx?$/i.test(name) ? 'Document' : /\.md$/i.test(name) || mediaType === 'text/markdown' ? 'Markdown' : 'File'
+  return <span className={css.artifactFileIcon} title={label}><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" role="img" aria-label={label}>
+    {image ? <><rect x="3" y="3" width="18" height="18" rx="3" /><circle cx="8" cy="8" r="1.5" /><path d="m3 17 5-5 4 4 4-6 5 7" /></> : <><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9Z" /><path d="M14 3v6h6" /><text x="12" y="17" textAnchor="middle" stroke="none" fill="currentColor" fontSize="6" fontWeight="700">{label === 'PDF' ? 'PDF' : label === 'Presentation' ? 'P' : label === 'Markdown' ? 'MD' : label === 'Document' ? 'DOC' : 'FILE'}</text></>}
+  </svg></span>
+}
+
+const presentedArtifacts = new Set<string>()
+
+function ArtifactPanel({ sessionId, node, renderMessageImages, t, read, openPreview }: PanelProps<'hivemind-artifact'> & { read: (id: FileAttachmentRef['attachmentId']) => Promise<{ ok: boolean; value?: { attachment: FileAttachmentRef; data: string } }> ; openPreview: () => void }) {
   const [busy, setBusy] = useState(false)
   const [failed, setFailed] = useState(false)
+  useEffect(() => {
+    if (node.data.file === undefined) return
+    const key = `${sessionId}:${node.id}`
+    if (presentedArtifacts.has(key)) return
+    presentedArtifacts.add(key)
+    openPreview()
+  }, [sessionId, node.id, node.data.file?.attachmentId, openPreview])
   return (
     <div className={css.artifactResult}>
+      {node.data.preview === undefined ? null : <div className={css.artifactHeroImage}>{renderMessageImages({ images: [{ attachment: node.data.preview }], align: 'start' })}</div>}
       <div className={css.artifactFileRow}>
         <button type="button" className={css.artifactFilePreview} onClick={openPreview} disabled={node.data.file === undefined}>
-          <span className={css.artifactFileIcon} aria-hidden="true">▤</span>
+          <ArtifactTypeIcon mediaType={node.data.mediaType} name={node.data.file?.name ?? node.data.title} />
           <span><strong>{node.data.file?.name ?? node.data.title}</strong><small>{t('artifact.preview')}</small></span>
         </button>
         <button
@@ -1106,9 +1128,6 @@ function ArtifactPanel({ node, renderMessageImages, t, read, openPreview }: Pane
           {t(busy ? 'artifact.downloading' : 'artifact.open')}
         </button>
       </div>
-      {node.data.preview === undefined
-        ? null
-        : renderMessageImages({ images: [{ attachment: node.data.preview }], align: 'start' })}
       {failed ? <div role="alert">{t('artifact.failed')}</div> : null}
     </div>
   )

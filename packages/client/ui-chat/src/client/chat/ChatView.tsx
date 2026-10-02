@@ -206,10 +206,37 @@ function TurnStatus({ startTime, working, t }: {
 
 type ChatNodeListProps = Omit<ComponentProps<typeof ChatNodeSeat>, 'nodeKey'> & {
   readonly order: readonly string[]
+  readonly useChat: ChatViewSlotProps['useChat']
 }
 
-const ChatNodeList = memo(function ChatNodeList({ order, ...seatProps }: ChatNodeListProps) {
-  return order.map(nodeKey => (
+const ChatNodeList = memo(function ChatNodeList({ order, useChat, ...seatProps }: ChatNodeListProps) {
+  const snapshot = useChat(s => s)
+  // Keep durable file receipts immediately before their own turn's actions,
+  // including when the answer streams after the artifact receipt.
+  const artifacts = new Map<number, string[]>()
+  const tails = new Set<number>()
+  const turnOf = (key: string) => {
+    const location = snapshot.nodes.get(key)?.location
+    return location?.kind === 'turn' || location?.kind === 'step' ? location.turn.turn : undefined
+  }
+  for (const key of order) {
+    const turn = turnOf(key)
+    if (turn !== undefined && snapshot.nodes.get(key)?.kind === 'turn-tail') tails.add(turn)
+  }
+  for (const key of order) {
+    const turn = turnOf(key)
+    if (turn !== undefined && tails.has(turn) && snapshot.nodes.get(key)?.kind === 'hivemind-artifact') {
+      artifacts.set(turn, [...(artifacts.get(turn) ?? []), key])
+    }
+  }
+  const relocated = new Set([...artifacts.values()].flat())
+  const displayOrder = order.flatMap((key) => {
+    if (relocated.has(key)) return []
+    const turn = turnOf(key)
+    return snapshot.nodes.get(key)?.kind === 'turn-tail' && turn !== undefined
+      ? [...(artifacts.get(turn) ?? []), key] : [key]
+  })
+  return displayOrder.map(nodeKey => (
     <ChatNodeSeat key={nodeKey} nodeKey={nodeKey} {...seatProps} />
   ))
 })
@@ -787,6 +814,7 @@ export function ChatView({
             </div>
           )}
           <ChatNodeList
+            useChat={useChat}
             order={order}
             useChatNode={useChatNode}
             useChatNodeProcess={useChatNodeProcess}

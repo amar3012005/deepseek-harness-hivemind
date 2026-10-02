@@ -5,6 +5,10 @@ export const NS = 'hivemindOperatingRun'
 
 /** Simplified Chinese dictionary (the key-set source of truth). */
 export const zh = {
+  'preview.preview': '预览',
+  'preview.artifacts': '文件',
+  'preview.computer': '电脑',
+  'preview.sources': '来源',
   'context.title': '公司上下文',
   'context.coverage': '已检索公司资料、记忆、方法和员工',
   'context.evidence': '{count} 条内部证据',
@@ -61,6 +65,10 @@ export type OperatingRunKey = keyof typeof zh
 
 /** English dictionary (same key set). */
 export const en: Record<OperatingRunKey, string> = {
+  'preview.preview': 'Preview',
+  'preview.artifacts': 'Artifacts',
+  'preview.computer': 'Computer',
+  'preview.sources': 'Sources',
   'context.title': 'Company context',
   'context.coverage': 'Company profile, memory, methods, and employees retrieved',
   'context.evidence': '{count} internal evidence items',

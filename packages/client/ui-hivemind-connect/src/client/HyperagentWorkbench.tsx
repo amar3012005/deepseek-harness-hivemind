@@ -3,7 +3,6 @@ import type { FileAttachmentRef, ImageAttachmentRef } from '@deepseek-ai/dsh-att
 import type { SessionEventWindow } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { SnapshotSelectorHook } from '@deepseek-ai/dsh-client-store'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
-import { isHyperagentPreset } from './HyperagentEmployee.tsx'
 import css from './HyperagentEmployee.module.css'
 
 type Kind = 'preview' | 'artifacts' | 'computer' | 'sources'
@@ -115,21 +114,16 @@ function PdfReceipt({ artifact, loadPdf, loadImage, t }: { artifact: Artifact; l
     : <><a className={css.workbenchOpen} href={url} download={artifact.file?.name}>{t('workbench.downloadPdf')}</a><iframe className={css.workbenchPdf} src={url} title={artifact.title} /></>
 }
 
-/** HyperAgents-only native sidebar body backed by one session log. */
+/** Shared native workbench backed by the current session log. */
 export function HyperagentWorkbench({
-  kind, sessionId, useSessions, useEmployeeEvents, loadImage, loadPdf, openArtifact, openWorkbench, t,
+  kind, sessionId, useEmployeeEvents, loadImage, loadPdf, openArtifact, t,
 }: WorkbenchProps) {
-  const preset = useSessions(state => state.byId[sessionId]?.projectionValues?.agentPreset)
   const data = useEmployeeEvents(workbenchSnapshot)
   const [selectedSource, setSelectedSource] = useState<Source | null>(null)
   useEffect(() => { setSelectedSource(null) }, [sessionId])
-  if (!isHyperagentPreset(preset)) return null
   const lastArtifact = data.artifacts.at(-1)
   const lastCapture = data.captures.at(-1)
   return <div className={css.workbench} data-hivemind-workbench={kind}>
-    <nav className={css.workbenchActions} aria-label={t('workbench.preview')}>
-      {(['preview', 'artifacts', 'computer', 'sources'] as const).map(tab => <button key={tab} type="button" className={css.workbenchOpen} aria-current={kind === tab ? 'page' : undefined} onClick={() => { openWorkbench(tab) }}>{t(`workbench.${tab}`)}</button>)}
-    </nav>
     {kind === 'preview' && (lastArtifact === undefined
       ? <p className={css.workbenchEmpty}>{t('workbench.emptyPreview')}</p>
       : <article><span className={css.workbenchEyebrow}>{lastArtifact.mediaType}</span><h2>{lastArtifact.title}</h2>{lastArtifact.mediaType === 'application/pdf' && lastArtifact.file !== undefined

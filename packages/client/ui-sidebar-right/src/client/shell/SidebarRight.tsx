@@ -289,6 +289,8 @@ function PanelChrome({ sessionId, fullscreen, autoFullscreen, actions, t }: Pick
  */
 function SidebarPanel(panel: PanelProps & { width: number; panelRef: RefObject<HTMLDivElement> }): ReactNode {
   const { sessionId, surface, actions, t, renderSlot, openTab, width, reportRoom, fullscreen, autoFullscreen, panelRef } = panel
+  const sections = panel.useTabTypes(types => types.filter(type =>
+    /^hivemind-workbench-(preview|artifacts|computer|sources)$/.test(type.kind)))
   const { expanded } = surface.layout
   return (
     <div
@@ -302,6 +304,7 @@ function SidebarPanel(panel: PanelProps & { width: number; panelRef: RefObject<H
       // accessibility tree.
       aria-hidden={!expanded || undefined}
     >
+      <nav className={css.windowMark} aria-label={t('section.preview')}><span className={css.windowDots} aria-hidden="true"><i /><i /><i /></span>{(['preview', 'artifacts', 'computer', 'sources'] as const).filter(kind => sections.some(type => type.kind === `hivemind-workbench-${kind}`)).map(kind => <button key={kind} type="button" onClick={() => { openTab(`hivemind-workbench-${kind}`) }}>{t(`section.${kind}`)}</button>)}</nav>
       <div className={css.panelBody}>
         <DockSurface
           state={surface.layout}
