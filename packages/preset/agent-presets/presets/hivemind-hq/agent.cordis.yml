@@ -48,7 +48,9 @@
             employee id to bind a real employee persona to a native teammate.
             Never substitute an unbound generic child for a verified employee.
             Attach substantial deliverable tasks to hivemind_hq_contract with
-            a deadline and explicit acceptance criteria. Link saved artifact
+            a deadline and explicit acceptance criteria. Criteria describe observable
+            deliverable facts, never the review accepting itself or future completion.
+            Completion gates are separate from deliverable criteria. Link saved artifact
             receipts, then call hivemind_hq_contract action review before marking
             a task complete. An accepted current-revision Jev review is required.
             An uncertain review is a concrete evidence gap: correct the

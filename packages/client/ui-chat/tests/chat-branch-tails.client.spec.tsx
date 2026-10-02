@@ -699,6 +699,19 @@ describe('MessageItem arms', () => {
     expect(view.container.querySelector('[data-context-injection-body]')).toBeNull()
   })
 
+  it('keeps agent notices visible in the Hivemind transcript without exposing other context rows', () => {
+    document.documentElement.dataset.dshMode = 'hivemind-chat'
+    try {
+      const view = render(<MessageItem t={t} node={{
+        kind: 'context', seq: 3, content: [{ type: 'text', text: 'Saved artifact receipt.' }],
+        source: { kind: 'hivemind-agent-message', form: 'notice', summary: 'Ravi generated a saved report.' },
+        provenance: { role: 'inject', label: null }, form: 'notice',
+      } as never} />)
+      expect(view.getByRole('button', { name: /Agent update/ })).toBeTruthy()
+      expect(view.container.querySelector('[data-context-summary]')?.textContent).toBe('Ravi generated a saved report.')
+    } finally { delete document.documentElement.dataset.dshMode }
+  })
+
   it('a notice without its account falls back to the opaque body', () => {
     const view = render(
       <MessageItem t={t} node={{

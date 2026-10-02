@@ -31,7 +31,9 @@ export interface ContextInjectionRowProps {
 export function ContextInjectionRow({ content, source, provenance, form, t }: ContextInjectionRowProps) {
   const [open, setOpen] = useState(false)
   // Presentation only: durable prompt/context events remain available for future inspection.
-  if (typeof document !== 'undefined' && document.documentElement.dataset.dshMode === 'hivemind-chat') return null
+  const agentMessage = typeof source === 'object' && source !== null && 'kind' in source && source.kind === 'hivemind-agent-message'
+  if (!agentMessage && typeof document !== 'undefined' && document.documentElement.dataset.dshMode === 'hivemind-chat') return null
+  const producerLabel = agentMessage ? 'Team' : provenance.label
   // Resolved rather than declared: a form whose fields are unreadable renders
   // the opaque body, and the marker must say what the row actually shows.
   const { rendered, summary, body } = contextBody(form, { content, source, t })
@@ -43,15 +45,15 @@ export function ContextInjectionRow({ content, source, provenance, form, t }: Co
         ? <span data-context-recall-icon><ReferenceIcon kind="session" /></span>
         : <IconContextInjectionOutline16 size={14} />}
       chevronClassName={css.chevron}
-      title={t(provenance.role === 'recall' ? 'message.contextRecall' : 'message.contextInjection')}
-      collapsedContent={provenance.label === null ? undefined : (
+      title={agentMessage ? (form === 'notice' ? 'Agent update' : 'Agent message') : t(provenance.role === 'recall' ? 'message.contextRecall' : 'message.contextInjection')}
+      collapsedContent={producerLabel === null ? undefined : (
         /* ToolRow's separator shape: an aria-hidden dot, so the accessible name
            stays the two readable parts and the two disclosure rows expose one
            name shape. A source that names no producer drops the dot with it. */
         <>
           <span className={css.sep} aria-hidden />
           <span className={css.source} data-context-source>{typeof document !== 'undefined' && document.documentElement.dataset.dshMode === 'hivemind-chat'
-            ? provenance.label.replace(/^dsh-hivemind-runtime\/turn$/u, 'HIVEMIND context').replace(/DeepSeek Harness|deepseek-harness|\bDSH\b|\bdsh-/gu, 'HIVEMIND ') : provenance.label}</span>
+            ? producerLabel.replace(/^dsh-hivemind-runtime\/turn$/u, 'HIVEMIND context').replace(/DeepSeek Harness|deepseek-harness|\bDSH\b|\bdsh-/gu, 'HIVEMIND ') : producerLabel}</span>
           {summary !== null && (
             <>
               <span className={css.sep} aria-hidden />

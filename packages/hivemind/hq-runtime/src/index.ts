@@ -209,6 +209,7 @@ export function apply(ctx: Context): void {
               authority: task.writeScopes,
             },
             acceptanceCriteria: contract.acceptanceCriteria,
+            savedArtifactLinks: { taskId: links.taskId, producerReceipts: links.producerReceipts },
             documents,
           }
           const inputHash = reviewFingerprint(state)
