@@ -42,7 +42,8 @@ class ImageWire {
     const prefix = config.command.endsWith('.js') ? [config.command] : []
     const overrides = ['features.image_generation=true', 'features.shell_tool=false', 'features.unified_exec=false',
       'features.browser_use=false', 'features.computer_use=false', 'web_search="disabled"',
-      'features.unbounded_connection_retries=false', 'model_providers.openai.supports_websockets=false',
+      'features.unbounded_connection_retries=false', 'model_providers.openai.name="OpenAI"',
+      'model_providers.openai.requires_openai_auth=true', 'model_providers.openai.supports_websockets=false',
       'model_providers.openai.request_max_retries=1', 'model_providers.openai.stream_max_retries=1',
       'model_providers.openai.stream_idle_timeout_ms=60000']
       .flatMap(value => ['-c', value])
