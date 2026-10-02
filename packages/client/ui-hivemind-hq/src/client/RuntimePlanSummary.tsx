@@ -47,7 +47,8 @@ export function RuntimePlanSummary({ sessionId, turn, events, load, cancel }: Pr
       {task.status === 'pending' && <button type="button" disabled={pending !== undefined} onClick={() => {
         setPending(task.id); setError(undefined)
         void cancel(sessionId, { taskId: task.id, expectedRevision: task.revision }).then(async (result) => {
-          if (!result.ok || !result.value.cancelled) throw new Error('Cancellation was not confirmed. Refresh and try again.')
+          if (!result.ok) throw result.error
+          if (!result.value.cancelled) throw new Error('Cancellation was not confirmed. Refresh and try again.')
           await refresh()
         }).catch((cause: unknown) => setError(cause instanceof Error ? cause.message : 'Cancellation failed.')).finally(() => setPending(undefined))
       }}>{pending === task.id ? 'Cancelling…' : 'Cancel task'}</button>}
