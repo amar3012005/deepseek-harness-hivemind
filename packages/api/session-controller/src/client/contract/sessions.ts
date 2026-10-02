@@ -35,6 +35,7 @@ export interface ISessions {
   create(opts?: {
     workspaceId?: WorkspaceId
     cwd?: string
+    hyperagentRoom?: string
     sessionId?: SessionId
   }): Promise<SessionId>
   /**

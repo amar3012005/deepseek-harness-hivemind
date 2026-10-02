@@ -53,7 +53,7 @@ export const TurnProcessNodeView = memo(function TurnProcessNodeView({
         turnProcess.setOpen(!open)
       }}
     >
-      <span className={css.label}>{turnProcess.spec.dreamSynthesis === true ? 'Exploration details' : label}</span>
+      <span className={css.label}>{turnProcess.spec.dreamSynthesis === true ? 'Exploration details' : window.location.pathname.includes('/employee/harness') ? 'Work details' : label}</span>
       <IconChevronDownOutline14 className={css.chevron} />
     </button>
   )

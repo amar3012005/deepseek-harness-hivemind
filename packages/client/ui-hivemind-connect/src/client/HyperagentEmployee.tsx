@@ -7,6 +7,7 @@ import type { SessionEventWindow } from '@deepseek-ai/dsh-api-session-controller
 import type { SnapshotSelectorHook } from '@deepseek-ai/dsh-client-store'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import css from './HyperagentEmployee.module.css'
+import { workbenchSnapshot } from './HyperagentWorkbench.tsx'
 
 export interface EmployeeOption {
   id: string
@@ -93,7 +94,9 @@ export function HyperagentEmployeePicker({ sessionId, useSessions, useEmployeeEv
   const owner = useSessions(state => state.byId[sessionId]?.projectionValues?.hyperagentOwner)
   const started = useSessions(state => state.byId[sessionId]?.blank === false)
   const fromEventsLocked = useEmployeeEvents(employeeOwnershipLocked)
-  const locked = owner != null || started || fromEventsLocked
+  // Switching now navigates to the other employee's room; it never reassigns this owner.
+  const locked = false
+  void started; void fromEventsLocked
   const [open, setOpen] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<boolean | string>(false)
@@ -131,21 +134,68 @@ export function HyperagentEmployeePicker({ sessionId, useSessions, useEmployeeEv
   </div>
 }
 
-type PanelProps = PropsRuntime<'sidebar.right.pane.tab'> & PropsLocale<'hivemind-connect'> & Pick<EmployeeInjected, 'useEmployeeEvents'>
+export interface AgentRoutine {
+  id: string
+  title: string
+  kind: string
+  active: boolean
+  next: string
+  toggle: (active: boolean) => Promise<void>
+}
+type PanelProps = PropsRuntime<'sidebar.right.pane.tab'> & PropsLocale<'hivemind-connect'> & Pick<EmployeeInjected, 'useEmployeeEvents'> & {
+  listRoutines: () => Promise<AgentRoutine[]>
+  selectArtifact: (id: string) => void
+  openSession: (id: string) => void
+}
 
-/** Employee environment in native right-sidebar tab; previews remain native tabs. */
-export function HyperagentEmployeePanel({ sessionId, useSessions, useSession, useEmployeeEvents, t }: PanelProps) {
+/** Real session-owned work and files, using existing native management APIs. */
+export function HyperagentEmployeePanel({
+  sessionId, useSessions, useSession, useEmployeeEvents, listRoutines, selectArtifact, openSession,
+}: PanelProps) {
   const owner = useSessions(state => state.byId[sessionId]?.projectionValues?.hyperagentOwner)
   const fromLog = useEmployeeEvents(selectedEmployee)
-  const selected = owner == null ? fromLog : projectedEmployee(owner)
+  const selected = projectedEmployee(owner) ?? fromLog
   const running = useSession(state => state.running)
-  return <div className={css.panel}>
-    <section className={css.environment} aria-label={t('employee.environment')}>
-      <header><span className={css.dots} aria-hidden="true">● ● ●</span>{t('employee.environment')}</header>
-      <div className={css.identity}>{selected === null ? <span className={css.autoAvatar}>{t('employee.initial')}</span> : <EmployeeAvatar employee={selected} size={36} />}<span><strong>{selected?.name ?? t('employee.auto')}</strong><small>{selected?.role ?? t('employee.autoDetail')}</small></span></div>
-      <p>{running ? t('employee.working') : t('employee.ready')}</p>
-    </section>
-  </div>
+  const jobs = useSessions(state => state.jobsBySession[sessionId] ?? [])
+  const history = useSessions(state => state.ids.flatMap((id) => {
+    if (id === sessionId) return []
+    const row = state.byId[id]
+    if ((row?.projectionValues?.agentPreset ?? row?.agentPreset) !== 'hivemind-hyperagents') return []
+    if (projectedEmployee(row?.projectionValues?.hyperagentOwner)?.id !== selected?.id) return []
+    return [{ id, title: row?.title ?? row?.displayTitle ?? 'Earlier conversation' }]
+  }))
+  const files = useEmployeeEvents(workbenchSnapshot).artifacts
+  const [routines, setRoutines] = useState<AgentRoutine[]>([])
+  const [accounts, setAccounts] = useState<{ id: string; toolkit: string }[]>([])
+  const [error, setError] = useState('')
+  const [pending, setPending] = useState<string>()
+  useEffect(() => {
+    let active = true
+    void listRoutines().then((value) => { if (active) setRoutines(value) }, () => { if (active) setError('Routines could not be loaded.') })
+    const controller = new AbortController()
+    void fetch('/hivemind/dreamer/connectors', { credentials: 'include', signal: controller.signal }).then(async (response) => {
+      if (!response.ok) throw new Error('apps unavailable')
+      const value = await response.json() as { accounts: { id: string; toolkit: string }[] }
+      if (active) setAccounts(value.accounts)
+    }).catch(() => { if (active) setError('Connected apps could not be loaded.') })
+    return () => { active = false; controller.abort() }
+  }, [sessionId, listRoutines])
+  const toggle = async (routine: AgentRoutine, value: boolean) => {
+    setPending(routine.id); setError('')
+    try { await routine.toggle(value); setRoutines(await listRoutines()) }
+    catch { setError('The routine could not be updated. Its saved state is unchanged.') }
+    finally { setPending(undefined) }
+  }
+  return <aside className={css.agentDetails} aria-label="Agent details">
+    <div className={css.identity}>{selected ? <EmployeeAvatar employee={selected} size={52} /> : <span className={css.autoAvatar}>R</span>}<span><strong>{selected?.name ?? 'Run Time'}</strong><small>{running ? 'Working' : 'Ready'}</small></span></div>
+    <section><h3>Role and responsibilities</h3><p>{selected?.role ?? 'Coordinates company work and the team.'}</p></section>
+    <section><h3>Active tasks</h3>{running && <p>Working on your latest request</p>}{jobs.filter(job => job.status === 'running' || job.status === 'stopping').map(job => <p key={job.id}>{job.label ?? job.status}</p>)}{!running && !jobs.some(job => job.status === 'running' || job.status === 'stopping') && <p>No active work</p>}{routines.filter(task => task.kind === 'at' && task.active).map(task => <p key={task.id}>{task.title}</p>)}</section>
+    <section><h3>Routines</h3>{routines.filter(task => task.kind !== 'at').map(task => <label className={css.routineRow} key={task.id}><span>{task.title}<small>{new Date(task.next).toLocaleString()}</small></span><input type="checkbox" role="switch" checked={task.active} disabled={pending !== undefined} onChange={(event) => { void toggle(task, event.target.checked) }} aria-label={task.title} /></label>)}{!routines.some(task => task.kind !== 'at') && <p>No routines yet</p>}</section>
+    <section><h3>Connected apps and permissions</h3>{accounts.map(account => <a className={css.detailFile} key={account.id} href="/hivemind/app/connectors"><img src={`https://logos.composio.dev/api/${encodeURIComponent(account.toolkit)}`} width="20" height="20" alt="" />{account.toolkit}<small>Manage permissions ↗</small></a>)}{accounts.length === 0 && <a href="/hivemind/app/connectors">Connect an app</a>}</section>
+    <section><h3>Files and deliverables</h3>{files.map(file => <button className={css.detailFile} type="button" key={file.id} onClick={() => { selectArtifact(file.id) }}>▧ {file.title}</button>)}{files.length === 0 && <p>No files in the loaded conversation</p>}</section>
+    {history.length > 0 && <details><summary>Earlier conversations</summary>{history.map(room => <button className={css.detailFile} type="button" key={room.id} onClick={() => { openSession(room.id) }}>{room.title}</button>)}</details>}
+    {error && <p role="alert">{error}</p>}
+  </aside>
 }
 
 export interface PanelToggleInjected {
@@ -250,4 +300,14 @@ export function HyperagentPanelToggle({ sessionId, useSessions, useEmployeeEvent
       </section>
     </div>, document.body)}
   </>
+}
+
+/** A teammate identity above the conversation; opening details never starts a task. */
+export function AgentRoomHeading({ sessionId, useSessions, useSession, useEmployeeEvents, showDetails }: PropsRuntime<'conversation.room.header'> & Pick<EmployeeInjected, 'useEmployeeEvents'> & { showDetails: () => void }) {
+  const value = useSessions(state => state.byId[sessionId]?.projectionValues?.hyperagentOwner)
+  const fromLog = useEmployeeEvents(selectedEmployee)
+  const employee = projectedEmployee(value) ?? fromLog
+  const running = useSession(state => state.running)
+  if (!window.location.pathname.startsWith('/hivemind/app/employee/harness')) return null
+  return <div className={css.roomHeading} data-agent-room><span>{employee ? <EmployeeAvatar employee={employee} size={36} /> : <span className={css.autoAvatar}>R</span>}</span><span><strong>{employee?.name ?? 'Run Time'}</strong><small>{running ? 'Working' : 'Ready'}</small></span><button type="button" onClick={showDetails}>Agent details</button></div>
 }

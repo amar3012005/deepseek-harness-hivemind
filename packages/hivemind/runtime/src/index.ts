@@ -28,7 +28,7 @@ import type {} from '@deepseek-ai/dsh-hivemind-execution-scope'
 import { contextPlugin } from '@deepseek-ai/dsh-hivemind-context'
 import { memoryPlugin, type EntitySearchRequest, type RecallRequest, type SaveRequest, type SaveStatusRequest } from '@deepseek-ai/dsh-hivemind-memory'
 import { hyperagentDirectory, projectHyperagentProfiles } from '@deepseek-ai/dsh-hivemind-employee-directory'
-import { completedTaskMemory, pendingTaskMemories, sessionOwner, sessionOwnerProjection, type SessionOwner } from './continuity.ts'
+import { completedTaskMemory, pendingTaskMemories, sessionOwner, sessionOwnerProjection, employeeLatestMessageProjection, type SessionOwner } from './continuity.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Events {
@@ -1569,6 +1569,7 @@ export function apply(ctx: Context, config: Config): void {
 
   if (config.privateMemoryEnabled) {
     ctx.effect(() => ctx.sessionProjections.register(sessionOwnerProjection))
+    ctx.effect(() => ctx.sessionProjections.register(employeeLatestMessageProjection))
     if (config.authorityMode !== 'scoped-service') throw new HiveMindRuntimeError('private operating memory requires scoped-service authority')
     const ensureOwner = async (agent: Agent, signal: AbortSignal): Promise<SessionOwner> => {
       const existing = sessionOwner(agent.session.snapshotEvents())

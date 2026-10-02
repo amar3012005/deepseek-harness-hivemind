@@ -38,6 +38,8 @@ import { ContextMeter } from './ContextMeter.tsx'
 import { PermissionSelect } from './PermissionSelect.tsx'
 import css from './InputBar.module.css'
 
+declare module '@deepseek-ai/dsh-session-projection/types' { interface SessionProjectionMap { hyperagentOwner: string | null } }
+
 export type InputBarProps = ComposerBarProps
 
 export const InputBar = memo(function InputBar({
@@ -60,6 +62,10 @@ export const InputBar = memo(function InputBar({
   const removed = useSession(s => s.removed) ?? false
   // Plan mode swaps the composer placeholder (the projection is the folded
   // host value; owner-prop placeholders — hero, session-unavailable — win).
+  const employeeOwner = useProjection('hyperagentOwner', value => value)
+  let roomName = 'Run Time'
+  try { if (employeeOwner) roomName = (JSON.parse(employeeOwner) as { name: string }).name } catch { /* Legacy room. */ }
+  if (typeof window !== 'undefined' && window.location.pathname.startsWith('/hivemind/app/employee/harness')) placeholder = `Message ${roomName}…`
   const planActive = useProjection('plan', plan => plan !== undefined && (plan.pending ? !plan.active : plan.active))
   // Absent (undefined: no frame yet) and cleared (null) both mean no goal.
   const hasGoal = useProjection('goal', goal => goal != null)

@@ -19,7 +19,7 @@ import { resolveScheduleUpdate } from './update.ts'
 import {
   foldScheduleEvents, ScheduleInputError, ScheduleLogError, ScheduleId, createAfterScheduleRecord, createAtScheduleRecord,
   createEveryScheduleRecord, createDailyScheduleRecord, createWeeklyScheduleRecord, createCronScheduleRecord,
-  scheduleTitle,
+  scheduleTitle, isRecurringScheduleRecord, resolveRecurringOccurrence,
 } from './domain.ts'
 import type {
   DeliveryRetentionBounds, ScheduleCatalogEntry, ScheduleCreateRequest, ScheduleDeleteRequest, ScheduleDeleteResult,
@@ -446,9 +446,23 @@ export class ScheduleService extends TypertRemoteService {
       if (current === undefined || current.sessionId !== request.sessionId) {
         return { id: request.id, updated: false, code: 'schedule_not_found' }
       }
-      if (current.status === 'inactive') return { id: request.id, updated: false, code: 'schedule_ended' }
+      if (current.status === 'inactive' && request.enabled !== true) return { id: request.id, updated: false, code: 'schedule_ended' }
       const result = resolveScheduleUpdate(current.record, request.expected, request.change, Date.now(), request)
-      if (!('record' in result) || !result.updated) return result
+      if (!('record' in result)) return result
+      if (request.enabled !== undefined) {
+        if (!isRecurringScheduleRecord(result.record)) return { id: request.id, updated: false, code: 'schedule_ended' }
+        let record = result.record
+        if (request.enabled && Date.parse(record.scheduledAt) <= Date.now()) {
+          const next = resolveRecurringOccurrence(record, Date.now()).nextScheduledAt
+          if (next === undefined) return { id: request.id, updated: false, code: 'schedule_ended' }
+          record = { ...record, scheduledAt: next }
+        }
+        await tasks.put(request.id, { ...current, record, status: request.enabled ? 'active' : 'inactive' })
+        this.emitChanged()
+        this.runtime?.requestDrive()
+        return { id: request.id, updated: true, record }
+      }
+      if (!result.updated) return result
       await tasks.put(request.id, { ...current, record: result.record })
       this.emitChanged()
       this.runtime?.requestDrive()

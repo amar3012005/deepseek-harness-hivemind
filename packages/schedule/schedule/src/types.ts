@@ -409,6 +409,8 @@ export interface ScheduleUpdateContent {
 
 /** Compare-and-update request within the original Session binding. */
 export interface ScheduleUpdateRequest extends ScheduleDeleteRequest, ScheduleUpdateContent {
+  /** Enable or pause a retained recurring routine without deleting it. */
+  readonly enabled?: boolean
   /** Complete record observed when editing began, including the committed target. */
   readonly expected: ScheduleRecord
   /** New timing; its kind may differ from the stored record's kind, and an omitted value keeps the committed target. */

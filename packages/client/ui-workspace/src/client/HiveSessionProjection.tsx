@@ -112,8 +112,8 @@ export function HiveSessionProjection({
   }
   const now = Date.now()
   const locale = document.documentElement.lang || navigator.language || 'en'
-  const content = <div className={`${css.root} ${osRail === null ? '' : css.osRoot}`}>
-    {osRail === null && <button type="button" className={css.newSession} disabled={creating} onClick={start}>
+  const content = <div data-agent-room-history={hyperagentRoute || undefined} className={`${css.root} ${osRail === null ? '' : css.osRoot}`}>
+    {!hyperagentRoute && osRail === null && <button type="button" className={css.newSession} disabled={creating} onClick={start}>
       <IconNewChatOutline16 /><span>{t('session.new')}</span>
     </button>}
     {hyperagentRoute && <a href="/hivemind/app/employees" className={css.newSession}>Company workspace ↗</a>}

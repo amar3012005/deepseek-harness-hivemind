@@ -262,6 +262,8 @@ export interface SessionSearchValue {
 
 /** Session creation or explicit-id adoption request. */
 export interface SessionCreateRequest {
+  /** Reopen the authenticated user's persistent employee room. */
+  readonly hyperagentRoom?: string
   readonly workspaceId?: WorkspaceId
   readonly cwd?: string
   readonly sessionId?: SessionId

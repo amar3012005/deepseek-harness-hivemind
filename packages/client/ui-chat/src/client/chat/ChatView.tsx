@@ -236,9 +236,17 @@ const ChatNodeList = memo(function ChatNodeList({ order, useChat, ...seatProps }
     return snapshot.nodes.get(key)?.kind === 'turn-tail' && turn !== undefined
       ? [...(artifacts.get(turn) ?? []), key] : [key]
   })
-  return displayOrder.map(nodeKey => (
-    <ChatNodeSeat key={nodeKey} nodeKey={nodeKey} {...seatProps} />
-  ))
+  let previousDay: string | undefined
+  const agentRoom = window.location.pathname.includes('/employee/harness')
+  return displayOrder.flatMap((nodeKey) => {
+    const turn = turnOf(nodeKey)
+    const time = turn === undefined ? undefined : snapshot.timeline.turns.get(turn)?.start?.time
+    const day = time === undefined ? undefined : new Date(time).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })
+    const header = agentRoom && day !== undefined && day !== previousDay
+    if (day !== undefined) previousDay = day
+    const seat = <ChatNodeSeat key={nodeKey} nodeKey={nodeKey} {...seatProps} />
+    return header ? [<div key={`date-${nodeKey}`} className={css.roomDate}>{day}</div>, seat] : [seat]
+  })
 })
 
 /**

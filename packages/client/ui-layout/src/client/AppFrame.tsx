@@ -67,6 +67,7 @@ function DragHandle(props: { side: 'sidebar' | 'rightbar'; left: number; onStart
   const [dragging, setDragging] = useState(false)
   const origin = useRef(0)
   const latest = useRef(0)
+  const coordinateScale = useRef(1)
   const frame = useRef<number | null>(null)
   const capture = useRef<{ element: HTMLDivElement; id: number } | null>(null)
   const callbacks = useRef({ onStart: props.onStart, onDrag: props.onDrag, onEnd: props.onEnd })
@@ -88,6 +89,8 @@ function DragHandle(props: { side: 'sidebar' | 'rightbar'; left: number; onStart
     e.preventDefault()
     e.currentTarget.setPointerCapture(e.pointerId)
     capture.current = { element: e.currentTarget, id: e.pointerId }
+    const parent = e.currentTarget.parentElement
+    coordinateScale.current = parent && parent.clientWidth > 0 ? parent.getBoundingClientRect().width / parent.clientWidth : 1
     origin.current = e.clientX
     latest.current = e.clientX
     callbacks.current.onStart()
@@ -98,12 +101,12 @@ function DragHandle(props: { side: 'sidebar' | 'rightbar'; left: number; onStart
     latest.current = e.clientX
     frame.current ??= requestAnimationFrame(() => {
       frame.current = null
-      callbacks.current.onDrag(latest.current - origin.current)
+      callbacks.current.onDrag((latest.current - origin.current) / coordinateScale.current)
     })
   }, [])
   const onPointerUp = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
     if (capture.current?.id !== e.pointerId) return
-    callbacks.current.onDrag(e.clientX - origin.current)
+    callbacks.current.onDrag((e.clientX - origin.current) / coordinateScale.current)
     endDrag()
   }, [endDrag])
   const onPointerCancel = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
@@ -114,6 +117,9 @@ function DragHandle(props: { side: 'sidebar' | 'rightbar'; left: number; onStart
     <div
       className={css.handle}
       style={{ left: props.left }}
+      role="separator"
+      aria-label={props.side === 'rightbar' ? 'Resize preview panel' : 'Resize sidebar'}
+      aria-orientation="vertical"
       data-side={props.side}
       data-dragging={dragging || undefined}
       onPointerDown={onPointerDown}
@@ -142,7 +148,8 @@ export function AppFrame({
   const hostOwnsChrome = hiveMode
   const dreamingRoom = typeof window !== 'undefined' && (window.location.pathname === '/hivemind/app/overview/dreaming'
     || new URLSearchParams(window.location.search).has('dreamingParent'))
-  const showSessionRail = hiveMode && !dreamingRoom
+  const agentRoom = typeof window !== 'undefined' && window.location.pathname.startsWith('/hivemind/app/employee/harness')
+  const showSessionRail = hiveMode && !dreamingRoom && !agentRoom
   const layoutInfo = useStore(state => state.layoutInfo)
   const frameRef = useRef<HTMLDivElement | null>(null)
   const viewport = layoutInfo.viewportWidth
@@ -155,7 +162,7 @@ export function AppFrame({
     let raf: number | null = null
     let disposed = false
     const measure = () => {
-      const width = el.getBoundingClientRect().width
+      const width = el.clientWidth
       if (width > 0) actions.setViewportWidth(width)
     }
     measure()

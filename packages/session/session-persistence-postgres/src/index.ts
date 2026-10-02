@@ -270,6 +270,28 @@ export class PostgresSessionPersistence extends SessionPersistence {
       scopeParams(scope))
     return result.rows.map(row => this.snapshot(row))
   }
+  /** Canonical room lookup uses authenticated scope, never browser-supplied tenant ids.
+   * Adopt the earliest owned legacy room; otherwise use a stable native identity.
+   * Existing session creation/adoption and fencing arbitrate concurrent opens.
+   */
+  async employeeRoomId(key: string): Promise<SessionId> {
+    const scope = this.capture()
+    const stable = `session-${createHash('sha256').update(JSON.stringify([scope.orgId, scope.userId, key])).digest('hex').slice(0, 32)}` as SessionId
+    const existing = await this.row(scope, stable)
+    if (existing !== undefined) return stable
+    const result = await this.query<{ id: SessionId }>(scope, `SELECT s.id FROM harness_sessions s
+      WHERE s.org_id=$1 AND s.user_id=$2 AND s.status='active'
+      AND s.header->>'parentSession' IS NULL
+      AND COALESCE(s.header->>'origin','') <> 'subagent'
+      AND COALESCE((SELECT e.payload->'data'->>'agentPreset' FROM harness_session_events e
+        WHERE e.session_id=s.id AND e.event_type='agent-preset/selected' ORDER BY e.sequence DESC LIMIT 1),s.header->>'agentPreset')='hivemind-hyperagents'
+      AND (SELECT COALESCE(e.payload->'data'->>'id','runtime') FROM harness_session_events e
+        WHERE e.session_id=s.id AND e.event_type IN ('hivemind/session-owner','hivemind/employee-selection')
+        ORDER BY CASE WHEN e.event_type='hivemind/session-owner' THEN 0 ELSE 1 END,e.sequence LIMIT 1)=$3
+      ORDER BY (s.header->>'createdAt')::bigint,s.id LIMIT 1`, [...scopeParams(scope), key])
+    return result.rows[0]?.id ?? stable
+  }
+
   /** Current preset for tenant-visible sessions, including blank-session selection events. */
   async effectivePresets(ids: readonly SessionId[], signal?: AbortSignal): Promise<ReadonlyMap<SessionId, string>> {
     checkAbort(signal)

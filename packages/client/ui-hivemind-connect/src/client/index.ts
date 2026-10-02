@@ -33,7 +33,7 @@ import { createConnectorMentionSource } from './ConnectorMentions.ts'
 import { ContextualFollowUps, selectContextualFollowUps } from './ContextualFollowUps.tsx'
 import {
   HyperagentEmployeePicker, HyperagentEmployeePanel, HyperagentPanelToggle,
-  type EmployeeOption, selectedEmployee, projectedEmployee, EmployeeAvatar,
+  type EmployeeOption, selectedEmployee, projectedEmployee, EmployeeAvatar, AgentRoomHeading,
 } from './HyperagentEmployee.tsx'
 import { HyperagentWorkbench } from './HyperagentWorkbench.tsx'
 
@@ -236,9 +236,9 @@ export function apply(ctx: ClientContext): void {
     })
   }
   ctx.inject(['remote.commands', 'remote.agentPresets'], (ctx: ClientContext) => {
-    const selectEmployee = async (sessionId: SessionId, id: string | null): Promise<boolean> => {
+    const selectEmployee = async (sessionId: SessionId, id: string | null, runtime = false): Promise<boolean> => {
       if (ctx.sessions.binding(sessionId) === undefined) throw new Error('Session is not ready. Please reopen it.')
-      const targetPreset = id === null ? 'hivemind-chat' : 'hivemind-hyperagents'
+      const targetPreset = id === null && !runtime ? 'hivemind-chat' : 'hivemind-hyperagents'
       const summary = ctx.sessions.list.getSnapshot().byId[sessionId]
       if ((summary?.projectionValues?.agentPreset ?? summary?.agentPreset) !== targetPreset) {
         const switched = await ctx.remote.agentPresets.select(sessionId, targetPreset)
@@ -296,31 +296,43 @@ export function apply(ctx: ClientContext): void {
     ctx.effect(() => {
       const bridge = async (id: string | null): Promise<boolean> => {
         const current = ctx.sessions.list.getSnapshot().current
-        return current === undefined ? false : selectEmployee(current, id)
+        return current === undefined ? false : id === null ? selectEmployee(current, id) : start(id)
       }
-      const start = async (id: string): Promise<boolean> => {
-        const sessionId = await ctx.sessions.create()
-        ctx.sessions.open(sessionId)
-        const session = ctx.sessions.binding(sessionId)?.session
-        if (session === undefined) return false
-        await new Promise<void>((resolve, reject) => {
-          let stop = () => {}
-          const timer = setTimeout(() => { stop(); reject(new Error('The new session is still opening. Please try again.')) }, 10000)
-          const check = () => {
-            if (session.getSnapshot().openState !== 'open') return
-            clearTimeout(timer); stop(); resolve()
-          }
-          stop = session.subscribe(check)
-          check()
-        })
-        const selected = await selectEmployee(sessionId, id)
-        if (selected) {
-          // Team navigation opens an agent workspace even while its first
-          // draft is blank. Do not wait for a user turn to choose the route.
+      let pendingRoom: Promise<boolean> | undefined
+      const start = (id: string): Promise<boolean> => {
+        const next = (pendingRoom ?? Promise.resolve(true)).catch(() => false).then(() => openRoom(id))
+        pendingRoom = next
+        return next
+      }
+      const openRoom = async (id: string): Promise<boolean> => {
+        document.documentElement.dataset.agentRoomOpening = 'true'
+        try {
+          const sessionId = await ctx.sessions.create({ hyperagentRoom: id === 'runtime' ? 'runtime' : id })
           window.history.replaceState(window.history.state, '', `/hivemind/app/employee/harness/session/${encodeURIComponent(sessionId)}`)
           window.dispatchEvent(new PopStateEvent('popstate'))
-        }
-        return selected
+          ctx.sessions.open(sessionId)
+          const session = ctx.sessions.binding(sessionId)?.session
+          if (session === undefined) return false
+          await new Promise<void>((resolve, reject) => {
+            let stop = () => {}
+            const timer = setTimeout(() => { stop(); reject(new Error('The new session is still opening. Please try again.')) }, 10000)
+            const check = () => {
+              if (session.getSnapshot().openState !== 'open') return
+              clearTimeout(timer); stop(); resolve()
+            }
+            stop = session.subscribe(check)
+            check()
+          })
+          const roomOwner = projectedEmployee(ctx.sessions.list.getSnapshot().byId[sessionId]?.projectionValues?.hyperagentOwner)
+          const selected = roomOwner?.id === id || await selectEmployee(sessionId, id === 'runtime' ? null : id, id === 'runtime')
+          if (selected) {
+          // Team navigation opens an agent workspace even while its first
+          // draft is blank. Do not wait for a user turn to choose the route.
+            window.history.replaceState(window.history.state, '', `/hivemind/app/employee/harness/session/${encodeURIComponent(sessionId)}`)
+            window.dispatchEvent(new PopStateEvent('popstate'))
+          }
+          return selected
+        } finally { delete document.documentElement.dataset.agentRoomOpening }
       }
       const publish = () => {
         const state = ctx.sessions.list.getSnapshot()
@@ -330,14 +342,27 @@ export function apply(ctx: ClientContext): void {
         const events = current === undefined ? undefined : ctx.sessions.binding(current)?.eventSource.getSnapshot()
         const selection = events === undefined ? null : selectedEmployee(events)
         window.dispatchEvent(new CustomEvent('hivemind:agent-selected', { detail: { id: owner?.id ?? selection?.id ?? null } }))
+        const rooms = state.ids.flatMap((id) => {
+          const row = state.byId[id]
+          if (!row || row.origin === 'subagent' || (row.projectionValues?.agentPreset ?? row.agentPreset) !== 'hivemind-hyperagents') return []
+          const employee = projectedEmployee(row.projectionValues?.hyperagentOwner)
+          const message = (row.projectionValues as { hyperagentLatestMessage?: string | null } | undefined)?.hyperagentLatestMessage
+          let preview = ''
+          try { preview = message ? (JSON.parse(message) as { text: string }).text : '' } catch { /* Missing legacy projection. */ }
+          return [{ id: employee?.id ?? 'runtime', sessionId: id, preview, running: row.running, unread: row.completed === true, updatedAt: row.updatedAt }]
+        })
+        ;(window as unknown as { __HIVEMIND_AGENT_ROOMS__: unknown }).__HIVEMIND_AGENT_ROOMS__ = rooms
+        window.dispatchEvent(new CustomEvent('hivemind:agent-rooms', { detail: { rooms } }))
       }
       const stop = ctx.sessions.list.subscribe(publish)
+      window.addEventListener('hivemind:request-agent-rooms', publish)
       publish()
       const host = window as unknown as { __HIVEMIND_SELECT_AGENT__?: typeof bridge; __HIVEMIND_START_AGENT__?: typeof start }
       host.__HIVEMIND_SELECT_AGENT__ = bridge
       host.__HIVEMIND_START_AGENT__ = start
       return () => {
         stop()
+        window.removeEventListener('hivemind:request-agent-rooms', publish)
         if (host.__HIVEMIND_SELECT_AGENT__ === bridge) delete host.__HIVEMIND_SELECT_AGENT__
         if (host.__HIVEMIND_START_AGENT__ === start) delete host.__HIVEMIND_START_AGENT__
       }
@@ -351,7 +376,10 @@ export function apply(ctx: ClientContext): void {
       } => ({
         hooks: { employeeEvents: employeeEvents(sessionId) },
         listEmployees,
-        selectEmployee: id => selectEmployee(sessionId, id),
+        selectEmployee: (id) => {
+          const host = window as unknown as { __HIVEMIND_START_AGENT__?: (id: string) => Promise<boolean> }
+          return id === null ? selectEmployee(sessionId, null) : host.__HIVEMIND_START_AGENT__?.(id) ?? Promise.resolve(false)
+        },
       }),
     }, HyperagentEmployeePicker))
   })
@@ -393,9 +421,11 @@ export function apply(ctx: ClientContext): void {
     rightSidebar = scope.sidebarRight
     scope.effect(() => () => { rightSidebar = undefined }, 'ui-hivemind-connect: release right sidebar')
     const t = scope.locale.bind(NS)
-    if (!window.location.pathname.startsWith('/hivemind/app/employee/harness/')) {
-      scope.effect(() => scope.sidebarRightTabs.register({ id: employeeTab, kind: 'hivemind-employee', title: () => t('employee.panel') }), 'ui-hivemind-connect: employee right tab')
-    }
+    scope.effect(() => scope.sidebarRightTabs.register({ id: employeeTab, kind: 'hivemind-employee', title: () => 'Agent details' }), 'ui-hivemind-connect: employee right tab')
+    scope.slots.inject('conversation.room.header', () => scope.slots.register({
+      name: 'conversation.room.header', id: 'agent-room-heading',
+      inject: sessionId => ({ hooks: { employeeEvents: employeeEvents(sessionId) }, showDetails: () => { scope.sidebarRight.openTabIn(sessionId, 'hivemind-employee') } }),
+    }, AgentRoomHeading))
     for (const kind of workbenchKinds) {
       const tabKind = `hivemind-workbench-${kind}`
       const tabId = `@deepseek-ai/dsh-client-ui-hivemind-connect/${kind}`
@@ -440,11 +470,25 @@ export function apply(ctx: ClientContext): void {
         }),
       }, HyperagentWorkbench))
     }
-    if (!window.location.pathname.startsWith('/hivemind/app/employee/harness/')) {
+    {
       scope.slots.inject('sidebar.right.pane.tab', () => scope.slots.register({
         name: 'sidebar.right.pane.tab', key: employeeTab, locale: NS,
-        inject: (sessionId): { hooks: { employeeEvents: ReturnType<typeof employeeEvents> } } => ({
+        inject: sessionId => ({
           hooks: { employeeEvents: employeeEvents(sessionId) },
+          openSession: (id: string) => { scope.sessions.open(id as SessionId) },
+          selectArtifact: (artifactId: string) => { scope.sidebarRight.openTabIn(sessionId, 'hivemind-workbench-preview', { params: { artifactId } }) },
+          listRoutines: async () => {
+            const result = await scope.remote.schedule.catalog()
+            if (!result.ok) throw new Error('Routine list unavailable')
+            return result.value.filter(task => task.sessionId === sessionId).map(task => ({
+              id: task.id, title: task.title, kind: task.kind, active: task.status === 'active', next: task.scheduledAt,
+              toggle: async (enabled: boolean) => {
+                const { sessionId: ownerId, status: _status, lastDelivery: _delivery, ...expected } = task
+                const changed = await scope.remote.schedule.update({ sessionId: ownerId, id: task.id, expected, enabled })
+                if (!changed.ok || !('updated' in changed.value) || !changed.value.updated) throw new Error('Routine update rejected')
+              },
+            }))
+          },
         }),
       }, HyperagentEmployeePanel))
     }

@@ -230,3 +230,5 @@
 :global(html[data-dsh-mode='hivemind-chat']) :global([data-chat-history-status]) {
   position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap;
 }
+
+.roomDate { padding: 18px 0 10px; text-align: center; font-size: 12px; color: var(--ds-text-tertiary, #777); }

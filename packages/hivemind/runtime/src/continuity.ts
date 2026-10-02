@@ -99,8 +99,8 @@ export function completedTaskMemory(
 }
 
 declare module '@deepseek-ai/dsh-session-projection/types' {
-  interface SessionProjectionMap { hyperagentOwner: string | null }
-  interface SessionProjectionStateMap { hyperagentOwner: SessionOwner | null }
+  interface SessionProjectionMap { hyperagentOwner: string | null; hyperagentLatestMessage: string | null }
+  interface SessionProjectionStateMap { hyperagentOwner: SessionOwner | null; hyperagentLatestMessage: string | null }
 }
 
 const ownerSchema = z.object({
@@ -121,3 +121,15 @@ export const sessionOwnerProjection = {
     }),
   },
 } satisfies ProjectionDefinition<'hyperagentOwner', SessionOwner | null>
+
+/** A bounded user-facing message preview, independent of transcript pagination. */
+export const employeeLatestMessageProjection = {
+  key: 'hyperagentLatestMessage', stateSchema: z.string().nullable(), stateVersion: 1,
+  init: () => null,
+  apply: (state, event) => {
+    if (event.type !== 'assistant/message' || event.data.interrupted) return state
+    const text = event.data.message.content.filter(block => block.type === 'text').map(block => block.text).join(' ').replace(/\s+/gu, ' ').trim()
+    return text ? JSON.stringify({ text: text.slice(0, 160), time: event.time }) : state
+  },
+  wire: { viewSchema: z.string().nullable(), view: state => state },
+} satisfies ProjectionDefinition<'hyperagentLatestMessage', string | null>

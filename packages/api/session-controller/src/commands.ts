@@ -89,7 +89,16 @@ export class SessionCommandController {
     if (request.workspaceId !== undefined && request.cwd !== undefined) {
       throw new RemoteError('gateway/bad-request', 'session.create accepts workspaceId or cwd, not both', {})
     }
-    const sessionId = request.sessionId ?? brandString<SessionId>(`session-${randomUUID()}`)
+    const room = request.hyperagentRoom
+    const persistence = this.ctx.sessionPersistence as unknown as { employeeRoomId?: (key: string) => Promise<SessionId> }
+    if (room !== undefined && (
+      !/^(runtime|[a-zA-Z0-9_-]{1,128})$/u.test(room)
+      || request.sessionId !== undefined || persistence.employeeRoomId === undefined
+    )) {
+      throw new RemoteError('gateway/bad-request', 'Persistent employee room is unavailable', {})
+    }
+    const roomId = room === undefined ? undefined : await persistence.employeeRoomId?.(room)
+    const sessionId = roomId ?? request.sessionId ?? brandString<SessionId>(`session-${randomUUID()}`)
     let workspace: Workspace | undefined
     if (request.workspaceId !== undefined) {
       workspace = this.ctx.workspaceRegistry.get(request.workspaceId)
@@ -105,8 +114,8 @@ export class SessionCommandController {
       adopted = await this.agents.ensureSession(
         sessionId,
         cwd,
-        request.sessionId !== undefined,
-        request.agentPreset,
+        request.sessionId !== undefined || roomId !== undefined,
+        room === undefined ? request.agentPreset : 'hivemind-hyperagents',
       )
     } catch (error) {
       this.rejectCreation(sessionId, error)
