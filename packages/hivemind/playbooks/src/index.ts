@@ -252,7 +252,8 @@ const CAPABILITY_TOOLS: Readonly<Record<CapabilityLane, readonly string[]>> = {
     'ralph',
   ],
   skills: ['hivemind_skills'],
-  artifact: ['hivemind_artifact_render', 'hivemind_generation_discover', 'hivemind_generate', 'hivemind_media_generate', 'hivemind_calculate'],
+  artifact: ['hivemind_artifact_render', 'hivemind_generation_discover', 'hivemind_generate', 'hivemind_media_generate',
+    'hivemind_calculate', 'job_list', 'job_output', 'job_kill'],
   visual: ['inspect_image', 'read_image'],
   memory: ['hivemind_meta', 'hivemind_save_memory'],
 }
