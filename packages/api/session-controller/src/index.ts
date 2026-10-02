@@ -354,7 +354,7 @@ export class SessionController extends TypertRemoteService {
    * @returns acknowledgement that the Agent accepted the prompt.
    */
   /** Trusted plugin-only room delivery; never exposed as a browser RPC. */
-  deliverAgentMessage(caller: Agent, input: RoomMessageRequest, signal: AbortSignal) {
+  deliverAgentMessage(caller: Agent, input: RoomMessageRequest, signal: AbortSignal): Promise<{ messageId: string; targetSessionId: SessionId; status: 'accepted' | 'recorded' }> {
     return this.roomMessaging.send(caller, input, signal)
   }
 
