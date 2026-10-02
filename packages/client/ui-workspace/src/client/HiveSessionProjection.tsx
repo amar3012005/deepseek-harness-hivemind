@@ -73,7 +73,7 @@ export function HiveSessionProjection({
   const start = () => {
     if (creating) return
     if (hyperagentRoute) {
-      window.history.pushState(window.history.state, '', '/hivemind/app/overview/new')
+      window.history.pushState(window.history.state, '', '/hivemind/app/employee/harness/new')
       window.dispatchEvent(new PopStateEvent('popstate'))
       return
     }
