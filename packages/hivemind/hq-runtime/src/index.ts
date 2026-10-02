@@ -60,7 +60,8 @@ declare module '@deepseek-ai/dsh-session/types' {
   }
 }
 export function apply(ctx: Context): void {
-  ctx.effect(() => ctx.on('agent/pre-step', async ({ agent }, next) => {
+  const briefed = new WeakMap<object, number>()
+  ctx.effect(() => ctx.on('agent/pre-step', async ({ agent, turn }, next) => {
     const decision = await next()
     if (decision.kind === 'reject') return decision
     const member = ctx.agentTeams.tryMembership(agent)
@@ -69,9 +70,11 @@ export function apply(ctx: Context): void {
     for (const event of agent.session.ownEvents())
       if (event.type === 'agent-preset/selected') preset = event.data.agentPreset
     if (preset !== 'hivemind-hq') return decision
-    // Native projections are reread after every tool step, so completion/receipt
-    // changes are visible immediately. This is server context, not a polling tool.
+    if (briefed.get(agent) === turn) return decision
+    // The admitted message is durable native context: inject once per turn,
+    // and reread on cold restoration rather than adding a copy per tool step.
     const workspace = await ctx.hivemindHq.workspace(agent)
+    briefed.set(agent, turn)
     return { ...decision, messages: [createUserMessage({
       source: { kind: 'plugin', plugin: 'hivemind-hq/wake-briefing', form: 'recall' },
       content: [{ type: 'text', text: wakeBriefing(workspace, agent.session.snapshotEvents(), agent.id) }],

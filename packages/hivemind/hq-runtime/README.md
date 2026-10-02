@@ -36,9 +36,9 @@ The browser canary proves persisted human calendar entries and the real built wo
 
 ## Wake continuity
 
-The HQ plugin projects the authenticated root's current native task board,
+The HQ plugin admits a compact native context message projecting the authenticated root's current native task board,
 calendar, Schedule delivery state, artifact/review links, recent Team messages
-and persistent-room notices into every model step. It uses existing durable
+and persistent-room notices once at the start of each HQ turn, including a cold wake. It uses existing durable
 records and adds no event or scheduler. Quiet employee updates become visible
 on the next turn without waking Runtime. The HIVE runtime supplies one bounded
 private operating-memory read per HQ turn; failure is an explicit retrieval gap.

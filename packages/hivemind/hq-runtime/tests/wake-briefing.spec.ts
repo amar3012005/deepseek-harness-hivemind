@@ -1,4 +1,6 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
+import type { Context } from '@deepseek-ai/cordis'
+import { apply } from '../src/index.ts'
 import { wakeBriefing } from '../src/wake-briefing.ts'
 import type { HqWorkspace } from '../src/types.ts'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
@@ -24,4 +26,25 @@ describe('HQ wake briefing', () => {
     expect(result.employeeMessages).toHaveLength(12)
     expect(result.employeeMessages.at(-1).id).toBe('18')
   })
+})
+
+
+it('admits one native briefing per turn and rereads on cold restore', async () => {
+  let hook: (payload: unknown, next: () => Promise<unknown>) => Promise<unknown>
+  const workspaceRead = vi.fn(async () => workspace)
+  const agent = { id: 'root', session: { header: { agentPreset: 'hivemind-hq' }, ownEvents: () => [], snapshotEvents: () => [] } }
+  const ctx = {
+    effect: (callback: () => unknown) => callback(),
+    on: (_name: string, callback: typeof hook) => { hook = callback; return () => {} },
+    agentTeams: { guardTaskUpdates: () => () => {}, tryMembership: (subject: unknown) => ({ role: 'lead', root: subject }) },
+    hivemindHq: { workspace: workspaceRead }, tools: { register: () => {} },
+  } as unknown as Context
+  apply(ctx)
+  const enter = async () => ({ kind: 'enter', messages: [] })
+  expect(JSON.stringify(await hook!({ agent, turn: 1 }, enter))).toContain('HQ current operating briefing')
+  expect(JSON.stringify(await hook!({ agent, turn: 1 }, enter))).not.toContain('HQ current operating briefing')
+  expect(workspaceRead).toHaveBeenCalledTimes(1)
+  await hook!({ agent, turn: 2 }, enter)
+  await hook!({ agent: { ...agent }, turn: 2 }, enter)
+  expect(workspaceRead).toHaveBeenCalledTimes(3)
 })

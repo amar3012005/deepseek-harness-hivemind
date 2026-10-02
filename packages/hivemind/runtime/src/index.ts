@@ -1649,6 +1649,7 @@ export function apply(ctx: Context, config: Config): void {
         if (String(event.type) === 'agent-preset/selected') preset = (event.data as { agentPreset: string }).agentPreset
       if (preset !== 'hivemind-hq') return decision
       let recalled = hqRecall.get(agent)
+      if (recalled?.turn === turn) return decision
       if (recalled?.turn !== turn) {
         // One authenticated bounded read per turn; a cold resumed Agent rereads.
         // A failed recall is explicit, never evidence that the store is empty.
