@@ -15,6 +15,9 @@ export interface GenerationRequest {
   readonly content: string
   readonly signal: AbortSignal
   readonly cwd: string
+  readonly operationId?: string
+  readonly transparentBackground?: boolean
+  readonly referenceFiles?: readonly { readonly data: Uint8Array }[]
   readonly referenceImages?: readonly string[]
   readonly sourcePath?: string
   readonly aspectRatio?: string
@@ -95,6 +98,9 @@ export async function generateArtifact(
     readonly format: GenerationFormat
     readonly title: string
     readonly content: string
+    readonly operationId?: string
+    readonly transparentBackground?: boolean
+    readonly referenceFiles?: readonly { readonly data: Uint8Array }[]
     readonly referenceImages?: readonly string[]
     readonly sourcePath?: string
     readonly aspectRatio?: string
@@ -114,6 +120,9 @@ export async function generateArtifact(
   const provider = registry.get(input.format)
   const generated = await provider.generate({
     title: input.title, content: input.content, cwd, signal,
+    ...(input.operationId === undefined ? {} : { operationId: input.operationId }),
+    ...(input.transparentBackground === undefined ? {} : { transparentBackground: input.transparentBackground }),
+    ...(input.referenceFiles === undefined ? {} : { referenceFiles: input.referenceFiles }),
     ...(input.referenceImages === undefined ? {} : { referenceImages: input.referenceImages }),
     ...(input.sourcePath === undefined ? {} : { sourcePath: input.sourcePath }),
     ...(input.aspectRatio === undefined ? {} : { aspectRatio: input.aspectRatio }),

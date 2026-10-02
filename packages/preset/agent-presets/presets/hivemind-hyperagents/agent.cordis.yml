@@ -151,12 +151,6 @@
               cloudflareUrl: !!js process.env.HIVEMIND_CLOUDFLARE_BROWSER_MCP_URL ?? ''
               cloudflareHeaders: !!js >-
                 ({ Authorization: process.env.CLOUDFLARE_BROWSER_RUN_MCP_TOKEN ? `Bearer ${process.env.CLOUDFLARE_BROWSER_RUN_MCP_TOKEN}` : '' })
-          - id: hivemind-artifact-renderer
-            name: '@deepseek-ai/dsh-hivemind-artifact-renderer'
-            config:
-              provider: markdown-pdf
-              outputDirectory: .hivemind/artifacts
-              attachmentOnly: true
       - insert:
           - id: tool-todo
             name: '@deepseek-ai/dsh-tool-todo'

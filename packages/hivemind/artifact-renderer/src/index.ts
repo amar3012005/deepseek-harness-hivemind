@@ -13,6 +13,7 @@ import { GenerationRegistry, registerGenerationTools } from './generation.ts'
 import {
   markdownReportProvider, presentationProvider, spreadsheetProvider, webProvider,
 } from './office-providers.ts'
+import { codexImageProvider } from './codex-image-provider.ts'
 import { openRouterImageProvider } from './image-provider.ts'
 import { higgsfieldVideoProvider } from './higgsfield-video-provider.ts'
 import { registerMediaWorkflow } from './media-workflow.ts'
@@ -22,7 +23,7 @@ import { designProfiles, designTheme, evaluateMarkdownDesignQuality, type Design
 export type { GenerationReceipt } from './generation.ts'
 
 export const name = 'hivemind-artifact-renderer'
-export const inject = ['tools', 'attachments', 'jobs']
+export const inject = ['tools', 'attachments', 'jobs', 'sessions']
 
 export interface ArtifactRenderRequest {
   readonly title: string
@@ -59,6 +60,10 @@ export interface Config {
   outputDirectory: string
   attachmentOnly?: boolean
   maxMarkdownChars: number
+  imageProvider?: 'codex' | 'openrouter'
+  codexImageCommand?: string
+  codexImageStateDirectory?: string
+  codexImageModel?: string
   imageBaseURL?: string
   imageApiKeyEnv?: string
   imageModel?: string
@@ -79,6 +84,10 @@ export const Config: z<Config> = z.object({
   outputDirectory: z.string().default('.hivemind/artifacts'),
   attachmentOnly: z.boolean().default(false),
   maxMarkdownChars: z.natural().min(1_000).max(2_000_000).default(400_000),
+  imageProvider: z.union(['codex', 'openrouter']).default('openrouter'),
+  codexImageCommand: z.string().default('/opt/deepseek-harness/packages/subagent/subagent-codex/node_modules/@openai/codex/bin/codex.js'),
+  codexImageStateDirectory: z.string().default('/tmp/dsh/storages/media-codex'),
+  codexImageModel: z.string().default('gpt-6-luna'),
   imageBaseURL: z.string().default(''),
   imageApiKeyEnv: z.string().default(''),
   imageModel: z.string().default(''),
@@ -282,7 +291,14 @@ export function apply(ctx: Context, config: Config): void {
     registerArtifactTool(rendererCtx, config)
     const registry = new GenerationRegistry()
     const { imageModel, imageBaseURL, imageApiKeyEnv } = config
-    if (imageModel) {
+    if (config.imageProvider === 'codex') {
+      rendererCtx.effect(() => registry.register(codexImageProvider({
+        command: config.codexImageCommand ?? '/opt/deepseek-harness/packages/subagent/subagent-codex/node_modules/@openai/codex/bin/codex.js',
+        stateDirectory: config.codexImageStateDirectory ?? '/tmp/dsh/storages/media-codex',
+        model: config.codexImageModel ?? 'gpt-6-luna', timeoutMs: config.imageTimeoutMs ?? 600_000,
+        auth: signal => rendererCtx.serial('hivemind/codex-image-auth', { signal }),
+      })))
+    } else if (imageModel) {
       if (!imageBaseURL || !imageApiKeyEnv) throw new Error('Configured image model requires imageBaseURL and imageApiKeyEnv')
       rendererCtx.effect(() => registry.register(openRouterImageProvider({
         model: imageModel, baseURL: imageBaseURL, apiKeyEnv: imageApiKeyEnv, timeoutMs: config.imageTimeoutMs ?? 180_000,
@@ -316,6 +332,7 @@ export function apply(ctx: Context, config: Config): void {
       maxBriefChars: config.mediaMaxBriefChars ?? 12_000,
       imageAttempts: config.mediaImageAttempts ?? 3,
       retryBaseDelayMs: config.mediaRetryBaseDelayMs ?? 500,
+      attachmentOnly: config.attachmentOnly ?? false,
     })
   })
 }
