@@ -65,6 +65,10 @@ export type OperatingRunKey = keyof typeof zh
 
 /** English dictionary (same key set). */
 export const en: Record<OperatingRunKey, string> = {
+  'preview.preview': 'Preview',
+  'preview.artifacts': 'Artifacts',
+  'preview.computer': 'Computer',
+  'preview.sources': 'Sources',
   'context.title': 'Company context',
   'context.coverage': 'Company profile, memory, methods, and employees retrieved',
   'context.evidence': '{count} internal evidence items',
