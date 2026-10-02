@@ -56,12 +56,17 @@ export function installAgentMessaging(ctx: Context): void {
         }
       }
     }
+    const childMasks = new WeakSet<Agent>()
     const lifetime = new AbortController()
     const notify = async (agent: Agent, signal: AbortSignal): Promise<void> => {
       try { await forwardUpdates(agent, signal) }
       catch { if (!signal.aborted) scope.logger.warn('Agent updates remain unconfirmed; they will reconcile on the next admitted turn.') }
     }
     scope.effect(() => scope.on('agent/pre-step', async ({ agent, signal }, next) => {
+      if (agent.session.header.parentSession !== undefined && !childMasks.has(agent)) {
+        agent.ctx.effect(() => agent.ctx.tools.restrict({ deny: ['hivemind_agent_message'] }))
+        childMasks.add(agent)
+      }
       await notify(agent, signal)
       return next()
     }))

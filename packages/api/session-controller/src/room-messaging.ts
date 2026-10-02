@@ -32,9 +32,11 @@ export interface RoomMessageRequest {
 }
 declare module '@deepseek-ai/dsh-session/types' {
   interface SessionEventMap {
-    'hivemind/employee-selection': { id: string | null; name?: string; role?: string; avatarUrl?: string }
+    /** Sender outbox packet committed before delivery; stable id binds its exact room and payload. */
     'hivemind/room-message-queued': RoomMessage
+    /** Receiver acknowledgement of one admitted question/reply or quietly saved update. */
     'hivemind/room-message-received': RoomMessage
+    /** Sender acknowledgement linking its message id to the confirmed receiver room. */
     'hivemind/room-message-delivered': { id: string; targetId: SessionId }
   }
 }

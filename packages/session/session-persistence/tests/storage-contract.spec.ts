@@ -118,6 +118,11 @@ describe('validateStoredEvents', () => {
     expect(validateStoredEvents(m, events)).toBe(events)
   })
 
+  it('reopens the native room messaging receipts after a cold start', () => {
+    const events = ['hivemind/room-message-queued', 'hivemind/room-message-received', 'hivemind/room-message-delivered'].map((type, seq) => ({ type, seq, time: seq + 1, data: { id: 'message', targetId: 'room' } })) as unknown as SessionEvent[]
+    expect(validateStoredEvents(meta('room-messaging'), events)).toBe(events)
+  })
+
   it('refuses an unknown event type before adopting anything', () => {
     const m = meta('unknown-type')
     const events = [

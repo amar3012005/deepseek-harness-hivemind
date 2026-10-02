@@ -475,7 +475,7 @@ Source: [`packages/goal/goal/src/domain.ts:66`](../packages/goal/goal/src/domain
 'hivemind/artifact-created': ArtifactCreated
 ```
 
-Source: [`packages/hivemind/artifact-renderer/src/index.ts:115`](../packages/hivemind/artifact-renderer/src/index.ts)
+Source: [`packages/hivemind/artifact-renderer/src/index.ts:137`](../packages/hivemind/artifact-renderer/src/index.ts)
 
 <a id="hivemindbrowser-capability-lease--log-only"></a>
 
@@ -528,7 +528,7 @@ Source: [`packages/hivemind/progressive-browser/src/index.ts:41`](../packages/hi
 'hivemind/capability-lease': CapabilityLeaseRecorded
 ```
 
-Source: [`packages/hivemind/playbooks/src/index.ts:200`](../packages/hivemind/playbooks/src/index.ts)
+Source: [`packages/hivemind/playbooks/src/index.ts:202`](../packages/hivemind/playbooks/src/index.ts)
 
 <a id="hivemindcomposio-session--log-only"></a>
 
@@ -572,7 +572,7 @@ Source: [`packages/hivemind/connected-apps/src/index.ts:43`](../packages/hivemin
 }
 ```
 
-Source: [`packages/hivemind/runtime/src/index.ts:43`](../packages/hivemind/runtime/src/index.ts)
+Source: [`packages/hivemind/runtime/src/index.ts:56`](../packages/hivemind/runtime/src/index.ts)
 
 <a id="hiveminddream-agenda--log-only"></a>
 
@@ -636,7 +636,7 @@ Source: [`packages/hivemind/employee-delegation/src/index.ts:120`](../packages/h
 'hivemind/employee-selection': { id: string | null; name?: string; role?: string; avatarUrl?: string }
 ```
 
-Source: [`packages/hivemind/runtime/src/index.ts:39`](../packages/hivemind/runtime/src/index.ts)
+Source: [`packages/hivemind/runtime/src/index.ts:52`](../packages/hivemind/runtime/src/index.ts)
 
 <a id="hivemindevidence-gap-recorded--log-only"></a>
 
@@ -658,7 +658,7 @@ Source: [`packages/hivemind/operating-workstreams/src/index.ts:94`](../packages/
 'hivemind/generation-created': GenerationReceipt
 ```
 
-Source: [`packages/hivemind/artifact-renderer/src/generation.ts:85`](../packages/hivemind/artifact-renderer/src/generation.ts)
+Source: [`packages/hivemind/artifact-renderer/src/generation.ts:92`](../packages/hivemind/artifact-renderer/src/generation.ts)
 
 <a id="hivemindhq-calendar-item--log-only"></a>
 
@@ -697,7 +697,7 @@ Source: [`packages/hivemind/hq-runtime/src/control.ts:37`](../packages/hivemind/
 }
 ```
 
-Source: [`packages/hivemind/hq-runtime/src/index.ts:48`](../packages/hivemind/hq-runtime/src/index.ts)
+Source: [`packages/hivemind/hq-runtime/src/index.ts:49`](../packages/hivemind/hq-runtime/src/index.ts)
 
 <a id="hivemindhq-mode--log-only"></a>
 
@@ -719,7 +719,7 @@ Source: [`packages/hivemind/hq-runtime/src/control.ts:33`](../packages/hivemind/
 'hivemind/hq-task-artifacts': TaskArtifactLinks
 ```
 
-Source: [`packages/hivemind/hq-runtime/src/index.ts:46`](../packages/hivemind/hq-runtime/src/index.ts)
+Source: [`packages/hivemind/hq-runtime/src/index.ts:47`](../packages/hivemind/hq-runtime/src/index.ts)
 
 <a id="hivemindhq-task-contract--log-only"></a>
 
@@ -730,7 +730,7 @@ Source: [`packages/hivemind/hq-runtime/src/index.ts:46`](../packages/hivemind/hq
 'hivemind/hq-task-contract': CompanyTaskContract
 ```
 
-Source: [`packages/hivemind/hq-runtime/src/index.ts:42`](../packages/hivemind/hq-runtime/src/index.ts)
+Source: [`packages/hivemind/hq-runtime/src/index.ts:43`](../packages/hivemind/hq-runtime/src/index.ts)
 
 <a id="hivemindhq-task-review--log-only"></a>
 
@@ -741,7 +741,7 @@ Source: [`packages/hivemind/hq-runtime/src/index.ts:42`](../packages/hivemind/hq
 'hivemind/hq-task-review': HqTaskReview
 ```
 
-Source: [`packages/hivemind/hq-runtime/src/index.ts:44`](../packages/hivemind/hq-runtime/src/index.ts)
+Source: [`packages/hivemind/hq-runtime/src/index.ts:45`](../packages/hivemind/hq-runtime/src/index.ts)
 
 <a id="hivemindmedia-workflow-ended--log-only"></a>
 
@@ -752,7 +752,7 @@ Source: [`packages/hivemind/hq-runtime/src/index.ts:44`](../packages/hivemind/hq
 'hivemind/media-workflow-ended': MediaEnd
 ```
 
-Source: [`packages/hivemind/artifact-renderer/src/media-workflow.ts:38`](../packages/hivemind/artifact-renderer/src/media-workflow.ts)
+Source: [`packages/hivemind/artifact-renderer/src/media-workflow.ts:53`](../packages/hivemind/artifact-renderer/src/media-workflow.ts)
 
 <a id="hivemindmedia-workflow-started--log-only"></a>
 
@@ -763,7 +763,7 @@ Source: [`packages/hivemind/artifact-renderer/src/media-workflow.ts:38`](../pack
 'hivemind/media-workflow-started': MediaStart
 ```
 
-Source: [`packages/hivemind/artifact-renderer/src/media-workflow.ts:36`](../packages/hivemind/artifact-renderer/src/media-workflow.ts)
+Source: [`packages/hivemind/artifact-renderer/src/media-workflow.ts:51`](../packages/hivemind/artifact-renderer/src/media-workflow.ts)
 
 <a id="hivemindmemory-save--log-only"></a>
 
@@ -790,7 +790,7 @@ Source: [`packages/hivemind/memory/src/index.ts:73`](../packages/hivemind/memory
 'hivemind/operating-context': OperatingContextRecorded
 ```
 
-Source: [`packages/hivemind/playbooks/src/index.ts:190`](../packages/hivemind/playbooks/src/index.ts)
+Source: [`packages/hivemind/playbooks/src/index.ts:192`](../packages/hivemind/playbooks/src/index.ts)
 
 <a id="hivemindoperating-receipt--log-only"></a>
 
@@ -812,7 +812,7 @@ Source: [`packages/hivemind/operating-workstreams/src/index.ts:96`](../packages/
 'hivemind/playbooks-loaded': PlaybooksLoaded
 ```
 
-Source: [`packages/hivemind/playbooks/src/index.ts:192`](../packages/hivemind/playbooks/src/index.ts)
+Source: [`packages/hivemind/playbooks/src/index.ts:194`](../packages/hivemind/playbooks/src/index.ts)
 
 <a id="hivemindread-scope--log-only"></a>
 
@@ -823,7 +823,7 @@ Source: [`packages/hivemind/playbooks/src/index.ts:192`](../packages/hivemind/pl
 'hivemind/read-scope': { scope: 'full' | 'personal' | 'organization' | 'project'; project?: string }
 ```
 
-Source: [`packages/hivemind/runtime/src/index.ts:35`](../packages/hivemind/runtime/src/index.ts)
+Source: [`packages/hivemind/runtime/src/index.ts:48`](../packages/hivemind/runtime/src/index.ts)
 
 <a id="hivemindreply-language--log-only"></a>
 
@@ -834,7 +834,7 @@ Source: [`packages/hivemind/runtime/src/index.ts:35`](../packages/hivemind/runti
 'hivemind/reply-language': { language: string }
 ```
 
-Source: [`packages/hivemind/runtime/src/index.ts:41`](../packages/hivemind/runtime/src/index.ts)
+Source: [`packages/hivemind/runtime/src/index.ts:54`](../packages/hivemind/runtime/src/index.ts)
 
 <a id="hivemindrequest-assembly-budget--log-only"></a>
 
@@ -845,7 +845,7 @@ Source: [`packages/hivemind/runtime/src/index.ts:41`](../packages/hivemind/runti
 'hivemind/request-assembly-budget': RequestAssemblyBudget
 ```
 
-Source: [`packages/hivemind/playbooks/src/index.ts:198`](../packages/hivemind/playbooks/src/index.ts)
+Source: [`packages/hivemind/playbooks/src/index.ts:200`](../packages/hivemind/playbooks/src/index.ts)
 
 <a id="hivemindresearch-gathered--log-only"></a>
 
@@ -902,6 +902,39 @@ Source: [`packages/hivemind/research/src/index.ts:174`](../packages/hivemind/res
 
 Source: [`packages/hivemind/research/src/index.ts:176`](../packages/hivemind/research/src/index.ts)
 
+<a id="hivemindroom-message-delivered--log-only"></a>
+
+#### `hivemind/room-message-delivered` — log-only
+
+```ts persistence-catalog
+/** Sender acknowledgement linking its message id to the confirmed receiver room. */
+'hivemind/room-message-delivered': { id: string; targetId: SessionId }
+```
+
+Source: [`packages/api/session-controller/src/room-messaging.ts:40`](../packages/api/session-controller/src/room-messaging.ts)
+
+<a id="hivemindroom-message-queued--log-only"></a>
+
+#### `hivemind/room-message-queued` — log-only
+
+```ts persistence-catalog
+/** Sender outbox packet committed before delivery; stable id binds its exact room and payload. */
+'hivemind/room-message-queued': RoomMessage
+```
+
+Source: [`packages/api/session-controller/src/room-messaging.ts:36`](../packages/api/session-controller/src/room-messaging.ts)
+
+<a id="hivemindroom-message-received--log-only"></a>
+
+#### `hivemind/room-message-received` — log-only
+
+```ts persistence-catalog
+/** Receiver acknowledgement of one admitted question/reply or quietly saved update. */
+'hivemind/room-message-received': RoomMessage
+```
+
+Source: [`packages/api/session-controller/src/room-messaging.ts:38`](../packages/api/session-controller/src/room-messaging.ts)
+
 <a id="hivemindrun-evaluation--log-only"></a>
 
 #### `hivemind/run-evaluation` — log-only
@@ -922,7 +955,7 @@ Source: [`packages/hivemind/operating-workstreams/src/index.ts:98`](../packages/
 'hivemind/run-plan': RunPlanRecorded
 ```
 
-Source: [`packages/hivemind/playbooks/src/index.ts:194`](../packages/hivemind/playbooks/src/index.ts)
+Source: [`packages/hivemind/playbooks/src/index.ts:196`](../packages/hivemind/playbooks/src/index.ts)
 
 <a id="hivemindrun-plan-revised--log-only"></a>
 
@@ -933,7 +966,7 @@ Source: [`packages/hivemind/playbooks/src/index.ts:194`](../packages/hivemind/pl
 'hivemind/run-plan-revised': RunPlanRecorded
 ```
 
-Source: [`packages/hivemind/playbooks/src/index.ts:196`](../packages/hivemind/playbooks/src/index.ts)
+Source: [`packages/hivemind/playbooks/src/index.ts:198`](../packages/hivemind/playbooks/src/index.ts)
 
 <a id="hivemindsession-owner--log-only"></a>
 
@@ -977,7 +1010,7 @@ Source: [`packages/hivemind/runtime/src/continuity.ts:46`](../packages/hivemind/
 'hivemind/web-search-route': { provider: 'native' | 'existing'; fallback: boolean }
 ```
 
-Source: [`packages/hivemind/runtime/src/index.ts:37`](../packages/hivemind/runtime/src/index.ts)
+Source: [`packages/hivemind/runtime/src/index.ts:50`](../packages/hivemind/runtime/src/index.ts)
 
 <a id="hivemindworkstream-approval--log-only"></a>
 
