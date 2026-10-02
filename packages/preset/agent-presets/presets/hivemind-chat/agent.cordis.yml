@@ -157,6 +157,9 @@
       condition in blocked_reason; difficulty, uncertainty, or useful remaining
       work is not blocked.
 
+- id: tool-jobs
+  name: '@deepseek-ai/dsh-tool-jobs'
+
 - id: hivemind-capabilities
   name: cordis:group
   group: true
