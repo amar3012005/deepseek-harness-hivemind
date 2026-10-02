@@ -572,7 +572,7 @@ Source: [`packages/hivemind/connected-apps/src/index.ts:43`](../packages/hivemin
 }
 ```
 
-Source: [`packages/hivemind/runtime/src/index.ts:57`](../packages/hivemind/runtime/src/index.ts)
+Source: [`packages/hivemind/runtime/src/index.ts:58`](../packages/hivemind/runtime/src/index.ts)
 
 <a id="hiveminddream-agenda--log-only"></a>
 
@@ -636,7 +636,7 @@ Source: [`packages/hivemind/employee-delegation/src/index.ts:120`](../packages/h
 'hivemind/employee-selection': { id: string | null; name?: string; role?: string; avatarUrl?: string }
 ```
 
-Source: [`packages/hivemind/runtime/src/index.ts:53`](../packages/hivemind/runtime/src/index.ts)
+Source: [`packages/hivemind/runtime/src/index.ts:54`](../packages/hivemind/runtime/src/index.ts)
 
 <a id="hivemindevidence-gap-recorded--log-only"></a>
 
@@ -659,6 +659,28 @@ Source: [`packages/hivemind/operating-workstreams/src/index.ts:94`](../packages/
 ```
 
 Source: [`packages/hivemind/artifact-renderer/src/generation.ts:92`](../packages/hivemind/artifact-renderer/src/generation.ts)
+
+<a id="hivemindhq-awakening-checkpoint--log-only"></a>
+
+#### `hivemind/hq-awakening-checkpoint` — log-only
+
+```ts persistence-catalog
+/** Saves an investigation stage, inspected evidence references and presentation cards without dispatching work. */
+'hivemind/hq-awakening-checkpoint': AwakeningCheckpoint
+```
+
+Source: [`packages/hivemind/hq-runtime/src/awakening.ts:25`](../packages/hivemind/hq-runtime/src/awakening.ts)
+
+<a id="hivemindhq-awakening-start--log-only"></a>
+
+#### `hivemind/hq-awakening-start` — log-only
+
+```ts persistence-catalog
+/** Records the human-triggered first awakening and its initial turn and timestamp for restart continuity. */
+'hivemind/hq-awakening-start': { readonly version: 1; readonly turn: number; readonly startedAt: string }
+```
+
+Source: [`packages/hivemind/hq-runtime/src/awakening.ts:23`](../packages/hivemind/hq-runtime/src/awakening.ts)
 
 <a id="hivemindhq-calendar-item--log-only"></a>
 
@@ -697,7 +719,7 @@ Source: [`packages/hivemind/hq-runtime/src/control.ts:39`](../packages/hivemind/
 }
 ```
 
-Source: [`packages/hivemind/hq-runtime/src/index.ts:55`](../packages/hivemind/hq-runtime/src/index.ts)
+Source: [`packages/hivemind/hq-runtime/src/index.ts:56`](../packages/hivemind/hq-runtime/src/index.ts)
 
 <a id="hivemindhq-mode--log-only"></a>
 
@@ -763,7 +785,7 @@ Source: [`packages/hivemind/hq-runtime/src/rest.ts:36`](../packages/hivemind/hq-
 'hivemind/hq-task-artifacts': TaskArtifactLinks
 ```
 
-Source: [`packages/hivemind/hq-runtime/src/index.ts:53`](../packages/hivemind/hq-runtime/src/index.ts)
+Source: [`packages/hivemind/hq-runtime/src/index.ts:54`](../packages/hivemind/hq-runtime/src/index.ts)
 
 <a id="hivemindhq-task-contract--log-only"></a>
 
@@ -774,7 +796,7 @@ Source: [`packages/hivemind/hq-runtime/src/index.ts:53`](../packages/hivemind/hq
 'hivemind/hq-task-contract': CompanyTaskContract
 ```
 
-Source: [`packages/hivemind/hq-runtime/src/index.ts:49`](../packages/hivemind/hq-runtime/src/index.ts)
+Source: [`packages/hivemind/hq-runtime/src/index.ts:50`](../packages/hivemind/hq-runtime/src/index.ts)
 
 <a id="hivemindhq-task-review--log-only"></a>
 
@@ -785,7 +807,7 @@ Source: [`packages/hivemind/hq-runtime/src/index.ts:49`](../packages/hivemind/hq
 'hivemind/hq-task-review': HqTaskReview
 ```
 
-Source: [`packages/hivemind/hq-runtime/src/index.ts:51`](../packages/hivemind/hq-runtime/src/index.ts)
+Source: [`packages/hivemind/hq-runtime/src/index.ts:52`](../packages/hivemind/hq-runtime/src/index.ts)
 
 <a id="hivemindmedia-workflow-ended--log-only"></a>
 
@@ -867,7 +889,7 @@ Source: [`packages/hivemind/playbooks/src/index.ts:194`](../packages/hivemind/pl
 'hivemind/read-scope': { scope: 'full' | 'personal' | 'organization' | 'project'; project?: string }
 ```
 
-Source: [`packages/hivemind/runtime/src/index.ts:49`](../packages/hivemind/runtime/src/index.ts)
+Source: [`packages/hivemind/runtime/src/index.ts:50`](../packages/hivemind/runtime/src/index.ts)
 
 <a id="hivemindreply-language--log-only"></a>
 
@@ -878,7 +900,7 @@ Source: [`packages/hivemind/runtime/src/index.ts:49`](../packages/hivemind/runti
 'hivemind/reply-language': { language: string }
 ```
 
-Source: [`packages/hivemind/runtime/src/index.ts:55`](../packages/hivemind/runtime/src/index.ts)
+Source: [`packages/hivemind/runtime/src/index.ts:56`](../packages/hivemind/runtime/src/index.ts)
 
 <a id="hivemindrequest-assembly-budget--log-only"></a>
 
@@ -1054,7 +1076,7 @@ Source: [`packages/hivemind/runtime/src/continuity.ts:46`](../packages/hivemind/
 'hivemind/web-search-route': { provider: 'native' | 'existing'; fallback: boolean }
 ```
 
-Source: [`packages/hivemind/runtime/src/index.ts:51`](../packages/hivemind/runtime/src/index.ts)
+Source: [`packages/hivemind/runtime/src/index.ts:52`](../packages/hivemind/runtime/src/index.ts)
 
 <a id="hivemindworkstream-approval--log-only"></a>
 

@@ -52,6 +52,8 @@ export const KNOWN_SESSION_EVENT_TYPES: ReadonlySet<string> = new Set([
   'hivemind/employee-selection',
   'hivemind/evidence-gap-recorded',
   'hivemind/generation-created',
+  'hivemind/hq-awakening-checkpoint',
+  'hivemind/hq-awakening-start',
   'hivemind/hq-calendar-item',
   'hivemind/hq-calendar-wake',
   'hivemind/hq-employee-assignment',

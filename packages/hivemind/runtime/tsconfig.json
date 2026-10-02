@@ -6,6 +6,7 @@
   },
   "include": ["src"],
   "references": [
+    { "path": "../../attachment/attachment" },
     { "path": "../../session/session-projection" },
     { "path": "../identity" },
     { "path": "../execution-scope" },

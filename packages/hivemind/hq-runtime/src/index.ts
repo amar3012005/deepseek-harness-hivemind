@@ -9,6 +9,7 @@ import {
 import { createHash } from 'node:crypto'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { installRest, recoverRest, acknowledgeRestNotes, restBriefing } from './rest.ts'
+import { installAwakening, awakeningContext } from './awakening.ts'
 import { wakeBriefing } from './wake-briefing.ts'
 import type {} from './control.ts'
 import { calendarItems } from './calendar.ts'
@@ -63,6 +64,7 @@ declare module '@deepseek-ai/dsh-session/types' {
 }
 export function apply(ctx: Context): void {
   installRest(ctx)
+  installAwakening(ctx)
   const briefed = new WeakMap<object, number>()
   ctx.effect(() => ctx.on('agent/pre-step', async ({ agent, turn, signal }, next) => {
     const decision = await next()
@@ -81,9 +83,10 @@ export function apply(ctx: Context): void {
     const workspace = await ctx.hivemindHq.workspace(agent)
     briefed.set(agent, turn)
     const rest = restBriefing(agent, decision.messages)
+    const awakening = await awakeningContext(ctx, agent, turn, decision.messages)
     return { ...decision, messages: [createUserMessage({
       source: { kind: 'plugin', plugin: 'hivemind-hq/wake-briefing', form: 'recall', sections: [rest.section] },
-      content: [{ type: 'text', text: `${wakeBriefing(workspace, agent.session.snapshotEvents(), agent.id)}\n${rest.text}` }],
+      content: [{ type: 'text', text: `${wakeBriefing(workspace, agent.session.snapshotEvents(), agent.id)}\n${rest.text}\n${awakening}` }],
     }), ...decision.messages] }
   }, { prepend: true }))
   ctx.effect(() =>

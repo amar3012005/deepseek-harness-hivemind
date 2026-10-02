@@ -1,3 +1,4 @@
+import { RuntimeAwakening } from './RuntimeAwakening.tsx'
 import { BrainConnections } from './BrainConnections.tsx'
 import type {} from '@deepseek-ai/dsh-client-ui-schedule/client'
 import { DreamingAutomation } from './DreamingAutomation.tsx'
@@ -507,6 +508,11 @@ export function apply(ctx: ClientContext): void {
       const conversation = scope?.get('conversation')
       if (conversation !== undefined) void conversation.send(prompt)
     }
+    ctx.slots.inject('conversation.chat.turnTail', () => ctx.slots.register({
+      name: 'conversation.chat.turnTail', priority: 35,
+      select: owner => owner.turn.turn,
+      inject: sessionId => ({ events: employeeEvents(sessionId) }),
+    }, ({ matched, events }) => createElement(RuntimeAwakening, { turn: matched, events })))
     ctx.slots.inject('conversation.chat.turnTail', () => ctx.slots.register({
       name: 'conversation.chat.turnTail', priority: 40,
       select: selectContextualFollowUps,

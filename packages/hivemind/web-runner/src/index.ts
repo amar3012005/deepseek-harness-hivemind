@@ -461,6 +461,25 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
       }
     },
   }), 'hivemind-web-runner: authenticated employee catalog')
+  ctx.effect(() => ctx.webServer.register({
+    kind: 'exact', path: '/api/hivemind/onboarding/screenshot',
+    handler: async (req, res) => {
+      if (req.method !== 'GET') { json(res, 405, { diagnostic: 'method_not_allowed' }, { allow: 'GET' }); return }
+      const principal = ctx.connection.principal({ headers: { host: publicHost(req) || req.headers.host, cookie: req.headers.cookie } })
+      if (principal?.profile !== 'hivemind-chat' || !nonEmpty(principal.user_id) || !nonEmpty(principal.org_id)) { json(res, 401, { diagnostic: 'authentication_required' }); return }
+      try {
+        const response = await fetch(new URL('/internal/v1/harness-chat/core/v1/hyperagents/onboarding/homepage-screenshot', projectCatalogBase), {
+          headers: { accept: 'application/json', authorization: `Bearer ${serviceToken(principal, projectCatalogSecret)}` },
+          redirect: 'manual', signal: AbortSignal.timeout(10_000),
+        })
+        if (!response.ok) { json(res, response.status === 404 ? 404 : 503, { diagnostic: 'retained_screenshot_unavailable' }); return }
+        const payload = await response.json() as Record<string, unknown>
+        if (typeof payload.base64 !== 'string' || payload.base64.length > 2 * 1024 * 1024 || !['image/jpeg', 'image/png', 'image/webp'].includes(String(payload.media_type))) throw new Error('invalid retained screenshot')
+        res.writeHead(200, { 'content-type': String(payload.media_type), 'cache-control': 'private, no-store', 'x-content-type-options': 'nosniff' })
+        res.end(Buffer.from(payload.base64, 'base64'))
+      } catch { json(res, 503, { diagnostic: 'retained_screenshot_unavailable' }) }
+    },
+  }), 'hivemind-web-runner: tenant-authenticated retained onboarding screenshot')
   ctx.effect(() => ctx.webServer.register({ kind: 'exact', path: HEALTH_PATH, handler: async (_req, res) => {
     try {
       const persistence = ctx.sessionPersistence as typeof ctx.sessionPersistence & { health?: () => Promise<void> }
