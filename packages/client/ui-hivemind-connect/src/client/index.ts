@@ -509,12 +509,51 @@ export function apply(ctx: ClientContext): void {
       select: selectContextualFollowUps,
     }, ({ matched }) => createElement(ContextualFollowUps, { matched, send: sendFollowUp })))
   })
+  // Draft-only actions use the native plus menu and per-session input facade.
+  // No task, schedule, or generation starts until the user submits the draft.
+  const composerActions = [
+    { name: 'Create image', token: 'create-image', detail: 'Describe the image you want to create' },
+    { name: 'Schedule task', token: 'schedule-task', detail: 'Describe the task and when it should run' },
+    { name: 'Create PDF', token: 'create-pdf', detail: 'Describe the PDF you want to create' },
+    { name: 'Create document', token: 'create-document', detail: 'Describe the document you want to create' },
+  ] as const
+  ctx.inject(['commandUi', 'conversation'], (scope: ClientContext) => {
+    const commandUi = scope.get('commandUi') as {
+      register(contribution: {
+        name: string
+        description(): string
+        available(): boolean
+        ui: {
+          kind: 'action'
+          run(session: { sessionId: SessionId }): void
+        }
+      }): () => void
+    } | undefined
+    if (commandUi === undefined) return
+    for (const action of composerActions) scope.effect(() => commandUi.register({
+      name: action.name,
+      description: () => action.detail,
+      available: () => window.location.pathname.startsWith('/hivemind/app/'),
+      ui: { kind: 'action', run: ({ sessionId }) => {
+        const actx = ctx.sessions.scope(sessionId)
+        if (actx === undefined) return
+        const input = scope.conversation.input.for(actx)
+        const draft = input.state.getSnapshot().draft.replace(/^@(create-image|schedule-task|create-pdf|create-document)\s*/, '')
+        input.setDraft(`@${action.token} ${draft}`)
+      } },
+    }), `hivemind composer action: ${action.token}`)
+  })
   ctx.inject(['inputTriggers'], (scope: ClientContext) => {
     const inputTriggers = scope.get('inputTriggers') as {
-      registerSource(source: ReturnType<typeof createConnectorMentionSource>): () => void
+      registerSource(source: ReturnType<typeof createConnectorMentionSource> & { lexicon?: () => readonly string[] }): () => void
     } | undefined
     if (inputTriggers === undefined) return
     ctx.effect(() => inputTriggers.registerSource(createConnectorMentionSource()), 'ui-hivemind-connect: lazy connector @ source')
+    ctx.effect(() => inputTriggers.registerSource({
+      trigger: '@', name: 'composer-actions', order: 0,
+      candidates: async () => [], onPick: () => undefined,
+      lexicon: () => composerActions.map(action => action.token),
+    }), 'ui-hivemind-connect: action tag highlighting')
   })
   ctx.slots.inject('sidebar.brand.name', () => ctx.slots.register({
     name: 'sidebar.brand.name',
