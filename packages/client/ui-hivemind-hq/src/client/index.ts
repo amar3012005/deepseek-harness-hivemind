@@ -56,6 +56,13 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
         calendar.sessions.open(id)
         calendar.layout.selectPanel(null)
       }
+      // The outer OS sidebar expresses navigation intent, not a session ID or
+      // permission grant. The server remains the authority for the HQ root.
+      if (new URLSearchParams(window.location.search).get('runtime') === '1') {
+        void runtime.then((result) => {
+          if (result.ok) openSession(result.value.sessionId)
+        }, error => calendar.logger.warn(`HQ navigation unavailable: ${String(error)}`))
+      }
       const workspace: Omit<CompanyWorkspaceProps, 'sessionId'> = {
         progress: (id, taskId) => calendar.remote.hivemindHq.taskProgress(id, taskId),
         history: (id, wakeId) => calendar.remote.hivemindHq.wakeHistory(id, wakeId),
