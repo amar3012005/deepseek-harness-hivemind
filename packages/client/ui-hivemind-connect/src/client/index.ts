@@ -617,3 +617,5 @@ export function apply(ctx: ClientContext): void {
     }
   }, 'ui-hivemind-connect: filesystem-free native session bootstrap')
 }
+
+export { RuntimeAwakening } from './RuntimeAwakening.tsx'
