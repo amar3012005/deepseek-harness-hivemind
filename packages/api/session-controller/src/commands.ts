@@ -118,7 +118,21 @@ export class SessionCommandController {
         room === undefined ? request.agentPreset : room === 'runtime' ? 'hivemind-hq' : 'hivemind-hyperagents',
       )
     } catch (error) {
-      this.rejectCreation(sessionId, error)
+      // A tenant-resolved employee room may have been switched to Brain.
+      // Reopen that same room; native employee selection restores its mode.
+      // Explicit session adoption and HQ preset admission stay strict.
+      if (roomId !== undefined && room !== 'runtime'
+        && error instanceof ApiSessionPresetConflict
+        && error.requestedPreset === 'hivemind-hyperagents'
+        && error.existingPreset === 'hivemind-chat') {
+        try {
+          adopted = await this.agents.ensureSession(sessionId, cwd, true)
+        } catch (adoptionError) {
+          this.rejectCreation(sessionId, adoptionError)
+        }
+      } else {
+        this.rejectCreation(sessionId, error)
+      }
     }
     if (workspace !== undefined) {
       try {
