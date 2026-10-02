@@ -211,6 +211,10 @@ const CORE_TOOLS = [
   'hivemind_research_answer',
   'hivemind_browser_capture',
   'hivemind_read_attachment',
+  'hivemind_media_generate',
+  'job_output',
+  'job_list',
+  'job_kill',
 ] as const
 
 // Schedule registers in each eligible Agent scope. Scoped registrations are

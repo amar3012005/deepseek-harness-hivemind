@@ -40,4 +40,6 @@ README and other Markdown documents use the same lane: the native file tool read
 
 Both HIVEMIND presets select `imageProvider: codex` on the shared renderer. The native app-server image tool uses the existing protected Codex OAuth store through a host-only credential resolver. It does not use the plan-sharing Responses endpoint or silently fall back to separately billed API generation. Server configuration controls the executable, model, private state directory, and timeout.
 
+The HIVE capability projection exposes image generation and native job tracking without discovery or leasing. The Codex worker retains its built-in OAuth provider configuration; only documented feature switches are applied.
+
 `hivemind_media_generate` accepts a complete brief, optional transparency, and up to five session-owned image references for edits. Stable operation IDs persist intent before dispatch and reuse completed receipts. Interrupted operations reconcile the recorded Codex thread; unknown outcomes stop without regeneration. Exact output bytes and PNG previews are stored as authorized attachments. The local background job itself does not survive a runner restart; recovery requires the same operation inputs with `resume_operation: true`. Account entitlement and provider availability remain external requirements.
