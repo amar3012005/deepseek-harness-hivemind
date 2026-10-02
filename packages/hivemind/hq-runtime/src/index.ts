@@ -89,7 +89,7 @@ export function apply(ctx: Context): void {
       content: [{ type: 'text', text: `${wakeBriefing(workspace, agent.session.snapshotEvents(), agent.id)}\n${awakening ? '' : rest.text}` }],
     })
     if (awakening) return { ...decision, messages: [briefing, ...decision.messages, createUserMessage({
-      source: { kind: 'plugin', plugin: 'hivemind-hq/first-awakening', form: 'snapshot' },
+      source: { kind: 'plugin', plugin: 'hivemind-hq/first-awakening', form: 'snapshot', sections: [{ name: 'hq-first-awakening', text: awakening }] },
       content: [{ type: 'text', text: awakening }],
     })] }
     return { ...decision, messages: [briefing, ...decision.messages] }
