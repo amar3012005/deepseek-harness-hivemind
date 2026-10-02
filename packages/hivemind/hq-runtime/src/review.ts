@@ -20,7 +20,9 @@ export function savedArtifactText(
   events: readonly LedgerEvent[],
   artifactId: string,
 ): string | undefined {
-  for (const event of events.toReversed()) {
+  for (let eventIndex = events.length - 1; eventIndex >= 0; eventIndex--) {
+    const event = events[eventIndex]
+    if (!event) continue
     if (event.type !== 'tool/result') continue
     const message = object(object(event.data)?.['message'])
     const content = message?.['content']
@@ -46,7 +48,7 @@ export function savedArtifactText(
         })
       if (!matched) continue
       const callId = block['toolCallId'] ?? object(message?.['source'])?.['callId']
-      const call = events.findLast(
+      const call = events.slice(0, eventIndex).findLast(
         item => item.type === 'tool/call' && object(item.data)?.['callId'] === callId,
       )
       const data = object(call?.data)
@@ -143,7 +145,7 @@ export function savedSourceEvidence(
   const passages = [...document.matchAll(/[“"]([^”"\n]{12,400})[”"]/g)].flatMap(match =>
     match[1] === undefined ? [] : [match[1]],
   )
-  for (const event of events) {
+  for (const [eventIndex, event] of events.entries()) {
     if (event.type !== 'tool/result') continue
     const message = object(object(event.data)?.['message'])
     if (!Array.isArray(message?.['content'])) continue
@@ -156,7 +158,7 @@ export function savedSourceEvidence(
       )
         continue
       const callId = block['toolCallId'] ?? object(message['source'])?.['callId']
-      const call = events.findLast(
+      const call = events.slice(0, eventIndex).findLast(
         item => item.type === 'tool/call' && object(item.data)?.['callId'] === callId,
       )
       if (!['browser_markdown', 'browser_extract'].includes(String(object(call?.data)?.['name'])))

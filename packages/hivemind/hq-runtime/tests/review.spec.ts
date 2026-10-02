@@ -28,3 +28,12 @@ it('decodes the observed Workers AI REST wrapper without mistaking HTTP success 
   try { expect((await jevReview({ document: 'Decision: inspect public sources.' }, ['An explicit decision'], new AbortController().signal)).status).toBe('accepted') }
   finally { request.mockRestore(); vi.unstubAllEnvs() }
 })
+
+
+it('correlates receipts to preceding calls when a provider reuses IDs across model turns', () => {
+  const call = (name: string, content: string) => ({ type: 'tool/call', data: { callId: 'call_0', name, arguments: JSON.stringify({ content }) } })
+  const result = (id: string) => ({ type: 'tool/result', data: { message: { content: [{ type: 'tool-result', toolCallId: 'call_0', content: [{ type: 'text', text: JSON.stringify({ artifact_id: id }) }] }] } } })
+  const events = [call('hivemind_generate', '# First'), result('first'), call('hivemind_generate', '# Revised'), result('revised'), call('hivemind_hq_contract', '')]
+  expect(savedArtifactText(events, 'first')).toBe('# First')
+  expect(savedArtifactText(events, 'revised')).toBe('# Revised')
+})
