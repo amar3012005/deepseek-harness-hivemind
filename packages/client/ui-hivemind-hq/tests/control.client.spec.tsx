@@ -36,3 +36,17 @@ it('does not retry or claim success after an uncertain write', async () => {
   await waitFor(() => expect(screen.getByRole('button', { name: en.enable }).hasAttribute('disabled')).toBe(false))
   expect(setMode).toHaveBeenCalledTimes(1)
 })
+
+
+it('shows Wake up only for the first paused revision and preserves human control', async () => {
+  const load = vi.fn().mockResolvedValue({ ok: true, value: { revision: 0, enabled: false, changedAt: 0 } })
+  const setMode = vi.fn().mockResolvedValue({ ok: true, value: { ok: true, value: mode } })
+  render(<HqControlAction {...base} load={load} setMode={setMode} />)
+  const wake = await screen.findByRole('button', { name: en.wake })
+  await waitFor(() => expect(wake.hasAttribute('disabled')).toBe(false))
+  expect(screen.getByText(en.paused)).toBeTruthy()
+  expect(setMode).not.toHaveBeenCalled()
+  fireEvent.click(wake)
+  await screen.findByRole('button', { name: en.pause })
+  expect(setMode).toHaveBeenCalledWith('hq', { enabled: true, expectedRevision: 0 })
+})

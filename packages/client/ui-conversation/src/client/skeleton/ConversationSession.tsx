@@ -158,6 +158,7 @@ export function ConversationSessionHeader({
             </div>
             <div className={css.headerCorner} data-conversation-header-corner="">
               {embeddedRoute && renderSlot('conversation.session.header.utilities', { environmentActivity: <>
+                {renderSlot('conversation.session.header.actions', {}, { only: 'hivemind.hq-mode' })}
                 <div style={{ borderTop: '1px solid #8882', marginTop: 12, paddingTop: 10, textAlign: 'left' }}>
                   <small style={{ display: 'block', marginBottom: 6 }}>Activity</small>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', minHeight: 32 }}>{renderSlot('conversation.session.header.actions', { compactJobs: true }, { only: 'job-list' })}</div>
