@@ -5,16 +5,19 @@ import { mkdir, writeFile } from 'node:fs/promises'
 import { resolve, relative, isAbsolute, join } from 'node:path'
 import type { FileAttachmentRef, ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import { defineTool } from '@deepseek-ai/dsh-tools'
+import type { MediaOwner } from './media-admission.ts'
 import type { DesignProfile, DesignQuality } from './design-kit.ts'
 
 /** Formats accepted by the compact generation consumer. */
 export type GenerationFormat = 'markdown_report' | 'pdf' | 'presentation' | 'spreadsheet' | 'web' | 'image' | 'video'
 /** Inputs already prepared by the parent runtime, without another planning model. */
 export interface GenerationRequest {
+  readonly reconcileOnly?: boolean
   readonly title: string
   readonly content: string
   readonly signal: AbortSignal
   readonly cwd: string
+  readonly owner?: MediaOwner
   readonly operationId?: string
   readonly transparentBackground?: boolean
   readonly referenceFiles?: readonly { readonly data: Uint8Array }[]
@@ -68,6 +71,7 @@ export class GenerationRegistry {
 
 /** A committed generated file, independent of the rendering provider. */
 export interface GenerationReceipt {
+  readonly owner?: MediaOwner
   readonly artifactId: string
   readonly title: string
   readonly format: GenerationFormat
@@ -98,7 +102,9 @@ export async function generateArtifact(
     readonly format: GenerationFormat
     readonly title: string
     readonly content: string
+    readonly owner?: MediaOwner
     readonly operationId?: string
+    readonly reconcileOnly?: boolean
     readonly transparentBackground?: boolean
     readonly referenceFiles?: readonly { readonly data: Uint8Array }[]
     readonly referenceImages?: readonly string[]
@@ -120,6 +126,8 @@ export async function generateArtifact(
   const provider = registry.get(input.format)
   const generated = await provider.generate({
     title: input.title, content: input.content, cwd, signal,
+    ...(input.reconcileOnly ? { reconcileOnly: true } : {}),
+    ...(input.owner === undefined ? {} : { owner: input.owner }),
     ...(input.operationId === undefined ? {} : { operationId: input.operationId }),
     ...(input.transparentBackground === undefined ? {} : { transparentBackground: input.transparentBackground }),
     ...(input.referenceFiles === undefined ? {} : { referenceFiles: input.referenceFiles }),
@@ -152,6 +160,7 @@ export async function generateArtifact(
       name: generatedPreview.nameSuffix === undefined ? filename : `${leaf}${generatedPreview.nameSuffix}`,
     })
   const receipt: GenerationReceipt = {
+    ...(input.owner ? { owner: input.owner } : {}),
     artifactId,
     title: input.title,
     format: provider.format,

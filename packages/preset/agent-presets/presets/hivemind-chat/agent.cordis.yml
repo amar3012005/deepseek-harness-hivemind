@@ -209,6 +209,11 @@
         outputDirectory: .hivemind/artifacts
         attachmentOnly: true
         imageProvider: codex
+        mediaRequireOwner: true
+        mediaGlobalConcurrency: 4
+        mediaTenantConcurrency: 1
+        mediaMaxQueued: 100
+        mediaDailyUserLimit: 50
         imageTimeoutMs: 600000
 
 - id: hivemind-skill-filesystem
