@@ -288,7 +288,7 @@ export class PostgresSessionPersistence extends SessionPersistence {
       AND (SELECT COALESCE(e.payload->'data'->>'id','runtime') FROM harness_session_events e
         WHERE e.session_id=s.id AND e.event_type IN ('hivemind/session-owner','hivemind/employee-selection')
         ORDER BY CASE WHEN e.event_type='hivemind/session-owner' THEN 0 ELSE 1 END,e.sequence LIMIT 1)=$3
-      ORDER BY (s.header->>'createdAt')::bigint,s.id LIMIT 1`, [...scopeParams(scope), key])
+      ORDER BY EXISTS(SELECT 1 FROM harness_session_events owned WHERE owned.session_id=s.id AND owned.org_id=s.org_id AND owned.user_id=s.user_id AND owned.event_type='hivemind/session-owner') DESC,(s.header->>'createdAt')::bigint,s.id LIMIT 1`, [...scopeParams(scope), key])
     return result.rows[0]?.id ?? stable
   }
 

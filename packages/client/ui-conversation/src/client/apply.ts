@@ -198,6 +198,7 @@ export function apply(ctx: Context, config: Config = Config({})): void {
     activateView(sessionId, readConversationViewPreference(sessionId))
   }
   const restoreCurrentView = (): void => {
+    if (ctx.fiber.uid === null) return
     const sessionId = sessions.list.getSnapshot().current
     if (sessionId !== undefined && sessions.binding(sessionId) !== undefined) {
       restoreView(sessionId)
@@ -205,6 +206,7 @@ export function apply(ctx: Context, config: Config = Config({})): void {
   }
   const conversationViews = createSnapshotStore<readonly ViewTab[]>(viewTabs())
   const refreshViews = (): void => {
+    if (ctx.fiber.uid === null) return
     const current = conversationViews.getSnapshot()
     const next = viewTabs()
     const unchanged = current.length === next.length
