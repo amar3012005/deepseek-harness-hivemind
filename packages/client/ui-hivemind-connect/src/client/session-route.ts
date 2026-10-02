@@ -116,7 +116,6 @@ export function setupHivemindSessionRouting(
         || preset === 'hyperagents' || preset === 'hyperagents-compressed') creatingOsSession = undefined
       else if (currentBase === HIVE_EMPLOYEE_HARNESS_PATH && summary.origin !== 'subagent') return id
     }
-    if (id === state.current && state.byId[id]?.blank === true && state.byId[id]?.origin !== 'subagent') return id
     return rootSession(state, id, currentBase)
   }
 
