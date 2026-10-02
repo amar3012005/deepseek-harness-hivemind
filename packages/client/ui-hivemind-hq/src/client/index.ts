@@ -45,7 +45,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
           ?? child.sessions.list.getSnapshot().byId[props.sessionId]?.agentPreset)
       return props.sessionId === canonical || preset === 'hivemind-hq' ? createElement(HqControlAction, props) : null
     }
-    // Initialize on authenticated Harness admission, before a calendar click.
+    // Resolve the canonical chat on authenticated admission without waking it.
     const runtime = child.remote.hivemindHq.start()
     void runtime.catch(error => child.logger.warn(`HQ initialization unavailable: ${String(error)}`))
     // HQ admission is independent of optional navigation. Calendar uses the
@@ -95,6 +95,26 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
           createElement(CompanyWorkspace, { ...workspace, sessionId: id }))
           : createElement('p', null, calendar.locale.bind('hivemind.hq')(error ? 'unavailable' : 'starting'))
       }
+      const runtimePanel = 'hivemind-runtime-chat' as MainPanelId
+      const RuntimeEntry = () => {
+        const [failed, setFailed] = useState(false)
+        useEffect(() => {
+          let disposed = false
+          void runtime.then((result) => {
+            if (disposed) return
+            if (result.ok) openSession(result.value.sessionId)
+            else setFailed(true)
+          }, () => { if (!disposed) setFailed(true) })
+          return () => { disposed = true }
+        }, [])
+        return createElement('p', null, calendar.locale.bind('hivemind.hq')(failed ? 'unavailable' : 'starting'))
+      }
+      calendar.slots.inject('main', () => calendar.slots.register({ name: 'main', key: runtimePanel,
+        locale: 'hivemind.hq', inject: () => ({}),
+      }, RuntimeEntry))
+      calendar.slots.inject('sidebar.panellist', () => calendar.slots.register({ name: 'sidebar.panellist', id: runtimePanel,
+        order: 10, locale: 'hivemind.hq', label: () => 'Runtime',
+      }, () => createElement('span', { 'aria-hidden': true }, '◉')))
       calendar.slots.inject('main', () => calendar.slots.register({ name: 'main', key: panel, locale: 'hivemind.hq', inject: () => ({}) }, Workspace))
       calendar.slots.inject('sidebar.panellist', () => calendar.slots.register({ name: 'sidebar.panellist', id: panel, order: 11,
         locale: 'hivemind.hq', label: () => 'Company calendar',

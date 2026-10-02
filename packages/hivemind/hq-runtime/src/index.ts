@@ -289,10 +289,20 @@ export function apply(ctx: Context): void {
           const slug = raw['slug']
           if (typeof slug !== 'string' || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug))
             throw new Error('hq_employee_slug_invalid')
-          const memberName = `${slug}-${task.id}`
-          let member = ctx.agentTeams.listMembers(root).find(value => value.name === memberName)
-          if (member?.status === 'failed' || member?.status === 'provisioning')
+          const baseName = `${slug}-${task.id}`
+          const attempts = ctx.agentTeams.listMembers(root).filter(value =>
+            value.name === baseName || value.name.startsWith(`${baseName}-retry-`))
+          let member = attempts.at(-1)
+          if (member?.status === 'provisioning')
             throw new Error('hq_employee_provisioning_requires_reconciliation')
+          // Native roster failures are immutable history. A bounded new attempt
+          // continues the same pending task without rewriting the failed child.
+          if (member?.status === 'failed') {
+            if (attempts.length >= 3) throw new Error('hq_employee_provisioning_retries_exhausted')
+            member = undefined
+          }
+          const memberName = attempts.length === 0 ? baseName
+            : member?.name ?? `${baseName}-retry-${attempts.length}`
           if (!member) {
             const assigned = await ctx.agentTeams.spawnTeammate(root, {
               name: memberName,

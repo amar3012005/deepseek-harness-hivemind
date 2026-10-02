@@ -61,10 +61,10 @@ export function HqControlAction({ sessionId, load, setMode, t }: HqControlAction
   }
   return <div className={css.control}>
     <Button size="sm" variant="outline" className={mode?.enabled ? css.pause : undefined}
-      disabled={pending || mode === null} aria-label={t(mode?.enabled ? 'pause' : 'enable')}
+      disabled={pending || mode === null} aria-label={t(mode?.enabled ? 'pause' : mode?.revision === 0 ? 'wake' : 'enable')}
       onClick={() => { void change() }}>
       {mode?.enabled && <span className={css.stop} aria-hidden="true" />}
-      {t(pending ? 'pending' : mode?.enabled ? 'pause' : 'enable')}
+      {t(pending ? 'pending' : mode?.enabled ? 'pause' : mode?.revision === 0 ? 'wake' : 'enable')}
     </Button>
     <Button size="sm" disabled={pending} aria-label={t('refresh')} icon={<IconRefreshOutline14 />} onClick={() => { void refresh() }} />
     {error && <span className={css.error} role="status">{error}</span>}

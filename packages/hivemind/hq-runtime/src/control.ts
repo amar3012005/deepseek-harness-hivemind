@@ -122,10 +122,8 @@ export class HqControl extends TypertRemoteService {
     const root = this.root(result.agent)
     if (!(await this.ctx.sessions.flush(root.session))) throw new Error('hq_mode_persistence_required')
     await this.ctx.hivemindHqOwnership.claim(id)
-    const mode = this.mode(root)
-    // Initialization is authorized by the workspace's human admission. Reloads
-    // never override a committed pause or create another startup occurrence.
-    if (mode.revision === 0) await this.setMode(root, { enabled: true, expectedRevision: 0 })
+    // Opening the company chat only provisions continuity. Its first activation
+    // is the explicit human Wake up command; reloads preserve autonomy state.
     return { sessionId: id, mode: this.mode(root) }
   }
 
