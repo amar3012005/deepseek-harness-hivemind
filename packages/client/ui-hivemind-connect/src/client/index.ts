@@ -521,6 +521,7 @@ export function apply(ctx: ClientContext): void {
     const inputTriggers = scope.get('inputTriggers') as {
       registerSource(source: Omit<ReturnType<typeof createConnectorMentionSource>, 'onPick'> & {
         lexicon?: () => readonly string[]
+        showGroupTitle?: boolean
         onPick(input: { candidate: Parameters<ReturnType<typeof createConnectorMentionSource>['onPick']>[0]['candidate']; session: { sessionId: SessionId } }): ReturnType<ReturnType<typeof createConnectorMentionSource>['onPick']> | 'handled'
       }): () => void
     } | undefined
