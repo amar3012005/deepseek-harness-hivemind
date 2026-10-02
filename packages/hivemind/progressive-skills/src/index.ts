@@ -94,7 +94,7 @@ export function apply(ctx: Context, config: Partial<Config> = {}): void {
       const nativeSkill = await ctx.skills.get(skillName, options)
       const skill = nativeSkill ?? THINK_SKILLS.find(candidate => candidate.name === skillName)
       if (skill === undefined || (nativeSkill !== undefined && !isModelInvocable(nativeSkill))) throw new TypeError(`hivemind-progressive-skills: unavailable skill ${skillName}`)
-      return { status: 'ready', operation: 'load', skill: { name: skill.name, description: skill.description, content: skill.content, resource_base: 'resourceBase' in skill ? skill.resourceBase : undefined } }
+      return { status: 'ready', operation: 'load', skill: { name: skill.name, description: skill.description, content: skill.content, ...('resourceBase' in skill ? { resource_base: skill.resourceBase } : {}) } }
     },
     presentCall(args) { return { card: 'generic', title: 'Use a specialized skill', kind: 'read', rawInput: String(args.operation ?? '') } },
   }))
