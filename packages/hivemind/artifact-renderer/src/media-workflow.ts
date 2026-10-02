@@ -53,6 +53,7 @@ function sourceImage(agent: Agent, artifactId: string | undefined): string | und
 }
 
 async function referenceFiles(ctx: Context, agent: Agent, ids: readonly string[], latestUpload: boolean): Promise<{ data: Uint8Array }[]> {
+  if (ids.length > 5) throw new Error('Native image editing accepts at most five reference images')
   const references: { data: Uint8Array }[] = []
   for (const id of ids) {
     const event = agent.session.snapshotEvents().find(item => item.type === 'hivemind/generation-created' && item.data.artifactId === id)

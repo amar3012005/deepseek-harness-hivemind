@@ -39,7 +39,10 @@ class ImageWire {
   constructor(config: CodexImageConfig, root: string, private readonly signal: AbortSignal) {
     const command = config.command.endsWith('.js') ? process.execPath : config.command
     const prefix = config.command.endsWith('.js') ? [config.command] : []
-    this.process = spawn(command, [...prefix, 'app-server', '--listen', 'stdio://', '-c', 'features.image_generation=true'], {
+    const overrides = ['features.image_generation=true', 'features.shell_tool=false', 'features.unified_exec=false',
+      'features.browser_use=false', 'features.computer_use=false', 'web_search="disabled"']
+      .flatMap(value => ['-c', value])
+    this.process = spawn(command, [...prefix, 'app-server', '--listen', 'stdio://', ...overrides], {
       cwd: root, env: { PATH: process.env.PATH ?? '/usr/bin:/bin', HOME: root, CODEX_HOME: root, LANG: 'C.UTF-8' },
       stdio: ['pipe', 'pipe', 'pipe'],
     })
