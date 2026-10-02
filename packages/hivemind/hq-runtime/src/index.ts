@@ -23,6 +23,7 @@ import {
   companyTaskContract,
   requireArtifactReceipts,
   taskContracts,
+  sameArtifactLinks,
   verifiedArtifactLinks,
   type CompanyTaskContract,
   type TaskArtifactLinks,
@@ -448,7 +449,10 @@ export function apply(ctx: Context): void {
         } finally {
           await handle.close()
         }
-        root.session.append('hivemind/hq-task-artifacts', receipt)
+        const latest = root.session.snapshotEvents().findLast(event =>
+          event.type === 'hivemind/hq-task-artifacts' && event.data.taskId === receipt.taskId)
+        if (latest?.type !== 'hivemind/hq-task-artifacts' || !sameArtifactLinks(latest.data, receipt))
+          root.session.append('hivemind/hq-task-artifacts', receipt)
         if (!(await ctx.sessions.flush(root.session)))
           throw new Error('hq_artifact_link_persistence_required')
         return {

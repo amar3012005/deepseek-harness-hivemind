@@ -1,4 +1,5 @@
 /** Metadata supplements the native Team board; it owns no task lifecycle. */
+import { isDeepStrictEqual } from 'node:util'
 import { parseAtInput } from '@deepseek-ai/dsh-schedule'
 export interface CompanyTaskContract { readonly taskId: string; readonly dueAt: string; readonly acceptanceCriteria: readonly string[] }
 export interface LedgerEvent { readonly type: string; readonly data: unknown; readonly seq?: number }
@@ -102,4 +103,17 @@ export function admissionFailedBeforeWork(events: readonly LedgerEvent[]): boole
     }
   }
   return failedAdmission && [...pending.values()].every(messages => messages.length === 0)
+}
+
+/** Compare only the typed verified receipt, preserving artifact and producer array order. */
+export function sameArtifactLinks(left: TaskArtifactLinks, right: TaskArtifactLinks): boolean {
+  const normalize = (value: TaskArtifactLinks) => ({
+    taskId: value.taskId,
+    artifactIds: [...value.artifactIds],
+    producerReceipts: value.producerReceipts?.map(receipt => ({
+      artifactId: receipt.artifactId, sessionId: receipt.sessionId,
+      sourceSeq: receipt.sourceSeq, sourceType: receipt.sourceType,
+    })),
+  })
+  return isDeepStrictEqual(normalize(left), normalize(right))
 }

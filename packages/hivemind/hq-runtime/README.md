@@ -44,3 +44,10 @@ on the next turn without waking Runtime. The HIVE runtime supplies one bounded
 private operating-memory read per HQ turn; failure is an explicit retrieval gap.
 Private response records and delivered schedules remain distinct from verified
 task completion. Company footprint evidence does not create objective authority.
+
+Artifact-link replay verifies the selected producer's saved receipts again,
+compares the normalized typed result with the latest task link, and reuses an
+identical link without appending another record. Root persistence is still
+required on replay. Artifact/producer changes retain their ordinary new-link
+semantics and receipt validation; array order remains significant. Contract
+replay already uses validated canonical requirements after cold restoration.
