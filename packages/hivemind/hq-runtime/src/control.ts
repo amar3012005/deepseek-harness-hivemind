@@ -383,7 +383,7 @@ export class HqControl extends TypertRemoteService {
           prompt:
             'The human enabled HQ autonomous mode. Review approved company objectives, the native Team task board, ' +
             'pending employee requests and committed receipts. Continue only authorized unfinished work; ' +
-            'do not duplicate assignments or widen authority. If no objective exists, ask the human for one. ' +
+            'do not duplicate assignments or widen authority. If nothing is due or no approved objective exists, remain quiet; do not request work as a greeting. ' +
             'Use native Schedule for a justified next wake and native Team waiting for active employees.',
         })
       }

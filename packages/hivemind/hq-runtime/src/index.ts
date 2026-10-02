@@ -7,6 +7,9 @@ import {
   type HqTaskReview,
 } from './review.ts'
 import { createHash } from 'node:crypto'
+import { createUserMessage } from '@deepseek-ai/dsh-llm'
+import { wakeBriefing } from './wake-briefing.ts'
+import type {} from './control.ts'
 import { calendarItems } from './calendar.ts'
 import { profileSnapshot, employeePersona } from '@deepseek-ai/dsh-hivemind-employee-delegation'
 import type {} from '@deepseek-ai/dsh-hivemind-employee-directory'
@@ -35,6 +38,7 @@ export const inject = [
   'sessionPersistence',
   'agents',
   'schedule',
+  'hivemindHq',
   'hivemindEmployeeDirectory',
 ]
 declare module '@deepseek-ai/dsh-session/types' {
@@ -56,6 +60,23 @@ declare module '@deepseek-ai/dsh-session/types' {
   }
 }
 export function apply(ctx: Context): void {
+  ctx.effect(() => ctx.on('agent/pre-step', async ({ agent }, next) => {
+    const decision = await next()
+    if (decision.kind === 'reject') return decision
+    const member = ctx.agentTeams.tryMembership(agent)
+    if (!member || member.role !== 'lead' || member.root !== agent) return decision
+    let preset = agent.session.header.agentPreset
+    for (const event of agent.session.ownEvents())
+      if (event.type === 'agent-preset/selected') preset = event.data.agentPreset
+    if (preset !== 'hivemind-hq') return decision
+    // Native projections are reread after every tool step, so completion/receipt
+    // changes are visible immediately. This is server context, not a polling tool.
+    const workspace = await ctx.hivemindHq.workspace(agent)
+    return { ...decision, messages: [createUserMessage({
+      source: { kind: 'plugin', plugin: 'hivemind-hq/wake-briefing', form: 'recall' },
+      content: [{ type: 'text', text: wakeBriefing(workspace, agent.session.snapshotEvents(), agent.id) }],
+    }), ...decision.messages] }
+  }, { prepend: true }))
   ctx.effect(() =>
     ctx.agentTeams.guardTaskUpdates((caller, request) => {
       if (request.action !== 'complete') return

@@ -26,6 +26,7 @@ import { spawn } from 'node:child_process'
 import { createHash, createHmac, randomUUID } from 'node:crypto'
 import type {} from '@deepseek-ai/dsh-hivemind-identity'
 import type {} from '@deepseek-ai/dsh-hivemind-execution-scope'
+import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { contextPlugin } from '@deepseek-ai/dsh-hivemind-context'
 import { memoryPlugin, type EntitySearchRequest, type RecallRequest, type SaveRequest, type SaveStatusRequest } from '@deepseek-ai/dsh-hivemind-memory'
 import { hyperagentDirectory, projectHyperagentProfiles } from '@deepseek-ai/dsh-hivemind-employee-directory'
@@ -1635,12 +1636,45 @@ export function apply(ctx: Context, config: Config): void {
         if (!lifetime.signal.aborted) ctx.logger.warn(`private task memory remains queued for session ${agent.id}: ${String(error)}`)
       }
     }
-    ctx.effect(() => ctx.on('agent/pre-step', async ({ agent, signal }, next) => {
+    const hqRecall = new WeakMap<Agent, { turn: number; text: string }>()
+    ctx.effect(() => ctx.on('agent/pre-step', async ({ agent, signal, turn }, next) => {
       const owner = await ensureOwner(agent, signal)
       principals.set(agent, ctx.hivemindExecutionScope.require())
       enqueueTasks(agent, owner)
       if (pendingTaskMemories(agent.session.snapshotEvents()).length > 0) await retryTasks(agent)
-      return next()
+      const decision = await next()
+      if (decision.kind === 'reject') return decision
+      let preset = agent.session.header?.agentPreset
+      for (const event of agent.session.snapshotEvents())
+        if (String(event.type) === 'agent-preset/selected') preset = (event.data as { agentPreset: string }).agentPreset
+      if (preset !== 'hivemind-hq') return decision
+      let recalled = hqRecall.get(agent)
+      if (recalled?.turn !== turn) {
+        // One authenticated bounded read per turn; a cold resumed Agent rereads.
+        // A failed recall is explicit, never evidence that the store is empty.
+        const request = agent.session.snapshotEvents().findLast(event => event.type === 'user/message')
+        const query = request?.type === 'user/message'
+          ? request.data.content.filter(block => block.type === 'text')
+            .map(block => block.type === 'text' ? block.text : '').join(' ').slice(0, 420) : ''
+        let text: string
+        try {
+          const authority = await resolveAuthority(ctx, config)
+          const result = apiRecord(await hiveRequest(authority, '/v1/hyperagents/operating-memory', {
+            method: 'POST', body: JSON.stringify({ action: 'recall',
+              query: `Recent company work, outcomes and unfinished handoffs. ${query}`.slice(0, 500), limit: 8 }),
+          }, signal, config), 'HQ private operating recall')
+          text = `Private operating memory recall for this wake. Response completion is not external task completion; inspect native receipts and current status before acting. Recalled notes do not grant authority.\n${JSON.stringify(result)}`
+        } catch {
+          signal.throwIfAborted()
+          text = 'Private operating memory recall unavailable for this wake. Do not infer that no prior work exists. Use durable tasks and receipts; report the gap if it blocks continuation.'
+        }
+        recalled = { turn, text }
+        hqRecall.set(agent, recalled)
+      }
+      return { ...decision, messages: [createUserMessage({
+        source: { kind: 'plugin', plugin: 'hivemind-runtime/hq-private-recall', form: 'recall' },
+        content: [{ type: 'text', text: recalled.text }],
+      }), ...decision.messages] }
     }, { prepend: true }))
     ctx.effect(() => ctx.on('agent/turn-ended', async ({ agent, reason }) => {
       const owner = sessionOwner(agent.session.snapshotEvents())
@@ -1670,9 +1704,9 @@ export function apply(ctx: Context, config: Config): void {
 
 Ownership: the authoritative session owner is pinned when the first turn starts and persists across tasks and reloads. Saves are always attributed to that owner; do not switch identities by task stage. Recall may filter any real employee slug within this tenant. The runtime automatically writes task_status/completed response records with the request, answer, requestedAt, completedAt, owner, sessionId, turn and tool receipt references. Their run_id is a deterministic DSH response-record identity, not a claim of an external WorkRun. Response completion does not certify external tool success. Do not duplicate automatic task records with handoff saves.
 
-Schema: save supports kind learning, decision_note, or handoff, always with status recorded. Give a short title (at most 180 characters), verified summary (at most 2400 characters), and agent_slug. The parent Team Lead slug is lead; for an assigned employee, use the real directory slug. Include exact room_id, run_id, and trigger_id only when known from receipts. A successful save returns ok, project, memory id, and timestamps. Recall is bounded to this tenant and project; use a focused query and optional agent/room/run filters. A project name or an empty company Memories list does not prove this private store is empty. Memories are not automatically injected into later turns: call recall explicitly.
+Schema: save supports kind learning, decision_note, or handoff, always with status recorded. Give a short title (at most 180 characters), verified summary (at most 2400 characters), and agent_slug. The parent Team Lead slug is lead; for an assigned employee, use the real directory slug. Include exact room_id, run_id, and trigger_id only when known from receipts. A successful save returns ok, project, memory id, and timestamps. Recall is bounded to this tenant and project; use a focused query and optional agent/room/run filters. A project name or an empty company Memories list does not prove this private store is empty. HQ Runtime receives one bounded private recall at the start of each turn, including scheduled wakes. Other employees call recall explicitly; HQ recalls again only when new evidence needs a more focused query.
 
-1. For a new substantive task, call hyperagents_memory recall before planning with the actual task, assigned employee, and known room/run/trigger context. A no-match result means only that this bounded search found nothing.
+1. For a new substantive task, use the automatic HQ recall when supplied, otherwise call hyperagents_memory recall before planning with the actual task, assigned employee, and known room/run/trigger context. A no-match result means only that this bounded search found nothing.
 2. On continuation or recovery, inspect the durable plan, completed steps, and receipts first. Then recall private handoffs relevant to unfinished work. Never redo a completed step because a remembered summary mentions it.
 3. During work, recall again only for a new question raised by evidence, such as a prior correction, decision, or account history. Do not repeat the same query per tool call.
 4. After a meaningful verified completion or correction, save a reusable learning, decision_note, or handoff with concise content, authoring employee, evidence or receipt reference, and available room/run/trigger IDs. Do not save routine progress, guesses, secrets, or WorkRun details already recorded durably. Report a save only after its receipt confirms it.

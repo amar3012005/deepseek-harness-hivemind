@@ -33,3 +33,14 @@ Human planning uses `hivemind/hq-calendar-item` events and compare-and-set revis
 `review` uses the Cloudflare Workers AI REST `typesafe/jev` model with the deployment’s account/token environment. Questions derive from the immutable criteria; documents derive from matched successful generation tool inputs and saved producer receipts. Relevant fetched page receipts carry exact matching passages. Reviews are keyed by task revision and input hash and reused on replay. The 0.95 acceptance threshold is conservative, not a proof of truth or a permission grant. Unsupported or oversized artifact inputs require explicit further review. No memory or playbook write is performed by Jev.
 
 The browser canary proves persisted human calendar entries and the real built workspace. It remains a deterministic fixture; production employee research, cross-member company sharing, recurrence-to-run correlation, and live release are not established by it. A separate native execution fixture assigns an authenticated employee persona, produces a real content-addressed Markdown attachment, imports its receipt, verifies review caching and acceptance enforcement, and reloads the completed native board. Its model and Jev answer are controlled fixtures, not a live research quality evaluation.
+
+## Wake continuity
+
+The HQ plugin projects the authenticated root's current native task board,
+calendar, Schedule delivery state, artifact/review links, recent Team messages
+and persistent-room notices into every model step. It uses existing durable
+records and adds no event or scheduler. Quiet employee updates become visible
+on the next turn without waking Runtime. The HIVE runtime supplies one bounded
+private operating-memory read per HQ turn; failure is an explicit retrieval gap.
+Private response records and delivered schedules remain distinct from verified
+task completion. Company footprint evidence does not create objective authority.

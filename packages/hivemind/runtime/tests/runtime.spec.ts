@@ -1232,3 +1232,26 @@ describe('HyperAgents durable employee ownership and completion outbox', () => {
     expect(harness.flush).toHaveBeenCalled()
   })
 })
+
+
+describe('HQ automatic private wake recall', () => {
+  it('reads once per turn across steps and rereads after cold restoration', async () => {
+    process.env.TEST_HIVE_RUNNER_SECRET = 'runner-service-secret-that-is-at-least-32-bytes'
+    const fetchMock = vi.fn(async (_url: string, _init: RequestInit) => jsonResponse({ ok: true, memories: [{ id: 'prior', summary: 'Ravi saved a report' }] }))
+    vi.stubGlobal('fetch', fetchMock)
+    const harness = mount({ ...config('unused'), authorityMode: 'scoped-service', privateMemoryEnabled: true, serviceApiBase: 'http://control.test', serviceHttpOrigins: ['http://control.test'], serviceSecretEnv: 'TEST_HIVE_RUNNER_SECRET' })
+    const events = [{ type: 'hivemind/session-owner', data: { id: null, slug: 'lead', name: 'HyperAgents', role: 'Team Lead' } }, { type: 'user/message', data: user('Review the saved crawler report') }] as unknown as SessionEvent[]
+    const subject = () => ({ id: 'session-d292efdd-4b56-4053-b61c-9cd63a7cd8ff', session: { header: { agentPreset: 'hivemind-hq' }, snapshotEvents: () => events } }) as unknown as Agent
+    const agent = subject()
+    const enter = async () => ({ kind: 'enter' as const, messages: [] })
+    const first = await harness.preStep?.({ agent, turn: 1, signal }, enter)
+    expect(JSON.stringify(first)).toContain('Ravi saved a report')
+    await harness.preStep?.({ agent, turn: 1, signal }, enter)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).not.toHaveProperty('agent_slug')
+    await harness.preStep?.({ agent: subject(), turn: 1, signal }, enter)
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    await harness.preStep?.({ agent, turn: 2, signal }, enter)
+    expect(fetchMock).toHaveBeenCalledTimes(3)
+  })
+})
