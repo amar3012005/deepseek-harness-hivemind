@@ -103,6 +103,11 @@ export class InputTriggerController {
    */
   track(draft: string, caret: number, guard: TriggerGuard, draftRev: number): void {
     if (this.disposed) return
+    // Focusing the composer can publish a delayed caret update after plus.
+    // Keep its explicit action menu until the draft changes or is dismissed.
+    if (this.launcher.getSnapshot() === 'composer-actions'
+      && this.menu.getSnapshot().open && this.hit?.span.draftRev === draftRev
+      && guard.tier !== 'frozen') return
     const launched = this.launcher.getSnapshot() !== null
     this.clearLauncher()
     const raw = detectTrigger(draft, caret, guard)
