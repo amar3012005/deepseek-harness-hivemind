@@ -323,8 +323,15 @@ export function apply(ctx: ClientContext): void {
             stop = session.subscribe(check)
             check()
           })
-          const roomOwner = projectedEmployee(ctx.sessions.list.getSnapshot().byId[sessionId]?.projectionValues?.hyperagentOwner)
-          const selected = roomOwner?.id === id || await selectEmployee(sessionId, id === 'runtime' ? null : id, id === 'runtime')
+          const summary = ctx.sessions.list.getSnapshot().byId[sessionId]
+          const roomOwner = projectedEmployee(summary?.projectionValues?.hyperagentOwner)
+          const history = ctx.sessions.binding(sessionId)?.eventSource.getSnapshot()
+          const alreadyUsed = summary?.blank === false || history?.entries.some(entry =>
+            entry.type === 'event' && ['turn/start', 'hivemind/session-owner'].includes(entry.event.type as string)) === true
+          // Authenticated room lookup already selected this employee's room.
+          // A restored persistent owner must never be assigned again.
+          const selected = alreadyUsed || roomOwner?.id === id
+            || await selectEmployee(sessionId, id === 'runtime' ? null : id, id === 'runtime')
           if (selected) {
           // Team navigation opens an agent workspace even while its first
           // draft is blank. Do not wait for a user turn to choose the route.

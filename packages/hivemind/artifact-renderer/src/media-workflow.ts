@@ -290,7 +290,7 @@ export function registerMediaWorkflow(
       } catch (error) { refuse(error instanceof Error ? error : new Error('Image intent persistence failed')); throw error }
       const queued = owner && admission?.status(owner, operationId) === 'queued'
       return { workflow_id: workflowId, job_id: jobId, status: 'running', provider: provider.id, attempt_limit: attemptLimit,
-        ...(queued ? { queue_status: 'queued', message: 'Your image request is waiting for the current generation to finish.' } : {}),
+        ...(queued ? { queue_status: 'queued', message: 'Your image request is queued and will start when a generation slot is available.' } : {}),
         next: 'Continue independent work or use job_output with this job_id when blocked.' }
     },
     presentCall: args => ({ card: 'generic', title: `Generate ${String(args.kind ?? 'media')}`, kind: 'read', rawInput: String(args.title ?? '') }),
