@@ -35,3 +35,9 @@ PPTX and XLSX are durable, editable downloads today. Their specialized slide and
 The document-design and Brand DNA skills remain separate. A PDF request loads document guidance; brand guidance is loaded only when the user, audience, or selected playbook makes organizational styling relevant.
 
 README and other Markdown documents use the same lane: the native file tool reads the requested source, the progressively loaded document-design skill adapts its hierarchy and content, and this renderer converts the finished Markdown to PDF and preview. Branding and evidence handling remain model-selected; the renderer owns pagination and print typography.
+
+## Native Codex images
+
+Both HIVEMIND presets select `imageProvider: codex` on the shared renderer. The native app-server image tool uses the existing protected Codex OAuth store through a host-only credential resolver. It does not use the plan-sharing Responses endpoint or silently fall back to separately billed API generation. Server configuration controls the executable, model, private state directory, and timeout.
+
+`hivemind_media_generate` accepts a complete brief, optional transparency, and up to five session-owned image references for edits. Stable operation IDs persist intent before dispatch and reuse completed receipts. Interrupted operations reconcile the recorded Codex thread; unknown outcomes stop without regeneration. Exact output bytes and PNG previews are stored as authorized attachments. The local background job itself does not survive a runner restart; recovery requires the same operation inputs with `resume_operation: true`. Account entitlement and provider availability remain external requirements.

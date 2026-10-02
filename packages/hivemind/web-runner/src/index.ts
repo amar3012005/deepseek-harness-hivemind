@@ -12,6 +12,7 @@ import type {} from '@deepseek-ai/dsh-hivemind-execution-scope'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { projectHyperagentProfiles } from '@deepseek-ai/dsh-hivemind-employee-directory'
+import { registerMediaAuth } from './media-auth.ts'
 import { liveVoicePlugin, type LiveVoiceConfig } from './live-voice.ts'
 
 export const name = 'hivemind-web-runner'
@@ -269,6 +270,7 @@ function compactProjects(value: unknown): Array<{ id: string; name: string; slug
 
 /** Mount the one-time ticket exchange and health routes. */
 export async function apply(ctx: Context, config: Config): Promise<void> {
+  registerMediaAuth(ctx)
   ctx.plugin(liveVoicePlugin(config.liveVoice, (req) => {
     const principal = ctx.connection.principal({ headers: {
       host: publicHost(req) || req.headers.host, cookie: req.headers.cookie,
