@@ -12,10 +12,12 @@ export type HivemindConnectKey =
   | 'employee.ownerLocked' | 'employee.initial' | 'employee.auto' | 'employee.autoDetail' | 'employee.label' | 'employee.loading' | 'employee.unavailable'
   | 'employee.environment' | 'employee.hide' | 'employee.working' | 'employee.ready' | 'employee.panel' | 'employee.toggle'
   | 'employee.settings' | 'employee.connectApps' | 'employee.creditsUsed'
+  | 'workbench.filter' | 'workbench.all' | 'workbench.grid' | 'workbench.stack' | 'workbench.lastViewed'
   | 'workbench.preview' | 'workbench.artifacts' | 'workbench.computer' | 'workbench.sources'
   | 'workbench.emptyPreview' | 'workbench.emptyArtifacts' | 'workbench.emptyComputer' | 'workbench.emptySources' | 'workbench.pdfUnavailable' | 'workbench.browserCapture' | 'workbench.open' | 'workbench.download' | 'workbench.downloadPdf'
 
 export const en: Record<HivemindConnectKey, string> = {
+  'workbench.filter': 'Filter', 'workbench.all': 'All files', 'workbench.grid': 'Grid view', 'workbench.stack': 'Stack view', 'workbench.lastViewed': 'Last viewed',
   connect: 'Connect HIVE-MIND',
   connected: 'HIVE-MIND connected',
   connecting: 'Connecting HIVE-MIND…',
@@ -59,6 +61,7 @@ export const en: Record<HivemindConnectKey, string> = {
 }
 
 export const zh: Record<HivemindConnectKey, string> = {
+  'workbench.filter': '筛选', 'workbench.all': '全部文件', 'workbench.grid': '网格视图', 'workbench.stack': '堆叠视图', 'workbench.lastViewed': '最近查看',
   connect: '连接 HIVE-MIND',
   connected: 'HIVE-MIND 已连接',
   connecting: '正在连接 HIVE-MIND…',

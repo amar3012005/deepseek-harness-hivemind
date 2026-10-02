@@ -404,6 +404,7 @@ export function apply(ctx: ClientContext): void {
         name: 'sidebar.right.pane.tab', key: tabId, locale: NS,
         inject: sessionId => ({
           kind,
+          selectArtifact: (artifactId: string) => { scope.sidebarRight.openTabIn(sessionId, 'hivemind-workbench-preview', { params: { artifactId } }) },
           openWorkbench: (nextKind: typeof kind) => { scope.sidebarRight.openTab(`hivemind-workbench-${nextKind}`) },
           hooks: { employeeEvents: employeeEvents(sessionId) },
           loadImage: (ref: ImageAttachmentRef) => scope.uiConversation.imageUrl(sessionId, ref),
