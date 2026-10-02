@@ -116,7 +116,7 @@ function PdfReceipt({ artifact, loadPdf, loadImage, t }: { artifact: Artifact; l
 
 /** Shared native workbench backed by the current session log. */
 export function HyperagentWorkbench({
-  kind, sessionId, useEmployeeEvents, loadImage, loadPdf, openArtifact, openWorkbench, t,
+  kind, sessionId, useEmployeeEvents, loadImage, loadPdf, openArtifact, t,
 }: WorkbenchProps) {
   const data = useEmployeeEvents(workbenchSnapshot)
   const [selectedSource, setSelectedSource] = useState<Source | null>(null)
@@ -124,9 +124,6 @@ export function HyperagentWorkbench({
   const lastArtifact = data.artifacts.at(-1)
   const lastCapture = data.captures.at(-1)
   return <div className={css.workbench} data-hivemind-workbench={kind}>
-    <nav className={css.workbenchActions} aria-label={t('workbench.preview')}>
-      {(['preview', 'artifacts', 'computer', 'sources'] as const).map(tab => <button key={tab} type="button" className={css.workbenchOpen} aria-current={kind === tab ? 'page' : undefined} onClick={() => { openWorkbench(tab) }}>{t(`workbench.${tab}`)}</button>)}
-    </nav>
     {kind === 'preview' && (lastArtifact === undefined
       ? <p className={css.workbenchEmpty}>{t('workbench.emptyPreview')}</p>
       : <article><span className={css.workbenchEyebrow}>{lastArtifact.mediaType}</span><h2>{lastArtifact.title}</h2>{lastArtifact.mediaType === 'application/pdf' && lastArtifact.file !== undefined
