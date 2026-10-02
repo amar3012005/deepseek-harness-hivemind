@@ -91,9 +91,10 @@ function ordered(jobs: readonly JobView[]): JobView[] {
  * @param props - runtime slot currency plus the namespace translator.
  * @returns the trigger and its popover list, or null when there is nothing to show.
  */
-export function JobListAction({ sessionId, useSessions, t }: JobListActionProps) {
+export function JobListAction({ sessionId, useSessions, t, compactJobs = false }: JobListActionProps) {
   const jobs = useSessions(state => state.jobsBySession[sessionId]) ?? NO_TASKS
-  const [open, setOpen] = useState(false)
+  const [open, setOpen] = useState(compactJobs)
+  const [showCompleted, setShowCompleted] = useState(false)
   const [now, setNow] = useState(() => Date.now())
   const rootRef = useRef<HTMLDivElement>(null)
   const triggerRef = useRef<HTMLButtonElement>(null)
@@ -117,12 +118,12 @@ export function JobListAction({ sessionId, useSessions, t }: JobListActionProps)
     if (jobs.length === 0 && open) setOpen(false)
   }, [jobs.length, open])
 
-  if (jobs.length === 0) return null
+  if (jobs.length === 0 && !compactJobs) return null
 
   const countKey = liveCount > 0
     ? (liveCount === 1 ? 'count.live.one' : 'count.live.other')
     : (jobs.length === 1 ? 'count.idle.one' : 'count.idle.other')
-  const countLabel = t(countKey, { count: liveCount > 0 ? liveCount : jobs.length })
+  const countLabel = compactJobs && liveCount === 0 ? 'No active jobs' : t(countKey, { count: liveCount > 0 ? liveCount : jobs.length })
 
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>): void => {
     if (event.key !== 'Escape' || !open) return
@@ -132,7 +133,7 @@ export function JobListAction({ sessionId, useSessions, t }: JobListActionProps)
   }
 
   return (
-    <div ref={rootRef} className={css.root} onKeyDown={onKeyDown}>
+    <div ref={rootRef} className={css.root} style={compactJobs ? { width: '100%' } : undefined} onKeyDown={onKeyDown}>
       <button
         ref={triggerRef}
         type="button"
@@ -152,10 +153,10 @@ export function JobListAction({ sessionId, useSessions, t }: JobListActionProps)
         <span className={css.count}>{countLabel}</span>
         <IconChevronDownOutline14 className={open ? css.triggerOpen : undefined} />
       </button>
-      {open
+      {(open || compactJobs)
         ? (
-          <ul className={css.menu} aria-label={t('list.aria')}>
-            {rows.map((job) => {
+          <ul style={compactJobs ? { position: 'static', width: '100%', maxHeight: 220, boxShadow: 'none', background: 'transparent', padding: 0 } : undefined} className={css.menu} aria-label={t('list.aria')}>
+            {rows.filter(job => !compactJobs || showCompleted || isLive(job)).map((job) => {
               const live = isLive(job)
               const elapsed = live ? now - job.startedAt : (job.finishedAt ?? job.startedAt) - job.startedAt
               const duration = formatDuration(elapsed, t)
@@ -178,6 +179,7 @@ export function JobListAction({ sessionId, useSessions, t }: JobListActionProps)
           </ul>
         )
         : null}
+      {compactJobs && jobs.some(job => !isLive(job)) && <button type="button" className={css.trigger} aria-expanded={showCompleted} onClick={() => { setShowCompleted(value => !value) }}>{showCompleted ? 'Hide completed jobs' : 'Recent completed jobs'}</button>}
     </div>
   )
 }

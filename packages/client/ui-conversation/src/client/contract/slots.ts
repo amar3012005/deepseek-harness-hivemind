@@ -234,6 +234,8 @@ export interface HeroDockOwnerProps {
 export interface ConversationHeaderActionOwnerProps {
   /** Existing header controls composed by the embedded shell for Environment. */
   environmentActivity?: ReactNode
+  /** Render job activity inline within the compact Environment panel. */
+  compactJobs?: boolean
   /** Marker field: entries receive no owner-specific values. */
   children?: never
 }
