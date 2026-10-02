@@ -1,6 +1,7 @@
 /** Progressive, provider-neutral PDF artifact rendering for HIVE-MIND. */
 
 import { randomUUID } from 'node:crypto'
+import { fileURLToPath } from 'node:url'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { isAbsolute, join, normalize, relative, resolve } from 'node:path'
 import { Context, Service } from '@deepseek-ai/cordis'
@@ -174,13 +175,17 @@ export class MarkdownArtifactRenderer extends ArtifactRenderer {
     // silently omits the glyphs on Linux while still drawing rules and table
     // borders. Resolve the font assets from the installed pdfjs-dist package
     // so the saved first-page PNG matches the PDF content in production.
-    const standardFontDataUrl = new URL('.', import.meta.resolve('pdfjs-dist/standard_fonts/FoxitSans.pfb')).href
-    const loading = getDocument({ data: new Uint8Array(pdf), useSystemFonts: true, standardFontDataUrl })
+    const standardFontDataUrl = fileURLToPath(new URL('.', import.meta.resolve('pdfjs-dist/standard_fonts/FoxitSans.pfb')))
+    const loading = getDocument({ data: new Uint8Array(pdf), useSystemFonts: false, standardFontDataUrl })
     const pdfDocument = await loading.promise
     let preview: Uint8Array
     const pageCount = pdfDocument.numPages
     try {
       const first = await pdfDocument.getPage(1)
+      const text = await first.getTextContent()
+      if (!text.items.some(item => 'str' in item && item.str.trim().length > 0)) {
+        throw new Error('PDF rendering produced no readable text; artifact was not delivered')
+      }
       const view = first.getViewport({ scale: 1.5 })
       const canvas = createCanvas(Math.ceil(view.width), Math.ceil(view.height))
       await first.render({ canvas: canvas as unknown as HTMLCanvasElement, canvasContext: canvas.getContext('2d') as unknown as CanvasRenderingContext2D, viewport: view }).promise
