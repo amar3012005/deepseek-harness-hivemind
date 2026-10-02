@@ -128,7 +128,7 @@ export function registerMediaWorkflow(
       transparent_background: { type: 'boolean', description: 'Image only. Preserve transparency when editing unless asked to change it.' },
       reference_artifact_ids: { type: 'array', items: { type: 'string' }, description: 'Image only. Up to five generated image artifact IDs from this session.' },
       use_latest_uploaded_images: { type: 'boolean', description: 'Image only. Use image attachments from the latest user message as authorized edit references.' },
-      aspect_ratio: { type: 'string', enum: ['16:9', '9:16', '1:1'] },
+      aspect_ratio: { type: 'string', description: 'Image composition ratio as positive integers, e.g. 4:5, 3:2, 16:9, 9:16 or 1:1. Video supports 16:9, 9:16 and 1:1.' },
       duration_seconds: { type: 'number', description: 'Video only; whole seconds from 4 through 15.' },
       reference_images: { type: 'array', items: { type: 'string' }, description: 'Image only; up to eight public HTTPS references.' },
       source_artifact_id: { type: 'string', description: 'Video only; exact artifact id of an image generated earlier in this session.' },
@@ -148,6 +148,8 @@ export function registerMediaWorkflow(
       if (kind === 'video' && args.reference_images?.length) throw new Error('Use source_artifact_id for video input')
       if (kind === 'image' && args.source_artifact_id) throw new Error('source_artifact_id applies only to video')
       if (args.duration_seconds !== undefined && (!Number.isInteger(args.duration_seconds) || args.duration_seconds < 4 || args.duration_seconds > 15)) throw new Error('duration_seconds must be a whole number from 4 through 15')
+      if (args.aspect_ratio !== undefined && !/^[1-9]\d{0,2}:[1-9]\d{0,2}$/.test(args.aspect_ratio)) throw new Error('aspect_ratio must contain positive integers such as 4:5 or 16:9')
+      if (kind === 'video' && args.aspect_ratio !== undefined && !['16:9', '9:16', '1:1'].includes(args.aspect_ratio)) throw new Error('Video aspect_ratio must be 16:9, 9:16 or 1:1')
       const references = args.reference_images ?? []
       if (references.length > 8 || references.some((value) => { try { const url = new URL(value); return url.protocol !== 'https:' || Boolean(url.username || url.password) } catch { return true } })) throw new Error('reference_images must contain at most eight public HTTPS URLs')
       const provider = registry.get(kind as GenerationFormat)
