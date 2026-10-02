@@ -413,8 +413,8 @@ export function apply(ctx: Context, config: Config = Config({})): void {
           : (selection) => {
             shell.dismissPopup()
             const snapshot = shell.snapshot
-            inputTriggers.toggleSource('command', {
-              trigger: '/',
+            inputTriggers.toggleSource(window.location.pathname.startsWith('/hivemind/app/') ? 'composer-actions' : 'command', {
+              trigger: window.location.pathname.startsWith('/hivemind/app/') ? '@' : '/',
               query: '',
               quoted: false,
               position: snapshot.draft.slice(0, selection.start).trim() === '' ? 'leading' : 'inline',

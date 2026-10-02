@@ -517,33 +517,7 @@ export function apply(ctx: ClientContext): void {
     { name: 'Create PDF', token: 'create-pdf', detail: 'Describe the PDF you want to create' },
     { name: 'Create document', token: 'create-document', detail: 'Describe the document you want to create' },
   ] as const
-  ctx.inject(['commandUi', 'conversation'], (scope: ClientContext) => {
-    const commandUi = scope.get('commandUi') as {
-      register(contribution: {
-        name: string
-        description(): string
-        available(): boolean
-        ui: {
-          kind: 'action'
-          run(session: { sessionId: SessionId }): void
-        }
-      }): () => void
-    } | undefined
-    if (commandUi === undefined) return
-    for (const action of composerActions) scope.effect(() => commandUi.register({
-      name: action.name,
-      description: () => action.detail,
-      available: () => window.location.pathname.startsWith('/hivemind/app/'),
-      ui: { kind: 'action', run: ({ sessionId }) => {
-        const actx = ctx.sessions.scope(sessionId)
-        if (actx === undefined) return
-        const input = scope.conversation.input.for(actx)
-        const draft = input.state.getSnapshot().draft.replace(/^@(create-image|schedule-task|create-pdf|create-document)\s*/, '')
-        input.setDraft(`@${action.token} ${draft}`)
-      } },
-    }), `hivemind composer action: ${action.token}`)
-  })
-  ctx.inject(['inputTriggers'], (scope: ClientContext) => {
+  ctx.inject(['inputTriggers', 'conversation'], (scope: ClientContext) => {
     const inputTriggers = scope.get('inputTriggers') as {
       registerSource(source: ReturnType<typeof createConnectorMentionSource> & { lexicon?: () => readonly string[] }): () => void
     } | undefined
@@ -551,7 +525,16 @@ export function apply(ctx: ClientContext): void {
     ctx.effect(() => inputTriggers.registerSource(createConnectorMentionSource()), 'ui-hivemind-connect: lazy connector @ source')
     ctx.effect(() => inputTriggers.registerSource({
       trigger: '@', name: 'composer-actions', order: 0,
-      candidates: async () => [], onPick: () => undefined,
+      showGroupTitle: false,
+      candidates: async (_session, request) => composerActions.filter(action => `${action.name} ${action.token}`.toLowerCase().includes(request.query.toLowerCase())).map(action => ({ name: action.name, description: action.detail, value: action.token, icon: action.token === 'create-image' ? 'image' : action.token === 'schedule-task' ? 'schedule' : 'document' })),
+      onPick: ({ candidate, session }) => {
+        const actx = ctx.sessions.scope(session.sessionId)
+        if (actx === undefined) return undefined
+        const input = scope.conversation.input.for(actx)
+        const draft = input.state.getSnapshot().draft.replace(/^@(create-image|schedule-task|create-pdf|create-document)\s*/, '')
+        input.setDraft(`@${candidate.value} ${draft}`)
+        return 'handled'
+      },
       lexicon: () => composerActions.map(action => action.token),
     }), 'ui-hivemind-connect: action tag highlighting')
   })

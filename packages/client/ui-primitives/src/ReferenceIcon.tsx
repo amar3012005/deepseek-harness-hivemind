@@ -4,7 +4,7 @@ import {
 } from './icons/index.tsx'
 
 /** Reference domains with distinct composer and transcript glyphs. */
-export type ReferenceIconKind = 'session' | 'file' | 'folder'
+export type ReferenceIconKind = 'session' | 'file' | 'folder' | 'image' | 'schedule' | 'document'
 
 /** Props shared by inline reference glyphs. */
 export interface ReferenceIconProps {
@@ -29,6 +29,12 @@ export function ReferenceIcon({ kind, size = 16, className }: ReferenceIconProps
           />
         </svg>
       )
+    case 'image':
+    case 'schedule':
+    case 'document':
+      return <svg width={size} height={size} className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+        {kind === 'image' ? <><rect x="3" y="3" width="18" height="18" rx="3" /><circle cx="8" cy="8" r="1.5" /><path d="m3 17 6-6 4 4 3-3 5 5" /></> : kind === 'schedule' ? <><rect x="3" y="5" width="18" height="16" rx="3" /><path d="M7 3v4M17 3v4M3 10h18M8 15h3M8 18h6" /></> : <><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9zM14 3v6h6M8 13h8M8 17h6" /></>}
+      </svg>
     case 'file': return <IconBrowseOutline16 size={size} className={className} />
     case 'folder': return <IconFolderClose16 size={size} className={className} />
   }
