@@ -24,7 +24,10 @@ interface Checkpoint {
   }>
 }
 const titles: Record<string, string> = { company: 'Understanding your company', evidence: 'Inspecting the evidence', team: 'Getting to know your team', memory: 'Learning from previous work', strategy: 'Building the initial strategy', conversation: 'Discussing your next agenda', remembered: 'Ready to continue' }
-export function RuntimeAwakening({ events, turn, renderSlot }: { events: EventSource; turn: number } & PropsRenderSlots<'hivemind.runtime.plan'>) {
+export function RuntimeAwakening(
+  { events, turn, renderSlot }: { events: EventSource; turn: number }
+    & Pick<PropsRenderSlots<'hivemind.runtime.plan'>, 'renderSlot'>,
+) {
   const window = useSyncExternalStore(listener => events.subscribe(listener), () => events.getSnapshot())
   const checkpoints = window.entries.flatMap((entry) => {
     if (entry.type !== 'event' || String(entry.event.type) !== 'hivemind/hq-awakening-checkpoint') return []

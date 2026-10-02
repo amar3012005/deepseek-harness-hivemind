@@ -17,7 +17,8 @@ import type { MainPanelId } from '@deepseek-ai/dsh-client-ui-layout/client'
 import { CompanyWorkspace, type CompanyWorkspaceProps } from './CompanyWorkspace.tsx'
 import { HqControlAction, type HqControlActionProps, type HqControlInjected } from './HqControlAction.tsx'
 import { en, zh, type HqKey } from './locales.ts'
-declare module '@deepseek-ai/dsh-client-ui-slots' { interface LocaleNamespaceMap { 'hivemind.hq': HqKey } }
+declare module '@deepseek-ai/dsh-client-ui-slots' { interface LocaleNamespaceMap { 'hivemind.hq': HqKey }
+  interface SlotMap { 'hivemind.runtime.plan': { kind: 'list'; scope: 'session'; owner: { turn: number } } } }
 export const inject = ['sessions', 'remote', 'slots', 'locale', 'layout', 'uiWorkspace']
 
 /**
@@ -42,7 +43,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       return preset === 'hivemind-hq' ? createElement(HqControlAction, props) : null
     }
     child.slots.inject('hivemind.runtime.plan', () => child.slots.register({
-      name: 'hivemind.runtime.plan',
+      name: 'hivemind.runtime.plan', id: 'runtime-saved-plan',
       inject: sessionId => ({
         sessionId, events: child.sessions.binding(sessionId)?.eventSource,
         load: (id: typeof sessionId) => child.remote.hivemindHq.workspace(id),
