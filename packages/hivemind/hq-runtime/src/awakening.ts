@@ -41,6 +41,13 @@ export async function awakeningContext(ctx: Context, agent: Agent, turn: number,
   if (!started && humanMessages.some(message => message.source.kind === 'user' && trigger.test(message.content.flatMap(block => block.type === 'text' ? [block.text] : []).join('').trim()))) {
     agent.session.append('hivemind/hq-awakening-start', { version: 1, turn, startedAt: new Date().toISOString() })
     if (!await ctx.sessions.flush(agent.session)) throw new Error('hq_awakening_persistence_required')
+    // Only the exact first human wake command activates the existing autonomy
+    // switch. Model checkpoints and later scheduled wakes cannot enable it.
+    const mode = ctx.hivemindHq.mode(agent)
+    if (!mode.enabled) {
+      const enabled = await ctx.hivemindHq.setMode(agent, { enabled: true, expectedRevision: mode.revision })
+      if (!enabled.ok) throw new Error('hq_awakening_mode_conflict')
+    }
     started = true
   }
   if (!started) return ''
