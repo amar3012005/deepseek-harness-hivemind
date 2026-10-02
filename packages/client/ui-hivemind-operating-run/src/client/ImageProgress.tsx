@@ -24,8 +24,8 @@ export function ImageProgress({ startedAt, label }: { startedAt?: number | undef
   const percent = Math.min(90, Math.max(1, Math.floor(90 * (1 - Math.exp(-elapsed / 90000)))))
   return <div className={css.imageProgress}>
     <AnimationBoundary>
-      <ImageGeneration preset="sweep-gradient" images={[]} autoReveal={false} paused={reduced} borderRadius={20}>
-        <div className={css.imageAnimationCanvas} aria-hidden="true" />
+      <ImageGeneration preset="sweep-gradient" images={[]} autoReveal={false} paused={reduced} borderRadius={20} style={{ width: 280, height: 280, maxWidth: '100%' }}>
+        <div className={css.imageAnimationCanvas} style={{ width: 280, height: 280, maxWidth: '100%', borderRadius: 20 }} aria-hidden="true" />
       </ImageGeneration>
     </AnimationBoundary>
     <div className={css.imageProgressLabel}>{label} · {percent}%</div>
