@@ -339,6 +339,9 @@ export function apply(ctx: ClientContext): void {
             window.dispatchEvent(new PopStateEvent('popstate'))
           }
           return selected
+        } catch (error) {
+          console.warn('HIVEMIND employee room could not open', error instanceof Error ? error.message : 'Room admission failed')
+          throw error
         } finally { delete document.documentElement.dataset.agentRoomOpening }
       }
       const publish = () => {
