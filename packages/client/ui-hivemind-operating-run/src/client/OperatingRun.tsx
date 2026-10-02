@@ -1074,9 +1074,18 @@ function EvaluationPanel({ node, t }: PanelProps<'hivemind-operating-evaluation'
   )
 }
 
-function ArtifactPanel({ node, renderMessageImages, t, read, openPreview }: PanelProps<'hivemind-artifact'> & { read: (id: FileAttachmentRef['attachmentId']) => Promise<{ ok: boolean; value?: { attachment: FileAttachmentRef; data: string } }> ; openPreview: () => void }) {
+const presentedArtifacts = new Set<string>()
+
+function ArtifactPanel({ sessionId, node, renderMessageImages, t, read, openPreview }: PanelProps<'hivemind-artifact'> & { read: (id: FileAttachmentRef['attachmentId']) => Promise<{ ok: boolean; value?: { attachment: FileAttachmentRef; data: string } }> ; openPreview: () => void }) {
   const [busy, setBusy] = useState(false)
   const [failed, setFailed] = useState(false)
+  useEffect(() => {
+    if (node.data.file === undefined) return
+    const key = `${sessionId}:${node.id}`
+    if (presentedArtifacts.has(key)) return
+    presentedArtifacts.add(key)
+    openPreview()
+  }, [sessionId, node.id, node.data.file?.attachmentId, openPreview])
   return (
     <div className={css.artifactResult}>
       <div className={css.artifactFileRow}>

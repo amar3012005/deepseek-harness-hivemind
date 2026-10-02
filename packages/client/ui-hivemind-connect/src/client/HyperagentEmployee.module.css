@@ -54,3 +54,11 @@
 .workbenchList button { width: fit-content; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; font-weight: 600; text-align: left; cursor: pointer; }
 .workbenchList button:hover { text-decoration: underline; }
 .workbenchOpen { border: 1px solid var(--dsw-border-subtle, #e4e4e7); border-radius: 7px; padding: 8px 12px; background: transparent; color: inherit; font: inherit; cursor: pointer; }
+
+/* Shared browser-style workbench: compact navigation, generous content. */
+.workbench { padding: 0 20px 24px; }
+.workbench > nav { position: sticky; top: 0; z-index: 1; margin: 0 -20px 20px; padding: 10px 12px; background: var(--dsw-surface-primary, #fff); border-bottom: 1px solid var(--dsw-border-subtle, #e4e4e7); gap: 4px; flex-wrap: wrap; }
+.workbench > nav button { border: 0; padding: 7px 10px; border-radius: 999px; font-size: 12px; }
+.workbench > nav button[aria-current='page'] { background: var(--dsw-text-primary, #27272a); color: var(--dsw-surface-primary, #fff); }
+.workbench h2 { font-size: 19px; margin: 12px 0 18px; }
+.workbenchPdf { min-height: 320px; height: 65dvh; }

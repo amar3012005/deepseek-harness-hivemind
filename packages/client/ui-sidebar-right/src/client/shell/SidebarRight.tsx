@@ -302,6 +302,7 @@ function SidebarPanel(panel: PanelProps & { width: number; panelRef: RefObject<H
       // accessibility tree.
       aria-hidden={!expanded || undefined}
     >
+      <div className={css.windowMark} aria-hidden="true"><i /><i /><i /></div>
       <div className={css.panelBody}>
         <DockSurface
           state={surface.layout}

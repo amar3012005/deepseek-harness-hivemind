@@ -118,3 +118,8 @@
   z-index: 60;
   pointer-events: none;
 }
+
+.windowMark { display: flex; align-items: center; gap: 6px; flex: none; height: 26px; padding: 0 14px; background: var(--dsw-alias-bg-base); border-bottom: 0.5px solid var(--dsw-alias-border-l4); }
+.windowMark i { width: 8px; height: 8px; border-radius: 50%; background: #ff5f57; }
+.windowMark i:nth-child(2) { background: #febc2e; }
+.windowMark i:nth-child(3) { background: #28c840; }
