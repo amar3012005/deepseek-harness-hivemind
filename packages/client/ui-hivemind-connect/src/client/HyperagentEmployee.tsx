@@ -14,6 +14,7 @@ export interface EmployeeOption {
   name: string
   role: string
   avatarUrl?: string
+  allowedTools?: string[]
   persona?: string
   createdAt?: string
 }
@@ -211,7 +212,7 @@ export function HyperagentEmployeePanel({
     <section><h3>Biography</h3>{profile?.persona && <p className={css.personaText}>{profile.persona}</p>}{profile?.createdAt && <p>Joined {new Date(profile.createdAt).toLocaleDateString()}</p>}<p>{selected?.role ?? 'Coordinates company work and the team.'}</p></section>
     <section><h3>Active tasks</h3>{running && <p>Working on your latest request</p>}{jobs.filter(job => job.status === 'running' || job.status === 'stopping').map(job => <p key={job.id}>{job.label ?? job.status}</p>)}{!running && !jobs.some(job => job.status === 'running' || job.status === 'stopping') && <p>No active work</p>}{routines.filter(task => task.kind === 'at' && task.active).map(task => <p key={task.id}>{task.title}</p>)}</section>
     <section><h3>Routines</h3>{routines.filter(task => task.kind !== 'at').map(task => <label className={css.routineRow} key={task.id}><span>{task.title}<small>{new Date(task.next).toLocaleString()}</small></span><input type="checkbox" role="switch" checked={task.active} disabled={pending !== undefined} onChange={(event) => { void toggle(task, event.target.checked) }} aria-label={task.title} /></label>)}{!routines.some(task => task.kind !== 'at') && <p>No routines yet</p>}</section>
-    <section><h3>Connected apps and permissions</h3>{accounts.map(account => <a className={css.detailFile} key={account.id} href="/hivemind/app/connectors"><img src={`https://logos.composio.dev/api/${encodeURIComponent(account.toolkit)}`} width="20" height="20" alt="" />{account.toolkit}<small>Manage permissions ↗</small></a>)}{accounts.length === 0 && <a href="/hivemind/app/connectors">Connect an app</a>}</section>
+    <section><h3>Connected apps and permissions</h3>{profile?.allowedTools && <p>Configured tools: {profile.allowedTools.length > 0 ? profile.allowedTools.join(', ') : 'None'}</p>}{accounts.map(account => <a className={css.detailFile} key={account.id} href="/hivemind/app/connectors"><img src={`https://logos.composio.dev/api/${encodeURIComponent(account.toolkit)}`} width="20" height="20" alt="" />{account.toolkit}<small>Manage permissions ↗</small></a>)}{accounts.length === 0 && <a href="/hivemind/app/connectors">Connect an app</a>}</section>
     <section><h3>Latest work</h3><p>{latestText ?? 'No completed work in this room yet'}</p></section>
     <section><h3>Files and deliverables</h3>{files.map(file => <button className={css.detailFile} type="button" key={file.id} onClick={() => { selectArtifact(file.id) }}>▧ {file.title}</button>)}{files.length === 0 && <p>No files in the loaded conversation</p>}</section>
     {history.length > 0 && <details><summary>Earlier conversations</summary>{history.map(room => <button className={css.detailFile} type="button" key={room.id} onClick={() => { openSession(room.id) }}>{room.title}</button>)}</details>}

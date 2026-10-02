@@ -127,7 +127,7 @@ export function setupHivemindSessionRouting(
   const selectOrCreate = (state: SessionListState, forceCreate: boolean): void => {
     if (creating) return
     const attempt = ++generation
-    const selected = forceCreate ? undefined : newestRoot(state, currentBase)
+    const selected = forceCreate || currentBase === HIVE_EMPLOYEE_HARNESS_PATH ? undefined : newestRoot(state, currentBase)
     if (selected !== undefined) {
       applyingRoute = true
       initialized = true
@@ -139,7 +139,7 @@ export function setupHivemindSessionRouting(
     }
     creating = true
     const creatingBase = currentBase
-    void sessions.create().then((sessionId) => {
+    void sessions.create(creatingBase === HIVE_EMPLOYEE_HARNESS_PATH ? { hyperagentRoom: 'runtime' } : {}).then((sessionId) => {
       if (disposed || attempt !== generation) return
       if (creatingBase === HIVE_EMPLOYEE_HARNESS_PATH) creatingOsSession = sessionId
       applyingRoute = true
@@ -149,7 +149,7 @@ export function setupHivemindSessionRouting(
       replace(sessionPath(sessionId))
       applyingRoute = false
     }).catch(() => {
-      if (!disposed && attempt === generation) replace(HIVE_OVERVIEW_PATH)
+      if (!disposed && attempt === generation) replace(currentBase)
     }).finally(() => { creating = false })
   }
 
@@ -181,10 +181,10 @@ export function setupHivemindSessionRouting(
         applyingRoute = false
         return
       }
-      replace(HIVE_OVERVIEW_PATH)
+      replace(currentBase)
       selectOrCreate(refreshed, false)
     }).catch(() => {
-      if (!disposed && attempt === generation) replace(HIVE_OVERVIEW_PATH)
+      if (!disposed && attempt === generation) replace(currentBase)
     }).finally(() => { resolving = false })
   }
 
@@ -245,7 +245,7 @@ export function setupHivemindSessionRouting(
         return
       }
       // A known child is never promoted to the root conversation surface.
-      replace(HIVE_OVERVIEW_PATH)
+      replace(currentBase)
       selectOrCreate(state, false)
       return
     }
@@ -253,7 +253,7 @@ export function setupHivemindSessionRouting(
       selectOrCreate(state, true)
       return
     }
-    if (route.kind === 'invalid') replace(HIVE_OVERVIEW_PATH)
+    if (route.kind === 'invalid') replace(currentBase)
     selectOrCreate(state, false)
   }
 
@@ -287,7 +287,7 @@ export function setupHivemindSessionRouting(
       if (route.kind === 'session' && rootForRoute(state, route.sessionId) === undefined && !resolving) {
         initialized = false
         observedCurrent = undefined
-        replace(HIVE_OVERVIEW_PATH)
+        replace(currentBase)
         selectOrCreate(state, false)
       }
       return

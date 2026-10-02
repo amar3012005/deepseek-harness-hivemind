@@ -454,6 +454,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
         json(res, 200, { ok: true, profiles: profiles.map(profile => ({
           id: profile.id, name: profile.name, role_archetype: profile.role_archetype,
           avatar_url: profile.avatar_url, status: profile.status,
+          persona: profile.persona, tools: profile.tools, policy_rules: profile.policy_rules,
         })) })
       } catch {
         json(res, 503, { ok: false, diagnostic: 'employee_catalog_unavailable' })
