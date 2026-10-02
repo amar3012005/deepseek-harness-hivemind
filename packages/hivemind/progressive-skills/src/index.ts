@@ -64,7 +64,7 @@ export function apply(ctx: Context, config: Partial<Config> = {}): void {
       operation: { type: 'string', required: true, enum: ['search', 'load'] },
       query: { type: 'string', description: 'Complete specialized capability, method, or output need.' },
       name: { type: 'string', description: 'Exact skill name returned by search.' },
-      limit: { type: 'integer', description: 'Maximum compact search candidates.' },
+      limit: { type: 'integer', description: `Maximum compact search candidates, from 1 to ${maxSearchResults}. Larger requests are capped.` },
     },
     output,
     isConcurrencySafe: () => true,
@@ -76,7 +76,8 @@ export function apply(ctx: Context, config: Partial<Config> = {}): void {
       if (operation === 'search') {
         const queryText = text(input.query, 'query', maxQueryChars)
         const requestedLimit = input.limit ?? maxSearchResults
-        if (!Number.isInteger(requestedLimit) || (requestedLimit as number) < 1 || (requestedLimit as number) > maxSearchResults) throw new TypeError(`hivemind-progressive-skills: limit must be from 1 to ${maxSearchResults}`)
+        if (!Number.isInteger(requestedLimit) || (requestedLimit as number) < 1) throw new TypeError('hivemind-progressive-skills: limit must be a positive integer')
+        const limit = Math.min(requestedLimit as number, maxSearchResults)
         const snapshot = await ctx.skills.snapshot(options)
         if (!snapshot.complete) return { status: 'unavailable', operation: 'search', reason: 'skill discovery is incomplete; retry once' }
         const query = terms(queryText)
@@ -85,7 +86,7 @@ export function apply(ctx: Context, config: Partial<Config> = {}): void {
           .map(skill => ({ skill, relevance: relevance(query, `${skill.name} ${skill.description} ${'whenToUse' in skill ? skill.whenToUse ?? '' : ''}`) }))
           .filter(candidate => candidate.relevance > 0)
           .sort((left, right) => right.relevance - left.relevance || left.skill.name.localeCompare(right.skill.name))
-          .slice(0, requestedLimit as number)
+          .slice(0, limit)
           .map(({ skill, relevance: score }) => ({ name: skill.name, description: skill.description, relevance: score }))
         return { status: 'ready', operation: 'search', candidates }
       }
