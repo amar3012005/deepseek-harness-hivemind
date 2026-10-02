@@ -1,5 +1,6 @@
 /** Native Codex image bridge with private, replayable per-operation state. */
 import { spawn } from 'node:child_process'
+import { existsSync } from 'node:fs'
 import { createHash } from 'node:crypto'
 import { mkdir, readFile, writeFile, rename, realpath, stat } from 'node:fs/promises'
 import { join, relative, isAbsolute } from 'node:path'
@@ -40,10 +41,17 @@ class ImageWire {
     const command = config.command.endsWith('.js') ? process.execPath : config.command
     const prefix = config.command.endsWith('.js') ? [config.command] : []
     const overrides = ['features.image_generation=true', 'features.shell_tool=false', 'features.unified_exec=false',
-      'features.browser_use=false', 'features.computer_use=false', 'web_search="disabled"']
+      'features.browser_use=false', 'features.computer_use=false', 'web_search="disabled"',
+      'features.unbounded_connection_retries=false', 'model_providers.openai.supports_websockets=false',
+      'model_providers.openai.request_max_retries=1', 'model_providers.openai.stream_max_retries=1',
+      'model_providers.openai.stream_idle_timeout_ms=60000']
       .flatMap(value => ['-c', value])
     this.process = spawn(command, [...prefix, 'app-server', '--listen', 'stdio://', ...overrides], {
-      cwd: root, env: { PATH: process.env.PATH ?? '/usr/bin:/bin', HOME: root, CODEX_HOME: root, LANG: 'C.UTF-8' },
+      cwd: root, env: {
+        ...(process.env.CODEX_CA_CERTIFICATE ? { CODEX_CA_CERTIFICATE: process.env.CODEX_CA_CERTIFICATE } : {}),
+        ...(process.env.SSL_CERT_FILE ? { SSL_CERT_FILE: process.env.SSL_CERT_FILE }
+          : existsSync('/etc/ssl/certs/ca-certificates.crt') ? { SSL_CERT_FILE: '/etc/ssl/certs/ca-certificates.crt' } : {}),
+        PATH: process.env.PATH ?? '/usr/bin:/bin', HOME: root, CODEX_HOME: root, LANG: 'C.UTF-8' },
       stdio: ['pipe', 'pipe', 'pipe'],
     })
     this.process.stderr.resume() // Raw provider diagnostics may contain sensitive input; never forward them.

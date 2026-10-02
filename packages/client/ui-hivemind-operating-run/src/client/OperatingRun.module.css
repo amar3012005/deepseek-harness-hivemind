@@ -259,3 +259,9 @@
 .status[data-state='failed'] {
   color: var(--dsw-alias-state-warning);
 }
+
+.imageProgress { width: 320px; max-width: 100%; margin: 16px 0; }
+.imageAnimationCanvas, .imageAnimationFallback { width: 100%; aspect-ratio: 1; border-radius: 20px; background: #102236; }
+.imageAnimationFallback { background: linear-gradient(135deg, #102236, #3d6977, #102236); }
+.imageProgressLabel { margin-top: 10px; font-size: 12px; opacity: .7; }
+.imageProgressBar { width: 100%; height: 4px; accent-color: #5896c2; }
