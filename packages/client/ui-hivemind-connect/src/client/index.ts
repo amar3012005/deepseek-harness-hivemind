@@ -313,7 +313,14 @@ export function apply(ctx: ClientContext): void {
           stop = session.subscribe(check)
           check()
         })
-        return selectEmployee(sessionId, id)
+        const selected = await selectEmployee(sessionId, id)
+        if (selected) {
+          // Team navigation opens an agent workspace even while its first
+          // draft is blank. Do not wait for a user turn to choose the route.
+          window.history.replaceState(window.history.state, '', `/hivemind/app/employee/harness/session/${encodeURIComponent(sessionId)}`)
+          window.dispatchEvent(new PopStateEvent('popstate'))
+        }
+        return selected
       }
       const publish = () => {
         const state = ctx.sessions.list.getSnapshot()

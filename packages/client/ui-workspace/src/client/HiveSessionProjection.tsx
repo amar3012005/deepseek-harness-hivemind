@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Button, IconNewChatOutline16, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
@@ -44,7 +44,13 @@ export function HiveSessionProjection({
   const composing = useRef(false)
   const list = useSessions(value => value)
   const pending = useSessionPendingInteraction(value => value)
-  const hyperagentRoute = window.location.pathname.startsWith('/hivemind/app/employee/harness')
+  const [pathname, setPathname] = useState(window.location.pathname)
+  useEffect(() => {
+    const update = () => { setPathname(window.location.pathname) }
+    window.addEventListener('popstate', update)
+    return () => { window.removeEventListener('popstate', update) }
+  }, [])
+  const hyperagentRoute = pathname.startsWith('/hivemind/app/employee/harness')
   // The OS sidebar is owned by the host frontend. Its existing first content
   // block is a stable seat, so the runner can show sessions without a host deploy.
   const osRail = hyperagentRoute
