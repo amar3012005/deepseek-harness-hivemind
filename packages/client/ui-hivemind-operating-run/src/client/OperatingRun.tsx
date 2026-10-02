@@ -1100,6 +1100,7 @@ function ArtifactPanel({ sessionId, node, renderMessageImages, t, read, openPrev
   }, [sessionId, node.id, node.data.file?.attachmentId, openPreview])
   return (
     <div className={css.artifactResult}>
+      {node.data.preview === undefined ? null : <div className={css.artifactHeroImage}>{renderMessageImages({ images: [{ attachment: node.data.preview }], align: 'start' })}</div>}
       <div className={css.artifactFileRow}>
         <button type="button" className={css.artifactFilePreview} onClick={openPreview} disabled={node.data.file === undefined}>
           <ArtifactTypeIcon mediaType={node.data.mediaType} name={node.data.file?.name ?? node.data.title} />
@@ -1127,9 +1128,6 @@ function ArtifactPanel({ sessionId, node, renderMessageImages, t, read, openPrev
           {t(busy ? 'artifact.downloading' : 'artifact.open')}
         </button>
       </div>
-      {node.data.preview === undefined
-        ? null
-        : renderMessageImages({ images: [{ attachment: node.data.preview }], align: 'start' })}
       {failed ? <div role="alert">{t('artifact.failed')}</div> : null}
     </div>
   )

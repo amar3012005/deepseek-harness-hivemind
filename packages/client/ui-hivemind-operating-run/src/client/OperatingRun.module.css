@@ -281,3 +281,8 @@
 .previewSections button, .previewSections span { padding: 7px 10px; border: 0; border-radius: 999px; background: transparent; color: inherit; font: inherit; font-size: 12px; }
 .previewSections button { cursor: pointer; }
 .previewSections span { background: var(--dsw-alias-label-primary); color: var(--dsw-alias-bg-base); }
+
+.artifactHeroImage { width: 100%; margin-bottom: 14px; }
+.artifactHeroImage > div { width: 100%; }
+.artifactHeroImage button { width: 100% !important; height: auto !important; max-width: 100% !important; flex: 1 1 100%; }
+.artifactHeroImage img { width: 100%; height: auto !important; object-fit: contain; }
