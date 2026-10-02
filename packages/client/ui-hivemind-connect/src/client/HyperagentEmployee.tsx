@@ -102,7 +102,7 @@ type PickerProps = PropsRuntime<'conversation.input.left'> & PropsLocale<'hivemi
 /** Downward-opening selector beside native Workspace Write control. */
 export function HyperagentEmployeePicker({ sessionId, useSessions, useEmployeeEvents, listEmployees, selectEmployee, t }: PickerProps) {
   const pickerRef = useRef<HTMLDivElement>(null)
-  const preset = useSessions(state => state.byId[sessionId]?.projectionValues?.agentPreset)
+  const preset = useSessions(state => state.byId[sessionId]?.projectionValues?.agentPreset ?? state.byId[sessionId]?.agentPreset)
   const fromLog = useEmployeeEvents(selectedEmployee)
   const owner = useSessions(state =>
     (state.byId[sessionId]?.projectionValues?.hyperagentOwner ?? state.byId[sessionId]?.projectionValues?.hyperagentSelection))
@@ -135,8 +135,10 @@ export function HyperagentEmployeePicker({ sessionId, useSessions, useEmployeeEv
   }
   return <div ref={pickerRef} className={css.picker} data-hivemind-employee-picker>
     <button className={css.pickerButton} type="button" aria-haspopup="listbox" aria-expanded={open && !locked} disabled={locked} title={locked ? t('employee.ownerLocked') : undefined} onClick={toggle}>
-      {selected === null ? <span className={css.autoAvatar}>{t('employee.initial')}</span> : <EmployeeAvatar employee={selected} size={24} />}
-      <span>{selected?.name ?? (isHyperagentPreset(preset) ? t('employee.auto') : 'HIVEMIND')}</span><span aria-hidden="true">⌄</span>
+      {selected === null
+        ? preset === 'hivemind-hq' ? <RuntimeAvatar size={24} /> : <span className={css.autoAvatar}>{t('employee.initial')}</span>
+        : <EmployeeAvatar employee={selected} size={24} />}
+      <span>{selected?.name ?? (preset === 'hivemind-hq' ? 'Runtime' : isHyperagentPreset(preset) ? t('employee.auto') : 'HIVEMIND')}</span><span aria-hidden="true">⌄</span>
     </button>
     {open && !locked && <div className={css.menu} role="listbox" aria-label={t('employee.label')} style={{ maxHeight: menuHeight }}>
       <button type="button" role="option" onClick={() => { choose(null) }} disabled={loading}><span className={css.autoAvatar}>H</span><span><strong>HIVEMIND</strong><small>Ask your company brain</small></span></button>
@@ -237,7 +239,7 @@ export function HyperagentPanelToggle({ sessionId, useSessions, useEmployeeEvent
   // The HIVE app owns the conversation's far-right header seat. Keep the
   // native panel affordance there for every session; it opens Preview for
   // HyperAgents and toggles the sidebar for other presets.
-  const preset = useSessions(state => state.byId[sessionId]?.projectionValues?.agentPreset)
+  const preset = useSessions(state => state.byId[sessionId]?.projectionValues?.agentPreset ?? state.byId[sessionId]?.agentPreset)
   const blank = useSessions(state => state.byId[sessionId]?.blank)
   const owner = useSessions(state =>
     (state.byId[sessionId]?.projectionValues?.hyperagentOwner ?? state.byId[sessionId]?.projectionValues?.hyperagentSelection))
