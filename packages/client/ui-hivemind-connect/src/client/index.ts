@@ -33,7 +33,7 @@ import { createConnectorMentionSource } from './ConnectorMentions.ts'
 import { ContextualFollowUps, selectContextualFollowUps } from './ContextualFollowUps.tsx'
 import {
   HyperagentEmployeePicker, HyperagentEmployeePanel, HyperagentPanelToggle,
-  type EmployeeOption, selectedEmployee, projectedEmployee, EmployeeAvatar, AgentRoomHeading,
+  type EmployeeOption, selectedEmployee, projectedEmployee, EmployeeAvatar,
 } from './HyperagentEmployee.tsx'
 import { HyperagentWorkbench } from './HyperagentWorkbench.tsx'
 
@@ -392,7 +392,7 @@ export function apply(ctx: ClientContext): void {
   })
   ctx.slots.inject('conversation.session.header.utilities', () => ctx.slots.register({
     name: 'conversation.session.header.utilities', id: 'brain-connections', locale: NS, order: 99,
-    inject: sessionId => ({ sessionId }),
+    inject: sessionId => ({ sessionId, showDetails: () => { rightSidebar?.openTabIn(sessionId, 'hivemind-employee') } }),
   }, BrainConnections))
   // Put the panel/preview affordance in the conversation header's far-right
   // corner, matching the native “door” control. A higher-priority seat shadows
@@ -429,10 +429,6 @@ export function apply(ctx: ClientContext): void {
     scope.effect(() => () => { rightSidebar = undefined }, 'ui-hivemind-connect: release right sidebar')
     const t = scope.locale.bind(NS)
     scope.effect(() => scope.sidebarRightTabs.register({ id: employeeTab, kind: 'hivemind-employee', title: () => 'Agent details' }), 'ui-hivemind-connect: employee right tab')
-    scope.slots.inject('conversation.room.header', () => scope.slots.register({
-      name: 'conversation.room.header', id: 'agent-room-heading',
-      inject: sessionId => ({ hooks: { employeeEvents: employeeEvents(sessionId) }, showDetails: () => { scope.sidebarRight.openTabIn(sessionId, 'hivemind-employee') } }),
-    }, AgentRoomHeading))
     for (const kind of workbenchKinds) {
       const tabKind = `hivemind-workbench-${kind}`
       const tabId = `@deepseek-ai/dsh-client-ui-hivemind-connect/${kind}`

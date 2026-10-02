@@ -56,3 +56,9 @@
 .activityDot { position: absolute; right: 5px; top: 5px; width: 6px; height: 6px; border-radius: 50%; background: #247aff; }
 .chatButton { position: relative; }
 .chatPanel { max-width: calc(100vw - 32px); max-height: calc(100dvh - 150px); overflow-y: auto; }
+
+.agentStatus { display: flex !important; align-items: center; gap: 6px; }
+.readyDot, .workingDot { width: 7px; height: 7px; border-radius: 50%; background: #16a34a; display: inline-block; }
+.workingDot { animation: agentWorkingPulse 1.4s ease-in-out infinite; }
+@keyframes agentWorkingPulse { 50% { opacity: .35; } }
+@media (prefers-reduced-motion: reduce) { .workingDot { animation: none; } }
