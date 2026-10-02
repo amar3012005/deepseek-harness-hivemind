@@ -1130,7 +1130,7 @@ function MediaWorkflowPanel({ node, t }: PanelProps<'hivemind-media-workflow'>) 
   return (
     <Card title={t('media.title')} state={node.data.status} statusText={t(`state.${node.data.status}` as OperatingRunKey)}>
       <div className={css.objective}>{node.data.title || t('media.title')}</div>
-      {node.data.kind === 'image' && node.data.status === 'running'
+      {node.data.status === 'running'
         ? <ImageProgress startedAt={node.data.startedAt} label={t('media.progress')} /> : null}
       <div className={css.meta}>
         <span className={css.chip}>{node.data.kind.toUpperCase()}</span>

@@ -9,7 +9,7 @@ class AnimationBoundary extends Component<{ children: ReactNode }, { failed: boo
   override render() { return this.state.failed ? <div className={css.imageAnimationFallback} /> : this.props.children }
 }
 
-/** Animate active image work while capping an elapsed-time estimate below completion. */
+/** Animate active image or video work while capping an elapsed-time estimate below completion. */
 export function ImageProgress({ startedAt, label }: { startedAt?: number | undefined; label: string }) {
   const [now, setNow] = useState(Date.now)
   const [reduced, setReduced] = useState(true)
@@ -24,7 +24,7 @@ export function ImageProgress({ startedAt, label }: { startedAt?: number | undef
   const percent = Math.min(90, Math.max(1, Math.floor(90 * (1 - Math.exp(-elapsed / 90000)))))
   return <div className={css.imageProgress}>
     <AnimationBoundary>
-      <ImageGeneration preset="pixels-organic" images={[]} autoReveal={false} paused={reduced} borderRadius={20}>
+      <ImageGeneration preset="sweep-gradient" images={[]} autoReveal={false} paused={reduced} borderRadius={20}>
         <div className={css.imageAnimationCanvas} aria-hidden="true" />
       </ImageGeneration>
     </AnimationBoundary>
