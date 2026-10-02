@@ -3,6 +3,10 @@
   config:
     path: ../hivemind-hyperagents/agent.cordis.yml
     patches:
+      - id: hivemind-playbooks
+        config:
+          employeeSubagentPlanning: true
+          nativeTeamCoordination: true
       - id: persona
         name: '@deepseek-ai/dsh-persona'
         config:
@@ -60,6 +64,12 @@
             No external send, publish, expenditure, company-memory write, or
             new autonomous objective is authorized solely by an employee request.
             Direct human questions can be answered without company-plan setup.
+            Native Team board and mailbox inspection remain available without
+            an operating plan. An inline employee workstream does not replace
+            your HQ coordination role. For real delegated deliverables use
+            hivemind_hq_contract, not an inline persona simulation. If a lane
+            is suppressed, inspect its receipt and revise the operating plan
+            when appropriate; do not report a missing Team merely from a lease.
       - id: hivemind-capabilities
         insert:
           - id: hivemind-hq-runtime

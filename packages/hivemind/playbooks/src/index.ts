@@ -31,6 +31,7 @@ export interface Config {
     effort: 'off' | 'low' | 'medium' | 'high'
   }[]
   employeeSubagentPlanning: boolean
+  nativeTeamCoordination: boolean
   progressiveToolDisclosure: boolean
 }
 
@@ -52,6 +53,7 @@ export const Config: z<Config> = z.object({
     )
     .default([]),
   employeeSubagentPlanning: z.boolean().default(true),
+  nativeTeamCoordination: z.boolean().default(false),
   progressiveToolDisclosure: z.boolean().default(false),
 })
 
@@ -729,6 +731,7 @@ export function apply(ctx: Context, config: Partial<Config> = {}): void {
   const maxOperatingCompanyChars = config.maxOperatingCompanyChars ?? 3_000
   const reasoningCaps = config.reasoningCaps ?? []
   const employeeSubagentPlanning = config.employeeSubagentPlanning ?? true
+  const nativeTeamCoordination = config.nativeTeamCoordination ?? false
   const progressiveToolDisclosure = config.progressiveToolDisclosure ?? false
   const plannedActorKinds: readonly WorkstreamActorKind[] = employeeSubagentPlanning
     ? ['main', 'inline_employee', 'employee_subagent', 'dynamic_subagent', 'workflow']
@@ -893,6 +896,15 @@ export function apply(ctx: Context, config: Partial<Config> = {}): void {
     // standing prompt assembly; only names registered later count as dynamic.
     const localBaseTools = previous?.localBaseTools ?? new Set(agent.ctx.tools.schemas().map(tool => tool.name))
     const requested = new Set<string>(CORE_TOOLS)
+    // HQ owns durable coordination even when a workstream executes inline.
+    // Ordinary employee presets retain their existing progressive boundary.
+    if (nativeTeamCoordination) {
+      for (const tool of [
+        'hivemind_hq_contract', 'hivemind_employee_panel',
+        'team_task_list', 'team_task_get', 'team_task_create', 'team_task_update', 'list_agents',
+        'send_message', 'wait_agent', 'interrupt_agent',
+      ]) requested.add(tool)
+    }
     for (const capability of capabilities) {
       for (const tool of CAPABILITY_TOOLS[capability]) requested.add(tool)
     }
@@ -1119,7 +1131,8 @@ export function apply(ctx: Context, config: Partial<Config> = {}): void {
         const plan = latestPlan(agent)
         const hasInlineEmployees = plan?.workstreams.some(item => item.actor.kind === 'inline_employee') ?? false
         const hasEmployeeChildren = plan?.workstreams.some(item => item.actor.kind === 'employee_subagent') ?? false
-        const suppressEmployeeChildren = !employeeSubagentPlanning || (hasInlineEmployees && !hasEmployeeChildren)
+        const suppressEmployeeChildren = !nativeTeamCoordination
+          && (!employeeSubagentPlanning || (hasInlineEmployees && !hasEmployeeChildren))
         if (suppressEmployeeChildren) active.delete('employees')
         for (const capability of requested) {
           if (capability === 'employees' && suppressEmployeeChildren) continue
