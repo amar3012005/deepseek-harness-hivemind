@@ -61,9 +61,6 @@
     },
     {
       "path": "../ui-chat"
-    },
-    {
-      "path": "../ui-hivemind-connect"
     }
   ]
 }

@@ -90,8 +90,7 @@
     "@deepseek-ai/dsh-client-ui-workspace": "workspace:^",
     "@deepseek-ai/dsh-schedule": "workspace:^",
     "@deepseek-ai/dsh-util-crypto": "workspace:^",
-    "@deepseek-ai/dsh-client-ui-chat": "workspace:^",
-    "@deepseek-ai/dsh-client-ui-hivemind-connect": "workspace:^"
+    "@deepseek-ai/dsh-client-ui-chat": "workspace:^"
   },
   "files": [
     "lib/index.js",

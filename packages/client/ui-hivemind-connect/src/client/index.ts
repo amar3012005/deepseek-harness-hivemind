@@ -510,9 +510,10 @@ export function apply(ctx: ClientContext): void {
     }
     ctx.slots.inject('conversation.chat.turnTail', () => ctx.slots.register({
       name: 'conversation.chat.turnTail', priority: 35,
+      children: { 'hivemind.runtime.plan': { kind: 'list', scope: 'session' } },
       select: owner => owner.turn.turn,
       inject: sessionId => ({ events: employeeEvents(sessionId) }),
-    }, ({ matched, events }) => createElement(RuntimeAwakening, { turn: matched, events })))
+    }, ({ matched, events, renderSlot }) => createElement(RuntimeAwakening, { turn: matched, events, renderSlot })))
     ctx.slots.inject('conversation.chat.turnTail', () => ctx.slots.register({
       name: 'conversation.chat.turnTail', priority: 40,
       select: selectContextualFollowUps,
@@ -617,5 +618,3 @@ export function apply(ctx: ClientContext): void {
     }
   }, 'ui-hivemind-connect: filesystem-free native session bootstrap')
 }
-
-export { RuntimeAwakening } from './RuntimeAwakening.tsx'
