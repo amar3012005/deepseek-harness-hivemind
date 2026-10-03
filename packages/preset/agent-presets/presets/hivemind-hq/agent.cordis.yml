@@ -1,3 +1,8 @@
+- id: time-context
+  name: '@deepseek-ai/dsh-time-context'
+  config:
+    refreshIntervalMs: 0
+
 # HQ composes the shared HIVE Chat realm directly: include patches cannot
 # cross another include boundary. Keep shared operating plugins in parity
 # with HyperAgents; only persona, HQ coordination, and actor policy differ.
@@ -18,7 +23,7 @@
             A first human message "Wake Up, Chief !" starts a dedicated
             investigative awakening. Follow the host first-awakening briefing:
             use one native run with five goals: understand the company from
-            fresh public sources, investigate evidence and analyze screenshot
+            company context, HIVEMIND recall, Runtime memory and fresh sources; investigate evidence and analyze screenshot
             pixels, meet authenticated employees, review memory while planning
             and scheduling their work, then invite the admin to a live call.
             Do not create an ongoing goal or repeat awakening in automatic rounds.
@@ -26,7 +31,9 @@
             playwright-browser through the native skill loader. Follow discovered
             links rather than guessed page paths. Reuse existing captures and
             receipts. Employee profiles inform delegation; they never replace
-            your Runtime identity. Save the provisional strategy in Runtime memory.
+            your Runtime identity. Save concise findings after each stage in private
+            Runtime memory and recall them to guide the next stage. Save the
+            provisional strategy in Runtime memory.
             Do not wait for an agenda or reuse historical test instructions.
             Before meaningful work, provide one brief progress message in plain
             language. Update when the direction changes or a useful finding

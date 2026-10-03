@@ -1,3 +1,5 @@
+import type { ConversationNodeDefinition } from '@deepseek-ai/dsh-client-ui-conversation/client'
+import type {} from '@deepseek-ai/dsh-client-ui-chat/client'
 import { RuntimeAwakening } from './RuntimeAwakening.tsx'
 import { BrainConnections } from './BrainConnections.tsx'
 import type {} from '@deepseek-ai/dsh-client-ui-schedule/client'
@@ -37,6 +39,22 @@ import {
   type EmployeeOption, selectedEmployee, projectedEmployee, EmployeeAvatar,
 } from './HyperagentEmployee.tsx'
 import { HyperagentWorkbench } from './HyperagentWorkbench.tsx'
+
+declare module '@deepseek-ai/dsh-client-ui-chat/client' {
+  interface ChatNodeDataMap { 'runtime-awakening-stage': { turn: number; seq: number } }
+}
+
+const awakeningStage: ConversationNodeDefinition<{ turn: number; seq: number }> = {
+  kind: 'runtime-awakening-stage', target: 'chat',
+  match: event => String(event.type) === 'hivemind/hq-awakening-checkpoint' ? { id: String(event.seq), role: 'start' } : null,
+  start: (_context, match) => ({ turn: (match.event.data as { turn: number }).turn, seq: match.event.seq }),
+  update: context => context.state,
+  buildViewNode: context => context.start === undefined ? null : {
+    key: context.key, kind: 'runtime-awakening-stage', id: context.id, target: 'chat',
+    anchorSeq: context.start.event.seq, location: context.start.location,
+    processDisclosure: 'independent', visibility: 'visible', data: context.state,
+  },
+}
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap { 'hivemind-connect': HivemindConnectKey }
@@ -512,11 +530,14 @@ export function apply(ctx: ClientContext): void {
       const conversation = scope?.get('conversation')
       if (conversation !== undefined) void conversation.send(prompt)
     }
-    ctx.slots.inject('conversation.chat.workUpdates', () => ctx.slots.register({
-      name: 'conversation.chat.workUpdates', id: 'runtime-investigation',
+    ctx.inject(['uiConversation'], () => ctx.effect(() => ctx.uiConversation.events.register(awakeningStage)))
+    ctx.slots.inject('conversation.chat.node', () => ctx.slots.register({
+      name: 'conversation.chat.node', key: 'runtime-awakening-stage',
       children: { 'hivemind.runtime.plan': { kind: 'list', scope: 'session' } },
       inject: sessionId => ({ events: employeeEvents(sessionId) }),
-    }, ({ turn, events, renderSlot }) => createElement(RuntimeAwakening, { turn, events, renderSlot })))
+    }, ({ node, events, renderSlot }) => createElement(RuntimeAwakening, {
+      turn: node.data.turn, checkpointSeq: node.data.seq, events, renderSlot,
+    })))
     ctx.slots.inject('conversation.chat.turnTail', () => ctx.slots.register({
       name: 'conversation.chat.turnTail', priority: 40,
       select: selectContextualFollowUps,

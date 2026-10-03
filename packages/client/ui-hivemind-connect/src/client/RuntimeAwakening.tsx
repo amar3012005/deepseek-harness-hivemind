@@ -8,7 +8,7 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface SlotMap { 'conversation.chat.workUpdates': { kind: 'list'; scope: 'session'; owner: { turn: number } }; 'hivemind.runtime.plan': { kind: 'list'; scope: 'session'; owner: { turn: number } } }
 }
 interface EventSource { subscribe(listener: () => void): () => void; getSnapshot(): SessionEventWindow }
-interface Checkpoint {
+export interface Checkpoint {
   stage: string
   turn: number
   summary: string
@@ -25,14 +25,15 @@ interface Checkpoint {
 }
 const titles: Record<string, string> = { company: 'Understanding your company', evidence: 'Inspecting the evidence', team: 'Getting to know your team', memory: 'Learning from previous work', strategy: 'Building the initial strategy', conversation: 'Discussing your next agenda', remembered: 'Ready to continue' }
 export function RuntimeAwakening(
-  { events, turn, renderSlot }: { events: EventSource; turn: number }
+  { events, turn, checkpointSeq, renderSlot }: { events: EventSource; turn: number; checkpointSeq?: number }
     & Pick<PropsRenderSlots<'hivemind.runtime.plan'>, 'renderSlot'>,
 ) {
   const window = useSyncExternalStore(listener => events.subscribe(listener), () => events.getSnapshot())
   const checkpoints = window.entries.flatMap((entry) => {
     if (entry.type !== 'event' || String(entry.event.type) !== 'hivemind/hq-awakening-checkpoint') return []
     const item = entry.event.data as unknown as Checkpoint
-    return item.turn === turn ? [{ ...item, seq: entry.event.seq }] : []
+    return item.turn === turn && (checkpointSeq === undefined || entry.event.seq === checkpointSeq)
+      ? [{ ...item, seq: entry.event.seq }] : []
   })
   if (!checkpoints.length) return null
   const stages = checkpoints.filter((item, index) => checkpoints.findIndex(other => other.stage === item.stage) === index)
@@ -61,6 +62,6 @@ export function RuntimeAwakening(
         </article>)}
       </div>}
     </section>)}
-    {renderSlot('hivemind.runtime.plan', { turn })}
+    {stages.some(item => item.stage === 'conversation' || item.stage === 'remembered') && renderSlot('hivemind.runtime.plan', { turn })}
   </section>
 }

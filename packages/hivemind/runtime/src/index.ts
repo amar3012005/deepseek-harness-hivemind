@@ -1237,16 +1237,6 @@ export function apply(ctx: Context, config: Config): void {
   }
   ctx.on('hivemind/voice-context', async ({ agent, signal }) =>
     (await snapshotFor(agent, signal, undefined, true)).initialContext)
-  const awakeningDiscovery = (agent: Agent): boolean => {
-    let preset = agent.session.header.agentPreset
-    const events = agent.session.snapshotEvents()
-    for (const event of events) if (String(event.type) === 'agent-preset/selected') preset = (event.data as { agentPreset: string }).agentPreset
-    if (preset !== 'hivemind-hq') return false
-    if (events.some(event => String(event.type) === 'hivemind/hq-awakening-checkpoint' && ['team', 'strategy', 'conversation', 'remembered'].includes((event.data as { stage: string }).stage) && !(event.data as { blocked: boolean }).blocked)) return false
-    if (events.some(event => String(event.type) === 'hivemind/hq-awakening-start')) return true
-    const human = events.findLast(event => event.type === 'user/message' && event.data.source.kind === 'user')
-    return human?.type === 'user/message' && /^wake\s+up\s*,?\s*chief\s*!?\s*$/iu.test(human.data.content.flatMap(block => block.type === 'text' ? [block.text] : []).join('').trim())
-  }
   ctx.plugin(contextPlugin({
     historyTurns: config.historyTurns,
     historyMaxChars: config.historyMaxChars,
@@ -1258,7 +1248,6 @@ export function apply(ctx: Context, config: Config): void {
       return `Reply language for this turn: ${language}. Use this language consistently throughout this turn, including any generated reasoning text, explanations, reports, final response, and contextual follow-ups. This persisted navbar selection applies to every new query until the user changes it; do not switch languages merely because sources or tool results use another language. Preserve proper nouns, code, tool names, and quoted source text unless translation is requested. ${owner?.slug === 'runtime' ? 'Keep findings concise and evidence-backed. Do not offer exports unless asked.' : 'When you deliver a report or substantial research, keep the complete deliverable in the user-facing response, then briefly ask whether the user wants it saved as a Google Doc or exported as a PDF using available connected apps or artifact tools. Do not create or publish that document unless the user requests or approves it; if already requested, carry it out without asking again. A memory-save receipt or short status update must not replace the report.'}${owner === undefined ? employee === undefined ? '' : ` User selected ${employee.name} (${employee.role}, id ${employee.id}) for this session.` : ` You are ${owner.name} (${owner.role}, agent slug ${owner.slug}), the persistent owner of this session. Keep this identity across tasks and stages; use specialist skills without changing employees. ${owner.persona ?? ''} The runtime records each delivered user-task response as private task_status memory with timestamps and session evidence. Do not duplicate that task record or claim external work succeeded without its tool receipt.`}`
     },
     async profileBrief(agent, signal, turn) {
-      if (awakeningDiscovery(agent)) return undefined
       const investigation = agent.session.snapshotEvents().findLast(
         event => String(event.type) === 'hivemind/hq-public-investigation',
       )
@@ -1706,7 +1695,7 @@ export function apply(ctx: Context, config: Config): void {
     }
     const hqRecall = new WeakMap<Agent, { turn: number; text: string }>()
     ctx.effect(() => ctx.on('agent/pre-step', async ({ agent, signal, turn }, next) => {
-      if (publicInvestigation(agent) || awakeningDiscovery(agent)) return next()
+      if (publicInvestigation(agent)) return next()
       const owner = await ensureOwner(agent, signal)
       principals.set(agent, ctx.hivemindExecutionScope.require())
       enqueueTasks(agent, owner)
