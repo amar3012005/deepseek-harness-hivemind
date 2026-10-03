@@ -5,6 +5,8 @@ import type { SessionId } from '@deepseek-ai/dsh-session/types'
 /** Authenticated backend must atomically retain one HQ root per company. */
 export interface HqOwnershipBackend {
   /** Claim the calling human's company for an exact owned native HQ root. */
+  freshTargets?(sessionId: SessionId): Promise<SessionId[]>
+  resetFresh?(sessionId: SessionId, ids: readonly SessionId[]): Promise<{ sessions: number; memories: number }>
   claim(sessionId: SessionId): Promise<void>
 }
 declare module '@deepseek-ai/cordis' { interface Context { hivemindHqOwnership: HqOwnership } }
@@ -18,6 +20,14 @@ export default class HqOwnership extends Service {
     if (this.backend) throw new Error('hq_ownership_backend_already_registered')
     this.backend = backend
     return () => { if (this.backend === backend) this.backend = undefined }
+  }
+  async freshTargets(sessionId: SessionId): Promise<SessionId[]> {
+    if (!this.backend?.freshTargets) throw new Error('fresh_reset_backend_required')
+    return this.backend.freshTargets(sessionId)
+  }
+  async resetFresh(sessionId: SessionId, ids: readonly SessionId[]): Promise<{ sessions: number; memories: number }> {
+    if (!this.backend?.resetFresh) throw new Error('fresh_reset_backend_required')
+    return this.backend.resetFresh(sessionId, ids)
   }
   /** Claim through authenticated storage; missing durability fails closed. */
   async claim(sessionId: SessionId): Promise<void> {

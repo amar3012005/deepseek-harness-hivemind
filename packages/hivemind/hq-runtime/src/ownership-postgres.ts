@@ -2,7 +2,7 @@
 import { Service, type Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { Pool } from 'pg'
-import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import { SessionId } from '@deepseek-ai/dsh-session/types'
 import type {} from '@deepseek-ai/dsh-hivemind-execution-scope'
 import type {} from './ownership.ts'
 
@@ -26,9 +26,58 @@ export default class PostgresHqOwnership extends Service {
   async [Service.init](): Promise<() => Promise<void>> {
     try {
       await this.pool.query('SELECT 1 FROM harness_company_hq LIMIT 0')
-      const unregister = this.ctx.hivemindHqOwnership.register({ claim: id => this.claim(id) })
+      const unregister = this.ctx.hivemindHqOwnership.register({
+        claim: id => this.claim(id), freshTargets: id => this.freshTargets(id),
+        resetFresh: (id, ids) => this.resetFresh(id, ids),
+      })
       return async () => { unregister(); await this.pool.end() }
     } catch (error) { await this.pool.end(); throw error }
+  }
+  /** Capture only the requesting user's native employee rooms and their descendants. */
+  async freshTargets(root: SessionId): Promise<SessionId[]> {
+    const p = this.ctx.hivemindExecutionScope.require()
+    const client=await this.pool.connect()
+    try {
+      await client.query('BEGIN')
+      await client.query("SELECT set_config('app.hivemind_org_id',$1,true),set_config('app.hivemind_user_id',$2,true)",[p.orgId,p.userId])
+      const owner = await client.query('SELECT 1 FROM harness_company_hq h JOIN user_organizations m ON m.org_id=h.org_id AND m.user_id=h.user_id AND m.is_active AND m.deactivated_at IS NULL JOIN users u ON u.id=h.user_id AND u.deleted_at IS NULL WHERE h.org_id=$1 AND h.user_id=$2 AND h.session_id=$3', [p.orgId, p.userId, root])
+      if (!owner.rowCount) throw new Error('fresh_reset_owned_runtime_required')
+      const rows = await client.query<{ id: string; parent: string | null; preset: string }>(`SELECT s.id,s.header->>'parentSession' AS parent,
+      COALESCE((SELECT e.payload->'data'->>'agentPreset' FROM harness_session_events e WHERE e.session_id=s.id AND e.org_id=s.org_id AND e.user_id=s.user_id AND e.event_type='agent-preset/selected' ORDER BY e.sequence DESC LIMIT 1),s.header->>'agentPreset') AS preset
+      FROM harness_sessions s WHERE s.org_id=$1 AND s.user_id=$2`, [p.orgId,p.userId])
+      const ids = new Set(rows.rows.filter(r => ['hivemind-hq','hivemind-hyperagents'].includes(r.preset)).map(r => r.id))
+      for (let i=0;i<rows.rows.length;i++) {
+        const before=ids.size
+        for (const r of rows.rows) if (r.parent && ids.has(r.parent)) ids.add(r.id)
+        if (before===ids.size) break
+      }
+      if (!ids.has(root)) throw new Error('fresh_reset_root_missing')
+      await client.query('COMMIT')
+      return [...ids].sort().map(SessionId)
+    } catch(error) {await client.query('ROLLBACK').catch(() => undefined);throw error} finally {client.release()}
+  }
+
+  /** Human-only scoped reset; company memory, profiles and other users are untouched. */
+  async resetFresh(root: SessionId, ids: readonly SessionId[]): Promise<{ sessions: number; memories: number }> {
+    const p=this.ctx.hivemindExecutionScope.require()
+    const current=await this.freshTargets(root)
+    if (JSON.stringify(current)!==JSON.stringify(ids)) throw new Error('fresh_reset_scope_changed')
+    const client=await this.pool.connect()
+    try {
+      await client.query('BEGIN')
+      await client.query("SELECT set_config('app.hivemind_org_id',$1,true),set_config('app.hivemind_user_id',$2,true)",[p.orgId,p.userId])
+      const lock=await client.query('SELECT id FROM harness_sessions WHERE org_id=$1 AND user_id=$2 AND id=ANY($3::text[]) FOR UPDATE',[p.orgId,p.userId,ids])
+      if (lock.rowCount!==ids.length) throw new Error('fresh_reset_scope_changed')
+      const leased=await client.query('SELECT 1 FROM harness_session_leases WHERE session_id=ANY($1::text[]) AND released_at IS NULL AND expires_at>now() LIMIT 1',[ids])
+      if (leased.rowCount) throw new Error('fresh_reset_sessions_still_owned')
+      const memories=await client.query("DELETE FROM hyper_agent_operating_memories WHERE org_id=$1 AND user_id=$2 AND project_slug='hyper-agents'",[p.orgId,p.userId])
+      await client.query('DELETE FROM harness_session_events WHERE org_id=$1 AND user_id=$2 AND session_id=$3',[p.orgId,p.userId,root])
+      await client.query('UPDATE harness_sessions SET event_count=0,revision=revision+1,updated_at=now() WHERE org_id=$1 AND user_id=$2 AND id=$3',[p.orgId,p.userId,root])
+      const sessions=await client.query('DELETE FROM harness_sessions WHERE org_id=$1 AND user_id=$2 AND id=ANY($3::text[]) AND id<>$4',[p.orgId,p.userId,ids,root])
+      if (sessions.rowCount!==ids.length-1) throw new Error('fresh_reset_scope_changed')
+      await client.query('COMMIT')
+      return { sessions:ids.length,memories:memories.rowCount ?? 0 }
+    } catch(error) { await client.query('ROLLBACK').catch(() => undefined);throw error } finally {client.release()}
   }
   /** Atomically retain one canonical root without accepting model-supplied tenant identifiers. */
   async claim(sessionId: SessionId): Promise<void> {

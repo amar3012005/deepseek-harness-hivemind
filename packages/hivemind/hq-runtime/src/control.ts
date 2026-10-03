@@ -96,6 +96,28 @@ export class HqControl extends TypertRemoteService {
     )
   }
 
+  /** Human-only fresh start, scoped by the authenticated storage principal. */
+  @Remote('startFresh')
+  async startFresh(agent: Agent, request: { confirmed: boolean }): Promise<{ sessions: number; memories: number }> {
+    if (request.confirmed !== true) throw new Error('fresh_reset_confirmation_required')
+    const root=this.root(agent)
+    const ids=await this.ctx.hivemindHqOwnership.freshTargets(root.id)
+    const paused=await this.setMode(root,{ enabled:false,expectedRevision:this.mode(root).revision })
+    if (!paused.ok) throw new Error('fresh_reset_mode_changed')
+    for (const item of await this.ctx.schedule.catalog()) {
+      if (ids.includes(item.sessionId)) await this.ctx.schedule.delete({ sessionId:item.sessionId,id:item.id })
+    }
+    await this.ctx.sessionController.releaseOwnedSessions(ids)
+    const result=await this.ctx.hivemindHqOwnership.resetFresh(root.id,ids)
+    const created=await this.ctx.sessionController.create({ hyperagentRoom:'runtime' })
+    const fresh=await this.ctx.sessionController.resolveAgent(created.sessionId)
+    if ('error' in fresh) throw fresh.error
+    fresh.agent.session.append('hivemind/hq-public-investigation',{ enabled:true })
+    if (!await this.ctx.sessions.flush(fresh.agent.session)) throw new Error('fresh_reset_room_not_persisted')
+    await this.ctx.hivemindHqOwnership.claim(fresh.agent.id)
+    return result
+  }
+
   /** Human-only investigation scope; does not clear tasks, change autonomy, or start a turn. */
   @Remote('publicInvestigation')
   async publicInvestigation(agent: Agent, request: { enabled: boolean }): Promise<{ enabled: boolean }> {

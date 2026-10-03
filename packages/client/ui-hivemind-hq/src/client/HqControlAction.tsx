@@ -9,8 +9,12 @@ import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import css from './HqControlAction.module.css'
 
+type FreshStartAction = (sessionId: SessionId, request: { confirmed: boolean })
+=> Promise<RemoteResult<{ sessions: number; memories: number }>>
+
 /** Only the browser plugin receives the human Remote mutation capability. */
 export interface HqControlInjected {
+  readonly startFresh?: FreshStartAction
   readonly load: (sessionId: SessionId) => Promise<RemoteResult<HqModeState>>
   readonly restState: (sessionId: SessionId) => Promise<RemoteResult<HqRestState>>
   readonly leaveRestNote: (sessionId: SessionId, request: HqRestNoteRequest) => Promise<RemoteResult<HqRestNoteResult>>
@@ -24,7 +28,7 @@ export type HqControlActionProps = Pick<PropsRuntime<'conversation.session.heade
  * @param props - scoped native session, localized copy and human-only RPC actions.
  * @returns the HQ switch, independent of ordinary employee session controls.
  */
-export function HqControlAction({ sessionId, load, setMode, restState, leaveRestNote, t }: HqControlActionProps) {
+export function HqControlAction({ sessionId, load, setMode, restState, leaveRestNote, startFresh, t }: HqControlActionProps) {
   const [mode, setState] = useState<HqModeState | null>(null)
   const [pending, setPending] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -110,7 +114,17 @@ export function HqControlAction({ sessionId, load, setMode, restState, leaveRest
   const parsedWakeAt = wakeAt ? new Date(wakeAt) : null
   const wakeTime = parsedWakeAt && !Number.isNaN(parsedWakeAt.getTime())
     ? parsedWakeAt.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }) : wakeAt
+  const reset = async () => {
+    if (!startFresh || !window.confirm(t('freshConfirm'))) return
+    setPending(true)
+    try {
+      const result=await startFresh(sessionId,{ confirmed:true })
+      if (!result.ok) {setError(result.error.message);setPending(false);return}
+      window.location.assign('/hivemind/app/employee/harness')
+    } catch {setError(t('freshFailed'));setPending(false)}
+  }
   return <div className={css.control}>
+    {startFresh && <Button size="sm" variant="outline" disabled={pending} onClick={() => {void reset()}}>{t('startFresh')}</Button>}
     {mode && <span role="status">{t(mode.enabled ? 'active' : 'paused')}</span>}
     <Button size="sm" variant="outline" className={mode?.enabled ? css.pause : undefined}
       disabled={pending || mode === null} aria-label={t(mode?.enabled ? 'pause' : mode?.revision === 0 ? 'wake' : 'enable')}

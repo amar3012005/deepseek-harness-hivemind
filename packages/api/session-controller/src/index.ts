@@ -199,6 +199,11 @@ export class SessionController extends TypertRemoteService {
    * @param sessionId - Session identity whose Agent owns the operation.
    * @returns the live Agent or the stable Session-domain failure.
    */
+  /** Host-only lifecycle disposal; callers must authorize exact session identities first. */
+  releaseOwnedSessions(ids: readonly SessionId[]): Promise<void> {
+    return this.agents.releaseOwned(ids)
+  }
+
   resolveAgent(sessionId: SessionId): Promise<ApiSessionAgentResult> {
     return this.agents.resolveAgent(sessionId)
   }
