@@ -757,7 +757,7 @@ const artifactDefinition: ConversationNodeDefinition<ArtifactData> = {
   kind: 'hivemind-artifact',
   target: 'chat',
   match: event =>
-    event.type === 'hivemind/artifact-created' || event.type === 'hivemind/generation-created' || String(event.type) === 'hivemind/browser-capture'
+    event.type === 'hivemind/artifact-created' || event.type === 'hivemind/generation-created' || (String(event.type) === 'hivemind/browser-capture' && typeof record(record(event.data)?.['preview'])?.['attachmentId'] === 'string')
       ? { id: string(record(event.data)?.['artifactId'] ?? record(event.data)?.['captureId']) ?? String(event.seq), role: 'start' }
       : null,
   start: (_context, match) => artifactData(match.event),
