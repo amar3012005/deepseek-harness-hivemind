@@ -170,17 +170,18 @@ export function apply(ctx: Context): void {
     defineTool({
       name: 'hivemind_hq_contract',
       description:
-        'Coordinate existing native Team tasks. list returns the authenticated employee directory with exact IDs, existing contracts, tasks, and calendar; use it to find an employee before assignment. attach immutable deadline/acceptance criteria, assign an authenticated employee persistent room, schedule contracted pending tasks for verified employees, link saved producer artifacts, or review saved inputs with Jev. Native Team tools own task lifecycle and dependencies. Completion requires linked receipts and an accepted review of the current revision. This tool never grants authority.',
+        'Coordinate existing native Team tasks. list returns the authenticated employee directory with exact IDs, existing contracts, tasks, and calendar; use it to find an employee before assignment. attach saves immutable deadline/acceptance criteria. assign starts eligible work immediately in the authenticated employee persistent room. For a future start, use schedule directly with task_id, employee_id, starts_at and ends_at: it binds the employee, saves the native timer in that employee room, and sends a quiet assignment notice without starting work. Do not call assign before schedule; running tasks cannot be scheduled. Link saved producer artifacts or review saved inputs with Jev. Native Team tools own task lifecycle and dependencies. Completion requires linked receipts and an accepted review of the current revision. This tool never grants authority.',
       parameters: {
         action: {
           type: 'string',
           required: true,
           enum: ['list', 'attach', 'artifacts', 'assign', 'review', 'schedule'],
+          description: 'assign dispatches work now; schedule assigns pending work for a future start and requires no preceding assign call.',
         },
         employee_id: {
           type: 'string',
           description:
-            'Exact authenticated employee id; assign delivers to the employee persistent room using native task ownership.',
+            'Exact authenticated employee id from list. Required for assign and schedule; both bind the employee persistent room using native task ownership.',
         },
         task_id: { type: 'string' },
         due_at: { type: 'string', description: 'RFC3339 instant with explicit timezone.' },

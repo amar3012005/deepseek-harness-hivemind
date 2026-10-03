@@ -95,7 +95,7 @@ function mount(pluginConfig: Config, withSpill = false, web?: Pick<WebRuntime, '
   const spills: Array<{ suggestedName: string; content: string }> = []
   const cleanups: Array<() => unknown> = []
   const harness: HarnessMock = {
-    tools, skills, spills, flush: vi.fn(async () => {}),
+    tools, skills, spills, flush: vi.fn(async () => true),
     dispose: async () => { await Promise.all(cleanups.map(cleanup => cleanup())) },
   }
   disposals.push(harness.dispose)
@@ -339,6 +339,7 @@ describe('HIVE-MIND runtime', () => {
     const harness = mount(config(path))
     const scopedAgent = {
       session: {
+        header: { agentPreset: 'hivemind-chat' },
         surface: { nodes: [] },
         eventAt: () => undefined,
         snapshotEvents: () => [],
@@ -368,6 +369,7 @@ describe('HIVE-MIND runtime', () => {
     const harness = mount(config(await authorityFile()))
     const scopedAgent = {
       session: {
+        header: { agentPreset: 'hivemind-chat' },
         surface: { nodes: [] },
         eventAt: () => undefined,
         snapshotEvents: () => [],
@@ -391,6 +393,7 @@ describe('HIVE-MIND runtime', () => {
     const harness = mount(config(path))
     const scopedAgent = {
       session: {
+        header: { agentPreset: 'hivemind-chat' },
         surface: { nodes: [] },
         eventAt: () => undefined,
         snapshotEvents: () => [],
@@ -432,7 +435,7 @@ describe('HIVE-MIND runtime', () => {
       }),
     ])
     const harness = mount(config(await authorityFile()))
-    const scopedAgent = { session: { surface: { nodes: [] }, eventAt: () => undefined, snapshotEvents: () => [] } } as unknown as Agent
+    const scopedAgent = { session: { header: { agentPreset: 'hivemind-chat' }, surface: { nodes: [] }, eventAt: () => undefined, snapshotEvents: () => [] } } as unknown as Agent
     const enter = (text: string) => async () => ({ kind: 'enter' as const, messages: [user(text)] })
 
     const first = await harness.preStep?.({ agent: scopedAgent, turn: 1, step: 0, signal }, enter('hello')) as { messages: UserMessage[] }
@@ -507,6 +510,25 @@ describe('HIVE-MIND runtime', () => {
     })
     await expect(harness.toolPreExecute?.({ name: 'hivemind_meta' }, allow)).resolves.toEqual({ kind: 'allow' })
     expect(allow).toHaveBeenCalledOnce()
+  })
+
+  it('delegates public research to native policy when per-call web approval is disabled', async () => {
+    const pluginConfig = config(await authorityFile())
+    pluginConfig.webApprovalRequired = false
+    const harness = mount(pluginConfig)
+    const nativePolicy = vi.fn(async () => ({ kind: 'deny' as const, reason: 'Native scope restriction' }))
+
+    for (const name of ['hivemind_web_search', 'web_fetch', 'hivemind_research_answer',
+      'hivemind_research_request', 'hivemind_research_gather', 'parallel_search', 'browser_markdown']) {
+      await expect(harness.toolPreExecute?.({ name }, nativePolicy)).resolves.toEqual({
+        kind: 'deny', reason: 'Native scope restriction',
+      })
+    }
+    expect(nativePolicy).toHaveBeenCalledTimes(7)
+    await expect(harness.toolPreExecute?.({ name: 'hivemind_create_project' }, nativePolicy)).resolves.toEqual({
+      kind: 'ask', reason: 'Creating a HIVE-MIND project requires your approval.',
+    })
+    expect(nativePolicy).toHaveBeenCalledTimes(7)
   })
 
   it('searches external sources through the authenticated HIVE job service', async () => {
@@ -639,6 +661,7 @@ describe('HIVE-MIND runtime', () => {
     const append = vi.fn()
     const scopedAgent = {
       session: {
+        header: { agentPreset: 'hivemind-chat' },
         surface: { nodes: [0, 2, 3, 4] },
         eventAt: findEvent,
         snapshotEvents: () => events,
@@ -1207,7 +1230,7 @@ describe('HyperAgents durable employee ownership and completion outbox', () => {
     }))
     const harness = mount({ ...config('unused'), authorityMode: 'scoped-service', privateMemoryEnabled: true, serviceApiBase: 'http://control.test', serviceHttpOrigins: ['http://control.test'], serviceSecretEnv: 'TEST_HIVE_RUNNER_SECRET' })
     const events = [{ seq: 0, time: 1000, type: 'hivemind/employee-selection', data: { id: 'elena', name: 'Elena', role: 'strategist' } }, { seq: 1, time: 1001, type: 'turn/start', data: { turn: 1 } }] as unknown as SessionEvent[]
-    const subject = { id: 'session-d292efdd-4b56-4053-b61c-9cd63a7cd8ff', session: { snapshotEvents: () => events, append: (type: string, data: unknown) => { events.push({ seq: events.length, time: 1000 + events.length, type, data } as SessionEvent) } } } as unknown as Agent
+    const subject = { id: 'session-d292efdd-4b56-4053-b61c-9cd63a7cd8ff', session: { header: { agentPreset: 'hivemind-hyperagents' }, snapshotEvents: () => events, append: (type: string, data: unknown) => { events.push({ seq: events.length, time: 1000 + events.length, type, data } as SessionEvent) } } } as unknown as Agent
     const enter = async () => ({ kind: 'enter' as const, messages: [] })
     await harness.preStep?.({ agent: subject, turn: 1, signal }, enter)
     const owner = events.find(event => event.type === 'hivemind/session-owner')
@@ -1240,7 +1263,7 @@ describe('HQ automatic private wake recall', () => {
     const fetchMock = vi.fn(async (_url: string, _init: RequestInit) => jsonResponse({ ok: true, memories: [{ id: 'prior', summary: 'Ravi saved a report' }] }))
     vi.stubGlobal('fetch', fetchMock)
     const harness = mount({ ...config('unused'), authorityMode: 'scoped-service', privateMemoryEnabled: true, serviceApiBase: 'http://control.test', serviceHttpOrigins: ['http://control.test'], serviceSecretEnv: 'TEST_HIVE_RUNNER_SECRET' })
-    const events = [{ type: 'hivemind/session-owner', data: { id: null, slug: 'lead', name: 'HyperAgents', role: 'Team Lead' } }, { type: 'user/message', data: user('Review the saved crawler report') }] as unknown as SessionEvent[]
+    const events = [{ type: 'hivemind/session-owner', data: { id: null, slug: 'runtime', name: 'Runtime', role: 'AI Chief of Staff' } }, { type: 'user/message', data: user('Review the saved crawler report') }] as unknown as SessionEvent[]
     const subject = () => ({ id: 'session-d292efdd-4b56-4053-b61c-9cd63a7cd8ff', session: { header: { agentPreset: 'hivemind-hq' }, snapshotEvents: () => events } }) as unknown as Agent
     events.push({ type: 'user/message', data: createUserMessage({ content: [{ type: 'text', text: 'Old projected history' }], source: { kind: 'plugin', plugin: 'history', form: 'recall' } }) } as SessionEvent)
     const agent = subject()

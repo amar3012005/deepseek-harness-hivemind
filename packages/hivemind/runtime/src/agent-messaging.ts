@@ -54,7 +54,7 @@ export function installAgentMessaging(ctx: Context): void {
           if (typeof saved.artifactId !== 'string') continue
           await rooms.deliverAgentMessage(agent, {
             key: `artifact-${event.seq}`, target: 'runtime', kind: 'update',
-            text: `${owner.name} generated ${saved.title ?? 'an artifact'}. Task completion has not been inferred.`,
+            text: `${owner.name}: Chief, I’ve saved ${saved.title ?? 'an artifact'} for your review.`,
             artifactIds: [saved.artifactId], ...(taskId === undefined ? {} : { taskId }),
           }, signal)
         }
@@ -63,7 +63,7 @@ export function installAgentMessaging(ctx: Context): void {
           if (!response) continue
           await rooms.deliverAgentMessage(agent, {
             key: `response-${event.seq}`, target: 'runtime', kind: 'update',
-            text: `${owner.name} delivered a response. ${response.summary}`, ...(taskId === undefined ? {} : { taskId }),
+            text: `${owner.name}: Chief, my update is ready. Detailed findings and task status are in my private memory.`, ...(taskId === undefined ? {} : { taskId }),
           }, signal)
         }
       }

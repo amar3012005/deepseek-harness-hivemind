@@ -173,7 +173,7 @@
           recallItemMaxChars: 1200
           historyTurns: 3
           historyMaxChars: 3000
-          webApprovalRequired: true
+          webApprovalRequired: false
           nativeWebSearch: false
       - id: hivemind-capabilities
         insert:

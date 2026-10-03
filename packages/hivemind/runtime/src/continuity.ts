@@ -32,6 +32,7 @@ export interface TaskMemoryRecord {
     requestSeqs: number[]
     responseSeq: number
     completionSeq: number
+    taskId?: string
     toolReceipts: Array<{ name: string; callId: string; resultSeq: number; isError: boolean }>
   }
 }
@@ -66,8 +67,22 @@ export function completedTaskMemory(
   const start = events.findLast(event => event.type === 'turn/start' && event.data.turn === turn)
   if (end?.type !== 'turn/end' || end.data.reason.kind !== 'completed' || start === undefined) return undefined
   const within = events.filter(event => event.seq > start.seq && event.seq < end.seq)
-  const requests = within.filter(event => event.type === 'user/message' && (event.data.source.kind === 'user' || String(event.data.source.kind) === 'schedule'))
-  const request = requests.map(event => event.type === 'user/message' ? event.data.content.filter(block => block.type === 'text').map(block => block.text).join('\n') : '').join('\n').trim()
+  const requests = within.filter(event => event.type === 'user/message' && (event.data.source.kind === 'user' || ['schedule', 'hivemind-agent-message'].includes(String(event.data.source.kind))))
+  const request = requests.map(event => event.type === 'user/message' ? event.data.content.filter(block => block.type === 'text').map((block) => {
+    if (String(event.data.source.kind) !== 'hivemind-agent-message') return block.text
+    try {
+      const envelope: unknown = JSON.parse(block.text)
+      return envelope !== null && typeof envelope === 'object' && 'text' in envelope && typeof envelope.text === 'string' ? envelope.text : ''
+    } catch { return '' }
+  }).join('\n') : '').join('\n').trim()
+  let taskId: string | undefined
+  for (const line of request.split('\n')) {
+    if (!line.startsWith('HQ_EMPLOYEE_ASSIGNMENT=')) continue
+    try {
+      const ref: unknown = JSON.parse(line.slice('HQ_EMPLOYEE_ASSIGNMENT='.length))
+      if (ref !== null && typeof ref === 'object' && 'taskId' in ref && typeof ref.taskId === 'string' && /^task-[1-9]\d*$/.test(ref.taskId)) taskId = ref.taskId
+    } catch { /* Malformed framing supplies no task reference. */ }
+  }
   const answer = within.findLast(event => event.type === 'assistant/message' && event.data.turn === turn && !event.data.interrupted && event.data.message.content.some(block => block.type === 'text' && block.text.trim() !== ''))
   if (request === '' || answer?.type !== 'assistant/message') return undefined
   const delivered = answer.data.message.content.filter(block => block.type === 'text').map(block => block.text).join('\n').trim()
@@ -94,6 +109,7 @@ export function completedTaskMemory(
       requestedAt: new Date(requests[0]?.time ?? start.time).toISOString(), completedAt: new Date(end.time).toISOString(),
       requestSeqs: requests.slice(-64).map(event => Number(event.seq)),
       responseSeq: Number(answer.seq), completionSeq: Number(end.seq), toolReceipts,
+      ...(taskId === undefined ? {} : { taskId }),
     },
   }
 }

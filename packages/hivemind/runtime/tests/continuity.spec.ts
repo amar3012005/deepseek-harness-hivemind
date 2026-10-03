@@ -51,6 +51,20 @@ describe('persistent employee task memory', () => {
     expect(completedTaskMemory(sessionId, owner, history('completed', 'plugin'), 1)).toBeUndefined()
     expect(completedTaskMemory(sessionId, owner, history('aborted'), 1)).toBeUndefined()
   })
+  it('records authenticated room messages with task references and safely ignores malformed envelopes', () => {
+    const events = structuredClone(history('completed', 'hivemind-agent-message'))
+    const request = events.find(event => event.type === 'user/message')!
+    if (request.type !== 'user/message') throw new Error('missing request')
+    request.data.content = [{ type: 'text', text: JSON.stringify({ text: 'HQ_EMPLOYEE_ASSIGNMENT={"rootId":"chief","taskId":"task-3"}\nCreate a vegetarian brief.' }) }]
+    const record = completedTaskMemory(sessionId, owner, events, 1)!
+    expect(record.agent_slug).toBe(owner.slug)
+    expect(record.context.taskId).toBe('task-3')
+    expect(record.summary).toContain('vegetarian brief')
+    request.data.content = [{ type: 'text', text: '{invalid' }]
+    expect(completedTaskMemory(sessionId, owner, events, 1)).toBeUndefined()
+    request.data.content = [{ type: 'text', text: JSON.stringify({ text: 'Hello Chief' }) }]
+    expect(completedTaskMemory(sessionId, owner, events, 1)?.context.taskId).toBeUndefined()
+  })
   it('retries durable pending records and suppresses successfully saved replay', () => {
     const packet = completedTaskMemory(sessionId, owner, history(), 1)!
     const events = [{ type: 'hivemind/task-memory-pending', data: packet }] as SessionEvent[]

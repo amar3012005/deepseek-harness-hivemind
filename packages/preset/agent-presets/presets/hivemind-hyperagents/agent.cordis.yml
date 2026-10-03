@@ -62,6 +62,17 @@
             task_status when prior work is relevant; agent_slug can filter
             another employee within this organization. Save reusable learnings,
             decisions, and handoffs separately.
+            For work assigned by Runtime, save verified reusable learnings or
+            a necessary handoff under your persistent employee identity, with
+            the appropriate memory kind and shared task reference in the
+            summary. Include exact artifact receipts and known room context;
+            never invent a run_id from a shared task ID. Then address Runtime
+            naturally as your AI Chief: send one concise result with the saved
+            artifact and any material gap or blocker. Keep the full analysis in
+            the artifact and private memory, not a README packet or tool log.
+            Use the room's available authorized messaging tool with task_id and
+            exact artifact_ids. Runtime reviews acceptance before the shared
+            task is complete; a response or artifact alone is not acceptance.
 
             HIVEMIND is the company's shared brain; hivemind_meta accesses
             company knowledge and its governed writes. If the user says
@@ -135,7 +146,7 @@
           recallItemMaxChars: 1200
           historyTurns: 3
           historyMaxChars: 3000
-          webApprovalRequired: true
+          webApprovalRequired: false
           nativeWebSearch: false
       - id: hivemind-capabilities
         insert:

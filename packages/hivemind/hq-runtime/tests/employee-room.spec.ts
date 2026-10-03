@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { Context } from '@deepseek-ai/cordis'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
-import { allowsEmployeeWork, prepareEmployee, workReference } from '../src/employee-room.ts'
+import { allowsEmployeeWork, employeeWorkPrompt, prepareEmployee, workReference } from '../src/employee-room.ts'
 
 function fixture() {
   const events = [
@@ -20,6 +20,16 @@ function fixture() {
 }
 const signal = new AbortController().signal
 describe('HQ persistent employee delivery', () => {
+  it('keeps detailed learning in typed private memory and returns concise artifact receipts', () => {
+    const root = { id: 'chief', session: { snapshotEvents: () => [{ type: 'hivemind/hq-task-contract', data: { taskId: 'task-1', dueAt: '2026-10-03T20:00:00Z', acceptanceCriteria: ['Save brief'] } }] } } as unknown as Agent
+    const ctx = { agentTeams: { getTask: () => ({ description: 'Create brief', subject: 'Brief', writeScopes: [] }) } } as unknown as Context
+    const prompt = employeeWorkPrompt(ctx, root, 'task-1')
+    expect(prompt).toContain('actual persistent employee identity')
+    expect(prompt).toContain('task_status automatically; do not duplicate')
+    expect(prompt).toContain('exact artifact_ids')
+    expect(prompt).toContain('do not send a README packet')
+    expect(prompt).toContain('do not mark the task complete or grant new permissions')
+  })
   it('resolves the exact directory from the root preset isolate realm', async () => {
     const profiles = vi.fn(async () => ({ profiles: [] }))
     const serviceFor = vi.fn(() => ({ profiles }))
