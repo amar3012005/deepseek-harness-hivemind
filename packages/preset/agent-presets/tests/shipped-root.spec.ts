@@ -90,7 +90,7 @@ describe('the shipped preset root', () => {
     const ctx = await roster({ includeUserRoot: false })
 
     const listed = await ctx.agentPresets.list()
-    expect(listed.map(preset => preset.id).sort()).toEqual(['cordis', 'hivemind', 'hivemind-chat', 'hivemind-hyperagents', 'hyperagents', 'minimal', 'ptc', 'standard'])
+    expect(listed.map(preset => preset.id).sort()).toEqual(['cordis', 'hivemind', 'hivemind-chat', 'hivemind-hq', 'hivemind-hyperagents', 'hyperagents', 'minimal', 'ptc', 'standard'])
     expect(listed.every(preset => preset.trust === 'system')).toBe(true)
     // Not `broken === undefined`: health asks whether each row's package is
     // installed above the base, and the shipped rows name packages the
@@ -169,7 +169,7 @@ describe('the shipped preset root', () => {
   })
 
   it('mounts HQ policy at the actual HIVE Chat include boundary with shared plugin parity', async () => {
-    const [hq] = await shippedEntries('hivemind-hq') as Array<{
+    const [hq] = (await shippedEntries('hivemind-hq') as EntryOptions[]).filter(entry => entry.id === 'hivemind-chat-base') as Array<{
       config: { path: string; patches: Parameters<typeof applyEntryPatches>[1] }
     }>
     const [employee] = await shippedEntries('hivemind-hyperagents') as typeof hq[]
@@ -181,11 +181,19 @@ describe('the shipped preset root', () => {
     expect(warnings).toEqual([])
     expect(findEntry(composed, 'persona')?.config).toMatchObject({ prefix: expect.stringContaining('chief of staff') })
     expect(findEntry(composed, 'hivemind-hq-runtime')).toBeDefined()
+    expect(findEntry(composed, 'hivemind-operating-workstreams')).toBeUndefined()
+    expect(findEntry(ordinary, 'hivemind-operating-workstreams')).toBeDefined()
+    expect(findEntry(await shippedEntries('hivemind-hq'), 'time-context')?.config)
+      .toMatchObject({ refreshIntervalMs: 0, inheritScheduledTimeZone: true })
     expect(findEntry(composed, 'hivemind-playbooks')?.config).toMatchObject({
       progressiveToolDisclosure: true, employeeSubagentPlanning: true, nativeTeamCoordination: true,
     })
-    for (const id of ['hivemind-runtime', 'hivemind-connected-apps', 'hivemind-progressive-skills',
-      'hivemind-operating-workstreams', 'hivemind-research', 'hivemind-progressive-browser', 'tool-todo']) {
+    expect(findEntry(composed, 'hivemind-runtime')?.config).toMatchObject({
+      privateMemoryEnabled: true, authorityMode: 'scoped-service', legacyToolsEnabled: false,
+      onboardingServiceApiBase: { __jsExpr: expect.stringContaining('HIVEMIND_ONBOARDING_SERVICE_URL') },
+    })
+    for (const id of ['hivemind-connected-apps', 'hivemind-progressive-skills',
+      'hivemind-research', 'hivemind-progressive-browser', 'tool-todo']) {
       expect(findEntry(composed, id)).toEqual(findEntry(ordinary, id))
     }
   })
