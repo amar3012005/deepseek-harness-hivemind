@@ -52,18 +52,15 @@ describe('persistent employee task memory', () => {
     expect(completedTaskMemory(sessionId, owner, history('aborted'), 1)).toBeUndefined()
   })
   it('records authenticated room messages with task references and safely ignores malformed envelopes', () => {
-    const events = structuredClone(history('completed', 'hivemind-agent-message'))
-    const request = events.find(event => event.type === 'user/message')!
-    if (request.type !== 'user/message') throw new Error('missing request')
-    request.data.content = [{ type: 'text', text: JSON.stringify({ text: 'HQ_EMPLOYEE_ASSIGNMENT={"rootId":"chief","taskId":"task-3"}\nCreate a vegetarian brief.' }) }]
-    const record = completedTaskMemory(sessionId, owner, events, 1)!
+    const withEnvelope = (text: string): SessionEvent[] => history('completed', 'hivemind-agent-message').map(event => event.type === 'user/message' ? {
+      ...event, data: createUserMessage({ content: [{ type: 'text', text }], source: { kind: 'hivemind-agent-message' } as never }),
+    } : event)
+    const record = completedTaskMemory(sessionId, owner, withEnvelope(JSON.stringify({ text: 'HQ_EMPLOYEE_ASSIGNMENT={"rootId":"chief","taskId":"task-3"}\nCreate a vegetarian brief.' })), 1)!
     expect(record.agent_slug).toBe(owner.slug)
     expect(record.context.taskId).toBe('task-3')
     expect(record.summary).toContain('vegetarian brief')
-    request.data.content = [{ type: 'text', text: '{invalid' }]
-    expect(completedTaskMemory(sessionId, owner, events, 1)).toBeUndefined()
-    request.data.content = [{ type: 'text', text: JSON.stringify({ text: 'Hello Chief' }) }]
-    expect(completedTaskMemory(sessionId, owner, events, 1)?.context.taskId).toBeUndefined()
+    expect(completedTaskMemory(sessionId, owner, withEnvelope('{invalid'), 1)).toBeUndefined()
+    expect(completedTaskMemory(sessionId, owner, withEnvelope(JSON.stringify({ text: 'Hello Chief' })), 1)?.context.taskId).toBeUndefined()
   })
   it('retries durable pending records and suppresses successfully saved replay', () => {
     const packet = completedTaskMemory(sessionId, owner, history(), 1)!
