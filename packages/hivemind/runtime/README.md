@@ -98,3 +98,7 @@ is a separate future feature.
 
 The `hyperagentOwner` native session projection keeps ownership available even
 when the original owner event is outside the client's paginated history window.
+
+## Finished artifact production
+
+The native `hivemind-artifact-production` skill supplies on-demand brand context, complete-format planning, capability discovery and actual-output inspection guidance for Runtime and employees. Its catalog summary is shared; the full body loads only for production or an actionable production blocker. Artifact receipts do not establish task completion or hide subsequent production tools; leased capabilities and executor authorization remain authoritative. Current presentation generation supports text slides, not image composition; Markdown PDF rendering omits image references. Unsupported assembly remains a reported capability gap.

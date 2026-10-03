@@ -7,6 +7,7 @@
 import { installAgentMessaging } from './agent-messaging.ts'
 import { installRequestFallback } from './request-recovery.ts'
 import { installSubmissionReviewGuidance } from './review-guidance.ts'
+import { installArtifactProductionGuidance } from './production-guidance.ts'
 import { installCompanyAwakeningGuidance } from './awakening-guidance.ts'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
@@ -1079,6 +1080,7 @@ function registerWebConnectRoutes(ctx: Context, config: Config): void {
  * @returns Nothing; Cordis owns the registered effects.
  */
 export function apply(ctx: Context, config: Config): void {
+  installArtifactProductionGuidance(ctx)
   if (config.companyAwakeningEnabled) installCompanyAwakeningGuidance(ctx)
   if (config.submissionReviewEnabled) installSubmissionReviewGuidance(ctx)
   if (config.privateMemoryEnabled) installAgentMessaging(ctx)

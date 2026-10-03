@@ -25,3 +25,7 @@ Capability leases separate ordinary operating controls from high-cost automation
 ## Verification
 
 Run `pnpm exec vitest run packages/hivemind/playbooks/tests/playbooks.spec.ts` and `pnpm run verify-cordis-config -- --preset hyperagents`.
+
+## Finished artifact production
+
+The native `hivemind-artifact-production` skill supplies on-demand brand context, complete-format planning, capability discovery and actual-output inspection guidance for Runtime and employees. Its catalog summary is shared; the full body loads only for production or an actionable production blocker. Artifact receipts do not establish task completion or hide subsequent production tools; leased capabilities and executor authorization remain authoritative. Current presentation generation supports text slides, not image composition; Markdown PDF rendering omits image references. Unsupported assembly remains a reported capability gap.
