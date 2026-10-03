@@ -27,6 +27,14 @@ export function authorizedRecipient(profiles: readonly Record<string, unknown>[]
   if (matches.length > 1) throw new Error('agent_message_recipient_ambiguous_use_exact_employee_id')
   return matches[0]
 }
+export function employeeFailureSummary(code: string): string {
+  const category = /POLICY|SAFETY|REFUS|CONTENT_FILTER/i.test(code) ? 'a provider policy rejection'
+    : /AUTH|PERMISSION|FORBIDDEN/i.test(code) ? 'an authorization failure'
+      : /QUOTA|BILLING|CREDIT/i.test(code) ? 'a provider quota limit'
+        : /TIMEOUT|TRANSPORT|SERVER/i.test(code) ? 'a provider availability failure'
+          : 'a model request failure'
+  return `Chief, my turn ended because of ${category}. The assignment remains unfinished; please review the blocker before resuming it.`
+}
 export function installAgentMessaging(ctx: Context): void {
   ctx.inject(['sessionController', 'hivemindEmployeeDirectory'], (scope) => {
     const rooms = Reflect.get(scope, 'sessionController') as RoomDelivery
@@ -39,7 +47,7 @@ export function installAgentMessaging(ctx: Context): void {
       const confirmed = (key: string) => delivered.has(`agent-message-${createHash('sha256').update(JSON.stringify([agent.id, key])).digest('hex')}`)
       const pending = events.filter((event) => {
         if (['hivemind/generation-created', 'hivemind/artifact-created'].includes(String(event.type))) return !confirmed(`artifact-${event.seq}`)
-        return event.type === 'turn/end' && !confirmed(`response-${event.seq}`) && completedTaskMemory(agent.id, owner, events, event.data.turn) !== undefined
+        return event.type === 'turn/end' && !confirmed(`response-${event.seq}`) && (event.data.reason.kind === 'error' || completedTaskMemory(agent.id, owner, events, event.data.turn) !== undefined)
       })
       if (pending.length === 0) return
       const directory = await scope.hivemindEmployeeDirectory.profiles(signal)
@@ -67,11 +75,19 @@ export function installAgentMessaging(ctx: Context): void {
           }, signal)
         }
         if (event.type === 'turn/end') {
+          if (event.data.reason.kind === 'error') {
+            await rooms.deliverAgentMessage(agent, { key: `response-${event.seq}`, target: 'runtime', kind: 'update', text: employeeFailureSummary(event.data.reason.error.code), ...(taskId === undefined ? {} : { taskId }) }, signal)
+            continue
+          }
           const response = completedTaskMemory(agent.id, owner, events, event.data.turn)
           if (!response) continue
+          const start = events.findLast(item => item.type === 'turn/start' && item.data.turn === event.data.turn)
+          if (events.some(item => item.seq > (start?.seq ?? -1) && item.seq < event.seq && String(item.type) === 'hivemind/room-message-queued' && (item.data as { kind?: string }).kind !== 'question' && !(item.data as { artifactIds?: string[] }).artifactIds?.length && delivered.has((item.data as { id: string }).id))) continue
+          const answer = events.findLast(item => item.type === 'assistant/message' && item.data.turn === event.data.turn && !item.data.interrupted)
+          const text = answer?.type === 'assistant/message' ? answer.data.message.content.filter(block => block.type === 'text').map(block => block.text).join('\n').trim().slice(0, 1200) : ''
           await rooms.deliverAgentMessage(agent, {
             key: `response-${event.seq}`, target: 'runtime', kind: 'update',
-            text: `${owner.name}: Chief, my update is ready. The full response is in my room.`, ...(taskId === undefined ? {} : { taskId }),
+            text: text || `${owner.name}: Chief, my response is saved. The assignment still needs review.`, ...(taskId === undefined ? {} : { taskId }),
           }, signal)
         }
       }

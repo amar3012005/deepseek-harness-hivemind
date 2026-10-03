@@ -60,6 +60,7 @@ export const KNOWN_SESSION_EVENT_TYPES: ReadonlySet<string> = new Set([
   'hivemind/hq-mode',
   'hivemind/hq-public-investigation',
   'hivemind/hq-rest-confirmed',
+  'hivemind/request-fallback',
   'hivemind/hq-rest-intent',
   'hivemind/hq-rest-note',
   'hivemind/hq-rest-notes-presented',

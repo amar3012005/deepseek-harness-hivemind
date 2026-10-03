@@ -5,6 +5,7 @@
  */
 
 import { installAgentMessaging } from './agent-messaging.ts'
+import { installRequestFallback } from './request-recovery.ts'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { defineTool } from '@deepseek-ai/dsh-tools'
@@ -201,6 +202,9 @@ export interface Config {
   privateMemoryEnabled?: boolean
   /** Retry interval for the durable private task-memory outbox. */
   privateMemoryRetryMs?: number
+  /** Optional advertised route for one bounded native failed-step recovery. */
+  requestFallbackProvider?: string
+  requestFallbackModel?: string
   /** ICARUS JSON file holding the browser-issued HIVE-MIND credential. */
   icarusConfigPath: string
   /** Identity transport. Local mode uses ICARUS; scoped-service uses the authenticated request principal. */
@@ -243,6 +247,8 @@ export const Config: z<Config> = z.object({
   capabilityHintEnabled: z.boolean().default(true),
   privateMemoryEnabled: z.boolean().default(false),
   privateMemoryRetryMs: z.natural().min(1000).default(30000),
+  requestFallbackProvider: z.string(),
+  requestFallbackModel: z.string(),
   icarusConfigPath: z.string().required(),
   authorityMode: z.union(['local', 'scoped-service'] as const).default('local'),
   onboardingServiceApiBase: z.string(),
@@ -1066,6 +1072,9 @@ function registerWebConnectRoutes(ctx: Context, config: Config): void {
  */
 export function apply(ctx: Context, config: Config): void {
   if (config.privateMemoryEnabled) installAgentMessaging(ctx)
+  if (config.requestFallbackProvider && config.requestFallbackModel) installRequestFallback(ctx, {
+    provider: config.requestFallbackProvider, model: config.requestFallbackModel,
+  })
   ctx.effect(() => ctx.hivemindIdentity.register({
     async identity(signal) {
       if (config.authorityMode === 'scoped-service') {
