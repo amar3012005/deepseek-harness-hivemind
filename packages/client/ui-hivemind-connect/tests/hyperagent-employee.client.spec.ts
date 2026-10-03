@@ -50,3 +50,23 @@ describe('HyperAgents employee selection', () => {
     expect(result.sources).toEqual([{ url: 'https://example.com', title: 'Source' }])
   })
 })
+
+
+describe('returned employee artifacts', () => {
+  it('projects a delivered file with producer attribution without claiming Runtime generated it', () => {
+    const file = { attachmentId: 'saved-file', name: 'brief.pdf', bytes: 42 }
+    const window = { entries: [{ type: 'event', event: { type: 'hivemind/room-message-received', data: {
+      senderName: 'Ravi', artifacts: [{ artifactId: 'receipt-1', title: 'Cafe brief', mediaType: 'application/pdf',
+        file, producerSessionId: 'ravi-room' }],
+    } } }] } as unknown as SessionEventWindow
+    expect(workbenchSnapshot(window).artifacts).toEqual([{ id: 'receipt-1', title: 'Cafe brief',
+      path: 'brief.pdf', mediaType: 'application/pdf', file, preview: undefined, producerName: 'Ravi' }])
+  })
+
+  it('ignores files without a producer receipt reference', () => {
+    const window = { entries: [{ type: 'event', event: { type: 'hivemind/room-message-received', data: {
+      artifacts: [{ artifactId: 'unknown', file: { attachmentId: 'f', name: 'brief.pdf', bytes: 42 } }],
+    } } }] } as unknown as SessionEventWindow
+    expect(workbenchSnapshot(window).artifacts).toEqual([])
+  })
+})

@@ -336,7 +336,7 @@ export const UserMessageNodeView = memo(function UserMessageNodeView({
 })
 
 /** Injected-context keyed Chat renderer. */
-export const ContextMessageNodeView = memo(function ContextMessageNodeView({ node, t }: ChatNodeViewProps<'context'>) {
+export const ContextMessageNodeView = memo(function ContextMessageNodeView({ node, t, openArtifact }: ChatNodeViewProps<'context'>) {
   const data = node.data
   return (
     <ContextInjectionRow
@@ -344,6 +344,7 @@ export const ContextMessageNodeView = memo(function ContextMessageNodeView({ nod
       source={data.source}
       provenance={data.provenance}
       form={data.form}
+      {...openArtifact === undefined ? {} : { openArtifact }}
       t={t}
     />
   )

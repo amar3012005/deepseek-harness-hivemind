@@ -32,6 +32,20 @@ function fixture() {
 const signal = new AbortController().signal
 
 describe('Persistent agent room messaging', () => {
+  it('transfers only an exact saved generated file to Runtime without starting a turn', async () => {
+    const { caller, ravi, messaging } = fixture()
+    const file = { type: 'file', id: 'stored-file', name: 'brief.pdf' }
+    ravi.session.append('hivemind/generation-created', { artifactId: 'saved-artifact', file } as never)
+    const request = { key: 'artifact', target: 'runtime', kind: 'update' as const, text: 'Chief, here is the brief.', taskId: 'task-3', artifactIds: ['invented-artifact'] }
+    await expect(messaging.send(ravi, request, signal)).rejects.toThrow('saved_artifact_required')
+    expect(caller.session.snapshotEvents()).toHaveLength(0)
+    await messaging.send(ravi, { ...request, artifactIds: ['saved-artifact'] }, signal)
+    const notice = caller.session.snapshotEvents().find(e => e.type === 'user/message')
+    expect(notice?.type === 'user/message' && notice.data.content).toContainEqual({ type: 'file', attachment: file })
+    const received = caller.session.snapshotEvents().find(e => e.type === 'hivemind/room-message-received')
+    expect(received?.data).toMatchObject({ artifacts: [{ artifactId: 'saved-artifact', file, producerSessionId: 'ravi', producerName: 'Employee' }] })
+    expect(caller.steer).not.toHaveBeenCalled()
+  })
   it('prepares a directory-bound persistent room without inbox insertion and rejects identity conflicts', async () => {
     const { messaging, ravi, request } = fixture()
     expect(await messaging.resolveRoom(request.target, request.targetProfile, signal)).toBe(ravi)

@@ -1,9 +1,10 @@
 import { useState } from 'react'
 import type { ChatViewSlotProps } from '../contract/slots.ts'
-import { DisclosureRow, IconContextInjectionOutline16, ReferenceIcon } from '@deepseek-ai/dsh-client-ui-primitives'
+import { DisclosureRow, FileTypeIcon, fileSizeText, IconContextInjectionOutline16, ReferenceIcon } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ContextMessageNode } from '../contract/snapshot.ts'
 import { contextBody } from './ContextBody.tsx'
 import css from './ContextInjectionRow.module.css'
+import messageCss from './MessageItem.module.css'
 
 /** Props for the logged non-user message presentation. */
 export interface ContextInjectionRowProps {
@@ -14,6 +15,7 @@ export interface ContextInjectionRowProps {
   /** Producer-declared information form; null renders the opaque body. */
   form: ContextMessageNode['form']
   /** The owning view's locale seat, passed down as a plain prop. */
+  openArtifact?: (artifactId: string) => void
   t: ChatViewSlotProps['t']
 }
 
@@ -28,7 +30,7 @@ export interface ContextInjectionRowProps {
  * @param props - Durable content, its projected producer role/name and form, and the locale seat.
  * @returns A collapsed context row with a bounded, form-specific body.
  */
-export function ContextInjectionRow({ content, source, provenance, form, t }: ContextInjectionRowProps) {
+export function ContextInjectionRow({ content, source, provenance, form, openArtifact, t }: ContextInjectionRowProps) {
   const [open, setOpen] = useState(false)
   // Presentation only: durable prompt/context events remain available for future inspection.
   const agentMessage = typeof source === 'object' && source !== null && 'kind' in source && source.kind === 'hivemind-agent-message'
@@ -41,12 +43,30 @@ export function ContextInjectionRow({ content, source, provenance, form, t }: Co
   // Team delivery stores the complete message envelope, not the truncated notice summary.
   if (agentMessage) {
     const text = content.filter(block => block.type === 'text').map(block => block.text).join('')
-    let message: { senderName?: unknown; text?: unknown } | undefined
+    let message: { senderName?: unknown; text?: unknown; artifacts?: unknown } | undefined
     try { message = JSON.parse(text) as typeof message } catch { /* Older records retain the existing disclosure. */ }
     if (typeof message?.text === 'string' && typeof message.senderName === 'string') {
       return <article className={css.messageBubble} aria-label={`Message from ${message.senderName}`}>
         <strong className={css.sender}>{message.senderName}</strong>
         <p className={css.messageText}>{message.text}</p>
+        <div className={messageCss.attachmentRow} data-team-artifacts>
+          {content.filter(block => block.type === 'file').map((block, index) => {
+            const artifact = Array.isArray(message.artifacts) ? message.artifacts.find((item: unknown) => {
+              if (typeof item !== 'object' || item === null) return false
+              const value = item as { file?: { attachmentId?: unknown } }
+              return value.file?.attachmentId === block.attachment.attachmentId
+            }) as { artifactId?: unknown } | undefined : undefined
+            const id = typeof artifact?.artifactId === 'string' ? artifact.artifactId : undefined
+            return <button key={`${block.attachment.attachmentId}:${index}`} type="button" className={messageCss.fileCard}
+              disabled={id === undefined || openArtifact === undefined}
+              aria-label={`Open ${block.attachment.name} in Preview`}
+              onClick={() => { if (id !== undefined) openArtifact?.(id) }}>
+              <FileTypeIcon path={block.attachment.name} className={messageCss.fileIcon} />
+              <span className={messageCss.fileContent}><span className={messageCss.fileName}>{block.attachment.name}</span>
+                <span className={messageCss.fileMeta}>{fileSizeText(block.attachment.bytes)}</span></span>
+            </button>
+          })}
+        </div>
         <details className={css.messageDetails}>
           <summary>Work details</summary>
           <div className={css.body} data-context-injection-body data-context-form={rendered ?? undefined}>{body}</div>

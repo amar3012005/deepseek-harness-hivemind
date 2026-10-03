@@ -175,8 +175,8 @@ export function apply(ctx: Context): void {
         action: {
           type: 'string',
           required: true,
-          enum: ['list', 'attach', 'artifacts', 'assign', 'review', 'schedule'],
-          description: 'assign dispatches work now; schedule assigns pending work for a future start and requires no preceding assign call.',
+          enum: ['list', 'attach', 'artifacts', 'inspect', 'assign', 'review', 'schedule'],
+          description: 'assign dispatches work now; schedule assigns pending work for a future start and requires no preceding assign call. artifacts links specified saved artifact_ids; it does not retrieve files. list returns saved receipts and reviews. inspect reads linked producer document content without changing task or review state. review evaluates linked documents against acceptance criteria.',
         },
         employee_id: {
           type: 'string',
@@ -188,7 +188,7 @@ export function apply(ctx: Context): void {
         starts_at: { type: 'string', description: 'Future RFC3339 start with timezone for schedule.' },
         ends_at: { type: 'string', description: 'RFC3339 end after starts_at for schedule.' },
         acceptance_criteria: { type: 'array', items: { type: 'string' } },
-        artifact_ids: { type: 'array', items: { type: 'string' } },
+        artifact_ids: { type: 'array', items: { type: 'string' }, description: 'Required nonempty exact saved artifact IDs for action artifacts. This action links receipts, not file retrieval; never invent IDs or call it without IDs.' },
         producer: {
           type: 'string',
           description:
@@ -230,6 +230,15 @@ export function apply(ctx: Context): void {
               ...contract,
               acceptanceCriteria: [...contract.acceptanceCriteria],
             })),
+            artifact_receipts: events.flatMap(event => event.type === 'hivemind/hq-task-artifacts' ? [{
+              task_id: event.data.taskId,
+              artifact_ids: [...event.data.artifactIds],
+              producer_receipts: (event.data.producerReceipts ?? []).map(receipt => ({ ...receipt })),
+            }] : []),
+            reviews: events.flatMap(event => event.type === 'hivemind/hq-task-review' ? [{
+              task_id: event.data.taskId, task_revision: event.data.taskRevision,
+              status: event.data.status, artifact_ids: [...event.data.artifactIds],
+            }] : []),
             tasks: ctx.agentTeams
               .listTasks(agent)
               .map(task => ({
@@ -273,7 +282,7 @@ export function apply(ctx: Context): void {
           return { status: 'scheduled', task_id: task.id, employee_id: result.value.owner, starts_at: result.value.startsAt,
             ends_at: result.value.endsAt, schedule_id: wake.id, effective_trigger_at: wake.scheduledAt }
         }
-        if (input.action === 'review') {
+        if (input.action === 'review' || input.action === 'inspect') {
           const contract = contracts.find(value => value.taskId === task.id)
           if (!contract) throw new Error('hq_contract_required')
           requireArtifactReceipts(events, task.id)
@@ -314,6 +323,11 @@ export function apply(ctx: Context): void {
             documents.reduce((total, value) => total + value.text.length, 0) > 48000
           )
             throw new Error('hq_review_document_context_unavailable')
+          if (input.action === 'inspect') return {
+            task_id: task.id,
+            task_revision: task.revision,
+            documents: documents.map(document => ({ ...document, content_is_untrusted_evidence: true })),
+          }
           const state = {
             task: {
               subject: task.subject,

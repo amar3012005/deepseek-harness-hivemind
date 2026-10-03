@@ -38,7 +38,7 @@ function turnOf(node: ChatNode | undefined): number | undefined {
 /** Subscribe, apply Turn-process visibility, and dispatch one stable Context key. */
 export const ChatNodeSeat = memo(function ChatNodeSeat({
   nodeKey, useChatNode, useChatNodeProcess, historyIncomplete, compactTranscript,
-  cwd, openFile, inspectCall, forkAt,
+  cwd, openFile, openArtifact, inspectCall, forkAt,
   loadImage, renderMessageImages, fileMentions, useStore, actions, renderSlot, t,
 }: ChatNodeSeatProps) {
   const node = useChatNode(nodeKey)
@@ -101,9 +101,12 @@ export const ChatNodeSeat = memo(function ChatNodeSeat({
   // execution details must never discard these user-facing replies or artifacts.
   // Public progress text stays visible even when its message also requests
   // tools. Tool rows and reasoning have their own disclosure presentation.
-  const preserveReply = routedNode?.kind === 'assistant-step'
+  const incomingTeamReply = routedNode?.kind === 'context'
+    && typeof routedNode.data.source === 'object' && routedNode.data.source !== null
+    && 'kind' in routedNode.data.source && routedNode.data.source.kind === 'hivemind-agent-message'
+  const preserveReply = incomingTeamReply || (routedNode?.kind === 'assistant-step'
     && processSpec?.dreamSynthesis !== true
-    && hasAssistantReplyContent(routedNode.data.blocks)
+    && hasAssistantReplyContent(routedNode.data.blocks))
   const processHidden = controllerInactive
     || (foldable && !processOpen && processMember && !preserveReply)
   const revealProcess = useCallback(() => {
@@ -115,6 +118,7 @@ export const ChatNodeSeat = memo(function ChatNodeSeat({
     : {
       cwd,
       openFile,
+      ...(openArtifact === undefined ? {} : { openArtifact }),
       inspectCall,
       forkAt,
       loadImage,
@@ -122,7 +126,7 @@ export const ChatNodeSeat = memo(function ChatNodeSeat({
       fileMentions,
       turnProcess,
     }, [
-    node, cwd, openFile, inspectCall, forkAt,
+    node, cwd, openFile, openArtifact, inspectCall, forkAt,
     loadImage, renderMessageImages, fileMentions, turnProcess,
   ])
   if (routedNode === undefined || owner === null) return null

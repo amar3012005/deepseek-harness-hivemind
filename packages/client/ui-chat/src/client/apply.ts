@@ -136,6 +136,7 @@ export function apply(ctx: Context): void {
             else ctx.sidebarRight.openResource(url, { params: { line: options.line } })
             await Promise.resolve()
           },
+          openArtifact: (artifactId: string) => { ctx.sidebarRight.openTabIn(sessionId, 'hivemind-workbench-preview', { params: { artifactId } }) },
           loadOlder: () => { void session.loadOlder() },
           loadThrough: seq => session.loadThrough(seq),
           loadImage: Object.assign(

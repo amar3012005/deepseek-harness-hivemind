@@ -1768,7 +1768,7 @@ export function apply(ctx: Context, config: Config): void {
 
 Ownership: the authoritative session owner is pinned when the first turn starts and persists across tasks and reloads. Saves are always attributed to that owner; do not switch identities by task stage. Recall may filter any real employee slug within this tenant. The runtime automatically writes task_status/completed response records with the request, answer, requestedAt, completedAt, owner, sessionId, turn and tool receipt references. Their run_id is a deterministic DSH response-record identity, not a claim of an external WorkRun. Response completion does not certify external tool success. Do not duplicate automatic task records with handoff saves.
 
-Schema: save supports kind learning, decision_note, or handoff, always with status recorded. Give a short title (at most 180 characters), verified summary (at most 2400 characters), and agent_slug. HQ Runtime uses slug runtime; historical HQ notes may use lead. The ordinary parent Team Lead slug is lead; for an assigned employee, use the real directory slug. Include exact room_id, run_id, and trigger_id only when known from receipts. A successful save returns ok, project, memory id, and timestamps. Recall is bounded to this tenant and project; use a focused query and optional agent/room/run filters. A project name or an empty company Memories list does not prove this private store is empty. HQ Runtime receives one bounded private recall at the start of each turn, including scheduled wakes. Other employees call recall explicitly; HQ recalls again only when new evidence needs a more focused query.
+Schema: save supports kind learning, decision_note, or handoff, always with status recorded. Give a short title (at most 180 characters), verified summary (at most 2400 characters), and agent_slug. HQ Runtime uses slug runtime; historical HQ notes may use lead. The ordinary parent Team Lead slug is lead; for an assigned employee, use the real directory slug. Include room_id, run_id, trigger_id, or supersedes_id only as exact UUIDs from receipts. A native session-... ID is not a room UUID. Native session context is already stored automatically; omit unknown UUIDs, and never invent a WorkRun ID from a shared task or session. A successful save returns ok, project, memory id, and timestamps. Recall is bounded to this tenant and project; use a focused query and optional agent/room/run filters. A project name or an empty company Memories list does not prove this private store is empty. HQ Runtime receives one bounded private recall at the start of each turn, including scheduled wakes. Other employees call recall explicitly; HQ recalls again only when new evidence needs a more focused query.
 
 1. For a new substantive task, use the automatic HQ recall when supplied, otherwise call hyperagents_memory recall before planning with the actual task, assigned employee, and known room/run/trigger context. A no-match result means only that this bounded search found nothing.
 2. On continuation or recovery, inspect the durable plan, completed steps, and receipts first. Then recall private handoffs relevant to unfinished work. Never redo a completed step because a remembered summary mentions it.
@@ -1787,8 +1787,8 @@ Schema: save supports kind learning, decision_note, or handoff, always with stat
         kind: { type: 'string', enum: ['learning', 'decision_note', 'handoff', 'task_status', 'trigger_status'], description: 'Recall filter, or save kind learning, decision_note, handoff. Runtime owns task_status and trigger_status writes.' },
         title: { type: 'string', description: 'Required for save; short searchable heading.' },
         summary: { type: 'string', description: 'Required for save; concise verified note with evidence or receipt reference.' },
-        room_id: { type: 'string', description: 'Optional exact originating room UUID when known from a receipt.' },
-        run_id: { type: 'string', description: 'Optional exact WorkRun ID when known from a receipt.' },
+        room_id: { type: 'string', description: 'Optional exact originating room UUID from a receipt. Omit when unknown; never pass a native session-... ID. Native session context is saved automatically.' },
+        run_id: { type: 'string', description: 'Optional exact WorkRun UUID (or trigger-prefixed UUID) from a verified WorkRun receipt. Omit when unknown; do not invent one from a task or session ID.' },
         trigger_id: { type: 'string', description: 'Optional exact scheduled trigger UUID when known from a receipt.' },
         supersedes_id: { type: 'string', description: 'Optional exact prior private-memory UUID being corrected.' },
       },
@@ -1797,6 +1797,13 @@ Schema: save supports kind learning, decision_note, or handoff, always with stat
       async execute(args, execution) {
         const action = args.action
         const agent = requireAgent(execution.agent)
+        for (const field of ['room_id', 'run_id', 'trigger_id', 'supersedes_id'] as const) {
+          const value = args[field]
+          const identity = field === 'run_id' && value?.startsWith('trigger-') ? value.slice('trigger-'.length) : value
+          if (identity !== undefined && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(identity)) {
+            throw new HiveMindRuntimeError(`private memory ${field} must be an exact UUID from a receipt; omit it when unknown. Native session IDs are already stored in context.sessionId and are not room UUIDs.`)
+          }
+        }
         const authority = await resolveAuthority(ctx, config)
         if (action === 'recall') {
           const query = nonEmptyString(args.query, 'private memory query')

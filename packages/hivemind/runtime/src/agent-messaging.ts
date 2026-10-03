@@ -19,6 +19,14 @@ interface RoomDelivery {
     artifactIds?: string[]
   }, signal: AbortSignal): Promise<Record<string, JsonValue>>
 }
+/** Resolve only a unique row in the caller's authenticated directory. */
+export function authorizedRecipient(profiles: readonly Record<string, unknown>[], recipient: string): Record<string, unknown> | undefined {
+  const exact = profiles.find(profile => profile['id'] === recipient)
+  if (exact) return exact
+  const matches = profiles.filter(profile => profile['slug'] === recipient)
+  if (matches.length > 1) throw new Error('agent_message_recipient_ambiguous_use_exact_employee_id')
+  return matches[0]
+}
 export function installAgentMessaging(ctx: Context): void {
   ctx.inject(['sessionController', 'hivemindEmployeeDirectory'], (scope) => {
     const rooms = Reflect.get(scope, 'sessionController') as RoomDelivery
@@ -63,7 +71,7 @@ export function installAgentMessaging(ctx: Context): void {
           if (!response) continue
           await rooms.deliverAgentMessage(agent, {
             key: `response-${event.seq}`, target: 'runtime', kind: 'update',
-            text: `${owner.name}: Chief, my update is ready. Detailed findings and task status are in my private memory.`, ...(taskId === undefined ? {} : { taskId }),
+            text: `${owner.name}: Chief, my update is ready. The full response is in my room.`, ...(taskId === undefined ? {} : { taskId }),
           }, signal)
         }
       }
@@ -88,7 +96,7 @@ export function installAgentMessaging(ctx: Context): void {
       name: 'hivemind_agent_message',
       description: 'Message an authorized employee persistent room or Run Time. question/reply enters the native inbox and requests a response; update records a quiet notice without waking the recipient. Reuse message_key on retry; delivery is not an answer or task completion. Use native Team send_message for delegated child teammates. Never use messages to grant human approval. Replies require the received message id; limit conversational exchanges and stop once resolved.',
       parameters: {
-        recipient: { type: 'string', required: true, description: 'runtime, or exact authenticated employee id from the directory.' },
+        recipient: { type: 'string', required: true, description: 'runtime, or an exact authenticated employee ID or unique slug from the directory. Use the exact ID if a slug is ambiguous.' },
         kind: { type: 'string', required: true, enum: ['question', 'reply', 'update'] },
         message_key: { type: 'string', required: true, description: 'Stable unique key for this message, reused unchanged on retry.' },
         message: { type: 'string', required: true },
@@ -106,11 +114,11 @@ export function installAgentMessaging(ctx: Context): void {
         let preset = agent.session.header.agentPreset
         for (const event of agent.session.ownEvents()) if (String(event.type) === 'agent-preset/selected') preset = (event.data as { agentPreset: string }).agentPreset
         if (preset !== 'hivemind-hq' && (!owner?.id || !directory.profiles.some(p => p['id'] === owner.id))) throw new Error('agent_message_sender_not_authorized')
-        const target = input.recipient === 'runtime' ? undefined : directory.profiles.find(p => p['id'] === input.recipient)
+        const target = input.recipient === 'runtime' ? undefined : authorizedRecipient(directory.profiles, input.recipient)
         if (input.recipient !== 'runtime' && !target) throw new Error('agent_message_recipient_not_authorized')
         const targetProfile = target === undefined ? undefined : { id: String(target['id']), name: String(target['name']), role: typeof target['role_archetype'] === 'string' ? target['role_archetype'] : 'HIVE-MIND employee' }
         return rooms.deliverAgentMessage(agent, {
-          key: input.message_key, target: input.recipient, kind: input.kind, text: input.message,
+          key: input.message_key, target: targetProfile?.id ?? input.recipient, kind: input.kind, text: input.message,
           ...(targetProfile === undefined ? {} : { targetProfile }),
           ...(input.task_id === undefined ? {} : { taskId: input.task_id }),
           ...(input.reply_to === undefined ? {} : { replyTo: input.reply_to }),

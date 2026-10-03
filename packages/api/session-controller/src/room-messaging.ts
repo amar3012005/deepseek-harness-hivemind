@@ -20,6 +20,15 @@ export interface RoomMessage {
   replyTo?: string
   hops: number
   artifactIds: string[]
+  artifacts?: {
+    artifactId: string
+    title: string
+    path?: string
+    mediaType?: string
+    file: FileAttachmentRef
+    producerSessionId: SessionId
+    producerName: string
+  }[]
 }
 export interface RoomMessageRequest {
   key: string
@@ -102,16 +111,18 @@ export class RoomMessaging {
       const hops = parent?.type === 'hivemind/room-message-received' ? parent.data.hops + 1 : 0
       if (hops > 8) throw new Error('agent_message_exchange_limit')
       const owner = events.find(e => String(e.type) === 'hivemind/session-owner')?.data as { name?: string; id?: string } | undefined
-      const artifactFiles = (input.artifactIds ?? []).map((artifactId) => {
-        const saved = events.find(e => ['hivemind/generation-created', 'hivemind/artifact-created'].includes(String(e.type)) && (e.data as { artifactId?: string }).artifactId === artifactId)?.data as { file?: FileAttachmentRef; pdf?: FileAttachmentRef } | undefined
+      const artifacts = (input.artifactIds ?? []).map((artifactId) => {
+        const saved = events.findLast(e => ['hivemind/generation-created', 'hivemind/artifact-created'].includes(String(e.type)) && (e.data as { artifactId?: string }).artifactId === artifactId)?.data as { file?: FileAttachmentRef; pdf?: FileAttachmentRef; title?: string; path?: string; mediaType?: string } | undefined
         const file = saved?.file ?? saved?.pdf
         if (!file) throw new Error('agent_message_saved_artifact_required')
-        return file
+        return { artifactId, title: saved?.title ?? file.name, file, producerSessionId: caller.id, producerName: preset === 'hivemind-hq' ? 'Run Time' : owner?.name ?? 'Employee', ...(saved?.path === undefined ? {} : { path: saved.path }), ...(saved?.mediaType === undefined ? {} : { mediaType: saved.mediaType }) }
       })
+      const artifactFiles = artifacts.map(artifact => artifact.file)
       if (artifactFiles.length > 8) throw new Error('agent_message_artifact_limit')
       const message: RoomMessage = { id, senderId: caller.id, senderName: preset === 'hivemind-hq' ? 'Run Time' : owner?.name ?? 'Employee', senderEmployee: preset === 'hivemind-hq' ? 'runtime' : owner?.id ?? '', targetId: target.id, kind: input.kind, text: input.text, hops, artifactIds: input.artifactIds ?? [], ...(input.taskId === undefined ? {} : { taskId: input.taskId }), ...(input.replyTo === undefined ? {} : { replyTo: input.replyTo }) }
+      if (artifacts.length) message.artifacts = artifacts
       const old = events.find(e => e.type === 'hivemind/room-message-queued' && e.data.id === id)
-      if (old?.type === 'hivemind/room-message-queued' &&  !isDeepStrictEqual(JSON.parse(JSON.stringify(old.data)), JSON.parse(JSON.stringify(message)))) throw new Error('agent_message_key_conflict')
+      if (old?.type === 'hivemind/room-message-queued' && !isDeepStrictEqual(JSON.parse(JSON.stringify({ ...old.data, artifacts: undefined })), JSON.parse(JSON.stringify({ ...message, artifacts: undefined })))) throw new Error('agent_message_key_conflict')
       if (old === undefined) caller.session.append('hivemind/room-message-queued', message)
       await this.persist(caller)
       return await (async () => {

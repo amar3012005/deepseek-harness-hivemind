@@ -21,6 +21,7 @@ interface Artifact {
   path: string
   file: FileAttachmentRef | undefined
   preview: ImageAttachmentRef | undefined
+  producerName?: string
 }
 interface Capture { id: string; title: string; url: string; status?: number; preview: ImageAttachmentRef | undefined }
 interface Source { url: string; title: string }
@@ -53,7 +54,23 @@ export function workbenchSnapshot(window: SessionEventWindow): Workbench {
     const data = object(event.data)
     if (data === undefined) continue
     const type = String(event.type)
-    if (type === 'hivemind/artifact-created' || type === 'hivemind/generation-created') {
+    if (type === 'hivemind/room-message-received') {
+      const message = data
+      const delivered = message?.artifacts
+      if (!Array.isArray(delivered)) continue
+      for (const value of delivered) {
+        const receipt = object(value)
+        const attachment = file(receipt?.file)
+        if (receipt === undefined || typeof receipt.artifactId !== 'string' || attachment === undefined
+          || typeof receipt.producerSessionId !== 'string') continue
+        artifacts.push({ id: receipt.artifactId, title: typeof receipt.title === 'string' ? receipt.title : attachment.name,
+          path: typeof receipt.path === 'string' ? receipt.path : attachment.name,
+          mediaType: typeof receipt.mediaType === 'string' ? receipt.mediaType : 'application/octet-stream',
+          file: attachment, preview: image(receipt.preview),
+          ...(typeof message?.senderName === 'string' ? { producerName: message.senderName } : {}),
+        })
+      }
+    } else if (type === 'hivemind/artifact-created' || type === 'hivemind/generation-created') {
       if (typeof data.artifactId !== 'string' || typeof data.path !== 'string') continue
       artifacts.push({ id: data.artifactId, title: typeof data.title === 'string' ? data.title : 'Artifact', path: data.path,
         mediaType: typeof data.mediaType === 'string' ? data.mediaType : 'application/octet-stream',
@@ -149,7 +166,7 @@ export function HyperagentWorkbench({
   return <div className={css.workbench} data-hivemind-workbench={kind}>
     {kind === 'preview' && (lastArtifact === undefined
       ? <p className={css.workbenchEmpty}>{t('workbench.emptyPreview')}</p>
-      : <article><span className={css.workbenchEyebrow}>{lastArtifact.mediaType}</span><h2>{lastArtifact.title}</h2>{lastArtifact.mediaType === 'application/pdf' && lastArtifact.file !== undefined
+      : <article><span className={css.workbenchEyebrow}>{lastArtifact.mediaType}</span><h2>{lastArtifact.title}</h2>{lastArtifact.producerName !== undefined && <p>From {lastArtifact.producerName}</p>}{lastArtifact.mediaType === 'application/pdf' && lastArtifact.file !== undefined
         ? <PdfReceipt artifact={lastArtifact} loadPdf={loadPdf} loadImage={loadImage} t={t} />
         : <><div className={css.workbenchActions}><button type="button" className={css.workbenchOpen} disabled={lastArtifact.file === undefined} onClick={() => { openArtifact(lastArtifact, 'download') }}>{t('workbench.download')}</button></div><ReceiptImage attachment={lastArtifact.preview} loadImage={loadImage} /></>}</article>)}
     {kind === 'artifacts' && <>

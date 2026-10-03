@@ -1239,6 +1239,11 @@ describe('HyperAgents durable employee ownership and completion outbox', () => {
     await harness.preStep?.({ agent: subject, turn: 1, signal }, enter)
     expect(events.filter(event => event.type === 'hivemind/session-owner')).toHaveLength(1)
     await expect(tool(harness, 'hyperagents_memory').execute({ action: 'save', agent_slug: 'ravi', kind: 'learning', title: 'Wrong author', summary: 'Wrong author', idempotency_key: 'wrong' }, execContext(subject))).rejects.toThrow('persistent session owner')
+    const beforeInvalid = packets.length
+    for (const field of ['room_id', 'run_id', 'trigger_id', 'supersedes_id']) {
+      await expect(tool(harness, 'hyperagents_memory').execute({ action: 'save', kind: 'learning', title: 'Learning', summary: 'Verified', [field]: 'session-not-a-uuid' }, execContext(subject))).rejects.toThrow('exact UUID')
+    }
+    expect(packets).toHaveLength(beforeInvalid)
     subject.session.append('user/message', user('Create a campaign blueprint'), { surfaceOp: 'append' })
     subject.session.append('assistant/message', { turn: 1, step: 1, stream: [], message: createAssistantMessage({ content: [{ type: 'text', text: 'Campaign blueprint delivered.' }], source: { model: 'test' } as never }) }, { surfaceOp: 'append' })
     subject.session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })

@@ -1,7 +1,15 @@
 import { expect, it, vi } from 'vitest'
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
-import { installAgentMessaging } from '../src/agent-messaging.ts'
+import { authorizedRecipient, installAgentMessaging } from '../src/agent-messaging.ts'
+
+it('resolves authenticated unique slugs without accepting missing or ambiguous recipients', () => {
+  const row = { id: 'employee-id', slug: 'ravi-patel' }
+  expect(authorizedRecipient([row], 'employee-id')).toBe(row)
+  expect(authorizedRecipient([row], 'ravi-patel')).toBe(row)
+  expect(authorizedRecipient([row], 'unlisted')).toBeUndefined()
+  expect(() => authorizedRecipient([row, { id: 'other', slug: 'ravi-patel' }], 'ravi-patel')).toThrow('ambiguous_use_exact_employee_id')
+})
 
 it('keeps delegated children on native Team messaging without hiding room messaging globally', async () => {
   let preStep: (input: { agent: Agent; signal: AbortSignal }, next: () => Promise<void>) => Promise<void>

@@ -80,6 +80,8 @@ export interface ChatNodeTurnDataInjected {
 export interface ChatNodeOwnerProps {
   cwd?: string | undefined
   openFile: (path: string, options?: OpenFileOptions) => void
+  /** Reveal a durable artifact in the session's existing Preview pane. */
+  openArtifact?: (artifactId: string) => void
   inspectCall: (callId: ToolCallId) => void
   forkAt: (seq: number) => void
   /**
@@ -139,6 +141,7 @@ export interface ChatViewInjected {
     chatNodeProcess: (key: string) => ChatNodeProcessSource
   }
   openFile: (path: string, options?: OpenFileOptions) => Promise<void>
+  openArtifact?: (artifactId: string) => void
   loadOlder: () => void
   /** Jump loader: page history back through seq; resolves when the window covers it. */
   loadThrough: (seq: SessionSeq) => Promise<void>
@@ -211,5 +214,12 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
      * that entry. With no entries, the standard action row remains unchanged.
      */
     'conversation.chat.assistant-actions': { kind: 'list'; scope: 'session'; owner: AssistantActionOwnerProps }
+  }
+}
+
+/** Saved artifacts reuse the existing HIVEMIND Preview seat. */
+declare module '@deepseek-ai/dsh-client-ui-sidebar-right/client' {
+  interface SidebarRightTabParamsMap {
+    'hivemind-workbench-preview': { artifactId: string }
   }
 }
