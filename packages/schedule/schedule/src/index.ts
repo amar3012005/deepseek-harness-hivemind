@@ -10,6 +10,8 @@ import type { Domain } from '@deepseek-ai/dsh-storage-domain'
 import type {} from '@deepseek-ai/dsh-api-session-controller'
 import type {} from '@deepseek-ai/dsh-agent-presets'
 import type { SessionId } from '@deepseek-ai/dsh-session'
+import type { Agent } from '@deepseek-ai/dsh-agent'
+import type { ScheduleTask } from './storage.ts'
 import type { SessionActivity } from '@deepseek-ai/dsh-workspace'
 import { ScheduleRuntime } from './runtime.ts'
 import { registerScheduleTools } from './tools.ts'
@@ -77,6 +79,8 @@ declare module '@deepseek-ai/cordis' {
 
 /** Configuration for the Host Schedule domain. */
 export interface Config {
+  /** Require at least one host delivery guard before any inbox admission. */
+  deliveryPolicyRequired?: boolean
   /**
    * Delivery-history window retained per task, in days; omission defaults to 30.
    * Pruning happens when an acknowledgment is appended, and `lastDelivery` is always retained.
@@ -105,16 +109,38 @@ const DEFAULT_DELIVERY_HISTORY_RECORDS = 200
  * service is the plugin that registers that listener.
  */
 export class ScheduleService extends TypertRemoteService {
+  private readonly deliveryGuards = new Set<(agent: Agent, task: ScheduleTask) => Promise<boolean>>()
+
+  /** Register a host-only monotonic delivery policy.
+   * @param guard - Authorization before inbox insertion; denial retains the active occurrence.
+   * @returns Disposer removing this exact policy.
+   */
+  guardDelivery(guard: (agent: Agent, task: ScheduleTask) => Promise<boolean>): () => void {
+    this.deliveryGuards.add(guard)
+    this.reconsiderDelivery()
+    return () => { this.deliveryGuards.delete(guard) }
+  }
+
+  /** Reconsider locally retained occurrences when host delivery policy changes. */
+  reconsiderDelivery(): void { this.runtime?.requestDrive() }
+
+  private async allowsDelivery(agent: Agent, task: ScheduleTask): Promise<boolean> {
+    if (this.deliveryPolicyRequired && this.deliveryGuards.size === 0) return false
+    for (const guard of this.deliveryGuards) if (!(await guard(agent, task))) return false
+    return true
+  }
   static inject = ['agents', 'sessions', 'tools', 'storageDomain', 'sessionController', 'sessionPersistence']
 
   static Config: z<Config> = z.object({
     storage: z.union(['domain', 'external']).default('domain'),
+    deliveryPolicyRequired: z.boolean().default(false),
     deliveryHistoryDays: z.number().step(1).min(1).max(3650).default(DEFAULT_DELIVERY_HISTORY_DAYS),
     deliveryHistoryRecords: z.number().step(1).min(1).max(10_000).default(DEFAULT_DELIVERY_HISTORY_RECORDS),
   })
 
   /** Resolved retention bounds shared with the runtime that appends acknowledgments. */
   private readonly retention: DeliveryRetentionBounds
+  private readonly deliveryPolicyRequired: boolean
   private readonly ready: Promise<Domain<typeof scheduleDomain> | undefined>
   private readonly backend: ScheduleBackend | undefined
   private readonly taskContext = new AsyncLocalStorage<{ table: ScheduleTaskTable; changed: boolean }>()
@@ -129,6 +155,7 @@ export class ScheduleService extends TypertRemoteService {
    */
   constructor(ctx: Context, config: Config) {
     super(ctx, 'schedule')
+    this.deliveryPolicyRequired = config.deliveryPolicyRequired ?? false
     this.retention = {
       days: config.deliveryHistoryDays ?? DEFAULT_DELIVERY_HISTORY_DAYS,
       records: config.deliveryHistoryRecords ?? DEFAULT_DELIVERY_HISTORY_RECORDS,
@@ -159,7 +186,8 @@ export class ScheduleService extends TypertRemoteService {
           pending = true
           void this.serialize(() => ctx.agents.withoutInitiator(() => backend.dispatch(async (tasks) => {
             const runtime = new ScheduleRuntime(ctx, () => [...tasks.entries()].map(([, task]) => task),
-              work => work(), task => tasks.put(task.record.id, task), this.retention, false)
+              work => work(), task => tasks.put(task.record.id, task), this.retention, false,
+              (agent, task) => this.allowsDelivery(agent, task))
             await runtime.driveOnce()
           }))).then((changed) => { if (changed) this.emitChanged() }).catch((error: unknown) => {
             ctx.logger.warn(`schedule: tenant dispatch failed (${error instanceof Error ? error.name : 'unknown error'})`)
@@ -190,7 +218,7 @@ export class ScheduleService extends TypertRemoteService {
           await tasks.put(task.record.id, task)
           this.emitChanged()
         },
-        this.retention)
+        this.retention, true, (agent, task) => this.allowsDelivery(agent, task))
       this.runtime.requestDrive()
       return cleanup
     })

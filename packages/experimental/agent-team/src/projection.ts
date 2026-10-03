@@ -65,6 +65,7 @@ const contentBlockSchema: z.ZodType<ContentBlock> = z.lazy(() => z.union([
 ])) as z.ZodType<ContentBlock>
 
 const teamMemberSnapshotSchema = z.object({
+  ownership: z.literal('persistent').optional(),
   id: sessionIdSchema,
   name: z.string(),
   description: z.string(),
@@ -245,9 +246,10 @@ function applyCurrentTeamEvent(state: TeamState, event: TeamSessionEvent): void 
         throw new Error(`teammate name "${member.name}" is reused by another member`)
       }
       if (prior === undefined) {
-        if (member.phase !== 'provisioning') throw new Error(`teammate "${member.name}" must begin provisioning`)
+        if (member.phase !== (member.ownership === 'persistent' ? 'active' : 'provisioning')) throw new Error(`teammate "${member.name}" must begin provisioning or bind an active persistent assignee`)
       } else {
-        if (prior.name !== member.name || prior.provider !== member.provider || prior.context !== member.context) {
+        if (prior.name !== member.name || prior.provider !== member.provider || prior.context !== member.context
+          || prior.ownership !== member.ownership) {
           throw new Error(`teammate "${member.id}" changed immutable identity fields`)
         }
         if (prior.phase !== 'provisioning' || member.phase === 'provisioning') {

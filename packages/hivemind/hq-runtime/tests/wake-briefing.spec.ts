@@ -32,7 +32,7 @@ describe('HQ wake briefing', () => {
 it('admits one native briefing per turn and rereads on cold restore', async () => {
   let hook: (payload: unknown, next: () => Promise<unknown>) => Promise<unknown>
   const workspaceRead = vi.fn(async () => workspace)
-  const agent = { id: 'root', session: { header: { agentPreset: 'hivemind-hq' }, ownEvents: () => [], snapshotEvents: () => [] } }
+  const agent = { id: 'root', ctx: { tools: { restrict: vi.fn(() => () => {}) } }, session: { header: { agentPreset: 'hivemind-hq' }, ownEvents: () => [], snapshotEvents: () => [] } }
   const ctx = {
     effect: (callback: () => unknown) => callback(),
     on: (_name: string, callback: typeof hook) => { hook = callback; return () => {} },

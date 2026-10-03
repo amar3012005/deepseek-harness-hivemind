@@ -118,6 +118,7 @@ export class TeamMailbox {
       request.signal.throwIfAborted()
       const state = this.journal.state(root)
       const target = resolveActiveMember(root, state, request.target)
+      if (state.members.find(member => member.id === target.id)?.ownership === 'persistent') throw new TeamError('persistent assignees use their host room mailbox', 'TEAM_INVALID_TARGET')
       if (target.id === caller.id) throw new TeamError('a Team member cannot message itself', 'TEAM_SELF_MESSAGE')
       const pendingForTarget = state.messages.filter(candidate =>
         candidate.targetId === target.id && !state.delivered.includes(candidate.id)).length

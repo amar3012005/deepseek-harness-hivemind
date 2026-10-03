@@ -1,13 +1,8 @@
 /** Host timer over stored tasks; Session activation is a delivery operation. */
 import { createHash } from 'node:crypto'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
-import type { ContextFormed } from '@deepseek-ai/dsh-llm'
-declare module '@deepseek-ai/dsh-llm' {
-  interface MessageSourceMap {
-    'schedule': { kind: 'schedule'; deliveryKey?: string; occurrenceAt?: string; nextScheduledAt?: string | null } & ContextFormed
-  }
-}
 import type { Context } from '@deepseek-ai/cordis'
+import type { Agent } from '@deepseek-ai/dsh-agent'
 import type {} from '@deepseek-ai/dsh-api-session-controller'
 import { isRecurringScheduleRecord, renderReminderFraming, renderRecurringReminderBatchFraming, resolveRecurringOccurrence } from './domain.ts'
 import type { DeliveryRetentionBounds, RecurringScheduleRecord } from './types.ts'
@@ -37,6 +32,7 @@ export class ScheduleRuntime {
     private readonly commit: (task: ScheduleTask) => Promise<void>,
     private readonly retention: DeliveryRetentionBounds,
     private readonly timers = true,
+    private readonly allowsDelivery: (agent: Agent, task: ScheduleTask) => Promise<boolean> = async () => true,
   ) {}
 
   /**
@@ -105,10 +101,16 @@ export class ScheduleRuntime {
       try {
         const resolved = await this.ctx.sessionController.resolveAgent(task.sessionId)
         if ('error' in resolved) throw resolved.error
+        const allowed: ScheduleTask[] = []
+        for (const member of group) {
+          if (await this.allowsDelivery(resolved.agent, member)) allowed.push(member)
+          else failed.add(member.record.id)
+        }
+        if (allowed.length === 0) continue
         if (this.stopping) return
         const now = Date.now()
         // Session restoration can span a wall-clock rollback; future members keep their timer obligation.
-        admitted = group.filter(member => Date.parse(member.record.scheduledAt) <= now)
+        admitted = allowed.filter(member => Date.parse(member.record.scheduledAt) <= now)
         if (admitted.length === 0) continue
         const recurring = admitted.filter((member): member is ScheduleTask & { record: RecurringScheduleRecord } =>
           isRecurringScheduleRecord(member.record))

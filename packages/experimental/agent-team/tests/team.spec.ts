@@ -25,6 +25,7 @@ import type { TeamMemberSnapshot, TeamMessageSnapshot, TeamTaskSnapshot } from '
 import { TestSessionQuery } from './test-session-query.ts'
 import HqControl from '../../../hivemind/hq-runtime/src/control.ts'
 import HqOwnership from '../../../hivemind/hq-runtime/src/ownership.ts'
+import { RoomMessaging } from '../../../api/session-controller/src/room-messaging.ts'
 
 const SIGNAL = new AbortController().signal
 const roots: string[] = []
@@ -86,6 +87,24 @@ function content(text: string) {
   return [{ type: 'text' as const, text }]
 }
 
+/** Native room admission uses independent persistent roots, never continuable children. */
+function mountEmployeeRooms(ctx: Context, lead: Agent, provideControl = true): void {
+  const open = async (key: string) => {
+    if (key === 'runtime') return lead
+    return ctx.agents.get(SessionId(key)) ?? await ctx.agentLoop.create(SessionId(key), { provider: 'mock', model: 'mock' })
+  }
+  const messaging = new RoomMessaging(ctx, open)
+  ctx.provide('sessionController', {
+    resolvePersistentEmployeeRoom: (key: string, profile: { id: string; name: string; role: string }, signal: AbortSignal) =>
+      messaging.resolveRoom(key, profile, signal),
+    deliverAgentMessage: messaging.send.bind(messaging),
+    resolveAgent: async (id: SessionId) => ({ agent: await open(id) }),
+  } as never)
+  if (provideControl) ctx.provide('hivemindHq', {} as never)
+  lead.session.append('agent-preset/selected', { agentPreset: 'hivemind-hq' })
+  lead.session.append('hivemind/hq-mode', { enabled: true, revision: 1, changedAt: Date.now() })
+}
+
 interface TeamServiceInternals {
   readonly roster: {
     readonly inFlightCreations: Set<Promise<unknown>>
@@ -141,6 +160,40 @@ async function waitRunning(ctx: Context, id: SessionId): Promise<Agent> {
 }
 
 describe('Team identity and provisioning', () => {
+  it('binds one persistent root across tasks without membership adoption or child teardown', async () => {
+    const { ctx, lead, teamFiber } = await setup([])
+    const employee = await ctx.agentLoop.create(SessionId('persistent-employee'), { provider: 'mock', model: 'mock' })
+    await ctx.sessions.flush(lead.session)
+    await ctx.sessions.flush(employee.session)
+    const member = await ctx.agentTeams.bindPersistentAssignee(lead, employee, 'employee', 'Persistent employee')
+    await ctx.agentTeams.bindPersistentAssignee(lead, employee, 'employee', 'Persistent employee')
+    expect(member).toMatchObject({ id: employee.id, ownership: 'persistent' })
+    expect(ctx.agentTeams.membership(employee).root).toBe(employee)
+    expect(employee.session.header.parentSession).toBeUndefined()
+    for (const subject of ['First', 'Second']) {
+      const task = await ctx.agentTeams.createTask(lead, { subject, description: 'A saved deliverable' })
+      await ctx.agentTeams.updateTask(lead, { taskId: task.id, expectedRevision: task.revision, action: 'reassign', owner: member.name })
+      expect(ctx.agentTeams.getTask(lead, task.id).ownerName).toBe('employee')
+    }
+    expect(durable(lead).members).toHaveLength(1)
+    expect(durable(lead).members[0]?.ownership).toBe('persistent')
+    await expect(ctx.agentTeams.sendMessage(lead, { target: member.name, content: content('Hi'), signal: SIGNAL })).rejects.toThrow('host room mailbox')
+    expect(() => ctx.agentTeams.interrupt(lead, member.name)).toThrow('room owner')
+    await teamFiber.dispose()
+    expect(ctx.agents.get(employee.id)).toBe(employee)
+  })
+  it('refuses persistent binding when the persistence owner denies the target tenant', async () => {
+    const { ctx, lead } = await setup([])
+    const employee = await ctx.agentLoop.create(SessionId('foreign-root'), { provider: 'mock', model: 'mock' })
+    await ctx.sessions.flush(lead.session)
+    const open = ctx.sessionPersistence.open.bind(ctx.sessionPersistence)
+    vi.spyOn(ctx.sessionPersistence, 'open').mockImplementation((id, mode, options) => {
+      if (id === employee.id) return Promise.reject(new Error('tenant denied'))
+      return open(id, mode, options)
+    })
+    await expect(ctx.agentTeams.bindPersistentAssignee(lead, employee, 'foreign', 'Foreign')).rejects.toThrow('tenant denied')
+    expect(durable(lead).members).toHaveLength(0)
+  })
   it('saves a native employee deliverable, reviews its actual receipt, completes once and reloads the terminal board', async () => {
     const { ctx, lead, storageRoot, teamFiber } = await setup([
       toolCallResponse('employee-save', 'hivemind_generate', { format: 'markdown_report', title: 'Company decision', content: '# Company decision\n\nDecision: review public evidence before external action.' }),
@@ -149,6 +202,7 @@ describe('Team identity and provisioning', () => {
     await ctx.plugin(LocalAttachmentStore, { dshHome: storageRoot })
     const registry = new GenerationRegistry(); registry.register(markdownReportProvider)
     registerGenerationTools(ctx, registry, 'artifacts', 4096, true)
+    mountEmployeeRooms(ctx, lead)
     ctx.provide('schedule', { ensure: vi.fn().mockResolvedValue({ id: 'deadline' }) } as never)
     ctx.provide('hivemindEmployeeDirectory', { profiles: vi.fn().mockResolvedValue({ profiles: [{ id: 'employee-ravi', slug: 'ravi', name: 'Ravi', role_archetype: 'Research', persona: 'Authorized research employee.' }] }) } as never)
     const fiber = await ctx.plugin(HqRuntime)
@@ -157,9 +211,9 @@ describe('Team identity and provisioning', () => {
     vi.stubEnv('CLOUDFLARE_ACCOUNT_ID', 'a'.repeat(32)); vi.stubEnv('CLOUDFLARE_API_TOKEN', 'fixture-token')
     const provider = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({ success: true, result: { result: { model: 'jev-fixture', answers: { criterion_0: { type: 'noul', noul: 0.99 } } } } })))
     try {
-      expect((await execute({ action: 'attach', task_id: task.id, due_at: '2026-10-02T10:00:00Z', acceptance_criteria: ['A saved Markdown report with an explicit decision.'] })).isError).not.toBe(true)
+      expect(await execute({ action: 'attach', task_id: task.id, due_at: '2026-10-02T10:00:00Z', acceptance_criteria: ['A saved Markdown report with an explicit decision.'] })).not.toMatchObject({ isError: true })
       expect((await execute({ action: 'assign', task_id: task.id, employee_id: 'employee-ravi' })).isError).not.toBe(true)
-      const member = ctx.agentTeams.listMembers(lead).find(value => value.name === 'ravi-task-1')!
+      const member = ctx.agentTeams.listMembers(lead).find(value => value.name === 'ravi')!
       await vi.waitFor(async () => expect((await storedEvents(ctx, member.id)).some(event => event.type === 'hivemind/generation-created')).toBe(true))
       const artifact = (await storedEvents(ctx, member.id)).find(event => event.type === 'hivemind/generation-created')
       expect(artifact?.type).toBe('hivemind/generation-created')
@@ -183,29 +237,32 @@ describe('Team identity and provisioning', () => {
   })
   it('repairs a lost planning acknowledgement and reschedules only its native future wake', async () => {
     const { ctx, lead, teamFiber } = await setup([])
-    lead.session.append('agent-preset/selected', { agentPreset: 'hivemind-hq' })
+    mountEmployeeRooms(ctx, lead, false)
+    ctx.provide('hivemindEmployeeDirectory', { profiles: async () => ({ profiles: [{ id: 'employee-ravi', slug: 'ravi', name: 'Ravi', role_archetype: 'Research', persona: 'Authorized research employee.' }] }) } as never)
     const ownershipFiber = await ctx.plugin(HqOwnership)
     const unregister = ctx.hivemindHqOwnership.register({ claim: async () => {} })
     const ensure = vi.fn().mockRejectedValueOnce(new Error('native schedule temporarily unavailable')).mockResolvedValueOnce({ id: 'wake-1' }).mockResolvedValueOnce({ id: 'wake-2' })
     const remove = vi.fn().mockResolvedValue({ deleted: true })
-    ctx.provide('schedule', { ensure, delete: remove, catalog: vi.fn().mockResolvedValue([{ id: 'wake-1', sessionId: lead.id, status: 'active' }]) } as never)
+    ctx.provide('schedule', { ensure, delete: remove, guardDelivery: () => () => {}, reconsiderDelivery: () => {}, catalog: vi.fn().mockResolvedValue([{ id: 'wake-1', sessionId: 'employee-ravi', status: 'active' }]) } as never)
     const control = await ctx.plugin(HqControl)
     try {
       const task = await ctx.agentTeams.createTask(lead, { subject: 'Research', description: 'Save report.' })
-      const item = { id: 'plan-task-1', revision: 1, kind: 'assignment' as const, title: 'Research', owner: 'Ravi', taskId: task.id, startsAt: '2026-10-02T09:00:00Z', endsAt: '2026-10-02T10:00:00Z', resolved: false }
+      lead.session.append('hivemind/hq-task-contract', { taskId: task.id, dueAt: '2030-01-01T10:00:00Z', acceptanceCriteria: ['Saved report'] })
+      const item = { id: 'plan-task-1', revision: 1, kind: 'assignment' as const, title: 'Research', owner: 'employee-ravi', taskId: task.id, startsAt: '2026-10-02T09:00:00Z', endsAt: '2026-10-02T10:00:00Z', resolved: false }
       await expect(ctx.hivemindHq.plan(lead, { expectedRevision: 0, item })).rejects.toThrow('temporarily unavailable')
       expect((await storedEvents(ctx, lead.id)).filter(event => event.type === 'hivemind/hq-calendar-item')).toHaveLength(1)
       expect(await ctx.hivemindHq.plan(lead, { expectedRevision: 0, item })).toMatchObject({ ok: true })
       expect(await ctx.hivemindHq.plan(lead, { expectedRevision: 0, item })).toMatchObject({ ok: true })
       expect(ensure).toHaveBeenCalledTimes(2)
       expect(await ctx.hivemindHq.plan(lead, { expectedRevision: 1, item: { ...item, revision: 2, startsAt: '2026-10-02T09:30:00Z' } })).toMatchObject({ ok: true })
-      expect(remove).toHaveBeenCalledExactlyOnceWith({ sessionId: lead.id, id: 'wake-1' })
+      expect(remove).toHaveBeenCalledExactlyOnceWith({ sessionId: 'employee-ravi', id: 'wake-1' })
       expect((await storedEvents(ctx, lead.id)).filter(event => event.type === 'hivemind/hq-calendar-wake')).toHaveLength(2)
       expect(ctx.agentTeams.getTask(lead, task.id).status).toBe('pending')
     } finally { await control.dispose(); unregister(); await ownershipFiber.dispose(); await teamFiber.dispose() }
   })
   it('binds an authenticated employee persona once and reuses the native assignment on retry', async () => {
     const { ctx, lead, teamFiber } = await setup(['hang'])
+    mountEmployeeRooms(ctx, lead)
     ctx.provide('schedule', { ensure: vi.fn().mockResolvedValue({ id: 'deadline' }) } as never)
     ctx.provide('hivemindEmployeeDirectory', { profiles: vi.fn().mockResolvedValue({ profiles: [{ id: 'employee-ravi', slug: 'ravi', name: 'Ravi', role_archetype: 'Research', persona: 'You are the authorized research employee.' }] }) } as never)
     const fiber = await ctx.plugin(HqRuntime)
@@ -213,13 +270,16 @@ describe('Team identity and provisioning', () => {
     const execute = (args: unknown) => ctx.tools.execute({ name: 'hivemind_hq_contract', callId: ToolCallId('hq-assignment-test'), agent: lead, signal: SIGNAL, arguments: args })
     const start = vi.spyOn(ctx.subagents, 'startContinuable')
     try {
-      expect((await execute({ action: 'attach', task_id: task.id, due_at: '2026-10-01T10:00:00Z', acceptance_criteria: ['One saved report'] })).isError).not.toBe(true)
+      expect(await execute({ action: 'attach', task_id: task.id, due_at: '2026-10-01T10:00:00Z', acceptance_criteria: ['One saved report'] })).not.toMatchObject({ isError: true })
       expect((await execute({ action: 'assign', task_id: task.id, employee_id: 'foreign-employee' })).isError).toBe(true)
       expect((await execute({ action: 'assign', task_id: task.id, employee_id: 'employee-ravi' })).isError).not.toBe(true)
       expect((await execute({ action: 'assign', task_id: task.id, employee_id: 'employee-ravi' })).isError).not.toBe(true)
-      expect(start).toHaveBeenCalledTimes(1)
-      expect(start.mock.calls[0]?.[0].request.persona).toContain('authorized research employee')
-      expect(ctx.agentTeams.getTask(lead, task.id)).toMatchObject({ status: 'in_progress', ownerName: 'ravi-task-1' })
+      expect(start).not.toHaveBeenCalled()
+      const employee = ctx.agents.get(SessionId('employee-ravi'))!
+      expect(employee.session.header.parentSession).toBeUndefined()
+      expect(ctx.agentTeams.membership(employee).root).toBe(employee)
+      expect(ctx.agentTeams.getTask(lead, task.id)).toMatchObject({ status: 'in_progress', ownerName: 'ravi' })
+      expect(ctx.agentTeams.listMembers(lead).find(value => value.id === employee.id)).toMatchObject({ ownership: 'persistent' })
       expect((await storedEvents(ctx, lead.id)).filter(event => event.type === 'hivemind/hq-employee-assignment')).toHaveLength(1)
       await expect(ctx.agentTeams.updateTask(lead, { taskId: task.id, expectedRevision: ctx.agentTeams.getTask(lead, task.id).revision, action: 'complete' })).rejects.toThrow('saved artifact receipt')
     } finally { await fiber.dispose(); await teamFiber.dispose() }
@@ -232,7 +292,8 @@ describe('Team identity and provisioning', () => {
     const claim = vi.fn().mockResolvedValue(undefined)
     const unregisterOwnership = ctx.hivemindHqOwnership.register({ claim })
     const ensure = vi.fn().mockResolvedValue(undefined)
-    ctx.provide('schedule', { ensure } as never)
+    ctx.provide('sessionController', {} as never)
+    ctx.provide('schedule', { ensure, guardDelivery: () => () => {}, reconsiderDelivery: () => {} } as never)
     const fiber = await ctx.plugin(HqControl)
     try {
       expect(ctx.hivemindHq.mode(lead).enabled).toBe(false)

@@ -1,3 +1,10 @@
+import type { ContextFormed } from '@deepseek-ai/dsh-llm'
+declare module '@deepseek-ai/dsh-llm' {
+  interface MessageSourceMap {
+    'schedule': { kind: 'schedule'; deliveryKey?: string; occurrenceAt?: string; nextScheduledAt?: string | null } & ContextFormed
+  }
+}
+
 /**
  * Durable and model-facing Schedule value types.
  * @module @deepseek-ai/dsh-schedule

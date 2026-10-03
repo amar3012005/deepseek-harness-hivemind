@@ -159,6 +159,17 @@ export class TeamService extends TypertRemoteService {
     return await this.roster.spawn(caller, request)
   }
 
+  /** Bind an authenticated persistent task assignee without reparenting or granting membership.
+   * @param caller - Exact live Team Lead.
+   * @param target - Exact independent live root authorized by persistence.
+   * @param name - Immutable model-facing assignee name.
+   * @param description - Human-facing employee responsibility.
+   * @returns Persisted assignee roster row.
+   */
+  async bindPersistentAssignee(caller: Agent, target: Agent, name: string, description: string): Promise<TeamMemberView> {
+    return this.roster.bindPersistent(caller, target, name, description)
+  }
+
   /**
    * Queue one durable peer message, then attempt immediate delivery.
    * @param caller - exact live sending Team member.

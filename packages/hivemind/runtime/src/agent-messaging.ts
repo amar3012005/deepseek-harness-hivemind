@@ -37,13 +37,25 @@ export function installAgentMessaging(ctx: Context): void {
       const directory = await scope.hivemindEmployeeDirectory.profiles(signal)
       if (!directory.profiles.some(profile => profile['id'] === owner.id)) return
       for (const event of pending) {
+        const input = events.findLast(value => value.seq < event.seq && value.type === 'user/message')
+        let taskId: string | undefined
+        if (input?.type === 'user/message' && ['schedule', 'hivemind-agent-message'].includes(input.data.source.kind)) {
+          for (const block of input.data.content) {
+            if (block.type !== 'text') continue
+            let text = String(input.data.source.kind) === 'schedule' ? block.text : (JSON.parse(block.text) as { text?: string }).text ?? ''
+            const framed = text.split('\n').find(value => value.startsWith('reminder_prompt_json: '))
+            if (framed !== undefined) text = JSON.parse(framed.slice('reminder_prompt_json: '.length)) as string
+            const line = text.split('\n').find(value => value.startsWith('HQ_EMPLOYEE_ASSIGNMENT='))
+            if (line) taskId = (JSON.parse(line.slice('HQ_EMPLOYEE_ASSIGNMENT='.length)) as { taskId: string }).taskId
+          }
+        }
         if (['hivemind/generation-created', 'hivemind/artifact-created'].includes(String(event.type))) {
           const saved = event.data as { artifactId?: string; title?: string }
           if (typeof saved.artifactId !== 'string') continue
           await rooms.deliverAgentMessage(agent, {
             key: `artifact-${event.seq}`, target: 'runtime', kind: 'update',
             text: `${owner.name} generated ${saved.title ?? 'an artifact'}. Task completion has not been inferred.`,
-            artifactIds: [saved.artifactId],
+            artifactIds: [saved.artifactId], ...(taskId === undefined ? {} : { taskId }),
           }, signal)
         }
         if (event.type === 'turn/end') {
@@ -51,7 +63,7 @@ export function installAgentMessaging(ctx: Context): void {
           if (!response) continue
           await rooms.deliverAgentMessage(agent, {
             key: `response-${event.seq}`, target: 'runtime', kind: 'update',
-            text: `${owner.name} delivered a response. ${response.summary}`,
+            text: `${owner.name} delivered a response. ${response.summary}`, ...(taskId === undefined ? {} : { taskId }),
           }, signal)
         }
       }

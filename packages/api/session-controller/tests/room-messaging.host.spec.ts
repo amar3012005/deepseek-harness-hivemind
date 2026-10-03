@@ -32,6 +32,15 @@ function fixture() {
 const signal = new AbortController().signal
 
 describe('Persistent agent room messaging', () => {
+  it('prepares a directory-bound persistent room without inbox insertion and rejects identity conflicts', async () => {
+    const { messaging, ravi, request } = fixture()
+    expect(await messaging.resolveRoom(request.target, request.targetProfile, signal)).toBe(ravi)
+    expect(ravi.steer).not.toHaveBeenCalled()
+    expect(ravi.inbox.nextTurn).toHaveLength(0)
+    ravi.session.append('hivemind/session-owner', { id: 'other' } as never)
+    await expect(messaging.resolveRoom(request.target, request.targetProfile, signal)).rejects.toThrow('identity_conflict')
+    await expect(messaging.resolveRoom('different', request.targetProfile, signal)).rejects.toThrow('identity_conflict')
+  })
   it('admits a question once and pins the trusted recipient selection', async () => {
     const { caller, ravi, messaging, request } = fixture()
     const receipt = await messaging.send(caller, request, signal)

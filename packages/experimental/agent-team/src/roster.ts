@@ -151,6 +151,7 @@ export class TeamRoster {
       const live = this.ctx.agents.get(member.id)
       const model = live?.options.model ?? root.options.model
       result.push({
+        ...(member.ownership === undefined ? {} : { ownership: member.ownership }),
         id: member.id,
         name: member.name,
         role: 'teammate',
@@ -186,6 +187,49 @@ export class TeamRoster {
     }
   }
 
+  /** Bind an authenticated independent root as persistent task assignee.
+   * @param caller - Exact live Lead.
+   * @param target - Existing independent root.
+   * @param rawName - Immutable assignee name.
+   * @param description - Employee responsibility.
+   * @returns Persisted assignee view.
+   */
+  async bindPersistent(caller: Agent, target: Agent, rawName: string, description: string): Promise<TeamMemberView> {
+    if (this.lifecycle.disposed) throw new TeamError('Agent Teams service is disposing', 'TEAM_DISPOSED')
+    const operation = this.bindPersistentAdmitted(caller, target, rawName, description)
+    this.inFlightCreations.add(operation)
+    try { return await operation } finally { this.inFlightCreations.delete(operation) }
+  }
+
+  private async bindPersistentAdmitted(caller: Agent, target: Agent, rawName: string, description: string): Promise<TeamMemberView> {
+    const membership = this.membership(caller)
+    if (membership.role !== 'lead' || caller !== membership.root) throw new TeamError('only the Team Lead can bind assignees', 'TEAM_LEAD_REQUIRED')
+    if (this.ctx.agents.get(target.id) !== target || target === caller || target.session.header.parentSession !== undefined) throw new TeamError('persistent assignee must be an exact independent live root', 'TEAM_INVALID_TARGET')
+    // The persistence provider authenticates both reads under the same current scope.
+    // A process-global live Agent reference cannot bypass tenant authorization.
+    for (const id of [caller.id, target.id]) {
+      const handle = await this.ctx.sessionPersistence.open(id, 'read')
+      try { await handle.read() } finally { await handle.close() }
+    }
+    const name = this.memberName(rawName)
+    await this.journal.transact(caller.id, async () => {
+      if (this.lifecycle.disposed || this.ctx.agents.get(caller.id) !== caller || this.ctx.agents.get(target.id) !== target) throw new TeamError('persistent assignee admission ended', 'TEAM_DISPOSED')
+      const state = this.journal.state(caller)
+      const existing = state.members.find(member => member.id === target.id || member.name === name)
+      if (existing !== undefined) {
+        if (existing.id !== target.id || existing.name !== name || existing.ownership !== 'persistent') throw new TeamError('persistent assignee identity conflicts', 'TEAM_MEMBER_NAME_TAKEN')
+        return
+      }
+      if (state.members.length >= this.maxMembers) throw new TeamError('Team member limit reached', 'TEAM_MEMBER_LIMIT')
+      await this.journal.appendAndFlush(caller, 'team/member', { version: 2, teamId: TeamId(caller.id), member: {
+        id: target.id, name, description: requiredText(description, 'description', 200), provider: 'persistent-room', context: 'fresh', phase: 'active', ownership: 'persistent',
+      } })
+    })
+    const bound = this.list(membership).find(member => member.id === target.id)
+    if (!bound) throw new TeamError('persistent binding missing after commit', 'TEAM_MEMBER_NOT_FOUND')
+    return bound
+  }
+
   /**
    * Return admitted creation operations captured for ordered disposal.
    * @returns detached snapshot ordered only by Set insertion.
@@ -216,6 +260,7 @@ export class TeamRoster {
     if (membership.role !== 'lead') throw new TeamError('only the Team Lead can interrupt teammates', 'TEAM_LEAD_REQUIRED')
     const state = this.journal.state(membership.root)
     const target = resolveActiveMember(membership.root, state, targetName)
+    if (state.members.find(member => member.id === target.id)?.ownership === 'persistent') throw new TeamError('persistent assignees are controlled by their room owner', 'TEAM_INVALID_TARGET')
     if (target.id === membership.root.id) throw new TeamError('the Team Lead cannot interrupt itself', 'TEAM_INVALID_TARGET')
     const live = this.ctx.agents.get(target.id)
     if (live === undefined) return { previousStatus: 'inactive' }

@@ -528,7 +528,7 @@ Source: [`packages/hivemind/progressive-browser/src/index.ts:41`](../packages/hi
 'hivemind/capability-lease': CapabilityLeaseRecorded
 ```
 
-Source: [`packages/hivemind/playbooks/src/index.ts:202`](../packages/hivemind/playbooks/src/index.ts)
+Source: [`packages/hivemind/playbooks/src/index.ts:204`](../packages/hivemind/playbooks/src/index.ts)
 
 <a id="hivemindcomposio-session--log-only"></a>
 
@@ -669,7 +669,7 @@ Source: [`packages/hivemind/artifact-renderer/src/generation.ts:92`](../packages
 'hivemind/hq-awakening-checkpoint': AwakeningCheckpoint
 ```
 
-Source: [`packages/hivemind/hq-runtime/src/awakening.ts:25`](../packages/hivemind/hq-runtime/src/awakening.ts)
+Source: [`packages/hivemind/hq-runtime/src/awakening.ts:33`](../packages/hivemind/hq-runtime/src/awakening.ts)
 
 <a id="hivemindhq-awakening-start--log-only"></a>
 
@@ -680,7 +680,7 @@ Source: [`packages/hivemind/hq-runtime/src/awakening.ts:25`](../packages/hivemin
 'hivemind/hq-awakening-start': { readonly version: 1; readonly turn: number; readonly startedAt: string }
 ```
 
-Source: [`packages/hivemind/hq-runtime/src/awakening.ts:23`](../packages/hivemind/hq-runtime/src/awakening.ts)
+Source: [`packages/hivemind/hq-runtime/src/awakening.ts:31`](../packages/hivemind/hq-runtime/src/awakening.ts)
 
 <a id="hivemindhq-calendar-item--log-only"></a>
 
@@ -691,7 +691,7 @@ Source: [`packages/hivemind/hq-runtime/src/awakening.ts:23`](../packages/hivemin
 'hivemind/hq-calendar-item': HqCalendarItem
 ```
 
-Source: [`packages/hivemind/hq-runtime/src/control.ts:37`](../packages/hivemind/hq-runtime/src/control.ts)
+Source: [`packages/hivemind/hq-runtime/src/control.ts:39`](../packages/hivemind/hq-runtime/src/control.ts)
 
 <a id="hivemindhq-calendar-wake--log-only"></a>
 
@@ -699,10 +699,10 @@ Source: [`packages/hivemind/hq-runtime/src/control.ts:37`](../packages/hivemind/
 
 ```ts persistence-catalog
 /** Native Schedule identity for a committed assignment planning revision. */
-'hivemind/hq-calendar-wake': { itemId: string; revision: number; scheduleId: string }
+'hivemind/hq-calendar-wake': { itemId: string; revision: number; scheduleId: string; sessionId?: string }
 ```
 
-Source: [`packages/hivemind/hq-runtime/src/control.ts:39`](../packages/hivemind/hq-runtime/src/control.ts)
+Source: [`packages/hivemind/hq-runtime/src/control.ts:41`](../packages/hivemind/hq-runtime/src/control.ts)
 
 <a id="hivemindhq-employee-assignment--log-only"></a>
 
@@ -719,7 +719,7 @@ Source: [`packages/hivemind/hq-runtime/src/control.ts:39`](../packages/hivemind/
 }
 ```
 
-Source: [`packages/hivemind/hq-runtime/src/index.ts:56`](../packages/hivemind/hq-runtime/src/index.ts)
+Source: [`packages/hivemind/hq-runtime/src/index.ts:55`](../packages/hivemind/hq-runtime/src/index.ts)
 
 <a id="hivemindhq-mode--log-only"></a>
 
@@ -730,7 +730,7 @@ Source: [`packages/hivemind/hq-runtime/src/index.ts:56`](../packages/hivemind/hq
 'hivemind/hq-mode': HqModeState
 ```
 
-Source: [`packages/hivemind/hq-runtime/src/control.ts:35`](../packages/hivemind/hq-runtime/src/control.ts)
+Source: [`packages/hivemind/hq-runtime/src/control.ts:37`](../packages/hivemind/hq-runtime/src/control.ts)
 
 <a id="hivemindhq-rest-intent--log-only"></a>
 
@@ -785,7 +785,7 @@ Source: [`packages/hivemind/hq-runtime/src/rest.ts:36`](../packages/hivemind/hq-
 'hivemind/hq-task-artifacts': TaskArtifactLinks
 ```
 
-Source: [`packages/hivemind/hq-runtime/src/index.ts:54`](../packages/hivemind/hq-runtime/src/index.ts)
+Source: [`packages/hivemind/hq-runtime/src/index.ts:53`](../packages/hivemind/hq-runtime/src/index.ts)
 
 <a id="hivemindhq-task-contract--log-only"></a>
 
@@ -796,7 +796,7 @@ Source: [`packages/hivemind/hq-runtime/src/index.ts:54`](../packages/hivemind/hq
 'hivemind/hq-task-contract': CompanyTaskContract
 ```
 
-Source: [`packages/hivemind/hq-runtime/src/index.ts:50`](../packages/hivemind/hq-runtime/src/index.ts)
+Source: [`packages/hivemind/hq-runtime/src/index.ts:49`](../packages/hivemind/hq-runtime/src/index.ts)
 
 <a id="hivemindhq-task-review--log-only"></a>
 
@@ -807,7 +807,7 @@ Source: [`packages/hivemind/hq-runtime/src/index.ts:50`](../packages/hivemind/hq
 'hivemind/hq-task-review': HqTaskReview
 ```
 
-Source: [`packages/hivemind/hq-runtime/src/index.ts:52`](../packages/hivemind/hq-runtime/src/index.ts)
+Source: [`packages/hivemind/hq-runtime/src/index.ts:51`](../packages/hivemind/hq-runtime/src/index.ts)
 
 <a id="hivemindmedia-workflow-ended--log-only"></a>
 
@@ -856,7 +856,7 @@ Source: [`packages/hivemind/memory/src/index.ts:73`](../packages/hivemind/memory
 'hivemind/operating-context': OperatingContextRecorded
 ```
 
-Source: [`packages/hivemind/playbooks/src/index.ts:192`](../packages/hivemind/playbooks/src/index.ts)
+Source: [`packages/hivemind/playbooks/src/index.ts:194`](../packages/hivemind/playbooks/src/index.ts)
 
 <a id="hivemindoperating-receipt--log-only"></a>
 
@@ -878,7 +878,7 @@ Source: [`packages/hivemind/operating-workstreams/src/index.ts:96`](../packages/
 'hivemind/playbooks-loaded': PlaybooksLoaded
 ```
 
-Source: [`packages/hivemind/playbooks/src/index.ts:194`](../packages/hivemind/playbooks/src/index.ts)
+Source: [`packages/hivemind/playbooks/src/index.ts:196`](../packages/hivemind/playbooks/src/index.ts)
 
 <a id="hivemindread-scope--log-only"></a>
 
@@ -911,7 +911,7 @@ Source: [`packages/hivemind/runtime/src/index.ts:56`](../packages/hivemind/runti
 'hivemind/request-assembly-budget': RequestAssemblyBudget
 ```
 
-Source: [`packages/hivemind/playbooks/src/index.ts:200`](../packages/hivemind/playbooks/src/index.ts)
+Source: [`packages/hivemind/playbooks/src/index.ts:202`](../packages/hivemind/playbooks/src/index.ts)
 
 <a id="hivemindresearch-gathered--log-only"></a>
 
@@ -1021,7 +1021,7 @@ Source: [`packages/hivemind/operating-workstreams/src/index.ts:98`](../packages/
 'hivemind/run-plan': RunPlanRecorded
 ```
 
-Source: [`packages/hivemind/playbooks/src/index.ts:196`](../packages/hivemind/playbooks/src/index.ts)
+Source: [`packages/hivemind/playbooks/src/index.ts:198`](../packages/hivemind/playbooks/src/index.ts)
 
 <a id="hivemindrun-plan-revised--log-only"></a>
 
@@ -1032,7 +1032,7 @@ Source: [`packages/hivemind/playbooks/src/index.ts:196`](../packages/hivemind/pl
 'hivemind/run-plan-revised': RunPlanRecorded
 ```
 
-Source: [`packages/hivemind/playbooks/src/index.ts:198`](../packages/hivemind/playbooks/src/index.ts)
+Source: [`packages/hivemind/playbooks/src/index.ts:200`](../packages/hivemind/playbooks/src/index.ts)
 
 <a id="hivemindsession-owner--log-only"></a>
 
@@ -1334,7 +1334,7 @@ Source: [`packages/sandbox/sandbox-policy/src/session-mode.ts:33`](../packages/s
 
 Types: [ScheduleChange](subsystems/schedule.md)
 
-Source: [`packages/schedule/schedule/src/types.ts:358`](../packages/schedule/schedule/src/types.ts)
+Source: [`packages/schedule/schedule/src/types.ts:365`](../packages/schedule/schedule/src/types.ts)
 
 ### `session/*`
 
@@ -1532,7 +1532,7 @@ Source: [`packages/core/session/src/types.ts:310`](../packages/core/session/src/
 
 Types: [TeamId](subsystems/agent-team.md) · [TeamMemberSnapshot](subsystems/agent-team.md)
 
-Source: [`packages/experimental/agent-team/src/types.ts:226`](../packages/experimental/agent-team/src/types.ts)
+Source: [`packages/experimental/agent-team/src/types.ts:229`](../packages/experimental/agent-team/src/types.ts)
 
 <a id="teammessagedelivered--log-only"></a>
 
@@ -1550,7 +1550,7 @@ Source: [`packages/experimental/agent-team/src/types.ts:226`](../packages/experi
 
 Types: [TeamId](subsystems/agent-team.md) · [TeamMessageId](subsystems/agent-team.md)
 
-Source: [`packages/experimental/agent-team/src/types.ts:232`](../packages/experimental/agent-team/src/types.ts)
+Source: [`packages/experimental/agent-team/src/types.ts:235`](../packages/experimental/agent-team/src/types.ts)
 
 <a id="teammessagequeued--log-only"></a>
 
@@ -1563,7 +1563,7 @@ Source: [`packages/experimental/agent-team/src/types.ts:232`](../packages/experi
 
 Types: [TeamId](subsystems/agent-team.md) · [TeamMessageSnapshot](subsystems/agent-team.md)
 
-Source: [`packages/experimental/agent-team/src/types.ts:230`](../packages/experimental/agent-team/src/types.ts)
+Source: [`packages/experimental/agent-team/src/types.ts:233`](../packages/experimental/agent-team/src/types.ts)
 
 <a id="teamtask--log-only"></a>
 
@@ -1576,7 +1576,7 @@ Source: [`packages/experimental/agent-team/src/types.ts:230`](../packages/experi
 
 Types: [TeamId](subsystems/agent-team.md) · [TeamTaskSnapshot](subsystems/agent-team.md)
 
-Source: [`packages/experimental/agent-team/src/types.ts:228`](../packages/experimental/agent-team/src/types.ts)
+Source: [`packages/experimental/agent-team/src/types.ts:231`](../packages/experimental/agent-team/src/types.ts)
 
 ### `todo/*`
 

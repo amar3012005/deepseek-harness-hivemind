@@ -358,6 +358,16 @@ export class SessionController extends TypertRemoteService {
     return this.roomMessaging.send(caller, input, signal)
   }
 
+  /** Resolve a canonical employee room through authenticated persistence.
+   * @param key - Exact authenticated employee id.
+   * @param profile - Trusted directory identity.
+   * @param signal - Cancellation before room admission.
+   * @returns Exact live persistent employee Agent.
+   */
+  resolvePersistentEmployeeRoom(key: string, profile: { id: string; name: string; role: string }, signal: AbortSignal): Promise<Agent> {
+    return this.roomMessaging.resolveRoom(key, profile, signal)
+  }
+
   @Remote('prompt')
   prompt(request: SessionPromptRequest, signal: AbortSignal): Promise<SessionPromptValue> {
     signal.throwIfAborted()

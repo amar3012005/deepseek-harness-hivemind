@@ -67,9 +67,9 @@ interface OperatingContextRecorded {
   readonly compatibleLocalPlaybooks: readonly string[]
   readonly employeeCandidates: readonly Record<string, JsonValue>[]
   readonly employeeExecution: {
-    readonly defaultActorKind: 'inline_employee'
-    readonly tool: 'hivemind_workstream'
-    readonly childAgents: 'optional_escalation' | 'disabled_for_preset'
+    readonly defaultActorKind: 'inline_employee' | 'persistent_employee'
+    readonly tool: 'hivemind_workstream' | 'hivemind_hq_contract'
+    readonly childAgents: 'optional_escalation' | 'disabled_for_preset' | 'persistent_room_execution'
   }
   readonly capabilityGuidance: readonly string[]
   readonly likelyNeeds: readonly string[]
@@ -106,7 +106,9 @@ function operatingContextHandoff(event: OperatingContextRecorded): string {
     `Retrieved: company evidence ${event.retrieval.companyContext}; internal recall ${event.retrieval.internalRecall}; employee directory ${event.retrieval.employeeDirectory}.`,
     methods.length === 0 ? 'Playbook candidates: none.' : `Playbook candidates: ${methods.join(', ')}.`,
     employees.length === 0 ? 'Employee candidates: none.' : `Employee candidates: ${employees.join(', ')}.`,
-    'Decide the approach now. For substantial multi-step company work, call hivemind_operating_plan once before searching, delegating, or starting a workstream. Choose inline_employee for ordinary employee perspectives; this parent runtime performs the work. A bounded task may proceed directly. Native Harness tools remain available after this decision.',
+    event.employeeExecution.defaultActorKind === 'persistent_employee'
+      ? 'Runtime coordinates and reviews. Delegate employee deliverables through hivemind_hq_contract into the authenticated employee persistent room; use native Schedule for saved future starts. Never perform an assigned employee research or artifact task inline. Answer ordinary direct questions concisely without company-plan setup.'
+      : 'Decide the approach now. For substantial multi-step company work, call hivemind_operating_plan once before searching, delegating, or starting a workstream. Choose inline_employee for ordinary employee perspectives; this parent runtime performs the work. A bounded task may proceed directly. Native Harness tools remain available after this decision.',
   ].join('\n')
 }
 
@@ -1293,9 +1295,9 @@ export function apply(ctx: Context, config: Partial<Config> = {}): void {
           recommendedGlobalPlaybooks: globals.map(candidate => candidate.playbook.id),
           compatibleLocalPlaybooks: compatibleLocals.map(candidate => candidate.playbook.id),
           employeeExecution: {
-            defaultActorKind: 'inline_employee',
-            tool: 'hivemind_workstream',
-            childAgents: employeeSubagentPlanning ? 'optional_escalation' : 'disabled_for_preset',
+            defaultActorKind: nativeTeamCoordination ? 'persistent_employee' : 'inline_employee',
+            tool: nativeTeamCoordination ? 'hivemind_hq_contract' : 'hivemind_workstream',
+            childAgents: nativeTeamCoordination ? 'persistent_room_execution' : employeeSubagentPlanning ? 'optional_escalation' : 'disabled_for_preset',
           },
           capabilityGuidance: guidance,
           likelyNeeds: guidance,
@@ -1317,9 +1319,11 @@ export function apply(ctx: Context, config: Partial<Config> = {}): void {
         return {
           status: 'ready',
           retrieval: retrievalReceipt,
-          next: employeeSubagentPlanning
-            ? 'Reason over the returned global doctrine, compatible local method content, evidence, and authenticated employee candidates. These employees are executable identities: never ask the user to provide their views. For substantial multi-step company work, record one concise adaptive operating plan before expensive research or delegation; include only workstreams and actors that add execution value. Use the returned employeeExecution default for ordinary employee work. Escalate to employee_subagent only when isolation, real concurrent long-running execution, or a distinct model/tool boundary materially helps. For bounded work, answer or execute directly. External research belongs after this orientation unless a live fact is needed to choose the approach. Do not repeat covered HIVE retrieval unless a specific gap emerges, and never invent facts, employees, files, deliverables, or thresholds.'
-            : 'Reason over the returned global doctrine, compatible local method content, evidence, and authenticated employee candidates. Employee selections are visible inline work identities: assign them with inline_employee and let this parent runtime complete their todo workstreams through hivemind_workstream. Do not create employee child sessions. For substantial multi-step company work, record one concise adaptive operating plan; bounded work may proceed directly. External research belongs after this orientation unless a live fact is needed to choose the approach. Do not repeat covered HIVE retrieval or invent facts, employees, files, deliverables, or thresholds.',
+          next: nativeTeamCoordination
+            ? 'Runtime coordinates approved work and reviews exact employee receipts. Assign immediate deliverables with hivemind_hq_contract action assign into each authenticated employee persistent room; schedule future assignments with action schedule, which notifies the employee now and targets their room at its saved start. Native Team tasks own dependencies and acceptance status. Do not perform assigned employee research or artifacts inline. Ordinary greetings and direct questions need concise answers without a task or investigation. Existing authority remains unchanged.'
+            : employeeSubagentPlanning
+              ? 'Reason over the returned global doctrine, compatible local method content, evidence, and authenticated employee candidates. These employees are executable identities: never ask the user to provide their views. For substantial multi-step company work, record one concise adaptive operating plan before expensive research or delegation; include only workstreams and actors that add execution value. Use the returned employeeExecution default for ordinary employee work. Escalate to employee_subagent only when isolation, real concurrent long-running execution, or a distinct model/tool boundary materially helps. For bounded work, answer or execute directly. External research belongs after this orientation unless a live fact is needed to choose the approach. Do not repeat covered HIVE retrieval unless a specific gap emerges, and never invent facts, employees, files, deliverables, or thresholds.'
+              : 'Reason over the returned global doctrine, compatible local method content, evidence, and authenticated employee candidates. Employee selections are visible inline work identities: assign them with inline_employee and let this parent runtime complete their todo workstreams through hivemind_workstream. Do not create employee child sessions. For substantial multi-step company work, record one concise adaptive operating plan; bounded work may proceed directly. External research belongs after this orientation unless a live fact is needed to choose the approach. Do not repeat covered HIVE retrieval or invent facts, employees, files, deliverables, or thresholds.',
           ...operatingEvidence,
         }
       },

@@ -6,14 +6,13 @@ import {
   savedSourceEvidence,
   type HqTaskReview,
 } from './review.ts'
-import { createHash } from 'node:crypto'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { installRest, recoverRest, acknowledgeRestNotes, restBriefing } from './rest.ts'
 import { installAwakening, awakeningContext } from './awakening.ts'
 import { wakeBriefing } from './wake-briefing.ts'
+import { dispatchEmployee, reconcileEmployeeArtifacts } from './employee-room.ts'
 import type {} from './control.ts'
 import { calendarItems } from './calendar.ts'
-import { profileSnapshot, employeePersona } from '@deepseek-ai/dsh-hivemind-employee-delegation'
 import type {} from '@deepseek-ai/dsh-hivemind-employee-directory'
 import type { Context } from '@deepseek-ai/cordis'
 import { TeamTaskId } from '@deepseek-ai/dsh-experimental-agent-team'
@@ -21,7 +20,6 @@ import { defineTool } from '@deepseek-ai/dsh-tools'
 import type {} from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-session-persistence'
 import {
-  admissionFailedBeforeWork,
   companyTaskContract,
   requireArtifactReceipts,
   taskContracts,
@@ -43,6 +41,7 @@ export const inject = [
   'schedule',
   'hivemindHq',
   'hivemindEmployeeDirectory',
+  'sessionController',
 ]
 declare module '@deepseek-ai/dsh-session/types' {
   interface SessionEventMap {
@@ -66,6 +65,7 @@ export function apply(ctx: Context): void {
   installRest(ctx)
   installAwakening(ctx)
   const briefed = new WeakMap<object, number>()
+  const researchMasked = new WeakSet<object>()
   ctx.effect(() => ctx.on('agent/pre-step', async ({ agent, turn, signal }, next) => {
     const decision = await next()
     if (decision.kind === 'reject') return decision
@@ -75,6 +75,10 @@ export function apply(ctx: Context): void {
     for (const event of agent.session.ownEvents())
       if (event.type === 'agent-preset/selected') preset = event.data.agentPreset
     if (preset !== 'hivemind-hq') return decision
+    if (!researchMasked.has(agent)) {
+      ctx.effect(() => agent.ctx.tools.restrict({ deny: ['hivemind_research_answer'] }))
+      researchMasked.add(agent)
+    }
     await recoverRest(ctx, agent, signal)
     await acknowledgeRestNotes(ctx, agent)
     const awakening = await awakeningContext(ctx, agent, turn, decision.messages)
@@ -134,7 +138,7 @@ export function apply(ctx: Context): void {
     defineTool({
       name: 'hivemind_hq_contract',
       description:
-        'Coordinate existing native Team tasks: list contracts, attach immutable deadline/acceptance criteria, assign an authenticated employee persona, schedule contracted pending tasks for verified employees, link saved producer artifacts, or review those saved inputs with Jev. Native Team tools own task lifecycle and dependencies. Completion requires linked receipts and an accepted review of the current revision. This tool never grants authority.',
+        'Coordinate existing native Team tasks: list contracts, attach immutable deadline/acceptance criteria, assign an authenticated employee persistent room, schedule contracted pending tasks for verified employees, link saved producer artifacts, or review those saved inputs with Jev. Native Team tools own task lifecycle and dependencies. Completion requires linked receipts and an accepted review of the current revision. This tool never grants authority.',
       parameters: {
         action: {
           type: 'string',
@@ -144,7 +148,7 @@ export function apply(ctx: Context): void {
         employee_id: {
           type: 'string',
           description:
-            'Exact authenticated employee id; assign creates or reuses a native employee teammate for this task.',
+            'Exact authenticated employee id; assign delivers to the employee persistent room using native task ownership.',
         },
         task_id: { type: 'string' },
         due_at: { type: 'string', description: 'RFC3339 instant with explicit timezone.' },
@@ -155,7 +159,7 @@ export function apply(ctx: Context): void {
         producer: {
           type: 'string',
           description:
-            'Exact native Team member name that saved the artifacts; defaults to lead. Only rostered members can supply receipts.',
+            'Exact native Team member name that saved the artifacts; defaults to lead. Only authenticated native task assignees can supply receipts.',
         },
       },
       output: {
@@ -179,6 +183,7 @@ export function apply(ctx: Context): void {
         }
         const membership = ctx.agentTeams.membership(agent)
         const root = membership.root
+        await reconcileEmployeeArtifacts(ctx, root, execution.signal)
         const events = root.session.snapshotEvents()
         const contracts = taskContracts(events)
         if (input.action === 'list')
@@ -341,100 +346,7 @@ export function apply(ctx: Context): void {
             throw new Error('hq_first_awakening_schedule_before_assign: use action schedule with task_id, employee_id, starts_at and ends_at; do not assign before its saved start')
           if (task.status === 'pending' && planned && Date.parse(planned.startsAt) > Date.now())
             throw new Error('hq_task_planned_start_not_due')
-          const prior = root.session
-            .snapshotEvents()
-            .findLast(
-              event =>
-                event.type === 'hivemind/hq-employee-assignment' && event.data.taskId === task.id,
-            )
-          if (task.status === 'in_progress' && prior === undefined)
-            throw new Error('hq_task_already_running')
-          if (
-            prior?.type === 'hivemind/hq-employee-assignment' &&
-            prior.data.employeeId !== input.employee_id
-          )
-            throw new Error('hq_assignment_identity_immutable')
-          const directory = await ctx.hivemindEmployeeDirectory.profiles(execution.signal)
-          const raw = directory.profiles.find(value => value['id'] === input.employee_id)
-          if (!raw) throw new Error('hq_employee_not_authorized')
-          const employee = profileSnapshot(raw)
-          const slug = raw['slug']
-          if (typeof slug !== 'string' || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug))
-            throw new Error('hq_employee_slug_invalid')
-          let memberName = prior?.type === 'hivemind/hq-employee-assignment'
-            ? prior.data.memberName : `${slug}-${task.id}`
-          let member = ctx.agentTeams.listMembers(root).find(value => value.name === memberName)
-          // Two bounded admission-only retries cover independently repaired service images.
-          // Each failed prefix must prove that no model/tool/artifact work was accepted.
-          for (let attempt = 0; attempt < 2 && member?.status === 'failed' && prior === undefined; attempt++) {
-            const handle = await ctx.sessionPersistence.open(member.id, 'read', { signal: execution.signal })
-            try {
-              const stored = await handle.read(0, undefined, { signal: execution.signal })
-              if (!admissionFailedBeforeWork(stored.events))
-                throw new Error('hq_employee_provisioning_requires_reconciliation')
-            } finally { await handle.close() }
-            memberName = `${slug}-${task.id}-admission-retry${attempt === 0 ? '' : '-2'}`
-            member = ctx.agentTeams.listMembers(root).find(value => value.name === memberName)
-          }
-          if (member?.status === 'failed' || member?.status === 'provisioning')
-            throw new Error('hq_employee_provisioning_requires_reconciliation')
-          if (!member) {
-            const assigned = await ctx.agentTeams.spawnTeammate(root, {
-              name: memberName,
-              description: `${employee.name}: ${task.subject}`.slice(0, 200),
-              context: 'fresh',
-              provider: 'spawn',
-              signal: execution.signal,
-              persona: employeePersona(employee),
-              prompt: [
-                {
-                  type: 'text',
-                  text: JSON.stringify({
-                    taskId: task.id,
-                    objective: task.description,
-                    expectedOutcome: task.subject,
-                    acceptanceCriteria: contract.acceptanceCriteria,
-                    authority: task.writeScopes,
-                    dueAt: contract.dueAt,
-                    instructions:
-                      'Follow the selected global/local method and load action skills progressively. Save the requested artifact and report its exact receipt to lead via the native Team mailbox. Do not mark the task complete; HQ reviews acceptance. Do not create company objectives or HQ schedules.',
-                  }),
-                },
-              ],
-            })
-            member = assigned.member
-          }
-          if (
-            !root.session
-              .snapshotEvents()
-              .some(
-                event =>
-                  event.type === 'hivemind/hq-employee-assignment' && event.data.taskId === task.id,
-              )
-          ) {
-            root.session.append('hivemind/hq-employee-assignment', {
-              taskId: task.id,
-              employeeId: employee.id,
-              memberName,
-              sessionId: member.id,
-              personaSha256: createHash('sha256').update(employeePersona(employee)).digest('hex'),
-            })
-            if (!(await ctx.sessions.flush(root.session)))
-              throw new Error('hq_assignment_persistence_required')
-          }
-          const current = ctx.agentTeams.getTask(root, task.id)
-          if (current.ownerName !== memberName)
-            await ctx.agentTeams.updateTask(root, {
-              taskId: task.id,
-              expectedRevision: current.revision,
-              action: 'reassign',
-              owner: memberName,
-            })
-          return {
-            task_id: task.id,
-            employee_id: employee.id,
-            member: { name: member.name, session_id: member.id, status: member.status },
-          }
+          return dispatchEmployee(ctx, root, task.id, input.employee_id, execution.signal)
         }
         if (input.action === 'attach') {
           if (task.status === 'completed' || task.status === 'deleted')

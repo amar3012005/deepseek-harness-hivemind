@@ -11,6 +11,8 @@ import { taskContracts, type TaskArtifactLinks } from './ledger.ts'
 import { calendarItems, validateCalendarItem } from './calendar.ts'
 import { TeamTaskId } from '@deepseek-ai/dsh-experimental-agent-team'
 import { ScheduleId } from '@deepseek-ai/dsh-schedule'
+import { SessionId } from '@deepseek-ai/dsh-session'
+import { prepareEmployee, employeeWorkPrompt, reconcileEmployeeArtifacts, installEmployeeDelivery, currentEmployeeWork, resumeEmployeeWork } from './employee-room.ts'
 import type {
   HqCalendarItem,
   HqCalendarUpdate,
@@ -36,7 +38,7 @@ declare module '@deepseek-ai/dsh-session/types' {
     /** Human-authored planning metadata with compare-and-set revisions; no execution transition. */
     'hivemind/hq-calendar-item': HqCalendarItem
     /** Native Schedule identity for a committed assignment planning revision. */
-    'hivemind/hq-calendar-wake': { itemId: string; revision: number; scheduleId: string }
+    'hivemind/hq-calendar-wake': { itemId: string; revision: number; scheduleId: string; sessionId?: string }
   }
 }
 
@@ -57,8 +59,10 @@ export class HqControl extends TypertRemoteService {
     'sessionPersistence',
     'hivemindHqOwnership',
     'schedule',
+    'sessionController',
   ]
   private readonly tails = new Map<string, Promise<void>>()
+  private readonly repairs = new Set<Promise<void>>()
 
   /**
    * Mount control and enforce the persisted switch at native dispatch boundaries.
@@ -66,6 +70,18 @@ export class HqControl extends TypertRemoteService {
    */
   constructor(ctx: Context) {
     super(ctx, 'hivemindHq')
+    installEmployeeDelivery(ctx)
+    ctx.effect(() => ctx.on('agent/session-start', ({ agent }) => {
+      if (!isHq(agent)) return
+      // Cold restoration can occur inside Schedule's serialized dispatch. Its
+      // observer must return before a repair can request another Schedule write.
+      const repair = this.reconcilePlans(agent).catch((error: unknown) => {
+        ctx.logger.warn(`HQ employee plans require reconciliation: ${error instanceof Error ? error.message : String(error)}`)
+      })
+      this.repairs.add(repair)
+      void repair.finally(() => this.repairs.delete(repair))
+    }, { global: true }))
+    ctx.effect(() => async () => { await Promise.allSettled([...this.repairs]) })
     ctx.effect(() =>
       ctx.agentTeams.guardDispatch((caller) => {
         const member = ctx.agentTeams.tryMembership(caller)
@@ -111,6 +127,7 @@ export class HqControl extends TypertRemoteService {
   @Remote('workspace')
   async workspace(agent: Agent): Promise<HqWorkspace> {
     const root = this.root(agent)
+    await reconcileEmployeeArtifacts(this.ctx, root, new AbortController().signal)
     const events = root.session.snapshotEvents()
     const contracts = taskContracts(events)
     const calendar = calendarItems(events)
@@ -190,7 +207,7 @@ export class HqControl extends TypertRemoteService {
         }
       }),
       wakes: catalog
-        .filter(wake => wake.sessionId === root.id)
+        .filter(wake => wake.sessionId === root.id || events.some(event => event.type === 'hivemind/hq-calendar-wake' && event.data.scheduleId === wake.id))
         .map(wake => ({
           id: wake.id,
           title: wake.title,
@@ -242,11 +259,11 @@ export class HqControl extends TypertRemoteService {
   @Remote('wakeHistory')
   async wakeHistory(agent: Agent, id: string): Promise<HqWakeHistory> {
     const root = this.root(agent)
-    const wake = (await this.ctx.schedule.catalog()).find(
-      item => item.sessionId === root.id && item.id === id,
-    )
+    const binding = root.session.ownEvents().findLast(event => event.type === 'hivemind/hq-calendar-wake' && event.data.scheduleId === id)
+    const targetId = binding?.type === 'hivemind/hq-calendar-wake' && binding.data.sessionId !== undefined ? SessionId(binding.data.sessionId) : root.id
+    const wake = (await this.ctx.schedule.catalog()).find(item => item.sessionId === targetId && item.id === id)
     if (!wake) throw new Error('hq_wake_not_authorized')
-    const history = await this.ctx.schedule.history({ sessionId: root.id, id: wake.id, limit: 20 })
+    const history = await this.ctx.schedule.history({ sessionId: targetId, id: wake.id, limit: 20 })
     if (!('records' in history)) throw new Error('hq_wake_history_unavailable')
     return {
       id,
@@ -310,7 +327,10 @@ export class HqControl extends TypertRemoteService {
 
   /** Reconcile committed planning with native Schedule; its backend owns delivery. */
   private async syncAssignmentWake(root: Agent, item: HqCalendarItem): Promise<void> {
-    if (item.kind !== 'assignment') return
+    if (item.kind !== 'assignment' || item.taskId === undefined) return
+    const task = this.ctx.agentTeams.getTask(root, TeamTaskId(item.taskId))
+    if (task.status !== 'pending') return
+    const assignment = await prepareEmployee(this.ctx, root, task.id, item.owner, new AbortController().signal)
     const bindings = root.session
       .snapshotEvents()
       .filter(
@@ -318,47 +338,54 @@ export class HqControl extends TypertRemoteService {
       )
     const same = bindings.findLast(
       event =>
-        event.type === 'hivemind/hq-calendar-wake' && event.data.revision === item.revision,
+        event.type === 'hivemind/hq-calendar-wake' && event.data.revision === item.revision && event.data.sessionId === assignment.sessionId,
     )
     if (!same) {
       // A past committed start becomes an immediate wake on repair. ensure's
       // deterministic identity retains the original delivery if already stored.
-      const wake = await this.ctx.schedule.ensure(root.id, `hq-plan-${item.id}-${item.revision}`, {
+      const wake = await this.ctx.schedule.ensure(SessionId(assignment.sessionId), `hq-room-plan-${item.id}-${item.revision}`, {
         title: `HQ planned work: ${item.title}`.slice(0, 120),
         at: new Date(Math.max(Date.parse(item.startsAt), Date.now() + 1000)).toISOString(),
-        prompt:
-          `Review planned native Team task ${item.taskId}, calendar item ${item.id}, revision ${item.revision}. ` +
-          'Read the current calendar revision, task status, dependencies, acceptance contract and employee receipts first. ' +
-          'If this revision was superseded or the task is already running or terminal, do not dispatch it again. ' +
-          `Otherwise assign authenticated employee ${item.owner} within existing authority. Missing employee, contract or authority must be resolved before dispatch. ` +
-          'This wake grants no new permissions; completion requires saved deliverable receipts and HQ review.',
+        prompt: employeeWorkPrompt(this.ctx, root, task.id, item),
       })
       root.session.append('hivemind/hq-calendar-wake', {
         itemId: item.id,
         revision: item.revision,
         scheduleId: wake.id,
+        sessionId: assignment.sessionId,
       })
       if (!(await this.ctx.sessions.flush(root.session)))
         throw new Error('hq_calendar_wake_persistence_required')
     }
+    const rooms = Reflect.get(this.ctx, 'sessionController') as { deliverAgentMessage: (caller: Agent, input: { key: string; target: string; kind: 'update'; text: string; taskId: string }, signal: AbortSignal) => Promise<unknown> }
+    await rooms.deliverAgentMessage(root, { key: `hq-plan-notice-${item.id}-${item.revision}`, target: item.owner, kind: 'update', taskId: task.id,
+      text: `Runtime assigned ${item.title}. Start ${item.startsAt}; deadline ${taskContracts(root.session.snapshotEvents()).find(value => value.taskId === task.id)?.dueAt}. This saved future assignment will trigger your room at its start after dependencies are accepted. Acknowledge only if a human asks; this quiet notice grants no new authority.` }, new AbortController().signal)
     // Only persisted host-created references may be removed; a matching user
     // title is never treated as ownership. Delivered occurrence history remains.
     const active = new Set(
       (await this.ctx.schedule.catalog())
-        .filter(wake => wake.sessionId === root.id && wake.status === 'active')
+        .filter(wake => wake.status === 'active')
         .map(wake => String(wake.id)),
     )
     for (const binding of bindings)
       if (
         binding.type === 'hivemind/hq-calendar-wake' &&
-        binding.data.revision < item.revision &&
+        (binding.data.revision < item.revision || binding.data.sessionId !== assignment.sessionId) &&
         active.has(binding.data.scheduleId)
       ) {
         await this.ctx.schedule.delete({
-          sessionId: root.id,
+          sessionId: binding.data.sessionId === undefined ? root.id : SessionId(binding.data.sessionId),
           id: ScheduleId(binding.data.scheduleId),
         })
       }
+  }
+
+  /** Repair pending planning wakes into employee rooms without model activity.
+   * @param agent - Exact live Runtime root.
+   */
+  async reconcilePlans(agent: Agent): Promise<void> {
+    const root = this.root(agent)
+    for (const item of calendarItems(root.session.snapshotEvents())) await this.syncAssignmentWake(root, item)
   }
 
   /** Cancel pending scheduled work through native Team state before removing its wake. */
@@ -395,10 +422,13 @@ export class HqControl extends TypertRemoteService {
     const itemIds = new Set(calendarItems(events)
       .filter(item => item.taskId !== undefined && cancelled.has(item.taskId)).map(item => item.id))
     const active = new Set((await this.ctx.schedule.catalog())
-      .filter(item => item.sessionId === root.id && item.status === 'active').map(item => String(item.id)))
+      .filter(item => item.status === 'active').map(item => String(item.id)))
     for (const event of events) {
       if (event.type !== 'hivemind/hq-calendar-wake' || !itemIds.has(event.data.itemId) || !active.has(event.data.scheduleId)) continue
-      await this.ctx.schedule.delete({ sessionId: root.id, id: ScheduleId(event.data.scheduleId) })
+      await this.ctx.schedule.delete({
+        sessionId: event.data.sessionId === undefined ? root.id : SessionId(event.data.sessionId),
+        id: ScheduleId(event.data.scheduleId),
+      })
     }
     return { cancelled: true }
   }
@@ -452,12 +482,15 @@ export class HqControl extends TypertRemoteService {
         // Cancellation is immediate. Pending native inbox and task state survive.
         root.cancel({ kind: 'user' }, { keepInbox: true })
         for (const member of this.ctx.agentTeams.listMembers(root)) {
-          if (member.role === 'teammate')
-            this.ctx.agents.get(member.id)?.cancel({ kind: 'parent' }, { keepInbox: true })
+          if (member.role !== 'teammate') continue
+          const target = this.ctx.agents.get(member.id)
+          if (member.ownership === 'persistent' && target && currentEmployeeWork(target)?.rootId !== root.id) continue
+          target?.cancel({ kind: 'parent' }, { keepInbox: true })
         }
       }
       if (!(await this.ctx.sessions.flush(root.session)))
         throw new Error('hq_mode_persistence_required')
+      if (value.enabled) await resumeEmployeeWork(this.ctx, root, value.revision)
       return { ok: true, value }
     })
     const tail = result.then(

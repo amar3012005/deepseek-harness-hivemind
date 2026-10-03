@@ -45,6 +45,8 @@ export type TeamMemberPhase = 'provisioning' | 'active' | 'failed'
 
 /** Whole durable value written on every teammate lifecycle change. */
 export interface TeamMemberSnapshot {
+  /** Host-bound persistent assignee; retains its own root Team and lifecycle. */
+  readonly ownership?: 'persistent'
   readonly id: SessionId
   readonly name: string
   readonly description: string
@@ -56,6 +58,7 @@ export interface TeamMemberSnapshot {
 
 /** Current runtime-enriched roster row. */
 export interface TeamMemberView {
+  readonly ownership?: 'persistent'
   readonly id: SessionId
   readonly name: string
   readonly role: 'lead' | 'teammate'

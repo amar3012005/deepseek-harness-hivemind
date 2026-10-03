@@ -21,6 +21,24 @@ function scheduleEvent(data: unknown, seq: number): SessionEvent {
 }
 
 describe('shared Schedule management', () => {
+  it('requires its configured host guard before cold-start delivery and removes the guard on disposal', async () => {
+    const test = await harness({ config: { deliveryPolicyRequired: true } })
+    tests.push(test)
+    const agent = agentFor(test.ctx)
+    test.resolve.mockResolvedValue({ agent })
+    const followup = vi.spyOn(agent, 'followup')
+    const record = await test.service.create(agent.id, { prompt: 'Employee work', title: 'Employee work', after_seconds: 1 })
+    await vi.advanceTimersByTimeAsync(1000)
+    expect(followup).not.toHaveBeenCalled()
+    expect((await test.service.catalog()).find(value => value.id === record.id)?.status).toBe('active')
+    const remove = test.service.guardDelivery(async () => true)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(followup).toHaveBeenCalledTimes(1)
+    remove()
+    await test.service.create(agent.id, { prompt: 'Next', title: 'Next', after_seconds: 1 })
+    await vi.advanceTimersByTimeAsync(1000)
+    expect(followup).toHaveBeenCalledTimes(1)
+  })
   it('initializes a new task with empty known delivery history', async () => {
     const { service, pool } = await setup()
     const sessionId = SessionId('new-history')

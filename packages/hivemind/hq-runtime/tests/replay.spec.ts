@@ -19,13 +19,13 @@ function mount() {
   const events = [{ type: 'hivemind/hq-task-contract', data: coldReorder(contract) },
     { type: 'hivemind/hq-task-artifacts', data: coldReorder(links) }] as unknown as SessionEvent[]
   const append = vi.fn((type: string, data: unknown) => events.push({ type, data } as SessionEvent))
-  const agent = { id: 'root', session: { snapshotEvents: () => events, append } } as unknown as Agent
+  const agent = { id: 'root', session: { snapshotEvents: () => events, ownEvents: () => events, append } } as unknown as Agent
   const flush = vi.fn(async () => true)
   const ensure = vi.fn(async () => ({ id: 'deadline' }))
   let tool: ToolDefinition
   const ctx = {
     effect: (callback: () => unknown) => callback(), on: () => () => {},
-    tools: { register: (definition: ToolDefinition) => { tool = definition } },
+    tools: { register: (definition: ToolDefinition) => { tool = definition }, restrict: () => () => {} },
     agentTeams: { guardTaskUpdates: () => () => {}, membership: () => ({ role: 'lead', root: agent }),
       getTask: () => ({ id: 'task-1', status: 'in_progress', subject: 'Report' }),
       listMembers: () => [{ name: 'ravi', id: 'ravi-session' }, { name: 'other', id: 'other-session' }] },

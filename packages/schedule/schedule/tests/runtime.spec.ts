@@ -18,7 +18,7 @@ afterEach(async () => {
   await Promise.all(tests.splice(0).map(test => test.ctx.fiber.dispose()))
   vi.useRealTimers()
 })
-async function setup(tasks: ScheduleTask[]) {
+async function setup(tasks: ScheduleTask[], policy?: (agent: Agent, task: ScheduleTask) => Promise<boolean>) {
   const test = await harness(); tests.push(test)
   const agent = agentFor(test.ctx)
   const followup = vi.fn<Agent['followup']>()
@@ -28,7 +28,7 @@ async function setup(tasks: ScheduleTask[]) {
     const index = tasks.findIndex(current => current.record.id === task.record.id)
     tasks[index] = task
   })
-  const runtime = new ScheduleRuntime(test.ctx, () => tasks, work => work(), commit, { days: 30, records: 200 })
+  const runtime = new ScheduleRuntime(test.ctx, () => tasks, work => work(), commit, { days: 30, records: 200 }, true, policy)
   runtimes.push(runtime)
   return { ...test, agent, followup, runtime, commit }
 }
@@ -59,6 +59,24 @@ it('seeds legacy history only from its actual receipt and appends through wall-c
 })
 
 describe('Host Schedule timer', () => {
+  it('retains the original due occurrence without inbox admission while host policy denies it', async () => {
+    const tasks = [task(createAfterScheduleRecord(ScheduleId('guarded'), 'Employee work', 1, Date.now(), 'Employee work'))]
+    let allowed = false
+    const policy = vi.fn(async () => allowed)
+    const test = await setup(tasks, policy)
+    test.runtime.requestDrive()
+    await vi.advanceTimersByTimeAsync(1000)
+    expect(policy).toHaveBeenCalledTimes(1)
+    expect(test.followup).not.toHaveBeenCalled()
+    expect(test.commit).not.toHaveBeenCalled()
+    expect(tasks[0]).toMatchObject({ status: 'active', record: { scheduledAt: '2026-09-16T00:00:01.000Z' } })
+    allowed = true
+    test.runtime.requestDrive()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(test.followup).toHaveBeenCalledTimes(1)
+    expect(tasks[0]?.lastDelivery?.scheduledAt).toBe('2026-09-16T00:00:01.000Z')
+    expect(tasks[0]?.status).toBe('inactive')
+  })
   it('restores the original Session and retains an ended one-shot with its flushed message receipt', async () => {
     const tasks = [task(createAfterScheduleRecord(ScheduleId('once'), 'Remember', 2, Date.now(), 'Remember'))]
     const test = await setup(tasks)

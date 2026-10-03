@@ -146,6 +146,8 @@ Each delivery adds fixed framing and content-dependent payload tokens. A recurri
 
 Reminder messages append to the original Session's history and preserve earlier message content; they do not replace the existing request prefix.
 
+Host adapters register monotonic `guardDelivery` policies before inbox insertion. A denied occurrence retains its original active record and delivery history, without a model wake. External backends retry through their existing polling; local adapters call `reconsiderDelivery` when their policy changes. Policies apply to every reminder in a recurring batch.
+
 ## Known Limitations and Deferred Work
 
 <a id="known-limitations-and-deferred-work"></a>

@@ -187,6 +187,8 @@ Each peer delivery adds the sender prefix plus message content to the target his
 
 Peer messages append after the target's reusable history prefix. Cold resume reuses the persisted conversation before appending a previously undelivered item.
 
+A host adapter can bind an existing independent root as a persistent task assignee through `bindPersistentAssignee`. The service verifies both exact live roots through the current persistence provider before saving the roster reference. This reference permits native task ownership; it grants no Team membership or child lifecycle authority. Persistent assignees use their host room mailbox, and native Team interrupt and teardown exclude them. Ordinary spawned child Teams retain their existing behavior.
+
 ## Known Limitations and Deferred Work
 
 <a id="known-limitations-and-deferred-work"></a>

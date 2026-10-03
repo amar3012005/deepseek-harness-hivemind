@@ -310,6 +310,7 @@
       inject: [scheduleBackend]
       config:
         storage: external
+        deliveryPolicyRequired: true
         deliveryHistoryDays: 30
         deliveryHistoryRecords: 200
 
