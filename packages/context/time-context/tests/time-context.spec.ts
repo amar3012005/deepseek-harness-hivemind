@@ -536,3 +536,27 @@ describe('real Loader export path', () => {
     expect(contextTexts(session)[0]).toContain('Time sampled while preparing turn 1, step 1:')
   })
 })
+
+
+describe('scheduled wake time zone continuity', () => {
+  it('uses the latest user-confirmed zone on every scheduled step when enabled', async () => {
+    const { ctx } = await mount({ inheritScheduledTimeZone: true })
+    const session = new Session(SessionId('scheduled-zone'))
+    openMessageTurn(session, 1, 'Europe/Berlin')
+    session.append('turn/end', { turn: 1, reason: { kind: 'stop' } })
+    session.append('turn/start', { turn: 2 })
+    session.append('user/message', createUserMessage({
+      content: [{ type: 'text', text: 'scheduled wake' }], source: { kind: 'schedule' },
+    }), { surfaceOp: 'append' })
+    const agent = sessionAgent(session)
+    await fire(ctx, agent, 2, 1)
+    await fire(ctx, agent, 2, 2)
+    const texts = contextTexts(session)
+    expect(texts).toHaveLength(2)
+    for (const text of texts) {
+      expect(text).toContain('Last user-confirmed time zone for this scheduled wake: Europe/Berlin')
+      expect(text).toContain('Europe/Berlin')
+    }
+    await ctx.fiber.dispose()
+  })
+})

@@ -2,6 +2,7 @@
   name: '@deepseek-ai/dsh-time-context'
   config:
     refreshIntervalMs: 0
+    inheritScheduledTimeZone: true
 
 # HQ composes the shared HIVE Chat realm directly: include patches cannot
 # cross another include boundary. Keep shared operating plugins in parity

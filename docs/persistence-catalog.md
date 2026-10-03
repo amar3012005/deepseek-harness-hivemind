@@ -509,6 +509,7 @@ Source: [`packages/hivemind/progressive-browser/src/index.ts:29`](../packages/hi
 /** Durable receipt for one bounded URL → title → screenshot capture. */
 'hivemind/browser-capture': {
   readonly captureId: string
+  readonly file?: FileAttachmentRef
   readonly provider: string
   readonly url: string
   readonly title?: string
@@ -743,6 +744,17 @@ Source: [`packages/hivemind/hq-runtime/src/control.ts:37`](../packages/hivemind/
 
 Source: [`packages/hivemind/hq-runtime/src/control.ts:39`](../packages/hivemind/hq-runtime/src/control.ts)
 
+<a id="hivemindhq-rest-confirmed--log-only"></a>
+
+#### `hivemind/hq-rest-confirmed` — log-only
+
+```ts persistence-catalog
+/** Current-turn confirmation of an immutable handoff and its persisted wake. */
+'hivemind/hq-rest-confirmed': RestWake
+```
+
+Source: [`packages/hivemind/hq-runtime/src/rest.ts:40`](../packages/hivemind/hq-runtime/src/rest.ts)
+
 <a id="hivemindhq-rest-intent--log-only"></a>
 
 #### `hivemind/hq-rest-intent` — log-only
@@ -774,7 +786,7 @@ Source: [`packages/hivemind/hq-runtime/src/rest.ts:38`](../packages/hivemind/hq-
 'hivemind/hq-rest-notes-presented': { readonly noteIds: readonly string[]; readonly messageSeq: number; readonly presentedAt: string }
 ```
 
-Source: [`packages/hivemind/hq-runtime/src/rest.ts:40`](../packages/hivemind/hq-runtime/src/rest.ts)
+Source: [`packages/hivemind/hq-runtime/src/rest.ts:42`](../packages/hivemind/hq-runtime/src/rest.ts)
 
 <a id="hivemindhq-rest-wake--log-only"></a>
 

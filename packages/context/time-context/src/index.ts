@@ -49,6 +49,8 @@ export const inject = ['agents', 'sessionProjections']
 export interface Config {
   /** Fallback display zone when the open turn has no unique browser zone. Omit to use the process zone. */
   timeZone?: string
+  /** Reuse the latest user-confirmed session zone for scheduled turns without a browser. */
+  inheritScheduledTimeZone?: boolean
   /** Minimum milliseconds between durable injections in one session. Omit or set to 0 to inject at every eligible step. */
   refreshIntervalMs?: number
 }
@@ -56,6 +58,7 @@ export interface Config {
 /** Schemastery validation for {@link Config}. */
 export const Config: z<Config> = z.object({
   timeZone: z.string(),
+  inheritScheduledTimeZone: z.boolean(),
   refreshIntervalMs: z.number(),
 })
 
@@ -196,9 +199,22 @@ export function apply(ctx: Context, config: Config): void {
       ? state.lastMessageTime ?? undefined
       : state.lastTurnInjectionTime ?? undefined
     const messages = requestMessages(agent, turn, decision.messages)
-    const browser = deriveBrowserTimeZoneContext(messages)
+    let browser = deriveBrowserTimeZoneContext(messages)
+    let inherited = false
+    if (config.inheritScheduledTimeZone && browser.kind === 'missing'
+      && messages.some(message => String(message.source.kind) === 'schedule')) {
+      for (let seq = agent.session.seq - 1; seq >= 0; seq -= 1) {
+        const event = agent.session.eventAt(SessionSeq(seq))
+        if (event?.type !== 'user/message') continue
+        const previousZone = deriveBrowserTimeZoneContext([event.data])
+        if (previousZone.kind !== 'resolved') continue
+        browser = previousZone
+        inherited = true
+        break
+      }
+    }
     const selectedTimeZone = browser.kind === 'resolved' ? browser.timeZone : fallbackTimeZone
-    const text = renderText(
+    const clockText = renderText(
       now,
       turn,
       step,
@@ -207,6 +223,9 @@ export function apply(ctx: Context, config: Config): void {
       selectedTimeZone,
       browser,
     )
+    const text = inherited
+      ? clockText.replace('Browser time zone for this request:', 'Last user-confirmed time zone for this scheduled wake:')
+      : clockText
     return {
       ...decision,
       messages: [
