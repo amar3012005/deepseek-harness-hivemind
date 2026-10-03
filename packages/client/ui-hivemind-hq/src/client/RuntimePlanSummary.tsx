@@ -42,7 +42,7 @@ export function RuntimePlanSummary({ sessionId, turn, events, load, cancel }: Pr
     <p>Here is the saved schedule. Cancelling a prerequisite also cancels its pending dependent tasks.</p>
     {!workspace && <p role="status">Loading saved tasks…</p>}
     {workspace?.tasks.filter(task => task.nextWakeAt || workspace.calendar.some(item => item.taskId === task.id)).map(task => <article key={task.id} style={{ padding: '12px 0', borderBottom: '1px solid #e4e7eb' }}>
-      <strong>{task.title}</strong><p>{employeeNames.get(workspace.calendar.find(item => item.taskId === task.id)?.owner) ?? task.owner} · {task.status === 'deleted' ? 'Cancelled' : task.status}</p>
+      <strong>{task.title}</strong><p>{employeeNames.get(workspace.calendar.find(item => item.kind === 'assignment' && item.taskId === task.id)?.owner) ?? task.owner} · {task.status === 'deleted' ? 'Cancelled' : task.status}</p>
       <p>{task.nextWakeAt ? new Date(task.nextWakeAt).toLocaleString(undefined, { timeZoneName: 'short' }) : 'No pending trigger'}</p>
       {task.status === 'pending' && <button type="button" disabled={pending !== undefined} onClick={() => {
         setPending(task.id); setError(undefined)

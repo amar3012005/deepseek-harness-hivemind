@@ -42,7 +42,9 @@ export function RuntimeAwakening(
       const cards = entries.flatMap(other => other.cards)
         .filter((card, index, all) => all.findLastIndex(other =>
           other.title === card.title && other.reference === card.reference) === index)
-      return { ...latest, cards }
+      const redundant = cards.length === 1 && cards[0]?.detail === latest.summary
+        && !cards[0]?.image && !cards[0]?.employeeId && !cards[0]?.reference
+      return { ...latest, cards: redundant ? [] : cards }
     })
   return <section className={css.root} aria-label="Runtime investigation">
     {stages.map(item => <section key={item.seq} className={css.stage}>
