@@ -200,3 +200,12 @@ export function runtimeReviewDecision(input: { decision?: string; rationale?: st
 export function runtimeReviewAccepts(review: HqTaskReview | undefined, revision: number, artifactIds: readonly string[]): boolean {
   return review?.reviewer === 'runtime' && review.status === 'accepted' && review.taskRevision === revision && JSON.stringify(review.artifactIds) === JSON.stringify(artifactIds)
 }
+
+/** Discover only immutable attachment metadata on the exact committed producer receipt. */
+export function savedArtifactAttachment(events: readonly LedgerEvent[], artifactId: string): { file: { attachmentId: string; name: string; bytes: number }; mediaType: string; modality: 'image' | 'video' | 'pdf' | 'file'; path: string | null } | undefined {
+  const event = events.findLast(e => ['hivemind/generation-created', 'hivemind/artifact-created'].includes(e.type) && object(e.data)?.['artifactId'] === artifactId)
+  const data = object(event?.data), file = object(data?.['file'] ?? data?.['pdf'])
+  if (!file || typeof file['attachmentId'] !== 'string' || !/^sha256:[a-f0-9]{64}$/.test(file['attachmentId']) || typeof file['name'] !== 'string' || typeof file['bytes'] !== 'number' || !Number.isSafeInteger(file['bytes']) || file['bytes'] < 0) return undefined
+  const mediaType = typeof data?.['mediaType'] === 'string' ? data['mediaType'] : data?.['pdf'] ? 'application/pdf' : 'application/octet-stream'
+  return { file: { attachmentId: file['attachmentId'], name: file['name'], bytes: file['bytes'] }, mediaType, modality: mediaType.startsWith('image/') ? 'image' : mediaType.startsWith('video/') ? 'video' : mediaType === 'application/pdf' ? 'pdf' : 'file', path: typeof data?.['path'] === 'string' ? data['path'] : null }
+}

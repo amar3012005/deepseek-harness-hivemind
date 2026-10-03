@@ -1,5 +1,5 @@
 import { expect, it, vi } from 'vitest'
-import { jevReview, runtimeReviewDecision, runtimeReviewAccepts, reviewAnswers, savedArtifactText, savedSourceEvidence } from '../src/review.ts'
+import { jevReview, runtimeReviewDecision, runtimeReviewAccepts, reviewAnswers, savedArtifactText, savedArtifactAttachment, savedSourceEvidence } from '../src/review.ts'
 it('fails closed on missing answers and uncertainty rather than certifying prose', () => {
   expect(reviewAnswers({ model: 'jev', answers: { criterion_0: { type: 'noul', noul: 0.99 }, criterion_1: { type: 'noul', noul: 0.7 } } }, 2).status).toBe('uncertain')
   expect(reviewAnswers({ model: 'jev', answers: { criterion_0: { type: 'noul', noul: 0.99 } } }, 1).status).toBe('accepted')
@@ -59,4 +59,14 @@ it('requires Runtime’s explicit current evidence decision; Jev is advisory onl
   expect(() => runtimeReviewDecision({ ...input, rationale: '' }, current)).toThrow('hq_runtime_review_decision_required')
   const changes = runtimeReviewDecision({ ...input, decision: 'needs_changes', rationale: 'Missing required seasonal ingredient.' }, current)
   expect(runtimeReviewAccepts({ ...review, ...changes }, 2, ['artifact'])).toBe(false)
+})
+
+it('exposes committed binary modality without claiming unseen content or accepting invented refs', () => {
+  const file = { attachmentId: `sha256:${'a'.repeat(64)}`, name: 'visual.bin', bytes: 705 }
+  for (const [mediaType, modality] of [['image/png', 'image'], ['video/mp4', 'video'], ['application/pdf', 'pdf']]) {
+    expect(savedArtifactAttachment([{ type: 'hivemind/generation-created', data: { artifactId: 'saved', file, mediaType } }], 'saved')).toMatchObject({ file, mediaType, modality })
+  }
+  expect(savedArtifactAttachment([{ type: 'tool/result', data: { artifactId: 'saved', file } }], 'saved')).toBeUndefined()
+  expect(savedArtifactAttachment([{ type: 'hivemind/generation-created', data: { artifactId: 'other', file } }], 'saved')).toBeUndefined()
+  expect(savedArtifactAttachment([{ type: 'hivemind/generation-created', data: { artifactId: 'saved', file: { ...file, attachmentId: 'invented' } } }], 'saved')).toBeUndefined()
 })

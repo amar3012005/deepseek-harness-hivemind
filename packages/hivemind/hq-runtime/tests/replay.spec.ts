@@ -38,7 +38,7 @@ function mount() {
   } as unknown as Context
   apply(ctx)
   const execute = (args: Record<string, unknown>) => tool!.execute(args, { agent, signal: new AbortController().signal } as never)
-  return { execute, append, flush, ensure, contract, events, complete: () => guard(agent, { action: 'complete', taskId: 'task-1', expectedRevision: 2 }), setRole: (value: string) => { role = value } }
+  return { execute, append, flush, ensure, contract, events, producerEvents, complete: () => guard(agent, { action: 'complete', taskId: 'task-1', expectedRevision: 2 }), setRole: (value: string) => { role = value } }
 }
 describe('native HQ durable receipt replay', () => {
   it('records Runtime decisions, preserves acceptance after advisory, and rejects stale inputs or teammates', async () => {
@@ -56,6 +56,15 @@ describe('native HQ durable receipt replay', () => {
     expect(f.complete()).toBeTypeOf('string')
     f.setRole('teammate')
     await expect(f.execute(input)).rejects.toThrow('hq_lead_required')
+  })
+  it('inspects and decides a committed binary without claiming text extraction', async () => {
+    const f = mount()
+    f.producerEvents.splice(0, f.producerEvents.length, { type: 'hivemind/generation-created', seq: 9, data: { artifactId: 'report', mediaType: 'image/png', file: { attachmentId: `sha256:${'a'.repeat(64)}`, name: 'report.png', bytes: 42 } } } as never)
+    const inspected = await f.execute({ action: 'inspect', task_id: 'task-1' }) as { evidence_hash: string; task_revision: number; documents: { text: string; attachment: { modality: string } }[] }
+    expect(inspected.documents[0]).toMatchObject({ text: '', attachment: { modality: 'image' } })
+    await expect(f.execute({ action: 'review', task_id: 'task-1' })).rejects.toThrow('hq_jev_advisory_requires_text_evidence')
+    await f.execute({ action: 'decide', task_id: 'task-1', decision: 'needs_changes', rationale: 'Actual pixel inspection is unavailable; receipt alone is insufficient.', task_revision: inspected.task_revision, evidence_hash: inspected.evidence_hash })
+    expect(f.complete()).toBeTypeOf('string')
   })
   it('reuses reordered cold artifact links while still checkpointing', async () => {
     const fixture = mount()

@@ -6,6 +6,7 @@ import {
   runtimeReviewDecision,
   runtimeReviewAccepts,
   savedArtifactText,
+  savedArtifactAttachment,
   savedSourceEvidence,
   type HqTaskReview,
 } from './review.ts'
@@ -305,6 +306,7 @@ export function apply(ctx: Context): void {
           const documents: {
             artifactId: string
             text: string
+            attachment: NonNullable<ReturnType<typeof savedArtifactAttachment>> | null
             sources: ReturnType<typeof savedSourceEvidence>
           }[] = []
           for (const receipt of links.producerReceipts ?? []) {
@@ -320,11 +322,13 @@ export function apply(ctx: Context): void {
               const assignment = events.findLast(event => event.type === 'hivemind/hq-employee-assignment' && event.data.taskId === task.id && event.data.sessionId === producer.id)
               if (assignment?.type === 'hivemind/hq-employee-assignment') operatingEvidence.push(savedOperatingEvidence(source, events, { sessionId: producer.id, employeeId: assignment.data.employeeId, taskId: task.id, artifactIds: links.artifactIds }))
               const text = savedArtifactText(source, receipt.artifactId)
-              if (!text) throw new Error('hq_review_saved_document_unavailable')
+              const attachment = savedArtifactAttachment(source, receipt.artifactId)
+              if (!text && !attachment) throw new Error('hq_review_saved_document_unavailable')
               documents.push({
                 artifactId: receipt.artifactId,
-                text,
-                sources: savedSourceEvidence(source, text),
+                text: text ?? '',
+                attachment: attachment ?? null,
+                sources: text ? savedSourceEvidence(source, text) : [],
               })
             } finally {
               await handle.close()
@@ -375,6 +379,7 @@ export function apply(ctx: Context): void {
                 probabilities: [...previous.data.probabilities],
               },
             }
+          if (documents.some(document => !document.text)) throw new Error('hq_jev_advisory_requires_text_evidence')
           const decision = await jevReview(state, contract.acceptanceCriteria, execution.signal)
           execution.signal.throwIfAborted()
           if (ctx.agentTeams.getTask(root, task.id).revision !== task.revision)

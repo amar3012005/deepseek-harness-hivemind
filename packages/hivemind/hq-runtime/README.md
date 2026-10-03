@@ -97,3 +97,10 @@ Jev `review` is an optional advisory opinion; its scores neither grant completio
 nor override Runtime’s decision. Existing Jev records remain readable and are not
 converted into Runtime acceptance. Permission and write-approval rules remain
 independent of review.
+
+`inspect` also returns committed producer attachment references and their modality
+for binary image, PDF, video, and other file submissions; it does not synthesize
+text or claim to have inspected their contents. Runtime must use available native
+readers and multimodal tools for actual content review. Missing readers or video
+frame/audio inspection remain explicit gaps. Jev’s text-only advisory path rejects
+binary-only inputs instead of judging unseen content.
