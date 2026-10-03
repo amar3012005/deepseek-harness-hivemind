@@ -499,7 +499,7 @@ Source: [`packages/hivemind/artifact-renderer/src/index.ts:137`](../packages/hiv
 }
 ```
 
-Source: [`packages/hivemind/progressive-browser/src/index.ts:26`](../packages/hivemind/progressive-browser/src/index.ts)
+Source: [`packages/hivemind/progressive-browser/src/index.ts:29`](../packages/hivemind/progressive-browser/src/index.ts)
 
 <a id="hivemindbrowser-capture--log-only"></a>
 
@@ -517,7 +517,7 @@ Source: [`packages/hivemind/progressive-browser/src/index.ts:26`](../packages/hi
 }
 ```
 
-Source: [`packages/hivemind/progressive-browser/src/index.ts:41`](../packages/hivemind/progressive-browser/src/index.ts)
+Source: [`packages/hivemind/progressive-browser/src/index.ts:44`](../packages/hivemind/progressive-browser/src/index.ts)
 
 <a id="hivemindcapability-lease--log-only"></a>
 
@@ -691,7 +691,7 @@ Source: [`packages/hivemind/hq-runtime/src/awakening.ts:31`](../packages/hivemin
 'hivemind/hq-calendar-item': HqCalendarItem
 ```
 
-Source: [`packages/hivemind/hq-runtime/src/control.ts:39`](../packages/hivemind/hq-runtime/src/control.ts)
+Source: [`packages/hivemind/hq-runtime/src/control.ts:41`](../packages/hivemind/hq-runtime/src/control.ts)
 
 <a id="hivemindhq-calendar-wake--log-only"></a>
 
@@ -702,7 +702,7 @@ Source: [`packages/hivemind/hq-runtime/src/control.ts:39`](../packages/hivemind/
 'hivemind/hq-calendar-wake': { itemId: string; revision: number; scheduleId: string; sessionId?: string }
 ```
 
-Source: [`packages/hivemind/hq-runtime/src/control.ts:41`](../packages/hivemind/hq-runtime/src/control.ts)
+Source: [`packages/hivemind/hq-runtime/src/control.ts:43`](../packages/hivemind/hq-runtime/src/control.ts)
 
 <a id="hivemindhq-employee-assignment--log-only"></a>
 
@@ -719,7 +719,7 @@ Source: [`packages/hivemind/hq-runtime/src/control.ts:41`](../packages/hivemind/
 }
 ```
 
-Source: [`packages/hivemind/hq-runtime/src/index.ts:55`](../packages/hivemind/hq-runtime/src/index.ts)
+Source: [`packages/hivemind/hq-runtime/src/index.ts:56`](../packages/hivemind/hq-runtime/src/index.ts)
 
 <a id="hivemindhq-mode--log-only"></a>
 
@@ -731,6 +731,17 @@ Source: [`packages/hivemind/hq-runtime/src/index.ts:55`](../packages/hivemind/hq
 ```
 
 Source: [`packages/hivemind/hq-runtime/src/control.ts:37`](../packages/hivemind/hq-runtime/src/control.ts)
+
+<a id="hivemindhq-public-investigation--log-only"></a>
+
+#### `hivemind/hq-public-investigation` — log-only
+
+```ts persistence-catalog
+/** Human-selected public investigation excludes stored company context for this room. */
+'hivemind/hq-public-investigation': { enabled: boolean }
+```
+
+Source: [`packages/hivemind/hq-runtime/src/control.ts:39`](../packages/hivemind/hq-runtime/src/control.ts)
 
 <a id="hivemindhq-rest-intent--log-only"></a>
 
@@ -785,7 +796,7 @@ Source: [`packages/hivemind/hq-runtime/src/rest.ts:36`](../packages/hivemind/hq-
 'hivemind/hq-task-artifacts': TaskArtifactLinks
 ```
 
-Source: [`packages/hivemind/hq-runtime/src/index.ts:53`](../packages/hivemind/hq-runtime/src/index.ts)
+Source: [`packages/hivemind/hq-runtime/src/index.ts:54`](../packages/hivemind/hq-runtime/src/index.ts)
 
 <a id="hivemindhq-task-contract--log-only"></a>
 
@@ -796,7 +807,7 @@ Source: [`packages/hivemind/hq-runtime/src/index.ts:53`](../packages/hivemind/hq
 'hivemind/hq-task-contract': CompanyTaskContract
 ```
 
-Source: [`packages/hivemind/hq-runtime/src/index.ts:49`](../packages/hivemind/hq-runtime/src/index.ts)
+Source: [`packages/hivemind/hq-runtime/src/index.ts:50`](../packages/hivemind/hq-runtime/src/index.ts)
 
 <a id="hivemindhq-task-review--log-only"></a>
 
@@ -807,7 +818,7 @@ Source: [`packages/hivemind/hq-runtime/src/index.ts:49`](../packages/hivemind/hq
 'hivemind/hq-task-review': HqTaskReview
 ```
 
-Source: [`packages/hivemind/hq-runtime/src/index.ts:51`](../packages/hivemind/hq-runtime/src/index.ts)
+Source: [`packages/hivemind/hq-runtime/src/index.ts:52`](../packages/hivemind/hq-runtime/src/index.ts)
 
 <a id="hivemindmedia-workflow-ended--log-only"></a>
 

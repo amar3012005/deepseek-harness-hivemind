@@ -35,6 +35,8 @@ declare module '@deepseek-ai/dsh-session/types' {
   interface SessionEventMap {
     /** Human-only HQ autonomy switch, checkpointed before acknowledging the control. */
     'hivemind/hq-mode': HqModeState
+    /** Human-selected public investigation excludes stored company context for this room. */
+    'hivemind/hq-public-investigation': { enabled: boolean }
     /** Human-authored planning metadata with compare-and-set revisions; no execution transition. */
     'hivemind/hq-calendar-item': HqCalendarItem
     /** Native Schedule identity for a committed assignment planning revision. */
@@ -92,6 +94,18 @@ export class HqControl extends TypertRemoteService {
           : 'HQ autonomous activity is paused by the human.'
       }),
     )
+  }
+
+  /** Human-only investigation scope; does not clear tasks, change autonomy, or start a turn. */
+  @Remote('publicInvestigation')
+  async publicInvestigation(agent: Agent, request: { enabled: boolean }): Promise<{ enabled: boolean }> {
+    if (typeof request.enabled !== 'boolean') throw new Error('invalid_public_investigation_scope')
+    const root = this.root(agent)
+    return root.runMaintenance(async () => {
+      root.session.append('hivemind/hq-public-investigation', { enabled: request.enabled })
+      if (!await this.ctx.sessions.flush(root.session)) throw new Error('investigation_scope_not_persisted')
+      return { enabled: request.enabled }
+    })
   }
 
   /** Human inspection of checkpointed rest intent and quiet notes; never wakes. */

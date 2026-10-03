@@ -67,6 +67,7 @@ export function apply(ctx: Context): void {
   installAwakening(ctx)
   const briefed = new WeakMap<object, number>()
   const researchMasked = new WeakSet<object>()
+  const investigationMasks = new WeakMap<object, () => void>()
   ctx.effect(() => ctx.on('agent/pre-step', async ({ agent, turn, signal }, next) => {
     const decision = await next()
     if (decision.kind === 'reject') return decision
@@ -80,6 +81,23 @@ export function apply(ctx: Context): void {
       ctx.effect(() => agent.ctx.tools.restrict({ deny: ['hivemind_research_answer'] }))
       researchMasked.add(agent)
     }
+    const investigation = agent.session.snapshotEvents().findLast(
+      event => event.type === 'hivemind/hq-public-investigation',
+    )
+    if (investigation?.type === 'hivemind/hq-public-investigation' && investigation.data.enabled) {
+      if (!investigationMasks.has(agent)) {
+        const internal = new Set(['hivemind_meta', 'hivemind_recall', 'hyperagents_memory',
+          'hivemind_profile_context', 'hivemind_operating_context', 'hivemind_onboarding',
+          'hivemind_hyperagent_profiles', 'hivemind_playbooks', 'hivemind_capabilities',
+          'hivemind_hq_contract', 'hivemind_hq_awakening', 'hivemind_agent_message'])
+        const deny = agent.ctx.tools.schemas().map(tool => tool.name).filter(name => internal.has(name))
+        if (deny.length) investigationMasks.set(agent, agent.ctx.tools.restrict({ deny }))
+      }
+      // Native tools and the user goal drive investigation; existing operational records remain intact.
+      return decision
+    }
+    investigationMasks.get(agent)?.()
+    investigationMasks.delete(agent)
     await recoverRest(ctx, agent, signal)
     await acknowledgeRestNotes(ctx, agent)
     const awakening = await awakeningContext(ctx, agent, turn, decision.messages)
