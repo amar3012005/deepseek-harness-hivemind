@@ -5,7 +5,7 @@ import type { SessionEventWindow } from '@deepseek-ai/dsh-api-session-controller
 import { EmployeeAvatar } from './HyperagentEmployee.tsx'
 import css from './RuntimeAwakening.module.css'
 declare module '@deepseek-ai/dsh-client-ui-slots' {
-  interface SlotMap { 'hivemind.runtime.plan': { kind: 'list'; scope: 'session'; owner: { turn: number } } }
+  interface SlotMap { 'conversation.chat.workUpdates': { kind: 'list'; scope: 'session'; owner: { turn: number } }; 'hivemind.runtime.plan': { kind: 'list'; scope: 'session'; owner: { turn: number } } }
 }
 interface EventSource { subscribe(listener: () => void): () => void; getSnapshot(): SessionEventWindow }
 interface Checkpoint {
@@ -36,7 +36,14 @@ export function RuntimeAwakening(
   })
   if (!checkpoints.length) return null
   const stages = checkpoints.filter((item, index) => checkpoints.findIndex(other => other.stage === item.stage) === index)
-    .map(item => ({ ...item, cards: checkpoints.filter(other => other.stage === item.stage).flatMap(other => other.cards) }))
+    .map((item) => {
+      const entries = checkpoints.filter(other => other.stage === item.stage)
+      const latest = entries.at(-1) ?? item
+      const cards = entries.flatMap(other => other.cards)
+        .filter((card, index, all) => all.findLastIndex(other =>
+          other.title === card.title && other.reference === card.reference) === index)
+      return { ...latest, cards }
+    })
   return <section className={css.root} aria-label="Runtime investigation">
     {stages.map(item => <section key={item.seq} className={css.stage}>
       <header><strong>{titles[item.stage] ?? item.stage}</strong>{item.blocked && <span>Needs attention</span>}</header>

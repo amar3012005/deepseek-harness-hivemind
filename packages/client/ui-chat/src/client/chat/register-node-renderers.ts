@@ -54,7 +54,9 @@ export function registerChatNodeRenderers(ctx: Context): void {
   ctx.slots.inject('conversation.chat.node', () => ctx.slots.register(
     { name: 'conversation.chat.node', key: 'turn-max-tokens', locale: NS }, TurnMaxTokensNodeView))
   ctx.slots.inject('conversation.chat.node', () => ctx.slots.register(
-    { name: 'conversation.chat.node', key: 'turn-process', locale: NS }, TurnProcessNodeView))
+    { name: 'conversation.chat.node', key: 'turn-process', locale: NS,
+      children: { 'conversation.chat.workUpdates': { kind: 'list', scope: 'session' } },
+    }, TurnProcessNodeView))
   ctx.slots.inject('conversation.chat.node', () => ctx.slots.register({
     name: 'conversation.chat.node',
     key: 'turn-tail',

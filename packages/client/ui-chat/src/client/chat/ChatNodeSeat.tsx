@@ -46,32 +46,33 @@ export const ChatNodeSeat = memo(function ChatNodeSeat({
   const turn = turnOf(routedNode)
   const processPresentation = useChatNodeProcess(nodeKey)
   const processSpec = processPresentation?.spec
+  const quietWork = window.location.pathname.includes('/employee/harness')
+  const disclosureStep = processSpec?.answerStep ?? -1
   const storedEntry = useStore(state => processSpec === undefined
     ? undefined
     : storedTurnProcessEntry(state, processSpec.turn))
   const processEntry = processSpec !== undefined
-    && processSpec.answerStep !== null
-    && storedEntry?.answerStep === processSpec.answerStep
+    && storedEntry?.answerStep === disclosureStep
     ? storedEntry
     : undefined
   const processOpen = processEntry !== undefined
   const setOpen = useCallback((open: boolean) => {
-    if (processSpec !== undefined && processSpec.answerStep !== null) {
-      actions.setTurnProcessOpen(processSpec.turn, processSpec.answerStep, open)
+    if (processSpec !== undefined) {
+      actions.setTurnProcessOpen(processSpec.turn, disclosureStep, open)
     }
-  }, [actions, processSpec])
+  }, [actions, processSpec, disclosureStep])
   const processWindowReady = processSpec !== undefined
     && processPresentation !== undefined
-    && (compactTranscript || processSpec.dreamSynthesis === true)
-    && processSpec.answerAnchorSeq !== null
+    && (quietWork || compactTranscript || processSpec.dreamSynthesis === true)
+    && (quietWork || processSpec.answerAnchorSeq !== null)
     && processPresentation.turn === processSpec.turn
-    && processPresentation.turnClosed
-    && (!historyIncomplete || processSpec.dreamSynthesis === true)
+    && (quietWork || processPresentation.turnClosed)
+    && (!historyIncomplete || quietWork || processSpec.dreamSynthesis === true)
   const processMember = routedNode !== undefined
     && processWindowReady
-    && (!TURN_PROCESS_INDEPENDENT_KINDS.has(routedNode.kind) || (routedNode.kind === 'system-prompt' && processSpec.dreamSynthesis === true))
+    && (!TURN_PROCESS_INDEPENDENT_KINDS.has(routedNode.kind) || (routedNode.kind === 'system-prompt' && (quietWork || processSpec.dreamSynthesis === true)))
     && routedNode.anchorSeq >= processSpec.processStartSeq
-    && routedNode.anchorSeq < processSpec.answerAnchorSeq
+    && routedNode.anchorSeq < (processSpec.answerAnchorSeq ?? Number.POSITIVE_INFINITY)
   const processAnswer = routedNode !== undefined
     && processWindowReady
     && routedNode.kind === 'assistant-step'
@@ -101,6 +102,7 @@ export const ChatNodeSeat = memo(function ChatNodeSeat({
   const preserveReply = routedNode?.kind === 'assistant-step'
     && processSpec?.dreamSynthesis !== true
     && hasAssistantReplyContent(routedNode.data.blocks)
+    && (!quietWork || !routedNode.data.blocks.some(block => block.kind === 'tool-call'))
   const processHidden = controllerInactive || (foldable && processMember && !processOpen && !preserveReply)
   const revealProcess = useCallback(() => {
     if (processMember) setOpen(true)

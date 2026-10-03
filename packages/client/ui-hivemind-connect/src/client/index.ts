@@ -508,12 +508,11 @@ export function apply(ctx: ClientContext): void {
       const conversation = scope?.get('conversation')
       if (conversation !== undefined) void conversation.send(prompt)
     }
-    ctx.slots.inject('conversation.chat.turnTail', () => ctx.slots.register({
-      name: 'conversation.chat.turnTail', priority: 35,
+    ctx.slots.inject('conversation.chat.workUpdates', () => ctx.slots.register({
+      name: 'conversation.chat.workUpdates', id: 'runtime-investigation',
       children: { 'hivemind.runtime.plan': { kind: 'list', scope: 'session' } },
-      select: owner => owner.turn.turn,
       inject: sessionId => ({ events: employeeEvents(sessionId) }),
-    }, ({ matched, events, renderSlot }) => createElement(RuntimeAwakening, { turn: matched, events, renderSlot })))
+    }, ({ turn, events, renderSlot }) => createElement(RuntimeAwakening, { turn, events, renderSlot })))
     ctx.slots.inject('conversation.chat.turnTail', () => ctx.slots.register({
       name: 'conversation.chat.turnTail', priority: 40,
       select: selectContextualFollowUps,
