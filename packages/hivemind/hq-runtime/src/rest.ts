@@ -4,7 +4,7 @@ import { isDeepStrictEqual } from 'node:util'
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
-import type { UserMessage } from '@deepseek-ai/dsh-llm'
+import { createUserMessage, type UserMessage } from '@deepseek-ai/dsh-llm'
 import { parseAtInput } from '@deepseek-ai/dsh-schedule'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { HqRestNote, HqRestNoteRequest, HqRestNoteResult, HqRestState } from './types.ts'
@@ -186,6 +186,28 @@ export function restBriefing(agent: Agent, messages: readonly UserMessage[]): { 
   }
 }
 export function installRest(ctx: Context): void {
+  const sleepChecks = new WeakMap<Agent, { turn: number; repairs: number }>()
+  ctx.effect(() => ctx.on('agent/turn-stopping', async ({ agent, turn, signal }) => {
+    if (signal.aborted || !isHqLead(ctx, agent) || !ctx.hivemindHq.mode(agent).enabled) return
+    const events = agent.session.snapshotEvents()
+    const investigation = events.findLast(event => String(event.type) === 'hivemind/hq-public-investigation')
+    if ((investigation?.data as { enabled?: boolean } | undefined)?.enabled) return
+    const start = events.findLast(event => event.type === 'turn/start')?.seq ?? -1
+    const intent = restIntents(events).findLast(item => item.sourceEventSeq >= start)
+    const binding = intent && events.findLast(event => event.type === 'hivemind/hq-rest-wake' && event.data.handoffId === intent.id)
+    if (binding?.type === 'hivemind/hq-rest-wake') {
+      const wake = (await ctx.schedule.catalog()).find(item => item.id === binding.data.scheduleId && item.sessionId === agent.id)
+      if (wake?.status === 'active' && Date.parse(wake.scheduledAt) > Date.now()) return
+    }
+    const prior = sleepChecks.get(agent)
+    const repairs = prior?.turn === turn ? prior.repairs : 0
+    if (repairs >= 2) throw new Error('hq_sleep_handoff_and_future_wake_not_confirmed')
+    sleepChecks.set(agent, { turn, repairs: repairs + 1 })
+    agent.steer(createUserMessage({
+      source: { kind: 'plugin', plugin: 'hivemind-hq/sleep-check' },
+      content: [{ type: 'text', text: 'Before this active Runtime turn finishes, commit a handoff and a justified future wake with hivemind_hq_rest. Include completed findings, current task/calendar references, next steps and blockers. Reuse the same handoff_id and timestamp on retry. Confirm its persisted future wake before saying sleeping. Do not repeat investigation, create a Goal, redo employee work or invent completed results. Pause or cancellation overrides this check.' }],
+    }))
+  }))
   ctx.effect(() => ctx.on('agent/turn-ended', async ({ agent }) => { await acknowledgeRestNotes(ctx, agent) }))
   ctx.effect(() => ctx.tools.register(defineTool({
     name: 'hivemind_hq_rest',
