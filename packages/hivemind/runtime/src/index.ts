@@ -1689,8 +1689,13 @@ export function apply(ctx: Context, config: Config): void {
         if (!lifetime.signal.aborted) ctx.logger.warn(`private task memory remains queued for session ${agent.id}: ${String(error)}`)
       }
     }
+    const publicInvestigation = (agent: Agent): boolean => {
+      const event = agent.session.snapshotEvents().findLast(item => String(item.type) === 'hivemind/hq-public-investigation')
+      return (event?.data as { enabled?: boolean } | undefined)?.enabled === true
+    }
     const hqRecall = new WeakMap<Agent, { turn: number; text: string }>()
     ctx.effect(() => ctx.on('agent/pre-step', async ({ agent, signal, turn }, next) => {
+      if (publicInvestigation(agent)) return next()
       const owner = await ensureOwner(agent, signal)
       principals.set(agent, ctx.hivemindExecutionScope.require())
       enqueueTasks(agent, owner)
@@ -1731,6 +1736,7 @@ export function apply(ctx: Context, config: Config): void {
       }), ...decision.messages] }
     }, { prepend: true }))
     ctx.effect(() => ctx.on('agent/turn-ended', async ({ agent, reason }) => {
+      if (publicInvestigation(agent)) return
       const owner = sessionOwner(agent.session.snapshotEvents())
       if (reason.kind !== 'completed' || owner === undefined) return
       principals.set(agent, ctx.hivemindExecutionScope.require())
