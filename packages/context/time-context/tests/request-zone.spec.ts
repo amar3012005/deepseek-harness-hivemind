@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { UserMessage } from '@deepseek-ai/dsh-llm'
 import {
+  createBrowserTimeZoneConfirmation,
   deriveBrowserTimeZoneContext,
   renderBrowserTimeZoneContext,
 } from '../src/request-zone.ts'
@@ -54,4 +55,12 @@ describe('browser request-zone context', () => {
     })).toContain('mixed ["America/New_York","Asia/Shanghai"]')
     expect(renderBrowserTimeZoneContext({ kind: 'missing' })).toContain('unavailable')
   })
+})
+
+it('accepts validated quiet human-control timezone confirmation without fabricating user RPC', () => {
+  const message = createBrowserTimeZoneConfirmation('Asia/Calcutta')
+  expect(message.source.kind).toBe('plugin')
+  expect(deriveBrowserTimeZoneContext([message])).toEqual({ kind: 'resolved', timeZone: 'Asia/Calcutta' })
+  expect(() => createBrowserTimeZoneConfirmation('+02:00')).toThrow()
+  expect(() => createBrowserTimeZoneConfirmation('Invalid/Zone')).toThrow()
 })

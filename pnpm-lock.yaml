@@ -7027,6 +7027,9 @@ importers:
 
   packages/hivemind/hq-runtime:
     dependencies:
+      '@deepseek-ai/dsh-time-context':
+        specifier: workspace:^
+        version: link:../../context/time-context
       '@deepseek-ai/schemastery':
         specifier: link:../../../vendor/schemastery
         version: link:../../../vendor/schemastery

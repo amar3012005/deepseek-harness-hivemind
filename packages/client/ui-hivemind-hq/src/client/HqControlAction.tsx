@@ -100,7 +100,11 @@ export function HqControlAction({ sessionId, load, setMode, restState, leaveRest
     const current = ++generation.current
     setPending(true)
     try {
-      const result = await setMode(sessionId, { enabled: !mode.enabled, expectedRevision: mode.revision })
+      const result = await setMode(sessionId, {
+        enabled: !mode.enabled,
+        expectedRevision: mode.revision,
+        clientTimeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      })
       if (current !== generation.current) return
       if (!result.ok) { setState(null); setError(result.error.message) }
       else if (result.value.ok) { setState(result.value.value); setError(null) }

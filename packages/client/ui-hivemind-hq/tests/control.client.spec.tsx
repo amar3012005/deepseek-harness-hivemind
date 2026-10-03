@@ -21,7 +21,7 @@ it('uses committed revisions and reconciles a conflicting human switch', async (
   await waitFor(() => expect(screen.getByRole('button', { name: en.pause }).hasAttribute('disabled')).toBe(false))
   fireEvent.click(screen.getByRole('button', { name: en.pause }))
   await screen.findByText(en.conflict)
-  expect(setMode).toHaveBeenCalledWith('hq', { enabled: false, expectedRevision: 1 })
+  expect(setMode).toHaveBeenCalledWith('hq', { enabled: false, expectedRevision: 1, clientTimeZone: Intl.DateTimeFormat().resolvedOptions().timeZone })
   expect(screen.getByRole('button', { name: en.enable }).hasAttribute('disabled')).toBe(false)
 })
 
@@ -51,7 +51,7 @@ it('shows Wake up only for the first paused revision and preserves human control
   expect(setMode).not.toHaveBeenCalled()
   fireEvent.click(wake)
   await screen.findByRole('button', { name: en.pause })
-  expect(setMode).toHaveBeenCalledWith('hq', { enabled: true, expectedRevision: 0 })
+  expect(setMode).toHaveBeenCalledWith('hq', { enabled: true, expectedRevision: 0, clientTimeZone: Intl.DateTimeFormat().resolvedOptions().timeZone })
 })
 
 it('saves a quiet instruction without mode changes and preserves text and identity on uncertain retry', async () => {

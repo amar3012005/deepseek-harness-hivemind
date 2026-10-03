@@ -1,6 +1,7 @@
 /** Host-side human controls; no model tool can enable HQ autonomy. */
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
+import { createBrowserTimeZoneConfirmation } from '@deepseek-ai/dsh-time-context'
 import type {} from '@deepseek-ai/dsh-agent-presets'
 import type {} from '@deepseek-ai/dsh-experimental-agent-team'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
@@ -487,6 +488,7 @@ export class HqControl extends TypertRemoteService {
       request.expectedRevision < 0
     )
       throw new Error('hq_invalid_mode_update')
+    const zoneContext = request.clientTimeZone === undefined ? undefined : createBrowserTimeZoneConfirmation(request.clientTimeZone)
     const prior = this.tails.get(root.id) ?? Promise.resolve()
     const result = prior.then(async (): Promise<HqModeUpdateResult> => {
       const current = this.mode(root)
@@ -504,6 +506,10 @@ export class HqControl extends TypertRemoteService {
         changedAt: Date.now(),
       }
       if (value.enabled) {
+        if (zoneContext) {
+          root.inject(zoneContext)
+          if (!await this.ctx.sessions.flush(root.session)) throw new Error('hq_mode_persistence_required')
+        }
         // The wake commits first. Until mode commits, the scheduler retains it paused.
         // Replaying an interrupted switch reuses the same native Schedule identity.
         await this.ctx.schedule.ensure(root.id, `hq-enable-${value.revision}`, {

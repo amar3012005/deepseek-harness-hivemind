@@ -50,6 +50,8 @@ The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-a
 
 ### Choosing the zone
 
+Authenticated browser controls without a chat submission can inject `createBrowserTimeZoneConfirmation(timeZone)` before scheduling their wake. The helper validates and canonicalizes the browser zone and records a quiet native plugin context message; it neither wakes the agent nor fabricates a human chat request. With `inheritScheduledTimeZone` enabled, scheduled turns reuse the latest confirmed zone, including a fresh control wake before any ordinary user RPC. Callers retain responsibility for authenticating the human control.
+
 When the open turn contains exactly one Host-validated browser zone, the timestamp is formatted in that request-local zone. With missing or mixed browser provenance, the configured `timeZone` formats the display; omitting it resolves the Node process zone once at plugin load, and every explicit fallback is validated through `Intl.DateTimeFormat`. The resolved instruction tells the model to interpret unqualified dates and times in the chosen zone, and to ask the user to clarify when provenance is mixed or unavailable.
 
 -----
