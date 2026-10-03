@@ -243,6 +243,7 @@ const CAPABILITY_TOOLS: Readonly<Record<CapabilityLane, readonly string[]>> = {
   employees: [
     'hivemind_employee_panel',
     'hivemind_delegate_employee',
+    'spawn_teammate',
     'list_agents',
     'send_message',
     'interrupt_agent',
@@ -912,7 +913,7 @@ export function apply(ctx: Context, config: Partial<Config> = {}): void {
         'hivemind_hq_contract', 'hivemind_hq_rest', 'hivemind_employee_panel',
         'hivemind_hq_awakening', 'hivemind_onboarding',
         'team_task_list', 'team_task_get', 'team_task_create', 'team_task_update', 'list_agents',
-        'send_message', 'wait_agent', 'interrupt_agent',
+        'spawn_teammate', 'send_message', 'wait_agent', 'interrupt_agent',
       ]) requested.add(tool)
     }
     for (const capability of capabilities) {
