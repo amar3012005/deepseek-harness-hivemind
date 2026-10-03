@@ -182,7 +182,8 @@ function processSpec(state: TurnProcessState, turn: TurnLocation): TurnProcessSp
 }
 
 function updateProcessState(state: TurnProcessState, event: ConversationEvent): TurnProcessState {
-  let current = String(event.type) === 'hivemind/hq-awakening-start'
+  let current = (String(event.type) === 'hivemind/hq-awakening-start'
+    || (event.type === 'tool/call' && event.data.name === 'hivemind_hq_awakening'))
     ? { ...state, runtimeAwakening: true } : state
   if (event.type === 'tool/call' && event.data.name === 'dream_finish') current = {
     ...current, dreamFinish: { callId: String(event.data.callId), seq: event.seq, step: event.data.step },
