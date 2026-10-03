@@ -329,6 +329,16 @@ export function apply(ctx: Context): void {
           const planned = calendarItems(root.session.snapshotEvents()).find(
             item => item.taskId === task.id,
           )
+          const firstAwakening = root.session.snapshotEvents().some(
+            event => event.type === 'hivemind/hq-awakening-start',
+          ) && !root.session.snapshotEvents().some(
+            event => event.type === 'hivemind/hq-awakening-checkpoint'
+              && event.data.stage === 'remembered' && !event.data.blocked,
+          )
+          // Initial discovery plans future work. A dispatch needs its saved
+          // calendar first; ordinary subsequent work retains its native flow.
+          if (task.status === 'pending' && firstAwakening && !planned)
+            throw new Error('hq_first_awakening_schedule_before_assign: use action schedule with task_id, employee_id, starts_at and ends_at; do not assign before its saved start')
           if (task.status === 'pending' && planned && Date.parse(planned.startsAt) > Date.now())
             throw new Error('hq_task_planned_start_not_due')
           const prior = root.session
