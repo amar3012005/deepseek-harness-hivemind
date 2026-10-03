@@ -239,11 +239,15 @@ export function apply(ctx: ClientContext): void {
   ctx.inject(['remote.commands', 'remote.agentPresets'], (ctx: ClientContext) => {
     const selectEmployee = async (sessionId: SessionId, id: string | null, runtime = false): Promise<boolean> => {
       if (ctx.sessions.binding(sessionId) === undefined) throw new Error('Session is not ready. Please reopen it.')
-      const targetPreset = id === null && !runtime ? 'hivemind-chat' : 'hivemind-hyperagents'
+      const targetPreset = runtime ? 'hivemind-hq' : id === null ? 'hivemind-chat' : 'hivemind-hyperagents'
       const summary = ctx.sessions.list.getSnapshot().byId[sessionId]
       if ((summary?.projectionValues?.agentPreset ?? summary?.agentPreset) !== targetPreset) {
         const switched = await ctx.remote.agentPresets.select(sessionId, targetPreset)
         if (!switched.ok) return false
+      }
+      if (runtime) {
+        window.dispatchEvent(new CustomEvent('hivemind:agent-selected', { detail: { id: 'runtime' } }))
+        return true
       }
       // Composition commit precedes asynchronous plugin activation. Read the
       // native command catalog until the existing selection command is ready;

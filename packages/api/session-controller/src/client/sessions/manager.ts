@@ -569,6 +569,10 @@ export class SessionManager {
     if (result.ok) {
       this.recordMutation({ kind: 'upsert', summary: {
         sessionId: result.value.sessionId, updatedAt: Date.now(), running: false, blank: true,
+        ...(result.value.agentPreset === undefined ? {} : {
+          agentPreset: result.value.agentPreset,
+          projectionValues: { agentPreset: result.value.agentPreset },
+        }),
         ...(opts.cwd !== undefined ? { cwd: opts.cwd } : {}),
       } })
     } else {

@@ -638,6 +638,15 @@ describe('remaining branches', () => {
     expect(session.getSnapshot().running).toBe(true)
   })
 
+  it('preserves the server-chosen Runtime preset in the immediate create echo', async () => {
+    const api = new FakeApiClient()
+    api.onCreate = () => Promise.resolve(ok({ sessionId: S1, agentPreset: 'hivemind-hq' }))
+    const manager = new SessionManager(fakeRemote(api))
+    await manager.create({ hyperagentRoom:'runtime' })
+    expect(api.callsOf('session.create')).toEqual([{ hyperagentRoom:'runtime' }])
+    expect(manager.getListSnapshot().items[0]).toMatchObject({ agentPreset:'hivemind-hq',projectionValues:{ agentPreset:'hivemind-hq' } })
+  })
+
   it('create passes cwd and a preallocated id, folds transport throws, and deduplicates the echo', async () => {
     const api = new FakeApiClient()
     api.onCreate = () => Promise.resolve(ok({ sessionId: S1 }))

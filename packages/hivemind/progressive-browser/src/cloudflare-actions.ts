@@ -206,7 +206,7 @@ export async function executeAction(
   if (!response.ok) throw new Error(`Browser Run ${action} failed (${response.status})`)
   if (name === 'browser_capture') {
     const bytes = new Uint8Array(await response.arrayBuffer())
-    if (bytes.length < 8 || bytes.length > 2000000 || ![137,80,78,71].every((byte, index) => bytes[index] === byte)) throw new Error(`capture_invalid_or_too_large: ${bytes.length} bytes, ${response.headers.get('content-type')}`)
+    if (bytes.length < 8 || bytes.length > 20 * 1024 * 1024 || ![137,80,78,71].every((byte, index) => bytes[index] === byte)) throw new Error(`capture_invalid_or_too_large: ${bytes.length} bytes, ${response.headers.get('content-type')}`)
     return bytes
   }
   const payload = await response.json() as { success?: boolean; result?: JsonValue }
