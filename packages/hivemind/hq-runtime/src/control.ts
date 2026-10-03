@@ -363,11 +363,30 @@ export class HqControl extends TypertRemoteService {
     const root = this.root(agent)
     const task = this.ctx.agentTeams.getTask(root, TeamTaskId(request.taskId))
     if (!['pending', 'deleted'].includes(task.status)) throw new Error('hq_only_pending_work_can_be_cancelled')
-    if (task.status === 'pending') await this.ctx.agentTeams.updateTask(root, { taskId: task.id, expectedRevision: request.expectedRevision, action: 'delete' })
+    if (task.status === 'pending' && task.revision !== request.expectedRevision) throw new Error('hq_cancel_task_revision_changed')
+    const board = this.ctx.agentTeams.listTasks(root)
+    const cancelled = new Set<string>([task.id])
+    for (let pass = 0; pass < board.length; pass++) {
+      const size = cancelled.size
+      for (const item of board) if (item.blockedBy.some(id => cancelled.has(id))) cancelled.add(item.id)
+      if (cancelled.size === size) break
+    }
+    const targets = board.filter(item => cancelled.has(item.id))
+    if (targets.some(item => item.status !== 'pending')) throw new Error('hq_cancel_requires_pending_dependents')
+    // Native Team requires a prerequisite to outlive its dependents. Remove
+    // pending leaves first; a crash leaves only safe pending prerequisites.
+    while (targets.length) {
+      const index = targets.findIndex(item => !targets.some(other => other.blockedBy.includes(item.id)))
+      if (index < 0) throw new Error('hq_cancel_dependency_cycle')
+      const item = targets[index]
+      await this.ctx.agentTeams.updateTask(root, { taskId: item.id, expectedRevision: item.revision, action: 'delete' })
+      targets.splice(index, 1)
+    }
     const events = root.session.snapshotEvents()
-    const itemIds = new Set(calendarItems(events).filter(item => item.taskId === task.id).map(item => item.id))
+    const itemIds = new Set(calendarItems(events).filter(item => cancelled.has(item.taskId)).map(item => item.id))
+    const active = new Set((await this.ctx.schedule.catalog()).filter(item => item.sessionId === root.id).map(item => String(item.id)))
     for (const event of events) {
-      if (event.type !== 'hivemind/hq-calendar-wake' || !itemIds.has(event.data.itemId)) continue
+      if (event.type !== 'hivemind/hq-calendar-wake' || !itemIds.has(event.data.itemId) || !active.has(event.data.scheduleId)) continue
       await this.ctx.schedule.delete({ sessionId: root.id, id: ScheduleId(event.data.scheduleId) })
     }
     return { cancelled: true }

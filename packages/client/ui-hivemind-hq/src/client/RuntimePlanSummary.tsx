@@ -39,7 +39,7 @@ export function RuntimePlanSummary({ sessionId, turn, events, load, cancel }: Pr
   if (!ready) return null
   return <section aria-label="Runtime strategic plan" style={{ border: '1px solid var(--border-color, #e4e7eb)', borderRadius: 16, padding: 18, marginTop: 16 }}>
     <h3>I’ve built the initial strategic plan.</h3>
-    <p>Here is the saved schedule. You can cancel pending work and discuss the plan with me.</p>
+    <p>Here is the saved schedule. Cancelling a prerequisite also cancels its pending dependent tasks.</p>
     {!workspace && <p role="status">Loading saved tasks…</p>}
     {workspace?.tasks.filter(task => task.nextWakeAt || workspace.calendar.some(item => item.taskId === task.id)).map(task => <article key={task.id} style={{ padding: '12px 0', borderBottom: '1px solid #e4e7eb' }}>
       <strong>{task.title}</strong><p>{employeeNames.get(workspace.calendar.find(item => item.taskId === task.id)?.owner) ?? task.owner} · {task.status === 'deleted' ? 'Cancelled' : task.status}</p>
