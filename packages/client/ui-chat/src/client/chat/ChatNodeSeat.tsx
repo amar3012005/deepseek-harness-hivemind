@@ -99,14 +99,13 @@ export const ChatNodeSeat = memo(function ChatNodeSeat({
     && !processOpen
   // Reports may be delivered before a later receipt/status message. Folding
   // execution details must never discard these user-facing replies or artifacts.
-  const investigationRecap = quietWork && processSpec?.runtimeAwakening === true
-    && routedNode?.kind === 'assistant-step'
-  const preserveReply = !investigationRecap && routedNode?.kind === 'assistant-step'
+  // Public progress text stays visible even when its message also requests
+  // tools. Tool rows and reasoning have their own disclosure presentation.
+  const preserveReply = routedNode?.kind === 'assistant-step'
     && processSpec?.dreamSynthesis !== true
     && hasAssistantReplyContent(routedNode.data.blocks)
-    && (!quietWork || !routedNode.data.blocks.some(block => block.kind === 'tool-call'))
   const processHidden = controllerInactive
-    || (foldable && !processOpen && ((processMember && !preserveReply) || investigationRecap))
+    || (foldable && !processOpen && processMember && !preserveReply)
   const revealProcess = useCallback(() => {
     if (processMember) setOpen(true)
   }, [processMember, setOpen])
