@@ -5,7 +5,7 @@ import { AssistantMarkdown } from './AssistantMarkdown.tsx'
 /** Streaming, settled, and interrupted Assistant states share one keyed renderer instance. */
 export const AssistantNodeView = memo(function AssistantNodeView({
   node, useTurnData, turnProcess, openFile, renderMessageImages, fileMentions, t, renderSlot,
-}: ChatNodeViewProps<'assistant-step'> & Partial<import('@deepseek-ai/dsh-client-ui-slots').PropsRenderSlots<'conversation.chat.agentAvatar'>>) {
+}: ChatNodeViewProps<'assistant-step'> & Partial<import('@deepseek-ai/dsh-client-ui-slots').PropsRenderSlots<'conversation.chat.assistantAvatar'>>) {
   const data = node.data
   const turn = node.location.kind === 'turn' || node.location.kind === 'step'
     ? node.location.turn
@@ -29,7 +29,7 @@ export const AssistantNodeView = memo(function AssistantNodeView({
   const revealProcess = useCallback(() => { turnProcess?.setOpen(true) }, [turnProcess])
   return (
     <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
-      {renderSlot?.('conversation.chat.agentAvatar', {})}
+      {renderSlot?.('conversation.chat.assistantAvatar', {})}
       <AssistantMarkdown
         blocks={data.blocks}
         streaming={data.status === 'running'}

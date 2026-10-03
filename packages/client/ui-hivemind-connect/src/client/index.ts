@@ -266,12 +266,12 @@ export function apply(ctx: ClientContext): void {
     const binding = ctx.sessions.binding(targetSessionId)
     return binding === undefined ? null : createElement(AgentChatAvatar, { events: binding.eventSource, load: chatEmployees })
   }))
-  ctx.slots.inject('conversation.chat.agentAvatar', () => ctx.slots.register({
-    name: 'conversation.chat.agentAvatar',
-  }, ({ employeeId, name, sessionId }) => window.location.pathname.includes('/employee/harness')
+  for (const name of ['conversation.chat.assistantAvatar', 'conversation.chat.contextAvatar', 'hivemind.runtime.planAvatar'] as const) ctx.slots.inject(name, () => ctx.slots.register({
+    name,
+  }, ({ employeeId, name: senderName, sessionId }) => window.location.pathname.includes('/employee/harness')
     ? createElement(AgentChatAvatar, {
       ...(employeeId === undefined ? {} : { employeeId }),
-      ...(name === undefined ? {} : { name }),
+      ...(senderName === undefined ? {} : { name: senderName }),
       events: employeeEvents(sessionId), load: chatEmployees,
     }) : null))
   ctx.inject(['remote.commands', 'remote.agentPresets'], (ctx: ClientContext) => {

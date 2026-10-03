@@ -178,7 +178,9 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 
   interface SlotMap {
     /** Identity supplied by an installed product profile, never inferred from prose. */
-    'conversation.chat.agentAvatar': { kind: 'single'; scope: 'session'; owner: { employeeId?: string; name?: string } }
+    'conversation.chat.assistantAvatar': { kind: 'single'; scope: 'session'; owner: { employeeId?: string; name?: string } }
+    'conversation.chat.contextAvatar': { kind: 'single'; scope: 'session'; owner: { employeeId?: string; name?: string } }
+    'hivemind.runtime.planAvatar': { kind: 'single'; scope: 'session'; owner: { employeeId?: string; name?: string } }
     /**
      * Final Chat node renderer, keyed by `ChatNodeKind`. The component receives
      * the typed node, shared Chat actions, and Turn-data hook. Reusing a key
