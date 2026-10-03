@@ -199,7 +199,8 @@ export async function executeAction(
     if (!Array.isArray(args.selectors) || !args.selectors.length || args.selectors.some(value => typeof value !== 'string')) throw new Error('selectors_required')
     body.elements = args.selectors.map(selector => ({ selector }))
   }
-  if (name === 'browser_capture') body.screenshotOptions = { fullPage: true, type: 'png' }
+  // Keep captures within native image dimension limits, including very long pages.
+  if (name === 'browser_capture') body.screenshotOptions = { fullPage: false, type: 'png' }
   const response = await fetch(`https://api.cloudflare.com/client/v4/accounts/${config.accountId}/browser-rendering/${action}`, {
     method: 'POST', headers: { Authorization: `Bearer ${config.browserToken}`, 'content-type': 'application/json' }, body: JSON.stringify(body), signal: requestSignal,
   })

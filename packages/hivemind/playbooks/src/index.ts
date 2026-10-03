@@ -207,6 +207,9 @@ declare module '@deepseek-ai/dsh-session/types' {
 
 const CORE_TOOLS = [
   'skill',
+  'create_goal',
+  'get_goal',
+  'update_goal',
   'ask_user_question',
   'hivemind_capabilities',
   'hivemind_meta',

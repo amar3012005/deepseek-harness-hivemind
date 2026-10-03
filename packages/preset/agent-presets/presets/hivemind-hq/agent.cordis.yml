@@ -1,6 +1,9 @@
 # HQ composes the shared HIVE Chat realm directly: include patches cannot
 # cross another include boundary. Keep shared operating plugins in parity
 # with HyperAgents; only persona, HQ coordination, and actor policy differ.
+- id: command-goal
+  name: '@deepseek-ai/dsh-command-goal'
+
 - id: hivemind-chat-base
   name: cordis:include
   config:
