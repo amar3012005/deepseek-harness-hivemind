@@ -12,6 +12,7 @@ it.each(['text/markdown', 'text/plain'])('uses native Markdown only for Markdown
     t: (key: string) => key,
   }
   render(<ArtifactPreview {...props as unknown as Parameters<typeof ArtifactPreview>[0]} />)
+  expect(document.querySelector('[data-preview-alignment]')?.getAttribute('data-preview-alignment')).toBe('top')
   if (mediaType === 'text/markdown') {
     await waitFor(() => expect(document.querySelector('h1')?.textContent).toBe('Café brief'))
     expect(document.querySelector('strong')?.textContent).toBe('Vegetarian')

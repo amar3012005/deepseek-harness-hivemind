@@ -82,8 +82,10 @@
 @media (prefers-reduced-motion: reduce) { .artifactCard { transition: none; } }
 
 /* Keep the selected file centered in the available preview canvas. */
-.workbench[data-hivemind-workbench='preview'] { min-height: 100%; display: flex; flex-direction: column; justify-content: center; }
-.workbench[data-hivemind-workbench='preview'] > article { width: 100%; margin: auto; }
+.workbench[data-hivemind-workbench='preview'] { min-height: 100%; display: flex; flex-direction: column; justify-content: flex-start; padding-top: 20px; }
+.workbench[data-hivemind-workbench='preview'] > article { width: 100%; margin: 0 auto; }
+.workbench[data-preview-alignment='center'] { justify-content: center; }
+.workbench[data-preview-alignment='center'] > article { margin-block: auto; }
 .workbench[data-hivemind-workbench='preview'] .workbenchImage { max-height: 70dvh; object-fit: contain; margin-inline: auto; }
 .workbench[data-hivemind-workbench='preview'] .workbenchActions { justify-content: flex-end; }
 

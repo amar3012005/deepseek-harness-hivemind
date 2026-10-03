@@ -1207,7 +1207,8 @@ export function ArtifactPreview({ useTabInfo, t, read }: PropsRuntime<'sidebar.r
     return () => { active = false; if (created) URL.revokeObjectURL(created) }
   }, [file?.attachmentId])
   if (!artifact) return null
-  return <div className={css.artifactPreviewBody}><h3>{artifact.title}</h3>
+  const textPreview = artifact.mediaType.startsWith('text/') || /\.(md|markdown|txt)$/i.test(file?.name ?? artifact.path)
+  return <div className={css.artifactPreviewBody} data-preview-alignment={textPreview ? 'top' : 'center'}><h3>{artifact.title}</h3>
     {failed ? <p role="alert">{t('artifact.failed')}</p> : null}
     {text !== undefined ? artifact.mediaType === 'text/markdown' || /\.(md|markdown)$/i.test(file?.name ?? artifact.path)
       ? <MarkdownText text={text} labels={{ code: { copyLabel: t('artifact.copy'), copiedLabel: t('artifact.copied') }, footnotes: t('artifact.footnotes') }} />

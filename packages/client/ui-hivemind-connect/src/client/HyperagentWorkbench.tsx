@@ -189,7 +189,8 @@ export function HyperagentWorkbench({
   useEffect(() => { setSelectedSource(null) }, [sessionId])
   const lastArtifact = data.artifacts.find(artifact => artifact.id === requested) ?? data.artifacts.at(-1)
   const lastCapture = data.captures.at(-1)
-  return <div className={css.workbench} data-hivemind-workbench={kind}>
+  const textPreview = lastArtifact !== undefined && (lastArtifact.mediaType.startsWith('text/') || /\.(md|markdown|txt)$/i.test(lastArtifact.path))
+  return <div className={css.workbench} data-hivemind-workbench={kind} data-preview-alignment={kind === 'preview' ? textPreview ? 'top' : 'center' : undefined}>
     {kind === 'preview' && (lastArtifact === undefined
       ? <p className={css.workbenchEmpty}>{t('workbench.emptyPreview')}</p>
       : <article><span className={css.workbenchEyebrow}>{lastArtifact.mediaType}</span><h2>{lastArtifact.title}</h2>{lastArtifact.producerName !== undefined && <p>From {lastArtifact.producerName}</p>}{lastArtifact.mediaType === 'application/pdf' && lastArtifact.file !== undefined
