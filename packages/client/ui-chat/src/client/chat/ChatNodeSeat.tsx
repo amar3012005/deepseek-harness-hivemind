@@ -99,11 +99,14 @@ export const ChatNodeSeat = memo(function ChatNodeSeat({
     && !processOpen
   // Reports may be delivered before a later receipt/status message. Folding
   // execution details must never discard these user-facing replies or artifacts.
-  const preserveReply = routedNode?.kind === 'assistant-step'
+  const investigationRecap = quietWork && processSpec?.runtimeAwakening === true
+    && routedNode?.kind === 'assistant-step'
+  const preserveReply = !investigationRecap && routedNode?.kind === 'assistant-step'
     && processSpec?.dreamSynthesis !== true
     && hasAssistantReplyContent(routedNode.data.blocks)
     && (!quietWork || !routedNode.data.blocks.some(block => block.kind === 'tool-call'))
-  const processHidden = controllerInactive || (foldable && processMember && !processOpen && !preserveReply)
+  const processHidden = controllerInactive
+    || (foldable && !processOpen && ((processMember && !preserveReply) || investigationRecap))
   const revealProcess = useCallback(() => {
     if (processMember) setOpen(true)
   }, [processMember, setOpen])

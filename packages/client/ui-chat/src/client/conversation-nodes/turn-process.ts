@@ -29,6 +29,7 @@ declare module '@deepseek-ai/dsh-client-ui-conversation/client' {
 }
 
 interface TurnProcessState {
+  readonly runtimeAwakening?: boolean
   readonly turn: number
   readonly dreamFinish?: { callId: string; seq: number; step: number; confirmed?: boolean; welcome?: boolean }
   readonly assistantStartByStep: ReadonlyMap<number, number>
@@ -138,6 +139,7 @@ function processSpec(state: TurnProcessState, turn: TurnLocation): TurnProcessSp
   }
   const answer = latestAnswer(turn)
   const counts = {
+    runtimeAwakening: state.runtimeAwakening,
     messageCount: answer === null
       ? state.messageCount
       : [...state.messageCountByStep]
@@ -180,7 +182,8 @@ function processSpec(state: TurnProcessState, turn: TurnLocation): TurnProcessSp
 }
 
 function updateProcessState(state: TurnProcessState, event: ConversationEvent): TurnProcessState {
-  let current = state
+  let current = String(event.type) === 'hivemind/hq-awakening-start'
+    ? { ...state, runtimeAwakening: true } : state
   if (event.type === 'tool/call' && event.data.name === 'dream_finish') current = {
     ...current, dreamFinish: { callId: String(event.data.callId), seq: event.seq, step: event.data.step },
   }
@@ -235,7 +238,8 @@ export const turnProcessDefinition: ConversationNodeDefinition<TurnProcessState>
     if (event.type === 'turn/start') return { id: String(event.data.turn), role: 'start' }
     const turn = eventTurn(event)
     if (turn === undefined) return null
-    if (event.type === 'assistant/live-chunk'
+    if (String(event.type) === 'hivemind/hq-awakening-start'
+      || event.type === 'assistant/live-chunk'
       || event.type === 'assistant/message'
       || event.type === 'tool/call'
       || event.type === 'tool/result'

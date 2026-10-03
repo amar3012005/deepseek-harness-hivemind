@@ -3,6 +3,7 @@ import type { ChatNode } from './chat-nodes.ts'
 /** Current process range and finalized answer boundary derived from one Turn. */
 export interface TurnProcessSpec {
   readonly dreamSynthesis?: boolean
+  readonly runtimeAwakening?: boolean
   readonly turn: number
   /** Stable control-node anchor source, including currently ineligible evidence. */
   readonly controlAnchorSeq: number
@@ -40,7 +41,8 @@ export const TURN_PROCESS_INDEPENDENT_KINDS: ReadonlySet<string> = new Set(
  * @returns whether both values describe the same process presentation.
  */
 export function sameTurnProcessSpec(left: TurnProcessSpec, right: TurnProcessSpec): boolean {
-  return left.dreamSynthesis === right.dreamSynthesis
+  return left.runtimeAwakening === right.runtimeAwakening
+    && left.dreamSynthesis === right.dreamSynthesis
     && left.turn === right.turn
     && left.controlAnchorSeq === right.controlAnchorSeq
     && left.processStartSeq === right.processStartSeq
