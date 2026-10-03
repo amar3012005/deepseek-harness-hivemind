@@ -772,7 +772,7 @@ const artifactDefinition: ConversationNodeDefinition<ArtifactData> = {
         target: 'chat',
         processDisclosure: 'independent',
         anchorSeq: (() => {
-          if (String(context.start.event.type) === 'hivemind/browser-capture') return context.start.event.seq
+          if (context.state.mediaType.startsWith('image/')) return context.start.event.seq
           const location = context.start.location
           const closing = location.kind === 'turn' || location.kind === 'step' ? location.turn.data.get('turn-tail')?.closing : undefined
           return closing ? closing.finalNode.seq + 0.075 : context.start.event.seq

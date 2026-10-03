@@ -36,6 +36,8 @@ declare module '@deepseek-ai/dsh-session/types' {
     'hivemind/hq-rest-wake': RestWake
     /** Human-only quiet note; never inserted into the Agent inbox. */
     'hivemind/hq-rest-note': QuietNote
+    /** Current-turn confirmation of an immutable handoff and its persisted wake. */
+    'hivemind/hq-rest-confirmed': RestWake
     /** Presentation acknowledgment after the native briefing message is durably admitted. */
     'hivemind/hq-rest-notes-presented': { readonly noteIds: readonly string[]; readonly messageSeq: number; readonly presentedAt: string }
   }
@@ -193,7 +195,10 @@ export function installRest(ctx: Context): void {
     const investigation = events.findLast(event => String(event.type) === 'hivemind/hq-public-investigation')
     if ((investigation?.data as { enabled?: boolean } | undefined)?.enabled) return
     const start = events.findLast(event => event.type === 'turn/start')?.seq ?? -1
-    const intent = restIntents(events).findLast(item => item.sourceEventSeq >= start)
+    const confirmed = events.findLast(event => event.type === 'hivemind/hq-rest-confirmed' && event.seq > start)
+    const intent = confirmed?.type === 'hivemind/hq-rest-confirmed'
+      ? restIntents(events).find(item => item.id === confirmed.data.handoffId)
+      : restIntents(events).findLast(item => item.sourceEventSeq >= start)
     const binding = intent && events.findLast(event => event.type === 'hivemind/hq-rest-wake' && event.data.handoffId === intent.id)
     if (binding?.type === 'hivemind/hq-rest-wake') {
       const wake = (await ctx.schedule.catalog()).find(item => item.id === binding.data.scheduleId && item.sessionId === agent.id)
@@ -242,6 +247,8 @@ export function installRest(ctx: Context): void {
         const binding = await ensureWake(ctx, agent, intent, execution.signal)
         const ownWake = (await ctx.schedule.catalog()).find(item => item.id === binding.scheduleId && item.sessionId === agent.id)
         if (!ownWake) throw new Error('hq_rest_committed_wake_missing')
+        agent.session.append('hivemind/hq-rest-confirmed', binding)
+        await checkpoint(ctx, agent)
         return { status: ownWake.status === 'active' ? 'rest_ready' : 'wake_committed_inactive', superseded: restIntents(agent.session.snapshotEvents()).at(-1)?.id !== intent.id, requestedWakeAt: intent.requestedWakeAt,
           ...binding, autonomyPaused: !ctx.hivemindHq.mode(agent).enabled, wakeStatus: ownWake.status,
           instructions: 'Handoff and native wake are checkpointed. Finish this turn; ordinary idle is rest. Paused mode does not automatically wake. A delivered or inactive wake is not a promise of a future wake.' }
