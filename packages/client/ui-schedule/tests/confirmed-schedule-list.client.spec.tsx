@@ -9,7 +9,7 @@ import type { CatalogInjected, CatalogSnapshot } from '../src/client/catalog-sou
 afterEach(cleanup)
 describe('native confirmed scheduled work list', () => {
   it('joins saved identities to native catalog and opens the recipient’s existing detail', async () => {
-    const task = { id: 'timer-1', kind: 'at', title: 'Ravi’s brief', prompt: 'Research', scheduledAt: '2026-10-03T20:40:00Z', sessionId: 'ravi-room', status: 'active' } as ScheduleCatalogEntry
+    const task = { id: 'timer-1', kind: 'at', title: 'Ravi’s brief', prompt: 'Research', scheduledAt: '2026-10-03T20:40:00Z', sessionId: 'runtime-room', status: 'active' } as ScheduleCatalogEntry
     let value: CatalogSnapshot<ScheduleCatalogEntry> = { records: [task], status: 'ready', deleting: [], settled: true, readRequest: 1, readSettled: 1 }
     const listeners = new Set<() => void>()
     const source = {
@@ -26,9 +26,9 @@ describe('native confirmed scheduled work list', () => {
       },
     } as CatalogInjected<ScheduleCatalogEntry>
     const open = vi.fn(); const avatar = vi.fn(() => <span>Ravi logo</span>)
-    const view = render(<ConfirmedScheduleList ids={['timer-1' as never, 'unconfirmed' as never]} source={source} open={open} avatar={avatar} t={makeTranslate(en)} />)
+    const view = render(<ConfirmedScheduleList ids={['timer-1' as never, 'unconfirmed' as never]} employeeIds={{ 'timer-1': 'ravi-id' }} source={source} open={open} avatar={avatar} t={makeTranslate(en)} />)
     await waitFor(() => { expect(view.getByText('Ravi’s brief')).toBeTruthy() })
-    expect(avatar).toHaveBeenCalledWith('ravi-room')
+    expect(avatar).toHaveBeenCalledWith('runtime-room', 'ravi-id')
     expect(view.getByText(/Enabled/)).toBeTruthy()
     expect(view.queryByText('unconfirmed')).toBeNull()
     fireEvent.click(view.getByRole('button', { name: 'Open' }))

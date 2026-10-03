@@ -261,8 +261,9 @@ export function apply(ctx: ClientContext): void {
   }
   let chatDirectory: Promise<EmployeeOption[]> | undefined
   const chatEmployees = () => chatDirectory ??= listEmployees().catch((error) => { chatDirectory = undefined; throw error })
-  ctx.slots.inject('schedule.task.avatar', () => ctx.slots.register({ name: 'schedule.task.avatar' }, ({ targetSessionId }) => {
+  ctx.slots.inject('schedule.task.avatar', () => ctx.slots.register({ name: 'schedule.task.avatar' }, ({ targetSessionId, employeeId }) => {
     if (!window.location.pathname.includes('/employee/harness')) return null
+    if (employeeId !== undefined) return createElement(AgentChatAvatar, { employeeId, load: chatEmployees })
     const binding = ctx.sessions.binding(targetSessionId)
     return binding === undefined ? null : createElement(AgentChatAvatar, { events: binding.eventSource, load: chatEmployees })
   }))
@@ -487,6 +488,13 @@ export function apply(ctx: ClientContext): void {
           openWorkbench: (nextKind: typeof kind) => { scope.sidebarRight.openTab(`hivemind-workbench-${nextKind}`) },
           hooks: { employeeEvents: employeeEvents(sessionId) },
           loadImage: (ref: ImageAttachmentRef) => scope.uiConversation.imageUrl(sessionId, ref),
+          loadText: async (file: FileAttachmentRef) => {
+            const result = await scope.remote.session.fileAttachment({ sessionId, attachmentId: file.attachmentId })
+            if (!result.ok || result.value.attachment.attachmentId !== file.attachmentId) throw new Error('Artifact preview unavailable')
+            const binary = atob(result.value.data)
+            if (binary.length !== file.bytes || binary.length > 4 * 1024 * 1024) throw new Error('Artifact size mismatch')
+            return new TextDecoder('utf-8', { fatal: true }).decode(Uint8Array.from(binary, char => char.charCodeAt(0)))
+          },
           loadPdf: async (file: FileAttachmentRef) => {
             const result = await scope.remote.session.fileAttachment({ sessionId, attachmentId: file.attachmentId })
             if (!result.ok || result.value.attachment.attachmentId !== file.attachmentId) throw new Error('Artifact preview unavailable')
@@ -557,7 +565,7 @@ export function apply(ctx: ClientContext): void {
     ctx.slots.inject('conversation.chat.node', () => ctx.slots.register({
       name: 'conversation.chat.node', key: 'hivemind-scheduled-work',
       children: { 'schedule.confirmed.tasks': { kind: 'single', scope: 'session' } },
-    }, ({ node, renderSlot }) => renderSlot('schedule.confirmed.tasks', { ids: node.data.ids })))
+    }, ({ node, renderSlot }) => renderSlot('schedule.confirmed.tasks', { ids: node.data.ids, ...(node.data.employeeIds === undefined ? {} : { employeeIds: node.data.employeeIds }) })))
     ctx.slots.inject('conversation.chat.node', () => ctx.slots.register({
       name: 'conversation.chat.node', key: 'runtime-awakening-stage',
       children: { 'hivemind.runtime.plan': { kind: 'list', scope: 'session' } },

@@ -5,11 +5,11 @@ import { EmployeeAvatar, RuntimeAvatar, selectedEmployee, type EmployeeOption } 
 export function AgentChatAvatar({ employeeId, name, events, load }: {
   employeeId?: string
   name?: string
-  events: { subscribe(listener: () => void): () => void; getSnapshot(): SessionEventWindow }
+  events?: { subscribe(listener: () => void): () => void; getSnapshot(): SessionEventWindow }
   load: () => Promise<EmployeeOption[]>
 }) {
-  const window = useSyncExternalStore(listener => events.subscribe(listener), () => events.getSnapshot())
-  const owner = selectedEmployee(window)
+  const window = useSyncExternalStore(listener => events?.subscribe(listener) ?? (() => {}), () => events?.getSnapshot())
+  const owner = window === undefined ? null : selectedEmployee(window)
   const [directory, setDirectory] = useState<EmployeeOption[]>([])
   useEffect(() => {
     let disposed = false

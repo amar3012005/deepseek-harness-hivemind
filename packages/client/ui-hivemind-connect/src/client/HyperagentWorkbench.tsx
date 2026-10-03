@@ -3,6 +3,7 @@ import type { FileAttachmentRef, ImageAttachmentRef } from '@deepseek-ai/dsh-att
 import type { SessionEventWindow } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { SnapshotSelectorHook } from '@deepseek-ai/dsh-client-store'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
+import { MarkdownText } from '@deepseek-ai/dsh-client-ui-primitives'
 import css from './HyperagentEmployee.module.css'
 
 declare module '@deepseek-ai/dsh-client-ui-sidebar-right/client' {
@@ -101,6 +102,7 @@ type WorkbenchProps = PropsRuntime<'sidebar.right.pane.tab'> & PropsLocale<'hive
   useEmployeeEvents: SnapshotSelectorHook<SessionEventWindow>
   loadImage: (ref: ImageAttachmentRef) => Promise<string>
   loadPdf: (ref: FileAttachmentRef) => Promise<Blob>
+  loadText: (ref: FileAttachmentRef) => Promise<string>
   openArtifact: (artifact: Artifact, disposition?: 'open' | 'download') => void
   openWorkbench: (kind: Kind) => void
   selectArtifact: (id: string) => void
@@ -144,9 +146,33 @@ function PdfReceipt({ artifact, loadPdf, loadImage, t }: { artifact: Artifact; l
     : <><a className={css.workbenchOpen} href={url} download={artifact.file?.name}>{t('workbench.downloadPdf')}</a><iframe className={css.workbenchPdf} src={url} title={artifact.title} /></>
 }
 
+/** Render authenticated receipt contents with the shared native Markdown primitive. */
+export function TextReceipt({ file, loadText, t }: {
+  file: FileAttachmentRef
+  loadText: WorkbenchProps['loadText']
+  t: WorkbenchProps['t']
+}) {
+  const [text, setText] = useState<string>()
+  const [failed, setFailed] = useState(false)
+  const load = useRef(loadText)
+  load.current = loadText
+  useEffect(() => {
+    let active = true
+    setText(undefined)
+    setFailed(false)
+    void load.current(file).then((value) => { if (active) setText(value) }, () => { if (active) setFailed(true) })
+    return () => { active = false }
+  }, [file.attachmentId])
+  if (failed) return <p role="alert">{t('workbench.textUnavailable')}</p>
+  if (text === undefined) return <p role="status">{t('workbench.loading')}</p>
+  return <div data-artifact-markdown><MarkdownText text={text} labels={{
+    code: { copyLabel: t('workbench.copy'), copiedLabel: t('workbench.copied') }, footnotes: t('workbench.footnotes'),
+  }} /></div>
+}
+
 /** Shared native workbench backed by the current session log. */
 export function HyperagentWorkbench({
-  kind, sessionId, useTabInfo, useEmployeeEvents, loadImage, loadPdf, openArtifact, selectArtifact, t,
+  kind, sessionId, useTabInfo, useEmployeeEvents, loadImage, loadPdf, loadText, openArtifact, selectArtifact, t,
 }: WorkbenchProps) {
   const data = useEmployeeEvents(workbenchSnapshot)
   const info = useTabInfo()
@@ -168,7 +194,9 @@ export function HyperagentWorkbench({
       ? <p className={css.workbenchEmpty}>{t('workbench.emptyPreview')}</p>
       : <article><span className={css.workbenchEyebrow}>{lastArtifact.mediaType}</span><h2>{lastArtifact.title}</h2>{lastArtifact.producerName !== undefined && <p>From {lastArtifact.producerName}</p>}{lastArtifact.mediaType === 'application/pdf' && lastArtifact.file !== undefined
         ? <PdfReceipt artifact={lastArtifact} loadPdf={loadPdf} loadImage={loadImage} t={t} />
-        : <><div className={css.workbenchActions}><button type="button" className={css.workbenchOpen} disabled={lastArtifact.file === undefined} onClick={() => { openArtifact(lastArtifact, 'download') }}>{t('workbench.download')}</button></div><ReceiptImage attachment={lastArtifact.preview} loadImage={loadImage} /></>}</article>)}
+        : <><div className={css.workbenchActions}><button type="button" className={css.workbenchOpen} disabled={lastArtifact.file === undefined} onClick={() => { openArtifact(lastArtifact, 'download') }}>{t('workbench.download')}</button></div>{lastArtifact.file !== undefined && (lastArtifact.mediaType.startsWith('text/') || /\.(md|markdown|txt)$/i.test(lastArtifact.path))
+          ? <TextReceipt file={lastArtifact.file} loadText={loadText} t={t} />
+          : <ReceiptImage attachment={lastArtifact.preview} loadImage={loadImage} />}</>}</article>)}
     {kind === 'artifacts' && <>
       <header className={css.galleryHeader}><strong>{t('workbench.artifacts')}</strong><select aria-label={t('workbench.filter')} value={filter} onChange={(event) => { setFilter(event.target.value) }}><option value="all">{t('workbench.all')}</option>{[...new Set(data.artifacts.map(artifact => artifact.mediaType))].map(type => <option key={type} value={type}>{type}</option>)}</select><button type="button" onClick={() => { setView(view === 'stack' ? 'grid' : 'stack') }}>{t(view === 'stack' ? 'workbench.grid' : 'workbench.stack')}</button></header>
       {data.artifacts.length === 0 ? <p className={css.workbenchEmpty}>{t('workbench.emptyArtifacts')}</p> : <div className={css.artifactGallery} data-view={view}>{[...data.artifacts].reverse().filter(artifact => filter === 'all' || artifact.mediaType === filter).map((artifact, index) => <button key={artifact.id} type="button" className={css.artifactCard} style={{ zIndex: data.artifacts.length - index }} onClick={() => { choose(artifact) }} aria-label={`${t('workbench.open')}: ${artifact.title}`}>

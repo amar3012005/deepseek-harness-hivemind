@@ -6,11 +6,12 @@ import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import type { CatalogInjected } from './catalog-source.ts'
 import { formatScheduleFrequency } from './schedule-format.ts'
-export function ConfirmedScheduleList({ ids, source, open, avatar, t }: {
+export function ConfirmedScheduleList({ ids, employeeIds, source, open, avatar, t }: {
   ids: readonly ScheduleId[]
+  employeeIds?: Readonly<Record<string, string>>
   source: CatalogInjected<ScheduleCatalogEntry>
   open: (task: ScheduleCatalogEntry) => void
-  avatar: (owner: SessionId) => ReactNode
+  avatar: (owner: SessionId, employeeId?: string) => ReactNode
   t: PropsLocale<'schedule.manager'>['t']
 }) {
   const catalog = useSyncExternalStore(source.hooks.catalog.subscribe, source.hooks.catalog.getSnapshot)
@@ -21,7 +22,7 @@ export function ConfirmedScheduleList({ ids, source, open, avatar, t }: {
   return <section aria-label={t('list.label')} data-confirmed-schedule-list>
     {tasks.map(task => <details key={task.id} style={{ padding: '12px 0', borderBottom: '1px solid var(--dsw-static-neutral-100)' }}>
       <summary style={{ display: 'flex', gap: 10, alignItems: 'center', cursor: 'pointer' }}>
-        {avatar(task.sessionId)}<span><strong>{task.title}</strong><br />
+        {avatar(task.sessionId, employeeIds?.[task.id])}<span><strong>{task.title}</strong><br />
           <small>{formatScheduleFrequency(task, t)} · {t(task.status === 'active' ? 'status.active' : 'status.inactive')}</small></span>
       </summary>
       <button type="button" onClick={() => { open(task) }}>{t('card.open')}</button>

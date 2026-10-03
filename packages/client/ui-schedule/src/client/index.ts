@@ -67,8 +67,8 @@ const PANEL_ID = 'schedules' as MainPanelId
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface SlotMap {
-    'schedule.confirmed.tasks': { kind: 'single'; scope: 'session'; owner: { ids: readonly ScheduleId[] } }
-    'schedule.task.avatar': { kind: 'single'; scope: 'session'; owner: { targetSessionId: SessionId } }
+    'schedule.confirmed.tasks': { kind: 'single'; scope: 'session'; owner: { ids: readonly ScheduleId[]; employeeIds?: Readonly<Record<string, string>> } }
+    'schedule.task.avatar': { kind: 'single'; scope: 'session'; owner: { targetSessionId: SessionId; employeeId?: string } }
     /** Read-only projections of externally owned automations; no Schedule record is created. */
     'schedule.manager.external': { kind: 'list'; scope: 'root' }
   }
@@ -197,10 +197,10 @@ export function apply(ctx: ClientContext): void {
   ctx.slots.inject('schedule.confirmed.tasks', () => ctx.slots.register({
     name: 'schedule.confirmed.tasks', locale: MANAGER_NS,
     children: { 'schedule.task.avatar': { kind: 'single', scope: 'session' } },
-  }, ({ ids, t, renderSlot }) => createElement(ConfirmedScheduleList, {
-    ids, t, source: manager,
+  }, ({ ids, employeeIds, t, renderSlot }) => createElement(ConfirmedScheduleList, {
+    ids, ...(employeeIds === undefined ? {} : { employeeIds }), t, source: manager,
     open: task => ctx.sidebarRight.openTab(SCHEDULE_TASK_KIND, { params: { sessionId: task.sessionId, id: task.id } }),
-    avatar: targetSessionId => renderSlot('schedule.task.avatar', { targetSessionId }),
+    avatar: (targetSessionId, employeeId) => renderSlot('schedule.task.avatar', { targetSessionId, ...(employeeId === undefined ? {} : { employeeId }) }),
   })))
   ctx.uiConversation.events.register(scheduleTurnDefinition)
   ctx.slots.inject('conversation.chat.turnTail', () => ctx.slots.register({

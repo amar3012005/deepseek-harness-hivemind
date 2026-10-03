@@ -1,7 +1,7 @@
 /** UI-only projection of a confirmed delegated native Schedule receipt. */
 import type { ConversationNodeDefinition } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { ScheduleId } from '@deepseek-ai/dsh-schedule/client'
-export interface ScheduledWork { ids: readonly ScheduleId[]; seq: number }
+export interface ScheduledWork { ids: readonly ScheduleId[]; seq: number; employeeIds?: Readonly<Record<string, string>> }
 /** Accept an actual saved schedule receipt, never a proposed time. */
 export function savedScheduleId(text: string): ScheduleId | undefined {
   try {
@@ -21,7 +21,9 @@ export const scheduledWork: ConversationNodeDefinition<ScheduledWork> = {
     if (match.event.type !== 'tool/result' || match.event.data.message.content.some(block => block.isError)) return context.state
     const text = match.event.data.message.content.flatMap(block => block.content).filter(block => block.type === 'text').map(block => block.text).join('')
     const id = savedScheduleId(text)
-    return id === undefined ? context.state : { ids: [id], seq: match.event.seq }
+    if (id === undefined) return context.state
+    const receipt = JSON.parse(text) as { employee_id?: unknown }
+    return { ids: [id], seq: match.event.seq, ...(typeof receipt.employee_id === 'string' ? { employeeIds: { [id]: receipt.employee_id } } : {}) }
   },
   buildViewNode: context => context.start === undefined || context.state === undefined || context.state.ids.length === 0 ? null : {
     key: context.key, kind: 'hivemind-scheduled-work', id: context.id, target: 'chat', anchorSeq: context.state.seq,

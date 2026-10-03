@@ -15,6 +15,7 @@ export type HivemindConnectKey =
   | 'employee.settings' | 'employee.connectApps' | 'employee.creditsUsed'
   | 'workbench.filter' | 'workbench.all' | 'workbench.grid' | 'workbench.stack' | 'workbench.lastViewed'
   | 'workbench.preview' | 'workbench.artifacts' | 'workbench.computer' | 'workbench.sources'
+  | 'workbench.textUnavailable' | 'workbench.loading' | 'workbench.copy' | 'workbench.copied' | 'workbench.footnotes'
   | 'workbench.emptyPreview' | 'workbench.emptyArtifacts' | 'workbench.emptyComputer' | 'workbench.emptySources' | 'workbench.pdfUnavailable' | 'workbench.browserCapture' | 'workbench.open' | 'workbench.download' | 'workbench.downloadPdf'
 
 export const en: Record<HivemindConnectKey, string> = {
@@ -54,6 +55,11 @@ export const en: Record<HivemindConnectKey, string> = {
   'employee.settings': 'Environment settings', 'employee.connectApps': 'Connect apps', 'employee.creditsUsed': 'Credits used',
   'workbench.preview': 'Preview', 'workbench.artifacts': 'Artifacts', 'workbench.computer': 'Computer', 'workbench.sources': 'Sources',
   'workbench.emptyPreview': 'Generated work appears here when ready.', 'workbench.emptyArtifacts': 'No artifacts yet.',
+  'workbench.textUnavailable': 'Document preview could not be loaded. You can still download it.',
+  'workbench.loading': 'Loading document…',
+  'workbench.copy': 'Copy',
+  'workbench.copied': 'Copied',
+  'workbench.footnotes': 'Footnotes',
   'workbench.pdfUnavailable': 'PDF preview could not be loaded. You can still download the PDF.',
   'workbench.emptyComputer': 'Browser captures appear here when ready.', 'workbench.emptySources': 'Research sources appear here when ready.',
   'workbench.browserCapture': 'Browser capture · HTTP',
@@ -99,6 +105,11 @@ export const zh: Record<HivemindConnectKey, string> = {
   'employee.settings': '工作环境设置', 'employee.connectApps': '连接应用', 'employee.creditsUsed': '已使用额度',
   'workbench.preview': '预览', 'workbench.artifacts': '成果', 'workbench.computer': '电脑', 'workbench.sources': '来源',
   'workbench.emptyPreview': '生成的成果就绪后将在此显示。', 'workbench.emptyArtifacts': '暂无成果。',
+  'workbench.textUnavailable': '无法加载文档预览。你仍可下载文档。',
+  'workbench.loading': '正在加载文档…',
+  'workbench.copy': '复制',
+  'workbench.copied': '已复制',
+  'workbench.footnotes': '脚注',
   'workbench.pdfUnavailable': '无法加载 PDF 预览。你仍可下载 PDF。',
   'workbench.emptyComputer': '浏览器截图就绪后将在此显示。', 'workbench.emptySources': '研究来源就绪后将在此显示。',
   'workbench.browserCapture': '浏览器截图 · HTTP',
