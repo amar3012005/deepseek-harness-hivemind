@@ -40,13 +40,16 @@ export function RuntimePlanSummary({ sessionId, turn, events, load, cancel, t, r
     const timer = setInterval(() => { void refresh().catch(() => {}) }, 15000)
     return () => { disposed = true; clearInterval(timer) }
   }, [ready, load, sessionId, refresh])
+  const scheduledTasks = workspace?.tasks.filter(task => task.nextWakeAt || workspace.calendar.some(item => item.taskId === task.id)) ?? []
   if (!ready) return null
-  return <section aria-label="Runtime strategic plan" style={{ border: '1px solid var(--border-color, #e4e7eb)', borderRadius: 16, padding: 18, marginTop: 16 }}>
-    <h3>I’ve built the initial strategic plan.</h3>
-    <p>Here is the saved schedule. Cancelling a prerequisite also cancels its pending dependent tasks.</p>
+  return <section aria-label="Runtime next steps" style={{ border: '1px solid var(--border-color, #e4e7eb)', borderRadius: 16, padding: 18, marginTop: 16 }}>
+    {scheduledTasks.length > 0 && <>
+      <h3>Scheduled work</h3>
+      <p>Here are the saved assignments. Cancelling a prerequisite also cancels its pending dependent tasks.</p>
+    </>}
     {!workspace && <p role="status">Loading saved tasks…</p>}
-    {workspace?.tasks.filter(task => task.nextWakeAt || workspace.calendar.some(item => item.taskId === task.id)).map(task => <article key={task.id} style={{ padding: '12px 0', borderBottom: '1px solid #e4e7eb' }}>
-      {renderAvatar?.({ employeeId: workspace.calendar.find(item => item.kind === 'assignment' && item.taskId === task.id)?.owner ?? task.owner })}<strong>{task.title}</strong><p>{employeeNames.get(workspace.calendar.find(item => item.kind === 'assignment' && item.taskId === task.id)?.owner) ?? task.owner} · {task.status === 'deleted' ? 'Cancelled' : task.status}</p>
+    {scheduledTasks.map(task => <article key={task.id} style={{ padding: '12px 0', borderBottom: '1px solid #e4e7eb' }}>
+      {renderAvatar?.({ employeeId: workspace?.calendar.find(item => item.kind === 'assignment' && item.taskId === task.id)?.owner ?? task.owner })}<strong>{task.title}</strong><p>{employeeNames.get(workspace?.calendar.find(item => item.kind === 'assignment' && item.taskId === task.id)?.owner) ?? task.owner} · {task.status === 'deleted' ? 'Cancelled' : task.status}</p>
       <p>{task.nextWakeAt ? new Date(task.nextWakeAt).toLocaleString(undefined, { timeZoneName: 'short' }) : 'No pending trigger'}</p>
       {task.status === 'pending' && <button type="button" disabled={pending !== undefined} onClick={() => {
         setPending(task.id); setError(undefined)
