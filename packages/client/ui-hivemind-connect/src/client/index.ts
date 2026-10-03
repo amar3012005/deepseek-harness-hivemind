@@ -1,6 +1,9 @@
 import type { ConversationNodeDefinition } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-ui-chat/client'
 import { RuntimeAwakening } from './RuntimeAwakening.tsx'
+import { scheduledWork, type ScheduledWork } from './scheduled-work.ts'
+import { AgentChatAvatar } from './AgentChatAvatar.tsx'
+import { RuntimeActivity } from './RuntimeActivity.tsx'
 import { BrainConnections } from './BrainConnections.tsx'
 import type {} from '@deepseek-ai/dsh-client-ui-schedule/client'
 import { DreamingAutomation } from './DreamingAutomation.tsx'
@@ -41,7 +44,7 @@ import {
 import { HyperagentWorkbench } from './HyperagentWorkbench.tsx'
 
 declare module '@deepseek-ai/dsh-client-ui-chat/client' {
-  interface ChatNodeDataMap { 'runtime-awakening-stage': { turn: number; seq: number } }
+  interface ChatNodeDataMap { 'hivemind-scheduled-work': ScheduledWork; 'runtime-awakening-stage': { turn: number; seq: number } }
 }
 
 const awakeningStage: ConversationNodeDefinition<{ turn: number; seq: number }> = {
@@ -183,6 +186,7 @@ export function apply(ctx: ClientContext): void {
   }, () => null))
   ctx.inject(['uiConversation'], (scope: ClientContext) => {
     scope.effect(() => scope.uiConversation.events.register(awakeningStage))
+    scope.effect(() => scope.uiConversation.events.register(scheduledWork))
     scope.effect(
       () => scope.uiConversation.configureWorkspaceRequirement(false),
       'ui-hivemind-connect: filesystem-free conversation',
@@ -255,6 +259,21 @@ export function apply(ctx: ClientContext): void {
       return [{ id: profile.id, name: profile.name, role, ...(typeof profile.persona === 'string' ? { persona: profile.persona } : {}), ...(Array.isArray(profile.tools) && profile.tools.every(tool => typeof tool === 'string') ? { allowedTools: profile.tools.filter((tool): tool is string => typeof tool === 'string') } : {}), ...(typeof profile.created_at === 'string' ? { createdAt: profile.created_at } : {}), ...(avatarUrl === undefined ? {} : { avatarUrl }) }]
     })
   }
+  let chatDirectory: Promise<EmployeeOption[]> | undefined
+  const chatEmployees = () => chatDirectory ??= listEmployees().catch((error) => { chatDirectory = undefined; throw error })
+  ctx.slots.inject('schedule.task.avatar', () => ctx.slots.register({ name: 'schedule.task.avatar' }, ({ targetSessionId }) => {
+    if (!window.location.pathname.includes('/employee/harness')) return null
+    const binding = ctx.sessions.binding(targetSessionId)
+    return binding === undefined ? null : createElement(AgentChatAvatar, { events: binding.eventSource, load: chatEmployees })
+  }))
+  ctx.slots.inject('conversation.chat.agentAvatar', () => ctx.slots.register({
+    name: 'conversation.chat.agentAvatar',
+  }, ({ employeeId, name, sessionId }) => window.location.pathname.includes('/employee/harness')
+    ? createElement(AgentChatAvatar, {
+      ...(employeeId === undefined ? {} : { employeeId }),
+      ...(name === undefined ? {} : { name }),
+      events: employeeEvents(sessionId), load: chatEmployees,
+    }) : null))
   ctx.inject(['remote.commands', 'remote.agentPresets'], (ctx: ClientContext) => {
     const selectEmployee = async (sessionId: SessionId, id: string | null, runtime = false): Promise<boolean> => {
       if (ctx.sessions.binding(sessionId) === undefined) throw new Error('Session is not ready. Please reopen it.')
@@ -531,6 +550,14 @@ export function apply(ctx: ClientContext): void {
       const conversation = scope?.get('conversation')
       if (conversation !== undefined) void conversation.send(prompt)
     }
+    ctx.slots.inject('conversation.chat.workUpdates', () => ctx.slots.register({
+      name: 'conversation.chat.workUpdates', id: 'hivemind-current-activity', locale: NS,
+    }, ({ turn, sessionId, t }) => window.location.pathname.includes('/employee/harness')
+      ? createElement(RuntimeActivity, { turn, events: employeeEvents(sessionId), t }) : null))
+    ctx.slots.inject('conversation.chat.node', () => ctx.slots.register({
+      name: 'conversation.chat.node', key: 'hivemind-scheduled-work',
+      children: { 'schedule.confirmed.tasks': { kind: 'single', scope: 'session' } },
+    }, ({ node, renderSlot }) => renderSlot('schedule.confirmed.tasks', { ids: node.data.ids })))
     ctx.slots.inject('conversation.chat.node', () => ctx.slots.register({
       name: 'conversation.chat.node', key: 'runtime-awakening-stage',
       children: { 'hivemind.runtime.plan': { kind: 'list', scope: 'session' } },

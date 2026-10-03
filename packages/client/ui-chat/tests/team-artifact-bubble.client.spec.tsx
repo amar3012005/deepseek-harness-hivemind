@@ -16,6 +16,17 @@ const props = {
 }
 
 describe('incoming teammate artifact bubble', () => {
+  it('renders the exact sender identity beside a reply without repeating its name in prose', () => {
+    const avatar = vi.fn(() => <span data-testid="sender-avatar" />)
+    const view = render(<ContextInjectionRow {...props} avatar={avatar} content={[
+      { type: 'text', text: JSON.stringify({ senderName: 'Ravi', senderEmployee: 'ravi-id', text: 'Ravi: Chief, the brief is ready.' }) },
+    ]} />)
+    expect(avatar).toHaveBeenCalledWith({ employeeId: 'ravi-id', name: 'Ravi' })
+    expect(view.getByTestId('sender-avatar')).toBeTruthy()
+    expect(view.getByText('Chief, the brief is ready.')).toBeTruthy()
+    expect(view.getAllByText('Ravi')).toHaveLength(1)
+  })
+
   it('shows the authorized file outside closed work details and opens its exact receipt', () => {
     const openArtifact = vi.fn()
     const view = render(<ContextInjectionRow {...props} openArtifact={openArtifact} content={[

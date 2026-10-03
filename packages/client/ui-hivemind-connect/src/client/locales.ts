@@ -1,5 +1,6 @@
 /** Localized copy for the HIVE-MIND connection control. */
 export type HivemindConnectKey =
+  | 'activity.search' | 'activity.website' | 'activity.capture' | 'activity.memory' | 'activity.draft' | 'activity.team'
   | 'connect' | 'connected' | 'connecting' | 'unavailable' | 'disconnect' | 'history' | 'history.empty'
   | 'session.new' | 'session.recent' | 'session.running' | 'composio.app' | 'composio.checking'
   | 'composio.connectionRequired' | 'composio.connectionPending' | 'composio.approvalRequired' | 'composio.failed' | 'composio.completed' | 'composio.cancelled'
@@ -17,6 +18,7 @@ export type HivemindConnectKey =
   | 'workbench.emptyPreview' | 'workbench.emptyArtifacts' | 'workbench.emptyComputer' | 'workbench.emptySources' | 'workbench.pdfUnavailable' | 'workbench.browserCapture' | 'workbench.open' | 'workbench.download' | 'workbench.downloadPdf'
 
 export const en: Record<HivemindConnectKey, string> = {
+  'activity.search': 'Searching public sources…', 'activity.website': 'Reading website…', 'activity.capture': 'Capturing website…', 'activity.memory': 'Working with memory…', 'activity.draft': 'Drafting an artifact…', 'activity.team': 'Coordinating with the team…',
   'workbench.filter': 'Filter', 'workbench.all': 'All files', 'workbench.grid': 'Grid view', 'workbench.stack': 'Stack view', 'workbench.lastViewed': 'Last viewed',
   connect: 'Connect HIVE-MIND',
   connected: 'HIVE-MIND connected',
@@ -61,6 +63,7 @@ export const en: Record<HivemindConnectKey, string> = {
 }
 
 export const zh: Record<HivemindConnectKey, string> = {
+  'activity.search': '正在搜索公开来源…', 'activity.website': '正在阅读网站…', 'activity.capture': '正在截取网站…', 'activity.memory': '正在处理记忆…', 'activity.draft': '正在编写成果…', 'activity.team': '正在与团队协调…',
   'workbench.filter': '筛选', 'workbench.all': '全部文件', 'workbench.grid': '网格视图', 'workbench.stack': '堆叠视图', 'workbench.lastViewed': '最近查看',
   connect: '连接 HIVE-MIND',
   connected: 'HIVE-MIND 已连接',

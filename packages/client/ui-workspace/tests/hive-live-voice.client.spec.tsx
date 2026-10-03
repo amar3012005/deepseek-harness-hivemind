@@ -21,6 +21,23 @@ class Peer {
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.restoreAllMocks() })
 
 describe('native HIVEMIND live voice composer', () => {
+  it('acknowledges an invitation and starts the existing voice API even with a typed draft', async () => {
+    Object.defineProperty(navigator, 'mediaDevices', { configurable: true, value: { getUserMedia: vi.fn(async () => ({ getTracks: () => [{ stop: vi.fn() }] })) } })
+    vi.stubGlobal('RTCPeerConnection', Peer)
+    vi.stubGlobal('Audio', class { autoplay = false; pause = vi.fn() })
+    const fetcher = vi.fn(async () => ({ ok: true, json: async () => ({ id: 'room-1', sdp: 'answer' }) }))
+    vi.stubGlobal('fetch', fetcher)
+    render(<HiveLiveVoiceButton sessionId={'session-1' as never} useInput={input('draft')} t={t} />)
+    const invitation = new CustomEvent('hivemind:start-room-call', { cancelable: true, detail: { sessionId: 'session-1' } })
+    fireEvent(window, invitation)
+    expect(invitation.defaultPrevented).toBe(true)
+    await waitFor(() => { expect(Peer.instance.setRemoteDescription).toHaveBeenCalledOnce() })
+    const repeat = new CustomEvent('hivemind:start-room-call', { cancelable: true, detail: { sessionId: 'session-1' } })
+    fireEvent(window, repeat)
+    expect(Peer.instance.close).not.toHaveBeenCalled()
+    expect(fetcher).toHaveBeenCalledOnce()
+  })
+
   it('leaves a typed draft to the ordinary send arrow', () => {
     render(<HiveLiveVoiceButton sessionId={'session-1' as never} useInput={input('hello')} t={t} />)
     expect(screen.queryByRole('button')).toBeNull()

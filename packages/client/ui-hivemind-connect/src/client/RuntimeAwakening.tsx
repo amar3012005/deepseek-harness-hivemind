@@ -35,6 +35,10 @@ export function RuntimeAwakening(
     return item.turn === turn && (checkpointSeq === undefined || entry.event.seq === checkpointSeq)
       ? [{ ...item, seq: entry.event.seq }] : []
   })
+  const invitationSeq = window.entries.find(entry => entry.type === 'event'
+    && String(entry.event.type) === 'hivemind/hq-awakening-checkpoint'
+    && (() => { const data = entry.event.data as unknown as Checkpoint; return data.turn === turn && data.stage === 'conversation' && !data.blocked })())
+  const firstInvitation = invitationSeq?.type === 'event' ? invitationSeq.event.seq : undefined
   if (!checkpoints.length) return null
   const stages = checkpoints.filter((item, index) => checkpoints.findIndex(other => other.stage === item.stage) === index)
     .map((item) => {
@@ -47,8 +51,8 @@ export function RuntimeAwakening(
         && !cards[0]?.image && !cards[0]?.employeeId && !cards[0]?.reference
       return { ...latest, cards: redundant ? [] : cards }
     })
-  const order = ['company', 'evidence', 'team', 'memory', 'strategy', 'conversation', 'remembered']
-  stages.sort((a, b) => order.indexOf(a.stage) - order.indexOf(b.stage))
+  // Evidence follows its saved order, including revised or skipped plan steps.
+  stages.sort((a, b) => a.seq - b.seq)
   return <section className={css.root} aria-label="Runtime investigation">
     {stages.map(item => <section key={item.seq} className={css.stage}>
       <header><strong>{titles[item.stage] ?? item.stage}</strong>{item.blocked && <span>Needs attention</span>}</header>
@@ -62,6 +66,6 @@ export function RuntimeAwakening(
         </article>)}
       </div>}
     </section>)}
-    {stages.some(item => item.stage === 'conversation' || item.stage === 'remembered') && renderSlot('hivemind.runtime.plan', { turn })}
+    {stages.some(item => item.stage === 'conversation' && item.seq === firstInvitation) && renderSlot('hivemind.runtime.plan', { turn })}
   </section>
 }

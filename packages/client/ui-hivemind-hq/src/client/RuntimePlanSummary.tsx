@@ -1,4 +1,6 @@
 /** Final saved plan with native cancellation and the existing room voice transport. */
+import { RuntimeCallBanner } from './RuntimeCallBanner.tsx'
+import type { HqKey } from './locales.ts'
 import { useCallback, useEffect, useState, useSyncExternalStore } from 'react'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { SessionEventWindow } from '@deepseek-ai/dsh-api-session-controller/client'
@@ -6,12 +8,14 @@ import type { HqWorkspace } from '@deepseek-ai/dsh-hivemind-hq-runtime/client'
 import type { RemoteResult } from '@deepseek-ai/dsh-api-remotes/client'
 interface Props {
   sessionId: SessionId
+  t: (key: HqKey) => string
+  renderAvatar?: (identity: { employeeId?: string; name?: string }) => import('react').ReactNode
   turn: number
   events: { subscribe(listener: () => void): () => void; getSnapshot(): SessionEventWindow }
   load(id: SessionId): Promise<RemoteResult<HqWorkspace>>
   cancel(id: SessionId, request: { taskId: string; expectedRevision: number }): Promise<RemoteResult<{ cancelled: boolean }>>
 }
-export function RuntimePlanSummary({ sessionId, turn, events, load, cancel }: Props) {
+export function RuntimePlanSummary({ sessionId, turn, events, load, cancel, t, renderAvatar }: Props) {
   const log = useSyncExternalStore(listener => events.subscribe(listener), () => events.getSnapshot())
   const ready = log.entries.some(entry => entry.type === 'event'
     && String(entry.event.type) === 'hivemind/hq-awakening-checkpoint'
@@ -42,7 +46,7 @@ export function RuntimePlanSummary({ sessionId, turn, events, load, cancel }: Pr
     <p>Here is the saved schedule. Cancelling a prerequisite also cancels its pending dependent tasks.</p>
     {!workspace && <p role="status">Loading saved tasks…</p>}
     {workspace?.tasks.filter(task => task.nextWakeAt || workspace.calendar.some(item => item.taskId === task.id)).map(task => <article key={task.id} style={{ padding: '12px 0', borderBottom: '1px solid #e4e7eb' }}>
-      <strong>{task.title}</strong><p>{employeeNames.get(workspace.calendar.find(item => item.kind === 'assignment' && item.taskId === task.id)?.owner) ?? task.owner} · {task.status === 'deleted' ? 'Cancelled' : task.status}</p>
+      {renderAvatar?.({ employeeId: workspace.calendar.find(item => item.kind === 'assignment' && item.taskId === task.id)?.owner ?? task.owner })}<strong>{task.title}</strong><p>{employeeNames.get(workspace.calendar.find(item => item.kind === 'assignment' && item.taskId === task.id)?.owner) ?? task.owner} · {task.status === 'deleted' ? 'Cancelled' : task.status}</p>
       <p>{task.nextWakeAt ? new Date(task.nextWakeAt).toLocaleString(undefined, { timeZoneName: 'short' }) : 'No pending trigger'}</p>
       {task.status === 'pending' && <button type="button" disabled={pending !== undefined} onClick={() => {
         setPending(task.id); setError(undefined)
@@ -54,8 +58,6 @@ export function RuntimePlanSummary({ sessionId, turn, events, load, cancel }: Pr
       }}>{pending === task.id ? 'Cancelling…' : 'Cancel task'}</button>}
     </article>)}
     {error && <p role="alert">{error}</p>}
-    <div style={{ paddingTop: 16 }}><strong>Let’s talk about your company’s next step.</strong>
-      <p>Start a live call with Runtime in this room.</p>
-      <button type="button" onClick={() => window.dispatchEvent(new CustomEvent('hivemind:start-room-call', { detail: { sessionId } }))}>Talk to Runtime</button></div>
+    <RuntimeCallBanner sessionId={sessionId} t={t} />
   </section>
 }

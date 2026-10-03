@@ -29,14 +29,31 @@ export function HiveLiveVoiceButton({ sessionId, useInput, t }: Props) {
     setState('idle'); setCaption(''); setSpeakerMuted(false); setMicMuted(false)
   }, [])
   useEffect(() => () => { stop() }, [sessionId, stop])
+  const voiceStatus = useRef({ state, error, busy })
+  voiceStatus.current = { state, error, busy }
+  useEffect(() => {
+    window.dispatchEvent(new CustomEvent('hivemind:room-call-status', { detail: { sessionId, state, error, busy } }))
+  }, [sessionId, state, error, busy])
   const toggleRef = useRef<() => Promise<void>>()
   useEffect(() => {
     const start = (event: Event) => {
       const detail = (event as CustomEvent<{ sessionId: string }>).detail
-      if (detail?.sessionId === sessionId) void toggleRef.current?.()
+      if (detail?.sessionId !== sessionId) return
+      event.preventDefault()
+      // Start invitations cannot terminate an already connected call.
+      if (voiceStatus.current.state === 'idle') void toggleRef.current?.()
+    }
+    const report = () => window.dispatchEvent(new CustomEvent('hivemind:room-call-status', { detail: { sessionId, ...voiceStatus.current } }))
+    const request = (event: Event) => {
+      if ((event as CustomEvent<{ sessionId: string }>).detail?.sessionId === sessionId) report()
     }
     window.addEventListener('hivemind:start-room-call', start)
-    return () => { window.removeEventListener('hivemind:start-room-call', start) }
+    window.addEventListener('hivemind:room-call-status-request', request)
+    report()
+    return () => {
+      window.removeEventListener('hivemind:start-room-call', start)
+      window.removeEventListener('hivemind:room-call-status-request', request)
+    }
   }, [sessionId])
   const toggle = async () => {
     if (state !== 'idle') { stop(); return }

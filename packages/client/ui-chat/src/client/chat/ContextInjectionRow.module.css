@@ -69,3 +69,4 @@
 .messageText { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.6; }
 .messageDetails { margin-top: 10px; font-size: 12px; color: var(--dsw-alias-label-secondary); }
 .messageDetails summary { cursor: pointer; }
+.messageRow { display: flex; align-items: flex-start; gap: 10px; }

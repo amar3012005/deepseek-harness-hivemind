@@ -144,9 +144,11 @@ export const AssistantMarkdown = memo(function AssistantMarkdown({
         )
     }
   }
+  const readableReply = document.documentElement.dataset.dshHyperagentOs !== undefined
+    && blocks.some(block => block.kind === 'text' && visibleAssistantText(block.text).trim() !== '')
   return (
     <div className={css.root} data-streaming={streaming || undefined}>
-      <div className={css.body}>
+      <div className={css.body} data-readable-reply={readableReply || undefined}>
         {rendered}
         {interrupted && <span className={css.stopped}>{t('message.stopped')}</span>}
       </div>

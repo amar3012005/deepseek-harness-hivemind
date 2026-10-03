@@ -1,7 +1,7 @@
 import { Button, IconClockOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ToolCallViewProps } from '@deepseek-ai/dsh-client-ui-tool/client'
-import type { ScheduleId, ScheduleRecord } from '@deepseek-ai/dsh-schedule/client'
+import type { ScheduleId, ScheduleRecord, ScheduleCatalogEntry } from '@deepseek-ai/dsh-schedule/client'
 import { formatScheduleFrequency, taskName } from './schedule-format.ts'
 import { scheduleCreateCardModel } from './schedule-create-card.ts'
 import css from './ScheduleCreateCard.module.css'
@@ -19,7 +19,7 @@ export interface ScheduleCreateCardInjected {
 export type ScheduleCreateCardProps = ToolCallViewProps
   & PropsLocale<'schedule.manager'>
   & InjectFace<ScheduleCreateCardInjected>
-  & { readonly currentTask?: ScheduleRecord | null }
+  & { readonly currentTask?: ScheduleRecord | ScheduleCatalogEntry | null }
 
 /**
  * Fields one card reads.
@@ -49,6 +49,7 @@ export function ScheduleCreateCard({ block, toolName, openTaskDetail, t, current
   const deleted = currentTask === null
   const title = currentTask === undefined || currentTask === null ? model.title : taskName(currentTask)
   const openable = task !== undefined && !deleted
+  const status = currentTask && 'status' in currentTask ? currentTask.status : undefined
   return (
     <div className={css.card} data-tool="schedule_create">
       {openable
@@ -68,6 +69,7 @@ export function ScheduleCreateCard({ block, toolName, openTaskDetail, t, current
           {task !== undefined
             ? <span className={css.frequency}>{deleted ? t('card.deleted') : formatScheduleFrequency(task, t)}</span>
             : null}
+          {status !== undefined && <span className={css.frequency}>{t(status === 'active' ? 'status.active' : 'status.inactive')}</span>}
         </span>
         {openable
           ? (

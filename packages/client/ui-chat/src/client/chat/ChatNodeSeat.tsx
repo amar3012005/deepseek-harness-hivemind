@@ -104,7 +104,7 @@ export const ChatNodeSeat = memo(function ChatNodeSeat({
   const incomingTeamReply = routedNode?.kind === 'context'
     && typeof routedNode.data.source === 'object' && routedNode.data.source !== null
     && 'kind' in routedNode.data.source && routedNode.data.source.kind === 'hivemind-agent-message'
-  const preserveReply = incomingTeamReply || (routedNode?.kind === 'assistant-step'
+  const preserveReply = incomingTeamReply || (quietWork && routedNode?.kind === 'assistant-step'
     && processSpec?.dreamSynthesis !== true
     && hasAssistantReplyContent(routedNode.data.blocks))
   const processHidden = controllerInactive

@@ -336,10 +336,11 @@ export const UserMessageNodeView = memo(function UserMessageNodeView({
 })
 
 /** Injected-context keyed Chat renderer. */
-export const ContextMessageNodeView = memo(function ContextMessageNodeView({ node, t, openArtifact }: ChatNodeViewProps<'context'>) {
+export const ContextMessageNodeView = memo(function ContextMessageNodeView({ node, t, openArtifact, renderSlot }: ChatNodeViewProps<'context'> & Partial<import('@deepseek-ai/dsh-client-ui-slots').PropsRenderSlots<'conversation.chat.agentAvatar'>>) {
   const data = node.data
   return (
     <ContextInjectionRow
+      avatar={identity => renderSlot?.('conversation.chat.agentAvatar', identity)}
       content={data.content}
       source={data.source}
       provenance={data.provenance}

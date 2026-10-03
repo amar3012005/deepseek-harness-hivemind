@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import { useState } from 'react'
 import type { ChatViewSlotProps } from '../contract/slots.ts'
 import { DisclosureRow, FileTypeIcon, fileSizeText, IconContextInjectionOutline16, ReferenceIcon } from '@deepseek-ai/dsh-client-ui-primitives'
@@ -15,6 +16,7 @@ export interface ContextInjectionRowProps {
   /** Producer-declared information form; null renders the opaque body. */
   form: ContextMessageNode['form']
   /** The owning view's locale seat, passed down as a plain prop. */
+  avatar?: (identity: { employeeId?: string; name?: string }) => ReactNode
   openArtifact?: (artifactId: string) => void
   t: ChatViewSlotProps['t']
 }
@@ -30,7 +32,7 @@ export interface ContextInjectionRowProps {
  * @param props - Durable content, its projected producer role/name and form, and the locale seat.
  * @returns A collapsed context row with a bounded, form-specific body.
  */
-export function ContextInjectionRow({ content, source, provenance, form, openArtifact, t }: ContextInjectionRowProps) {
+export function ContextInjectionRow({ content, source, provenance, form, openArtifact, avatar, t }: ContextInjectionRowProps) {
   const [open, setOpen] = useState(false)
   // Presentation only: durable prompt/context events remain available for future inspection.
   const agentMessage = typeof source === 'object' && source !== null && 'kind' in source && source.kind === 'hivemind-agent-message'
@@ -43,12 +45,12 @@ export function ContextInjectionRow({ content, source, provenance, form, openArt
   // Team delivery stores the complete message envelope, not the truncated notice summary.
   if (agentMessage) {
     const text = content.filter(block => block.type === 'text').map(block => block.text).join('')
-    let message: { senderName?: unknown; text?: unknown; artifacts?: unknown } | undefined
+    let message: { senderName?: unknown; senderEmployee?: unknown; text?: unknown; artifacts?: unknown } | undefined
     try { message = JSON.parse(text) as typeof message } catch { /* Older records retain the existing disclosure. */ }
     if (typeof message?.text === 'string' && typeof message.senderName === 'string') {
-      return <article className={css.messageBubble} aria-label={`Message from ${message.senderName}`}>
+      return <div className={css.messageRow}>{avatar?.({ ...(typeof message.senderEmployee === 'string' ? { employeeId: message.senderEmployee } : {}), name: message.senderName })}<article className={css.messageBubble} aria-label={`Message from ${message.senderName}`}>
         <strong className={css.sender}>{message.senderName}</strong>
-        <p className={css.messageText}>{message.text}</p>
+        <p className={css.messageText}>{message.text.startsWith(`${message.senderName}:`) ? message.text.slice(message.senderName.length + 1).trimStart() : message.text}</p>
         <div className={messageCss.attachmentRow} data-team-artifacts>
           {content.filter(block => block.type === 'file').map((block, index) => {
             const artifact = Array.isArray(message.artifacts) ? message.artifacts.find((item: unknown) => {
@@ -71,7 +73,7 @@ export function ContextInjectionRow({ content, source, provenance, form, openArt
           <summary>Work details</summary>
           <div className={css.body} data-context-injection-body data-context-form={rendered ?? undefined}>{body}</div>
         </details>
-      </article>
+      </article></div>
     }
   }
 

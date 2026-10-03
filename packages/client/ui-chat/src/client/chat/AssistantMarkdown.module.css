@@ -68,3 +68,13 @@
   /* Optical align with 28px icon hit targets that pad 6px past the glyph. */
   margin-left: -6px;
 }
+
+/* Employee rooms share incoming team replies' restrained bubble treatment. */
+.body[data-readable-reply] {
+  box-sizing: border-box;
+  width: fit-content;
+  max-width: 100%;
+  padding: 14px 18px;
+  border-radius: 18px 18px 18px 4px;
+  background: color-mix(in srgb, currentColor 5%, transparent);
+}

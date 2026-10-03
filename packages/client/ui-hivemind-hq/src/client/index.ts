@@ -44,14 +44,15 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       return preset === 'hivemind-hq' ? createElement(HqControlAction, props) : null
     }
     child.slots.inject('hivemind.runtime.plan', () => child.slots.register({
-      name: 'hivemind.runtime.plan', id: 'runtime-saved-plan',
+      name: 'hivemind.runtime.plan', id: 'runtime-saved-plan', locale: 'hivemind.hq',
+      children: { 'conversation.chat.agentAvatar': { kind: 'single', scope: 'session' } },
       inject: sessionId => ({
         sessionId, events: child.sessions.binding(sessionId)?.eventSource,
         load: (id: typeof sessionId) => child.remote.hivemindHq.workspace(id),
         cancel: (id: typeof sessionId, request: { taskId: string; expectedRevision: number }) =>
           child.remote.hivemindHq.cancelScheduledTask(id, request),
       }),
-    }, ({ events, ...props }) => events ? createElement(RuntimePlanSummary, { ...props, events }) : null))
+    }, ({ events, renderSlot, ...props }) => events ? createElement(RuntimePlanSummary, { ...props, events, renderAvatar: identity => renderSlot('conversation.chat.agentAvatar', identity) }) : null))
     const panel = 'hivemind-company-calendar' as MainPanelId
     const workspace: Omit<CompanyWorkspaceProps, 'sessionId'> = {
       progress: (id, taskId) => child.remote.hivemindHq.taskProgress(id, taskId),

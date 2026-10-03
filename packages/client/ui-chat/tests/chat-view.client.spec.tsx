@@ -1342,6 +1342,24 @@ describe('ChatView', () => {
     expect(branchButtons.map(button => button.getAttribute('aria-disabled'))).toEqual([null, null])
   })
 
+  it('keeps HIVE progress narration visible while tool details remain collapsed', () => {
+    const previousPath = window.location.pathname
+    window.history.replaceState({}, '', '/hivemind/app/employee/harness/runtime')
+    try {
+      const first = { ...assistant(2, 'I found the company focus.', 1, 1), blocks: [
+        { kind: 'reasoning' as const, text: 'internal assessment' },
+        { kind: 'text' as const, text: 'I found the company focus.' },
+      ] }
+      const h = makeHarness({ nodes: [user(1, 'Wake up'), first, toolResult(3, 'a'), assistant(4, 'Here is the plan.', 1, 2)], turnEnds: new Map([[1, 5]]) })
+      const view = render(<h.ChatView {...h.props} />)
+      expect(view.getByText('I found the company focus.').closest('[hidden]')).toBeNull()
+      expect(view.getByText('Here is the plan.').closest('[hidden]')).toBeNull()
+      expect(view.getByText('bash:a').closest('[hidden]')).not.toBeNull()
+    } finally {
+      window.history.replaceState({}, '', previousPath)
+    }
+  })
+
   it('folds Think and Tool rows before the final answer without unmounting them', () => {
     const first = {
       ...assistant(2, 'earlier reply', 1, 1),
@@ -2106,7 +2124,7 @@ describe('ChatView', () => {
     const view = render(<h.ChatView {...h.props} />)
     expect(view.getByTestId('tool-seat-r1')).toBeTruthy()
     expect(h.toolOwners[0]?.block).toMatchObject({ callId: 'r1', argsRaw: '{"command":"cmd-r1"}' })
-    expect(view.getByRole('status').textContent).toBe('深度求索中...')
+    expect(view.getByRole('status').textContent).toBe('工作中...')
   })
 
   it('keeps the Tool renderer mounted when a running call settles into log order', () => {
@@ -2166,7 +2184,7 @@ describe('ChatView', () => {
     const view = render(<h.ChatView {...h.props} />)
     // Freshly mounted (as after a reload) yet already past the 15s gate.
     const status = view.getByRole('status')
-    expect(status.textContent).toMatch(/^深度求索中\.\.\.2分0\d秒$/)
+    expect(status.textContent).toMatch(/^思考中\.\.\.2分0\d秒$/)
     expect(status.querySelector('[aria-hidden="true"]')).not.toBeNull()
     act(() => {
       h.setSession({ queue: [{
@@ -2178,7 +2196,7 @@ describe('ChatView', () => {
         text: 'also',
       }] })
     })
-    expect(status.textContent).toMatch(/^深度求索中\.\.\.2分0\d秒$/)
+    expect(status.textContent).toMatch(/^思考中\.\.\.2分0\d秒$/)
   })
 
   it('hands each ordered root call to the keyed business-node slot', () => {

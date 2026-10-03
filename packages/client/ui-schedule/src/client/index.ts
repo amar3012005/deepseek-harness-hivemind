@@ -1,3 +1,4 @@
+import { createElement } from 'react'
 /**
  * Browser catalogs for retained Host tasks and the selected Session's active
  * reminders, plus the right-Sidebar page that shows one task's detail.
@@ -47,6 +48,7 @@ import { createDeleteToastSource, ScheduleDeleteToast } from './DeleteToast.tsx'
 import { SCHEDULE_TASK_ID, SCHEDULE_TASK_KIND, scheduleTaskDefinition } from './definition.ts'
 import { ScheduleCatalogAction } from './ScheduleCatalogAction.tsx'
 import { ScheduleManagerAction } from './ScheduleManagerAction.tsx'
+import { ConfirmedScheduleList } from './ConfirmedScheduleList.tsx'
 import { ScheduleTurnCard, type ScheduleTurnCardInjected } from './ScheduleTurnCard.tsx'
 import { scheduleTurnDefinition, selectScheduleTasks } from './schedule-turn.ts'
 import { ScheduleTaskTab, type ScheduleTaskBindingInjected, type ScheduleTaskCatalogInjected, type ScheduleTaskTabInjected } from './ScheduleTaskTab.tsx'
@@ -65,6 +67,8 @@ const PANEL_ID = 'schedules' as MainPanelId
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface SlotMap {
+    'schedule.confirmed.tasks': { kind: 'single'; scope: 'session'; owner: { ids: readonly ScheduleId[] } }
+    'schedule.task.avatar': { kind: 'single'; scope: 'session'; owner: { targetSessionId: SessionId } }
     /** Read-only projections of externally owned automations; no Schedule record is created. */
     'schedule.manager.external': { kind: 'list'; scope: 'root' }
   }
@@ -190,6 +194,14 @@ export function apply(ctx: ClientContext): void {
   // The created task is a Turn-level element, not a Tool-group row: the Turn
   // Definition publishes the settled result and this tail list entry renders
   // the card beneath the closing prose.
+  ctx.slots.inject('schedule.confirmed.tasks', () => ctx.slots.register({
+    name: 'schedule.confirmed.tasks', locale: MANAGER_NS,
+    children: { 'schedule.task.avatar': { kind: 'single', scope: 'session' } },
+  }, ({ ids, t, renderSlot }) => createElement(ConfirmedScheduleList, {
+    ids, t, source: manager,
+    open: task => ctx.sidebarRight.openTab(SCHEDULE_TASK_KIND, { params: { sessionId: task.sessionId, id: task.id } }),
+    avatar: targetSessionId => renderSlot('schedule.task.avatar', { targetSessionId }),
+  })))
   ctx.uiConversation.events.register(scheduleTurnDefinition)
   ctx.slots.inject('conversation.chat.turnTail', () => ctx.slots.register({
     name: 'conversation.chat.turnTail',
