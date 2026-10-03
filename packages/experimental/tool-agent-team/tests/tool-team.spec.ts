@@ -10,7 +10,7 @@ import { ToolCallId } from '@deepseek-ai/dsh-llm'
 import { scopeOf } from '@deepseek-ai/dsh-scope'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
-import SessionQueryEngine from '@deepseek-ai/dsh-session-query'
+import { TestSessionQuery } from '../../agent-team/tests/test-session-query.ts'
 import SubagentService from '@deepseek-ai/dsh-subagent'
 import * as SubagentFork from '@deepseek-ai/dsh-subagent-fork-in-process'
 import * as SubagentSpawn from '@deepseek-ai/dsh-subagent-spawn-in-process'
@@ -36,17 +36,6 @@ const TOOL_NAMES = [
 
 const roots: string[] = []
 let callNumber = 0
-
-/** Session query implementation whose search faces are outside these tests. */
-class TestSessionQuery extends SessionQueryEngine {
-  override searchSessions(): Promise<never> {
-    return Promise.reject(new Error('session search is not configured in this test'))
-  }
-
-  override searchEvents(): Promise<never> {
-    return Promise.reject(new Error('event search is not configured in this test'))
-  }
-}
 
 afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
@@ -200,6 +189,16 @@ describe('dsh-tool-team', () => {
     expect(text(aborted)).toBe("Error: wait_agent aborted: { kind: 'user' }")
     await execute(activeSetup.ctx, activeSetup.lead, 'interrupt_agent', { target: 'active-worker' })
     await waitNoAgent(activeSetup.ctx, activeId)
+  })
+
+  it('publishes a persistent assignee through the strict native roster schema', async () => {
+    const { ctx, lead } = await setup([])
+    const employee = await ctx.agentLoop.create(SessionId('employee-room'), { provider: 'mock', model: 'mock' })
+    await ctx.agentTeams.bindPersistentAssignee(lead, employee, 'employee', 'Employee')
+    const roster = await execute(ctx, lead, 'list_agents', {})
+    expect(roster.isError).toBe(false)
+    expect(JSON.parse(text(roster))).toContainEqual(expect.objectContaining({ id: employee.id, ownership: 'persistent' }))
+    expect(ctx.agentTeams.membership(employee)).toMatchObject({ role: 'lead', root: employee })
   })
 
   it('adapts roster, mailbox, wait, and task CAS operations to canonical JSON', async () => {

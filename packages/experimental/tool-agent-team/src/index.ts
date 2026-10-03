@@ -55,6 +55,7 @@ const MEMBER_VIEW_SCHEMA = {
     status: { type: 'string', required: true, enum: ['running', 'idle', 'inactive', 'provisioning', 'failed'] },
     description: { type: 'string' },
     provider: { type: 'string' },
+    ownership: { type: 'string', enum: ['persistent'] },
     context: { type: 'string', enum: ['fresh', 'fork'] },
     model: { type: 'string' },
     diagnostics: { type: 'array', required: true, items: { type: 'string' } },
