@@ -1,5 +1,5 @@
 import { expect, it, vi } from 'vitest'
-import { jevReview, reviewAnswers, savedArtifactText, savedSourceEvidence } from '../src/review.ts'
+import { jevReview, runtimeReviewDecision, runtimeReviewAccepts, reviewAnswers, savedArtifactText, savedSourceEvidence } from '../src/review.ts'
 it('fails closed on missing answers and uncertainty rather than certifying prose', () => {
   expect(reviewAnswers({ model: 'jev', answers: { criterion_0: { type: 'noul', noul: 0.99 }, criterion_1: { type: 'noul', noul: 0.7 } } }, 2).status).toBe('uncertain')
   expect(reviewAnswers({ model: 'jev', answers: { criterion_0: { type: 'noul', noul: 0.99 } } }, 1).status).toBe('accepted')
@@ -42,4 +42,21 @@ it('uses the dedicated Jev Decisions credential and preserves typed acceptance c
     expect(JSON.parse(String(options?.body))).toMatchObject({ model: '~typesafe/jev-latest', state: { document: 'Saved evidence' } })
     expect(JSON.parse(String(options?.body))).not.toHaveProperty('input')
   } finally { request.mockRestore(); vi.unstubAllEnvs() }
+})
+
+it('requires Runtime’s explicit current evidence decision; Jev is advisory only', () => {
+  const current = { revision: 2, inputHash: 'saved-hash' }
+  const input = { decision: 'accepted', rationale: 'Inspected the saved brief and exact learning/return receipts.', task_revision: 2, evidence_hash: 'saved-hash' }
+  const decision = runtimeReviewDecision(input, current)
+  const review = { ...decision, taskId: 'task-1', taskRevision: 2, inputHash: 'saved-hash', artifactIds: ['artifact'] }
+  expect(runtimeReviewAccepts(review, 2, ['artifact'])).toBe(true)
+  expect(runtimeReviewAccepts({ ...review, reviewer: 'jev', probabilities: [1] }, 2, ['artifact'])).toBe(false)
+  expect(runtimeReviewAccepts({ ...review, reviewer: undefined }, 2, ['artifact'])).toBe(false)
+  expect(runtimeReviewAccepts(review, 3, ['artifact'])).toBe(false)
+  expect(runtimeReviewAccepts(review, 2, ['other'])).toBe(false)
+  expect(() => runtimeReviewDecision({ ...input, task_revision: 1 }, current)).toThrow('hq_review_task_changed')
+  expect(() => runtimeReviewDecision({ ...input, evidence_hash: 'old' }, current)).toThrow('hq_review_evidence_changed')
+  expect(() => runtimeReviewDecision({ ...input, rationale: '' }, current)).toThrow('hq_runtime_review_decision_required')
+  const changes = runtimeReviewDecision({ ...input, decision: 'needs_changes', rationale: 'Missing required seasonal ingredient.' }, current)
+  expect(runtimeReviewAccepts({ ...review, ...changes }, 2, ['artifact'])).toBe(false)
 })

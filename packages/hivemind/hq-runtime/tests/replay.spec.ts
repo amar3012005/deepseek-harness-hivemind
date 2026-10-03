@@ -13,7 +13,9 @@ function coldReorder(value: unknown): unknown {
 }
 function mount() {
   const producerEvents = [{ type: 'hivemind/generation-created', seq: 9, data: { artifactId: 'report' } },
-    { type: 'hivemind/generation-created', seq: 10, data: { artifactId: 'revision' } }]
+    { type: 'hivemind/generation-created', seq: 10, data: { artifactId: 'revision' } },
+    { type: 'tool/call', data: { callId: 'saved', name: 'hivemind_generate', arguments: JSON.stringify({ content: '# Saved report' }) } },
+    { type: 'tool/result', data: { message: { content: [{ type: 'tool-result', toolCallId: 'saved', content: [{ type: 'text', text: JSON.stringify({ artifact_id: 'report' }) }] }] } } }]
   const contract = companyTaskContract({ taskId: 'task-1', dueAt: '2030-01-01T10:00:00Z', acceptanceCriteria: ['One saved report', 'Source citations'] })
   const links = verifiedArtifactLinks(producerEvents, 'task-1', ['report'], 'ravi-session')
   const events = [{ type: 'hivemind/hq-task-contract', data: coldReorder(contract) },
@@ -22,21 +24,39 @@ function mount() {
   const agent = { id: 'root', session: { snapshotEvents: () => events, ownEvents: () => events, append } } as unknown as Agent
   const flush = vi.fn(async () => true)
   const ensure = vi.fn(async () => ({ id: 'deadline' }))
+  let role = 'lead'
+  let guard: (caller: Agent, request: { action: string; taskId: string; expectedRevision: number }) => unknown
   let tool: ToolDefinition
   const ctx = {
     effect: (callback: () => unknown) => callback(), on: () => () => {},
     tools: { register: (definition: ToolDefinition) => { tool = definition }, restrict: () => () => {} },
-    agentTeams: { guardTaskUpdates: () => () => {}, membership: () => ({ role: 'lead', root: agent }),
-      getTask: () => ({ id: 'task-1', status: 'in_progress', subject: 'Report' }),
+    agentTeams: { guardTaskUpdates: (value: typeof guard) => { guard = value; return () => {} }, membership: () => ({ role, root: agent }),
+      getTask: () => ({ id: 'task-1', status: 'in_progress', subject: 'Report', revision: 2, description: 'Saved report', writeScopes: [] }),
       listMembers: () => [{ name: 'ravi', id: 'ravi-session' }, { name: 'other', id: 'other-session' }] },
     agents: { get: () => undefined }, sessions: { flush }, schedule: { ensure },
     sessionPersistence: { open: async () => ({ read: async () => ({ events: producerEvents }), close: async () => {} }) },
   } as unknown as Context
   apply(ctx)
   const execute = (args: Record<string, unknown>) => tool!.execute(args, { agent, signal: new AbortController().signal } as never)
-  return { execute, append, flush, ensure, contract, events }
+  return { execute, append, flush, ensure, contract, events, complete: () => guard(agent, { action: 'complete', taskId: 'task-1', expectedRevision: 2 }), setRole: (value: string) => { role = value } }
 }
 describe('native HQ durable receipt replay', () => {
+  it('records Runtime decisions, preserves acceptance after advisory, and rejects stale inputs or teammates', async () => {
+    const f = mount()
+    const inspected = await f.execute({ action: 'inspect', task_id: 'task-1' }) as { evidence_hash: string; task_revision: number }
+    const input = { action: 'decide', task_id: 'task-1', decision: 'accepted', rationale: 'The saved report satisfies the contract.', task_revision: inspected.task_revision, evidence_hash: inspected.evidence_hash }
+    expect(f.complete()).toBeTypeOf('string')
+    await expect(f.execute({ ...input, evidence_hash: 'stale' })).rejects.toThrow('hq_review_evidence_changed')
+    await expect(f.execute({ ...input, task_revision: 1 })).rejects.toThrow('hq_review_task_changed')
+    await f.execute(input)
+    expect(f.complete()).toBeUndefined()
+    f.events.push({ type: 'hivemind/hq-task-review', data: { taskId: 'task-1', reviewer: 'jev', status: 'uncertain' } } as SessionEvent)
+    expect(f.complete()).toBeUndefined()
+    await f.execute({ ...input, decision: 'needs_changes', rationale: 'The requested source citation is missing.' })
+    expect(f.complete()).toBeTypeOf('string')
+    f.setRole('teammate')
+    await expect(f.execute(input)).rejects.toThrow('hq_lead_required')
+  })
   it('reuses reordered cold artifact links while still checkpointing', async () => {
     const fixture = mount()
     await fixture.execute({ action: 'artifacts', task_id: 'task-1', producer: 'ravi', artifact_ids: ['report'] })

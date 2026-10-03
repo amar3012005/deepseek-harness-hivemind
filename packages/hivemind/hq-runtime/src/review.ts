@@ -6,7 +6,9 @@ export interface HqTaskReview {
   readonly taskRevision: number
   readonly artifactIds: readonly string[]
   readonly inputHash: string
-  readonly status: 'accepted' | 'uncertain'
+  readonly status: 'accepted' | 'uncertain' | 'needs_changes'
+  readonly reviewer?: 'runtime' | 'jev'
+  readonly rationale?: string
   readonly probabilities: readonly number[]
   readonly model: string
 }
@@ -186,4 +188,15 @@ export function savedSourceEvidence(
     }
   }
   return [...sources.values()].slice(-12)
+}
+
+/** Runtime's explicit decision is evidence-bound; advisory model scores never authorize completion. */
+export function runtimeReviewDecision(input: { decision?: string; rationale?: string; task_revision?: number; evidence_hash?: string }, current: { revision: number; inputHash: string }): Pick<HqTaskReview, 'status' | 'reviewer' | 'rationale' | 'model' | 'probabilities'> {
+  if (input.task_revision !== current.revision) throw new Error('hq_review_task_changed')
+  if (input.evidence_hash !== current.inputHash) throw new Error('hq_review_evidence_changed')
+  if (!['accepted', 'needs_changes'].includes(input.decision ?? '') || typeof input.rationale !== 'string' || !input.rationale.trim() || input.rationale.length > 4000) throw new Error('hq_runtime_review_decision_required')
+  return { status: input.decision as 'accepted' | 'needs_changes', reviewer: 'runtime', rationale: input.rationale.trim(), model: 'runtime', probabilities: [] }
+}
+export function runtimeReviewAccepts(review: HqTaskReview | undefined, revision: number, artifactIds: readonly string[]): boolean {
+  return review?.reviewer === 'runtime' && review.status === 'accepted' && review.taskRevision === revision && JSON.stringify(review.artifactIds) === JSON.stringify(artifactIds)
 }

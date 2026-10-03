@@ -84,3 +84,16 @@ omitted count.
 
 - Existing task-specific child assignments remain frozen and require explicit receipt reconciliation before transfer; pending unassigned plans can move to persistent rooms automatically.
 - Controlled fixtures prove native delivery and receipt enforcement; research quality still requires reviewing each actual deliverable.
+
+## Runtime submission review
+
+For contracted internal tasks, Runtime uses `inspect` to read saved producer
+artifacts, private learning and returned-message receipts. It then records a
+`decide` action with `accepted` or `needs_changes`, an evidence-based rationale,
+and the exact inspected task revision and evidence hash. Changed evidence or
+revision requires a fresh inspection. Native Team completion remains guarded by
+that explicit current-revision Runtime acceptance and exact artifact identities.
+Jev `review` is an optional advisory opinion; its scores neither grant completion
+nor override Runtime’s decision. Existing Jev records remain readable and are not
+converted into Runtime acceptance. Permission and write-approval rules remain
+independent of review.

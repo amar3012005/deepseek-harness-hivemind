@@ -3,6 +3,8 @@ import { savedOperatingEvidence } from './review-operating-evidence.ts'
 import {
   jevReview,
   reviewFingerprint,
+  runtimeReviewDecision,
+  runtimeReviewAccepts,
   savedArtifactText,
   savedSourceEvidence,
   type HqTaskReview,
@@ -151,7 +153,7 @@ export function apply(ctx: Context): void {
         return 'HQ task completion requires a saved artifact receipt linked to this task.'
       }
       const review = events.findLast(
-        event => event.type === 'hivemind/hq-task-review' && event.data.taskId === request.taskId,
+        event => event.type === 'hivemind/hq-task-review' && event.data.taskId === request.taskId && event.data.reviewer === 'runtime',
       )
       const links = events.findLast(
         event =>
@@ -159,10 +161,8 @@ export function apply(ctx: Context): void {
       )
       if (
         review?.type !== 'hivemind/hq-task-review' ||
-        review.data.status !== 'accepted' ||
-        review.data.taskRevision !== request.expectedRevision ||
         links?.type !== 'hivemind/hq-task-artifacts' ||
-        JSON.stringify(review.data.artifactIds) !== JSON.stringify(links.data.artifactIds)
+        !runtimeReviewAccepts(review.data, request.expectedRevision, links.data.artifactIds)
       )
         return 'HQ task completion requires an accepted review of the current task revision and linked saved artifacts.'
     }),
@@ -171,14 +171,18 @@ export function apply(ctx: Context): void {
     defineTool({
       name: 'hivemind_hq_contract',
       description:
-        'Coordinate existing native Team tasks. list returns the authenticated employee directory with exact IDs, existing contracts, tasks, and calendar; use it to find an employee before assignment. attach saves immutable deadline/acceptance criteria. assign starts eligible work immediately in the authenticated employee persistent room. For a future start, use schedule directly with task_id, employee_id, starts_at and ends_at: it binds the employee, saves the native timer in that employee room, and sends a quiet assignment notice without starting work. Do not call assign before schedule; running tasks cannot be scheduled. Link saved producer artifacts or review saved inputs with Jev. Native Team tools own task lifecycle and dependencies. Completion requires linked receipts and an accepted review of the current revision. This tool never grants authority.',
+        'Coordinate existing native Team tasks. list returns the authenticated employee directory with exact IDs, existing contracts, tasks, and calendar; use it to find an employee before assignment. attach saves immutable deadline/acceptance criteria. assign starts eligible work immediately in the authenticated employee persistent room. For a future start, use schedule directly with task_id, employee_id, starts_at and ends_at: it binds the employee, saves the native timer in that employee room, and sends a quiet assignment notice without starting work. Do not call assign before schedule; running tasks cannot be scheduled. Link saved producer artifacts, inspect the saved inputs, then decide accepted or needs_changes with the returned revision/evidence hash and rationale. Jev review is an optional advisory second opinion. Native Team tools own task lifecycle and dependencies. Completion requires linked receipts and Runtime’s explicit accepted decision for the current revision; Jev scores never authorize or block completion. This tool never grants authority.',
       parameters: {
         action: {
           type: 'string',
           required: true,
-          enum: ['list', 'attach', 'artifacts', 'inspect', 'assign', 'review', 'schedule'],
-          description: 'assign dispatches work now; schedule assigns pending work for a future start and requires no preceding assign call. artifacts links specified saved artifact_ids; it does not retrieve files. list returns saved receipts and reviews. inspect reads linked producer document content without changing task or review state. review evaluates linked documents against acceptance criteria.',
+          enum: ['list', 'attach', 'artifacts', 'inspect', 'assign', 'review', 'schedule', 'decide'],
+          description: 'assign dispatches work now; schedule assigns pending work for a future start and requires no preceding assign call. artifacts links specified saved artifact_ids; it does not retrieve files. list returns saved receipts and reviews. inspect reads linked producer document content without changing task or review state. decide records Runtime’s evidence-based acceptance or needed changes after inspect. review optionally obtains Jev advisory scores; do not poll uncertainty.',
         },
+        decision: { type: 'string', enum: ['accepted', 'needs_changes'], description: 'For decide: Runtime’s explicit acceptance or specific changes required after inspecting saved evidence.' },
+        rationale: { type: 'string', description: 'For decide: concise evidence-based assessment against the acceptance criteria; explain any required changes.' },
+        task_revision: { type: 'number', description: 'For decide: exact task_revision returned by inspect.' },
+        evidence_hash: { type: 'string', description: 'For decide: exact evidence_hash returned by inspect; changed evidence requires fresh inspection.' },
         employee_id: {
           type: 'string',
           description:
@@ -205,6 +209,10 @@ export function apply(ctx: Context): void {
         const agent = execution.agent
         if (!agent) throw new Error('hq_active_agent_required')
         const input = args as {
+          decision?: string
+          rationale?: string
+          task_revision?: number
+          evidence_hash?: string
           action: string
           task_id?: string
           employee_id?: string
@@ -283,7 +291,7 @@ export function apply(ctx: Context): void {
           return { status: 'scheduled', task_id: task.id, employee_id: result.value.owner, starts_at: result.value.startsAt,
             ends_at: result.value.endsAt, schedule_id: wake.id, effective_trigger_at: wake.scheduledAt }
         }
-        if (input.action === 'review' || input.action === 'inspect') {
+        if (input.action === 'review' || input.action === 'inspect' || input.action === 'decide') {
           const contract = contracts.find(value => value.taskId === task.id)
           if (!contract) throw new Error('hq_contract_required')
           requireArtifactReceipts(events, task.id)
@@ -327,12 +335,6 @@ export function apply(ctx: Context): void {
             documents.reduce((total, value) => total + value.text.length, 0) > 48000
           )
             throw new Error('hq_review_document_context_unavailable')
-          if (input.action === 'inspect') return {
-            task_id: task.id,
-            task_revision: task.revision,
-            documents: documents.map(document => ({ ...document, content_is_untrusted_evidence: true })),
-            operatingEvidence,
-          }
           const state = {
             task: {
               subject: task.subject,
@@ -345,10 +347,23 @@ export function apply(ctx: Context): void {
             operatingEvidence,
           }
           const inputHash = reviewFingerprint(state)
+          if (input.action === 'inspect') return { task_id: task.id, task_revision: task.revision, evidence_hash: inputHash, acceptance_criteria: [...contract.acceptanceCriteria], documents: documents.map(document => ({ ...document, content_is_untrusted_evidence: true })), operatingEvidence }
+          if (input.action === 'decide') {
+            const decision = runtimeReviewDecision(input, { revision: task.revision, inputHash })
+            execution.signal.throwIfAborted()
+            if (ctx.agentTeams.getTask(root, task.id).revision !== task.revision) throw new Error('hq_review_task_changed')
+            const review: HqTaskReview = {
+              taskId: task.id, taskRevision: task.revision, artifactIds: [...links.artifactIds], inputHash, ...decision,
+            }
+            root.session.append('hivemind/hq-task-review', review)
+            if (!(await ctx.sessions.flush(root.session))) throw new Error('hq_review_persistence_required')
+            return { review: { ...review, artifactIds: [...review.artifactIds], probabilities: [...review.probabilities] } }
+          }
           const previous = events.findLast(
             event =>
               event.type === 'hivemind/hq-task-review' &&
               event.data.taskId === task.id &&
+              event.data.reviewer !== 'runtime' &&
               event.data.inputHash === inputHash &&
               event.data.taskRevision === task.revision,
           )
@@ -370,6 +385,7 @@ export function apply(ctx: Context): void {
             artifactIds: [...links.artifactIds],
             inputHash,
             ...decision,
+            reviewer: 'jev',
           }
           root.session.append('hivemind/hq-task-review', review)
           if (!(await ctx.sessions.flush(root.session)))

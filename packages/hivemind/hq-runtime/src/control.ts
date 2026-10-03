@@ -222,10 +222,12 @@ export class HqControl extends TypertRemoteService {
                 (event.data.taskRevision === task.revision ||
                   (task.status === 'completed' && event.data.taskRevision === task.revision - 1)),
             )
-            .map(event =>
-              event.type === 'hivemind/hq-task-review' ? event.data.status : undefined,
-            )
-            .at(-1),
+            .toReversed()
+            // Runtime decisions govern status; optional advisory opinions remain secondary.
+            .toSorted((a, b) => Number(b.type === 'hivemind/hq-task-review' && b.data.reviewer === 'runtime')
+              - Number(a.type === 'hivemind/hq-task-review' && a.data.reviewer === 'runtime'))
+            .map(event => event.type === 'hivemind/hq-task-review' ? event.data.status : undefined)
+            .at(0),
           completedAt: events
             .filter(
               event =>
