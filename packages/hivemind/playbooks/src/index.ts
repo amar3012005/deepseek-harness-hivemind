@@ -206,6 +206,7 @@ declare module '@deepseek-ai/dsh-session/types' {
 }
 
 const CORE_TOOLS = [
+  'skill',
   'ask_user_question',
   'hivemind_capabilities',
   'hivemind_meta',
@@ -967,7 +968,7 @@ export function apply(ctx: Context, config: Partial<Config> = {}): void {
       // Conversely, retain local names which were not in the original
       // assembly. They are the progressively revealed native schemas and
       // must remain both executable and visible on the next model step.
-      const localDynamicSchemas = agent.ctx.tools.schemas().filter(
+      const localDynamicSchemas = agent.ctx.tools.schemas(agent).filter(
         tool => !state.availableTools.has(tool.name) && !state.localBaseTools.has(tool.name),
       )
       const promptDynamicSchemas = assembled.tools.filter(
