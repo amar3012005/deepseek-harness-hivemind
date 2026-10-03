@@ -1,6 +1,7 @@
 /** Read-only progressive investigation cards over the native durable room log. */
 import type { PropsRenderSlots } from '@deepseek-ai/dsh-client-ui-slots'
-import { useSyncExternalStore } from 'react'
+import { useState, useSyncExternalStore } from 'react'
+import { DisclosureRow, IconBrowseOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { SessionEventWindow } from '@deepseek-ai/dsh-api-session-controller/client'
 import { EmployeeAvatar } from './HyperagentEmployee.tsx'
 import css from './RuntimeAwakening.module.css'
@@ -29,43 +30,60 @@ export function RuntimeAwakening(
     & Pick<PropsRenderSlots<'hivemind.runtime.plan'>, 'renderSlot'>,
 ) {
   const window = useSyncExternalStore(listener => events.subscribe(listener), () => events.getSnapshot())
+  const previous = new Map<string, string>()
+  const seenCards = new Set<string>()
   const checkpoints = window.entries.flatMap((entry) => {
     if (entry.type !== 'event' || String(entry.event.type) !== 'hivemind/hq-awakening-checkpoint') return []
     const item = entry.event.data as unknown as Checkpoint
-    return item.turn === turn && (checkpointSeq === undefined || entry.event.seq === checkpointSeq)
-      ? [{ ...item, seq: entry.event.seq }] : []
+    if (item.turn !== turn) return []
+    const fingerprint = JSON.stringify([item.summary, item.blocked, item.cards])
+    const unchanged = previous.get(item.stage) === fingerprint
+    previous.set(item.stage, fingerprint)
+    const cards = item.cards.filter((card) => {
+      const key = JSON.stringify(card)
+      if (seenCards.has(key)) return false
+      seenCards.add(key)
+      return true
+    })
+    return !unchanged && (checkpointSeq === undefined || entry.event.seq === checkpointSeq)
+      ? [{ ...item, cards, seq: entry.event.seq }] : []
   })
   const invitationSeq = window.entries.find(entry => entry.type === 'event'
     && String(entry.event.type) === 'hivemind/hq-awakening-checkpoint'
     && (() => { const data = entry.event.data as unknown as Checkpoint; return data.turn === turn && data.stage === 'conversation' && !data.blocked })())
   const firstInvitation = invitationSeq?.type === 'event' ? invitationSeq.event.seq : undefined
   if (!checkpoints.length) return null
-  const stages = checkpoints.filter((item, index) => checkpoints.findIndex(other => other.stage === item.stage) === index)
-    .map((item) => {
-      const entries = checkpoints.filter(other => other.stage === item.stage)
-      const latest = entries.at(-1) ?? item
-      const cards = entries.flatMap(other => other.cards)
-        .filter((card, index, all) => all.findLastIndex(other =>
-          other.title === card.title && other.reference === card.reference) === index)
-      const redundant = cards.length === 1 && cards[0]?.detail === latest.summary
-        && !cards[0]?.image && !cards[0]?.employeeId && !cards[0]?.reference
-      return { ...latest, cards: redundant ? [] : cards }
-    })
-  // Evidence follows its saved order, including revised or skipped plan steps.
-  stages.sort((a, b) => a.seq - b.seq)
+  const stages = checkpoints.map((item) => {
+    const redundant = item.cards.length === 1 && item.cards[0]?.detail === item.summary
+      && !item.cards[0]?.image && !item.cards[0]?.employeeId && !item.cards[0]?.reference
+    return { ...item, cards: redundant ? [] : item.cards }
+  })
   return <section className={css.root} aria-label="Runtime investigation">
     {stages.map(item => <section key={item.seq} className={css.stage}>
       <header><strong>{titles[item.stage] ?? item.stage}</strong>{item.blocked && <span>Needs attention</span>}</header>
       <p>{item.summary}</p>
-      {item.cards.length > 0 && <div className={css.cards} role="list" aria-label={titles[item.stage]}>
-        {item.cards.map((card, index) => <article key={`${item.seq}-${index}`} className={css.card} role="listitem">
-          {card.employeeId && <EmployeeAvatar employee={{ id: card.employeeId, name: card.title, role: card.role ?? 'communicator', ...(card.avatarUrl ? { avatarUrl: card.avatarUrl } : {}) }} size={52} />}
-          {card.image && <img src={card.image} alt={card.title} loading="lazy" />}
-          <strong>{card.title}</strong><p>{card.detail}</p>
-          {card.reference && <small>{card.reference}</small>}
-        </article>)}
-      </div>}
+      {item.cards.length > 0 && <CheckpointDetails cards={item.cards} />}
     </section>)}
     {stages.some(item => item.stage === 'conversation' && item.seq === firstInvitation) && renderSlot('hivemind.runtime.plan', { turn })}
   </section>
+}
+
+/** Optional receipt/persona detail uses the same native collapsed chrome as tool work. */
+function CheckpointDetails({ cards }: { cards: Checkpoint['cards'] }) {
+  const [open, setOpen] = useState(false)
+  return <>
+    {cards.filter(card => card.image).map((card, index) => <img key={index} className={css.evidenceImage}
+      src={card.image} alt={card.title} loading="lazy" />)}
+    <DisclosureRow title="Work details" icon={<IconBrowseOutline16 size={14} />} open={open}
+      expandable expandOnRowClick onToggle={() => { setOpen(value => !value) }}>
+      <div className={css.cards} role="list">
+        {cards.map((card, index) => <article key={index} className={css.card} role="listitem">
+          {card.employeeId && <EmployeeAvatar employee={{ id: card.employeeId, name: card.title,
+            role: card.role ?? 'communicator', ...(card.avatarUrl ? { avatarUrl: card.avatarUrl } : {}) }} size={32} />}
+          <strong>{card.title}</strong><p>{card.detail}</p>
+          {card.reference && <small>{card.reference}</small>}
+        </article>)}
+      </div>
+    </DisclosureRow>
+  </>
 }
