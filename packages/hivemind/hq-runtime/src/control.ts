@@ -112,7 +112,7 @@ export class HqControl extends TypertRemoteService {
     const created=await this.ctx.sessionController.create({ hyperagentRoom:'runtime' })
     const fresh=await this.ctx.sessionController.resolveAgent(created.sessionId)
     if ('error' in fresh) throw fresh.error
-    fresh.agent.session.append('hivemind/hq-public-investigation',{ enabled:true })
+    fresh.agent.session.append('hivemind/hq-public-investigation',{ enabled:false })
     if (!await this.ctx.sessions.flush(fresh.agent.session)) throw new Error('fresh_reset_room_not_persisted')
     await this.ctx.hivemindHqOwnership.claim(fresh.agent.id)
     return result

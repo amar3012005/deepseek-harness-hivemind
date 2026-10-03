@@ -9,6 +9,7 @@ import {
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { installRest, recoverRest, acknowledgeRestNotes, restBriefing, isHqLead } from './rest.ts'
 import { installAwakening, awakeningContext } from './awakening.ts'
+import { investigationExpired } from './investigation.ts'
 import { wakeBriefing } from './wake-briefing.ts'
 import { dispatchEmployee, reconcileEmployeeArtifacts } from './employee-room.ts'
 import type {} from './control.ts'
@@ -69,6 +70,14 @@ export function apply(ctx: Context): void {
   const researchMasked = new WeakSet<object>()
   const investigationMasks = new WeakMap<object, () => void>()
   ctx.effect(() => ctx.on('agent/pre-step', async ({ agent, turn, signal }, next) => {
+    // Public-only investigation is a one-turn test scope, not the employee's
+    // permanent operating identity. A later turn restores normal capabilities.
+    if (investigationExpired(agent.session.ownEvents(), turn) && isHqLead(ctx, agent)) {
+      agent.session.append('hivemind/hq-public-investigation', { enabled: false })
+      if (!await ctx.sessions.flush(agent.session)) throw new Error('hq_investigation_scope_persistence_required')
+      investigationMasks.get(agent)?.()
+      investigationMasks.delete(agent)
+    }
     const latestHuman = agent.session.snapshotEvents().findLast(event => event.type === 'user/message' && event.data.source.kind === 'user')
     const wake = latestHuman?.type === 'user/message' && /^wake\s+up\s*,?\s*chief\s*!?\s*$/iu.test(latestHuman.data.content.flatMap(block => block.type === 'text' ? [block.text] : []).join('').trim())
     if (wake && isHqLead(ctx, agent)) {
