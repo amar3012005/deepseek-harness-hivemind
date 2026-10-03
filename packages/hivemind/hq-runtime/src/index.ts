@@ -71,8 +71,6 @@ export function apply(ctx: Context): void {
   ctx.effect(() => ctx.on('agent/pre-step', async ({ agent, turn, signal }, next) => {
     const decision = await next()
     if (decision.kind === 'reject') return decision
-    const member = ctx.agentTeams.tryMembership(agent)
-    if (!member || member.role !== 'lead' || member.root !== agent) return decision
     let preset = agent.session.header.agentPreset
     for (const event of agent.session.ownEvents())
       if (event.type === 'agent-preset/selected') preset = event.data.agentPreset
@@ -96,6 +94,8 @@ export function apply(ctx: Context): void {
       // Native tools and the user goal drive investigation; existing operational records remain intact.
       return decision
     }
+    const member = ctx.agentTeams.tryMembership(agent)
+    if (!member || member.role !== 'lead' || member.root !== agent) return decision
     investigationMasks.get(agent)?.()
     investigationMasks.delete(agent)
     await recoverRest(ctx, agent, signal)
