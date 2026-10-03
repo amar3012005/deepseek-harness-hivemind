@@ -19,7 +19,7 @@ import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { ToolDefinition, ToolExecution, ToolRunContext } from '@deepseek-ai/dsh-tools'
 import type { ToolSchema } from '@deepseek-ai/dsh-llm'
 import type { Agent } from '@deepseek-ai/dsh-agent'
-import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
+import type { FileAttachmentRef, ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import type {} from '@deepseek-ai/dsh-agent'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 
@@ -43,6 +43,7 @@ declare module '@deepseek-ai/dsh-session/types' {
     /** Durable receipt for one bounded URL → title → screenshot capture. */
     'hivemind/browser-capture': {
       readonly captureId: string
+      readonly file?: FileAttachmentRef
       readonly provider: string
       readonly url: string
       readonly title?: string

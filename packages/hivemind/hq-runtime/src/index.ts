@@ -88,7 +88,7 @@ export function apply(ctx: Context): void {
           'hivemind_profile_context', 'hivemind_operating_context', 'hivemind_onboarding',
           'hivemind_hyperagent_profiles', 'hivemind_playbooks', 'hivemind_capabilities',
           'hivemind_hq_contract', 'hivemind_hq_awakening', 'hivemind_agent_message'])
-        const deny = agent.ctx.tools.schemas().map(tool => tool.name).filter(name => internal.has(name))
+        const deny = agent.ctx.tools.schemas(agent).map(tool => tool.name).filter(name => internal.has(name))
         if (deny.length) investigationMasks.set(agent, agent.ctx.tools.restrict({ deny }))
       }
       // Native tools and the user goal drive investigation; existing operational records remain intact.

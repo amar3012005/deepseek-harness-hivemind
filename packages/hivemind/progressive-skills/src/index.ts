@@ -11,7 +11,7 @@ import type {} from '@deepseek-ai/dsh-hivemind-progressive-browser'
 import { THINK_SKILLS } from './think-skills.ts'
 
 export const name = 'hivemind-progressive-skills'
-export const inject = ['tools', 'skills']
+export const inject = ['tools', 'skills', 'hivemindActionToolkits']
 
 /** Deployment-owned progressive discovery limits. */
 export interface Config { maxSearchResults: number; maxQueryChars: number }

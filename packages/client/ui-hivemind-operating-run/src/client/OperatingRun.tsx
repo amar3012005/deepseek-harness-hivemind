@@ -423,9 +423,9 @@ function artifactData(event: SessionEventLike): ArtifactData {
   const previewName = string(preview['name'])
   return {
     title: text(data['title'], 'Rendered document'),
-    path: text(data['path'], ''),
+    path: text(data['path'], String(event.type) === 'hivemind/browser-capture' ? text(file?.['name'], 'Website screenshot.png') : ''),
     provider: text(data['provider'], ''),
-    mediaType: text(data['mediaType'], 'application/pdf'),
+    mediaType: text(data['mediaType'], String(event.type) === 'hivemind/browser-capture' ? 'image/png' : 'application/pdf'),
     pageSize: string(data['pageSize']) === 'Letter' ? 'Letter' : 'A4',
     pageCount: typeof data['pageCount'] === 'number' ? data['pageCount'] : 0,
     pdfBytes: typeof data['pdfBytes'] === 'number' ? data['pdfBytes'] : Number(record(data['file'])?.['bytes'] ?? 0),
@@ -757,8 +757,8 @@ const artifactDefinition: ConversationNodeDefinition<ArtifactData> = {
   kind: 'hivemind-artifact',
   target: 'chat',
   match: event =>
-    event.type === 'hivemind/artifact-created' || event.type === 'hivemind/generation-created'
-      ? { id: string(record(event.data)?.['artifactId']) ?? String(event.seq), role: 'start' }
+    event.type === 'hivemind/artifact-created' || event.type === 'hivemind/generation-created' || String(event.type) === 'hivemind/browser-capture'
+      ? { id: string(record(event.data)?.['artifactId'] ?? record(event.data)?.['captureId']) ?? String(event.seq), role: 'start' }
       : null,
   start: (_context, match) => artifactData(match.event),
   update: context => context.state,

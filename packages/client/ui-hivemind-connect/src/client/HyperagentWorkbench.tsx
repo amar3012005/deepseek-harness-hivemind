@@ -60,6 +60,7 @@ export function workbenchSnapshot(window: SessionEventWindow): Workbench {
         file: file(data.pdf ?? data.file), preview: image(data.preview) })
     } else if (type === 'hivemind/browser-capture') {
       if (typeof data.captureId !== 'string' || typeof data.url !== 'string') continue
+      if (image(data.preview)) artifacts.push({ id: data.captureId, title: typeof data.title === 'string' ? data.title : 'Website screenshot', path: typeof object(data.file)?.name === 'string' ? String(object(data.file)?.name) : 'Website screenshot.png', mediaType: 'image/png', file: file(data.file), preview: image(data.preview) })
       captures.push({ id: data.captureId, url: data.url, title: typeof data.title === 'string' ? data.title : data.url,
         ...(typeof data.status === 'number' ? { status: data.status } : {}), preview: image(data.preview) })
     } else if (type === 'hivemind/research-receipt') {

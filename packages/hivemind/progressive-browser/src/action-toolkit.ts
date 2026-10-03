@@ -63,6 +63,11 @@ export function mountActionToolkits(ctx: Context, config: ActionConfig): void {
             if (!store) throw new Error('No native attachment store is mounted')
             const [preview] = await store.saveImages([{ data: result, mediaType: 'image/png', name: String(args.title ?? 'Website screenshot') + '.png' }])
             if (!preview) throw new Error('Screenshot storage did not return a receipt')
+            const file = await store.saveFile({ data: result, name: preview.name ?? 'Website screenshot.png' })
+            execution.agent?.session.append('hivemind/browser-capture', {
+              captureId: preview.attachmentId, provider: 'cloudflare-action-toolkit',
+              url: String(args.url), title: String(args.title ?? 'Website screenshot'), preview, file,
+            })
             return { id: preview.attachmentId, url: args.url, title: args.title ?? 'Website screenshot', contentType: 'image/png', preview: preview as unknown as JsonValue }
           }
           return result
