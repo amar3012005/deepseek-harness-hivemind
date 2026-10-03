@@ -13,6 +13,9 @@ type CommandNodeViewProps = ChatNodeViewProps<'command'> & PropsRenderSlots<'con
 export const CommandNodeView = memo(function CommandNodeView({ node, renderSlot, t }: CommandNodeViewProps) {
   const command = node.data
   const owner = useMemo<CommandRowOwnerProps>(() => ({ node: command }), [command])
+  // A settled identity acknowledgement is room metadata, not a conversation message.
+  if (command.name === 'hivemind-employee' && command.outcome?.kind === 'success'
+    && typeof location !== 'undefined' && location.pathname.includes('/employee/harness')) return null
   return (
     <div className={css.callRow}>
       {renderSlot('conversation.chat.commandview', owner, {

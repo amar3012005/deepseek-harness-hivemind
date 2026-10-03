@@ -1,5 +1,5 @@
 .root { width: 100%; min-width: 0; display: grid; gap: 16px; margin: 12px 0; }
-.stage { min-width: 0; padding: 16px; border: 1px solid color-mix(in srgb, currentColor 12%, transparent); border-radius: 16px; }
+.stage { box-sizing: border-box; min-width: 0; width: fit-content; max-width: 100%; padding: 16px 18px; background: color-mix(in srgb, currentColor 5%, transparent); border-radius: 18px 18px 18px 4px; }
 .stage header { display: flex; justify-content: space-between; gap: 12px; align-items: center; }
 .stage header span { font-size: 12px; opacity: .65; }
 .stage > p { margin: 8px 0; line-height: 1.55; }

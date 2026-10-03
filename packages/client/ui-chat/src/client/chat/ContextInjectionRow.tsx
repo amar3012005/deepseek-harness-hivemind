@@ -38,6 +38,23 @@ export function ContextInjectionRow({ content, source, provenance, form, t }: Co
   // the opaque body, and the marker must say what the row actually shows.
   const { rendered, summary, body } = contextBody(form, { content, source, t })
 
+  // Team delivery stores the complete message envelope, not the truncated notice summary.
+  if (agentMessage) {
+    const text = content.filter(block => block.type === 'text').map(block => block.text).join('')
+    let message: { senderName?: unknown; text?: unknown } | undefined
+    try { message = JSON.parse(text) as typeof message } catch { /* Older records retain the existing disclosure. */ }
+    if (typeof message?.text === 'string' && typeof message.senderName === 'string') {
+      return <article className={css.messageBubble} aria-label={`Message from ${message.senderName}`}>
+        <strong className={css.sender}>{message.senderName}</strong>
+        <p className={css.messageText}>{message.text}</p>
+        <details className={css.messageDetails}>
+          <summary>Work details</summary>
+          <div className={css.body} data-context-injection-body data-context-form={rendered ?? undefined}>{body}</div>
+        </details>
+      </article>
+    }
+  }
+
   return (
     <DisclosureRow
       className={css.root}

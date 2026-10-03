@@ -62,3 +62,10 @@
   /* Figma 10:2482 code text: the form bodies inherit it from the scrollport. */
   font: 400 11px/16px var(--ds-font-family-code);
 }
+
+/* Incoming teammate messages share the quiet, left-aligned conversation treatment. */
+.messageBubble { box-sizing: border-box; width: fit-content; max-width: min(90%, 680px); padding: 14px 18px; border-radius: 18px 18px 18px 4px; background: color-mix(in srgb, currentColor 5%, transparent); color: var(--dsw-alias-label-primary); }
+.sender { display: block; font-size: 13px; margin-bottom: 6px; }
+.messageText { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.6; }
+.messageDetails { margin-top: 10px; font-size: 12px; color: var(--dsw-alias-label-secondary); }
+.messageDetails summary { cursor: pointer; }
