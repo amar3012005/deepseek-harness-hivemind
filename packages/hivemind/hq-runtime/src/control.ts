@@ -114,6 +114,10 @@ export class HqControl extends TypertRemoteService {
     const events = root.session.snapshotEvents()
     const contracts = taskContracts(events)
     const calendar = calendarItems(events)
+    const employeeNames = new Map(events.flatMap(event =>
+      event.type === 'hivemind/hq-awakening-checkpoint'
+        ? event.data.cards.filter(card => card.employeeId !== undefined)
+          .map(card => [card.employeeId, card.title] as const) : []))
     const members = this.ctx.agentTeams.listMembers(root)
     const catalog = await this.ctx.schedule.catalog()
     return {
@@ -126,7 +130,7 @@ export class HqControl extends TypertRemoteService {
             event.type === 'hivemind/hq-task-artifacts' &&
             (event.data as TaskArtifactLinks).taskId === task.id,
         )?.data as TaskArtifactLinks | undefined
-        const planning = calendar.find(item => item.taskId === task.id)
+        const planning = calendar.find(item => item.kind === 'assignment' && item.taskId === task.id)
         const binding =
           planning &&
           events.findLast(
@@ -141,7 +145,7 @@ export class HqControl extends TypertRemoteService {
           title: task.subject,
           objective: task.description,
           status: task.status,
-          owner: task.ownerName ?? 'Unassigned',
+          owner: task.ownerName ?? employeeNames.get(planning?.owner) ?? planning?.owner ?? 'Unassigned',
           sessionId: members.find(member => member.name === task.ownerName)?.id,
           dependencies: [...task.blockedBy],
           authority: [...task.writeScopes],
