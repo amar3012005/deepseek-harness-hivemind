@@ -55,6 +55,7 @@ export class HqControl extends TypertRemoteService {
   static inject = [
     'agents',
     'agentTeams',
+    'agentPresets',
     'sessions',
     'sessionPersistence',
     'hivemindHqOwnership',

@@ -60,7 +60,8 @@ async function authenticatedRoot(ctx: Context, id: string, signal: AbortSignal):
  */
 export async function prepareEmployee(ctx: Context, root: Agent, taskId: string, employeeId: string, signal: AbortSignal,
 ): Promise<{ employeeId: string; memberName: string; sessionId: string; personaSha256: string }> {
-  const service = root.ctx.get('hivemindEmployeeDirectory')
+  const service = ctx.get('agentPresets')?.serviceFor(root, 'hivemindEmployeeDirectory')
+    ?? ctx.get('hivemindEmployeeDirectory')
   if (!service) throw new Error('hq_employee_directory_required')
   const directory = await service.profiles(signal)
   const raw = directory.profiles.find(profile => profile['id'] === employeeId)

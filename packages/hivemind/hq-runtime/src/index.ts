@@ -35,6 +35,7 @@ export type { HqModeState } from './mode.ts'
 export const inject = [
   'tools',
   'agentTeams',
+  'agentPresets',
   'sessions',
   'sessionPersistence',
   'agents',

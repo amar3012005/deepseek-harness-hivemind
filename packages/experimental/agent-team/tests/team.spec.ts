@@ -76,6 +76,11 @@ async function setup(
   await ctx.plugin(SubagentService)
   await ctx.plugin(SubagentSpawn, { providerName: 'spawn' })
   await ctx.plugin(SubagentFork, { providerName: 'fork' })
+  ctx.provide('agentPresets', {
+    composedPreset: () => undefined,
+    composeFrom: () => undefined,
+    serviceFor: (_agent: Agent, name: string & keyof Context) => ctx.get(name),
+  } as never)
   const teamFiber = await ctx.plugin(TeamService, config)
   const adapter = new MockAdapter(script)
   ctx.llm.registerAdapter(['mock'], adapter)

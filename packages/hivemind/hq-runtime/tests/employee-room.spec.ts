@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { Context } from '@deepseek-ai/cordis'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
-import { allowsEmployeeWork, workReference } from '../src/employee-room.ts'
+import { allowsEmployeeWork, prepareEmployee, workReference } from '../src/employee-room.ts'
 
 function fixture() {
   const events = [
@@ -20,6 +20,15 @@ function fixture() {
 }
 const signal = new AbortController().signal
 describe('HQ persistent employee delivery', () => {
+  it('resolves the exact directory from the root preset isolate realm', async () => {
+    const profiles = vi.fn(async () => ({ profiles: [] }))
+    const serviceFor = vi.fn(() => ({ profiles }))
+    const root = { id: 'runtime-room', ctx: { get: () => undefined } } as unknown as Agent
+    const ctx = { get: (name: string) => name === 'agentPresets' ? { serviceFor } : undefined } as unknown as Context
+    await expect(prepareEmployee(ctx, root, 'task-1', 'employee', signal)).rejects.toThrow('hq_employee_not_authorized')
+    expect(serviceFor).toHaveBeenCalledWith(root, 'hivemindEmployeeDirectory')
+    expect(profiles).toHaveBeenCalledWith(signal)
+  })
   it('recognizes the native JSON reminder framing and rejects malformed references', () => {
     const prompt = 'HQ_EMPLOYEE_ASSIGNMENT={"rootId":"runtime","taskId":"task-1","itemId":"planning","revision":2}\nPerform saved work.'
     expect(workReference(`reminder_prompt_json: ${JSON.stringify(prompt)}`)).toEqual({ rootId: 'runtime', taskId: 'task-1', itemId: 'planning', revision: 2 })
