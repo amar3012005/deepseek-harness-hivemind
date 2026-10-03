@@ -49,6 +49,17 @@ function fixture() {
 }
 afterEach(() => vi.useRealTimers())
 describe('native Runtime voluntary rest', () => {
+  it('confirms a reused handoff in the current turn without duplicating its wake', async () => {
+    const f = fixture()
+    await f.execute()
+    f.agent.session.append('turn/start', { turn: 2 } as never)
+    const start = f.events.at(-1)!.seq
+    await f.execute()
+    expect(f.events.findLast(event => event.type === 'hivemind/hq-rest-confirmed')?.seq).toBeGreaterThan(start)
+    expect(f.events.filter(event => event.type === 'hivemind/hq-rest-intent')).toHaveLength(1)
+    expect(f.ensure).toHaveBeenCalledTimes(1)
+  })
+
   it('checkpoints an exact host snapshot and one wake, replays after original time passes', async () => {
     const f = fixture()
     expect(await f.execute()).toMatchObject({ status: 'rest_ready', autonomyPaused: true })

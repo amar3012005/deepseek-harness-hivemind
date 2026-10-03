@@ -31,7 +31,7 @@ const TURN_PROCESS_INDEPENDENT_KIND_LIST = [
 
 /** Chat Node kinds that remain independent of a Turn's process disclosure. */
 export const TURN_PROCESS_INDEPENDENT_KINDS: ReadonlySet<string> = new Set(
-  [...TURN_PROCESS_INDEPENDENT_KIND_LIST, 'hivemind-artifact', 'hivemind-media-workflow'],
+  [...TURN_PROCESS_INDEPENDENT_KIND_LIST, 'hivemind-artifact', 'hivemind-media-workflow', 'runtime-awakening-stage'],
 )
 
 /**
