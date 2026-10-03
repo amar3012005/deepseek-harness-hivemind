@@ -47,7 +47,7 @@ export function mountActionToolkits(ctx: Context, config: ActionConfig): void {
       const definition: ToolDefinition = {
         name: tool.name, description: tool.description, parameters: tool.parameters,
         output: {
-          schema: { type: 'object', additionalProperties: true, properties: {} },
+          schema: {},
           render: (_args, value) => [
             { type: 'text', text: typeof value === 'string' ? value : JSON.stringify(value) },
             ...(value && typeof value === 'object' && !Array.isArray(value) && value.preview ? [{ type: 'image' as const, attachment: value.preview as unknown as ImageAttachmentRef }] : []),
