@@ -125,6 +125,7 @@
           hivemindEmployeeDirectory: true
           hivemindOperatingRuns: true
           hivemindArtifactRenderer: true
+          hivemindActionToolkits: true
       - id: hivemind-runtime
         name: '@deepseek-ai/dsh-hivemind-runtime'
         config:
