@@ -190,6 +190,7 @@ export function apply(ctx: ClientContext): void {
   ctx.inject(['uiConversation'], (scope: ClientContext) => {
     scope.effect(() => scope.uiConversation.events.register(awakeningStage))
     scope.effect(() => scope.uiConversation.events.register(scheduledWork))
+    scope.effect(() => scope.uiConversation.events.register(websiteRead))
     scope.effect(
       () => scope.uiConversation.configureWorkspaceRequirement(false),
       'ui-hivemind-connect: filesystem-free conversation',
@@ -560,15 +561,14 @@ export function apply(ctx: ClientContext): void {
       name: 'conversation.chat.workUpdates', id: 'hivemind-current-activity', locale: NS,
     }, ({ turn, sessionId, t }) => window.location.pathname.includes('/employee/harness')
       ? createElement(RuntimeActivity, { turn, events: employeeEvents(sessionId), t }) : null))
-    ctx.uiConversation.events.register(websiteRead)
     ctx.slots.inject('conversation.chat.node', () => ctx.slots.register({
       name: 'conversation.chat.node', key: 'hivemind-website-source', locale: NS,
-      inject: sessionId => ({ open: (sourceUrl: string) => { ctx.sidebarRight.openTabIn(sessionId, 'hivemind-workbench-preview', { params: { sourceUrl } }) } }),
+      inject: sessionId => ({ open: (sourceUrl: string) => { rightSidebar?.openTabIn(sessionId, 'hivemind-workbench-preview', { params: { sourceUrl } }) } }),
     }, ({ node, open, t }) => createElement(WebsiteSourceCard, { sources: node.data.sources, open, t })))
-    ctx.slots.inject('conversation.session.header.utilities', () => ctx.slots.register({
-      name: 'conversation.session.header.utilities', id: 'hivemind-source-preview-updates',
+    ctx.slots.inject('conversation.chat.workUpdates', () => ctx.slots.register({
+      name: 'conversation.chat.workUpdates', id: 'hivemind-source-preview-updates',
       inject: sessionId => ({ events: employeeEvents(sessionId), open: (sourceUrl: string) => {
-        ctx.sidebarRight.openTabIn(sessionId, 'hivemind-workbench-preview', { params: { sourceUrl } })
+        rightSidebar?.openTabIn(sessionId, 'hivemind-workbench-preview', { params: { sourceUrl } })
       } }),
     }, WebsitePreviewUpdates))
     ctx.slots.inject('conversation.chat.node', () => ctx.slots.register({

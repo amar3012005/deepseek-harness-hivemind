@@ -22,6 +22,26 @@ afterEach(() => {
 })
 
 describe('HIVE-MIND connection UI', () => {
+  it('registers website receipts only in the native injected conversation scope', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SlotRegistry).await()
+    ctx.provide('locale', { register: () => () => {} } as never)
+    ctx.provide('sessions', { list: {
+      getSnapshot: () => ({ current: undefined, ids: [], byId: {}, phase: 'ready' }), subscribe: () => () => {},
+    } } as never)
+    ctx.provide('remote', { $on: () => () => {} } as never)
+    ctx.provide('uiSession', { registerPendingInteraction: () => () => () => {} } as never)
+    ctx.provide('conversation', {} as never)
+    const register = vi.fn(() => () => {})
+    ctx.provide('uiConversation', {
+      events: { register }, configureWorkspaceRequirement: () => () => {}, configureSidebarViewNavigation: () => () => {},
+    } as never)
+    const fiber = ctx.plugin({ inject: [...inject], apply })
+    await fiber.await()
+    await waitFor(() => expect(register).toHaveBeenCalledWith(expect.objectContaining({ kind: 'hivemind-website-source' })))
+    await fiber.dispose()
+  })
+
   it('activates before the generic question fallback without waiting on optional conversation services', () => {
     expect(inject).toEqual(['sessions', 'remote', 'uiSession', 'slots', 'locale'])
   })
@@ -204,6 +224,7 @@ describe('HIVE-MIND connection UI', () => {
     ctx.provide('sessions', { list: { getSnapshot: () => ({ current: undefined, ids: [], byId: {}, phase: 'ready' }), subscribe: () => () => {} }, create: vi.fn(async () => 'session-1') } as never)
     ctx.provide('remote', { $on: () => () => {}, session: {} } as never)
     ctx.provide('remote.session', {} as never)
+    ctx.provide('remote.schedule', {} as never)
     ctx.provide('uiConversation', {} as never)
     ctx.provide('uiSession', { registerPendingInteraction: () => () => () => {} } as never)
     const registerTab = vi.fn(() => () => {})
