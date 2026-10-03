@@ -23,6 +23,8 @@ it('registers a scoped on-demand native skill and disposes its registry entry', 
   expect(registered?.content).toContain('inspect rendered pages')
   expect(registered?.content).toContain('inspect representative frames')
   expect(registered?.content).toContain('do not infer unseen content')
+  expect(registered?.content).toContain('validated producer attachment references')
+  expect(registered?.content).not.toContain('currently exposes saved document text, not universal')
   expect(registered?.content).toContain('Jev\'s action review is optional advisory')
   dispose?.()
   expect(remove).toHaveBeenCalledTimes(1)
