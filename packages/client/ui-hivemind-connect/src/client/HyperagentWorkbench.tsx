@@ -1,3 +1,5 @@
+import { websiteSources } from './website-sources.ts'
+import { WebsitePreview } from './WebsitePreview.tsx'
 import { useEffect, useRef, useState } from 'react'
 import type { FileAttachmentRef, ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import type { SessionEventWindow } from '@deepseek-ai/dsh-api-session-controller/client'
@@ -8,7 +10,7 @@ import css from './HyperagentEmployee.module.css'
 
 declare module '@deepseek-ai/dsh-client-ui-sidebar-right/client' {
   interface SidebarRightTabParamsMap {
-    'hivemind-workbench-preview': { artifactId: string }
+    'hivemind-workbench-preview': { artifactId?: string; sourceUrl?: string }
   }
 }
 const lastViewedArtifacts = new Map<string, string>()
@@ -47,8 +49,8 @@ function file(value: unknown): FileAttachmentRef | undefined {
 export function workbenchSnapshot(window: SessionEventWindow): Workbench {
   const artifacts: Artifact[] = []
   const captures: Capture[] = []
-  const sources: Source[] = []
-  const seenSources = new Set<string>()
+  const sources: Source[] = websiteSources(window)
+  const seenSources = new Set(sources.map(source => source.url))
   for (const entry of window.entries) {
     if (entry.type !== 'event') continue
     const event = entry.event
@@ -176,7 +178,8 @@ export function HyperagentWorkbench({
 }: WorkbenchProps) {
   const data = useEmployeeEvents(workbenchSnapshot)
   const info = useTabInfo()
-  const requested = (info.tab.navigation.params as { artifactId?: string } | undefined)?.artifactId
+  const params = info.tab.navigation.params as { artifactId?: string; sourceUrl?: string } | undefined
+  const requested = params?.artifactId
   const [view, setView] = useState<'stack' | 'grid'>('stack')
   const [filter, setFilter] = useState('all')
   const [latestViewed, setLatestViewed] = useState(lastViewedArtifacts.get(sessionId))
@@ -186,18 +189,24 @@ export function HyperagentWorkbench({
     selectArtifact(artifact.id)
   }
   const [selectedSource, setSelectedSource] = useState<Source | null>(null)
-  useEffect(() => { setSelectedSource(null) }, [sessionId])
+  useEffect(() => { setSelectedSource(null) }, [sessionId, params?.sourceUrl, params?.artifactId])
   const lastArtifact = data.artifacts.find(artifact => artifact.id === requested) ?? data.artifacts.at(-1)
   const lastCapture = data.captures.at(-1)
+  const website = data.sources.find(source => source.url === (selectedSource?.url ?? params?.sourceUrl))
+    ?? (lastArtifact === undefined ? data.sources.at(-1) : undefined)
   const textPreview = lastArtifact !== undefined && (lastArtifact.mediaType.startsWith('text/') || /\.(md|markdown|txt)$/i.test(lastArtifact.path))
-  return <div className={css.workbench} data-hivemind-workbench={kind} data-preview-alignment={kind === 'preview' ? textPreview ? 'top' : 'center' : undefined}>
-    {kind === 'preview' && (lastArtifact === undefined
-      ? <p className={css.workbenchEmpty}>{t('workbench.emptyPreview')}</p>
-      : <article><span className={css.workbenchEyebrow}>{lastArtifact.mediaType}</span><h2>{lastArtifact.title}</h2>{lastArtifact.producerName !== undefined && <p>From {lastArtifact.producerName}</p>}{lastArtifact.mediaType === 'application/pdf' && lastArtifact.file !== undefined
-        ? <PdfReceipt artifact={lastArtifact} loadPdf={loadPdf} loadImage={loadImage} t={t} />
-        : <><div className={css.workbenchActions}><button type="button" className={css.workbenchOpen} disabled={lastArtifact.file === undefined} onClick={() => { openArtifact(lastArtifact, 'download') }}>{t('workbench.download')}</button></div>{lastArtifact.file !== undefined && (lastArtifact.mediaType.startsWith('text/') || /\.(md|markdown|txt)$/i.test(lastArtifact.path))
-          ? <TextReceipt file={lastArtifact.file} loadText={loadText} t={t} />
-          : <ReceiptImage attachment={lastArtifact.preview} loadImage={loadImage} />}</>}</article>)}
+  return <div className={css.workbench} data-hivemind-workbench={kind} data-preview-alignment={kind === 'preview' ? website !== undefined || textPreview ? 'top' : 'center' : undefined}>
+    {kind === 'preview' && (website !== undefined
+      ? <WebsitePreview sources={data.sources.map(source => ({ ...source, seq: 0 }))}
+        selected={{ ...website, seq: 0 }}
+        select={url => setSelectedSource(data.sources.find(source => source.url === url) ?? null)} t={t} />
+      : lastArtifact === undefined
+        ? <p className={css.workbenchEmpty}>{t('workbench.emptyPreview')}</p>
+        : <article><span className={css.workbenchEyebrow}>{lastArtifact.mediaType}</span><h2>{lastArtifact.title}</h2>{lastArtifact.producerName !== undefined && <p>From {lastArtifact.producerName}</p>}{lastArtifact.mediaType === 'application/pdf' && lastArtifact.file !== undefined
+          ? <PdfReceipt artifact={lastArtifact} loadPdf={loadPdf} loadImage={loadImage} t={t} />
+          : <><div className={css.workbenchActions}><button type="button" className={css.workbenchOpen} disabled={lastArtifact.file === undefined} onClick={() => { openArtifact(lastArtifact, 'download') }}>{t('workbench.download')}</button></div>{lastArtifact.file !== undefined && (lastArtifact.mediaType.startsWith('text/') || /\.(md|markdown|txt)$/i.test(lastArtifact.path))
+            ? <TextReceipt file={lastArtifact.file} loadText={loadText} t={t} />
+            : <ReceiptImage attachment={lastArtifact.preview} loadImage={loadImage} />}</>}</article>)}
     {kind === 'artifacts' && <>
       <header className={css.galleryHeader}><strong>{t('workbench.artifacts')}</strong><select aria-label={t('workbench.filter')} value={filter} onChange={(event) => { setFilter(event.target.value) }}><option value="all">{t('workbench.all')}</option>{[...new Set(data.artifacts.map(artifact => artifact.mediaType))].map(type => <option key={type} value={type}>{type}</option>)}</select><button type="button" onClick={() => { setView(view === 'stack' ? 'grid' : 'stack') }}>{t(view === 'stack' ? 'workbench.grid' : 'workbench.stack')}</button></header>
       {data.artifacts.length === 0 ? <p className={css.workbenchEmpty}>{t('workbench.emptyArtifacts')}</p> : <div className={css.artifactGallery} data-view={view}>{[...data.artifacts].reverse().filter(artifact => filter === 'all' || artifact.mediaType === filter).map((artifact, index) => <button key={artifact.id} type="button" className={css.artifactCard} style={{ zIndex: data.artifacts.length - index }} onClick={() => { choose(artifact) }} aria-label={`${t('workbench.open')}: ${artifact.title}`}>

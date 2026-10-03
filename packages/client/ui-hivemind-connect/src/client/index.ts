@@ -1,3 +1,5 @@
+import { websiteRead, type WebsiteRead } from './website-sources.ts'
+import { WebsitePreviewUpdates, WebsiteSourceCard } from './WebsitePreview.tsx'
 import { decodeArtifactText } from './artifact-text.ts'
 import type { ConversationNodeDefinition } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-ui-chat/client'
@@ -45,7 +47,7 @@ import {
 import { HyperagentWorkbench } from './HyperagentWorkbench.tsx'
 
 declare module '@deepseek-ai/dsh-client-ui-chat/client' {
-  interface ChatNodeDataMap { 'hivemind-scheduled-work': ScheduledWork; 'runtime-awakening-stage': { turn: number; seq: number } }
+  interface ChatNodeDataMap { 'hivemind-website-source': WebsiteRead; 'hivemind-scheduled-work': ScheduledWork; 'runtime-awakening-stage': { turn: number; seq: number } }
 }
 
 const awakeningStage: ConversationNodeDefinition<{ turn: number; seq: number }> = {
@@ -558,6 +560,17 @@ export function apply(ctx: ClientContext): void {
       name: 'conversation.chat.workUpdates', id: 'hivemind-current-activity', locale: NS,
     }, ({ turn, sessionId, t }) => window.location.pathname.includes('/employee/harness')
       ? createElement(RuntimeActivity, { turn, events: employeeEvents(sessionId), t }) : null))
+    ctx.uiConversation.events.register(websiteRead)
+    ctx.slots.inject('conversation.chat.node', () => ctx.slots.register({
+      name: 'conversation.chat.node', key: 'hivemind-website-source', locale: NS,
+      inject: sessionId => ({ open: (sourceUrl: string) => { ctx.sidebarRight.openTabIn(sessionId, 'hivemind-workbench-preview', { params: { sourceUrl } }) } }),
+    }, ({ node, open, t }) => createElement(WebsiteSourceCard, { sources: node.data.sources, open, t })))
+    ctx.slots.inject('conversation.session.header.utilities', () => ctx.slots.register({
+      name: 'conversation.session.header.utilities', id: 'hivemind-source-preview-updates',
+      inject: sessionId => ({ events: employeeEvents(sessionId), open: (sourceUrl: string) => {
+        ctx.sidebarRight.openTabIn(sessionId, 'hivemind-workbench-preview', { params: { sourceUrl } })
+      } }),
+    }, WebsitePreviewUpdates))
     ctx.slots.inject('conversation.chat.node', () => ctx.slots.register({
       name: 'conversation.chat.node', key: 'hivemind-scheduled-work',
       children: { 'schedule.confirmed.tasks': { kind: 'single', scope: 'session' } },

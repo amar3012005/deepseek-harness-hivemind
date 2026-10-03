@@ -15,6 +15,7 @@ export type HivemindConnectKey =
   | 'employee.settings' | 'employee.connectApps' | 'employee.creditsUsed'
   | 'workbench.filter' | 'workbench.all' | 'workbench.grid' | 'workbench.stack' | 'workbench.lastViewed'
   | 'workbench.preview' | 'workbench.artifacts' | 'workbench.computer' | 'workbench.sources'
+  | 'website.select' | 'website.open' | 'website.title' | 'website.embedding' | 'website.failed' | 'website.preview'
   | 'workbench.textUnavailable' | 'workbench.loading' | 'workbench.copy' | 'workbench.copied' | 'workbench.footnotes'
   | 'workbench.emptyPreview' | 'workbench.emptyArtifacts' | 'workbench.emptyComputer' | 'workbench.emptySources' | 'workbench.pdfUnavailable' | 'workbench.browserCapture' | 'workbench.open' | 'workbench.download' | 'workbench.downloadPdf'
 
@@ -55,6 +56,12 @@ export const en: Record<HivemindConnectKey, string> = {
   'employee.settings': 'Environment settings', 'employee.connectApps': 'Connect apps', 'employee.creditsUsed': 'Credits used',
   'workbench.preview': 'Preview', 'workbench.artifacts': 'Artifacts', 'workbench.computer': 'Computer', 'workbench.sources': 'Sources',
   'workbench.emptyPreview': 'Generated work appears here when ready.', 'workbench.emptyArtifacts': 'No artifacts yet.',
+  'website.select': 'Source website',
+  'website.open': 'Open source',
+  'website.title': 'Source website',
+  'website.preview': 'View source',
+  'website.embedding': 'Some websites block embedded viewing. If the page is blank or unavailable, open the source directly.',
+  'website.failed': 'This website could not be embedded. Open the source directly.',
   'workbench.textUnavailable': 'Document preview could not be loaded. You can still download it.',
   'workbench.loading': 'Loading document…',
   'workbench.copy': 'Copy',
@@ -105,6 +112,12 @@ export const zh: Record<HivemindConnectKey, string> = {
   'employee.settings': '工作环境设置', 'employee.connectApps': '连接应用', 'employee.creditsUsed': '已使用额度',
   'workbench.preview': '预览', 'workbench.artifacts': '成果', 'workbench.computer': '电脑', 'workbench.sources': '来源',
   'workbench.emptyPreview': '生成的成果就绪后将在此显示。', 'workbench.emptyArtifacts': '暂无成果。',
+  'website.select': '来源网站',
+  'website.open': '打开来源',
+  'website.title': '来源网站',
+  'website.preview': '查看来源',
+  'website.embedding': '部分网站不允许嵌入显示。如果页面空白或不可用，请直接打开来源。',
+  'website.failed': '无法嵌入此网站。请直接打开来源。',
   'workbench.textUnavailable': '无法加载文档预览。你仍可下载文档。',
   'workbench.loading': '正在加载文档…',
   'workbench.copy': '复制',
