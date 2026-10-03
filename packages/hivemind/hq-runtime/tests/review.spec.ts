@@ -51,7 +51,16 @@ it('requires Runtime’s explicit current evidence decision; Jev is advisory onl
   const review = { ...decision, taskId: 'task-1', taskRevision: 2, inputHash: 'saved-hash', artifactIds: ['artifact'] }
   expect(runtimeReviewAccepts(review, 2, ['artifact'])).toBe(true)
   expect(runtimeReviewAccepts({ ...review, reviewer: 'jev', probabilities: [1] }, 2, ['artifact'])).toBe(false)
-  expect(runtimeReviewAccepts({ ...review, reviewer: undefined }, 2, ['artifact'])).toBe(false)
+  const legacyReview = {
+    taskId: review.taskId,
+    taskRevision: review.taskRevision,
+    inputHash: review.inputHash,
+    artifactIds: review.artifactIds,
+    status: review.status,
+    model: review.model,
+    probabilities: review.probabilities,
+  }
+  expect(runtimeReviewAccepts(legacyReview, 2, ['artifact'])).toBe(false)
   expect(runtimeReviewAccepts(review, 3, ['artifact'])).toBe(false)
   expect(runtimeReviewAccepts(review, 2, ['other'])).toBe(false)
   expect(() => runtimeReviewDecision({ ...input, task_revision: 1 }, current)).toThrow('hq_review_task_changed')
