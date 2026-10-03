@@ -72,7 +72,11 @@ export function workbenchSnapshot(window: SessionEventWindow): Workbench {
       }
     }
   }
-  return { artifacts, captures, sources }
+  return {
+    artifacts: artifacts.filter((item, index, all) => all.findLastIndex(other => other.id === item.id) === index),
+    captures: captures.filter((item, index, all) => all.findLastIndex(other => other.id === item.id) === index),
+    sources,
+  }
 }
 
 type WorkbenchProps = PropsRuntime<'sidebar.right.pane.tab'> & PropsLocale<'hivemind-connect'> & {

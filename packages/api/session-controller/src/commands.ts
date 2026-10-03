@@ -714,7 +714,7 @@ function referencedImage(
 function referencedGeneratedFile(events: readonly SessionEvent[], attachmentId: string): FileAttachmentRef | undefined {
   for (const event of events) {
     const type = String(event.type)
-    if (type !== 'hivemind/artifact-created' && type !== 'hivemind/generation-created') continue
+    if (type !== 'hivemind/artifact-created' && type !== 'hivemind/generation-created' && type !== 'hivemind/browser-capture') continue
     const data = event.data as unknown as Record<string, unknown>
     const candidate = (type === 'hivemind/artifact-created' ? data['pdf'] : data['file']) as Record<string, unknown> | undefined
     if (candidate?.['attachmentId'] !== attachmentId) continue

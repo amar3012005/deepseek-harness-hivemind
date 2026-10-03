@@ -25,6 +25,7 @@ export function mountActionToolkits(ctx: Context, config: ActionConfig): void {
   if (!config.accountId || !config.browserToken) return
   const states = new WeakMap<Agent, { names: Set<string>; schemas: ToolSchema[]; disposers: (() => void)[] }>()
   const disposers = new Set<() => void>()
+  const requests = new WeakMap<Agent, { turn: number; results: Map<string, Promise<JsonValue>> }>()
   const load = async (agent: Agent, skill: string, persist = true): Promise<readonly string[]> => {
     const names = groups[skill]
     if (!names) return []
@@ -57,20 +58,40 @@ export function mountActionToolkits(ctx: Context, config: ActionConfig): void {
         async execute(input, execution) {
           if (!input || typeof input !== 'object' || Array.isArray(input)) throw new Error('Action arguments must be an object')
           const args = input as Record<string, JsonValue>
-          const result = await executeAction(config, tool.name, args, execution.signal)
-          if (result instanceof Uint8Array) {
-            const store = execution.agent?.ctx.get('attachments') ?? ctx.get('attachments')
-            if (!store) throw new Error('No native attachment store is mounted')
-            const [preview] = await store.saveImages([{ data: result, mediaType: 'image/png', name: String(args.title ?? 'Website screenshot') + '.png' }])
-            if (!preview) throw new Error('Screenshot storage did not return a receipt')
-            const file = await store.saveFile({ data: result, name: preview.name ?? 'Website screenshot.png' })
-            execution.agent?.session.append('hivemind/browser-capture', {
-              captureId: preview.attachmentId, provider: 'cloudflare-action-toolkit',
-              url: String(args.url), title: String(args.title ?? 'Website screenshot'), preview, file,
-            })
-            return { id: preview.attachmentId, url: args.url, title: args.title ?? 'Website screenshot', contentType: 'image/png', preview: preview as unknown as JsonValue }
+          const agent = execution.agent
+          const turn = agent?.session.snapshotEvents().findLast(event => event.type === 'turn/start')?.seq ?? -1
+          let cache = agent ? requests.get(agent) : undefined
+          if (agent && (!cache || cache.turn !== turn)) {
+            cache = { turn, results: new Map() }
+            requests.set(agent, cache)
           }
-          return result
+          // Identical read-only requests share one operation and screenshot receipt
+          // within a turn. A later human turn can deliberately refresh the source.
+          const key = JSON.stringify([tool.name, Object.keys(args).sort().map(key => [key, args[key]])])
+          const saved = cache?.results.get(key)
+          if (saved) return saved
+          const pending = (async (): Promise<JsonValue> => {
+            const result = await executeAction(config, tool.name, args, execution.signal)
+            if (result instanceof Uint8Array) {
+              const store = execution.agent?.ctx.get('attachments') ?? ctx.get('attachments')
+              if (!store) throw new Error('No native attachment store is mounted')
+              const [preview] = await store.saveImages([{ data: result, mediaType: 'image/png', name: String(args.title ?? 'Website screenshot') + '.png' }])
+              if (!preview) throw new Error('Screenshot storage did not return a receipt')
+              const file = await store.saveFile({ data: result, name: preview.name ?? 'Website screenshot.png' })
+              execution.agent?.session.append('hivemind/browser-capture', {
+                captureId: preview.attachmentId, provider: 'cloudflare-action-toolkit',
+                url: String(args.url), title: String(args.title ?? 'Website screenshot'), preview, file,
+              })
+              return { id: preview.attachmentId, url: String(args.url), title: args.title ?? 'Website screenshot', contentType: 'image/png', preview: preview as unknown as JsonValue }
+            }
+            return result
+          })()
+          cache?.results.set(key, pending)
+          try { return await pending } catch (error) {
+            cache?.results.delete(key)
+            throw error
+          }
+
         },
       }
       const dispose = agent.ctx.tools.register(definition)

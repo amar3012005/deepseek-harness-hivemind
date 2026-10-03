@@ -46,6 +46,8 @@ export function RuntimeAwakening(
         && !cards[0]?.image && !cards[0]?.employeeId && !cards[0]?.reference
       return { ...latest, cards: redundant ? [] : cards }
     })
+  const order = ['company', 'evidence', 'team', 'memory', 'strategy', 'conversation', 'remembered']
+  stages.sort((a, b) => order.indexOf(a.stage) - order.indexOf(b.stage))
   return <section className={css.root} aria-label="Runtime investigation">
     {stages.map(item => <section key={item.seq} className={css.stage}>
       <header><strong>{titles[item.stage] ?? item.stage}</strong>{item.blocked && <span>Needs attention</span>}</header>

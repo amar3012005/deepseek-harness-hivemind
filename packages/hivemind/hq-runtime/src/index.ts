@@ -7,7 +7,7 @@ import {
   type HqTaskReview,
 } from './review.ts'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
-import { installRest, recoverRest, acknowledgeRestNotes, restBriefing } from './rest.ts'
+import { installRest, recoverRest, acknowledgeRestNotes, restBriefing, isHqLead } from './rest.ts'
 import { installAwakening, awakeningContext } from './awakening.ts'
 import { wakeBriefing } from './wake-briefing.ts'
 import { dispatchEmployee, reconcileEmployeeArtifacts } from './employee-room.ts'
@@ -69,6 +69,17 @@ export function apply(ctx: Context): void {
   const researchMasked = new WeakSet<object>()
   const investigationMasks = new WeakMap<object, () => void>()
   ctx.effect(() => ctx.on('agent/pre-step', async ({ agent, turn, signal }, next) => {
+    const latestHuman = agent.session.snapshotEvents().findLast(event => event.type === 'user/message' && event.data.source.kind === 'user')
+    const wake = latestHuman?.type === 'user/message' && /^wake\s+up\s*,?\s*chief\s*!?\s*$/iu.test(latestHuman.data.content.flatMap(block => block.type === 'text' ? [block.text] : []).join('').trim())
+    if (wake && isHqLead(ctx, agent)) {
+      const mode = agent.session.snapshotEvents().findLast(event => event.type === 'hivemind/hq-public-investigation')
+      if (mode?.type === 'hivemind/hq-public-investigation' && mode.data.enabled) {
+        agent.session.append('hivemind/hq-public-investigation', { ...mode.data, enabled: false })
+        if (!await ctx.sessions.flush(agent.session)) throw new Error('hq_awakening_persistence_required')
+        investigationMasks.get(agent)?.()
+        investigationMasks.delete(agent)
+      }
+    }
     const decision = await next()
     if (decision.kind === 'reject') return decision
     let preset = agent.session.header.agentPreset
@@ -101,14 +112,7 @@ export function apply(ctx: Context): void {
     await recoverRest(ctx, agent, signal)
     await acknowledgeRestNotes(ctx, agent)
     const awakening = await awakeningContext(ctx, agent, turn, decision.messages)
-    if (briefed.get(agent) === turn) {
-      if (!awakening) return decision
-      return { ...decision, messages: [...decision.messages, createUserMessage({
-        source: { kind: 'plugin', plugin: 'hivemind-hq/first-awakening', form: 'snapshot',
-          sections: [{ name: 'hq-first-awakening', text: awakening }] },
-        content: [{ type: 'text', text: awakening }],
-      })] }
-    }
+    if (briefed.get(agent) === turn) return decision
     // The admitted message is durable native context: inject once per turn,
     // and reread on cold restoration rather than adding a copy per tool step.
     const workspace = await ctx.hivemindHq.workspace(agent)
@@ -357,7 +361,7 @@ export function apply(ctx: Context): void {
             event => event.type === 'hivemind/hq-awakening-start',
           ) && !root.session.snapshotEvents().some(
             event => event.type === 'hivemind/hq-awakening-checkpoint'
-              && event.data.stage === 'remembered' && !event.data.blocked,
+              && (event.data.stage === 'conversation' || event.data.stage === 'remembered') && !event.data.blocked,
           )
           // Initial discovery plans future work. A dispatch needs its saved
           // calendar first; ordinary subsequent work retains its native flow.
