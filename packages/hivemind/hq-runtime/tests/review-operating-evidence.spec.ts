@@ -26,5 +26,25 @@ it('does not accept missing receipts, wrong author, task-10 or another sender', 
   expect(savedOperatingEvidence(fixture('task-1','elena').events,[],identity).memories).toEqual([])
   expect(savedOperatingEvidence(fixture('task-10').events,[],identity).memories).toEqual([])
   expect(savedOperatingEvidence(f.events,f.inbox,{ ...identity,sessionId:'other-room' }).replies).toEqual([])
-  expect(savedOperatingEvidence(f.events,f.inbox,{ ...identity,employeeId:'elena-id' })).toEqual({ memories:[],replies:[] })
+  expect(savedOperatingEvidence(f.events,f.inbox,{ ...identity,employeeId:'elena-id' })).toEqual({ memories:[],replies:[],activity:[] })
+})
+
+it('scopes compact tool outcomes to the completed artifact-producing turn', () => {
+  const f=fixture()
+  const producer=[
+    { seq:0,type:'hivemind/session-owner',data:{ id:'ravi-id',slug:'ravi' } },
+    { seq:1,type:'turn/start',data:{ turn:1 } },
+    { seq:2,type:'tool/call',data:{ callId:'outside',name:'parallel_search' } },
+    { seq:3,type:'turn/end',data:{ turn:1 } },
+    { seq:4,type:'turn/start',data:{ turn:2 } },
+    { seq:5,type:'tool/call',data:{ callId:'generate',name:'hivemind_generate',arguments:'PRIVATE CONTENT' } },
+    { seq:6,type:'tool/result',data:{ message:{ content:[{ type:'tool-result',toolCallId:'generate',isError:false,content:[] }] } } },
+    { seq:7,type:'hivemind/generation-created',data:{ artifactId:'artifact' } },
+    { seq:8,type:'turn/end',data:{ turn:2 } },
+  ] as LedgerEvent[]
+  const evidence=savedOperatingEvidence(producer,f.inbox,identity)
+  expect(evidence.activity[0]?.tools).toEqual([{ name:'hivemind_generate',callSeq:5,results:[{ resultSeq:6,outcome:'success' }] }])
+  expect(JSON.stringify(evidence)).not.toContain('PRIVATE CONTENT')
+  expect(evidence.activity[0]?.interpretation).toContain('does not establish absence')
+  expect(savedOperatingEvidence(producer.slice(0,-1),[],identity).activity).toEqual([])
 })
