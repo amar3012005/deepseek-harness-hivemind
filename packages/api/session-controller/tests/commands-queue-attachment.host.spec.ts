@@ -333,6 +333,31 @@ describe('Session attachment authorization', () => {
     expect(readFileStream).toHaveBeenCalledTimes(1)
     await fixture.ctx.fiber.dispose()
   })
+  it('serves a verified received file only in its recipient session', async () => {
+    const file = { attachmentId: AttachmentId('transferred'), name: 'brief.md', bytes: 4 }
+    const read = vi.fn(async function* () { yield Uint8Array.of(116, 101, 115, 116) })
+    const receipt = { targetId: 'cold-attachment', senderId: 'producer', artifactIds: ['artifact'], artifacts: [{ artifactId: 'artifact', producerSessionId: 'producer', file }] }
+    const fixture = await persistedController([event('hivemind/room-message-received', SessionSeq(0), receipt)], vi.fn(), read)
+    await expect(fixture.controller.fileAttachment({ sessionId: fixture.sessionId, attachmentId: file.attachmentId })).resolves.toEqual({ attachment: file, data: 'dGVzdA==' })
+    await expectFailure(fixture.controller.fileAttachment({ sessionId: SessionId('other-recipient'), attachmentId: file.attachmentId }), 'session/not-found')
+    expect(read).toHaveBeenCalledTimes(1)
+    await fixture.ctx.fiber.dispose()
+  })
+  it('rejects forged text references and mismatched transfer identities', async () => {
+    const file = { attachmentId: AttachmentId('transferred'), name: 'brief.md', bytes: 4 }
+    const read = vi.fn()
+    for (const invalid of [
+      { targetId: 'other-user', senderId: 'producer', artifactIds: ['artifact'], artifacts: [{ artifactId: 'artifact', producerSessionId: 'producer', file }] },
+      { targetId: 'cold-attachment', senderId: 'producer', artifactIds: ['artifact'], artifacts: [{ artifactId: 'artifact', producerSessionId: 'wrong-producer', file }] },
+      { targetId: 'cold-attachment', senderId: 'producer', artifactIds: ['other-artifact'], artifacts: [{ artifactId: 'artifact', producerSessionId: 'producer', file }] },
+      { text: JSON.stringify(file) },
+    ]) {
+      const fixture = await persistedController([event('hivemind/room-message-received', SessionSeq(0), invalid)], vi.fn(), read)
+      await expectFailure(fixture.controller.fileAttachment({ sessionId: fixture.sessionId, attachmentId: file.attachmentId }), 'session/attachment-invalid')
+      await fixture.ctx.fiber.dispose()
+    }
+    expect(read).not.toHaveBeenCalled()
+  })
   it('finds references in direct, message, inserted, nested, and streamed content', async () => {
     const nested = imageRef('nested')
     const message = imageRef('message')

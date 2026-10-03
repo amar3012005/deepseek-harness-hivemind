@@ -110,12 +110,24 @@ async function ensureWake(ctx: Context, agent: Agent, intent: RestIntent, signal
     if (!isDeepStrictEqual(prior.data, binding)) throw new Error('hq_rest_wake_identity_conflict')
   } else agent.session.append('hivemind/hq-rest-wake', binding)
   await checkpoint(ctx, agent)
+  if (restIntents(agent.session.snapshotEvents()).at(-1)?.id === intent.id) {
+    const bindings = agent.session.snapshotEvents().filter(event => event.type === 'hivemind/hq-rest-wake' && event.data.handoffId !== intent.id)
+    const catalog = await ctx.schedule.catalog()
+    for (const priorBinding of bindings) {
+      if (priorBinding.type !== 'hivemind/hq-rest-wake') continue
+      const priorIntent = restIntents(agent.session.snapshotEvents()).find(value => value.id === priorBinding.data.handoffId)
+      const obsolete = catalog.find(value => value.id === priorBinding.data.scheduleId && value.sessionId === agent.id && value.status === 'active')
+      if (!priorIntent || !obsolete || obsolete.id !== restScheduleId(agent.id, priorIntent.id)
+        || obsolete.prompt !== prompt(priorIntent.id) || obsolete.title !== `Runtime rest: ${priorIntent.id}`) continue
+      await ctx.schedule.delete({ sessionId: agent.id, id: obsolete.id }, signal)
+    }
+  }
   return binding
 }
 export async function recoverRest(ctx: Context, agent: Agent, signal?: AbortSignal): Promise<void> {
   if (!isHqLead(ctx, agent)) return
   const latest = restIntents(agent.session.snapshotEvents()).at(-1)
-  if (!latest || agent.session.snapshotEvents().some(event => event.type === 'hivemind/hq-rest-wake' && event.data.handoffId === latest.id)) return
+  if (!latest) return
   await serial(ctx, agent, async () => { await checkpoint(ctx, agent); await ensureWake(ctx, agent, latest, signal) })
 }
 export async function restState(ctx: Context, agent: Agent): Promise<HqRestState> {

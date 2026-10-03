@@ -1,3 +1,4 @@
+import { decodeArtifactText } from './artifact-text.ts'
 import type { ConversationNodeDefinition } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-ui-chat/client'
 import { RuntimeAwakening } from './RuntimeAwakening.tsx'
@@ -488,13 +489,8 @@ export function apply(ctx: ClientContext): void {
           openWorkbench: (nextKind: typeof kind) => { scope.sidebarRight.openTab(`hivemind-workbench-${nextKind}`) },
           hooks: { employeeEvents: employeeEvents(sessionId) },
           loadImage: (ref: ImageAttachmentRef) => scope.uiConversation.imageUrl(sessionId, ref),
-          loadText: async (file: FileAttachmentRef) => {
-            const result = await scope.remote.session.fileAttachment({ sessionId, attachmentId: file.attachmentId })
-            if (!result.ok || result.value.attachment.attachmentId !== file.attachmentId) throw new Error('Artifact preview unavailable')
-            const binary = atob(result.value.data)
-            if (binary.length !== file.bytes || binary.length > 4 * 1024 * 1024) throw new Error('Artifact size mismatch')
-            return new TextDecoder('utf-8', { fatal: true }).decode(Uint8Array.from(binary, char => char.charCodeAt(0)))
-          },
+          loadText: async (file: FileAttachmentRef) => decodeArtifactText(file,
+            await scope.remote.session.fileAttachment({ sessionId, attachmentId: file.attachmentId })),
           loadPdf: async (file: FileAttachmentRef) => {
             const result = await scope.remote.session.fileAttachment({ sessionId, attachmentId: file.attachmentId })
             if (!result.ok || result.value.attachment.attachmentId !== file.attachmentId) throw new Error('Artifact preview unavailable')

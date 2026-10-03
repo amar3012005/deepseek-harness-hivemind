@@ -451,7 +451,7 @@ export class SessionCommandController {
       }
       throw new RemoteError('gateway/internal', 'File attachment authorization unavailable.', {})
     }
-    const ref = referencedGeneratedFile(source.events, String(request.attachmentId))
+    const ref = referencedGeneratedFile(source.events, String(request.attachmentId), String(source.id))
     if (ref === undefined) {
       throw new RemoteError('session/attachment-invalid', 'File is not referenced by this session.', { reason: 'ATTACHMENT_NOT_REFERENCED' })
     }
@@ -711,7 +711,22 @@ function referencedImage(
   return undefined
 }
 
-function referencedGeneratedFile(events: readonly SessionEvent[], attachmentId: string): FileAttachmentRef | undefined {
+function referencedGeneratedFile(events: readonly SessionEvent[], attachmentId: string, sessionId: string): FileAttachmentRef | undefined {
+  // Room messaging commits verified producer files to the receiving session.
+  // Authorize only that server-owned receipt, never IDs mentioned in text.
+  for (const event of events) {
+    if (String(event.type) !== 'hivemind/room-message-received') continue
+    const receipt = event.data as unknown as { targetId?: string; senderId?: string; artifactIds?: unknown; artifacts?: unknown }
+    if (receipt.targetId !== sessionId || typeof receipt.senderId !== 'string' || !Array.isArray(receipt.artifactIds) || !Array.isArray(receipt.artifacts)) continue
+    for (const value of receipt.artifacts) {
+      if (typeof value !== 'object' || value === null) continue
+      const artifact = value as { artifactId?: unknown; producerSessionId?: unknown; file?: FileAttachmentRef }
+      const file = artifact.file
+      if (typeof artifact.artifactId !== 'string' || !receipt.artifactIds.includes(artifact.artifactId) || artifact.producerSessionId !== receipt.senderId || file?.attachmentId !== attachmentId) continue
+      if (typeof file.name !== 'string' || !Number.isSafeInteger(file.bytes) || file.bytes < 0) continue
+      return file
+    }
+  }
   for (const event of events) {
     const type = String(event.type)
     if (type !== 'hivemind/artifact-created' && type !== 'hivemind/generation-created' && type !== 'hivemind/browser-capture') continue

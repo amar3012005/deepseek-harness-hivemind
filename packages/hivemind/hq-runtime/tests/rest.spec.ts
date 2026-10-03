@@ -36,19 +36,50 @@ function fixture() {
     const schedule = { id, sessionId, prompt: input.prompt, title: input.title, kind: 'at', status: 'active', scheduledAt: input.at ?? new Date(Date.now() + (input.after_seconds ?? 1) * 1000).toISOString() }
     schedules.set(id, schedule); return schedule
   })
+  const remove = vi.fn(async ({ id }: { id: string }) => ({ id, deleted: schedules.delete(id) }))
   const ctx = { effect: (callback: () => unknown) => callback(), on: () => () => {},
     tools: { register: (tool: ToolDefinition) => { tools.set(tool.name, tool); return () => {} } },
     agentTeams: { membership: (subject: Agent) => ({ role: 'lead', root: subject }) },
-    sessions: { flush }, schedule: { catalog: async () => [...schedules.values()], ensure },
+    sessions: { flush }, schedule: { catalog: async () => [...schedules.values()], ensure, delete: remove },
     hivemindHq: { workspace: async () => ({ tasks: [{ id: 'task-3', revision: 2, status: 'in_progress', owner: 'Ravi', artifactIds: ['saved-report'], reviewStatus: 'uncertain' }] }), mode: () => ({ enabled: false }) },
   } as unknown as Context
   installRest(ctx)
   const execute = (args = request) => tools.get('hivemind_hq_rest')!.execute(args, { agent, signal: new AbortController().signal } as never)
-  return { ctx, get agent() { return agent }, get events() { return events }, schedules, ensure, flush, execute, prompt,
+  return { ctx, get agent() { return agent }, get events() { return events }, schedules, ensure, remove, flush, execute, prompt,
     crash: () => { events = structuredClone(durable); agent = makeAgent(); return agent } }
 }
 afterEach(() => vi.useRealTimers())
 describe('native Runtime voluntary rest', () => {
+  it('supersedes only its own active rest timers and preserves inactive and unrelated schedules', async () => {
+    const f = fixture()
+    await f.execute()
+    const old = f.schedules.get(restScheduleId('root', request.handoff_id))!
+    const delivered = { ...old, id: 'delivered', status: 'inactive' }
+    const employee = { ...old, id: 'employee-assignment', sessionId: 'employee-room' }
+    const user = { ...old, id: 'user-reminder', title: 'Runtime rest: custom' }
+    f.schedules.set(delivered.id, delivered)
+    f.schedules.set(employee.id, employee)
+    f.schedules.set(user.id, user)
+    await f.execute({ ...request, handoff_id: 'next-rest' })
+    expect(f.schedules.has(old.id)).toBe(false)
+    expect(f.schedules.has(delivered.id)).toBe(true)
+    expect(f.schedules.has(employee.id)).toBe(true)
+    expect(f.schedules.has(user.id)).toBe(true)
+  })
+  it('retains the earlier wake on failed replacement and reconciles interrupted cleanup', async () => {
+    const f = fixture()
+    await f.execute()
+    const oldId = restScheduleId('root', request.handoff_id)
+    f.ensure.mockRejectedValueOnce(new Error('replacement failed'))
+    await expect(f.execute({ ...request, handoff_id: 'next-rest' })).rejects.toThrow('replacement failed')
+    expect(f.schedules.has(oldId)).toBe(true)
+    f.remove.mockRejectedValueOnce(new Error('cleanup interrupted'))
+    await expect(recoverRest(f.ctx, f.agent)).rejects.toThrow('cleanup interrupted')
+    expect(f.schedules.has(oldId)).toBe(true)
+    await recoverRest(f.ctx, f.agent)
+    expect(f.schedules.has(oldId)).toBe(false)
+    expect(f.schedules.size).toBe(1)
+  })
   it('disarms native goal rounds only after a future wake and handoff are confirmed', async () => {
     const f = fixture()
     const disarm = vi.fn(() => {
@@ -120,11 +151,9 @@ describe('native Runtime voluntary rest', () => {
     await Promise.all([f.execute(), f.execute()])
     expect(f.ensure).toHaveBeenCalledTimes(1)
     await Promise.all([f.execute({ ...request, handoff_id: 'newer-a', summary: 'First newer plan' }), f.execute({ ...request, handoff_id: 'newer', summary: 'Newer plan' })])
-    const oldWake = f.schedules.get(restScheduleId('root', 'rest-test'))
-    if (!oldWake) throw new Error('test wake missing')
-    oldWake.status = 'inactive'
-    const old = await f.execute()
-    expect(old).toMatchObject({ superseded: true, handoffId: 'rest-test', wakeStatus: 'inactive' })
+    expect(f.schedules.has(restScheduleId('root', 'rest-test'))).toBe(false)
+    expect(f.schedules.size).toBe(1)
+    await expect(f.execute()).rejects.toThrow('hq_rest_committed_wake_missing')
     const message = createUserMessage({ content: [{ type: 'text', text: 'HQ_REST_WAKE[rest-test]' }], source: { kind: 'schedule' } as never })
     const briefing = restBriefing(f.agent, [message]).text
     expect(briefing).toContain('"latestHandoff":{"id":"newer"')
