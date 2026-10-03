@@ -182,6 +182,7 @@ export function apply(ctx: ClientContext): void {
     key: 'hivemind-language',
   }, () => null))
   ctx.inject(['uiConversation'], (scope: ClientContext) => {
+    scope.effect(() => scope.uiConversation.events.register(awakeningStage))
     scope.effect(
       () => scope.uiConversation.configureWorkspaceRequirement(false),
       'ui-hivemind-connect: filesystem-free conversation',
@@ -530,7 +531,6 @@ export function apply(ctx: ClientContext): void {
       const conversation = scope?.get('conversation')
       if (conversation !== undefined) void conversation.send(prompt)
     }
-    ctx.inject(['uiConversation'], () => ctx.effect(() => ctx.uiConversation.events.register(awakeningStage)))
     ctx.slots.inject('conversation.chat.node', () => ctx.slots.register({
       name: 'conversation.chat.node', key: 'runtime-awakening-stage',
       children: { 'hivemind.runtime.plan': { kind: 'list', scope: 'session' } },
