@@ -914,6 +914,7 @@ export function apply(ctx: Context, config: Partial<Config> = {}): void {
         'hivemind_hq_awakening', 'hivemind_onboarding',
         'team_task_list', 'team_task_get', 'team_task_create', 'team_task_update', 'list_agents',
         'spawn_teammate', 'send_message', 'wait_agent', 'interrupt_agent',
+        'schedule_create', 'schedule_list', 'schedule_update', 'schedule_delete',
       ]) requested.add(tool)
     }
     for (const capability of capabilities) {
