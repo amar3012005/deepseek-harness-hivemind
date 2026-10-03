@@ -1,6 +1,9 @@
 /** Progressive, native-schema access to one official Playwright MCP server. */
 
 import { randomUUID } from 'node:crypto'
+import { mountActionToolkits } from './action-toolkit.ts'
+import { mountPlaywrightToolkit } from './playwright-toolkit.ts'
+export { mountActionToolkits } from './action-toolkit.ts'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
@@ -53,6 +56,10 @@ export const name = 'hivemind-progressive-browser'
 export const inject = ['tools', 'systemPrompt']
 
 export interface Config {
+  actionAccountId: string
+  actionBrowserToken: string
+  actionGatewayId: string
+  actionGatewayToken: string
   url: string
   headers: Record<string, string>
   serverName: string
@@ -71,6 +78,10 @@ export interface EndpointConfig {
 }
 
 export const Config: z<Config> = z.object({
+  actionAccountId: z.string().default(''),
+  actionBrowserToken: z.string().default(''),
+  actionGatewayId: z.string().default('hivemind-prod'),
+  actionGatewayToken: z.string().default(''),
   url: z.string().required(),
   headers: z.dict(String).default({}),
   serverName: z.string().default('singulance_browser'),
@@ -276,7 +287,10 @@ function navigationFacts(value: unknown, fallbackUrl: string): { url: string; ti
  * in a generic execute schema or asks the model to invent selectors.
  */
 export function apply(ctx: Context, config: Partial<Config> = {}): void {
+  mountPlaywrightToolkit(ctx, config.url ?? '', config.headers ?? {})
+  mountActionToolkits(ctx, { accountId: config.actionAccountId ?? '', browserToken: config.actionBrowserToken ?? '', gatewayId: config.actionGatewayId ?? 'hivemind-prod', gatewayToken: config.actionGatewayToken ?? '' })
   const resolved: Config = {
+    actionAccountId: config.actionAccountId ?? '', actionBrowserToken: config.actionBrowserToken ?? '', actionGatewayId: config.actionGatewayId ?? 'hivemind-prod', actionGatewayToken: config.actionGatewayToken ?? '',
     url: config.url ?? '', headers: config.headers ?? {}, serverName: config.serverName ?? 'singulance_browser',
     cloudflareUrl: config.cloudflareUrl ?? '', cloudflareHeaders: config.cloudflareHeaders ?? {}, cloudflareServerName: config.cloudflareServerName ?? 'singulance_browser',
     toolCallTimeoutMs: config.toolCallTimeoutMs ?? 30_000, leaseDurationMs: config.leaseDurationMs ?? 5 * 60_000,

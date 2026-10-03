@@ -6,6 +6,7 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
 import { isModelInvocable } from '@deepseek-ai/dsh-skill'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
+import type {} from '@deepseek-ai/dsh-hivemind-progressive-browser'
 
 import { THINK_SKILLS } from './think-skills.ts'
 
@@ -55,6 +56,8 @@ const output = {
 
 /** Register compact search and exact loading over all model-invocable scoped skills. */
 export function apply(ctx: Context, config: Partial<Config> = {}): void {
+  // Contribute to the existing native registry; tool-skill owns its catalog and loader.
+  for (const skill of THINK_SKILLS) ctx.skills.register({ ...skill, source: 'bundled', provider: 'hivemind-action-toolkits' })
   const maxSearchResults = config.maxSearchResults ?? 6
   const maxQueryChars = config.maxQueryChars ?? 4_000
   ctx.tools.register(defineTool({
@@ -95,6 +98,10 @@ export function apply(ctx: Context, config: Partial<Config> = {}): void {
       const nativeSkill = await ctx.skills.get(skillName, options)
       const skill = nativeSkill ?? THINK_SKILLS.find(candidate => candidate.name === skillName)
       if (skill === undefined || (nativeSkill !== undefined && !isModelInvocable(nativeSkill))) throw new TypeError(`hivemind-progressive-skills: unavailable skill ${skillName}`)
+      if (['browser-use', 'parallel-search'].includes(skillName)) {
+        if (!ctx.hivemindActionToolkits) throw new Error('Cloudflare action toolkit is not configured; skill instructions alone do not enable these tools')
+        await ctx.hivemindActionToolkits.load(agent, skillName)
+      }
       return { status: 'ready', operation: 'load', skill: { name: skill.name, description: skill.description, content: skill.content, ...('resourceBase' in skill ? { resource_base: skill.resourceBase } : {}) } }
     },
     presentCall(args) { return { card: 'generic', title: 'Use a specialized skill', kind: 'read', rawInput: String(args.operation ?? '') } },

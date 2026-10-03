@@ -7214,6 +7214,9 @@ importers:
 
   packages/hivemind/progressive-skills:
     dependencies:
+      '@deepseek-ai/dsh-hivemind-progressive-browser':
+        specifier: workspace:^
+        version: link:../progressive-browser
       '@deepseek-ai/schemastery':
         specifier: link:../../../vendor/schemastery
         version: link:../../../vendor/schemastery

@@ -12,6 +12,7 @@ function setup() {
   const ctx = {
     tools: { register(tool: ToolDefinition) { tools.set(tool.name, tool); return () => {} } },
     skills: {
+      register() { return () => {} },
       async snapshot() { return { complete: true, skills: summaries } },
       async get(name: string) { return name === 'presentation-design' ? { ...summaries[0], content: 'Create the deck and inspect every slide.', source: 'test', provider: 'test' } : undefined },
     },

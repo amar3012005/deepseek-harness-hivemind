@@ -182,6 +182,10 @@
               url: !!js process.env.HIVEMIND_PLAYWRIGHT_MCP_URL ?? 'https://playwright-mcp.singulancelabs.com/mcp'
               headers: !!js >-
                 ({ Authorization: process.env.PLAYWRIGHT_EXTERNAL_MCP_TOKEN ? `Bearer ${process.env.PLAYWRIGHT_EXTERNAL_MCP_TOKEN}` : '' })
+              actionAccountId: !!js process.env.HIVEMIND_ACTION_CLOUDFLARE_ACCOUNT_ID ?? ''
+              actionBrowserToken: !!js process.env.HIVEMIND_ACTION_BROWSER_TOKEN ?? ''
+              actionGatewayId: !!js process.env.HIVEMIND_ACTION_GATEWAY_ID ?? 'hivemind-prod'
+              actionGatewayToken: !!js process.env.HIVEMIND_ACTION_GATEWAY_TOKEN ?? ''
               cloudflareUrl: !!js process.env.HIVEMIND_CLOUDFLARE_BROWSER_MCP_URL ?? ''
               cloudflareHeaders: !!js >-
                 ({ Authorization: process.env.CLOUDFLARE_BROWSER_RUN_MCP_TOKEN ? `Bearer ${process.env.CLOUDFLARE_BROWSER_RUN_MCP_TOKEN}` : '' })
