@@ -10,7 +10,7 @@ import css from './TurnProcessNodeView.module.css'
 /** Turn-level process disclosure controller. */
 export const TurnProcessNodeView = memo(function TurnProcessNodeView({
   node, turnProcess, t, renderSlot,
-}: ChatNodeViewProps<'turn-process'> & PropsRenderSlots<'conversation.chat.workUpdates'>) {
+}: ChatNodeViewProps<'turn-process'> & Partial<PropsRenderSlots<'conversation.chat.workUpdates'>>) {
   if (turnProcess === undefined) throw new Error('turn-process node requires Turn process owner state')
   if (!turnProcess.foldable) return null
   const open = turnProcess.open
@@ -61,7 +61,7 @@ export const TurnProcessNodeView = memo(function TurnProcessNodeView({
         <span className={css.label}>{turnProcess.spec.dreamSynthesis === true ? 'Exploration details' : window.location.pathname.includes('/employee/harness') ? 'Work details' : label}</span>
         <IconChevronDownOutline14 className={css.chevron} />
       </button>
-      {renderSlot('conversation.chat.workUpdates', { turn: node.data.turn })}
+      {renderSlot?.('conversation.chat.workUpdates', { turn: node.data.turn })}
     </>
   )
 })
