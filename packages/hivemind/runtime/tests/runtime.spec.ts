@@ -358,6 +358,7 @@ describe('HIVE-MIND runtime', () => {
     expect(decision.startsRequestSeries).toBeUndefined()
     expect(decision.messages).toHaveLength(3)
     expect(textOfForTest(decision.messages[1] as UserMessage)).toContain('Reply language for this turn: en')
+    expect(textOfForTest(decision.messages[1] as UserMessage)).not.toContain('then briefly ask whether the user wants')
     expect(textOfForTest(decision.messages[0] as UserMessage)).toContain('Authenticated HIVE-MIND profile brief')
     expect(textOfForTest(decision.messages[0] as UserMessage)).toContain('User profile version: 7')
     expect(textOfForTest(decision.messages[0] as UserMessage)).toContain('Organization profile version: 12')

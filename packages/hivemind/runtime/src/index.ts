@@ -9,6 +9,7 @@ import { installRequestFallback } from './request-recovery.ts'
 import { installSubmissionReviewGuidance } from './review-guidance.ts'
 import { installArtifactProductionGuidance } from './production-guidance.ts'
 import { installCompanyAwakeningGuidance } from './awakening-guidance.ts'
+import { installCompanyStrategyGuidance } from './strategy-guidance.ts'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { defineTool } from '@deepseek-ai/dsh-tools'
@@ -1081,6 +1082,7 @@ function registerWebConnectRoutes(ctx: Context, config: Config): void {
  */
 export function apply(ctx: Context, config: Config): void {
   installArtifactProductionGuidance(ctx)
+  installCompanyStrategyGuidance(ctx)
   if (config.companyAwakeningEnabled) installCompanyAwakeningGuidance(ctx)
   if (config.submissionReviewEnabled) installSubmissionReviewGuidance(ctx)
   if (config.privateMemoryEnabled) installAgentMessaging(ctx)
@@ -1270,7 +1272,7 @@ export function apply(ctx: Context, config: Config): void {
       for (const event of agent.session.snapshotEvents())
         if (String(event.type) === 'agent-preset/selected') preset = (event.data as { agentPreset: string }).agentPreset
       const runtime = owner?.slug === 'runtime' || preset === 'hivemind-hq'
-      return `Reply language for this turn: ${language}. Use this language consistently throughout this turn, including any generated reasoning text, explanations, reports, final response, and contextual follow-ups. This persisted navbar selection applies to every new query until the user changes it; do not switch languages merely because sources or tool results use another language. Preserve proper nouns, code, tool names, and quoted source text unless translation is requested. ${runtime ? 'Keep findings concise and evidence-backed. Do not offer exports unless asked.' : 'When you deliver a report or substantial research, keep the complete deliverable in the user-facing response, then briefly ask whether the user wants it saved as a Google Doc or exported as a PDF using available connected apps or artifact tools. Do not create or publish that document unless the user requests or approves it; if already requested, carry it out without asking again. A memory-save receipt or short status update must not replace the report.'}${owner === undefined ? employee === undefined ? '' : ` User selected ${employee.name} (${employee.role}, id ${employee.id}) for this session.` : ` You are ${owner.name} (${owner.role}, agent slug ${owner.slug}), the persistent owner of this session. Keep this identity across tasks and stages; use specialist skills without changing employees. ${owner.persona ?? ''} The runtime records each delivered user-task response as private task_status memory with timestamps and session evidence. Do not duplicate that task record or claim external work succeeded without its tool receipt.`}`
+      return `Reply language for this turn: ${language}. Use this language consistently throughout this turn, including any generated reasoning text, explanations, reports, final response, and contextual follow-ups. This persisted navbar selection applies to every new query until the user changes it; do not switch languages merely because sources or tool results use another language. Preserve proper nouns, code, tool names, and quoted source text unless translation is requested. ${runtime ? 'Keep findings concise and evidence-backed. Do not offer exports unless asked.' : 'Answer direct user questions usefully in the requested form. For assigned employee work, keep detailed findings in the saved deliverable and send Runtime a concise natural result with the artifact and any material blocker. Do not duplicate the full artifact in chat or offer unsolicited exports. If the user requests a file, finish the authorized artifact rather than asking again. A memory-save receipt alone is not the requested result.'}${owner === undefined ? employee === undefined ? '' : ` User selected ${employee.name} (${employee.role}, id ${employee.id}) for this session.` : ` You are ${owner.name} (${owner.role}, agent slug ${owner.slug}), the persistent owner of this session. Keep this identity across tasks and stages; use specialist skills without changing employees. ${owner.persona ?? ''} The runtime records each delivered user-task response as private task_status memory with timestamps and session evidence. Do not duplicate that task record or claim external work succeeded without its tool receipt.`}`
     },
     async profileBrief(agent, signal, turn) {
       const investigation = agent.session.snapshotEvents().findLast(

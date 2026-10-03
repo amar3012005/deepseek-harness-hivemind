@@ -28,6 +28,9 @@ describe('HQ persistent employee delivery', () => {
     expect(prompt).toContain('task_status automatically; do not duplicate')
     expect(prompt).toContain('exact artifact_ids')
     expect(prompt).toContain('do not send a README packet')
+    expect(prompt).toContain('selected method references in the saved task description')
+    expect(prompt).toContain('retrieve the relevant authorized source or ask Runtime')
+    expect(prompt).toContain('deadline does not make a reported blocker inactionable')
     expect(prompt).toContain('do not mark the task complete or grant new permissions')
   })
   it('resolves the exact directory from the root preset isolate realm', async () => {

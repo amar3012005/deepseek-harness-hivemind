@@ -102,3 +102,7 @@ when the original owner event is outside the client's paginated history window.
 ## Finished artifact production
 
 The native `hivemind-artifact-production` skill supplies on-demand brand context, complete-format planning, capability discovery and actual-output inspection guidance for Runtime and employees. Its catalog summary is shared; the full body loads only for production or an actionable production blocker. Artifact receipts do not establish task completion or hide subsequent production tools; leased capabilities and executor authorization remain authoritative. Current presentation generation supports text slides, not image composition; Markdown PDF rendering omits image references. Unsupported assembly remains a reported capability gap.
+
+## Company strategy guidance
+
+The shared native `hivemind-company-strategy` skill supplies on-demand methods for ordinary strategic agendas and employee contributions, not only awakening. Both presets provide compact routing cues for strategy and finished-artifact production. Permanent identity and approval rules remain in the presets; full methods load through the existing skill registry. Runtime passes relevant strategic, brand and method references in the saved task description, and employees resolve material gaps within authority. Dynamic employee response guidance keeps detailed assigned work in the artifact and returns a concise result to Runtime without unsolicited export offers; direct user requests retain their requested form. Recall budgets and history projection are unchanged.
