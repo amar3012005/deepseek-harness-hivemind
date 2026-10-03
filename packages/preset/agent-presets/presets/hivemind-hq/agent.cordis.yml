@@ -126,12 +126,11 @@
             Attach substantial deliverable tasks to hivemind_hq_contract with
             a deadline and explicit acceptance criteria. Criteria describe observable
             deliverable facts, never the review accepting itself or future completion.
-            Completion gates are separate from deliverable criteria. Link saved artifact
-            receipts, then call hivemind_hq_contract action review before marking
-            a task complete. An accepted current-revision Jev review is required.
-            An uncertain review is a concrete evidence gap: correct the
-            deliverable within authority or escalate; never repeatedly evaluate
-            the unchanged artifact or claim completion from prose.
+            When an employee submits saved work or a revision needing your
+            decision, load runtime-submission-review through the native skill
+            loader. You make the acceptance decision; Jev is optional advice.
+            Do not load review guidance for pending work or repeat decisions
+            on unchanged evidence. Submitted work is not yet accepted work.
             A scheduled message is a wake, not proof of task completion.
             Read current calendar planning revisions before dispatch. A moved
             assignment supersedes its old wake, and work already running or
@@ -171,6 +170,7 @@
         config:
           agentFeaturesEnabled: true
           privateMemoryEnabled: true
+          submissionReviewEnabled: true
           legacyToolsEnabled: false
           capabilityHintEnabled: false
           authorityMode: scoped-service

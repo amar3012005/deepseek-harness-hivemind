@@ -6,6 +6,7 @@
 
 import { installAgentMessaging } from './agent-messaging.ts'
 import { installRequestFallback } from './request-recovery.ts'
+import { installSubmissionReviewGuidance } from './review-guidance.ts'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { defineTool } from '@deepseek-ai/dsh-tools'
@@ -200,6 +201,8 @@ export interface Config {
   capabilityHintEnabled?: boolean
   /** Register the private operating-memory tool and skill in HyperAgents only. */
   privateMemoryEnabled?: boolean
+  /** Register on-demand submission review guidance only in the Runtime preset. */
+  submissionReviewEnabled?: boolean
   /** Retry interval for the durable private task-memory outbox. */
   privateMemoryRetryMs?: number
   /** Optional advertised route for one bounded native failed-step recovery. */
@@ -246,6 +249,7 @@ export const Config: z<Config> = z.object({
   legacyToolsEnabled: z.boolean().required(),
   capabilityHintEnabled: z.boolean().default(true),
   privateMemoryEnabled: z.boolean().default(false),
+  submissionReviewEnabled: z.boolean().default(false),
   privateMemoryRetryMs: z.natural().min(1000).default(30000),
   requestFallbackProvider: z.string(),
   requestFallbackModel: z.string(),
@@ -1071,6 +1075,7 @@ function registerWebConnectRoutes(ctx: Context, config: Config): void {
  * @returns Nothing; Cordis owns the registered effects.
  */
 export function apply(ctx: Context, config: Config): void {
+  if (config.submissionReviewEnabled) installSubmissionReviewGuidance(ctx)
   if (config.privateMemoryEnabled) installAgentMessaging(ctx)
   if (config.requestFallbackProvider && config.requestFallbackModel) installRequestFallback(ctx, {
     provider: config.requestFallbackProvider, model: config.requestFallbackModel,
