@@ -541,9 +541,9 @@ describe('real Loader export path', () => {
 describe('scheduled wake time zone continuity', () => {
   it('uses the latest user-confirmed zone on every scheduled step when enabled', async () => {
     const { ctx } = await mount({ inheritScheduledTimeZone: true })
-    const session = new Session(SessionId('scheduled-zone'))
+    const session = Session.create(SessionId('scheduled-zone'))
     openMessageTurn(session, 1, 'Europe/Berlin')
-    session.append('turn/end', { turn: 1, reason: { kind: 'stop' } })
+    session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
     session.append('turn/start', { turn: 2 })
     session.append('user/message', createUserMessage({
       content: [{ type: 'text', text: 'scheduled wake' }], source: { kind: 'schedule' },
