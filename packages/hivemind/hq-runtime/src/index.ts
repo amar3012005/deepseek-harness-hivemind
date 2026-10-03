@@ -170,7 +170,7 @@ export function apply(ctx: Context): void {
     defineTool({
       name: 'hivemind_hq_contract',
       description:
-        'Coordinate existing native Team tasks: list contracts, attach immutable deadline/acceptance criteria, assign an authenticated employee persistent room, schedule contracted pending tasks for verified employees, link saved producer artifacts, or review those saved inputs with Jev. Native Team tools own task lifecycle and dependencies. Completion requires linked receipts and an accepted review of the current revision. This tool never grants authority.',
+        'Coordinate existing native Team tasks. list returns the authenticated employee directory with exact IDs, existing contracts, tasks, and calendar; use it to find an employee before assignment. attach immutable deadline/acceptance criteria, assign an authenticated employee persistent room, schedule contracted pending tasks for verified employees, link saved producer artifacts, or review saved inputs with Jev. Native Team tools own task lifecycle and dependencies. Completion requires linked receipts and an accepted review of the current revision. This tool never grants authority.',
       parameters: {
         action: {
           type: 'string',
@@ -218,8 +218,13 @@ export function apply(ctx: Context): void {
         await reconcileEmployeeArtifacts(ctx, root, execution.signal)
         const events = root.session.snapshotEvents()
         const contracts = taskContracts(events)
-        if (input.action === 'list')
+        if (input.action === 'list') {
+          const directory = await ctx.hivemindEmployeeDirectory.profiles(execution.signal)
           return {
+            employees: directory.profiles.map(profile => ({
+              id: profile['id'] ?? null, name: profile['name'] ?? null, slug: profile['slug'] ?? null,
+              role: profile['role_archetype'] ?? profile['role'] ?? 'HIVE-MIND employee',
+            })),
             contracts: contracts.map(contract => ({
               ...contract,
               acceptanceCriteria: [...contract.acceptanceCriteria],
@@ -244,6 +249,7 @@ export function apply(ctx: Context): void {
               taskId: item.taskId ?? null,
             })),
           }
+        }
         if (membership.role !== 'lead') throw new Error('hq_lead_required')
         if (!input.task_id) throw new Error('hq_task_id_required')
         const task = ctx.agentTeams.getTask(agent, TeamTaskId(input.task_id))
