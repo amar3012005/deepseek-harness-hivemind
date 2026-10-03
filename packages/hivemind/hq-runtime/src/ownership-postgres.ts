@@ -70,7 +70,7 @@ export default class PostgresHqOwnership extends Service {
       if (lock.rowCount!==ids.length) throw new Error('fresh_reset_scope_changed')
       const leased=await client.query('SELECT 1 FROM harness_session_leases WHERE session_id=ANY($1::text[]) AND released_at IS NULL AND expires_at>now() LIMIT 1',[ids])
       if (leased.rowCount) throw new Error('fresh_reset_sessions_still_owned')
-      const memories=await client.query("DELETE FROM hyper_agent_operating_memories WHERE org_id=$1 AND user_id=$2 AND project_slug='hyper-agents'",[p.orgId,p.userId])
+      const memories=await client.query("DELETE FROM hyper_agent_operating_memories WHERE org_id=$1 AND author_user_id=$2 AND project_slug='hyper-agents'",[p.orgId,p.userId])
       await client.query('DELETE FROM harness_session_events WHERE org_id=$1 AND user_id=$2 AND session_id=$3',[p.orgId,p.userId,root])
       await client.query('UPDATE harness_sessions SET event_count=0,revision=revision+1,updated_at=now() WHERE org_id=$1 AND user_id=$2 AND id=$3',[p.orgId,p.userId,root])
       const sessions=await client.query('DELETE FROM harness_sessions WHERE org_id=$1 AND user_id=$2 AND id=ANY($3::text[]) AND id<>$4',[p.orgId,p.userId,ids,root])

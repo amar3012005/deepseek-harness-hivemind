@@ -67,7 +67,7 @@ suite('canonical company HQ ownership', () => {
   })
   it('fresh reset removes only the requesting team and its private memories', async () => {
     await claim(a, 'a-hq')
-    await admin.query('CREATE TABLE IF NOT EXISTS hyper_agent_operating_memories(id text,org_id uuid,user_id uuid,project_slug text)')
+    await admin.query('CREATE TABLE IF NOT EXISTS hyper_agent_operating_memories(id text,org_id uuid,author_user_id uuid,project_slug text)')
     await admin.query('GRANT SELECT,DELETE ON hyper_agent_operating_memories TO codex_schedule_test')
     await admin.query('TRUNCATE hyper_agent_operating_memories')
     await admin.query('INSERT INTO hyper_agent_operating_memories VALUES (\'own\',$1,$2,\'hyper-agents\'),(\'other\',$1,$3,\'hyper-agents\'),(\'company\',$1,$2,\'company\')',[a.orgId,a.userId,b.userId])
