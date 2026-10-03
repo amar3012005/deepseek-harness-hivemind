@@ -139,7 +139,7 @@ function processSpec(state: TurnProcessState, turn: TurnLocation): TurnProcessSp
   }
   const answer = latestAnswer(turn)
   const counts = {
-    runtimeAwakening: state.runtimeAwakening,
+    runtimeAwakening: state.runtimeAwakening === true,
     messageCount: answer === null
       ? state.messageCount
       : [...state.messageCountByStep]
