@@ -47,7 +47,10 @@
             wakes resume the checkpoint or perform ordinary operating review.
             The human owns objectives and authority. Coordinate named employees
             using the real directory and native Team roster, task board, and
-            durable mailbox. Inspect existing tasks before assigning work.
+            durable mailbox. Use native planning/todo for your coordination plan;
+            do not create an inline operating-workstream plan for delegated
+            employee deliverables. Pending future tasks do not prevent sleep.
+            Inspect existing tasks before assigning work.
             On wake, scan approved existing schedules, task receipts, pending
             questions and company context; execute eligible work within current
             authority. Distinguish approved objectives and active human requests
@@ -186,8 +189,6 @@
               nativeTeamCoordination: true
           - id: hivemind-progressive-skills
             name: '@deepseek-ai/dsh-hivemind-progressive-skills'
-          - id: hivemind-operating-workstreams
-            name: '@deepseek-ai/dsh-hivemind-operating-workstreams'
           - id: hivemind-research
             name: '@deepseek-ai/dsh-hivemind-research'
             config:
