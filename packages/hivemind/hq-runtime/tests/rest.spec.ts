@@ -49,6 +49,22 @@ function fixture() {
 }
 afterEach(() => vi.useRealTimers())
 describe('native Runtime voluntary rest', () => {
+  it('disarms native goal rounds only after a future wake and handoff are confirmed', async () => {
+    const f = fixture()
+    const disarm = vi.fn(() => {
+      expect(f.events.at(-1)?.type).toBe('hivemind/hq-rest-confirmed')
+      expect(f.schedules.size).toBe(1)
+    })
+    Object.assign(f.ctx, { get: (name: string) => name === 'goals' ? { disarm } : undefined })
+    await f.execute()
+    expect(disarm).toHaveBeenCalledExactlyOnceWith(f.agent)
+    const failed = fixture()
+    const blockedDisarm = vi.fn()
+    Object.assign(failed.ctx, { get: () => ({ disarm: blockedDisarm }) })
+    failed.ensure.mockRejectedValueOnce(new Error('schedule unavailable'))
+    await expect(failed.execute()).rejects.toThrow('schedule unavailable')
+    expect(blockedDisarm).not.toHaveBeenCalled()
+  })
   it('confirms a reused handoff in the current turn without duplicating its wake', async () => {
     const f = fixture()
     await f.execute()

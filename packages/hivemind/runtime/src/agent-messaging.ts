@@ -45,10 +45,11 @@ export function installAgentMessaging(ctx: Context): void {
       const events = agent.session.snapshotEvents()
       const delivered = new Set(events.filter(event => String(event.type) === 'hivemind/room-message-delivered').map(event => (event.data as { id: string }).id))
       const confirmed = (key: string) => delivered.has(`agent-message-${createHash('sha256').update(JSON.stringify([agent.id, key])).digest('hex')}`)
-      const pending = events.filter((event) => {
-        if (['hivemind/generation-created', 'hivemind/artifact-created'].includes(String(event.type))) return !confirmed(`artifact-${event.seq}`)
-        return event.type === 'turn/end' && !confirmed(`response-${event.seq}`) && (event.data.reason.kind === 'error' || completedTaskMemory(agent.id, owner, events, event.data.turn) !== undefined)
-      })
+      // Report once at the terminal lifecycle boundary. Artifact creation is
+      // intermediate progress, not a separate employee conversation turn.
+      const pending = events.filter(event => event.type === 'turn/end'
+        && !confirmed(`response-${event.seq}`)
+        && (event.data.reason.kind === 'error' || completedTaskMemory(agent.id, owner, events, event.data.turn) !== undefined))
       if (pending.length === 0) return
       const directory = await scope.hivemindEmployeeDirectory.profiles(signal)
       if (!directory.profiles.some(profile => profile['id'] === owner.id)) return
@@ -65,29 +66,36 @@ export function installAgentMessaging(ctx: Context): void {
             if (line) taskId = (JSON.parse(line.slice('HQ_EMPLOYEE_ASSIGNMENT='.length)) as { taskId: string }).taskId
           }
         }
-        if (['hivemind/generation-created', 'hivemind/artifact-created'].includes(String(event.type))) {
-          const saved = event.data as { artifactId?: string; title?: string }
-          if (typeof saved.artifactId !== 'string') continue
-          await rooms.deliverAgentMessage(agent, {
-            key: `artifact-${event.seq}`, target: 'runtime', kind: 'update',
-            text: `${owner.name}: Chief, I’ve saved ${saved.title ?? 'an artifact'} for your review.`,
-            artifactIds: [saved.artifactId], ...(taskId === undefined ? {} : { taskId }),
-          }, signal)
-        }
         if (event.type === 'turn/end') {
+          const start = events.findLast(item => item.type === 'turn/start' && item.data.turn === event.data.turn)
+          const artifactIds = events.filter(item => item.seq > (start?.seq ?? -1) && item.seq < event.seq
+            && ['hivemind/generation-created', 'hivemind/artifact-created'].includes(String(item.type)))
+            .flatMap((item) => {
+              const saved = item.data as { artifactId?: string; file?: unknown; pdf?: unknown }
+              return typeof saved.artifactId === 'string' && (saved.file || saved.pdf) ? [saved.artifactId] : []
+            })
           if (event.data.reason.kind === 'error') {
-            await rooms.deliverAgentMessage(agent, { key: `response-${event.seq}`, target: 'runtime', kind: 'update', text: employeeFailureSummary(event.data.reason.error.code), ...(taskId === undefined ? {} : { taskId }) }, signal)
+            await rooms.deliverAgentMessage(agent, { key: `response-${event.seq}`, target: 'runtime', kind: 'update', text: employeeFailureSummary(event.data.reason.error.code), artifactIds: [...new Set(artifactIds)], ...(taskId === undefined ? {} : { taskId }) }, signal)
             continue
           }
           const response = completedTaskMemory(agent.id, owner, events, event.data.turn)
           if (!response) continue
-          const start = events.findLast(item => item.type === 'turn/start' && item.data.turn === event.data.turn)
-          if (events.some(item => item.seq > (start?.seq ?? -1) && item.seq < event.seq && String(item.type) === 'hivemind/room-message-queued' && (item.data as { kind?: string }).kind !== 'question' && !(item.data as { artifactIds?: string[] }).artifactIds?.length && delivered.has((item.data as { id: string }).id))) continue
+          const manualRuntimeReply = events.some((item) => {
+            if (item.seq <= (start?.seq ?? -1) || item.seq >= event.seq || item.type !== 'tool/call'
+              || item.data.name !== 'hivemind_agent_message') return false
+            try {
+              const args = JSON.parse(item.data.arguments) as { recipient?: string; kind?: string; message_key?: string }
+              return args.recipient === 'runtime' && args.kind !== 'question'
+                && typeof args.message_key === 'string' && confirmed(args.message_key)
+            } catch { return false }
+          })
+          if (manualRuntimeReply) continue
           const answer = events.findLast(item => item.type === 'assistant/message' && item.data.turn === event.data.turn && !item.data.interrupted)
           const text = answer?.type === 'assistant/message' ? answer.data.message.content.filter(block => block.type === 'text').map(block => block.text).join('\n').trim().slice(0, 1200) : ''
           await rooms.deliverAgentMessage(agent, {
             key: `response-${event.seq}`, target: 'runtime', kind: 'update',
-            text: text || `${owner.name}: Chief, my response is saved. The assignment still needs review.`, ...(taskId === undefined ? {} : { taskId }),
+            text: text || 'Chief, my response is saved. The assignment still needs review.',
+            artifactIds: [...new Set(artifactIds)], ...(taskId === undefined ? {} : { taskId }),
           }, signal)
         }
       }
@@ -133,12 +141,25 @@ export function installAgentMessaging(ctx: Context): void {
         const target = input.recipient === 'runtime' ? undefined : authorizedRecipient(directory.profiles, input.recipient)
         if (input.recipient !== 'runtime' && !target) throw new Error('agent_message_recipient_not_authorized')
         const targetProfile = target === undefined ? undefined : { id: String(target['id']), name: String(target['name']), role: typeof target['role_archetype'] === 'string' ? target['role_archetype'] : 'HIVE-MIND employee' }
+        const events = agent.session.snapshotEvents()
+        const messageId = `agent-message-${createHash('sha256').update(JSON.stringify([agent.id, input.message_key])).digest('hex')}`
+        const queued = events.find(event => String(event.type) === 'hivemind/room-message-queued' && (event.data as { id?: string }).id === messageId)
+        const start = events.findLast(event => event.type === 'turn/start')
+        const savedIds = input.recipient === 'runtime' && input.kind !== 'question' && preset !== 'hivemind-hq'
+          ? events.filter(event => event.seq > (start?.seq ?? Number.POSITIVE_INFINITY)
+            && ['hivemind/generation-created', 'hivemind/artifact-created'].includes(String(event.type)))
+            .flatMap((event) => {
+              const saved = event.data as { artifactId?: string; file?: unknown; pdf?: unknown }
+              return typeof saved.artifactId === 'string' && (saved.file || saved.pdf) ? [saved.artifactId] : []
+            }) : []
+        const artifactIds = queued === undefined ? [...new Set([...(input.artifact_ids ?? []), ...savedIds])]
+          : (queued.data as { artifactIds: string[] }).artifactIds
         return rooms.deliverAgentMessage(agent, {
           key: input.message_key, target: targetProfile?.id ?? input.recipient, kind: input.kind, text: input.message,
           ...(targetProfile === undefined ? {} : { targetProfile }),
           ...(input.task_id === undefined ? {} : { taskId: input.task_id }),
           ...(input.reply_to === undefined ? {} : { replyTo: input.reply_to }),
-          ...(input.artifact_ids === undefined ? {} : { artifactIds: input.artifact_ids }),
+          ...(artifactIds.length === 0 ? {} : { artifactIds }),
         }, execution.signal)
       },
     })))

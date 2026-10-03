@@ -218,7 +218,7 @@ export function installRest(ctx: Context): void {
     name: 'hivemind_hq_rest',
     description: 'Commit an exact voluntary Runtime rest handoff and idempotent native scheduled wake before waiting until a future time. Use only as HQ lead when no current work remains eligible. Reuse handoff_id with identical content on retry. Success checkpoints the handoff and wake; actual rest is ordinary idle after the turn ends, not cancellation. Paused autonomy remains paused. This does not grant authority.',
     parameters: {
-      handoff_id: { type: 'string', required: true }, wake_at: { type: 'string', required: true, description: 'Future RFC3339 timestamp with explicit timezone; original timestamp on retry.' },
+      handoff_id: { type: 'string', required: true, description: 'Unique identity for this exact handoff. Retry with the same ID only when wake_at, summary, next_steps and blockers are identical. A new or changed handoff needs a new ID.' }, wake_at: { type: 'string', required: true, description: 'Future RFC3339 timestamp with explicit timezone; original timestamp on identical retry.' },
       summary: { type: 'string', required: true }, next_steps: { type: 'array', required: true, items: { type: 'string' } }, blockers: { type: 'array', required: true, items: { type: 'string' } },
     },
     output: { schema: { type: 'object', additionalProperties: true, properties: {} }, render: (_args, result) => [{ type: 'text', text: JSON.stringify(result) }] },
@@ -249,6 +249,12 @@ export function installRest(ctx: Context): void {
         if (!ownWake) throw new Error('hq_rest_committed_wake_missing')
         agent.session.append('hivemind/hq-rest-confirmed', binding)
         await checkpoint(ctx, agent)
+        // Voluntary rest waits for Schedule, not an immediate native goal round.
+        // Keep durable goal state intact; only explicit native resume re-arms it.
+        if (ownWake.status === 'active') {
+          const goals = ctx.get?.('goals') as { disarm(agent: Agent): unknown } | undefined
+          goals?.disarm(agent)
+        }
         return { status: ownWake.status === 'active' ? 'rest_ready' : 'wake_committed_inactive', superseded: restIntents(agent.session.snapshotEvents()).at(-1)?.id !== intent.id, requestedWakeAt: intent.requestedWakeAt,
           ...binding, autonomyPaused: !ctx.hivemindHq.mode(agent).enabled, wakeStatus: ownWake.status,
           instructions: 'Handoff and native wake are checkpointed. Finish this turn; ordinary idle is rest. Paused mode does not automatically wake. A delivered or inactive wake is not a promise of a future wake.' }

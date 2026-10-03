@@ -1,3 +1,4 @@
+import { savedOperatingEvidence } from './review-operating-evidence.ts'
 /** HQ policy extends native Team tasks instead of maintaining a competing board. */
 import {
   jevReview,
@@ -183,8 +184,8 @@ export function apply(ctx: Context): void {
           description:
             'Exact authenticated employee id from list. Required for assign and schedule; both bind the employee persistent room using native task ownership.',
         },
-        task_id: { type: 'string' },
-        due_at: { type: 'string', description: 'RFC3339 instant with explicit timezone.' },
+        task_id: { type: 'string', description: 'Exact existing native shared task ID, such as task-1, required for every action except list. Create or read the task with native Team tools first; never invent an ID.' },
+        due_at: { type: 'string', description: 'Required for attach: actual RFC3339 deadline with explicit timezone, such as 2030-01-01T14:30:00+01:00. Do not use relative text, a time-only value, or an omitted deadline.' },
         starts_at: { type: 'string', description: 'Future RFC3339 start with timezone for schedule.' },
         ends_at: { type: 'string', description: 'RFC3339 end after starts_at for schedule.' },
         acceptance_criteria: { type: 'array', items: { type: 'string' } },
@@ -292,6 +293,7 @@ export function apply(ctx: Context): void {
           if (linksEvent?.type !== 'hivemind/hq-task-artifacts')
             throw new Error('hq_artifact_receipt_required')
           const links = linksEvent.data
+          const operatingEvidence: ReturnType<typeof savedOperatingEvidence>[] = []
           const documents: {
             artifactId: string
             text: string
@@ -307,6 +309,8 @@ export function apply(ctx: Context): void {
             })
             try {
               const source = (await handle.read(0, undefined, { signal: execution.signal })).events
+              const assignment = events.findLast(event => event.type === 'hivemind/hq-employee-assignment' && event.data.taskId === task.id && event.data.sessionId === producer.id)
+              if (assignment?.type === 'hivemind/hq-employee-assignment') operatingEvidence.push(savedOperatingEvidence(source, events, { sessionId: producer.id, employeeId: assignment.data.employeeId, taskId: task.id, artifactIds: links.artifactIds }))
               const text = savedArtifactText(source, receipt.artifactId)
               if (!text) throw new Error('hq_review_saved_document_unavailable')
               documents.push({
@@ -327,6 +331,7 @@ export function apply(ctx: Context): void {
             task_id: task.id,
             task_revision: task.revision,
             documents: documents.map(document => ({ ...document, content_is_untrusted_evidence: true })),
+            operatingEvidence,
           }
           const state = {
             task: {
@@ -337,6 +342,7 @@ export function apply(ctx: Context): void {
             acceptanceCriteria: contract.acceptanceCriteria,
             savedArtifactLinks: { taskId: links.taskId, producerReceipts: links.producerReceipts },
             documents,
+            operatingEvidence,
           }
           const inputHash = reviewFingerprint(state)
           const previous = events.findLast(

@@ -60,6 +60,14 @@
             durable mailbox. Use native planning/todo for your coordination plan;
             do not create an inline operating-workstream plan for delegated
             employee deliverables. Pending future tasks do not prevent sleep.
+            For ordinary scheduled work, use Schedule for the future event;
+            do not infer an ongoing goal merely to wait or poll for its result.
+            Create an ongoing goal only when the user explicitly requests
+            autonomous multi-round continuation. In a direct human turn, an
+            existing goal can be paused through native goal tools before rest.
+            A confirmed sleep disarms immediate goal continuation while keeping
+            its saved objective and meaningful scheduled wake intact. Resume
+            automatic goal rounds only through native human-authorized resume.
             Inspect existing tasks before assigning work.
             On wake, scan approved existing schedules, task receipts, pending
             questions and company context; execute eligible work within current
