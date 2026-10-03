@@ -335,8 +335,9 @@ export function apply(ctx: Context, config: Config): void {
       rendererCtx.effect(() => registry.register(provider))
     }
     rendererCtx.effect(() => registry.register({
-      id: config.provider, format: 'pdf', instructions: 'Provide the finished report as Markdown. For PDF plus inline preview use hivemind_artifact_render. This generator returns the PDF file only.',
+      id: config.provider, format: 'pdf', instructions: 'Provide the finished report as Markdown, or use source_format html for complete self-contained image/text HTML with print CSS. Saved image placeholders require saved_image_ids. For Markdown PDF plus inline preview use hivemind_artifact_render. HTML PDF returns the actual PDF without a screen thumbnail.',
       async generate(request) {
+        if (request.sourceFormat === 'html') return webProvider.generate({ ...request, htmlPdf: true })
         const rendered = await rendererCtx.hivemindArtifactRenderer.render({
           ...request, markdown: request.content, pageSize: 'A4',
           ...(request.designProfile === undefined ? {} : { designProfile: request.designProfile }),

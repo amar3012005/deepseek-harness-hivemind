@@ -6,12 +6,15 @@ import { resolve, relative, isAbsolute, join } from 'node:path'
 import type { FileAttachmentRef, ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { MediaOwner } from './media-admission.ts'
+import { embedHtmlAssets } from './html-assets.ts'
 import type { DesignProfile, DesignQuality } from './design-kit.ts'
 
 /** Formats accepted by the compact generation consumer. */
 export type GenerationFormat = 'markdown_report' | 'pdf' | 'presentation' | 'spreadsheet' | 'web' | 'image' | 'video'
 /** Inputs already prepared by the parent runtime, without another planning model. */
 export interface GenerationRequest {
+  readonly htmlPdf?: boolean
+  readonly sourceFormat?: 'html'
   readonly reconcileOnly?: boolean
   readonly title: string
   readonly content: string
@@ -72,6 +75,8 @@ export class GenerationRegistry {
 /** A committed generated file, independent of the rendering provider. */
 export interface GenerationReceipt {
   readonly owner?: MediaOwner
+  readonly sourceFormat?: 'html'
+  readonly savedImageIds?: readonly string[]
   readonly artifactId: string
   readonly title: string
   readonly format: GenerationFormat
@@ -99,6 +104,8 @@ export async function generateArtifact(
   registry: GenerationRegistry,
   outputDirectory: string,
   input: {
+    readonly savedImageIds?: readonly string[]
+    readonly sourceFormat?: 'html'
     readonly format: GenerationFormat
     readonly title: string
     readonly content: string
@@ -126,6 +133,7 @@ export async function generateArtifact(
   const provider = registry.get(input.format)
   const generated = await provider.generate({
     title: input.title, content: input.content, cwd, signal,
+    ...(input.sourceFormat === undefined ? {} : { sourceFormat: input.sourceFormat }),
     ...(input.reconcileOnly ? { reconcileOnly: true } : {}),
     ...(input.owner === undefined ? {} : { owner: input.owner }),
     ...(input.operationId === undefined ? {} : { operationId: input.operationId }),
@@ -162,6 +170,8 @@ export async function generateArtifact(
   const receipt: GenerationReceipt = {
     ...(input.owner ? { owner: input.owner } : {}),
     artifactId,
+    ...(input.sourceFormat === undefined ? {} : { sourceFormat: input.sourceFormat }),
+    ...(input.savedImageIds === undefined ? {} : { savedImageIds: input.savedImageIds }),
     title: input.title,
     format: provider.format,
     mediaType: generated.mediaType,
@@ -194,12 +204,14 @@ export function registerGenerationTools(
   })))
   ctx.effect(() => ctx.tools.register(defineTool({
     name: 'hivemind_generate',
-    description: 'Create a finished Markdown report, PDF, presentation, spreadsheet, or web file using a configured generator. For format "web", provide complete self-contained HTML directly; generator discovery is unnecessary. Image and video must use hivemind_media_generate so their long-running lifecycle is tracked. Returns a stored artifact, not a published campaign or sent message.',
+    description: 'Create a finished Markdown report, PDF, presentation, spreadsheet, or web file using a configured generator. For format "web", provide complete self-contained HTML directly; generator discovery is unnecessary. For image/text HTML or PDF use source_format html with saved_image_ids and hive-asset:<attachment ID> placeholders. Image and video must use hivemind_media_generate so their long-running lifecycle is tracked. Returns a stored artifact, not a published campaign or sent message.',
     parameters: {
       format: { type: 'string', required: true, enum: ['markdown_report', 'pdf', 'presentation', 'spreadsheet', 'web'] },
       title: { type: 'string', required: true },
       content: { type: 'string', required: true, description: 'For web, complete self-contained HTML. For another known format, provide that generator’s source content. Use discovery only when the representation is unknown.' },
       design_profile: { type: 'string', enum: ['executive', 'editorial', 'campaign', 'product', 'data'], description: 'Optional HIVE visual baseline. Use campaign for marketing, executive for leadership documents, product for product UI, data for KPI dashboards, and editorial for narrative reports. It is applied locally and recorded in the durable receipt; it never opens an external design app.' },
+      source_format: { type: 'string', enum: ['html'], description: 'For web or PDF, complete self-contained HTML. PDF uses print CSS/page breaks; omitted PDF remains Markdown.' },
+      saved_image_ids: { type: 'array', items: { type: 'string' }, description: 'Up to twenty current-session saved image attachment IDs. Use hive-asset:<attachment ID> in HTML img src or CSS url; exact bytes are embedded server-side. No URLs or filesystem paths.' },
       reference_images: { type: 'array', items: { type: 'string' }, description: 'Optional public HTTPS brand/product image URLs for image generation.' },
     },
     output,
@@ -211,12 +223,18 @@ export function registerGenerationTools(
       if (!args.content.trim() || args.content.length > maxContentChars) throw new Error(`Content must contain 1–${maxContentChars} characters`)
       const referenceImages = args.reference_images ?? []
       if (referenceImages.length > 8 || referenceImages.some((value) => { try { const u = new URL(value); return u.protocol !== 'https:' || Boolean(u.username || u.password) } catch { return true } })) throw new Error('Use at most eight public HTTPS reference image URLs')
+      if (args.source_format && !['web', 'pdf'].includes(args.format)) throw new Error('HTML source supports web or PDF only')
+      if ((args.saved_image_ids?.length ?? 0) > 0 && args.source_format !== 'html') throw new Error('Saved images require HTML source')
+      const content = args.source_format === 'html'
+        ? await embedHtmlAssets(ctx, agent, args.content, args.saved_image_ids ?? [], execution.signal)
+        : args.content
       const receipt = await generateArtifact(
         ctx,
         registry,
         outputDirectory,
         {
-          format: args.format as GenerationFormat, title: args.title, content: args.content, referenceImages,
+          format: args.format as GenerationFormat, title: args.title, content, referenceImages,
+          ...(args.source_format === undefined ? {} : { sourceFormat: args.source_format, savedImageIds: args.saved_image_ids ?? [] }),
           ...(args.design_profile === undefined ? {} : { designProfile: args.design_profile as DesignProfile }),
         },
         agent,

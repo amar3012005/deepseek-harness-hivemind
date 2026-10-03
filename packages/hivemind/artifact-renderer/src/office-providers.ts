@@ -68,14 +68,17 @@ export const presentationProvider: GenerationProvider = {
 /** Local HTML artifact. Publication remains a separate authenticated action. */
 export const webProvider: GenerationProvider = {
   id: 'html-document', format: 'web',
-  instructions: 'Provide complete HTML/CSS for an editable web artifact. It is saved locally, not deployed or published. Use self-contained resources for the native screenshot preview. Optionally select a HIVE design_profile for a deterministic visual baseline; authored CSS can override it.',
+  instructions: 'Provide complete HTML/CSS for an editable web artifact. It is saved locally, not deployed or published. Use source_format html and saved_image_ids with hive-asset:<attachment ID> placeholders for exact saved imagery. Use self-contained resources for the native screenshot preview. Optionally select a HIVE design_profile for a deterministic visual baseline; authored CSS can override it.',
   async generate(request) {
     request.signal.throwIfAborted()
     if (!/<html[\s>]/i.test(request.content)) throw new Error('Web content must be a complete HTML document')
     const html = applyDesignProfile(request.content, request.designProfile)
     const designQuality = evaluateDesignQuality(html, request.designProfile)
     const browser = await chromium.launch({ headless: true })
+    const abort = () => { void browser.close().catch(() => undefined) }
+    request.signal.addEventListener('abort', abort, { once: true })
     try {
+      request.signal.throwIfAborted()
       const page = await browser.newPage({
         viewport: { width: 1440, height: 1024 },
         deviceScaleFactor: 1,
@@ -88,15 +91,19 @@ export const webProvider: GenerationProvider = {
       await page.setContent(html, { waitUntil: 'networkidle', timeout: 30_000 })
       await page.evaluate(() => document.fonts.ready)
       request.signal.throwIfAborted()
-      const preview = await page.screenshot({ type: 'png', fullPage: false })
+      const preview = request.htmlPdf === true ? undefined : await page.screenshot({ type: 'png', fullPage: false })
+      const pdf = request.htmlPdf === true
+        ? await page.pdf({ printBackground: true, preferCSSPageSize: true, format: 'A4' }) : undefined
+      request.signal.throwIfAborted()
       return {
-        data: new TextEncoder().encode(html),
-        extension: 'html',
-        mediaType: 'text/html',
-        preview: { data: new Uint8Array(preview), mediaType: 'image/png', nameSuffix: '-preview.png' },
+        data: pdf === undefined ? new TextEncoder().encode(html) : new Uint8Array(pdf),
+        extension: pdf === undefined ? 'html' : 'pdf',
+        mediaType: pdf === undefined ? 'text/html' : 'application/pdf',
+        ...(preview === undefined ? {} : { preview: { data: new Uint8Array(preview), mediaType: 'image/png' as const, nameSuffix: '-preview.png' } }),
         designQuality,
       }
     } finally {
+      request.signal.removeEventListener('abort', abort)
       await browser.close()
     }
   },

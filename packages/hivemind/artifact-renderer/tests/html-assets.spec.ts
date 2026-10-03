@@ -1,0 +1,65 @@
+import { expect, it } from 'vitest'
+import type { Context } from '@deepseek-ai/cordis'
+import type { Agent } from '@deepseek-ai/dsh-agent'
+import { createCanvas } from '@napi-rs/canvas'
+import { embedHtmlAssets } from '../src/html-assets.ts'
+import { webProvider } from '../src/office-providers.ts'
+
+const image = createCanvas(8, 8).toBuffer('image/png')
+const ref = { attachmentId: 'saved-image', name: 'image.png', bytes: image.length }
+const agent = (events: unknown[]) => ({ session: { id: 'room', snapshotEvents: () => events } }) as unknown as Agent
+const ctx = { attachments: { async *readFileStream() { yield image } } } as unknown as Context
+const own = [{ type: 'hivemind/generation-created', data: { mediaType: 'image/png', file: ref } }]
+const html = '<html><head><style>@page{size:320px 180px;margin:0}.slide{height:180px;break-after:page}.slide:last-child{break-after:auto}</style></head><body style="margin:0"><section class="slide">First slide<img src="hive-asset:saved-image"></section><section class="slide">Second slide</section></body></html>'
+
+it('embeds exact saved image bytes and rejects missing, oversized and unresolved references', async () => {
+  const result = await embedHtmlAssets(ctx, agent(own), html, ['saved-image'], new AbortController().signal)
+  expect(result).toContain(image.toString('base64'))
+  await expect(embedHtmlAssets(ctx, agent([]), html, ['saved-image'], new AbortController().signal)).rejects.toThrow('unavailable')
+  await expect(embedHtmlAssets(ctx, agent([{ type: 'hivemind/generation-created', data: { mediaType: 'image/png', file: { ...ref, bytes: 31 * 1024 * 1024 } } }]), html, ['saved-image'], new AbortController().signal)).rejects.toThrow('30 MiB')
+  const abort = new AbortController(); abort.abort()
+  await expect(embedHtmlAssets(ctx, agent(own), html, ['saved-image'], abort.signal)).rejects.toThrow()
+  const wrongSize = [{ type: 'hivemind/generation-created', data: { mediaType: 'image/png', file: { ...ref, bytes: image.length + 1 } } }]
+  await expect(embedHtmlAssets(ctx, agent(wrongSize), html, ['saved-image'], new AbortController().signal)).rejects.toThrow('size mismatch')
+  await expect(embedHtmlAssets(ctx, agent(own), html, [], new AbortController().signal)).rejects.toThrow('unresolved')
+})
+
+it('accepts only recipient-bound, producer-matched transferred file receipts', async () => {
+  const data = { targetId: 'room', senderId: 'producer', artifactIds: ['asset'], artifacts: [{ artifactId: 'asset', producerSessionId: 'producer', file: ref }] }
+  expect(await embedHtmlAssets(ctx, agent([{ type: 'hivemind/room-message-received', data }]), html, ['saved-image'], new AbortController().signal)).toContain('data:image/png')
+  for (const invalid of [{ ...data, targetId: 'other' }, { ...data, senderId: 'other' }, { ...data, artifactIds: [] }, { ...data, artifacts: [null] }]) {
+    await expect(embedHtmlAssets(ctx, agent([{ type: 'hivemind/room-message-received', data: invalid }]), html, ['saved-image'], new AbortController().signal)).rejects.toThrow('unavailable')
+  }
+})
+
+it('renders ordered image/text HTML and exports two ordered PDF pages from the same source', async () => {
+  const content = await embedHtmlAssets(ctx, agent(own), html, ['saved-image'], new AbortController().signal)
+  const request = { title: 'Deck', content, cwd: '/tmp', sourceFormat: 'html' as const, signal: new AbortController().signal }
+  const web = await webProvider.generate(request)
+  expect(web.preview?.data.length).toBeGreaterThan(100)
+  expect(new TextDecoder().decode(web.data)).toContain('First slide')
+  const pdf = await webProvider.generate({ ...request, htmlPdf: true })
+  expect(pdf.mediaType).toBe('application/pdf')
+  const { getDocument, OPS } = await import('pdfjs-dist/legacy/build/pdf.mjs')
+  const loading = getDocument({ data: pdf.data })
+  const document = await loading.promise
+  expect(document.numPages).toBe(2)
+  for (const [index, text] of ['First slide', 'Second slide'].entries()) {
+    const page = await document.getPage(index + 1)
+    if (index === 0) {
+      const operators = await page.getOperatorList()
+      expect(operators.fnArray).toContain(OPS.paintImageXObject)
+    }
+    const content = await page.getTextContent()
+    expect(content.items.map(item => 'str' in item ? item.str : '').join(' ')).toContain(text)
+  }
+  await loading.destroy()
+}, 30_000)
+
+it('supports ten slide images without imposing the editing tool five-image limit', async () => {
+  const ids = Array.from({ length: 10 }, (_, index) => `image-${index}`)
+  const events = ids.map(attachmentId => ({ type: 'hivemind/generation-created', data: { mediaType: 'image/png', file: { ...ref, attachmentId } } }))
+  const html = `<html>${ids.map(id => `<img src="hive-asset:${id}">`).join('')}</html>`
+  const embedded = await embedHtmlAssets(ctx, agent(events), html, ids, new AbortController().signal)
+  expect(embedded.match(/data:image\/png;base64/g)).toHaveLength(10)
+})
