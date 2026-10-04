@@ -240,7 +240,9 @@ export function installRest(ctx: Context): void {
       const events = agent.session.snapshotEvents()
       const handoff = restIntents(events).at(-1) ?? null
       const iso = state.latest?.effectiveWakeAt ?? state.latest?.requestedWakeAt
-      return JSON.parse(JSON.stringify({ state, handoff, wakeDisplay: iso ? restWakeDisplay(events, iso) : null }))
+      const exactRetry = handoff ? { handoff_id: handoff.id, wake_at: handoff.requestedWakeAt,
+        summary: handoff.summary, next_steps: [...handoff.nextSteps], blockers: [...handoff.blockers] } : null
+      return JSON.parse(JSON.stringify({ state, handoff, exactRetry, wakeDisplay: iso ? restWakeDisplay(events, iso) : null }))
     },
   })))
   const sleepChecks = new WeakMap<Agent, { turn: number; repairs: number }>()
@@ -265,13 +267,13 @@ export function installRest(ctx: Context): void {
     sleepChecks.set(agent, { turn, repairs: repairs + 1 })
     agent.steer(createUserMessage({
       source: { kind: 'plugin', plugin: 'hivemind-hq/sleep-check' },
-      content: [{ type: 'text', text: 'Before this active Runtime turn finishes, commit a handoff and a justified future wake with hivemind_hq_rest. Include completed findings, current task/calendar references, next steps and blockers. Reuse the same handoff_id and timestamp on retry. Confirm its persisted future wake before saying sleeping. Do not repeat investigation, create a Goal, redo employee work or invent completed results. Pause or cancellation overrides this check.' }],
+      content: [{ type: 'text', text: 'Before this active Runtime turn finishes, commit a handoff and a justified future wake with hivemind_hq_rest. Include completed findings, current task/calendar references, next steps and blockers. For unchanged state, read hivemind_hq_rest_state and copy its exactRetry arguments verbatim; preserve every summary and array string, not just the identifier and timestamp. If content changes, use a new handoff_id. Confirm its persisted future wake before saying sleeping. Do not repeat investigation, create a Goal, redo employee work or invent completed results. Pause or cancellation overrides this check.' }],
     }))
   }))
   ctx.effect(() => ctx.on('agent/turn-ended', async ({ agent }) => { await acknowledgeRestNotes(ctx, agent) }))
   ctx.effect(() => ctx.tools.register(defineTool({
     name: 'hivemind_hq_rest',
-    description: 'Commit an exact voluntary Runtime rest handoff and idempotent native scheduled wake before waiting until a future time. Use only as HQ lead when no current work remains eligible. Reuse handoff_id with identical content on retry. Success checkpoints the handoff and wake; actual rest is ordinary idle after the turn ends, not cancellation. Paused autonomy remains paused. This does not grant authority.',
+    description: 'Commit an exact voluntary Runtime rest handoff and idempotent native scheduled wake before waiting until a future time. Use only as HQ lead when no current work remains eligible. For unchanged rest, read hivemind_hq_rest_state and copy its exactRetry object verbatim, including summary and arrays; do not summarize or improve an existing request. Changed content needs a new handoff_id. Success checkpoints the handoff and wake; actual rest is ordinary idle after the turn ends, not cancellation. Paused autonomy remains paused. This does not grant authority.',
     parameters: {
       handoff_id: { type: 'string', required: true, description: 'Unique identity for this exact handoff. Retry with the same ID only when wake_at, summary, next_steps and blockers are identical. A new or changed handoff needs a new ID.' }, wake_at: { type: 'string', required: true, description: 'Future RFC3339 timestamp with explicit timezone; original timestamp on identical retry.' },
       summary: { type: 'string', required: true }, next_steps: { type: 'array', required: true, items: { type: 'string' }, description: 'Preserve meaningful next work and unresolved human information, decision or discussion requests until actual evidence resolves them. Before sleep, give one plain reminder and issue the appropriate existing invitation or approval action in the current final sleep turn before saving this handoff. For unresolved discussion, use a fresh plain conversation checkpoint; mentioning a prior invitation is not the current action. Omit the invitation once evidence resolves the need; do not repeat unchanged reminders during active work.' }, blockers: { type: 'array', required: true, items: { type: 'string' }, description: 'Concrete unresolved blockers, including required human approval or access. An invitation, schedule or silence does not resolve a request or grant authority.' },

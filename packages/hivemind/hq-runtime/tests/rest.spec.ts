@@ -249,6 +249,7 @@ it('reads exact rest state without mutation, scheduling or reopening a past rece
   const tool = f.tools.get('hivemind_hq_rest_state')!
   const result = await tool.execute({}, { agent: f.agent, signal: new AbortController().signal } as never)
   expect(JSON.stringify(result)).toContain(request.handoff_id)
+  expect(result).toMatchObject({ exactRetry: { ...request, wake_at: '2030-01-01T01:00:00.000Z' } })
   expect(JSON.stringify(result)).toContain('2030-01-01T01:00:00.000Z')
   expect(f.events).toEqual(before)
   expect(f.ensure).toHaveBeenCalledOnce()
