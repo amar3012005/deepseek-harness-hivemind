@@ -51,3 +51,13 @@ it('keeps grounded entity search guidance in the existing shared on-demand body'
   expect(search?.content).toContain('Verify candidate identity')
   expect(search?.description).not.toContain('verified entity context')
 })
+
+
+it('loads reference-led design methods without an extra internal approval gate', () => {
+  const design = THINK_SKILLS.find(skill => skill.name === 'design-artifact')
+  expect(design?.content).toContain('User-authorized internal generation is an accepted brief')
+  expect(design?.content).toContain('references actually viewed')
+  expect(design?.content).toContain('without copying the reference brand')
+  expect(design?.content).toContain('purposeful large visual or illustration')
+  expect(design?.content).toContain('inspect the corrected output')
+})
