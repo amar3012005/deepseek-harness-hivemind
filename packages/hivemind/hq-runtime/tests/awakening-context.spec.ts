@@ -62,3 +62,25 @@ it.each(['conversation', 'company', 'strategy'])('only a plain invitation is adm
   if (stage === 'conversation') await expect(result).resolves.toMatchObject({ status: 'checkpoint_saved' })
   else await expect(result).rejects.toThrow('hq_awakening_not_started')
 })
+
+it.each([
+  ['Wake up, Chief!', 'user', true],
+  ['Wake up, Chief! I want to grow our LinkedIn presence over the next week.', 'user', true],
+  ['wake up chief: Review this agenda', 'user', true],
+  ['Wake up Chiefly', 'user', false],
+  ['Please explain Wake up, Chief!', 'user', false],
+  ['"Wake up, Chief!" is the command', 'user', false],
+  ['Wake up, Chief! Review this agenda', 'schedule', false],
+  ['Wake up, Chief!', 'plugin', false],
+])('matches only a leading direct human command: %s (%s)', async (text, kind, expected) => {
+  const append = vi.fn()
+  const setMode = vi.fn().mockResolvedValue({ ok: true })
+  const ctx = { sessions: { flush: vi.fn().mockResolvedValue(true) },
+    hivemindHq: { mode: () => ({ enabled: false, revision: 0 }), setMode } } as unknown as Context
+  const agent = { session: { snapshotEvents: () => [], append } } as unknown as Agent
+  const messages = [{ source: { kind }, content: [{ type: 'text', text }] }] as never
+  const result = await awakeningContext(ctx, agent, 1, messages)
+  expect(append).toHaveBeenCalledTimes(expected ? 1 : 0)
+  expect(setMode).toHaveBeenCalledTimes(expected ? 1 : 0)
+  expect(Boolean(result)).toBe(expected)
+})

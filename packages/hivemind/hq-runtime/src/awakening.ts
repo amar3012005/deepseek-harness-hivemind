@@ -33,7 +33,7 @@ declare module '@deepseek-ai/dsh-session/types' {
     'hivemind/hq-awakening-checkpoint': AwakeningCheckpoint
   }
 }
-const trigger = /^wake\s+up\s*,?\s*chief\s*!?\s*$/iu
+const trigger = /^wake\s+up\s*,?\s*chief(?=$|[\s!.,:;—-])/iu
 export async function awakeningContext(ctx: Context, agent: Agent, turn: number, messages: readonly UserMessage[]): Promise<string> {
   if (!isHqLead(ctx, agent)) return ''
   let started = agent.session.snapshotEvents().some(event => event.type === 'hivemind/hq-awakening-start')
@@ -41,7 +41,7 @@ export async function awakeningContext(ctx: Context, agent: Agent, turn: number,
   if (!started && humanMessages.some(message => message.source.kind === 'user' && trigger.test(message.content.flatMap(block => block.type === 'text' ? [block.text] : []).join('').trim()))) {
     agent.session.append('hivemind/hq-awakening-start', { version: 1, turn, startedAt: new Date().toISOString() })
     if (!await ctx.sessions.flush(agent.session)) throw new Error('hq_awakening_persistence_required')
-    // Only the exact first human wake command activates the existing autonomy
+    // Only the explicit leading human wake command activates the existing autonomy
     // switch. Model checkpoints and later scheduled wakes cannot enable it.
     const mode = ctx.hivemindHq.mode(agent)
     if (!mode.enabled) {
