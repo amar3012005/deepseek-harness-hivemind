@@ -29,3 +29,12 @@ it('reviews method proposals without confusing infrastructure failures or blocki
   expect(submissionReviewSkill.content).toContain('existing human approval boundary')
   expect(submissionReviewSkill.content).toContain('Do not delay acceptance')
 })
+
+it('preserves useful user context without inventing learning or shared publication authority', () => {
+  expect(completionLearningSkill.content).toContain('confirmed decisions and useful outcomes')
+  expect(completionLearningSkill.content).toContain('decision_note or handoff')
+  expect(completionLearningSkill.content).toContain('Attribute user reports')
+  expect(completionLearningSkill.content).toContain('Private operating-memory writes do not require company publication approval')
+  expect(completionLearningSkill.content).toContain('shared company-brain writes retain their existing policy')
+  expect(completionLearningSkill.content).toContain('do not duplicate it or save giant transcripts')
+})
