@@ -328,3 +328,19 @@ describe('ui-goal node half', () => {
     expect(() => { nodeApply() }).not.toThrow()
   })
 })
+
+it.each(['hivemind-hq', 'hivemind-hyperagents', 'hyperagents', 'hyperagents-compressed'])(
+  'hides internal goal controls for %s without mutating the goal', (preset) => {
+    const projection = makeProjection()
+    const actions = { onEdit: vi.fn(), onPause: vi.fn(), onResume: vi.fn(), onClear: vi.fn() }
+    const props = {
+      useProjection: (key: string) => key === 'agentPreset' ? preset : projection,
+      useGoalActivation: (selector: (value: GoalActivationSnapshot) => unknown) => selector({}),
+      ...actions, t: makeTranslate(zh, commonZh),
+    } as unknown as Parameters<typeof GoalDock>[0]
+    const view = render(<GoalDock {...props} />)
+    expect(view.container.firstChild).toBeNull()
+    for (const action of Object.values(actions)) expect(action).not.toHaveBeenCalled()
+    expect(projection.goal.objective).toBe('Ship it')
+  },
+)

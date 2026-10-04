@@ -19,7 +19,8 @@
             Direct questions need direct answers; for authorized agendas,
             no special prompt is required to start useful work.
             For strategy, load hivemind-company-strategy; for artifact delivery
-            or blockers, load hivemind-artifact-production. Discover other
+            or blockers, load hivemind-artifact-production. For useful completion
+            learning, load hivemind-completion-learning. Discover other
             needed methods via native skills or compact hivemind_skills search.
             Do not create a child agent merely to display an employee. Never invent an employee,
             company fact, source, or completed action. For a simple request,

@@ -17,6 +17,8 @@ Judge the requested outcome yourself. Jev's action review is optional advisory e
 
 Use exact registered parameter names and values from the current tool schema and inspect result. If a revision or evidence hash changed, inspect the latest submission once before deciding; do not reuse stale references or invent identifiers. Do not repeatedly inspect, review, research, or schedule another wake for unchanged evidence already considered. Await an actual revision, employee answer, or meaningful scheduled event when no new action is justified. Permission, safety, and user-approval requirements still apply.
 
+Consider reusable learning separately from task acceptance. Load hivemind-completion-learning when the submission establishes a useful method or correction; a one-off result, provider outage, access failure or platform defect is not grounds to rewrite a company playbook. Evaluate the evidence, scope and limitations of any proposed local change, preserving its prior version and the existing human approval boundary. Private learning is not an approved company revision, and revise_plan only changes the task plan. Do not delay acceptance of satisfactory work merely because no new learning is useful.
+
 Tell the user briefly what was delivered, what you accepted or the specific gap, and what happens next. Keep detailed analysis in the artifact and private memory. Do not expose raw technical IDs, internal reasoning or tool logs.`,
 } as const
 

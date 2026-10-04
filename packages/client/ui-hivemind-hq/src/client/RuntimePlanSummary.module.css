@@ -8,3 +8,11 @@
 .cancel { border: 1px solid color-mix(in srgb, currentColor 15%, transparent); border-radius: 16px; background: transparent; color: inherit; padding: 6px 12px; font: inherit; font-size: 12px; cursor: pointer; }
 .cancel:disabled { opacity: .5; }
 @media (max-width: 420px) { .task { gap: 8px; flex-wrap: wrap; } .body { flex-basis: calc(100% - 96px); } .cancel { margin-left: auto; } }
+
+.nextSteps { margin-top: 16px; }
+.assignments { border: 1px solid color-mix(in srgb, currentColor 12%, transparent); border-radius: 16px; padding: 16px; margin-bottom: 16px; }
+.assignments h3 { margin: 0 0 4px; font-size: 14px; }
+.completedIcon { flex: 0 0 42px; display: grid; place-items: center; height: 42px; border-radius: 50%; color: #16804a; background: color-mix(in srgb, #16804a 10%, transparent); font-size: 22px; }
+.completedLabel { color: #16804a; font-weight: 600; }
+.history { margin-top: 8px; font-size: 12px; opacity: .7; }
+.history summary { cursor: pointer; }

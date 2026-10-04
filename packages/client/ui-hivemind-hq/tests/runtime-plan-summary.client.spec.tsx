@@ -25,7 +25,7 @@ it('shows saved assignments only when records contain scheduled tasks', async ()
   const load = vi.fn().mockResolvedValue({ ok: true, value: { ...empty, tasks: [task] } })
   const view = render(<RuntimePlanSummary sessionId={'runtime' as never} turn={1} events={events}
     load={load} cancel={vi.fn()} t={key => en[key]} />)
-  expect(await view.findByRole('heading', { name: 'Scheduled work' })).toBeTruthy()
+  expect(await view.findByRole('heading', { name: 'Assigned work' })).toBeTruthy()
   expect(view.getByText('Research')).toBeTruthy()
   expect(view.getByText(/^Due /)).toBeTruthy()
   expect(view.getByRole('button', { name: 'Cancel' })).toBeTruthy()
@@ -81,4 +81,19 @@ it('shows actual saved assignments on an ordinary scheduling turn without a call
   await vi.waitFor(() => expect(view.getByText('Launch brief')).toBeTruthy())
   expect(view.getByRole('button', { name: 'Cancel' })).toBeTruthy()
   expect(view.queryByRole('button', { name: 'Start Call' })).toBeNull()
+})
+
+it('shows receipt-backed completed status separately from the call invitation', async () => {
+  const load = vi.fn().mockResolvedValue({ ok: true, value: { ...empty, tasks: [{
+    id: 'task-1', title: 'Reviewed brief', owner: 'ravi', status: 'completed', revision: 3,
+    nextWakeAt: '2026-10-04T12:00:00Z', dueAt: '2026-10-04T12:05:00Z',
+  }] } })
+  const view = render(<RuntimePlanSummary sessionId={'runtime' as never} turn={1}
+    events={events} load={load} cancel={vi.fn()} t={key => en[key]} />)
+  await view.findByRole('heading', { name: 'Completed work' })
+  expect(view.getByText('Completed')).toBeTruthy()
+  expect(view.queryByRole('button', { name: 'Cancel' })).toBeNull()
+  expect(view.queryByText(/^Starts /)).toBeNull()
+  expect(view.getByText('Past schedule')).toBeTruthy()
+  expect(view.getByRole('button', { name: 'Start Call' }).closest('[aria-label="Assigned work"]')).toBeNull()
 })

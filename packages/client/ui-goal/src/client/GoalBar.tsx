@@ -189,6 +189,7 @@ export type GoalDockProps =
 export function GoalDock({
   useProjection, useGoalActivation, onEdit, onPause, onResume, onClear, t,
 }: GoalDockProps) {
+  const preset = useProjection('agentPreset')
   const projection = useProjection('goal')
   const goal = projection === undefined || projection === null ? projection : projection.goal
   const goalId = goal?.id
@@ -196,6 +197,11 @@ export function GoalDock({
   const activation = useGoalActivation(next => (
     next.id === goalId && next.revision === revision ? next.activation : undefined
   ))
+
+  // Product employees use normal instructions and shared tasks; the native
+  // goal remains active, but its destructive composer controls stay internal.
+  if (preset === 'hivemind-hq' || preset === 'hivemind-hyperagents'
+    || preset === 'hyperagents' || preset === 'hyperagents-compressed') return null
 
   return (
     <GoalBar

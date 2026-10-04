@@ -55,38 +55,47 @@ export function RuntimePlanSummary({ sessionId, turn, events, load, cancel, t, r
   }, [ready, load, sessionId, refresh])
   const scheduledTasks = workspace?.tasks.filter(task => task.nextWakeAt || workspace.calendar.some(item => item.taskId === task.id)) ?? []
   if (!ready) return null
-  return <section aria-label="Runtime next steps" style={{ border: '1px solid var(--border-color, #e4e7eb)', borderRadius: 16, padding: 18, marginTop: 16 }}>
-    {scheduledTasks.length > 0 && <>
-      <h3>Scheduled work</h3>
-      <p>Here are the saved assignments. Cancelling a prerequisite also cancels its pending dependent tasks.</p>
-    </>}
+  return <section aria-label="Runtime next steps" className={css.nextSteps}>
+    {scheduledTasks.length > 0 && <section aria-label="Assigned work" className={css.assignments}>
+      {scheduledTasks.length > 0 && <>
+        <h3>{scheduledTasks.every(task => task.status === 'completed') ? 'Completed work' : 'Assigned work'}</h3>
+      </>}
+
+      {scheduledTasks.map((task) => {
+        const assignment = workspace?.calendar.find(item => item.kind === 'assignment' && item.taskId === task.id)
+        const owner = assignment?.owner ?? task.owner
+        const start = assignment?.startsAt ?? task.nextWakeAt
+        const date = start === undefined ? undefined : new Date(start)
+        const format = (value: string) => new Date(value).toLocaleString(undefined, { timeZoneName: 'short' })
+        const completed = task.status === 'completed'
+        return <article key={task.id} className={css.task}>
+          {completed && <span className={css.completedIcon} aria-hidden>✓</span>}
+          {!completed && date && <div className={css.date} aria-hidden><small>{date.toLocaleString(undefined, { month: 'short' })}</small><strong>{date.getDate()}</strong></div>}
+          <div className={css.identity}>{renderAvatar?.({ employeeId: owner })}</div>
+          <div className={css.body}><strong>{task.title}</strong>
+            <div className={css.meta}>{employeeNames.get(owner) ?? task.owner} · {completed ? <span className={css.completedLabel}>Completed</span> : task.status === 'deleted' ? 'Cancelled' : task.status}</div>
+            {completed && <details className={css.history}><summary>Past schedule</summary>
+              {start && <div className={css.meta}>Started {format(start)}</div>}
+              {assignment?.endsAt && <div className={css.meta}>Work window ended {format(assignment.endsAt)}</div>}
+              {task.dueAt && <div className={css.meta}>Original deadline {format(task.dueAt)}</div>}
+            </details>}
+            {!completed && start && <div className={css.meta}>Starts {format(start)}</div>}
+            {!completed && assignment?.endsAt && <div className={css.meta}>Work window ends {format(assignment.endsAt)}</div>}
+            {!completed && task.dueAt && <div className={css.meta}>Due {format(task.dueAt)}</div>}
+          </div>
+          {task.status === 'pending' && <button className={css.cancel} type="button" disabled={pending !== undefined} onClick={() => {
+            setPending(task.id); setError(undefined)
+            void cancel(sessionId, { taskId: task.id, expectedRevision: task.revision }).then(async (result) => {
+              if (!result.ok) throw result.error
+              if (!result.value.cancelled) throw new Error('Cancellation was not confirmed. Refresh and try again.')
+              await refresh()
+            }).catch((cause: unknown) => setError(cause instanceof Error ? cause.message : 'Cancellation failed.')).finally(() => setPending(undefined))
+          }}>{pending === task.id ? 'Cancelling…' : 'Cancel'}</button>}
+        </article>
+      })}
+      {error && <p role="alert">{error}</p>}
+    </section>}
     {!workspace && <p role="status">Loading saved tasks…</p>}
-    {scheduledTasks.map((task) => {
-      const assignment = workspace?.calendar.find(item => item.kind === 'assignment' && item.taskId === task.id)
-      const owner = assignment?.owner ?? task.owner
-      const start = assignment?.startsAt ?? task.nextWakeAt
-      const date = start === undefined ? undefined : new Date(start)
-      const format = (value: string) => new Date(value).toLocaleString(undefined, { timeZoneName: 'short' })
-      return <article key={task.id} className={css.task}>
-        {date && <div className={css.date} aria-hidden><small>{date.toLocaleString(undefined, { month: 'short' })}</small><strong>{date.getDate()}</strong></div>}
-        <div className={css.identity}>{renderAvatar?.({ employeeId: owner })}</div>
-        <div className={css.body}><strong>{task.title}</strong>
-          <div className={css.meta}>{employeeNames.get(owner) ?? task.owner} · {task.status === 'deleted' ? 'Cancelled' : task.status}</div>
-          {start && <div className={css.meta}>Starts {format(start)}</div>}
-          {assignment?.endsAt && <div className={css.meta}>Work window ends {format(assignment.endsAt)}</div>}
-          {task.dueAt && <div className={css.meta}>Due {format(task.dueAt)}</div>}
-        </div>
-        {task.status === 'pending' && <button className={css.cancel} type="button" disabled={pending !== undefined} onClick={() => {
-          setPending(task.id); setError(undefined)
-          void cancel(sessionId, { taskId: task.id, expectedRevision: task.revision }).then(async (result) => {
-            if (!result.ok) throw result.error
-            if (!result.value.cancelled) throw new Error('Cancellation was not confirmed. Refresh and try again.')
-            await refresh()
-          }).catch((cause: unknown) => setError(cause instanceof Error ? cause.message : 'Cancellation failed.')).finally(() => setPending(undefined))
-        }}>{pending === task.id ? 'Cancelling…' : 'Cancel'}</button>}
-      </article>
-    })}
-    {error && <p role="alert">{error}</p>}
     {invited && <RuntimeCallBanner sessionId={sessionId} t={t} avatar={renderAvatar?.({ employeeId: 'runtime', name: 'Runtime' })} />}
   </section>
 }

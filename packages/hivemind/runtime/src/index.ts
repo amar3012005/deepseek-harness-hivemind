@@ -9,6 +9,7 @@ import { installRequestFallback } from './request-recovery.ts'
 import { installSubmissionReviewGuidance } from './review-guidance.ts'
 import { installArtifactProductionGuidance } from './production-guidance.ts'
 import { installCompanyAwakeningGuidance } from './awakening-guidance.ts'
+import { installCompletionLearningGuidance } from './learning-guidance.ts'
 import { installCompanyStrategyGuidance } from './strategy-guidance.ts'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
@@ -1083,6 +1084,7 @@ function registerWebConnectRoutes(ctx: Context, config: Config): void {
 export function apply(ctx: Context, config: Config): void {
   installArtifactProductionGuidance(ctx)
   installCompanyStrategyGuidance(ctx)
+  installCompletionLearningGuidance(ctx)
   if (config.companyAwakeningEnabled) installCompanyAwakeningGuidance(ctx)
   if (config.submissionReviewEnabled) installSubmissionReviewGuidance(ctx)
   if (config.privateMemoryEnabled) installAgentMessaging(ctx)
