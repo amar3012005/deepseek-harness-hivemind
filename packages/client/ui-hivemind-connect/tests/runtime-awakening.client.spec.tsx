@@ -53,7 +53,7 @@ it('keeps human summary visible and full persona behind the native Work details 
   const view = render(<RuntimeAwakening events={{ getSnapshot: () => snapshot, subscribe: () => () => {} }}
     turn={1} checkpointSeq={1} renderSlot={() => null} />)
   expect(view.getByText('I met Ravi and checked his availability.')).toBeTruthy()
-  expect(view.getByRole('list', { name: 'Your team' })).toBeTruthy()
+  expect(view.getByRole('list', { name: 'Our team' })).toBeTruthy()
   expect(view.getAllByText('Ravi').length).toBeGreaterThan(0)
   expect(view.queryByText(detail)).toBeNull()
   fireEvent.click(view.getByRole('button', { name: 'Work details' }))

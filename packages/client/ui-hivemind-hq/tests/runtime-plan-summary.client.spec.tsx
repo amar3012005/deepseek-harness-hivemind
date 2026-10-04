@@ -130,3 +130,59 @@ it('labels active native work as in progress rather than scheduled', async () =>
   expect(view.queryByText(/Scheduled/)).toBeNull()
   expect(view.queryByRole('button', { name: 'Cancel' })).toBeNull()
 })
+
+it('shows only Runtime’s latest chosen call invitation and hides it during a later run', async () => {
+  let log = { entries: [...snapshot.entries,
+    { type: 'event', event: { type: 'turn/start', data: { turn: 2 } } },
+    { type: 'event', event: { type: 'hivemind/hq-awakening-checkpoint', data: { turn: 2, stage: 'conversation', blocked: false, cards: [] } } },
+    { type: 'event', event: { type: 'hivemind/hq-rest-confirmed', data: {} } },
+  ] } as unknown as SessionEventWindow
+  const listeners = new Set<() => void>()
+  const shared = { getSnapshot: () => log, subscribe: (fn: () => void) => { listeners.add(fn); return () => { listeners.delete(fn) } } }
+  const props = { sessionId: 'runtime' as never, events: shared,
+    load: vi.fn().mockResolvedValue({ ok: true, value: empty }), cancel: vi.fn(), t: (key: keyof typeof en) => en[key] }
+  const view = render(<><RuntimePlanSummary {...props} turn={1} /><RuntimePlanSummary {...props} turn={2} /></>)
+  expect(view.getAllByRole('button', { name: 'Start Call' })).toHaveLength(1)
+  log = { entries: [...log.entries, { type: 'event', event: { type: 'turn/start', data: { turn: 3 } } }] } as unknown as SessionEventWindow
+  await vi.waitFor(() => { listeners.forEach(fn => fn()); expect(view.queryByRole('button', { name: 'Start Call' })).toBeNull() })
+})
+
+it('retains the authoritative completed card at its closure turn without repeating it on a later wake', async () => {
+  const log = { entries: [
+    { type: 'event', event: { type: 'turn/start', data: { turn: 1 } } },
+    { type: 'event', event: { type: 'hivemind/hq-task-review', data: { taskId: 'task-1', status: 'accepted' } } },
+    { type: 'event', event: { type: 'turn/start', data: { turn: 2 } } },
+    { type: 'event', event: { type: 'hivemind/hq-awakening-checkpoint', data: { turn: 2, stage: 'conversation', blocked: false, cards: [] } } },
+  ] } as unknown as SessionEventWindow
+  const load = vi.fn().mockResolvedValue({ ok: true, value: { ...empty, tasks: [{
+    id: 'task-1', title: 'Accepted brief', owner: 'ravi', status: 'completed', revision: 3,
+    nextWakeAt: '2026-10-04T12:00:00Z',
+  }] } })
+  const props = { sessionId: 'runtime' as never, events: { getSnapshot: () => log, subscribe: () => () => {} },
+    load, cancel: vi.fn(), t: (key: keyof typeof en) => en[key] }
+  const view = render(<><RuntimePlanSummary {...props} turn={1} /><RuntimePlanSummary {...props} turn={2} /></>)
+  expect(await view.findByText('Accepted brief')).toBeTruthy()
+  expect(view.getAllByText('Completed')).toHaveLength(1)
+  expect(view.getByText('Accepted brief').closest('[aria-label="Runtime next steps"]')?.textContent).not.toContain('Start Call')
+})
+
+it('reloads authoritative state immediately when accepted review arrives live', async () => {
+  let log = { entries: [
+    { type: 'event', event: { type: 'turn/start', data: { turn: 1 } } },
+    { type: 'event', event: { type: 'hivemind/hq-calendar-item', data: { kind: 'assignment' } } },
+  ] } as unknown as SessionEventWindow
+  const listeners = new Set<() => void>()
+  const task = { id: 'task-1', title: 'Live brief', owner: 'ravi', revision: 2, nextWakeAt: '2026-10-04T12:00:00Z' }
+  let status = 'in_progress'
+  const load = vi.fn(async () => ({ ok: true as const, value: { ...empty, tasks: [{ ...task, status }] } }))
+  const shared = { getSnapshot: () => log, subscribe: (fn: () => void) => { listeners.add(fn); return () => { listeners.delete(fn) } } }
+  const view = render(<RuntimePlanSummary sessionId={'runtime' as never} turn={1} events={shared}
+    load={load as never} cancel={vi.fn()} t={key => en[key]} />)
+  expect(await view.findByText(/In progress/)).toBeTruthy()
+  status = 'completed'
+  log = { entries: [...log.entries, { type: 'event', event: {
+    type: 'hivemind/hq-task-review', data: { taskId: 'task-1', status: 'accepted' },
+  } }] } as unknown as SessionEventWindow
+  await vi.waitFor(() => { listeners.forEach(fn => fn()); expect(view.getByText('Completed')).toBeTruthy() })
+  expect(view.queryByText(/In progress/)).toBeNull()
+})

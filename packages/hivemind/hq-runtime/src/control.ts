@@ -5,6 +5,7 @@ import { createBrowserTimeZoneConfirmation } from '@deepseek-ai/dsh-time-context
 import type {} from '@deepseek-ai/dsh-agent-presets'
 import type {} from '@deepseek-ai/dsh-experimental-agent-team'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
+import { installEmployeeSnapshots } from './employee-snapshot.ts'
 import { restState as loadRestState, leaveRestNote as saveRestNote } from './rest.ts'
 import type { HqRestState, HqRestNoteRequest, HqRestNoteResult } from './types.ts'
 import { hqMode, type HqModeState } from './mode.ts'
@@ -76,6 +77,7 @@ export class HqControl extends TypertRemoteService {
   constructor(ctx: Context) {
     super(ctx, 'hivemindHq')
     installEmployeeDelivery(ctx)
+    installEmployeeSnapshots(ctx)
     ctx.effect(() => ctx.on('agent/session-start', ({ agent }) => {
       if (!isHq(agent)) return
       // Cold restoration can occur inside Schedule's serialized dispatch. Its

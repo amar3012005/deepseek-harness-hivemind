@@ -1,4 +1,6 @@
 import type {} from '@deepseek-ai/dsh-client-ui-chat/client'
+import { RuntimeTaskCard } from './RuntimeTaskCard.tsx'
+import { employeeTaskCard } from './employee-task-card.ts'
 import { FinalRuntimePlanSummary } from './RuntimePlanSummary.tsx'
 /** Native header contribution over generated, tenant-authorized HQ Remote contracts. */
 import { createElement, useState, useSyncExternalStore } from 'react'
@@ -28,8 +30,18 @@ export const inject = ['sessions', 'remote', 'slots', 'locale', 'layout', 'uiWor
  */
 export async function apply(ctx: Context): Promise<() => Promise<void>> {
   const disposeRemote = await ctx.remote.$mount(hqRemote)
-  const ui = ctx.inject(['sessions', 'remote.hivemindHq', 'remote.agentPresets', 'slots', 'locale', 'layout', 'uiWorkspace'], (child) => {
+  const ui = ctx.inject(['uiConversation', 'sessions', 'remote.hivemindHq', 'remote.agentPresets', 'slots', 'locale', 'layout', 'uiWorkspace'], (child) => {
     child.effect(() => child.locale.register('hivemind.hq', { en, zh }))
+    child.effect(() => child.uiConversation.events.register(employeeTaskCard))
+    child.slots.inject('conversation.chat.node', () => child.slots.register({
+      name: 'conversation.chat.node', key: 'hivemind-employee-task',
+      children: { 'hivemind.employee.taskAvatar': { kind: 'single', scope: 'session' } },
+    }, ({ node, renderSlot }) => createElement(RuntimeTaskCard, {
+      task: node.data.task, employeeName: node.data.employeeName,
+      avatar: renderSlot('hivemind.employee.taskAvatar', { employeeId: node.data.employeeId, name: node.data.employeeName }),
+      ...(node.data.calendar?.startsAt ? { startsAt: node.data.calendar.startsAt } : {}),
+      ...(node.data.calendar?.endsAt ? { endsAt: node.data.calendar.endsAt } : {}),
+    })))
     const actions: HqControlInjected = {
       startFresh: (sessionId, request) => child.remote.hivemindHq.startFresh(sessionId, request),
       restState: sessionId => child.remote.hivemindHq.restState(sessionId),

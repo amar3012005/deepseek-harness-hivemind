@@ -4,3 +4,5 @@ export type { HqWorkspace, HqWorkspaceTask, HqWorkspaceWake } from './types.ts'
 export type { HqCalendarItem, HqCalendarUpdate, HqCalendarUpdateResult } from './types.ts'
 export type { HqWakeHistory, HqTaskProgress } from './types.ts'
 export type { HqRestState, HqRestNote, HqRestNoteRequest, HqRestNoteResult } from './types.ts'
+
+export type { EmployeeTaskSnapshot } from './types.ts'

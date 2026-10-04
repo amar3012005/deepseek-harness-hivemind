@@ -68,6 +68,9 @@ declare module '@deepseek-ai/dsh-session/types' {
       memberName: string
       sessionId: string
       personaSha256: string
+      employeeName?: string
+      employeeRole?: string
+      avatarUrl?: string
     }
   }
 }
@@ -204,7 +207,7 @@ export function apply(ctx: Context): void {
         producer: {
           type: 'string',
           description:
-            'Exact native Team member name that saved the artifacts; defaults to lead. Only authenticated native task assignees can supply receipts.',
+            'Exact native Team member name from list_agents, not a display name or employee ID; persistent employees normally use their authenticated slug. Defaults to lead. For received employee artifacts prefer inspect with exact task_id after list shows linked receipts; artifacts only links exact saved artifact_ids. Only authenticated native task assignees can supply receipts.',
         },
       },
       output: {

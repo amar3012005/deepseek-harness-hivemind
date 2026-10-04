@@ -19,6 +19,7 @@ export function ConfirmedScheduleList({ ids, employeeIds, source, open, avatar, 
   useEffect(() => { void source.onRetry(ordinal) }, [source, ordinal])
   if (!catalog.settled || catalog.readSettled <= ordinal) return null
   const tasks = catalog.records.filter(task => ids.includes(task.id))
+  if (tasks.length === 0) return null
   const technicalCatalog = <section aria-label={t('list.label')} data-confirmed-schedule-list>
     {tasks.map(task => <details key={task.id} style={{ padding: '12px 0', borderBottom: '1px solid var(--dsw-static-neutral-100)' }}>
       <summary style={{ display: 'flex', gap: 10, alignItems: 'center', cursor: 'pointer' }}>

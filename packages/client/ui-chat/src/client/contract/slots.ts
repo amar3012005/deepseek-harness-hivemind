@@ -180,6 +180,7 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
     /** Identity supplied by an installed product profile, never inferred from prose. */
     'conversation.chat.assistantAvatar': { kind: 'single'; scope: 'session'; owner: { employeeId?: string; name?: string } }
     'conversation.chat.contextAvatar': { kind: 'single'; scope: 'session'; owner: { employeeId?: string; name?: string } }
+    'hivemind.employee.taskAvatar': { kind: 'single'; scope: 'session'; owner: { employeeId?: string; name?: string } }
     'hivemind.runtime.planAvatar': { kind: 'single'; scope: 'session'; owner: { employeeId?: string; name?: string } }
     /**
      * Final Chat node renderer, keyed by `ChatNodeKind`. The component receives

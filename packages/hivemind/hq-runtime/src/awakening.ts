@@ -70,7 +70,7 @@ export function installAwakening(ctx: Context): void {
     parameters: {
       stage: { type: 'string', required: true, enum: [...awakeningStages] },
       summary: { type: 'string', required: true, description: 'Short evidence-backed finding or concrete gap, not hidden reasoning.' },
-      evidence_refs: { type: 'array', required: true, items: { type: 'string' }, description: 'Exact source URLs, artifact IDs or receipt identifiers returned by native tools. Use an empty list only for team discovery, a blocked stage, or a conversation invitation without artifact/image references.' },
+      evidence_refs: { type: 'array', required: true, items: { type: 'string' }, description: 'Exact source URLs, artifact IDs or receipt identifiers copied unchanged from successful non-awakening tool results in this Runtime room; employee messages, IDs from another room or earlier awakening checkpoints are not substitutes. After a rejected reference, inspect the actual successful result and correct the reference rather than repeating the same call. Use an empty list only for team discovery, a blocked stage, or a conversation invitation without artifact/image references.' },
       blocked: { type: 'boolean', description: 'Set true only when this stage has a concrete unresolved gap; defaults to false.' },
       title: { type: 'string', description: 'Optional inspected artifact or page title.' },
       image: { type: 'string', description: 'Optional exact authenticated same-origin image path already returned by a successful receipt.' },

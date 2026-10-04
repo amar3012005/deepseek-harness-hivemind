@@ -78,8 +78,9 @@ export function RuntimeAwakening(
 /** Optional receipt/persona detail uses the same native collapsed chrome as tool work. */
 function CheckpointDetails({ cards }: { cards: Checkpoint['cards'] }) {
   const [open, setOpen] = useState(false)
+  const detailedCards = cards.filter(card => card.detail.trim() || card.reference)
   return <>
-    {cards.some(card => card.employeeId) && <div className={css.team} role="list" aria-label="Your team">
+    {cards.some(card => card.employeeId) && <div className={css.team} role="list" aria-label="Our team">
       {cards.filter(card => card.employeeId).map(card => <article key={card.employeeId} className={css.employee} role="listitem">
         <EmployeeAvatar employee={{ id: card.employeeId ?? '', name: card.title, role: card.role ?? 'communicator',
           ...(card.avatarUrl ? { avatarUrl: card.avatarUrl } : {}) }} size={36} />
@@ -88,16 +89,16 @@ function CheckpointDetails({ cards }: { cards: Checkpoint['cards'] }) {
     </div>}
     {cards.filter(card => card.image).map((card, index) => <img key={index} className={css.evidenceImage}
       src={card.image} alt={card.title} loading="lazy" />)}
-    <DisclosureRow title="Work details" icon={<IconBrowseOutline16 size={14} />} open={open}
+    {detailedCards.length > 0 && <DisclosureRow title="Work details" icon={<IconBrowseOutline16 size={14} />} open={open}
       expandable expandOnRowClick onToggle={() => { setOpen(value => !value) }}>
       <div className={css.cards} role="list">
-        {cards.map((card, index) => <article key={index} className={css.card} role="listitem">
+        {detailedCards.map((card, index) => <article key={index} className={css.card} role="listitem">
           {card.employeeId && <EmployeeAvatar employee={{ id: card.employeeId, name: card.title,
             role: card.role ?? 'communicator', ...(card.avatarUrl ? { avatarUrl: card.avatarUrl } : {}) }} size={32} />}
           <strong>{card.title}</strong><p>{card.detail}</p>
           {card.reference && <small>{card.reference}</small>}
         </article>)}
       </div>
-    </DisclosureRow>
+    </DisclosureRow>}
   </>
 }

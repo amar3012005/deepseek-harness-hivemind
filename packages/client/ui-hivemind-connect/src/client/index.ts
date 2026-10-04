@@ -271,7 +271,7 @@ export function apply(ctx: ClientContext): void {
     const binding = ctx.sessions.binding(targetSessionId)
     return binding === undefined ? null : createElement(AgentChatAvatar, { events: binding.eventSource, load: chatEmployees })
   }))
-  for (const name of ['conversation.chat.assistantAvatar', 'conversation.chat.contextAvatar', 'hivemind.runtime.planAvatar'] as const) ctx.slots.inject(name, () => ctx.slots.register({
+  for (const name of ['conversation.chat.assistantAvatar', 'conversation.chat.contextAvatar', 'hivemind.runtime.planAvatar', 'hivemind.employee.taskAvatar'] as const) ctx.slots.inject(name, () => ctx.slots.register({
     name,
   }, ({ employeeId, name: senderName, sessionId }) => window.location.pathname.includes('/employee/harness')
     ? createElement(AgentChatAvatar, {

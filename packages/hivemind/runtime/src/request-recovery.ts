@@ -6,6 +6,7 @@ import type { LlmFailure } from '@deepseek-ai/dsh-llm'
 export interface RequestFallback { provider: string; model: string }
 declare module '@deepseek-ai/dsh-session/types' {
   interface SessionEventMap {
+    /** Records the explicitly configured fallback route used for one recoverable request turn. */
     'hivemind/request-fallback': { turn: number; step: number; provider: string; model: string; failureCode: string }
   }
 }

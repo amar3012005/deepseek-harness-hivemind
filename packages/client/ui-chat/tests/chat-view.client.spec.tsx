@@ -1581,6 +1581,22 @@ describe('ChatView', () => {
     expect(answer?.hasAttribute('data-turn-process-answer')).toBe(false)
   })
 
+  it('preserves product narration through live completion on a non-employee route', () => {
+    document.documentElement.dataset.dshMode = 'hivemind-chat'
+    try {
+      const reply = assistant(2, 'I learned about our company', 1, 1)
+      const h = makeHarness({ nodes: [user(1, 'question'), reply], running: true })
+      const view = render(<h.ChatView {...h.props} />)
+      const row = view.getByText('I learned about our company').closest('[data-chat-flow-kind="assistant-step"]')
+      act(() => { h.set({ nodes: [user(1, 'question'), reply, assistant(4, 'Sleeping now', 1, 2)],
+        running: false, turnEnds: new Map([[1, 5]]) }) })
+      expect(row?.hasAttribute('hidden')).toBe(false)
+      expect(row?.hasAttribute('data-turn-process-hidden')).toBe(false)
+      act(() => { h.set({ nodes: [user(1, 'question'), reply, assistant(4, 'Sleeping now', 1, 2), user(6, 'next')], running: true }) })
+      expect(row?.hasAttribute('hidden')).toBe(false)
+    } finally { delete document.documentElement.dataset.dshMode }
+  })
+
   it('keeps a live Turn expanded and folds it once at turn/end', () => {
     const process = assistant(2, 'inspect', 1, 1)
     const h = makeHarness({

@@ -103,7 +103,7 @@ function CurrentScheduleCards({ created, openTaskDetail, t, useCatalog, onRetry 
 export function ScheduleTurnCard(props: ScheduleTurnCardProps) {
   const matched = selectScheduleTasks(props)
   if (matched === null) return null
-  return (
+  const technicalCards = (
     <div className={css.list}>
       <CurrentScheduleCards
         created={matched.created}
@@ -114,4 +114,7 @@ export function ScheduleTurnCard(props: ScheduleTurnCardProps) {
       />
     </div>
   )
+  return document.documentElement.dataset.dshMode === 'hivemind-chat'
+    ? <details><summary>Work details</summary>{technicalCards}</details>
+    : technicalCards
 }

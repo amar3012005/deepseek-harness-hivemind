@@ -101,3 +101,15 @@ export interface HqRestState {
   readonly notes: readonly HqRestNote[]
   readonly omittedPresentedNotes?: number
 }
+
+/** Derived authorized task display stored only in its assigned employee room. */
+export interface EmployeeTaskSnapshot {
+  readonly rootSessionId: string
+  readonly employeeId: string
+  readonly employeeName: string
+  readonly employeeRole?: string
+  readonly avatarUrl?: string
+  readonly sourceSequence: number
+  readonly task: HqWorkspaceTask
+  readonly calendar: HqCalendarItem | null
+}

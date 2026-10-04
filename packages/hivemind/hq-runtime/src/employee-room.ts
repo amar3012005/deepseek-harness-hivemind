@@ -77,7 +77,7 @@ export async function prepareEmployee(ctx: Context, root: Agent, taskId: string,
     return prior.data
   }
   const member = await ctx.agentTeams.bindPersistentAssignee(root, target, slug, profile.name)
-  const assignment = { taskId, employeeId, memberName: member.name, sessionId: target.id, personaSha256: createHash('sha256').update(employeePersona(profile)).digest('hex') }
+  const assignment = { taskId, employeeId, memberName: member.name, sessionId: target.id, employeeName: profile.name, employeeRole: profile.role, ...(typeof raw['avatar_url'] === 'string' ? { avatarUrl: raw['avatar_url'] } : {}), personaSha256: createHash('sha256').update(employeePersona(profile)).digest('hex') }
   root.session.append('hivemind/hq-employee-assignment', assignment)
   if (!(await ctx.sessions.flush(root.session))) throw new Error('hq_assignment_persistence_required')
   return assignment

@@ -1,6 +1,7 @@
 /** Final saved plan with native cancellation and the existing room voice transport. */
 import type { TurnLocation } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import css from './RuntimePlanSummary.module.css'
+import { RuntimeTaskCard } from './RuntimeTaskCard.tsx'
 import { RuntimeCallBanner } from './RuntimeCallBanner.tsx'
 import type { HqKey } from './locales.ts'
 import { useCallback, useEffect, useState, useSyncExternalStore } from 'react'
@@ -22,12 +23,17 @@ export function RuntimePlanSummary({ sessionId, turn, events, load, cancel, t, r
   let eventTurn: number | undefined
   let summaryTurn: number | undefined
   let invitationTurn: number | undefined
+  let latestTurn: number | undefined
   const reviewedInTurn = new Set<string>()
+  let reviewRevision = 0
   for (const entry of log.entries) {
     if (entry.type !== 'event') continue
     const type = String(entry.event.type)
     const data = entry.event.data as unknown as { turn?: number; stage?: string; blocked?: boolean; kind?: string; taskId?: string }
-    if (type === 'turn/start' || type === 'step/start') eventTurn = data.turn
+    if (type === 'turn/start' || type === 'step/start') {
+      eventTurn = data.turn
+      if (data.turn !== undefined) latestTurn = data.turn
+    }
     if (type === 'hivemind/hq-awakening-checkpoint' && data.stage === 'conversation' && !data.blocked) {
       invitationTurn = data.turn
       summaryTurn = data.turn
@@ -35,12 +41,14 @@ export function RuntimePlanSummary({ sessionId, turn, events, load, cancel, t, r
     if (type === 'hivemind/hq-calendar-item' && data.kind === 'assignment') summaryTurn = eventTurn
     if (type === 'hivemind/hq-task-review') {
       summaryTurn = eventTurn
+      reviewRevision++
       if (eventTurn === turn && data.taskId) reviewedInTurn.add(data.taskId)
     }
   }
-  const invited = invitationTurn === turn
+  const invited = invitationTurn === turn && (latestTurn === undefined || latestTurn === turn)
   const ownsSummary = summaryTurn === turn
-  const ready = invited || ownsSummary
+  const preservesClosure = reviewedInTurn.size > 0
+  const ready = invited || ownsSummary || preservesClosure
   const employeeNames = new Map(log.entries.flatMap((entry) => {
     if (entry.type !== 'event' || String(entry.event.type) !== 'hivemind/hq-awakening-checkpoint') return []
     const data = entry.event.data as unknown as { cards: Array<{ employeeId?: string; title: string }> }
@@ -60,9 +68,10 @@ export function RuntimePlanSummary({ sessionId, turn, events, load, cancel, t, r
     void load(sessionId).then((result) => { if (!disposed && result.ok) setWorkspace(result.value) })
     const timer = setInterval(() => { void refresh().catch(() => {}) }, 15000)
     return () => { disposed = true; clearInterval(timer) }
-  }, [ready, load, sessionId, refresh])
-  const scheduledTasks = ownsSummary ? workspace?.tasks.filter(task =>
-    (task.status !== 'completed' || reviewedInTurn.has(task.id))
+  }, [ready, load, sessionId, refresh, reviewRevision])
+  const scheduledTasks = (ownsSummary || preservesClosure) ? workspace?.tasks.filter(task =>
+    (ownsSummary || (reviewedInTurn.has(task.id) && task.status === 'completed'))
+    && (task.status !== 'completed' || reviewedInTurn.has(task.id))
     && (task.nextWakeAt || workspace.calendar.some(item => item.taskId === task.id))) ?? [] : []
   if (!ready) return null
   return <section aria-label="Runtime next steps" className={css.nextSteps}>
@@ -74,34 +83,20 @@ export function RuntimePlanSummary({ sessionId, turn, events, load, cancel, t, r
       {scheduledTasks.map((task) => {
         const assignment = workspace?.calendar.find(item => item.kind === 'assignment' && item.taskId === task.id)
         const owner = assignment?.owner ?? task.owner
-        const start = assignment?.startsAt ?? task.nextWakeAt
-        const date = start === undefined ? undefined : new Date(start)
-        const format = (value: string) => new Date(value).toLocaleString(undefined, { timeZoneName: 'short' })
-        const completed = task.status === 'completed'
-        return <article key={task.id} className={css.task}>
-          {completed && <span className={css.completedIcon} aria-hidden>✓</span>}
-          {!completed && date && <div className={css.date} aria-hidden><small>{date.toLocaleString(undefined, { month: 'short' })}</small><strong>{date.getDate()}</strong></div>}
-          <div className={css.identity}>{renderAvatar?.({ employeeId: owner })}</div>
-          <div className={css.body}><strong>{task.title}</strong>
-            <div className={css.meta}>{employeeNames.get(owner) ?? task.owner} · {completed ? <span className={css.completedLabel}>Completed</span> : task.status === 'deleted' ? 'Cancelled' : task.status === 'pending' ? (assignment ? 'Scheduled' : 'Assigned') : task.status === 'in_progress' ? 'In progress' : task.status}</div>
-            {completed && <details className={css.history}><summary>Past schedule</summary>
-              {start && <div className={css.meta}>Started {format(start)}</div>}
-              {assignment?.endsAt && <div className={css.meta}>Work window ended {format(assignment.endsAt)}</div>}
-              {task.dueAt && <div className={css.meta}>Original deadline {format(task.dueAt)}</div>}
-            </details>}
-            {!completed && start && <div className={css.meta}>Starts {format(start)}</div>}
-            {!completed && assignment?.endsAt && <div className={css.meta}>Work window ends {format(assignment.endsAt)}</div>}
-            {!completed && task.dueAt && <div className={css.meta}>Due {format(task.dueAt)}</div>}
-          </div>
-          {task.status === 'pending' && <button className={css.cancel} type="button" disabled={pending !== undefined} onClick={() => {
+        const knownName = employeeNames.get(owner)
+        const employeeName = knownName ?? (/^[0-9a-f-]{36}$/iu.test(owner) ? 'Assigned employee' : owner)
+        return <RuntimeTaskCard key={task.id} task={task} employeeName={employeeName}
+          avatar={renderAvatar?.({ employeeId: owner })}
+          {...(assignment?.startsAt ? { startsAt: assignment.startsAt } : {})}
+          {...(assignment?.endsAt ? { endsAt: assignment.endsAt } : {})}
+          busy={pending !== undefined} cancelling={pending === task.id} cancel={() => {
             setPending(task.id); setError(undefined)
             void cancel(sessionId, { taskId: task.id, expectedRevision: task.revision }).then(async (result) => {
               if (!result.ok) throw result.error
               if (!result.value.cancelled) throw new Error('Cancellation was not confirmed. Refresh and try again.')
               await refresh()
             }).catch((cause: unknown) => setError(cause instanceof Error ? cause.message : 'Cancellation failed.')).finally(() => setPending(undefined))
-          }}>{pending === task.id ? 'Cancelling…' : 'Cancel'}</button>}
-        </article>
+          }} />
       })}
       {error && <p role="alert">{error}</p>}
     </section>}
