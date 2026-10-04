@@ -12,6 +12,8 @@ describe('HQ wake briefing', () => {
     expect(text).toContain('"deliveredAt":"2030-01-01"')
     expect(text).toContain('do not certify task completion')
     expect(text).toContain('When nothing is due, remain quiet')
+    expect(text).toContain('a queued reminder alone is not new work')
+    expect(text).toContain('Reuse the current handoff and confirmed active future wake')
   })
   it('includes quiet persistent employee notices with exact artifact references', () => {
     const events = [{ type: 'hivemind/room-message-received', data: { id: 'notice', senderName: 'Ravi', kind: 'update', text: 'Saved report', artifactIds: ['artifact-1'] } }] as unknown as SessionEvent[]

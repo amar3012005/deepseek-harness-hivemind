@@ -13,3 +13,7 @@ Live traces showed the model used the supported native `skill` loader, whose tex
 ## HTML edit continuity
 
 A later HTML correction stripped the saved layout into a placeholder. The existing native design skill result now includes the latest same-chat saved HTML source and exact preview attachment on each load, bounded by validated designContextMaxChars. The shared on-demand production/design guidance requires reloading for every HTML-producing turn, preserving the designed artifact for narrow edits, and rendered inspection before closeout. Explicit current user image references suppress only the private fallback, not the prior HTML design context. Oversized existing HTML fails visibly rather than returning incomplete source as complete. No new tool, production gate or agent loop was added.
+
+## PDF worker packaging correction
+
+The live renderer's lazy PDF inspection reached PDF.js's default relative worker lookup after incremental bundling, so a healthy plugin import did not prove PDF generation. Inspection now resolves the existing pdfjs-dist legacy worker asset explicitly with import.meta.resolve before opening document bytes. No dependency changed. The incremental build must keep pdfjs-dist subpaths external and run a real paginated PDF generation/raster smoke, not only a module-import check. Nine local PDF integration checks passed, including actual page rendering and the explicit worker asset URL.
