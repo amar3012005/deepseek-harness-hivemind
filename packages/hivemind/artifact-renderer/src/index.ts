@@ -1,3 +1,4 @@
+import { registerArtifactInspection } from './artifact-inspection.ts'
 /** Progressive, provider-neutral PDF artifact rendering for HIVE-MIND. */
 
 import { randomUUID } from 'node:crypto'
@@ -250,6 +251,7 @@ const outputSchema = {
 
 /** Register the compact model-facing consumer against an already mounted provider. */
 export function registerArtifactTool(ctx: Context, config: Config): void {
+  registerArtifactInspection(ctx)
   ctx.tools.register(defineTool({
     name: 'hivemind_artifact_render',
     description: 'Render finished Markdown directly to a durable PDF with an inline first-page PNG preview. The renderer uses PDFKit and does not launch a browser. The optional HIVE design profile selects print typography and link colors. The durable chat projection is committed before this tool returns and chat_preview_status confirms it is visible to the user even when a text-only model sees the image payload as omitted. The receipt authoritatively reports page_count, pdf_bytes, layout_status, and deterministic design checks; do not lease shell tools to list files, recount pages, rasterize, or re-surface the preview. If explicit visual interpretation is materially required, use the progressive vision lane.',
