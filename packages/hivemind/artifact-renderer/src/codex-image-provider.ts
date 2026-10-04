@@ -1,8 +1,9 @@
 /** Native Codex image bridge with private, replayable per-operation state. */
 import { spawn } from 'node:child_process'
 import { existsSync } from 'node:fs'
+import { loadImage } from '@napi-rs/canvas'
 import { createHash } from 'node:crypto'
-import { mkdir, readFile, writeFile, rename, realpath, stat, open } from 'node:fs/promises'
+import { mkdir, readFile, rename, realpath, stat, open } from 'node:fs/promises'
 import { join, relative, isAbsolute } from 'node:path'
 import { createInterface } from 'node:readline'
 import type { MediaOwner } from './media-admission.ts'
@@ -27,7 +28,7 @@ declare module '@deepseek-ai/cordis' {
     'hivemind/codex-image-auth'(input: { signal: AbortSignal }): Promise<CodexImageAuth | undefined>
   }
 }
-interface State { owner?: MediaOwner; status: 'pending' | 'completed'; threadId?: string; turnId?: string; filename?: string }
+interface State { owner?: MediaOwner; status: 'pending' | 'completed' | 'failed'; threadId?: string; turnId?: string; filename?: string }
 const active = new Map<string, { owner: MediaOwner | undefined; run: Promise<GeneratedFile> }>()
 function object(value: unknown): value is Record<string, unknown> { return value !== null && typeof value === 'object' && !Array.isArray(value) }
 
@@ -123,6 +124,24 @@ async function storedOutput(root: string, filename: string): Promise<GeneratedFi
   return { data, extension: png ? 'png' : jpeg ? 'jpg' : 'webp', mediaType: png ? 'image/png' : jpeg ? 'image/jpeg' : 'image/webp' }
 }
 
+/** Native structured image input avoids sandbox filesystem reference reads. */
+export async function codexReferenceInputs(files: readonly { readonly data: Uint8Array }[]): Promise<{ type: 'image'; url: string }[]> {
+  if (files.length > 5) throw new Error('Image editing accepts at most five saved references')
+  let bytes = 0
+  return Promise.all(files.map(async ({ data }) => {
+    bytes += data.byteLength
+    if (!data.byteLength || data.byteLength > 30 * 1024 * 1024 || bytes > 60 * 1024 * 1024) throw new Error('Saved references exceed the image byte budget')
+    const buffer = Buffer.from(data)
+    const mime = buffer.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])) ? 'image/png'
+      : buffer[0] === 255 && buffer[1] === 216 && buffer[2] === 255 ? 'image/jpeg'
+        : buffer.toString('ascii', 0, 4) === 'RIFF' && buffer.toString('ascii', 8, 12) === 'WEBP' ? 'image/webp' : undefined
+    if (!mime) throw new Error('Saved reference must be PNG, JPEG or WebP')
+    const image = await loadImage(buffer)
+    if (image.width * image.height > 40_000_000) throw new Error('Saved reference exceeds the pixel budget')
+    return { type: 'image' as const, url: `data:${mime};base64,${buffer.toString('base64')}` }
+  }))
+}
+
 /** Generate through the authenticated native runtime; a saved operation is never blindly restarted. */
 export function codexImageProvider(config: CodexImageConfig): GenerationProvider {
   return {
@@ -156,6 +175,7 @@ async function runImage(config: CodexImageConfig, root: string, request: Generat
   if (state?.owner && !request.owner) throw new Error('Image operation ownership is required')
   if (state && request.owner && (!state.owner || state.owner.orgId !== request.owner.orgId || state.owner.userId !== request.owner.userId || state.owner.sessionId !== request.owner.sessionId)) throw new Error('Image operation ownership mismatch')
   if (!state && request.reconcileOnly) throw new Error('Previous image submission has no confirmed provider receipt; it was not regenerated')
+  if (state?.status === 'failed') throw new Error('Previous image turn ended without output; this operation was not regenerated')
   if (state?.status === 'completed' && state.filename) return storedOutput(root, state.filename)
   const signal = AbortSignal.any([request.signal, AbortSignal.timeout(config.timeoutMs)])
   const auth = await config.auth(signal)
@@ -178,6 +198,10 @@ async function runImage(config: CodexImageConfig, root: string, request: Generat
                 return output
               }
             }
+            if (turn.status === 'completed' || turn.status === 'failed' || turn.status === 'interrupted') {
+              await saveState(root, { ...state, status: 'failed' })
+              throw new Error('Previous image turn ended without output; this operation was not regenerated')
+            }
           }
         }
       }
@@ -185,12 +209,13 @@ async function runImage(config: CodexImageConfig, root: string, request: Generat
     }
     await saveState(root, { ...(request.owner ? { owner: request.owner } : {}), status: 'pending' })
     const thread = await wire.request('thread/start', { cwd: root, model: config.model, approvalPolicy: 'never', sandbox: 'read-only', ephemeral: false,
-      baseInstructions: 'You produce exactly one image using image_gen.imagegen. Do not use shell, research, MCP, or other tools. Do not answer with prose in place of generation. Reference paths are authorized inputs. Use the native image tool once.' })
+      baseInstructions: 'You produce exactly one image using image_gen.imagegen. Do not use shell, research, MCP, or other tools. Do not answer with prose in place of generation. Supplied conversation images are authorized inputs. Use the native image tool once.' })
     if (!object(thread) || !object(thread.thread) || typeof thread.thread.id !== 'string') throw new Error('Codex image thread was not accepted')
     state = { ...(request.owner ? { owner: request.owner } : {}), status: 'pending', threadId: thread.thread.id }
     await saveState(root, state)
     let image: Record<string, unknown> | undefined
     let turnError: string | undefined
+    let turnCompleted = false
     let finish!: () => void
     const done = new Promise<void>((resolve) => { finish = resolve })
     const stop = wire.listen((message) => {
@@ -199,6 +224,7 @@ async function runImage(config: CodexImageConfig, root: string, request: Generat
       const item = message.params.item
       if (message.method === 'item/completed' && object(item) && item.type === 'imageGeneration') image = item
       if (message.method === 'turn/completed') {
+        turnCompleted = true
         const turn = message.params.turn
         if (object(turn) && object(turn.error) && typeof turn.error.message === 'string') {
           turnError = turn.error.message.includes('not supported when using Codex with a ChatGPT account')
@@ -209,19 +235,19 @@ async function runImage(config: CodexImageConfig, root: string, request: Generat
       }
     })
     try {
-      const paths: string[] = []
-      for (const [index, reference] of (request.referenceFiles ?? []).entries()) {
-        const path = join(root, `input-${index}.png`)
-        await writeFile(path, reference.data, { mode: 0o600 }); paths.push(path)
-      }
-      const prompt = `${request.content}\n${request.aspectRatio ? `Composition aspect ratio: ${request.aspectRatio}.` : ''}\nUse transparent_background=${request.transparentBackground === true}. ${paths.length ? `Edit the supplied images using referenced_image_paths=${JSON.stringify(paths)}.` : 'Generate a new image.'}`
-      const turn = await wire.request('turn/start', { threadId: state.threadId, input: [{ type: 'text', text: prompt }] })
+      const images = await codexReferenceInputs(request.referenceFiles ?? [])
+      const prompt = `${request.content}\n${request.aspectRatio ? `Composition aspect ratio: ${request.aspectRatio}.` : ''}\nUse transparent_background=${request.transparentBackground === true}. ${images.length ? `Edit the supplied conversation images using num_last_images_to_include=${images.length}. Do not use referenced_image_paths.` : 'Generate a new image.'}`
+      const turn = await wire.request('turn/start', { threadId: state.threadId, input: [{ type: 'text', text: prompt }, ...images] })
       if (!object(turn) || !object(turn.turn) || typeof turn.turn.id !== 'string') throw new Error('Codex image turn was not accepted')
       state = { ...state, turnId: turn.turn.id }; await saveState(root, state)
       await done
       signal.throwIfAborted()
-      if (turnError) throw new Error(turnError)
-      if (!image || image.status !== 'completed' || typeof image.savedPath !== 'string' || image.failure) throw new Error('Codex returned no confirmed image output')
+      if (!turnCompleted) throw new Error('Image outcome is unknown; reconcile this operation before retrying')
+      if (turnError) { await saveState(root, { ...state, status: 'failed' }); throw new Error(turnError) }
+      if (!image || image.status !== 'completed' || typeof image.savedPath !== 'string' || image.failure) {
+        await saveState(root, { ...state, status: 'failed' })
+        throw new Error('Codex image turn ended without output; this operation was not regenerated')
+      }
       const output = await storedOutput(root, image.savedPath)
       await saveState(root, { ...state, status: 'completed', filename: image.savedPath })
       return output
