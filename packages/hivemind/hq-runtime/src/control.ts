@@ -9,6 +9,7 @@ import { restState as loadRestState, leaveRestNote as saveRestNote } from './res
 import type { HqRestState, HqRestNoteRequest, HqRestNoteResult } from './types.ts'
 import { hqMode, type HqModeState } from './mode.ts'
 import { taskContracts, type TaskArtifactLinks } from './ledger.ts'
+import { taskDeadlineScheduleId, projectCalendarTaskStatus } from './task-schedule-lifecycle.ts'
 import { calendarItems, validateCalendarItem } from './calendar.ts'
 import { TeamTaskId } from '@deepseek-ai/dsh-experimental-agent-team'
 import { ScheduleId } from '@deepseek-ai/dsh-schedule'
@@ -168,7 +169,9 @@ export class HqControl extends TypertRemoteService {
     await reconcileEmployeeArtifacts(this.ctx, root, new AbortController().signal)
     const events = root.session.snapshotEvents()
     const contracts = taskContracts(events)
-    const calendar = calendarItems(events)
+    const statuses = new Map<string, string>()
+    for (const event of events) if (event.type === 'team/task') statuses.set(event.data.task.id, event.data.task.status)
+    const calendar = projectCalendarTaskStatus(calendarItems(events), statuses)
     const employeeNames = new Map(events.flatMap(event =>
       event.type === 'hivemind/hq-awakening-checkpoint'
         ? event.data.cards.filter(card => card.employeeId !== undefined)
@@ -461,8 +464,14 @@ export class HqControl extends TypertRemoteService {
     const events = root.session.snapshotEvents()
     const itemIds = new Set(calendarItems(events)
       .filter(item => item.taskId !== undefined && cancelled.has(item.taskId)).map(item => item.id))
-    const active = new Set((await this.ctx.schedule.catalog())
-      .filter(item => item.status === 'active').map(item => String(item.id)))
+    const catalog = await this.ctx.schedule.catalog()
+    const active = new Set(catalog.filter(item => item.status === 'active').map(item => String(item.id)))
+    for (const taskId of cancelled) {
+      const id = taskDeadlineScheduleId(root.id, taskId)
+      if (catalog.some(item => String(item.id) === id && item.sessionId === root.id && item.status === 'active')) {
+        await this.ctx.schedule.delete({ sessionId: root.id, id: ScheduleId(id) })
+      }
+    }
     for (const event of events) {
       if (event.type !== 'hivemind/hq-calendar-wake' || !itemIds.has(event.data.itemId) || !active.has(event.data.scheduleId)) continue
       await this.ctx.schedule.delete({

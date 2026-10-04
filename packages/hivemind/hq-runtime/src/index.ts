@@ -18,6 +18,7 @@ import { wakeBriefing } from './wake-briefing.ts'
 import { dispatchEmployee, reconcileEmployeeArtifacts } from './employee-room.ts'
 import type {} from './control.ts'
 import { calendarItems } from './calendar.ts'
+import { projectCalendarTaskStatus } from './task-schedule-lifecycle.ts'
 import type {} from '@deepseek-ai/dsh-hivemind-employee-directory'
 import type {} from '@deepseek-ai/dsh-hivemind-artifact-renderer'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
@@ -268,7 +269,8 @@ export function apply(ctx: Context): void {
                 subject: task.subject,
                 status: task.status,
               })),
-            calendar: calendarItems(events).map(item => ({
+            calendar: projectCalendarTaskStatus(calendarItems(events), new Map(events.flatMap(event =>
+              event.type === 'team/task' ? [[event.data.task.id, event.data.task.status] as const] : []))).map(item => ({
               id: item.id,
               revision: item.revision,
               kind: item.kind,
