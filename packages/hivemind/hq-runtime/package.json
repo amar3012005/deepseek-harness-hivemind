@@ -47,6 +47,10 @@
     "./ownership-postgres": {
       "types": "./lib/types/ownership-postgres.d.ts",
       "default": "./lib/ownership-postgres.js"
+    },
+    "./attention": {
+      "types": "./lib/types/attention.d.ts",
+      "default": "./lib/attention.js"
     }
   },
   "files": [
@@ -78,7 +82,8 @@
     "@deepseek-ai/dsh-hivemind-employee-delegation": "workspace:^",
     "@deepseek-ai/dsh-tool-todo": "workspace:^",
     "@deepseek-ai/dsh-api-session-controller": "workspace:^",
-    "@deepseek-ai/dsh-hivemind-artifact-renderer": "workspace:^"
+    "@deepseek-ai/dsh-hivemind-artifact-renderer": "workspace:^",
+    "@deepseek-ai/dsh-host-webserver": "workspace:^"
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "workspace:^",
@@ -99,7 +104,8 @@
     "@deepseek-ai/dsh-hivemind-employee-delegation": "workspace:^",
     "@deepseek-ai/dsh-tool-todo": "workspace:^",
     "@deepseek-ai/dsh-api-session-controller": "workspace:^",
-    "@deepseek-ai/dsh-hivemind-artifact-renderer": "workspace:^"
+    "@deepseek-ai/dsh-hivemind-artifact-renderer": "workspace:^",
+    "@deepseek-ai/dsh-host-webserver": "workspace:^"
   },
   "dependencies": {
     "pg": "^8.13.1",

@@ -62,6 +62,9 @@
     },
     {
       "path": "../artifact-renderer"
+    },
+    {
+      "path": "../../host/webserver"
     }
   ]
 }

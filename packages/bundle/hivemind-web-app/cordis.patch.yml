@@ -250,6 +250,11 @@
       name: '@deepseek-ai/dsh-hivemind-hq-runtime/ownership-postgres'
       config: {connectionStringEnv: DATABASE_URL, schema: hivemind, maxConnections: 4, statementTimeoutMs: 15000}
 
+    # Optional server-to-server attention seam; no subscriptions or wakes until explicitly enabled.
+    - id: hivemind-runtime-attention
+      name: '@deepseek-ai/dsh-hivemind-hq-runtime/attention'
+      config: {enabled: false, serviceSecretEnv: HIVE_HARNESS_RUNNER_SERVICE_SECRET, connectionStringEnv: DATABASE_URL, schema: hivemind, triggerSchema: hivemind, maxConnections: 4, statementTimeoutMs: 15000}
+
     - id: ui-hivemind-hq
       name: '@deepseek-ai/dsh-client-ui-hivemind-hq'
 
