@@ -43,6 +43,18 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       ...(node.data.calendar?.endsAt ? { endsAt: node.data.calendar.endsAt } : {}),
     })))
     const actions: HqControlInjected = {
+      subscribeState: (sessionId, listener) => {
+        const source = child.sessions.binding(sessionId)?.eventSource
+        if (!source) return () => {}
+        const revision = () => source.getSnapshot().entries.filter(entry => entry.type === 'event'
+          && ['hivemind/hq-mode', 'hivemind/hq-rest-confirmed'].includes(String(entry.event.type)))
+          .map(entry => entry.type === 'event' ? entry.event.seq : '').join(':')
+        let previous = revision()
+        return source.subscribe(() => {
+          const current = revision()
+          if (current !== previous) { previous = current; listener() }
+        })
+      },
       startFresh: (sessionId, request) => child.remote.hivemindHq.startFresh(sessionId, request),
       restState: sessionId => child.remote.hivemindHq.restState(sessionId),
       leaveRestNote: (sessionId, request) => child.remote.hivemindHq.leaveRestNote(sessionId, request),

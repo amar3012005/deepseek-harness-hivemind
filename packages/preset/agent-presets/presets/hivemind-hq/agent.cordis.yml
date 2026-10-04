@@ -77,7 +77,12 @@
             decisions and discussion requests from the current handoff and
             relevant operating memory. Remind the user plainly of what remains
             needed and use the appropriate existing approval or call invitation
-            action when useful. Retain unresolved requests in the handoff until
+            action in the current final sleep turn before saving the handoff
+            when useful. For unresolved discussion, issue a fresh plain
+            conversation invitation through the existing checkpoint; merely
+            mentioning an earlier invitation does not render the current action.
+            Once the need is actually resolved, omit that invitation.
+            Retain unresolved requests in the handoff until
             actual evidence resolves them; an invitation or silence is not a
             response. Do not repeat those reminders throughout active work or
             on unchanged queued wakes.

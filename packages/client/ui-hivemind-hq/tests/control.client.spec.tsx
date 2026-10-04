@@ -82,3 +82,16 @@ it('labels inactive rest wakes without claiming an upcoming wake', async () => {
   await screen.findByText(new RegExp(en.wakeInactive))
   expect(screen.queryByText(new RegExp(en.nextWake))).toBeNull()
 })
+
+it('refreshes displayed autonomy on the native state notification without granting authority', async () => {
+  let notify: (() => void) | undefined
+  const load = vi.fn().mockResolvedValue({ ok: true, value: { ...mode, enabled: false } })
+  const setMode = vi.fn()
+  render(<HqControlAction {...base} load={load} setMode={setMode}
+    subscribeState={(_id, listener) => { notify = listener; return () => {} }} />)
+  await screen.findByText(en.paused)
+  load.mockResolvedValue({ ok: true, value: { ...mode, revision: 2, enabled: true } })
+  notify?.()
+  await screen.findByText(en.active)
+  expect(setMode).not.toHaveBeenCalled()
+})

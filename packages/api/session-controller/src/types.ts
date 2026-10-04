@@ -542,6 +542,7 @@ export interface SessionQueuedItem {
   readonly message: {
     readonly id: MessageId
     readonly content: readonly JsonValue[]
+    readonly source?: JsonValue
   }
 }
 

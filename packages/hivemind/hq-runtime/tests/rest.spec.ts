@@ -45,11 +45,19 @@ function fixture() {
   } as unknown as Context
   installRest(ctx)
   const execute = (args = request) => tools.get('hivemind_hq_rest')!.execute(args, { agent, signal: new AbortController().signal } as never)
-  return { ctx, get agent() { return agent }, get events() { return events }, schedules, ensure, remove, flush, execute, prompt,
+  return { ctx, tools, get agent() { return agent }, get events() { return events }, schedules, ensure, remove, flush, execute, prompt,
     crash: () => { events = structuredClone(durable); agent = makeAgent(); return agent } }
 }
 afterEach(() => vi.useRealTimers())
 describe('native Runtime voluntary rest', () => {
+  it('guides a current relevant invitation before handoff without creating a new request registry', () => {
+    const f = fixture()
+    const schema = JSON.stringify(f.tools.get('hivemind_hq_rest')!.parameters)
+    expect(schema).toContain('current final sleep turn before saving this handoff')
+    expect(schema).toContain('Omit the invitation once evidence resolves the need')
+    expect(f.events).toHaveLength(0)
+    expect(f.ensure).not.toHaveBeenCalled()
+  })
   it('supersedes only its own active rest timers and preserves inactive and unrelated schedules', async () => {
     const f = fixture()
     await f.execute()

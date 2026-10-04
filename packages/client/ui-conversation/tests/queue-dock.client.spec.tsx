@@ -633,3 +633,19 @@ describe('QueueDock', () => {
     )
   })
 })
+
+it('uses native schedule provenance for product queue details without matching human text', () => {
+  document.documentElement.dataset.dshMode = 'hivemind-chat'
+  try {
+    const scheduled = { ...row('scheduled', 'schedule_id_json: private-timer'), source: { kind: 'schedule' } }
+    const source = liveSession(snapshotWith([scheduled]))
+    const view = render(<QueueDock {...kitFor(snapshotWith([scheduled]))} useSession={source.useSession} />)
+    expect(view.getByText('Scheduled check queued')).toBeTruthy()
+    expect(view.getByText('schedule_id_json: private-timer').closest('details')?.open).toBe(false)
+    cleanup()
+    const human = row('human', '[SCHEDULE REMINDER] my own note')
+    const humanSource = liveSession(snapshotWith([human]))
+    const humanView = render(<QueueDock {...kitFor(snapshotWith([human]))} useSession={humanSource.useSession} />)
+    expect(humanView.getByText('[SCHEDULE REMINDER] my own note').closest('details')).toBeNull()
+  } finally { delete document.documentElement.dataset.dshMode }
+})

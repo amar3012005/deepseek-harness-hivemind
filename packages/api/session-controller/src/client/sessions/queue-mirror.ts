@@ -48,6 +48,7 @@ export class SessionQueueMirror {
         placement: item.placement,
         ...(item.rpcId === undefined ? {} : { rpcId: item.rpcId }),
         content,
+        ...(item.message.source === undefined ? {} : { source: item.message.source }),
         preview: previewOf(content),
         text: textOf(content),
       }

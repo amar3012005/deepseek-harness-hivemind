@@ -14,6 +14,7 @@ type FreshStartAction = (sessionId: SessionId, request: { confirmed: boolean })
 
 /** Only the browser plugin receives the human Remote mutation capability. */
 export interface HqControlInjected {
+  readonly subscribeState?: (sessionId: SessionId, listener: () => void) => () => void
   readonly startFresh?: FreshStartAction
   readonly load: (sessionId: SessionId) => Promise<RemoteResult<HqModeState>>
   readonly restState: (sessionId: SessionId) => Promise<RemoteResult<HqRestState>>
@@ -28,7 +29,9 @@ export type HqControlActionProps = Pick<PropsRuntime<'conversation.session.heade
  * @param props - scoped native session, localized copy and human-only RPC actions.
  * @returns the HQ switch, independent of ordinary employee session controls.
  */
-export function HqControlAction({ sessionId, load, setMode, restState, leaveRestNote, startFresh, t }: HqControlActionProps) {
+export function HqControlAction({
+  sessionId, load, setMode, restState, leaveRestNote, startFresh, subscribeState, t,
+}: HqControlActionProps) {
   const [mode, setState] = useState<HqModeState | null>(null)
   const [pending, setPending] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -94,6 +97,10 @@ export function HqControlAction({ sessionId, load, setMode, restState, leaveRest
     void refresh()
     return () => { generation.current++ }
   }, [refresh])
+  useEffect(() => subscribeState?.(sessionId, () => {
+    void refresh()
+    void refreshRest()
+  }), [subscribeState, sessionId, refresh, refreshRest])
   const change = async () => {
     if (mode === null || changing.current || pending) return
     changing.current = true

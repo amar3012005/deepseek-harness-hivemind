@@ -69,6 +69,7 @@ describe('Session queue snapshot intake', () => {
         id: 'q-1', placement: 'queued',
         content: [{ type: 'text', text: '第一条  排队\n消息' }],
         preview: '第一条 排队 消息', text: '第一条  排队\n消息',
+        source: { kind: 'user' },
       },
     ])
   })

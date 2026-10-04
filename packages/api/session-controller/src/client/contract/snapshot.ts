@@ -1,4 +1,5 @@
 /** Session-owned observable state excluding Conversation target data. */
+import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm/types'
 import type { FileAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import type { MessageId } from '@deepseek-ai/dsh-llm/brand'
@@ -15,6 +16,7 @@ export interface QueuedMessage {
   /** Prompt-RPC identity of a browser-submitted occurrence; correlates the local submission echo. */
   readonly rpcId?: SessionRequestId
   readonly content: readonly ContentBlock[]
+  readonly source?: JsonValue
   readonly preview: string
   readonly text: string | null
 }

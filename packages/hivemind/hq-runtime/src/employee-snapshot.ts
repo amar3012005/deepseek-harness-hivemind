@@ -56,8 +56,10 @@ export function employeeTaskSnapshot(
  */
 export function installEmployeeSnapshots(ctx: Context): void {
   const tails = new Map<string, Promise<void>>()
+  const pending = new Map<string, { root: Agent; taskId: string; targetId: string }>()
   const enqueue = (root: Agent, taskId: string): void => {
     const key = `${root.id}:${taskId}`
+    let targetId: string | undefined
     const run = (tails.get(key) ?? Promise.resolve()).then(async () => {
       if (!await ctx.sessions.flush(root.session)) throw new Error('hq_employee_snapshot_source_persistence_required')
       const snapshot = employeeTaskSnapshot(root.session.snapshotEvents(), taskId, root.id)
@@ -68,6 +70,14 @@ export function installEmployeeSnapshots(ctx: Context): void {
       const resolved = await ctx.sessionController.resolveAgent(SessionId(snapshot.task.sessionId))
       if ('error' in resolved) throw resolved.error
       const target: Agent = resolved.agent
+      targetId = target.id
+      if (target.status === 'running') {
+        if (pending.size >= 128 && !pending.has(key)) throw new Error('hq_employee_snapshot_pending_capacity')
+        pending.set(key, { root, taskId, targetId })
+        return
+      }
+      // Remove before maintenance emits idle, so our own publication cannot retry itself.
+      pending.delete(key)
       await target.runMaintenance(async () => {
         const previous = target.session.ownEvents().findLast(e => e.type === 'hivemind/employee-task-snapshot' && e.data.rootSessionId === root.id && e.data.task.id === taskId)
         if (previous?.type === 'hivemind/employee-task-snapshot') {
@@ -77,7 +87,10 @@ export function installEmployeeSnapshots(ctx: Context): void {
         target.session.append('hivemind/employee-task-snapshot', snapshot)
         if (!await ctx.sessions.flush(target.session)) throw new Error('hq_employee_snapshot_persistence_required')
       })
-    }).catch((error: unknown) => { ctx.logger.warn(`Employee task snapshot pending: ${error instanceof Error ? error.message : String(error)}`) })
+    }).catch((error: unknown) => {
+      if (targetId !== undefined && (pending.size < 128 || pending.has(key))) pending.set(key, { root, taskId, targetId })
+      ctx.logger.warn(`Employee task snapshot pending: ${error instanceof Error ? error.message : String(error)}`)
+    })
     tails.set(key, run)
     void run.finally(() => { if (tails.get(key) === run) tails.delete(key) })
   }
@@ -88,6 +101,14 @@ export function installEmployeeSnapshots(ctx: Context): void {
     const data = event.data as { taskId?: string; task?: { id: string } }
     const taskId = data.taskId ?? data.task?.id
     if (taskId) enqueue(root, taskId)
+  }, { global: true }))
+  ctx.effect(() => ctx.on('agent/status', ({ agent, status }) => {
+    if (status !== 'idle') return
+    for (const [key, item] of pending) {
+      if (item.targetId !== agent.id) continue
+      pending.delete(key)
+      enqueue(item.root, item.taskId)
+    }
   }, { global: true }))
   // Cold restoration repairs a missed display publication from authoritative state.
   ctx.effect(() => ctx.on('agent/session-start', ({ agent }) => {

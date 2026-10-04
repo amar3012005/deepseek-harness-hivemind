@@ -180,13 +180,13 @@ function queueItemsFromInbox(inbox: InboxState): SessionQueuedItem[] {
       id: message.id,
       placement: 'queued' as const,
       ...promptRpcId(message),
-      message: { id: message.id, content: message.content as unknown as JsonValue[] },
+      message: { id: message.id, content: message.content as unknown as JsonValue[], source: message.source as unknown as JsonValue },
     })),
     ...inbox['next-step'].map(message => ({
       id: message.id,
       placement: message.source.kind === 'user' ? 'steering' as const : 'context' as const,
       ...promptRpcId(message),
-      message: { id: message.id, content: message.content as unknown as JsonValue[] },
+      message: { id: message.id, content: message.content as unknown as JsonValue[], source: message.source as unknown as JsonValue },
     })),
   ]
 }

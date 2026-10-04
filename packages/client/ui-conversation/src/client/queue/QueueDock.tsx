@@ -167,6 +167,9 @@ export function QueueDock({ useSession, updateQueue, notify, loadImage, t }: Que
         <ul id={listId} className={css.list} hidden={!listVisible}>
           {listVisible && queue.map((row) => {
             const attachments = queueAttachments(row.content)
+            const scheduled = document.documentElement.dataset.dshMode === 'hivemind-chat'
+              && typeof row.source === 'object' && row.source !== null && !Array.isArray(row.source)
+              && row.source['kind'] === 'schedule'
             return (
               <li key={row.id} className={css.row}>
                 {/* Single-item strip has no count header, so the row itself carries the queue glyph. */}
@@ -213,7 +216,9 @@ export function QueueDock({ useSession, updateQueue, notify, loadImage, t }: Que
                             ))}
                         </span>
                       )}
-                      <span className={css.preview}>{projectUserText(row.preview, [])}</span>
+                      {scheduled ? <div className={css.preview}><span>Scheduled check queued</span>
+                        <details><summary>Work details</summary><pre>{row.text ?? row.preview}</pre></details>
+                      </div> : <span className={css.preview}>{projectUserText(row.preview, [])}</span>}
                     </>
                   )}
                 {queueMutable && <div className={css.actions}>

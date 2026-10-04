@@ -28,7 +28,27 @@ it('projects only the authorized snapshot event at its actual receipt position',
   expect(employeeTaskCard.match(event as never)).toEqual({ id: '42', role: 'start' })
   expect(employeeTaskCard.match({ type: 'user/message', seq: 43, data: {} } as never)).toBeNull()
   const node = employeeTaskCard.buildViewNode?.({ key: 'employee-task:42', id: '42',
-    start: { event: { seq: 42 }, location: { kind: 'session' } }, state: event.data,
+    start: { event: { seq: 42 }, location: { kind: 'session' } }, state: { snapshot: event.data, visible: true, seen: {} },
   } as never)
   expect(node).toMatchObject({ anchorSeq: 42, visibility: 'visible', processDisclosure: 'independent', data: event.data })
+})
+
+it('deduplicates internal revisions per task while retaining actual status transitions', () => {
+  let previous: unknown
+  const reader = { previous: () => previous === undefined ? undefined : { state: previous } }
+  const project = (status: string, revision: number, artifactIds: string[]) => {
+    const snapshot = { rootSessionId: 'runtime', employeeId: 'ravi-id', employeeName: 'Ravi Patel',
+      task: { ...task, status, revision, artifactIds }, calendar: null, sourceSequence: revision }
+    const state = employeeTaskCard.start({} as never, { event: { data: snapshot } } as never, reader as never)
+    previous = state
+    return employeeTaskCard.buildViewNode?.({ key: `card:${revision}`, id: String(revision),
+      start: { event: { seq: revision }, location: { kind: 'session' } }, state,
+    } as never)
+  }
+  expect(project('pending', 1, [])).not.toBeNull()
+  expect(project('in_progress', 2, [])).not.toBeNull()
+  expect(project('in_progress', 3, ['pdf'])).toBeNull()
+  expect(project('in_progress', 4, ['pdf', 'html'])).toBeNull()
+  expect(project('completed', 5, ['pdf', 'html'])).toMatchObject({ anchorSeq: 5, data: { task: { status: 'completed' } } })
+  expect(project('completed', 6, ['pdf', 'html'])).toBeNull()
 })

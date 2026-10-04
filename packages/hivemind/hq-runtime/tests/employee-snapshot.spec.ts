@@ -85,3 +85,38 @@ it('does not publish when authenticated target read fails', async () => {
   expect(resolveAgent).not.toHaveBeenCalled()
   expect(append).not.toHaveBeenCalled()
 })
+
+it('retries an exact busy target on native idle with the latest source revision and no wake', async () => {
+  let input = events()
+  const hooks = new Map<string, (...args: unknown[]) => void>()
+  const received: SessionEvent[] = []
+  const target = { id: 'employee-room', status: 'running', runMaintenance: async (fn: () => Promise<void>) => fn(), session: {
+    ownEvents: () => received,
+    append: vi.fn((type: string, data: unknown) => received.push({ type, data } as SessionEvent)),
+  } }
+  const root = { id: 'root', session: { id: 'root', header: { agentPreset: 'hivemind-hq' }, snapshotEvents: () => input } }
+  const read = vi.fn(async () => ({})), open = vi.fn(async () => ({ read, close: async () => {} }))
+  const wake = vi.fn()
+  const ctx = {
+    effect: (fn: (...args: unknown[]) => void) => { fn() },
+    on: (name: string, fn: (...args: unknown[]) => void) => hooks.set(name, fn),
+    agents: { get: () => root }, sessions: { flush: async () => true }, sessionPersistence: { open },
+    sessionController: { resolveAgent: async () => ({ agent: target }) }, logger: { warn: vi.fn() },
+    schedule: { ensure: wake },
+  } as unknown as Context
+  installEmployeeSnapshots(ctx)
+  hooks.get('session/event')!(root.session, input[2])
+  await vi.waitFor(() => { expect(read).toHaveBeenCalledOnce() })
+  expect(target.session.append).not.toHaveBeenCalled()
+  input = events('completed')
+  target.status = 'idle'
+  hooks.get('agent/status')!({ agent: target, status: 'idle' })
+  await vi.waitFor(() => { expect(target.session.append).toHaveBeenCalledOnce() })
+  const result = received[0]
+  if (result?.type !== 'hivemind/employee-task-snapshot') throw new Error('snapshot_missing')
+  expect(result.data.task.status).toBe('completed')
+  expect(result.data.task.revision).toBe(3)
+  hooks.get('agent/status')!({ agent: target, status: 'idle' })
+  expect(target.session.append).toHaveBeenCalledOnce()
+  expect(wake).not.toHaveBeenCalled()
+})
