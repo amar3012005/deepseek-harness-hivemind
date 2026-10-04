@@ -177,7 +177,7 @@ export function apply(ctx: Context): void {
   }, HiveLiveVoiceButton))
   ctx.slots.inject('shell.sessionRail', () => ctx.slots.register({
     name: 'shell.sessionRail',
-    children: { 'conversation.sidebar.viewTabs': { kind: 'single', scope: 'session' }, 'shell.sessionRail.avatar': { kind: 'single', scope: 'root' } },
+    children: { 'conversation.sidebar.viewTabs': { kind: 'single', scope: 'session' }, 'shell.sessionRail.avatar': { kind: 'single', scope: 'root' }, 'shell.sessionRail.artifacts': { kind: 'single', scope: 'root' } },
     locale: NS,
     inject: (): HiveSessionProjectionInjected => ({
       createSession: () => sessions.create(),

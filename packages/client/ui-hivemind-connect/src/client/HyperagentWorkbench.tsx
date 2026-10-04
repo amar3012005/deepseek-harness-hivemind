@@ -17,7 +17,7 @@ const lastViewedArtifacts = new Map<string, string>()
 
 type Kind = 'preview' | 'artifacts' | 'computer' | 'sources'
 
-interface Artifact {
+export interface Artifact {
   id: string
   title: string
   mediaType: string
@@ -130,7 +130,7 @@ export function ReceiptImage({ attachment, loadImage }: { attachment: ImageAttac
   return <img className={css.workbenchImage} src={url} alt="Generated preview" />
 }
 
-function PdfReceipt({ artifact, loadPdf, loadImage, t }: { artifact: Artifact; loadPdf: WorkbenchProps['loadPdf']; loadImage: WorkbenchProps['loadImage']; t: WorkbenchProps['t'] }) {
+export function PdfReceipt({ artifact, loadPdf, loadImage, t }: { artifact: Artifact; loadPdf: WorkbenchProps['loadPdf']; loadImage: WorkbenchProps['loadImage']; t: WorkbenchProps['t'] }) {
   const [url, setUrl] = useState<string>()
   const [failed, setFailed] = useState(false)
   const loadPdfRef = useRef(loadPdf)

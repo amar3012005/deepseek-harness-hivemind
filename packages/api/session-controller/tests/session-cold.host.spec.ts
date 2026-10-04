@@ -231,6 +231,29 @@ describe('attached updatedAt tracks human prompts', () => {
 })
 
 describe('cold history recovery view', () => {
+  it('reads the latest persisted cursor without activating a cold room and retains stable page cuts', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SessionStore)
+    const sessionId = sid('artifact-library-cold')
+    const meta = header(sessionId, 1000)
+    const events = [{ type: 'turn/start', seq: SessionSeq(0), time: 1, data: { turn: 1 } }] as SessionEvent[]
+    providePersistence(ctx, {
+      list: () => Promise.resolve([structuredClone(meta)]),
+      inspect: () => Promise.resolve({ meta: structuredClone(meta), events: structuredClone(events) }),
+    })
+    const remote = createSessionTestRemote(ctx, { defaultModelSelection: () => ({ provider: 'p', model: 'm' }), cwd: '/tmp' })
+    const latest = await remote.page({ address: { kind: 'session', sessionId }, maxMessages: 10 })
+    if (!latest.ok) throw new Error('latest page failed')
+    expect(latest.value.cursor).toBe(latest.value.records.at(-1)?.event.seq)
+    expect(latest.value.records[0]?.event.seq).toBe(0)
+    expect(ctx.sessions.get(sessionId)).toBeUndefined()
+    const stable = await remote.page({ address: { kind: 'session', sessionId }, throughSeq: latest.value.cursor, maxMessages: 10 })
+    expect(stable).toEqual(latest)
+    const future = await remote.page({ address: { kind: 'session', sessionId }, throughSeq: (latest.value.cursor ?? 0) + 1 })
+    expect(future.ok).toBe(false)
+    await ctx.fiber.dispose()
+  })
+
   it('serves the stored interrupted prefix verbatim without activating the session', async () => {
     // Semantic crash repair is the resuming agent loop's job (it appends the
     // closers durably through its write handle); a cold history read shows the

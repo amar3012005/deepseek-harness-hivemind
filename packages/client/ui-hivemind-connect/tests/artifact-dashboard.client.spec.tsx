@@ -1,0 +1,61 @@
+// @vitest-environment jsdom
+import { afterEach, expect, it, vi } from 'vitest'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { ArtifactDashboard, artifactCategory, type LibraryArtifact } from '../src/client/ArtifactDashboard.tsx'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
+afterEach(cleanup)
+const artifact = { id: 'saved', title: 'Launch deck', mediaType: 'text/html', path: 'deck.html', sessionId: 'room' as SessionId, roomTitle: 'Elena', file: undefined, preview: undefined } satisfies LibraryArtifact
+const props = () => ({ selection: { category: 'All' as const }, load: vi.fn(async () => ({ artifacts: [artifact], incomplete: false })), loadImage: vi.fn(), renderArtifact: vi.fn(item => <p>Saved {item.title} content</p>), expand: vi.fn(), collapse: vi.fn() })
+it('opens a popup, filters, and fits selected content inside it with independent fullscreen', async () => {
+  const input = props(); render(<ArtifactDashboard {...input} />)
+  fireEvent.click(screen.getByRole('button', { name: /Artifacts/ }))
+  await screen.findByRole('button', { name: /Open Launch deck/ })
+  fireEvent.click(screen.getByRole('button', { name: 'Images' }))
+  expect(screen.queryByRole('button', { name: /Open Launch deck/ })).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: 'HTML' }))
+  fireEvent.click(screen.getByRole('button', { name: /Open Launch deck/ }))
+  expect(screen.getByText('Saved Launch deck content')).toBeTruthy()
+  expect(document.querySelector('[data-artifact-dashboard="popup"]')).toBeTruthy()
+  fireEvent.click(screen.getByRole('button', { name: 'Expand artifact fullscreen' }))
+  expect(document.querySelector('[data-fullscreen]')).toBeTruthy()
+  fireEvent.click(screen.getByRole('button', { name: 'Fit artifact to dashboard' }))
+  expect(document.querySelector('[data-fullscreen]')).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: /All artifacts/ }))
+  expect(screen.getByRole('button', { name: /Open Launch deck/ })).toBeTruthy()
+  fireEvent.click(screen.getByRole('button', { name: 'Expand artifact dashboard' }))
+  expect(input.expand).toHaveBeenCalledOnce()
+  expect(screen.queryByRole('dialog')).toBeNull()
+})
+it('renders expanded dashboard in native main region rather than a portal popup', async () => {
+  const input = props(); const view = render(<ArtifactDashboard {...input} page />)
+  await screen.findByRole('button', { name: /Open Launch deck/ })
+  expect(view.container.querySelector('[data-artifact-dashboard="page"]')).toBeTruthy()
+  expect(screen.queryByRole('dialog')).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: 'Back to conversation' }))
+  expect(input.collapse).toHaveBeenCalledOnce()
+})
+it('shows load errors and retry without stale tiles', async () => {
+  const input = props(); input.load.mockRejectedValueOnce(new Error('Access unavailable'))
+  render(<ArtifactDashboard {...input} />)
+  fireEvent.click(screen.getByRole('button', { name: /Artifacts/ }))
+  await screen.findByRole('alert')
+  expect(screen.queryByRole('button', { name: /Open Launch deck/ })).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: 'Try again' }))
+  await screen.findByRole('button', { name: /Open Launch deck/ })
+})
+it('cancels pending catalog read when dismissed and restores focus', async () => {
+  const input = props(); input.load.mockImplementation(async (signal) => { await new Promise(resolve => signal.addEventListener('abort', resolve)); return { artifacts: [], incomplete: false } })
+  render(<ArtifactDashboard {...input} />)
+  const trigger = screen.getByRole('button', { name: /Artifacts/ }); fireEvent.click(trigger)
+  await waitFor(() => expect(input.load).toHaveBeenCalledOnce())
+  const signal = input.load.mock.calls[0]?.[0]
+  fireEvent.click(screen.getByRole('button', { name: 'Close artifacts' }))
+  expect(signal?.aborted).toBe(true)
+  expect(document.activeElement).toBe(trigger)
+})
+it('categorizes requested types from real MIME/filename', () => {
+  expect(artifactCategory(artifact)).toBe('HTML')
+  expect(artifactCategory({ ...artifact, mediaType: 'application/pdf' })).toBe('PDFs')
+  expect(artifactCategory({ ...artifact, mediaType: 'video/mp4' })).toBe('Videos')
+  expect(artifactCategory({ ...artifact, mediaType: 'image/png' })).toBe('Images')
+})

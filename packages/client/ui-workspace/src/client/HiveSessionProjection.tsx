@@ -17,7 +17,7 @@ export interface HiveSessionProjectionInjected {
 
 type Props = PropsRuntime<'shell.sessionRail'>
   & PropsLocale<'workspace'>
-  & PropsRenderSlots<'conversation.sidebar.viewTabs' | 'shell.sessionRail.avatar'>
+  & PropsRenderSlots<'conversation.sidebar.viewTabs' | 'shell.sessionRail.avatar' | 'shell.sessionRail.artifacts'>
   & HiveSessionProjectionInjected
 
 /** A stable local timestamp is a useful label for sessions without distinct titles. */
@@ -117,6 +117,7 @@ export function HiveSessionProjection({
       <IconNewChatOutline16 /><span>{t('session.new')}</span>
     </button>}
     {hyperagentRoute && <a href="/hivemind/app/employees" className={css.newSession}>Company workspace ↗</a>}
+    {hyperagentRoute && renderSlot('shell.sessionRail.artifacts', {}, { fallback: null })}
     <div className={css.recentHeading}>
       <span>{hyperagentRoute ? 'Your agent tasks' : t('section.recent')}</span>
     </div>

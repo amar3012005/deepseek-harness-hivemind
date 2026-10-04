@@ -446,8 +446,8 @@ export interface SessionWireEvent {
 /** One message-aligned backwards-history request. */
 export interface SessionPageRequest {
   readonly address: SessionAddress
-  /** Inclusive log cut obtained from the corresponding follow opening frame. */
-  readonly throughSeq: number
+  /** Inclusive log cut from follow; omit to read the latest persisted cursor without activating the room. */
+  readonly throughSeq?: number
   readonly beforeSeq?: number
   readonly maxMessages?: number
 }
@@ -514,6 +514,8 @@ export type SessionAssistantStreamFrame =
 
 /** One contiguous backwards page of a Session log. */
 export interface SessionPage {
+  /** Stable cut for backwards paging; older hosts can omit it. */
+  readonly cursor?: number
   readonly records: readonly SessionHistoryRecord[]
   readonly hasMore: boolean
 }

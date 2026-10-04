@@ -44,7 +44,8 @@ import {
   HyperagentEmployeePicker, HyperagentEmployeePanel, HyperagentPanelToggle,
   type EmployeeOption, selectedEmployee, projectedEmployee, EmployeeAvatar,
 } from './HyperagentEmployee.tsx'
-import { HyperagentWorkbench } from './HyperagentWorkbench.tsx'
+import { ArtifactDashboard, ArtifactMedia, type LibraryArtifact, type DashboardSelection } from './ArtifactDashboard.tsx'
+import { workbenchSnapshot, HyperagentWorkbench, PdfReceipt, TextReceipt, ReceiptImage } from './HyperagentWorkbench.tsx'
 
 declare module '@deepseek-ai/dsh-client-ui-chat/client' {
   interface ChatNodeDataMap { 'hivemind-website-source': WebsiteRead; 'hivemind-scheduled-work': ScheduledWork; 'runtime-awakening-stage': { turn: number; seq: number } }
@@ -63,6 +64,7 @@ const awakeningStage: ConversationNodeDefinition<{ turn: number; seq: number }> 
 }
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
+  interface SlotMap { 'shell.sessionRail.artifacts': { kind: 'single'; scope: 'root' } }
   interface LocaleNamespaceMap { 'hivemind-connect': HivemindConnectKey }
 }
 
@@ -475,8 +477,65 @@ export function apply(ctx: ClientContext): void {
   // Preview and download read session attachments, and thumbnail rendering
   // uses the conversation image cache. Inject both services in the pane scope;
   // the header toggle is registered above and remains independent of it.
-  ctx.inject(['sidebarRight', 'sidebarRightTabs', 'remote.session', 'remote.schedule', 'uiConversation'], (scope: ClientContext) => {
+  ctx.inject(['sidebarRight', 'sidebarRightTabs', 'remote.session', 'remote.schedule', 'uiConversation', 'layout'], (scope: ClientContext) => {
     rightSidebar = scope.sidebarRight
+    const artifactsPanel = 'hivemind-artifacts' as import('@deepseek-ai/dsh-client-ui-layout/client').MainPanelId
+    const dashboardSelection: DashboardSelection = { category: 'All' }
+    const dashboardInjected = (page = false) => ({
+      page, selection: dashboardSelection,
+      expand: () => { scope.layout.selectPanel(artifactsPanel) },
+      collapse: () => { scope.layout.selectPanel(null) },
+      load: async (signal: AbortSignal) => {
+        const rooms = Object.values(scope.sessions.list.getSnapshot().byId).filter(room =>
+          ['hivemind-hyperagents', 'hivemind-hq', 'hyperagents', 'hyperagents-compressed'].includes(String(room.agentPreset ?? room.projectionValues?.agentPreset)))
+        const artifacts: LibraryArtifact[] = []
+        let incomplete = rooms.length > 100
+        let readBudget = 200
+        // Read cold-safe persisted pages sequentially; no room activation or work dispatch.
+        for (const room of rooms.slice(0, 100)) {
+          signal.throwIfAborted()
+          if (readBudget === 0) { incomplete = true; break }
+          const id = room.id
+          let beforeSeq: number | undefined
+          let throughSeq: number | undefined
+          for (let pageNumber = 0; pageNumber < 10; pageNumber++) {
+            if (readBudget-- === 0) { incomplete = true; readBudget = 0; break }
+            const response = await scope.remote.session.page({ address: { kind: 'session', sessionId: id }, maxMessages: 100,
+              ...(throughSeq === undefined ? {} : { throughSeq }), ...(beforeSeq === undefined ? {} : { beforeSeq }) }, signal)
+            if (!response.ok) { incomplete = true; break }
+            const page = response.value
+            throughSeq = page.cursor
+            const entries = page.records as unknown as import('@deepseek-ai/dsh-api-session-controller/client').SessionEventWindow['entries']
+            const found = workbenchSnapshot({ entries, hasMore: page.hasMore, revision: 0, change: { kind: 'replace', entries } }).artifacts
+            artifacts.push(...found.map(artifact => ({ ...artifact, sessionId: id, roomTitle: room.title || 'Agent room' })))
+            if (!page.hasMore) break
+            beforeSeq = page.records[0]?.event.seq
+            if (beforeSeq === undefined || throughSeq === undefined || pageNumber === 9) { incomplete = true; break }
+          }
+        }
+        return { artifacts: artifacts.filter((item, index, all) => all.findIndex(other => other.id === item.id) === index), incomplete }
+      },
+      loadImage: (sessionId: SessionId, ref: ImageAttachmentRef) => scope.uiConversation.imageUrl(sessionId, ref),
+      renderArtifact: (artifact: LibraryArtifact) => {
+        const loadBlob = async (file: FileAttachmentRef) => {
+          const response = await scope.remote.session.fileAttachment({ sessionId: artifact.sessionId, attachmentId: file.attachmentId })
+          if (!response.ok || response.value.attachment.attachmentId !== file.attachmentId) throw new Error('Artifact unavailable')
+          const data = atob(response.value.data)
+          if (data.length !== file.bytes || data.length > 64 * 1024 * 1024) throw new Error('Artifact size mismatch')
+          return new Blob([Uint8Array.from(data, char => char.charCodeAt(0))], { type: artifact.mediaType })
+        }
+        const loadImage = (ref: ImageAttachmentRef) => scope.uiConversation.imageUrl(artifact.sessionId, ref)
+        if (artifact.file && artifact.mediaType === 'application/pdf') return createElement(PdfReceipt, { artifact, loadPdf: loadBlob, loadImage, t: scope.locale.bind(NS) })
+        if (artifact.file && (artifact.mediaType.startsWith('text/') || /\.(md|markdown|txt|html?)$/i.test(artifact.path))) return createElement(TextReceipt, {
+          file: artifact.file, mediaType: artifact.mediaType, t: scope.locale.bind(NS), loadText: async file => decodeArtifactText(file,
+            await scope.remote.session.fileAttachment({ sessionId: artifact.sessionId, attachmentId: file.attachmentId })),
+        })
+        if (artifact.file && (artifact.mediaType.startsWith('video/') || artifact.mediaType.startsWith('image/'))) return createElement(ArtifactMedia, { artifact, loadBlob })
+        return createElement(ReceiptImage, { attachment: artifact.preview, loadImage })
+      },
+    })
+    scope.slots.inject('shell.sessionRail.artifacts', () => scope.slots.register({ name: 'shell.sessionRail.artifacts', inject: () => dashboardInjected() }, ArtifactDashboard))
+    scope.slots.inject('main', () => scope.slots.register({ name: 'main', key: artifactsPanel, inject: () => dashboardInjected(true) }, ArtifactDashboard))
     scope.effect(() => () => { rightSidebar = undefined }, 'ui-hivemind-connect: release right sidebar')
     const t = scope.locale.bind(NS)
     scope.effect(() => scope.sidebarRightTabs.register({ id: employeeTab, kind: 'hivemind-employee', title: () => 'Agent details' }), 'ui-hivemind-connect: employee right tab')
