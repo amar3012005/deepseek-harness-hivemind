@@ -9,6 +9,7 @@ import type { GenerationFormat, GenerationReceipt } from './generation.ts'
 import { GenerationRegistry, generateArtifact } from './generation.ts'
 import { acquireMediaAdmission, type MediaOwner, type MediaAdmissionConfig } from './media-admission.ts'
 import { GenerationProviderError } from './image-provider.ts'
+import { savedImageReference } from './html-assets.ts'
 import { currentDesignReference } from './design-reference.ts'
 
 declare module '@deepseek-ai/cordis' {
@@ -67,21 +68,29 @@ function sourceImage(agent: Agent, artifactId: string | undefined): string | und
   return path
 }
 
-async function referenceFiles(ctx: Context, agent: Agent, ids: readonly string[], latestUpload: boolean): Promise<{ data: Uint8Array }[]> {
+export async function referenceFiles(
+  ctx: Context, agent: Agent, ids: readonly string[], latestUpload: boolean,
+): Promise<{ data: Uint8Array }[]> {
   if (ids.length > 5) throw new Error('Native image editing accepts at most five reference images')
   const references: { data: Uint8Array }[] = []
   for (const id of ids) {
-    const event = agent.session.snapshotEvents().find(item => item.type === 'hivemind/generation-created' && item.data.artifactId === id)
-    if (event?.type !== 'hivemind/generation-created' || !event.data.mediaType.startsWith('image/')) {
-      throw new Error('Reference artifact is not an image in this session')
+    const ref = savedImageReference(agent, id)
+    if (!ref) throw new Error('Reference image is not a saved generated image or browser capture in this session')
+    if ('mediaType' in ref) {
+      const image = await ctx.attachments.readImage(ref)
+      if (!image.data.byteLength || image.data.byteLength > 30 * 1024 * 1024) throw new Error('Reference image exceeds 30 MiB')
+      references.push({ data: image.data })
+    } else {
+      if (!Number.isSafeInteger(ref.bytes) || ref.bytes <= 0 || ref.bytes > 30 * 1024 * 1024) throw new Error('Reference image exceeds 30 MiB')
+      const chunks: Uint8Array[] = []; let bytes = 0
+      for await (const chunk of ctx.attachments.readFileStream(ref)) {
+        bytes += chunk.byteLength
+        if (bytes > 30 * 1024 * 1024) throw new Error('Reference image exceeds 30 MiB')
+        chunks.push(chunk)
+      }
+      if (bytes !== ref.bytes) throw new Error('Reference image size mismatch')
+      references.push({ data: Buffer.concat(chunks) })
     }
-    const chunks: Uint8Array[] = []; let bytes = 0
-    for await (const chunk of ctx.attachments.readFileStream(event.data.file)) {
-      bytes += chunk.byteLength
-      if (bytes > 30 * 1024 * 1024) throw new Error('Reference image exceeds 30 MiB')
-      chunks.push(chunk)
-    }
-    references.push({ data: Buffer.concat(chunks) })
   }
   if (latestUpload) {
     const message = agent.session.snapshotEvents().findLast(item => item.type === 'user/message' && item.data.source.kind === 'user')
@@ -169,7 +178,7 @@ export function registerMediaWorkflow(
       operation_id: { type: 'string', description: 'Stable operation identity. Reuse on retries. A deliberately new output uses a new identity.' },
       resume_operation: { type: 'boolean', description: 'Reconcile an interrupted native image operation; never blindly repeat it.' },
       transparent_background: { type: 'boolean', description: 'Image only. Preserve transparency when editing unless asked to change it.' },
-      reference_artifact_ids: { type: 'array', items: { type: 'string' }, description: 'Image only. Up to five generated image artifact IDs from this session.' },
+      reference_artifact_ids: { type: 'array', items: { type: 'string' }, description: 'Image only. Up to five authorized saved image artifact IDs, browser capture IDs, or screenshot attachment IDs from this session. Supplies the actual saved pixels.' },
       use_latest_uploaded_images: { type: 'boolean', description: 'Image only. Use image attachments from the latest user message as authorized edit references.' },
       aspect_ratio: { type: 'string', description: 'Image composition ratio as positive integers, e.g. 4:5, 3:2, 16:9, 9:16 or 1:1. Video supports 16:9, 9:16 and 1:1.' },
       duration_seconds: { type: 'number', description: 'Video only; whole seconds from 4 through 15.' },

@@ -19,6 +19,33 @@ export function latestUploadedImages(agent: Agent): Map<string, ImageAttachmentR
   return uploads
 }
 
+/** Resolve only immutable refs committed in this authorized session, including native browser captures. */
+export function savedImageReference(agent: Agent, id: string): FileAttachmentRef | ImageAttachmentRef | undefined {
+  let ref: FileAttachmentRef | ImageAttachmentRef | undefined
+  for (const event of agent.session.snapshotEvents()) {
+    if (typeof event.data !== 'object' || event.data === null) continue
+    const data = event.data as unknown as Record<string, unknown>
+    if (String(event.type) === 'hivemind/generation-created') {
+      const file = data['file'] as FileAttachmentRef | undefined
+      if (file && (file.attachmentId === id || data['artifactId'] === id) && String(data['mediaType']).startsWith('image/')) ref = file
+    }
+    if (String(event.type) === 'hivemind/browser-capture') {
+      const preview = data['preview'] as ImageAttachmentRef | undefined
+      const file = data['file'] as FileAttachmentRef | undefined
+      if (preview && typeof preview.attachmentId === 'string' && typeof preview.mediaType === 'string'
+        && preview.mediaType.startsWith('image/') && (data['captureId'] === id || preview.attachmentId === id || file?.attachmentId === id)) ref = file && typeof file.attachmentId === 'string' && typeof file.name === 'string' && Number.isSafeInteger(file.bytes) ? file : preview
+    }
+    if (String(event.type) === 'hivemind/room-message-received' && data['targetId'] === agent.session.id && typeof data['senderId'] === 'string' && Array.isArray(data['artifactIds']) && Array.isArray(data['artifacts'])) {
+      for (const item of data['artifacts']) {
+        if (typeof item !== 'object' || item === null) continue
+        const asset = item as { artifactId?: string; producerSessionId?: string; file?: FileAttachmentRef }
+        if (asset.file && (asset.file.attachmentId === id || asset.artifactId === id) && asset.producerSessionId === data['senderId'] && data['artifactIds'].includes(asset.artifactId)) ref = asset.file
+      }
+    }
+  }
+  return ref
+}
+
 export async function embedHtmlAssets(
   ctx: Context, agent: Agent, html: string, ids: readonly string[], signal: AbortSignal, latestUpload = false,
 ): Promise<string> {
@@ -30,23 +57,8 @@ export async function embedHtmlAssets(
   let total = 0
   for (const id of [...ids, ...uploadIds]) {
     signal.throwIfAborted()
-    let ref: FileAttachmentRef | undefined
-    for (const event of agent.session.snapshotEvents()) {
-      if (typeof event.data !== 'object' || event.data === null) continue
-      const data = event.data as unknown as Record<string, unknown>
-      if (String(event.type) === 'hivemind/generation-created') {
-        const file = data['file'] as FileAttachmentRef | undefined
-        if (file && (file.attachmentId === id || data['artifactId'] === id) && String(data['mediaType']).startsWith('image/')) ref = file
-      }
-      if (String(event.type) === 'hivemind/room-message-received' && data['targetId'] === agent.session.id && typeof data['senderId'] === 'string' && Array.isArray(data['artifactIds']) && Array.isArray(data['artifacts'])) {
-        for (const item of data['artifacts']) {
-          if (typeof item !== 'object' || item === null) continue
-          const asset = item as { artifactId?: string; producerSessionId?: string; file?: FileAttachmentRef }
-          if (asset.file && (asset.file.attachmentId === id || asset.artifactId === id) && asset.producerSessionId === data['senderId'] && data['artifactIds'].includes(asset.artifactId)) ref = asset.file
-        }
-      }
-    }
-    const upload = uploads.get(id)
+    const ref = savedImageReference(agent, id)
+    const upload = uploads.get(id) ?? (ref && 'mediaType' in ref ? ref : undefined)
     let data: Buffer
     if (upload) {
       const image = await ctx.attachments.readImage(upload, signal)
@@ -54,7 +66,7 @@ export async function embedHtmlAssets(
       total += data.byteLength
       if (!data.byteLength || data.byteLength > 30 * 1024 * 1024 || total > 60 * 1024 * 1024) throw new Error('Saved image assets exceed the byte budget')
     } else {
-      if (!ref || !Number.isSafeInteger(ref.bytes) || ref.bytes <= 0 || ref.bytes > 30 * 1024 * 1024) throw new Error('Saved image attachment is unavailable or exceeds 30 MiB')
+      if (!ref || 'mediaType' in ref || !Number.isSafeInteger(ref.bytes) || ref.bytes <= 0 || ref.bytes > 30 * 1024 * 1024) throw new Error('Saved image attachment is unavailable or exceeds 30 MiB')
       const chunks: Uint8Array[] = []; let bytes = 0
       for await (const chunk of ctx.attachments.readFileStream(ref, signal)) {
         bytes += chunk.byteLength; total += chunk.byteLength

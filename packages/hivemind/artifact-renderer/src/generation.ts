@@ -220,7 +220,7 @@ export function registerGenerationTools(
       design_profile: { type: 'string', enum: ['executive', 'editorial', 'campaign', 'product', 'data'], description: 'Optional HIVE visual baseline. Use campaign for marketing, executive for leadership documents, product for product UI, data for KPI dashboards, and editorial for narrative reports. It is applied locally and recorded in the durable receipt; it never opens an external design app.' },
       source_format: { type: 'string', enum: ['html'], description: 'For web or PDF, complete self-contained HTML. PDF uses print CSS/page breaks; omitted PDF remains Markdown.' },
       use_latest_uploaded_images: { type: 'boolean', description: 'HTML source only. Use actual image attachments from the latest human message via hive-asset:latest-0, latest-1, etc., in native image order. Only referenced images are embedded; no filesystem paths or external URLs.' },
-      saved_image_ids: { type: 'array', items: { type: 'string' }, description: 'Up to twenty current-session saved image artifact IDs or attachment IDs. Use hive-asset:<saved ID> in HTML img src or CSS url; exact bytes are embedded server-side. No URLs or filesystem paths.' },
+      saved_image_ids: { type: 'array', items: { type: 'string' }, description: 'Up to twenty current-session saved image artifact IDs, browser capture IDs, or screenshot attachment IDs. Use hive-asset:<saved ID> in HTML img src or CSS url; exact bytes are embedded server-side. No URLs or filesystem paths.' },
       reference_images: { type: 'array', items: { type: 'string' }, description: 'Optional public HTTPS brand/product image URLs for image generation.' },
     },
     output,

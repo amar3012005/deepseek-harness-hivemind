@@ -80,3 +80,26 @@ it('embeds actual uploaded image pixels only from the latest human message', asy
   await expect(embedHtmlAssets(context, agent([{ ...event, data: { ...event.data, source: { kind: 'plugin' } } }]), source, [], new AbortController().signal, true)).rejects.toThrow('latest human message')
   await expect(embedHtmlAssets(context, agent([event, { type: 'user/message', data: { source: { kind: 'user' }, content: [] } }]), source, [], new AbortController().signal, true)).rejects.toThrow('latest human message')
 })
+
+it('admits exact current-session native screenshot pixels by capture or attachment ID for HTML and image generation', async () => {
+  const preview = { attachmentId: 'capture-image', mediaType: 'image/png', name: 'screen.png' }
+  const events = [{ type: 'hivemind/browser-capture', data: { captureId: 'capture-id', url: 'https://example.org', preview } }]
+  const source = '<html><img src="hive-asset:capture-id"></html>'
+  const context = { attachments: { readImage: async () => ({ data: image, mediaType: 'image/png' }) } } as unknown as Context
+  expect(await embedHtmlAssets(context, agent(events), source, ['capture-id'], new AbortController().signal)).toContain(image.toString('base64'))
+  const { referenceFiles } = await import('../src/media-workflow.ts')
+  for (const id of ['capture-id', 'capture-image']) {
+    const references = await referenceFiles(context, agent(events), [id], false)
+    expect(Buffer.from(references[0]!.data)).toEqual(image)
+  }
+  await expect(referenceFiles(context, agent([]), ['capture-image'], false)).rejects.toThrow('not a saved')
+  await expect(embedHtmlAssets(context, agent([]), source, ['capture-id'], new AbortController().signal)).rejects.toThrow('unavailable')
+})
+
+it('rejects screenshot references with non-raster MIME and oversized actual bytes', async () => {
+  const event = { type: 'hivemind/browser-capture', data: { captureId: 'capture-id', preview: { attachmentId: 'capture-image', mediaType: 'text/html' } } }
+  await expect(embedHtmlAssets(ctx, agent([event]), '<img src="hive-asset:capture-id">', ['capture-id'], new AbortController().signal)).rejects.toThrow('unavailable')
+  const large = { attachments: { readImage: async () => ({ data: new Uint8Array(31 * 1024 * 1024) }) } } as unknown as Context
+  const valid = { ...event, data: { ...event.data, preview: { ...event.data.preview, mediaType: 'image/png' } } }
+  await expect(embedHtmlAssets(large, agent([valid]), '<img src="hive-asset:capture-id">', ['capture-id'], new AbortController().signal)).rejects.toThrow('byte budget')
+})
