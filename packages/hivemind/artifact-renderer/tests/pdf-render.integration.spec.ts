@@ -95,7 +95,7 @@ it('stores actual HTML PDF page count and first-page preview in the native recei
 }, 30_000)
 
 
-it.each([[0], [1, 1], [1, 2, 3, 4, 5], [1.5]])('rejects invalid bounded PDF page selections %j', async (pages) => {
+it.each([{ pages: [0] }, { pages: [1, 1] }, { pages: [1, 2, 3, 4, 5] }, { pages: [1.5] }])('rejects invalid bounded PDF page selections %j', async ({ pages }) => {
   await expect(inspectPdf(new Uint8Array(), new AbortController().signal, false, pages)).rejects.toThrow('distinct positive')
 })
 
