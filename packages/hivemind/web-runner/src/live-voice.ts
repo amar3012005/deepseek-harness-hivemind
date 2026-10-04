@@ -3,6 +3,7 @@ import type { Context, Plugin } from '@deepseek-ai/cordis'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { randomUUID } from 'node:crypto'
 import WebSocket from 'ws'
+import { RUNTIME_VOICE_INSTRUCTIONS, runtimeVoiceEvidence, RUNTIME_AWAKENING_CALL_AGENDA, needsAwakeningCallAgenda } from './runtime-voice.ts'
 import { createModels } from '@earendil-works/pi-ai'
 import { openaiCodexProvider } from '@earendil-works/pi-ai/providers/openai-codex'
 import { authContextFrom, credentialStoreFrom } from '@deepseek-ai/dsh-llm-pi-ai'
@@ -206,14 +207,13 @@ export function liveVoicePlugin(config: LiveVoiceConfig,
               const preset = agent.session.header.agentPreset
               const runtime = preset === 'hivemind-hq'
               const voiceIdentity = runtime
-                ? 'You are Runtime, this company’s AI Chief of Staff, speaking in your persistent Runtime room. Discuss the investigated company, evidence-backed strategy and actual scheduled tasks from the room context. Ask about the user’s current agenda and listen to corrections. Do not call yourself HIVEMIND or Tara. Handle conversation naturally; route plan changes, approvals and actions to the same Runtime agent using the spoken request verbatim. Never claim a change before its native receipt. Do not read tool names or hidden reasoning aloud.'
+                ? RUNTIME_VOICE_INSTRUCTIONS
                 : VOICE_INSTRUCTIONS
-              const prompt = `${persona}\n\n${voiceIdentity}`
+              const initialCheckIn = runtime && needsAwakeningCallAgenda(agent.session.snapshotEvents())
+              const prompt = `${persona}\n\n${voiceIdentity}${initialCheckIn ? `\n\nFor this first awakening check-in, the following administrator-supplied agenda specializes the opening, questions and close. Use known names only from authenticated context.\n${RUNTIME_AWAKENING_CALL_AGENDA}` : ''}`
               const history = agent.session.snapshotEvents().flatMap(event => event.type === 'user/message' && event.data.source.kind === 'user'
                 ? [`User: ${textOf(event.data)}`] : event.type === 'assistant/message' ? [`${runtime ? 'Runtime' : 'HIVEMIND'}: ${textOf(event.data.message)}`] : []).slice(-12).join('\n').slice(-12000)
-              const investigation = runtime ? agent.session.snapshotEvents().filter(event =>
-                ['hivemind/hq-awakening-checkpoint', 'hivemind/hq-calendar-item', 'hivemind/hq-calendar-wake'].includes(String(event.type)))
-                .slice(-24).map(event => JSON.stringify(event.data)).join('\n').slice(-16000) : ''
+              const investigation = runtime ? runtimeVoiceEvidence(agent.session.snapshotEvents()) : ''
               const context = `${compact}\n\nRecent conversation:\n${history}\n\nSaved Runtime investigation and scheduled work:\n${investigation}`
               const grant = await models.getAuth('openai-codex', { signal })
               const token = grant?.auth.apiKey
@@ -250,7 +250,8 @@ export function liveVoicePlugin(config: LiveVoiceConfig,
                   await ctx.sessions.flush(agent.session)
                 }).catch(() => { /* Session persistence retains the unflushed prefix for recovery. */ })
               }
-              const timer = setTimeout(close, config.maxDurationMs); timer.unref()
+              const duration = initialCheckIn ? Math.min(config.maxDurationMs, 180000) : config.maxDurationMs
+              const timer = setTimeout(close, duration); timer.unref()
               res.once('close', () => { if (!res.writableFinished) close() })
               socket.on('error', close); socket.on('close', close)
               socket.on('message', (raw) => {
