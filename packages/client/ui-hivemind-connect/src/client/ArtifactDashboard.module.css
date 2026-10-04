@@ -43,3 +43,6 @@
 .viewerContent img,.viewerContent video { display:block; max-width:100%; max-height:100%; margin:auto; object-fit:contain; }
 
 @container artifact-content (max-width: 320px) { .grid { grid-template-columns:minmax(0,1fr); } }
+
+:global([data-hivemind-artifacts-seat][data-collapsed]) .trigger { justify-content:center; }
+:global([data-hivemind-artifacts-seat][data-collapsed]) .trigger span { display:none; }

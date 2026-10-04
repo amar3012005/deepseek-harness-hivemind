@@ -59,3 +59,12 @@ it('categorizes requested types from real MIME/filename', () => {
   expect(artifactCategory({ ...artifact, mediaType: 'video/mp4' })).toBe('Videos')
   expect(artifactCategory({ ...artifact, mediaType: 'image/png' })).toBe('Images')
 })
+it('places the dashboard entry in the host sidebar seat', async () => {
+  const seat = document.createElement('div'); seat.setAttribute('data-hivemind-artifacts-seat', '')
+  document.body.append(seat)
+  const view = render(<ArtifactDashboard {...props()} hostSeat />)
+  expect(seat.querySelector('button')?.textContent).toContain('Artifacts')
+  fireEvent.click(seat.querySelector('button')!)
+  await screen.findByRole('dialog', { name: 'Artifacts' })
+  view.unmount(); seat.remove()
+})

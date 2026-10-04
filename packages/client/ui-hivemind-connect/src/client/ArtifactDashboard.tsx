@@ -21,13 +21,14 @@ interface Props {
   loadImage: (sessionId: SessionId, ref: ImageAttachmentRef) => Promise<string>
   renderArtifact: (artifact: LibraryArtifact) => ReactNode
   page?: boolean
+  hostSeat?: boolean
   expand: () => void
   collapse: () => void
 }
 const categories: ArtifactCategory[] = ['All', 'Images', 'Videos', 'HTML', 'PDFs', 'Documents']
 
 /** Presentation over native saved receipts; never starts work or generates previews. */
-export function ArtifactDashboard({ load, loadImage, renderArtifact, page = false, expand, collapse, selection }: Props) {
+export function ArtifactDashboard({ load, loadImage, renderArtifact, page = false, hostSeat = false, expand, collapse, selection }: Props) {
   const [open, setOpen] = useState(page)
   const [fullscreen, setFullscreen] = useState(false)
   const [selected, setSelected] = useState<LibraryArtifact | undefined>(selection.selected)
@@ -97,8 +98,11 @@ export function ArtifactDashboard({ load, loadImage, renderArtifact, page = fals
       </div>
     </div>
   </div>
+  const seat = hostSeat ? document.querySelector<HTMLElement>('[data-hivemind-artifacts-seat]') : undefined
+  if (hostSeat && !seat) return null
+  const triggerButton = !page && <button ref={trigger} type="button" className={css.trigger} aria-haspopup="dialog" aria-expanded={open} onClick={() => { setOpen(true) }}>▧ <span>Artifacts</span></button>
   return <>
-    {!page && <button ref={trigger} type="button" className={css.trigger} aria-haspopup="dialog" aria-expanded={open} onClick={() => { setOpen(true) }}>▧ <span>Artifacts</span></button>}
+    {seat ? createPortal(triggerButton, seat) : triggerButton}
     {page ? contents : contents && createPortal(contents, document.body)}
   </>
 }

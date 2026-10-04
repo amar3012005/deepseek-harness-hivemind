@@ -534,6 +534,7 @@ export function apply(ctx: ClientContext): void {
         return createElement(ReceiptImage, { attachment: artifact.preview, loadImage })
       },
     })
+    scope.slots.inject('conversation.session.header.utilities', () => scope.slots.register({ name: 'conversation.session.header.utilities', id: 'host-artifacts', inject: () => ({ ...dashboardInjected(), hostSeat: true }) }, ArtifactDashboard))
     scope.slots.inject('shell.sessionRail.artifacts', () => scope.slots.register({ name: 'shell.sessionRail.artifacts', inject: () => dashboardInjected() }, ArtifactDashboard))
     scope.slots.inject('main', () => scope.slots.register({ name: 'main', key: artifactsPanel, inject: () => dashboardInjected(true) }, ArtifactDashboard))
     scope.effect(() => () => { rightSidebar = undefined }, 'ui-hivemind-connect: release right sidebar')
