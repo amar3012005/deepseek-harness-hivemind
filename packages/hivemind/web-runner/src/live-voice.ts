@@ -36,8 +36,8 @@ interface Room {
   id: string
   principal: HivemindPrincipal
   sessionId: string
-  socket: WebSocket
-  close(): void
+  socket?: WebSocket
+  close(reason?: 'ended' | 'interrupted'): void
 }
 
 /** Voice style augments the existing company-brain persona. */
@@ -180,12 +180,48 @@ export function liveVoicePlugin(config: LiveVoiceConfig,
           const input = await body(req)
           if (req.url?.split('?')[0] === '/api/hivemind/voice/stop') {
             const room = typeof input.id === 'string' ? rooms.get(input.id) : undefined
-            if (room && room.principal.orgId === p.orgId && room.principal.userId === p.userId) room.close()
+            if (room && room.principal.orgId === p.orgId && room.principal.userId === p.userId) room.close('ended')
             reply(res, 200, { ok: true }); return
           }
-          if (req.url?.split('?')[0] !== '/api/hivemind/voice/start') { reply(res, 404, { error: 'not_found' }); return }
+          if (req.url?.split('?')[0] === '/api/hivemind/voice/fallback/finish') {
+            if (typeof input.sessionId !== 'string' || typeof input.callId !== 'string') { reply(res, 400, { error: 'invalid_request' }); return }
+            await ctx.hivemindExecutionScope.run(p, async () => {
+              const id = SessionId(input.sessionId as string)
+              if (!await ctx.sessionPersistence.stat(id)) { reply(res, 404, { error: 'session_not_found' }); return }
+              const resolved = await ctx.sessionController.resolveAgent(id)
+              if ('error' in resolved) throw new Error('session_unavailable')
+              const agent = resolved.agent
+              const result = await agentEvents(ctx, agent).serial('hivemind/voice-fallback-request', {
+                signal: AbortSignal.timeout(config.timeoutMs), callId: input.callId as string,
+              }) as {
+                session_id?: string
+                call_id?: string
+                status?: string
+                turns?: { user_text?: string; agent_text?: string }[]
+                initial_check_in?: boolean
+                interrupted?: boolean
+                had_user_speech?: boolean
+              }
+              if (result.status === 'pending') { reply(res, 202, { status: 'pending' }); return }
+              if (result.session_id !== id || result.call_id !== input.callId || !['completed', 'failed'].includes(result.status ?? '')) throw new Error('voice_receipt_invalid')
+              const marker = `Saved Grok Runtime conversation (${result.call_id}):`
+              if (!agent.session.snapshotEvents().some(event => event.type === 'user/message' && event.data.source.kind === 'plugin'
+                && event.data.source.plugin === 'hivemind-live-voice' && textOf(event.data).startsWith(marker))) {
+                const transcript = (result.turns ?? []).slice(0, 100).flatMap(turn => [turn.user_text ? `user: ${turn.user_text.slice(0,8000)}` : '', turn.agent_text ? `assistant: ${turn.agent_text.slice(0,8000)}` : '']).filter(Boolean).join('\n').slice(-20000)
+                agent.session.append('hivemind/voice-call-ended', { callId: input.callId as string, provider: 'grok', initialCheckIn: result.initial_check_in === true, interrupted: result.interrupted !== false, hadUserSpeech: result.had_user_speech === true, transcript })
+                appendContext(agent, `${marker}\nTerminal status: ${result.status}. This call alone does not confirm a complete baseline or authorize external actions.\n${transcript}`)
+                if (!(await ctx.sessions.flush(agent.session))) throw new Error('voice_handoff_persistence_required')
+                if (result.initial_check_in) agent.followup(createUserMessage({ content: [{ type: 'text', text: `Assess saved initial voice check-in ${result.call_id} and record an evidence-based complete or incomplete outcome with hivemind_voice_baseline. Interrupted calls remain pending; unknowns stay unknown. Do not repeat work, assign tasks or take external actions as part of this assessment.` }], source: { kind: 'plugin', plugin: 'hivemind-live-voice', form: 'recall' } }))
+              }
+              if (!(await ctx.sessions.flush(agent.session))) throw new Error('voice_handoff_persistence_required')
+              rooms.delete(input.callId as string)
+              reply(res, 200, { ok: true })
+            }); return
+          }
+          const fallback = req.url?.split('?')[0] === '/api/hivemind/voice/fallback/start'
+          if (!fallback && req.url?.split('?')[0] !== '/api/hivemind/voice/start') { reply(res, 404, { error: 'not_found' }); return }
           if (!config.enabled) { reply(res, 503, { error: 'voice_unavailable' }); return }
-          if (typeof input.sessionId !== 'string' || typeof input.sdp !== 'string' || !input.sdp.startsWith('v=0')) {
+          if (typeof input.sessionId !== 'string' || (!fallback && (typeof input.sdp !== 'string' || !input.sdp.startsWith('v=0')))) {
             reply(res, 400, { error: 'invalid_request' }); return
           }
           if (starting.has(owner)
@@ -215,6 +251,22 @@ export function liveVoicePlugin(config: LiveVoiceConfig,
                 ? [`User: ${textOf(event.data)}`] : event.type === 'assistant/message' ? [`${runtime ? 'Runtime' : 'HIVEMIND'}: ${textOf(event.data.message)}`] : []).slice(-12).join('\n').slice(-12000)
               const investigation = runtime ? runtimeVoiceEvidence(agent.session.snapshotEvents()) : ''
               const context = `${compact}\n\nRecent conversation:\n${history}\n\nSaved Runtime investigation and scheduled work:\n${investigation}`
+              if (fallback) {
+                if (!runtime) { reply(res, 403, { error: 'runtime_voice_required' }); return }
+                const result = await agentEvents(ctx, agent).serial('hivemind/voice-fallback-request', { signal,
+                  context: { session_id: id, instructions: `${prompt}\n\nAuthenticated room context:\n${context}`,
+                    initial_check_in: initialCheckIn, opening_instruction: runtimeVoiceOpening(true, initialCheckIn, 'fallback')('session.started')?.content[0]?.text ?? '' },
+                }) as { session_id?: string; provider?: string; ws_url?: string; capability?: string; audio_format?: unknown }
+                if (result.provider !== 'grok' || !result.session_id || !result.capability || typeof result.ws_url !== 'string'
+                  || !result.ws_url.startsWith('wss://')) throw new Error('voice_fallback_unavailable')
+                const fallbackId = result.session_id
+                const expiry = setTimeout(() => rooms.delete(fallbackId), (initialCheckIn ? 180000 : 600000) + 30000); expiry.unref()
+                rooms.set(fallbackId, { id: fallbackId, principal: p, sessionId: id,
+                  close: () => { clearTimeout(expiry); rooms.delete(fallbackId) } })
+                appendContext(agent, `Live voice system instructions:\n${prompt}\n\nAuthenticated voice context:\n${context}`)
+                await ctx.sessions.flush(agent.session)
+                reply(res, 200, result); return
+              }
               const grant = await models.getAuth('openai-codex', { signal })
               const token = grant?.auth.apiKey
               if (!token) throw new Error('voice_authorization_unavailable')
@@ -222,7 +274,7 @@ export function liveVoicePlugin(config: LiveVoiceConfig,
               const response = await fetch('https://chatgpt.com/backend-api/codex/realtime/calls?intent=quicksilver&architecture=avas', {
                 method: 'POST', headers, body: JSON.stringify({ sdp: input.sdp, session: voiceSession(config.model, config.voice, prompt, context) }), signal, redirect: 'error',
               })
-              if (!response.ok) throw new Error('voice_connection_failed')
+              if (!response.ok) { if ([400, 403].includes(response.status)) { reply(res, 502, { error: 'voice_provider_rejected', fallbackAllowed: false }); return }; throw new Error('voice_connection_failed') }
               const location = response.headers.get('location') ?? ''
               const callId = (location.split('?')[0] ?? '').split('/').filter(Boolean).at(-1)
               if (!callId || !/^[\w-]+$/.test(callId)) throw new Error('voice_connection_failed')
@@ -231,7 +283,8 @@ export function liveVoicePlugin(config: LiveVoiceConfig,
               const roomId = randomUUID()
               const opening = runtimeVoiceOpening(runtime, initialCheckIn, `runtime-opening-${roomId}`)
               let lastCompact = compact
-              let closed = false; let busy = false; const seen = new Set<string>(); const transcript: string[] = []
+              let closed = false; let busy = false; let hadUserSpeech = false; let closing = false
+              const seen = new Set<string>(); const transcript: string[] = []
               const queries = new VoiceQueryBuffer()
               const lifetime = new AbortController()
               const send = (text: string, delegationId?: string, channel: 'speakable' | 'commentary' = 'speakable') => {
@@ -241,20 +294,26 @@ export function liveVoicePlugin(config: LiveVoiceConfig,
                     ...(delegationId ? { delegation_item_id: delegationId } : {}), channel, content: [{ type: 'input_text', text: part }] }))
                 }
               }
-              const close = () => {
+              const close = (reason: 'ended' | 'interrupted' = 'interrupted') => {
                 if (closed) return
-                closed = true; lifetime.abort(); clearTimeout(timer); rooms.delete(roomId)
+                closed = true; lifetime.abort(); clearTimeout(timer); clearTimeout(closingTimer); rooms.delete(roomId)
                 if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: 'session.close' }))
                 socket.close(); setTimeout(() => socket.terminate(), 1000).unref()
                 if (transcript.length) void ctx.hivemindExecutionScope.run(p, async () => {
-                  appendContext(agent, `Completed live voice conversation:\n${transcript.join('\n').slice(-20000)}`)
-                  await ctx.sessions.flush(agent.session)
+                  const savedTranscript = transcript.join('\n').slice(-20000)
+                  agent.session.append('hivemind/voice-call-ended', { callId: roomId, provider: 'codex', initialCheckIn, interrupted: reason === 'interrupted', hadUserSpeech, transcript: savedTranscript })
+                  appendContext(agent, `Completed live voice conversation:\n${savedTranscript}`)
+                  if (!(await ctx.sessions.flush(agent.session))) throw new Error('voice_handoff_persistence_required')
+                  if (initialCheckIn) agent.followup(createUserMessage({ content: [{ type: 'text', text: `Assess the saved initial voice check-in receipt ${roomId} against the spoken baseline agenda. Record an evidence-based complete or incomplete outcome with hivemind_voice_baseline. Interrupted calls remain pending. Preserve unknowns, do not manufacture a complete baseline, repeat work, assign tasks or take external actions as part of this assessment.` }], source: { kind: 'plugin', plugin: 'hivemind-live-voice', form: 'recall' } }))
                 }).catch(() => { /* Session persistence retains the unflushed prefix for recovery. */ })
               }
               const duration = initialCheckIn ? Math.min(config.maxDurationMs, 180000) : config.maxDurationMs
-              const timer = setTimeout(close, duration); timer.unref()
+              const closingTimer = setTimeout(() => {
+                if (initialCheckIn && !closed) { closing = true; send('The baseline check-in ends in fifteen seconds. Stop asking questions now. Briefly summarize only what the administrator actually confirmed and name any remaining uncertainty. Give the warm closing from the supplied agenda, then stop speaking. A time limit does not mean the baseline was completed.') }
+              }, Math.max(0, duration - 15000)); closingTimer.unref()
+              const timer = setTimeout(() => close('ended'), duration); timer.unref()
               res.once('close', () => { if (!res.writableFinished) close() })
-              socket.on('error', close); socket.on('close', close)
+              socket.on('error', () => close()); socket.on('close', () => close())
               socket.on('message', (raw) => {
                 let event: {
                   type?: string
@@ -275,10 +334,11 @@ export function liveVoicePlugin(config: LiveVoiceConfig,
                 const greeting = opening(event.type)
                 if (greeting && !closed && socket.readyState === WebSocket.OPEN)
                   socket.send(JSON.stringify(greeting))
-                if (event.type === 'turn.done' && ['user', 'assistant'].includes(event.turn?.role ?? '') && typeof event.turn?.transcript === 'string') {
+                if ((!closing || event.turn?.role === 'assistant') && event.type === 'turn.done' && ['user', 'assistant'].includes(event.turn?.role ?? '') && typeof event.turn?.transcript === 'string') {
                   queries.record(event.turn.role ?? '', event.turn.transcript)
                   transcript.push(`${event.turn.role}: ${event.turn.transcript.slice(0,8000)}`)
                   if (transcript.length > 100) transcript.shift()
+                  if (event.turn.role === 'user' && event.turn.transcript.trim()) hadUserSpeech = true
                   if (event.turn.role === 'user') void ctx.hivemindExecutionScope.run(p, async () => {
                     try {
                       const updated = await agentEvents(ctx, agent).serial('hivemind/voice-context', { signal: AbortSignal.any([lifetime.signal, AbortSignal.timeout(config.timeoutMs)]) })
@@ -286,7 +346,7 @@ export function liveVoicePlugin(config: LiveVoiceConfig,
                     } catch { close() }
                   })
                 }
-                if (event.type !== 'delegation.created' || event.item?.target !== 'client' || typeof event.item.id !== 'string') return
+                if (closing || event.type !== 'delegation.created' || event.item?.target !== 'client' || typeof event.item.id !== 'string') return
                 const delegationId = event.item.id
                 if (seen.has(delegationId)) return
                 seen.add(delegationId)
@@ -345,10 +405,10 @@ export function liveVoicePlugin(config: LiveVoiceConfig,
               try { await ctx.sessions.flush(agent.session) } catch { close(); throw new Error('session_unavailable') }
               if (closed) throw new Error('voice_connection_failed')
               rooms.set(roomId, { id: roomId, principal: p, sessionId: String(id), socket, close })
-              reply(res, 200, { id: roomId, sdp })
+              reply(res, 200, { id: roomId, sdp, ...(initialCheckIn ? { closingAfterMs: Math.max(0, duration - 15000) } : {}) })
             })
           } finally { starting.delete(owner) }
-        } catch { reply(res, 503, { error: 'voice_unavailable' }) }
+        } catch (error) { reply(res, 503, { error: 'voice_unavailable', fallbackAllowed: error instanceof Error && ['voice_connection_failed', 'voice_authorization_unavailable'].includes(error.message) }) }
       } }))
     } }
 }

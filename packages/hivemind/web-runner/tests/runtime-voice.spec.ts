@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
+import { validateVoiceOutcome } from '../../runtime/src/voice-outcome.ts'
+import type { Agent } from '@deepseek-ai/dsh-agent'
 import { RUNTIME_VOICE_INSTRUCTIONS, RUNTIME_AWAKENING_CALL_AGENDA, needsAwakeningCallAgenda, runtimeVoiceEvidence, runtimeVoiceOpening } from '../src/runtime-voice.ts'
 
 const voice = (text: string): SessionEvent => ({ type: 'user/message', data: createUserMessage({
@@ -34,11 +36,22 @@ describe('Runtime operator voice context', () => {
     expect(needsAwakeningCallAgenda([voice('Completed live voice conversation:\nuser: Hello')])).toBe(true)
     expect(needsAwakeningCallAgenda([voice(`Live voice system instructions:\n${RUNTIME_AWAKENING_CALL_AGENDA}`)])).toBe(true)
   })
-  it('continues normally after an actual initial spoken check-in; reset clears room history', () => {
+  it('does not consume the initial baseline after unrelated speech or an aborted call', () => {
     const events = [voice(`Live voice system instructions:\n${RUNTIME_AWAKENING_CALL_AGENDA}`),
-      voice('Completed live voice conversation:\nuser: Our objective is internal customer research.')]
-    expect(needsAwakeningCallAgenda(events)).toBe(false)
-    expect(needsAwakeningCallAgenda([])).toBe(true)
+      voice('Completed live voice conversation:\nuser: Hello, I have to leave.')]
+    expect(needsAwakeningCallAgenda(events)).toBe(true)
+  })
+  it('requires an explicit same-call outcome and retains interrupted calls as pending', () => {
+    const call = { type: 'hivemind/voice-call-ended', data: { callId: 'call-one', provider: 'codex', initialCheckIn: true, interrupted: false, hadUserSpeech: true, transcript: 'user: Customer research first.\nassistant: Understood.' } } as SessionEvent
+    const complete = { type: 'hivemind/voice-baseline-outcome', data: { callId: 'call-one', status: 'complete', summary: 'Direction confirmed; sales unknown.', remaining: [] } } as unknown as SessionEvent
+    expect(needsAwakeningCallAgenda([call, complete])).toBe(false)
+    expect(needsAwakeningCallAgenda([complete])).toBe(true)
+    expect(needsAwakeningCallAgenda([{ ...call, data: { ...call.data, interrupted: true } } as SessionEvent, complete])).toBe(true)
+    const agent = { session: { snapshotEvents: () => [call] } } as unknown as Agent
+    expect(() => validateVoiceOutcome(agent, 'another-call', 'complete')).toThrow('baseline_call_receipt_required')
+    const interrupted = { session: { snapshotEvents: () => [{ ...call, data: { ...call.data, interrupted: true } }] } } as unknown as Agent
+    expect(() => validateVoiceOutcome(interrupted, 'call-one', 'complete')).toThrow('interrupted_baseline_remains_pending')
+    expect(validateVoiceOutcome(interrupted, 'call-one', 'incomplete').interrupted).toBe(true)
   })
   it('includes latest task, handoff and schedule evidence without inventing business metrics', () => {
     const events = [{ type: 'team/task', data: { task: { status: 'completed' } } },

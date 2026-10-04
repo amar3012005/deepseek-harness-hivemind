@@ -4,6 +4,8 @@
  * @module @deepseek-ai/dsh-hivemind-runtime
  */
 
+export type {} from './voice-outcome.ts'
+import { installVoiceOutcome } from './voice-outcome.ts'
 import { installAgentMessaging } from './agent-messaging.ts'
 import { installRequestFallback } from './request-recovery.ts'
 import { installSubmissionReviewGuidance } from './review-guidance.ts'
@@ -47,6 +49,10 @@ declare module '@deepseek-ai/cordis' {
      * @mode serial
      */
     'hivemind/voice-context'(this: Scoped<Agent>, input: { agent: Agent; signal: AbortSignal }): Promise<string>
+    /** Trusted native room voice request through the existing scoped Core transport.
+     * @mode serial
+     */
+    'hivemind/voice-fallback-request'(this: Scoped<Agent>, input: { agent: Agent; signal: AbortSignal; callId?: string; context?: { session_id: string; instructions: string; opening_instruction: string; initial_check_in: boolean } }): Promise<unknown>
   }
 }
 
@@ -1119,6 +1125,7 @@ export function apply(ctx: Context, config: Config): void {
 
   if (config.authorityMode !== 'scoped-service') registerWebConnectRoutes(ctx, config)
   if (!config.agentFeaturesEnabled) return
+  if (config.privateMemoryEnabled) installVoiceOutcome(ctx)
   ctx.inject(['hivemindEmployeeDirectory'], (directoryCtx) => {
     directoryCtx.effect(() => directoryCtx.hivemindEmployeeDirectory.register({
       async profiles(signal) {
@@ -1260,6 +1267,17 @@ export function apply(ctx: Context, config: Config): void {
       }))
     })
   }
+  ctx.on('hivemind/voice-fallback-request', async ({ agent, signal, callId, context }) => {
+    if (config.authorityMode !== 'scoped-service' || !config.onboardingServiceApiBase)
+      throw new HiveMindRuntimeError('native voice fallback is not configured')
+    if (agent.session.header.agentPreset !== 'hivemind-hq' || (context && context.session_id !== agent.session.id))
+      throw new HiveMindRuntimeError('native Runtime voice room required')
+    if (callId !== undefined && !PROJECT_ID_PATTERN.test(callId)) throw new HiveMindRuntimeError('invalid voice call reference')
+    const authority = { ...scopedServiceAuthority(ctx, config),
+      apiBase: allowedServiceBase(config.onboardingServiceApiBase, config.serviceHttpOrigins) }
+    return hiveRequest(authority, '/v1/tara/native-voice' + (callId ? '/' + callId + '?session_id=' + encodeURIComponent(agent.session.id) : ''),
+      callId ? { method: 'GET' } : { method: 'POST', body: JSON.stringify(context), headers: { 'content-type': 'application/json' } }, signal, config)
+  })
   ctx.on('hivemind/voice-context', async ({ agent, signal }) =>
     (await snapshotFor(agent, signal, undefined, true)).initialContext)
   ctx.plugin(contextPlugin({

@@ -23,7 +23,7 @@ export function runtimeVoiceOpening(runtime: boolean, initialCheckIn: boolean, e
     if (!runtime || sent || type !== 'session.started') return undefined
     sent = true
     const text = initialCheckIn
-      ? 'Begin speaking now as Runtime, in the administrator\'s profile language if known, otherwise English. Deliver the first-check-in opening from your supplied agenda, using only the known first name and company name; never invent them. Then pause and listen. Lead the three-minute baseline conversation with one focused follow-up at a time, allowing pauses and interruptions.'
+      ? 'Begin speaking now as Runtime, in the administrator\'s profile language if known, otherwise English. Deliver the first-check-in opening from your supplied agenda, or briefly resume its unresolved questions if a previous interrupted check-in is saved, using only the known first name and company name; never invent them. Then pause and listen. Lead the three-minute baseline conversation with one focused follow-up at a time, allowing pauses and interruptions.'
       : 'Begin speaking now as Runtime, in the administrator\'s profile language if known, otherwise English. Briefly welcome them back, state the current discussion purpose from confirmed room context and ask one focused question. Then pause and listen. Lead the discussion and choose relevant follow-ups; do not restart onboarding, invent an agenda or talk over the administrator.'
     // The deployed subscription protocol uses the existing context append wire
     // contract; public GPT-Live instructions.append is rejected on this route.
@@ -77,14 +77,7 @@ Then stop and let them talk.
  * @returns Whether this room still needs the first operator check-in.
  */
 export function needsAwakeningCallAgenda(events: readonly SessionEvent[]): boolean {
-  let agendaStarted = false
-  for (const event of events) {
-    if (event.type !== 'user/message' || event.data.source.kind !== 'plugin'
-      || event.data.source.plugin !== 'hivemind-live-voice') continue
-    const text = event.data.content.flatMap(item => item.type === 'text' ? [item.text] : []).join('\n')
-    if (text.startsWith('Live voice system instructions:') && text.includes('Runtime awakening baseline check-in'))
-      agendaStarted = true
-    if (agendaStarted && text.startsWith('Completed live voice conversation:') && text.includes('\nuser:')) return false
-  }
-  return true
+  return !events.some(event => event.type === 'hivemind/voice-baseline-outcome' && event.data.status === 'complete'
+    && events.some(call => call.type === 'hivemind/voice-call-ended' && call.data.callId === event.data.callId
+      && call.data.initialCheckIn && !call.data.interrupted && call.data.hadUserSpeech && call.data.transcript.trim()))
 }

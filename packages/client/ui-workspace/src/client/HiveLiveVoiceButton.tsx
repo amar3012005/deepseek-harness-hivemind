@@ -2,10 +2,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
+import { startGrokVoice } from './grok-voice.ts'
 import css from './HiveLiveVoiceButton.module.css'
 
 type Props = Pick<PropsRuntime<'conversation.input.right'>, 'sessionId' | 'useInput'> & PropsLocale<'workspace'>
-interface VoiceConnection { peer: RTCPeerConnection; stream: MediaStream; audio: HTMLAudioElement; id?: string }
+interface VoiceConnection { peer: Pick<RTCPeerConnection, 'close'>; stream: MediaStream; audio: HTMLAudioElement; id?: string; closingTimer?: ReturnType<typeof setTimeout> }
 
 /** Start a company-context voice conversation without changing the text composer. */
 export function HiveLiveVoiceButton({ sessionId, useInput, t }: Props) {
@@ -16,17 +17,19 @@ export function HiveLiveVoiceButton({ sessionId, useInput, t }: Props) {
   const [caption, setCaption] = useState('')
   const [speakerMuted, setSpeakerMuted] = useState(false)
   const [micMuted, setMicMuted] = useState(false)
+  const [micClosing, setMicClosing] = useState(false)
   const connection = useRef<VoiceConnection>()
   const generation = useRef(0)
   const stop = useCallback(() => {
     generation.current++
     const current = connection.current; connection.current = undefined
+    if (current?.closingTimer) clearTimeout(current.closingTimer)
     current?.stream.getTracks().forEach(track => track.stop())
     current?.peer.close()
     if (current) { current.audio.pause(); current.audio.srcObject = null }
     if (current?.id) void fetch('/api/hivemind/voice/stop', { method: 'POST', credentials: 'include', keepalive: true,
       headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id: current.id }) }).catch(() => {})
-    setState('idle'); setCaption(''); setSpeakerMuted(false); setMicMuted(false)
+    setState('idle'); setCaption(''); setSpeakerMuted(false); setMicMuted(false); setMicClosing(false)
   }, [])
   useEffect(() => () => { stop() }, [sessionId, stop])
   const voiceStatus = useRef({ state, error, busy })
@@ -60,6 +63,29 @@ export function HiveLiveVoiceButton({ sessionId, useInput, t }: Props) {
     const ticket = ++generation.current
     setState('connecting'); setError(false); setBusy(false)
     let local: VoiceConnection | undefined
+    let mayFallback = false
+    let fallbackAttempted = false
+    let everConnected = false
+    const recover = async () => {
+      if (!local || fallbackAttempted || generation.current !== ticket) return false
+      fallbackAttempted = true; mayFallback = true; setState('connecting')
+      local.peer.close()
+      if (local.id) {
+        await fetch('/api/hivemind/voice/stop', { method: 'POST', credentials: 'include',
+          headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id: local.id }) }).catch(() => {})
+        delete local.id
+      }
+      try {
+        const fallback = await startGrokVoice(sessionId, local.stream, local.audio,
+          () => { if (generation.current === ticket) setState('live') }, setCaption,
+          (failed) => { if (generation.current === ticket) { stop(); setError(failed) } },
+          () => { setMicMuted(true); setMicClosing(true) })
+        if (generation.current !== ticket) { fallback.close(); return false }
+        local.peer = fallback
+        local.id = fallback.id
+        return true
+      } catch { return false }
+    }
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
@@ -75,8 +101,9 @@ export function HiveLiveVoiceButton({ sessionId, useInput, t }: Props) {
       }
       peer.onconnectionstatechange = () => {
         if (generation.current !== ticket) return
-        if (peer.connectionState === 'connected') setState('live')
-        if (['failed', 'closed'].includes(peer.connectionState)) { stop(); setError(true) }
+        if (peer.connectionState === 'connected') { everConnected = true; setState('live') }
+        if (!mayFallback && peer.connectionState === 'failed' && !everConnected) void recover().then((recovered) => { if (!recovered && generation.current === ticket) { stop(); setError(true) } })
+        else if (!mayFallback && ['failed', 'closed'].includes(peer.connectionState)) { stop(); setError(true) }
       }
       const events = peer.createDataChannel('oai-events')
       events.onmessage = (event) => {
@@ -90,16 +117,28 @@ export function HiveLiveVoiceButton({ sessionId, useInput, t }: Props) {
       await peer.setLocalDescription(await peer.createOffer())
       const response = await fetch('/api/hivemind/voice/start', { method: 'POST', credentials: 'include',
         headers: { 'content-type': 'application/json' }, body: JSON.stringify({ sessionId, sdp: peer.localDescription?.sdp }), signal: AbortSignal.timeout(35000) })
-      const value = await response.json() as { id?: string; sdp?: string; error?: string }
+      const value = await response.json() as {
+        id?: string
+        sdp?: string
+        error?: string
+        fallbackAllowed?: boolean
+        closingAfterMs?: number
+      }
       if (response.status === 409 && value.error === 'voice_already_active') setBusy(true)
+      mayFallback = response.status >= 500 && value.fallbackAllowed === true
       if (!response.ok || !value.id || !value.sdp) throw new Error('voice_unavailable')
       local.id = value.id
+      if (typeof value.closingAfterMs === 'number' && value.closingAfterMs >= 0) local.closingTimer = setTimeout(() => {
+        if (generation.current !== ticket) return
+        stream.getAudioTracks().forEach((track) => { track.enabled = false }); setMicMuted(true); setMicClosing(true)
+      }, value.closingAfterMs)
       if (generation.current !== ticket) {
         void fetch('/api/hivemind/voice/stop', { method: 'POST', credentials: 'include', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id: value.id }) })
         return
       }
       await peer.setRemoteDescription({ type: 'answer', sdp: value.sdp })
     } catch {
+      if (generation.current === ticket && mayFallback && await recover()) return
       if (generation.current === ticket) { stop(); setError(true) }
       else { local?.stream.getTracks().forEach(track => track.stop()); local?.peer.close() }
     }
@@ -113,7 +152,7 @@ export function HiveLiveVoiceButton({ sessionId, useInput, t }: Props) {
       <button type="button" className={css.utility} disabled={state !== 'live'} aria-label={t(speakerMuted ? 'voice.unmuteSpeaker' : 'voice.muteSpeaker')} aria-pressed={speakerMuted} onClick={() => {
         const next = !speakerMuted; if (connection.current) connection.current.audio.muted = next; setSpeakerMuted(next)
       }}><svg width="20" height="20" viewBox="0 0 24 24" aria-hidden><path d="M11 5 6 9H3v6h3l5 4V5Z" fill="currentColor" /><path d={speakerMuted ? 'm16 9 6 6m0-6-6 6' : 'M15 8a6 6 0 0 1 0 8m3-11a10 10 0 0 1 0 14'} fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /></svg></button>
-      <button type="button" className={css.utility} disabled={state !== 'live'} aria-label={t(micMuted ? 'voice.unmuteMic' : 'voice.muteMic')} aria-pressed={micMuted} onClick={() => {
+      <button type="button" className={css.utility} disabled={state !== 'live' || micClosing} aria-label={t(micMuted ? 'voice.unmuteMic' : 'voice.muteMic')} aria-pressed={micMuted} onClick={() => {
         const next = !micMuted; connection.current?.stream.getAudioTracks().forEach((track) => { track.enabled = !next }); setMicMuted(next)
       }}><svg width="20" height="20" viewBox="0 0 24 24" aria-hidden><rect x="9" y="2" width="6" height="12" rx="3" fill="none" stroke="currentColor" strokeWidth="1.6" /><path d="M5 10v2a7 7 0 0 0 14 0v-2M12 19v3m-4 0h8" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />{micMuted && <path d="m3 3 18 18" stroke="currentColor" strokeWidth="1.6" />}</svg></button>
     </>}
