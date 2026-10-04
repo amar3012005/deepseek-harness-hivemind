@@ -258,6 +258,7 @@ export function liveVoicePlugin(config: LiveVoiceConfig,
               socket.on('message', (raw) => {
                 let event: {
                   type?: string
+                  error?: { code?: string }
                   turn?: { role?: string; transcript?: string }
                   item?: { target?: string; id?: string; content?: unknown }
                 }
@@ -266,7 +267,11 @@ export function liveVoicePlugin(config: LiveVoiceConfig,
                   if (!value || typeof value !== 'object') return
                   event = value as typeof event
                 } catch { return }
-                if (event.type === 'error') { close(); return }
+                if (event.type === 'error') {
+                  const code = event.error?.code
+                  console.warn('hivemind voice provider rejected control', typeof code === 'string' && /^[a-z_]{1,80}$/.test(code) ? code : 'unspecified')
+                  close(); return
+                }
                 const greeting = opening(event.type)
                 if (greeting && !closed && socket.readyState === WebSocket.OPEN)
                   socket.send(JSON.stringify(greeting))
