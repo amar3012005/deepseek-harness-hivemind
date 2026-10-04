@@ -3,7 +3,7 @@ import type { Context, Plugin } from '@deepseek-ai/cordis'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { randomUUID } from 'node:crypto'
 import WebSocket from 'ws'
-import { RUNTIME_VOICE_INSTRUCTIONS, runtimeVoiceEvidence, RUNTIME_AWAKENING_CALL_AGENDA, needsAwakeningCallAgenda } from './runtime-voice.ts'
+import { RUNTIME_VOICE_INSTRUCTIONS, runtimeVoiceEvidence, RUNTIME_AWAKENING_CALL_AGENDA, needsAwakeningCallAgenda, runtimeVoiceOpening } from './runtime-voice.ts'
 import { createModels } from '@earendil-works/pi-ai'
 import { openaiCodexProvider } from '@earendil-works/pi-ai/providers/openai-codex'
 import { authContextFrom, credentialStoreFrom } from '@deepseek-ai/dsh-llm-pi-ai'
@@ -229,6 +229,7 @@ export function liveVoicePlugin(config: LiveVoiceConfig,
               const sdp = await response.text()
               const socket = new WebSocket(`wss://api.openai.com/v1/live/${encodeURIComponent(callId)}`, { headers, handshakeTimeout: config.timeoutMs, maxPayload: 1_000_000 })
               const roomId = randomUUID()
+              const opening = runtimeVoiceOpening(runtime, initialCheckIn, `runtime-opening-${roomId}`)
               let lastCompact = compact
               let closed = false; let busy = false; const seen = new Set<string>(); const transcript: string[] = []
               const queries = new VoiceQueryBuffer()
@@ -266,6 +267,9 @@ export function liveVoicePlugin(config: LiveVoiceConfig,
                   event = value as typeof event
                 } catch { return }
                 if (event.type === 'error') { close(); return }
+                const greeting = opening(event.type)
+                if (greeting && !closed && socket.readyState === WebSocket.OPEN)
+                  socket.send(JSON.stringify(greeting))
                 if (event.type === 'turn.done' && ['user', 'assistant'].includes(event.turn?.role ?? '') && typeof event.turn?.transcript === 'string') {
                   queries.record(event.turn.role ?? '', event.turn.transcript)
                   transcript.push(`${event.turn.role}: ${event.turn.transcript.slice(0,8000)}`)
