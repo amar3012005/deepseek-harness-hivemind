@@ -129,6 +129,9 @@ describe('native Runtime voluntary rest', () => {
     expect(f.events.filter(event => event.type === 'hivemind/hq-rest-intent')).toHaveLength(1)
     expect(f.events.filter(event => event.type === 'hivemind/hq-rest-wake')).toHaveLength(1)
     await expect(f.execute({ ...request, summary: 'Changed plan' })).rejects.toThrow('hq_rest_identity_conflict')
+    await expect(f.execute({ ...request, summary: 'Changed plan' })).rejects.toThrow('read the current rest state in your native briefing')
+    await expect(f.execute({ ...request, summary: 'Changed plan' })).rejects.toThrow('use a new handoff_id')
+    expect(f.events.filter(event => event.type === 'hivemind/hq-rest-intent')).toHaveLength(1)
   })
   it('repairs a saved intent after crash and overdue time, preserving original requested instant', async () => {
     const f = fixture()

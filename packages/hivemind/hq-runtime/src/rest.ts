@@ -251,7 +251,9 @@ export function installRest(ctx: Context): void {
         if (intent) {
           const prior = { id: intent.id, requestedWakeAt: intent.requestedWakeAt, summary: intent.summary,
             nextSteps: [...intent.nextSteps], blockers: [...intent.blockers] }
-          if (!isDeepStrictEqual(prior, request)) throw new Error('hq_rest_identity_conflict')
+          if (!isDeepStrictEqual(prior, request)) {
+            throw new Error(`hq_rest_identity_conflict: handoff_id ${JSON.stringify(intent.id)} is already saved with different content (wake_at ${intent.requestedWakeAt}). For unchanged rest, read the current rest state in your native briefing and reuse the confirmed handoff without rewriting it. For a changed handoff, use a new handoff_id. An identical retry must preserve the original wake_at, summary, next_steps and blockers.`)
+          }
         } else {
           if (Date.parse(request.requestedWakeAt) <= Date.now()) throw new Error('hq_rest_new_wake_must_be_future')
           const workspace = await ctx.hivemindHq.workspace(agent)
