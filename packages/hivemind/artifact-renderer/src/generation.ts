@@ -7,7 +7,7 @@ import type { FileAttachmentRef, ImageAttachmentRef } from '@deepseek-ai/dsh-att
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { MediaOwner } from './media-admission.ts'
 import { inspectPdf } from './pdf-inspection.ts'
-import { embedHtmlAssets } from './html-assets.ts'
+import { embedHtmlAssets, latestUploadedImages } from './html-assets.ts'
 import type { DesignProfile, DesignQuality } from './design-kit.ts'
 
 /** Formats accepted by the compact generation consumer. */
@@ -78,6 +78,7 @@ export class GenerationRegistry {
 export interface GenerationReceipt {
   readonly owner?: MediaOwner
   readonly sourceFormat?: 'html'
+  readonly uploadedImageIds?: readonly string[]
   readonly savedImageIds?: readonly string[]
   readonly artifactId: string
   readonly title: string
@@ -107,6 +108,7 @@ export async function generateArtifact(
   registry: GenerationRegistry,
   outputDirectory: string,
   input: {
+    readonly uploadedImageIds?: readonly string[]
     readonly savedImageIds?: readonly string[]
     readonly sourceFormat?: 'html'
     readonly format: GenerationFormat
@@ -176,6 +178,7 @@ export async function generateArtifact(
     artifactId,
     ...(input.sourceFormat === undefined ? {} : { sourceFormat: input.sourceFormat }),
     ...(input.savedImageIds === undefined ? {} : { savedImageIds: input.savedImageIds }),
+    ...(input.uploadedImageIds === undefined ? {} : { uploadedImageIds: input.uploadedImageIds }),
     title: input.title,
     format: provider.format,
     mediaType: generated.mediaType,
@@ -216,6 +219,7 @@ export function registerGenerationTools(
       content: { type: 'string', required: true, description: 'For web, complete self-contained HTML. For another known format, provide that generator’s source content. Use discovery only when the representation is unknown.' },
       design_profile: { type: 'string', enum: ['executive', 'editorial', 'campaign', 'product', 'data'], description: 'Optional HIVE visual baseline. Use campaign for marketing, executive for leadership documents, product for product UI, data for KPI dashboards, and editorial for narrative reports. It is applied locally and recorded in the durable receipt; it never opens an external design app.' },
       source_format: { type: 'string', enum: ['html'], description: 'For web or PDF, complete self-contained HTML. PDF uses print CSS/page breaks; omitted PDF remains Markdown.' },
+      use_latest_uploaded_images: { type: 'boolean', description: 'HTML source only. Use actual image attachments from the latest human message via hive-asset:latest-0, latest-1, etc., in native image order. Only referenced images are embedded; no filesystem paths or external URLs.' },
       saved_image_ids: { type: 'array', items: { type: 'string' }, description: 'Up to twenty current-session saved image artifact IDs or attachment IDs. Use hive-asset:<saved ID> in HTML img src or CSS url; exact bytes are embedded server-side. No URLs or filesystem paths.' },
       reference_images: { type: 'array', items: { type: 'string' }, description: 'Optional public HTTPS brand/product image URLs for image generation.' },
     },
@@ -229,9 +233,11 @@ export function registerGenerationTools(
       const referenceImages = args.reference_images ?? []
       if (referenceImages.length > 8 || referenceImages.some((value) => { try { const u = new URL(value); return u.protocol !== 'https:' || Boolean(u.username || u.password) } catch { return true } })) throw new Error('Use at most eight public HTTPS reference image URLs')
       if (args.source_format && !['web', 'pdf'].includes(args.format)) throw new Error('HTML source supports web or PDF only')
-      if ((args.saved_image_ids?.length ?? 0) > 0 && args.source_format !== 'html') throw new Error('Saved images require HTML source')
+      if (((args.saved_image_ids?.length ?? 0) > 0 || args.use_latest_uploaded_images === true) && args.source_format !== 'html') throw new Error('Saved images require HTML source')
       const content = args.source_format === 'html'
-        ? await embedHtmlAssets(ctx, agent, args.content, args.saved_image_ids ?? [], execution.signal)
+        ? await embedHtmlAssets(
+          ctx, agent, args.content, args.saved_image_ids ?? [], execution.signal, args.use_latest_uploaded_images === true,
+        )
         : args.content
       const receipt = await generateArtifact(
         ctx,
@@ -239,7 +245,9 @@ export function registerGenerationTools(
         outputDirectory,
         {
           format: args.format as GenerationFormat, title: args.title, content, referenceImages,
-          ...(args.source_format === undefined ? {} : { sourceFormat: args.source_format, savedImageIds: args.saved_image_ids ?? [] }),
+          ...(args.source_format === undefined ? {} : { sourceFormat: args.source_format, savedImageIds: args.saved_image_ids ?? [],
+            ...(args.use_latest_uploaded_images === true ? { uploadedImageIds: [...latestUploadedImages(agent)].filter(([id]) => args.content.includes(`hive-asset:${id}`)).map(([, ref]) => String(ref.attachmentId)) } : {}),
+          }),
           ...(args.design_profile === undefined ? {} : { designProfile: args.design_profile as DesignProfile }),
         },
         agent,

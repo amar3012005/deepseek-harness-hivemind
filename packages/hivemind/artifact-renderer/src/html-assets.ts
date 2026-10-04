@@ -1,15 +1,34 @@
 /** Embed exact saved image bytes referenced by this authenticated session. */
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
-import type { FileAttachmentRef } from '@deepseek-ai/dsh-attachment'
+import type { FileAttachmentRef, ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import { loadImage } from '@napi-rs/canvas'
 
+/** Authorized image attachments of the latest direct human message, in image order. */
+export function latestUploadedImages(agent: Agent): Map<string, ImageAttachmentRef> {
+  const uploads = new Map<string, ImageAttachmentRef>()
+  {
+    const message = agent.session.snapshotEvents().findLast(event => event.type === 'user/message' && event.data.source.kind === 'user')
+    if (message?.type === 'user/message') {
+      const images = message.data.content.filter(part => part.type === 'image' && 'attachment' in part && part.attachment)
+      for (const [index, part] of images.entries()) {
+        if (part.type === 'image' && 'attachment' in part && part.attachment) uploads.set(`latest-${index}`, part.attachment)
+      }
+    }
+  }
+  return uploads
+}
+
 export async function embedHtmlAssets(
-  ctx: Context, agent: Agent, html: string, ids: readonly string[], signal: AbortSignal,
+  ctx: Context, agent: Agent, html: string, ids: readonly string[], signal: AbortSignal, latestUpload = false,
 ): Promise<string> {
-  if (ids.length > 20 || new Set(ids).size !== ids.length) throw new Error('Use at most twenty distinct saved image attachments')
+  const uploads = latestUpload ? latestUploadedImages(agent) : new Map<string, ImageAttachmentRef>()
+  const uploadIds = [...uploads.keys()].filter(id => html.includes(`hive-asset:${id}`))
+  if (latestUpload && !uploadIds.length) throw new Error('Use a latest-image placeholder from the latest human message')
+  if (ids.some(id => id.startsWith('latest-'))) throw new Error('Latest-image placeholders use the upload flag, not saved image IDs')
+  if (ids.length + uploadIds.length > 20 || new Set(ids).size !== ids.length) throw new Error('Use at most twenty distinct saved image attachments')
   let total = 0
-  for (const id of ids) {
+  for (const id of [...ids, ...uploadIds]) {
     signal.throwIfAborted()
     let ref: FileAttachmentRef | undefined
     for (const event of agent.session.snapshotEvents()) {
@@ -27,15 +46,24 @@ export async function embedHtmlAssets(
         }
       }
     }
-    if (!ref || !Number.isSafeInteger(ref.bytes) || ref.bytes <= 0 || ref.bytes > 30 * 1024 * 1024) throw new Error('Saved image attachment is unavailable or exceeds 30 MiB')
-    const chunks: Uint8Array[] = []; let bytes = 0
-    for await (const chunk of ctx.attachments.readFileStream(ref, signal)) {
-      bytes += chunk.byteLength; total += chunk.byteLength
-      if (bytes > 30 * 1024 * 1024 || total > 60 * 1024 * 1024) throw new Error('Saved image assets exceed the byte budget')
-      chunks.push(chunk)
+    const upload = uploads.get(id)
+    let data: Buffer
+    if (upload) {
+      const image = await ctx.attachments.readImage(upload, signal)
+      data = Buffer.from(image.data)
+      total += data.byteLength
+      if (!data.byteLength || data.byteLength > 30 * 1024 * 1024 || total > 60 * 1024 * 1024) throw new Error('Saved image assets exceed the byte budget')
+    } else {
+      if (!ref || !Number.isSafeInteger(ref.bytes) || ref.bytes <= 0 || ref.bytes > 30 * 1024 * 1024) throw new Error('Saved image attachment is unavailable or exceeds 30 MiB')
+      const chunks: Uint8Array[] = []; let bytes = 0
+      for await (const chunk of ctx.attachments.readFileStream(ref, signal)) {
+        bytes += chunk.byteLength; total += chunk.byteLength
+        if (bytes > 30 * 1024 * 1024 || total > 60 * 1024 * 1024) throw new Error('Saved image assets exceed the byte budget')
+        chunks.push(chunk)
+      }
+      data = Buffer.concat(chunks)
+      if (bytes !== ref.bytes) throw new Error('Saved image attachment size mismatch')
     }
-    const data = Buffer.concat(chunks)
-    if (bytes !== ref.bytes) throw new Error('Saved image attachment size mismatch')
     const mime = data.subarray(0, 8).equals(Buffer.from([137,80,78,71,13,10,26,10])) ? 'image/png'
       : data[0] === 255 && data[1] === 216 && data[2] === 255 ? 'image/jpeg'
         : data.toString('ascii', 0, 4) === 'RIFF' && data.toString('ascii', 8, 12) === 'WEBP' ? 'image/webp' : undefined

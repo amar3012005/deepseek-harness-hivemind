@@ -70,3 +70,13 @@ it('resolves the native background media artifact ID to its exact file attachmen
   expect(result).toContain(image.toString('base64'))
   await expect(embedHtmlAssets(ctx, agent(own), source, ['invented-artifact'], new AbortController().signal)).rejects.toThrow('unavailable')
 })
+
+it('embeds actual uploaded image pixels only from the latest human message', async () => {
+  const uploaded = { attachmentId: 'native-upload', mediaType: 'image/png', width: 8, height: 8 }
+  const context = { attachments: { readImage: async () => ({ data: image, mediaType: 'image/png' }) } } as unknown as Context
+  const event = { type: 'user/message', data: { source: { kind: 'user' }, content: [{ type: 'image', attachment: uploaded }] } }
+  const source = '<html><img src="hive-asset:latest-0"></html>'
+  expect(await embedHtmlAssets(context, agent([event]), source, [], new AbortController().signal, true)).toContain(image.toString('base64'))
+  await expect(embedHtmlAssets(context, agent([{ ...event, data: { ...event.data, source: { kind: 'plugin' } } }]), source, [], new AbortController().signal, true)).rejects.toThrow('latest human message')
+  await expect(embedHtmlAssets(context, agent([event, { type: 'user/message', data: { source: { kind: 'user' }, content: [] } }]), source, [], new AbortController().signal, true)).rejects.toThrow('latest human message')
+})
