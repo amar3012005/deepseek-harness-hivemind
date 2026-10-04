@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { ToolDefinition } from '@deepseek-ai/dsh-tools'
 import { apply } from '../src/index.ts'
+import { THINK_SKILLS } from '../src/think-skills.ts'
 
 function setup() {
   const tools = new Map<string, ToolDefinition>()
@@ -37,4 +38,16 @@ describe('hivemind progressive skills', () => {
     const execution = { agent, signal: new AbortController().signal } as never
     await expect(tool.execute({ operation: 'load', name: 'private-command' }, execution)).rejects.toThrow('unavailable skill')
   })
+})
+
+
+it('keeps grounded entity search guidance in the existing shared on-demand body', () => {
+  const search = THINK_SKILLS.find(skill => skill.name === 'parallel-search')
+  expect(search).toBeDefined()
+  expect(search?.content).toContain('verified entity context')
+  expect(search?.content).toContain('omit unknown details rather than inventing')
+  expect(search?.content).toContain('narrow recall query')
+  expect(search?.content).toContain('not confirmed absence')
+  expect(search?.content).toContain('Verify candidate identity')
+  expect(search?.description).not.toContain('verified entity context')
 })

@@ -28,7 +28,7 @@ it('correlates successful results, deduplicates updates, and excludes failure/un
   const call = { type: 'tool/call', seq: 1, data: { callId: 'read', name: 'browser_markdown', arguments: JSON.stringify({ url: source.url }) } }
   const result = (seq: number) => ({ type: 'tool/result', seq, data: { message: { source: { callId: 'read' }, content: [{ content: [{ type: 'text', text: 'Read homepage' }] }] } } })
   const window = { entries: [call, result(2), result(3)].map(event => ({ type: 'event', event })) } as unknown as SessionEventWindow
-  expect(websiteSources(window)).toEqual([{ ...source, title: 'example.com' }])
+  expect(websiteSources(window)).toEqual([{ ...source, title: 'example.com', visited: true, visitedSeq: 3 }])
   expect(successfulSources({ name: 'browser_markdown', url: source.url, sources: [], seq: 1 }, '{"error":"failed"}', 2)).toEqual([])
   expect(sourceUrl('javascript:alert(1)')).toBeUndefined()
   expect(sourceUrl('http://localhost:3000')).toBeUndefined()
@@ -53,11 +53,12 @@ it('opens only a newly received result, not restored history', () => {
   view.rerender(<WebsitePreviewUpdates events={events} open={open} />)
   expect(open).toHaveBeenCalledTimes(1)
 })
-it('anchors a source card to successful result chronology', () => {
+it('keeps source receipts out of normal chat while retaining their chronology', () => {
   const state = { name: 'parallel_search', sources: [], seq: 1 }
   const result = websiteRead.update!({ state } as never, { event: { type: 'tool/result', seq: 8, data: { message: { content: [{ content: [{ type: 'text', text: JSON.stringify({ results: [source] }) }] }] } } } } as never)
   const node = websiteRead.buildViewNode!({ state: result, start: { location: {} }, key: 'read', id: 'a' } as never)
-  expect((node as { anchorSeq?: number } | null)?.anchorSeq).toBe(8)
+  expect(node).toBeNull()
+  expect((result as { sources: { seq: number }[] }).sources[0]?.seq).toBe(8)
 })
 
 it('does not auto-open restored sources when changing rooms', () => {
@@ -71,4 +72,18 @@ it('does not auto-open restored sources when changing rooms', () => {
   const view = render(<WebsitePreviewUpdates events={first} open={open} />)
   view.rerender(<WebsitePreviewUpdates events={second} open={open} />)
   expect(open).not.toHaveBeenCalled()
+})
+
+it('retains search candidates alongside visited URLs without treating search results as visits', () => {
+  const entries = [
+    { type: 'tool/call', seq: 1, data: { callId: 'search', name: 'parallel_search', arguments: '{}' } },
+    { type: 'tool/result', seq: 2, data: { message: { source: { callId: 'search' }, content: [{ content: [{ type: 'text',
+      text: JSON.stringify({ results: [{ url: 'https://example.com/a', title: 'A' }, { url: 'https://example.com/b', title: 'B' }] }) }] }] } } },
+    { type: 'tool/call', seq: 3, data: { callId: 'read', name: 'browser_extract', arguments: JSON.stringify({ url: 'https://example.com/a' }) } },
+    { type: 'tool/result', seq: 4, data: { message: { source: { callId: 'read' }, content: [{ content: [{ type: 'text', text: '{}' }] }] } } },
+  ].map(event => ({ type: 'event', event }))
+  const sources = websiteSources({ entries } as unknown as SessionEventWindow)
+  expect(sources).toHaveLength(2)
+  expect(sources.find(source => source.url.endsWith('/a'))?.visited).toBe(true)
+  expect(sources.find(source => source.url.endsWith('/b'))?.visited).toBe(false)
 })

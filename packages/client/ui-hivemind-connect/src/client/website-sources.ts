@@ -1,7 +1,7 @@
 /** Successful native read receipts, correlated by tool call identity. */
 import type { SessionEventWindow } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { ConversationNodeDefinition } from '@deepseek-ai/dsh-client-ui-conversation/client'
-export interface WebsiteSource { url: string; title: string; seq: number }
+export interface WebsiteSource { url: string; title: string; seq: number; visited?: boolean; visitedSeq?: number }
 export interface WebsiteRead { name: string; url?: string; sources: WebsiteSource[]; seq: number }
 const browserReads = new Set(['browser_markdown', 'browser_extract', 'browser_links', 'browser_scrape', 'browser_capture'])
 export function sourceUrl(value: unknown): string | undefined {
@@ -20,7 +20,7 @@ export function successfulSources(read: WebsiteRead, text: string, seq: number):
   if (value?.error || value?.success === false) return []
   if (browserReads.has(read.name)) {
     const url = sourceUrl(read.url)
-    return url === undefined ? [] : [{ url, title: new URL(url).hostname, seq }]
+    return url === undefined ? [] : [{ url, title: new URL(url).hostname, seq, visited: true }]
   }
   if (read.name !== 'parallel_search' || !Array.isArray(value?.results)) return []
   return value.results.flatMap((row: unknown) => {
@@ -47,17 +47,18 @@ export const websiteRead: ConversationNodeDefinition<WebsiteRead> = {
     const text = match.event.data.message.content.flatMap(block => block.content).filter(block => block.type === 'text').map(block => block.text).join('')
     return { ...context.state, seq: match.event.seq, sources: successfulSources(context.state, text, match.event.seq) }
   },
-  buildViewNode: context => context.start === undefined || context.state === undefined || context.state.sources.length === 0 ? null : {
-    key: context.key, kind: 'hivemind-website-source', id: context.id, target: 'chat', anchorSeq: context.state.seq,
-    location: context.start.location, processDisclosure: 'independent', visibility: 'visible', data: context.state,
-  },
+  // Successful URLs drive the shared Preview observer. Their native tool
+  // receipts remain in Work details; don't duplicate every source as a bubble.
+  buildViewNode: () => null,
 }
 export function websiteSources(window: SessionEventWindow): WebsiteSource[] {
   const calls = new Map<string, WebsiteRead>()
   const sources = new Map<string, WebsiteSource>()
-  const add = (urlValue: unknown, title: unknown, seq: number) => {
+  const add = (urlValue: unknown, title: unknown, seq: number, visited = false) => {
     const url = sourceUrl(urlValue)
-    if (url !== undefined) sources.set(url, { url, title: typeof title === 'string' && title ? title : new URL(url).hostname, seq })
+    const visitedSeq = visited ? seq : url === undefined ? undefined : sources.get(url)?.visitedSeq
+    if (url !== undefined) sources.set(url, { url, title: typeof title === 'string' && title ? title : new URL(url).hostname, seq, visited: visited || sources.get(url)?.visited === true,
+      ...(visitedSeq === undefined ? {} : { visitedSeq }) })
   }
   for (const entry of window.entries) {
     if (entry.type !== 'event') continue
@@ -72,7 +73,7 @@ export function websiteSources(window: SessionEventWindow): WebsiteSource[] {
       const read = calls.get(String(event.data.message.source.callId))
       if (read === undefined) continue
       const text = event.data.message.content.flatMap(block => block.content).filter(block => block.type === 'text').map(block => block.text).join('')
-      for (const source of successfulSources(read, text, event.seq)) add(source.url, source.title, source.seq)
+      for (const source of successfulSources(read, text, event.seq)) add(source.url, source.title, source.seq, source.visited)
     } else if (String(event.type) === 'hivemind/research-receipt') {
       const data = event.data as { sources?: { url?: unknown; title?: unknown }[] }
       for (const source of data.sources ?? []) add(source.url, source.title, event.seq)

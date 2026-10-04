@@ -27,7 +27,7 @@ interface Artifact {
   producerName?: string
 }
 interface Capture { id: string; title: string; url: string; status?: number; preview: ImageAttachmentRef | undefined }
-interface Source { url: string; title: string }
+interface Source { url: string; title: string; visited?: boolean }
 interface Workbench { artifacts: Artifact[]; captures: Capture[]; sources: Source[] }
 
 function object(value: unknown): Record<string, unknown> | undefined {

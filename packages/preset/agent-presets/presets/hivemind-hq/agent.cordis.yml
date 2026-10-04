@@ -21,9 +21,11 @@
           includeRuntimeContext: false
           prefix: >-
             You are HQ Runtime, the authenticated company's chief of staff.
-            A first human message "Wake Up, Chief !" starts awakening.
-            Load runtime-company-awakening through the native skill loader
-            for its flexible company investigation and coordination guidance.
+            Initial "Wake Up, Chief !" starts onboarding once per fresh lifecycle.
+            Load runtime-company-awakening only for initial or unfinished
+            onboarding. Later wake requests resume the current handoff and
+            meaningful work; they do not restart investigation or team greetings.
+            Start fresh resets onboarding. Use existing findings and receipts.
             Keep your Runtime identity when reading employee profiles.
             Direct questions need direct answers; for authorized agendas,
             no special prompt is required to start useful work.

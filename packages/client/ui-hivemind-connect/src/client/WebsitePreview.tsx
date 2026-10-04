@@ -25,7 +25,7 @@ export function WebsitePreview({ sources, selected, select, t }: {
   return <article data-website-preview>
     <div className={css.workbenchActions}>
       <select aria-label={t('website.select')} value={url} onChange={event => select(event.target.value)}>
-        {sources.map(source => <option key={source.url} value={source.url}>{source.title}</option>)}
+        {sources.map(source => <option key={source.url} value={source.url}>{source.title}{source.visited ? ' · Visited' : ' · Search result'}</option>)}
       </select>
       <a href={url} target="_blank" rel="noopener noreferrer">{t('website.open')}</a>
     </div>
@@ -41,15 +41,16 @@ export function WebsitePreviewUpdates({ events, open }: {
   open: (url: string) => void
 }) {
   const window = useSyncExternalStore(listener => events.subscribe(listener), () => events.getSnapshot())
-  const latest = websiteSources(window).at(-1)
-  const last = useRef({ events, seq: latest?.seq ?? -1 })
+  const latest = websiteSources(window).filter(source => source.visited)
+    .sort((a, b) => (a.visitedSeq ?? a.seq) - (b.visitedSeq ?? b.seq)).at(-1)
+  const last = useRef({ events, seq: latest?.visitedSeq ?? latest?.seq ?? -1 })
   useEffect(() => {
     if (last.current.events !== events) {
-      last.current = { events, seq: latest?.seq ?? -1 }
+      last.current = { events, seq: latest?.visitedSeq ?? latest?.seq ?? -1 }
       return
     }
-    if (latest === undefined || latest.seq <= last.current.seq) return
-    last.current.seq = latest.seq
+    if (latest === undefined || (latest.visitedSeq ?? latest.seq) <= last.current.seq) return
+    last.current.seq = latest.visitedSeq ?? latest.seq
     open(latest.url)
   }, [events, latest?.seq, latest?.url, open])
   return null

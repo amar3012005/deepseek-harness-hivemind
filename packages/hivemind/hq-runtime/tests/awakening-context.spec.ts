@@ -31,6 +31,19 @@ it('does not reinsert awakening guidance after its conversation checkpoint', asy
 })
 
 
+it('does not restart completed onboarding for a later human wake command', async () => {
+  const append = vi.fn()
+  const events = [
+    { type: 'hivemind/hq-awakening-start', data: { version: 1, turn: 1 } },
+    { type: 'hivemind/hq-awakening-checkpoint', data: { stage: 'conversation', blocked: false } },
+  ]
+  const agent = { session: { snapshotEvents: () => events, append } } as unknown as Agent
+  const messages = [{ source: { kind: 'user' }, content: [{ type: 'text', text: 'Wake up, Chief! Continue our agenda.' }] }] as never
+  expect(await awakeningContext({} as Context, agent, 4, messages)).toBe('')
+  expect(append).not.toHaveBeenCalled()
+})
+
+
 it.each([
   ['conversation', undefined, undefined, true],
   ['conversation', 'artifact-id', undefined, false],
