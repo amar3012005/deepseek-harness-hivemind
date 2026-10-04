@@ -244,6 +244,7 @@ describe('cold history recovery view', () => {
     const remote = createSessionTestRemote(ctx, { defaultModelSelection: () => ({ provider: 'p', model: 'm' }), cwd: '/tmp' })
     const latest = await remote.page({ address: { kind: 'session', sessionId }, maxMessages: 10 })
     if (!latest.ok) throw new Error('latest page failed')
+    if (latest.value.cursor === undefined) throw new Error('latest cursor missing')
     expect(latest.value.cursor).toBe(latest.value.records.at(-1)?.event.seq)
     expect(latest.value.records[0]?.event.seq).toBe(0)
     expect(ctx.sessions.get(sessionId)).toBeUndefined()
