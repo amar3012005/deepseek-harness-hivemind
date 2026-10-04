@@ -8,7 +8,9 @@ export async function inspectPdf(data: Uint8Array, signal: AbortSignal, requireT
     pages.some(page => !Number.isSafeInteger(page) || page < 1)) {
     throw new Error('PDF inspection requires one to four distinct positive page numbers')
   }
-  const { getDocument } = await import('pdfjs-dist/legacy/build/pdf.mjs')
+  const { getDocument, GlobalWorkerOptions } = await import('pdfjs-dist/legacy/build/pdf.mjs')
+  // Bundled consumers do not share PDF.js's directory; resolve its shipped worker asset explicitly.
+  GlobalWorkerOptions.workerSrc = import.meta.resolve('pdfjs-dist/legacy/build/pdf.worker.mjs')
   const standardFontDataUrl = fileURLToPath(new URL('.', import.meta.resolve('pdfjs-dist/standard_fonts/FoxitSans.pfb')))
   const loading = getDocument({ data: new Uint8Array(data), useSystemFonts: false, standardFontDataUrl })
   const abort = () => { void loading.destroy() }

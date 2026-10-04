@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createCanvas, loadImage } from '@napi-rs/canvas'
 import { Context } from '@deepseek-ai/cordis'
-import { getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs'
+import { getDocument, GlobalWorkerOptions } from 'pdfjs-dist/legacy/build/pdf.mjs'
 import { expect, it, vi } from 'vitest'
 import { MarkdownArtifactRenderer } from '../src/index.ts'
 import { GenerationRegistry, generateArtifact } from '../src/generation.ts'
@@ -17,6 +17,7 @@ it('renders a real paginated PDF and rasterizes its first page', async () => {
     const renderer = new MarkdownArtifactRenderer(ctx, { provider: 'markdown-pdf', outputDirectory: 'artifacts', maxMarkdownChars: 400_000 })
     const markdown = ['# Two page canary', ...Array.from({ length: 36 }, (_, index) => `## Evidence ${index + 1}\n\nHannover-based insurance research confirms the source passage and documents the verification context for this report. The supplied source remains linked and reviewable.`)].join('\n\n')
     const result = await renderer.render({ cwd, title: 'Two page canary', pageSize: 'A4', markdown, signal: new AbortController().signal })
+    expect(GlobalWorkerOptions.workerSrc).toBe(import.meta.resolve('pdfjs-dist/legacy/build/pdf.worker.mjs'))
     expect(result.pageCount).toBeGreaterThan(1)
     expect(Buffer.from(result.pdf).subarray(0, 5).toString()).toBe('%PDF-')
     expect(Buffer.from(result.preview).subarray(1, 4).toString()).toBe('PNG')
