@@ -9,3 +9,7 @@ Verification: focused reference ownership/integrity/path/current-task tests, pro
 ## Native loader correction
 
 Live traces showed the model used the supported native `skill` loader, whose text-only result bypassed the custom `hivemind_skills` reference arguments. The artifact plugin now enriches successful `skill(name:design-artifact)` results at the existing `tools/post-execute` waterfall, preserving its instructions and appending one owner-scoped image plus fallback policy before the next model request. No core loader or agent loop changed. Explicit current user images suppress fallback. Approved Brand DNA retains priority; remembered homepage style is not an approval record. A native ToolRuntime integration test verifies the default accept shape preserves the actual image ContentBlock in the final model-facing result.
+
+## HTML edit continuity
+
+A later HTML correction stripped the saved layout into a placeholder. The existing native design skill result now includes the latest same-chat saved HTML source and exact preview attachment on each load, bounded by validated designContextMaxChars. The shared on-demand production/design guidance requires reloading for every HTML-producing turn, preserving the designed artifact for narrow edits, and rendered inspection before closeout. Explicit current user image references suppress only the private fallback, not the prior HTML design context. Oversized existing HTML fails visibly rather than returning incomplete source as complete. No new tool, production gate or agent loop was added.

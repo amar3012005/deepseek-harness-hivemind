@@ -1276,6 +1276,31 @@ describe('ChatView', () => {
     expect(within(cancelledDisclosure).getByRole('status').textContent).toContain('重试已取消')
   })
 
+  it('keeps product-room terminal errors inside closed Work details', () => {
+    document.documentElement.dataset.dshMode = 'hivemind-chat'
+    try {
+      const h = makeHarness({ nodes: [user(1, 'try'), turnError(2, 'INVALID_ARGUMENTS')] })
+      const view = render(<h.ChatView {...h.props} />)
+      const disclosure = view.getByText('Work details').closest('details')
+      expect(disclosure?.open).toBe(false)
+      expect(disclosure?.textContent).toContain('INVALID_ARGUMENTS')
+      expect(view.getByRole('status', { hidden: true }).closest('details')).toBe(disclosure)
+    } finally {
+      delete document.documentElement.dataset.dshMode
+    }
+  })
+
+  it('keeps a failed tool without a final answer inside closed product Work details', () => {
+    document.documentElement.dataset.dshMode = 'hivemind-chat'
+    try {
+      const h = makeHarness({ nodes: [user(1, 'try'), { ...toolResult(2, 'bad'), isError: true }] })
+      const view = render(<h.ChatView {...h.props} />)
+      const disclosure = view.getByText('Work details').closest('details')
+      expect(disclosure?.open).toBe(false)
+      expect(disclosure?.textContent).toContain('bash:bad')
+    } finally { delete document.documentElement.dataset.dshMode }
+  })
+
   it('renders terminal turn failures inline with their durable message and optional code', () => {
     const h = makeHarness({ nodes: [user(1, 'try'), turnError(2, 'AUTH'), turnError(3)] })
     const view = render(<h.ChatView {...h.props} />)

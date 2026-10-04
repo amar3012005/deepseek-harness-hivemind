@@ -143,7 +143,7 @@ export const ChatNodeSeat = memo(function ChatNodeSeat({
   // keyed-slot entry passed alongside that same Node. TypeScript does not
   // distribute an object containing a union into a union of objects itself.
   const routedOwner = { ...owner, node: routedNode } as RoutedChatNodeOwner
-  return (
+  const rendered = (
     <div
       ref={wrapperRef}
       className={css.flowItem}
@@ -168,4 +168,10 @@ export const ChatNodeSeat = memo(function ChatNodeSeat({
       })}
     </div>
   )
+  // Failed calls without a finalized process range still belong to technical details.
+  return document.documentElement.dataset.dshMode === 'hivemind-chat'
+    && routedNode.kind === 'tool-call' && 'kind' in routedNode.data.root
+    && routedNode.data.root.kind === 'tool-result' && routedNode.data.root.isError && !foldable
+    ? <details><summary>Work details</summary>{rendered}</details>
+    : rendered
 })

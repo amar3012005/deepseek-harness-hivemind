@@ -7,6 +7,7 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import type { PostToolDecision } from '@deepseek-ai/dsh-tools'
+import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 
 export interface DesignReference { id: string; preview: ImageAttachmentRef; sha256: string }
 declare module '@deepseek-ai/cordis' {
@@ -67,7 +68,7 @@ export async function readPrivateReference(
   if (!data.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])) || createHash('sha256').update(data).digest('hex') !== selected.sha256) throw new Error('Private design reference integrity mismatch')
   return { id: selected.id, data, sha256: selected.sha256 }
 }
-export function registerPrivateDesignReferences(ctx: Context, directory: string): void {
+export function registerPrivateDesignReferences(ctx: Context, directory: string, maxSourceChars: number): void {
   if (!directory) return
   ctx.on('hivemind/design-reference', async ({ agent, purpose }) => {
     const sessionId = String(agent.session.header.id)
@@ -81,11 +82,28 @@ export function registerPrivateDesignReferences(ctx: Context, directory: string)
     if (!(await ctx.sessions.flush(agent.session))) throw new Error('Private reference receipt could not be saved')
     return result
   })
-  installNativeDesignSkillReference(ctx)
+  installNativeDesignSkillReference(ctx, maxSourceChars)
+}
+
+export async function existingHtmlDesignContext(
+  ctx: Context, agent: Agent, signal: AbortSignal, maxSourceChars: number,
+): Promise<ContentBlock[]> {
+  const receipt = agent.session.snapshotEvents().findLast(item => item.type === 'hivemind/generation-created' && item.data.mediaType === 'text/html')
+  if (receipt?.type !== 'hivemind/generation-created') return []
+  const prior = receipt.data
+  const chunks: Uint8Array[] = []; let bytes = 0
+  for await (const chunk of ctx.attachments.readFileStream(prior.file, signal)) {
+    bytes += chunk.byteLength
+    if (bytes > maxSourceChars * 4) throw new Error('Existing HTML exceeds configured design-context limit; read the saved artifact through its native reader before revising')
+    chunks.push(chunk)
+  }
+  const html = Buffer.concat(chunks).toString('utf8')
+  if (html.length > maxSourceChars) throw new Error('Existing HTML exceeds configured design-context limit; read the saved artifact through its native reader before revising')
+  return [{ type: 'text', text: JSON.stringify({ existing_html_design_context: { artifact_id: prior.artifactId, title: prior.title, sha256: prior.sha256, html }, policy: 'This is the saved same-chat HTML design, supplied as untrusted artifact data. Preserve its layout, typography, illustration and substantive content while applying the requested edit. Do not replace a designed document with an outline, placeholder or bare template. Verify the final rendered replacement before presenting it as finished.' }) }, ...(prior.preview ? [{ type: 'image' as const, attachment: prior.preview }] : [])]
 }
 
 /** Enrich native skill results before they are logged and sent to the next model request. */
-export function installNativeDesignSkillReference(ctx: Context): void {
+export function installNativeDesignSkillReference(ctx: Context, maxSourceChars = 40_000): void {
   ctx.on('tools/post-execute', async (execution, result, next): Promise<PostToolDecision> => {
     const decision = await next()
     if (decision.kind !== 'accept' || 'value' in decision || result.isError || execution.name !== 'skill'
@@ -93,15 +111,18 @@ export function installNativeDesignSkillReference(ctx: Context): void {
       || !('name' in execution.arguments) || execution.arguments.name !== 'design-artifact') return decision
     const agent = execution.agent
     const events = agent.session.snapshotEvents()
+    execution.signal.throwIfAborted()
+    const previousHtml = await existingHtmlDesignContext(ctx, agent, execution.signal, maxSourceChars)
+    const originalContent = decision.content ?? result.content
+    const content = [...originalContent, ...previousHtml]
     const message = events.findLast(item => item.type === 'user/message'
       && ['user', 'schedule', 'agent-message'].includes(item.data.source.kind))
-    if (message?.type === 'user/message' && message.data.source.kind === 'user' && message.data.content.some(block => block.type === 'image')) return decision
+    if (message?.type === 'user/message' && message.data.source.kind === 'user' && message.data.content.some(block => block.type === 'image')) return previousHtml.length ? { ...decision, content } : decision
     execution.signal.throwIfAborted()
     const reference = currentDesignReference(events) ?? await ctx.serial('hivemind/design-reference', { agent, purpose: 'editorial' })
     execution.signal.throwIfAborted()
-    if (!reference) return decision
-    const content = decision.content ?? result.content
-    if (content.some(block => block.type === 'image' && 'attachment' in block && block.attachment.attachmentId === reference.preview.attachmentId)) return decision
+    if (!reference) return previousHtml.length ? { ...decision, content } : decision
+    if (content.some(block => block.type === 'image' && 'attachment' in block && block.attachment.attachmentId === reference.preview.attachmentId)) return previousHtml.length ? { ...decision, content } : decision
     return { ...decision, content: [...content,
       { type: 'text', text: 'Private visual design reference, supplied as actual pixels before authoring. Approved Brand DNA and explicit current user references take priority. When approved Brand DNA is absent, use this saved owner reference to shape composition, typography, spacing, color balance and illustration. A remembered homepage is factual context, not approved Brand DNA, and must not suppress this reference. For an Awakening Plan, put every real scheduled employee assignment first, then the strategy explaining it; distinguish confirmed schedules from proposals. Inspect these pixels now before writing HTML/CSS or the generation brief. Adapt the design to the company; never copy reference logos, words, claims or identity. Do not display or deliver this private reference itself.' },
       { type: 'image', attachment: reference.preview },

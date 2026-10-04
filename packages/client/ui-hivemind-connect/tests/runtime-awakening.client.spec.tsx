@@ -15,12 +15,12 @@ describe('chronological Runtime evidence', () => {
   it('keeps event order rather than sorting into a prescribed workflow', () => {
     const view = render(<RuntimeAwakening events={events('team', 'company')} turn={1} renderSlot={() => null} />)
     expect([...view.container.querySelectorAll('header strong')].map(item => item.textContent))
-      .toEqual(['Getting to know your team', 'Understanding your company'])
+      .toEqual(['Getting to know our team', 'Understanding our company'])
   })
   it('renders only its anchored checkpoint and does not repeat the call plan after remembering', () => {
     const renderSlot = vi.fn(() => null)
     const view = render(<RuntimeAwakening events={events('company', 'conversation', 'remembered')} turn={1} checkpointSeq={3} renderSlot={renderSlot} />)
-    expect(view.queryByText('Understanding your company')).toBeNull()
+    expect(view.queryByText('Understanding our company')).toBeNull()
     expect(view.getByText('Ready to continue')).toBeTruthy()
     expect(renderSlot).not.toHaveBeenCalled()
   })

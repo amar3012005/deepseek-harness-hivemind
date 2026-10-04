@@ -41,6 +41,36 @@ async function baseContext(): Promise<Context> {
 }
 
 describe('Session creation failures', () => {
+  it.each(['absent-owned', 'present', 'foreign'] as const)('handles cached employee room %s without stealing ownership', async (mode) => {
+    const ctx = await baseContext()
+    ctx.provide('workspaceRegistry', { get: () => undefined, list: () => [] } as never)
+    const id = SessionId('session-deleted-employee')
+    const session = ctx.sessions.create(id, { meta: { cwd: '/default' } })
+    let cached: Agent | undefined = { id, session } as Agent
+    vi.spyOn(ctx.agents, 'get').mockImplementation(() => cached)
+    ctx.provide('sessionPersistence', {
+      employeeRoomId: async () => id,
+      stat: async () => mode === 'present' ? { header: session.header } : undefined,
+    } as never)
+    const releaseOwned = vi.fn(async () => {
+      if (mode === 'foreign') throw new Error('session_lifecycle_not_owned_by_api')
+      cached = undefined
+    })
+    const ensureSession = vi.fn(async () => ({ id, session } as Agent))
+    const controller = new SessionCommandController(ctx, controllerAgents({ releaseOwned, ensureSession }), '/default')
+    if (mode === 'foreign') {
+      await expect(controller.create({ hyperagentRoom: 'ravi-patel' })).rejects.toThrow('session_lifecycle_not_owned_by_api')
+      expect(ensureSession).not.toHaveBeenCalled()
+      expect(cached).toBeDefined()
+    } else {
+      await controller.create({ hyperagentRoom: 'ravi-patel' })
+      expect(releaseOwned).toHaveBeenCalledTimes(mode === 'present' ? 0 : 1)
+      expect(ensureSession).toHaveBeenCalledOnce()
+      if (mode === 'absent-owned') expect(releaseOwned.mock.invocationCallOrder[0]).toBeLessThan(ensureSession.mock.invocationCallOrder[0]!)
+    }
+    await ctx.fiber.dispose()
+  })
+
   it('mints an identity with the default cwd when no explicit target is supplied', async () => {
     const ctx = await baseContext()
     ctx.provide('workspaceRegistry', { get: () => undefined, list: () => [] } as never)

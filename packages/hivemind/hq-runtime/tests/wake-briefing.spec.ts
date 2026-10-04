@@ -36,8 +36,8 @@ it('admits one native briefing per turn and rereads on cold restore', async () =
   const ctx = {
     effect: (callback: () => unknown) => callback(),
     on: (_name: string, callback: typeof hook) => { hook = callback; return () => {} },
-    agentTeams: { guardTaskUpdates: () => () => {}, tryMembership: (subject: unknown) => ({ role: 'lead', root: subject }) },
-    hivemindHq: { workspace: workspaceRead }, tools: { register: () => {} },
+    agentTeams: { guardTaskUpdates: () => () => {}, tryMembership: (subject: unknown) => ({ role: 'lead', root: subject }), membership: (subject: unknown) => ({ role: 'lead', root: subject }) },
+    hivemindHq: { workspace: workspaceRead }, sessions: { flush: async () => true }, tools: { register: () => {} },
   } as unknown as Context
   apply(ctx)
   const enter = async () => ({ kind: 'enter', messages: [] })
@@ -47,4 +47,27 @@ it('admits one native briefing per turn and rereads on cold restore', async () =
   await hook!({ agent, turn: 2 }, enter)
   await hook!({ agent: { ...agent }, turn: 2 }, enter)
   expect(workspaceRead).toHaveBeenCalledTimes(3)
+})
+
+
+it('keeps saved human timing notes visible during initial awakening', async () => {
+  let hook: (payload: unknown, next: () => Promise<unknown>) => Promise<unknown>
+  const events = [
+    { seq: 0, type: 'hivemind/hq-awakening-start', data: { version: 1, turn: 1 } },
+    { seq: 1, type: 'hivemind/hq-rest-note', data: { id: 'test-timing', text: 'Use minute-scale schedules for this test, not tomorrow.', createdAt: '2026-10-04T00:00:00Z' } },
+    { seq: 2, type: 'turn/start', data: { turn: 1 } },
+  ]
+  const agent = { id: 'root', ctx: { tools: { restrict: vi.fn(() => () => {}) } }, session: { header: { agentPreset: 'hivemind-hq' }, ownEvents: () => events, snapshotEvents: () => events } }
+  const ctx = {
+    effect: (callback: () => unknown) => callback(),
+    on: (_name: string, callback: typeof hook) => { hook = callback; return () => {} },
+    agentTeams: { guardTaskUpdates: () => () => {}, tryMembership: (subject: unknown) => ({ role: 'lead', root: subject }), membership: (subject: unknown) => ({ role: 'lead', root: subject }) },
+    hivemindHq: { workspace: async () => workspace }, sessions: { flush: async () => true }, tools: { register: () => {} },
+  } as unknown as Context
+  apply(ctx)
+  const result = await hook!({ agent, turn: 1 }, async () => ({ kind: 'enter', messages: [] }))
+  const text = JSON.stringify(result)
+  expect(text).toContain('First awakening is active')
+  expect(text).toContain('Use minute-scale schedules for this test, not tomorrow.')
+  expect(text).toContain('hq-rest-pending-note-ids')
 })

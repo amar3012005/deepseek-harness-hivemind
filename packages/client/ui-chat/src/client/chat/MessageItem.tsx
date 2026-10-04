@@ -126,7 +126,7 @@ function TurnErrorItem({ node, t }: {
   node: TurnErrorNode
   t: ChatViewSlotProps['t']
 }) {
-  return (
+  const technicalDetails = (
     <div className={css.turnErrorRow} role="status">
       <StateDot state="error" className={css.turnErrorDot} />
       <div className={css.turnErrorCopy}>
@@ -136,6 +136,9 @@ function TurnErrorItem({ node, t }: {
       {node.code !== undefined && <code className={css.turnErrorCode}>{node.code}</code>}
     </div>
   )
+  return document.documentElement.dataset.dshMode === 'hivemind-chat'
+    ? <details><summary>Work details</summary>{technicalDetails}</details>
+    : technicalDetails
 }
 
 /** Persistent, turn-positioned notice for a turn ended at the output-token cap. */

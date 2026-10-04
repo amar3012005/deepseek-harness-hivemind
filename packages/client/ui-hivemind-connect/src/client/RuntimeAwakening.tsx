@@ -24,7 +24,7 @@ export interface Checkpoint {
     avatarUrl?: string
   }>
 }
-const titles: Record<string, string> = { company: 'Understanding your company', evidence: 'Inspecting the evidence', team: 'Getting to know your team', memory: 'Learning from previous work', strategy: 'Awakening Plan', conversation: 'Discussing your next agenda', remembered: 'Ready to continue' }
+const titles: Record<string, string> = { company: 'Understanding our company', evidence: 'Inspecting our evidence', team: 'Getting to know our team', memory: 'Learning from previous work', strategy: 'Awakening Plan', conversation: 'Discussing your next agenda', remembered: 'Ready to continue' }
 export function RuntimeAwakening(
   { events, turn, checkpointSeq, openArtifact }: {
     events: EventSource

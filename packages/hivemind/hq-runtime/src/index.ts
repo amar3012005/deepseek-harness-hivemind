@@ -138,7 +138,7 @@ export function apply(ctx: Context): void {
     const currentRest = await restState(ctx, agent)
     const briefing = createUserMessage({
       source: { kind: 'plugin', plugin: 'hivemind-hq/wake-briefing', form: 'recall', sections: [rest.section] },
-      content: [{ type: 'text', text: `${wakeBriefing(workspace, agent.session.snapshotEvents(), agent.id)}\n${awakening ? '' : rest.text}\nCurrent native rest state: ${JSON.stringify(currentRest.latest)}. A missing wake is not confirmed sleep; choose a new justified handoff when needed, without restoring a deleted timer.` }],
+      content: [{ type: 'text', text: `${wakeBriefing(workspace, agent.session.snapshotEvents(), agent.id)}\n${rest.text}\nCurrent native rest state: ${JSON.stringify(currentRest.latest)}. A missing wake is not confirmed sleep; choose a new justified handoff when needed, without restoring a deleted timer.` }],
     })
     if (awakening) return { ...decision, messages: [briefing, ...decision.messages, createUserMessage({
       source: { kind: 'plugin', plugin: 'hivemind-hq/first-awakening', form: 'snapshot', sections: [{ name: 'hq-first-awakening', text: awakening }] },
@@ -292,11 +292,15 @@ export function apply(ctx: Context): void {
           const directory = await ctx.hivemindEmployeeDirectory.profiles(execution.signal)
           if (!directory.profiles.some(profile => profile['id'] === input.employee_id)) throw new Error('hq_employee_not_found')
           const existing = calendarItems(events).find(item => item.taskId === task.id)
-          if (!existing && Date.parse(input.starts_at) <= Date.now()) throw new Error('hq_schedule_start_must_be_future')
+          const unchanged = existing !== undefined && existing.owner === input.employee_id
+            && Date.parse(existing.startsAt) === Date.parse(input.starts_at)
+            && Date.parse(existing.endsAt) === Date.parse(input.ends_at)
+          if (!unchanged && Date.parse(input.starts_at) <= Date.now()) throw new Error('hq_schedule_start_must_be_future')
           const result = await ctx.hivemindHq.plan(root, {
-            expectedRevision: existing ? existing.revision - 1 : 0,
-            item: existing ?? { id: `initial-${task.id}`, revision: 1, kind: 'assignment', title: task.subject,
-              owner: input.employee_id, taskId: task.id, startsAt: input.starts_at, endsAt: input.ends_at, resolved: false },
+            expectedRevision: existing ? unchanged ? existing.revision - 1 : existing.revision : 0,
+            item: unchanged ? existing : { id: existing?.id ?? `initial-${task.id}`, revision: (existing?.revision ?? 0) + 1,
+              kind: 'assignment', title: task.subject, owner: input.employee_id, taskId: task.id,
+              startsAt: input.starts_at, endsAt: input.ends_at, resolved: false },
           })
           if (!result.ok) throw new Error('hq_calendar_conflict')
           const workspace = await ctx.hivemindHq.workspace(root)

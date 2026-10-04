@@ -98,6 +98,16 @@ export class SessionCommandController {
       throw new RemoteError('gateway/bad-request', 'Persistent employee room is unavailable', {})
     }
     const roomId = room === undefined ? undefined : await persistence.employeeRoomId?.(room)
+    if (roomId !== undefined && this.ctx.agents.get(roomId) !== undefined
+      && await this.ctx.sessionPersistence.stat(roomId) === undefined) {
+      // Start fresh may delete storage after a former API-owned room was cached.
+      // Proven absence permits release/recreation; a lost lease on an existing
+      // row is not absence and must never be silently retried or re-owned.
+      await this.agents.releaseOwned([roomId])
+      if (this.ctx.agents.get(roomId) !== undefined) {
+        throw new Error('session_absent_cached_lifecycle_not_released')
+      }
+    }
     const sessionId = roomId ?? request.sessionId ?? brandString<SessionId>(`session-${randomUUID()}`)
     let workspace: Workspace | undefined
     if (request.workspaceId !== undefined) {

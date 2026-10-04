@@ -86,6 +86,7 @@ export abstract class ArtifactRenderer extends Service {
 
 export interface Config {
   privateDesignReferenceDirectory?: string
+  designContextMaxChars?: number
   provider: 'markdown-pdf'
   outputDirectory: string
   attachmentOnly?: boolean
@@ -117,6 +118,7 @@ export interface Config {
 
 export const Config: z<Config> = z.object({
   privateDesignReferenceDirectory: z.string().default('/tmp/dsh/private-design-references'),
+  designContextMaxChars: z.natural().min(1_000).max(100_000).default(40_000),
   provider: z.const('markdown-pdf').default('markdown-pdf'),
   outputDirectory: z.string().default('.hivemind/artifacts'),
   attachmentOnly: z.boolean().default(false),
@@ -311,7 +313,7 @@ export function registerArtifactTool(ctx: Context, config: Config): void {
 
 /** Mount the selected provider and compact model-facing render tool. */
 export function apply(ctx: Context, config: Config): void {
-  registerPrivateDesignReferences(ctx, config.privateDesignReferenceDirectory ?? '')
+  registerPrivateDesignReferences(ctx, config.privateDesignReferenceDirectory ?? '', config.designContextMaxChars ?? 40_000)
   registerCalculator(ctx)
   if (config.provider === 'markdown-pdf') ctx.plugin(MarkdownArtifactRenderer, config)
   ctx.inject(['hivemindArtifactRenderer'], (rendererCtx) => {
