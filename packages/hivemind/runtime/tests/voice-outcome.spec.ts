@@ -6,9 +6,9 @@ import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import { installVoiceOutcome } from '../src/voice-outcome.ts'
 
 const callId = '11111111-1111-4111-8111-111111111111'
-function fixture(interrupted = false) {
+function fixture(interrupted = false, empty = false) {
   const events = [{ type: 'hivemind/voice-call-ended', data: { callId, provider: 'codex', initialCheckIn: true,
-    interrupted, hadUserSpeech: true, transcript: 'user: We sell software; sales are unknown.\nassistant: Understood.' } }] as unknown as SessionEvent[]
+    interrupted, hadUserSpeech: true, transcript: empty ? '' : 'user: We sell software; sales are unknown.\nassistant: Understood.' } }] as unknown as SessionEvent[]
   const append = vi.fn((type: string, data: unknown) => events.push({ type, data } as unknown as SessionEvent))
   const agent = { session: { header: { agentPreset: 'hivemind-hq' }, snapshotEvents: () => events, append } } as unknown as Agent
   let tool: ToolDefinition | undefined
@@ -35,4 +35,12 @@ describe('native initial voice outcome', () => {
     await expect(f.execute({ ...args, status: 'invalid' })).rejects.toThrow()
     await expect(f.execute({ ...args, status: 'incomplete', remaining: ['Current sales still unknown.'] })).resolves.toMatchObject({ status: 'incomplete' })
   })
+})
+
+it('records an empty terminal call as incomplete but never as complete', async () => {
+  const f = fixture(false, true)
+  const args = { call_id: callId, status: 'complete', summary: 'No transcript was saved.', remaining: ['Baseline remains unknown.'] }
+  await expect(f.execute(args)).rejects.toThrow('interrupted_baseline_remains_pending')
+  await expect(f.execute({ ...args, status: 'incomplete' })).resolves.toMatchObject({ saved: true, status: 'incomplete' })
+  expect(f.append).toHaveBeenCalledOnce()
 })

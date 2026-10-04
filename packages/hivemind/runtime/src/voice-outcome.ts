@@ -13,15 +13,15 @@ declare module '@deepseek-ai/dsh-session/types' {
 /** Validate the actual saved call instead of duration or a transcript keyword. */
 export function validateVoiceOutcome(agent: Agent, callId: string, status: string) {
   const call = agent.session.snapshotEvents().findLast(event => event.type === 'hivemind/voice-call-ended' && event.data.callId === callId)
-  if (call?.type !== 'hivemind/voice-call-ended' || !call.data.initialCheckIn || !call.data.transcript.trim()) throw new Error('baseline_call_receipt_required')
-  if (status === 'complete' && (call.data.interrupted || !call.data.hadUserSpeech)) throw new Error('interrupted_baseline_remains_pending')
+  if (call?.type !== 'hivemind/voice-call-ended' || !call.data.initialCheckIn) throw new Error('baseline_call_receipt_required')
+  if (status === 'complete' && (call.data.interrupted || !call.data.hadUserSpeech || !call.data.transcript.trim())) throw new Error('interrupted_baseline_remains_pending')
   return call.data
 }
 /** Small native tool; Runtime decides the outcome, the receipt only validates provenance. */
 export function installVoiceOutcome(ctx: Context) {
   ctx.effect(() => ctx.tools.register(defineTool({
     name: 'hivemind_voice_baseline',
-    description: 'Record your assessment of a saved initial Runtime voice check-in. Read its exact voice-call-ended receipt. Complete only when the administrator established or explicitly left unknown the needed baseline or explicitly left unknown current company status, actual offer, sales, niche and go-to-market; no separate growth objective is required. Aborted or interrupted calls remain incomplete. Cite exact call_id; preserve uncertainty and remaining discussion in summary/remaining. No task, memory publication or schedule is authorized by this receipt.',
+    description: 'Record your assessment of a saved initial Runtime voice check-in. Read its exact voice-call-ended receipt. Complete only when the administrator established or explicitly left unknown the needed baseline or explicitly left unknown current company status, actual offer, sales, niche and go-to-market; no separate growth objective is required. Aborted, interrupted or empty-transcript terminal calls remain incomplete. Use the saved same-room receipt already supplied in native context; never ask the user for an internal call ID or receipt. Cite exact call_id; preserve uncertainty and remaining discussion in summary/remaining. No task, memory publication or schedule is authorized by this receipt.',
     parameters: {
       call_id: { type: 'string', required: true, description: 'Exact saved same-room voice call ID.' },
       status: { type: 'string', enum: ['complete', 'incomplete'], required: true },
