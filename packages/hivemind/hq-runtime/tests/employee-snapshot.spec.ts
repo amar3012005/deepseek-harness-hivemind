@@ -45,24 +45,25 @@ it('publishes only authorized own-room snapshots quietly and deduplicates unchan
   const received: SessionEvent[] = []
   const target = { runMaintenance: async (fn: () => Promise<void>) => fn(), session: {
     ownEvents: () => received,
-    append: vi.fn((type, data) => received.push({ type, data } as SessionEvent)),
+    append: vi.fn((type: string, data: unknown) => received.push({ type, data } as SessionEvent)),
   } }
   const root = { id: 'root', session: { id: 'root', header: { agentPreset: 'hivemind-hq' }, snapshotEvents: () => input, ownEvents: () => input } }
   const read = vi.fn(async () => ({})), close = vi.fn(async () => {})
+  const open = vi.fn(async () => ({ read, close }))
   const ctx = {
-    effect: (fn: (...args: unknown[]) => void) => fn(), on: (name: string, fn: (...args: unknown[]) => void) => hooks.set(name, fn),
+    effect: (fn: (...args: unknown[]) => void) => { fn() }, on: (name: string, fn: (...args: unknown[]) => void) => hooks.set(name, fn),
     agents: { get: () => root }, sessions: { flush: async () => true },
-    sessionPersistence: { open: vi.fn(async () => ({ read, close })) },
+    sessionPersistence: { open },
     sessionController: { resolveAgent: vi.fn(async () => ({ agent: target })) },
     logger: { warn: vi.fn() },
   } as unknown as Context
   installEmployeeSnapshots(ctx)
   hooks.get('session/event')!(root.session, input[2])
-  await vi.waitFor(() => expect(target.session.append).toHaveBeenCalledOnce())
-  expect(ctx.sessionPersistence.open).toHaveBeenCalledWith('employee-room', 'read')
+  await vi.waitFor(() => { expect(target.session.append).toHaveBeenCalledOnce() })
+  expect(open).toHaveBeenCalledWith('employee-room', 'read')
   expect(received[0]?.type).toBe('hivemind/employee-task-snapshot')
   hooks.get('agent/session-start')!({ agent: root })
-  await vi.waitFor(() => expect(read).toHaveBeenCalledTimes(2))
+  await vi.waitFor(() => { expect(read).toHaveBeenCalledTimes(2) })
   expect(target.session.append).toHaveBeenCalledOnce()
   expect(close).toHaveBeenCalledTimes(2)
 })
@@ -73,14 +74,14 @@ it('does not publish when authenticated target read fails', async () => {
   const append = vi.fn(), resolveAgent = vi.fn(), warn = vi.fn()
   const root = { id: 'root', session: { id: 'root', header: { agentPreset: 'hivemind-hq' }, snapshotEvents: () => input } }
   const ctx = {
-    effect: (fn: (...args: unknown[]) => void) => fn(), on: (name: string, fn: (...args: unknown[]) => void) => { if (name === 'session/event') hook = fn },
+    effect: (fn: (...args: unknown[]) => void) => { fn() }, on: (name: string, fn: (...args: unknown[]) => void) => { if (name === 'session/event') hook = fn },
     agents: { get: () => root }, sessions: { flush: async () => true },
     sessionPersistence: { open: async () => { throw new Error('not_authorized') } },
     sessionController: { resolveAgent }, logger: { warn },
   } as unknown as Context
   installEmployeeSnapshots(ctx)
   hook!(root.session, input[2])
-  await vi.waitFor(() => expect(warn).toHaveBeenCalledOnce())
+  await vi.waitFor(() => { expect(warn).toHaveBeenCalledOnce() })
   expect(resolveAgent).not.toHaveBeenCalled()
   expect(append).not.toHaveBeenCalled()
 })

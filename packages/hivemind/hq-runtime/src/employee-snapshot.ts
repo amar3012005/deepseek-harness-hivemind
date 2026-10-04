@@ -77,7 +77,7 @@ export function installEmployeeSnapshots(ctx: Context): void {
         target.session.append('hivemind/employee-task-snapshot', snapshot)
         if (!await ctx.sessions.flush(target.session)) throw new Error('hq_employee_snapshot_persistence_required')
       })
-    }).catch((error: unknown) => ctx.logger.warn(`Employee task snapshot pending: ${error instanceof Error ? error.message : String(error)}`))
+    }).catch((error: unknown) => { ctx.logger.warn(`Employee task snapshot pending: ${error instanceof Error ? error.message : String(error)}`) })
     tails.set(key, run)
     void run.finally(() => { if (tails.get(key) === run) tails.delete(key) })
   }
