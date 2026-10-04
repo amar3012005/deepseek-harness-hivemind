@@ -11,6 +11,7 @@ import { joinContextSections, renderContextSections, renderPrompt } from '@deeps
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import { PLAYBOOKS, type Playbook, type PlaybookLevel } from './catalog.ts'
+import { approvedLocalCatalog } from './approved-local-methods.ts'
 import { registerFieldMethods } from './field-methods.ts'
 
 export const name = 'hivemind-playbooks'
@@ -438,13 +439,14 @@ function currentAgent(agent: Agent | undefined): Agent {
   return agent
 }
 
-function normalizeOperation(value: JsonValue | undefined): 'search' | 'load' | 'record_plan' | 'revise_plan' {
+function normalizeOperation(value: JsonValue | undefined): 'search' | 'load' | 'record_plan' | 'revise_plan' | 'propose_revision' {
   const operation = text(value, 'operation', 40)
   // Discovery aliases are accepted at the provider boundary so a concise
   // natural-language request cannot strand the run before a playbook exists.
   // The returned receipt always uses the canonical operation name.
   if (operation === 'search' || operation === 'brief' || operation === 'discover' || operation === 'select')
     return 'search'
+  if (operation === 'propose_revision') return 'propose_revision'
   if (operation === 'load') return 'load'
   if (operation === 'record_plan' || operation === 'record' || operation === 'plan') return 'record_plan'
   if (operation === 'revise_plan' || operation === 'revise') return 'revise_plan'
@@ -756,7 +758,16 @@ export function apply(ctx: Context, config: Partial<Config> = {}): void {
   const employeeActorDescription = employeeSubagentPlanning
     ? 'main = parent runtime; inline_employee = normal employee choice, where the parent executes with a frozen authenticated persona via hivemind_workstream and avoids another full Harness session; employee_subagent = independent native child only when isolated context, genuine concurrent long-running work, or a distinct model/tool boundary is materially useful; dynamic_subagent = task-created specialist; workflow = durable workflow.'
     : 'main = parent runtime; inline_employee = an authenticated employee identity projected through hivemind_workstream while this parent runtime performs the work; workflow = durable workflow. Employee assignments in this preset never create child sessions.'
-  const byId = new Map(PLAYBOOKS.map(playbook => [playbook.id, playbook]))
+  const catalogFor = async (signal: AbortSignal) => {
+    try {
+      return { playbooks: approvedLocalCatalog(await ctx.hivemindMemory.approvedMethods?.(signal) ?? []),
+        companyMethods: ctx.hivemindMemory.approvedMethods ? 'available' : 'not-configured' }
+    } catch (error) {
+      if (signal.aborted) throw error
+      // Optional company publication must not gate ordinary global-method work.
+      return { playbooks: PLAYBOOKS, companyMethods: 'unavailable' }
+    }
+  }
   const loadedByAgent = new WeakMap<Agent, Set<string>>()
   const assemblyIndexByAgent = new WeakMap<Agent, number>()
   const capabilityStateByAgent = new WeakMap<
@@ -1209,7 +1220,9 @@ export function apply(ctx: Context, config: Partial<Config> = {}): void {
           }
         }
         const query = new Set([...tokens(objective)].filter(token => !RECALL_STOP_WORDS.has(token)))
-        const ranked = PLAYBOOKS.map(playbook => ({ playbook, score: score(playbook, query, new Set()) }))
+        const catalogResult = await catalogFor(execution.signal)
+        const catalog = catalogResult.playbooks
+        const ranked = catalog.map(playbook => ({ playbook, score: score(playbook, query, new Set()) }))
           .filter(candidate => candidate.score > 0)
           .sort((left, right) => right.score - left.score || left.playbook.id.localeCompare(right.playbook.id))
         const rankedLocals = ranked.filter(candidate => candidate.playbook.level === 'local')
@@ -1242,6 +1255,7 @@ export function apply(ctx: Context, config: Partial<Config> = {}): void {
           .map(({ playbook, score: relevance }) => ({
             id: playbook.id,
             version: playbook.version,
+            ...(playbook.companyRevision === undefined ? {} : { approved_company_version: playbook.companyRevision }),
             level: playbook.level,
             title: playbook.title,
             description: playbook.description,
@@ -1344,13 +1358,14 @@ export function apply(ctx: Context, config: Partial<Config> = {}): void {
     defineTool({
       name: 'hivemind_playbooks',
       description:
-        'Progressively discover and load company operating playbooks, then record the adaptive playbook selection for a substantial HyperAgents run. Search first with the user objective and optional domains; load only useful IDs. record_plan atomically loads its selected playbooks if they were not already loaded, so an ordering error cannot strand a governed run. If no playbook fits, continue with native Harness reasoning instead of inventing a method. Do not call for greetings or simple direct answers, and do not treat a run plan as a completed task.',
+        'Progressively discover and load company operating playbooks, then record the adaptive playbook selection for a substantial HyperAgents run. Search first with the user objective and optional domains; load only useful IDs. record_plan atomically loads its selected playbooks if they were not already loaded, so an ordering error cannot strand a governed run. If no playbook fits, continue with native Harness reasoning instead of inventing a method. propose_revision prepares a company-local advisory change with evidence, rationale and prior_version; only explicit administrator approval publishes it. Global methods are stable. Pending proposals never block satisfactory task completion. Search/load read approved versions afresh. Do not call for greetings or simple direct answers, and do not treat a run plan as a completed task.',
       parameters: {
         operation: {
           type: 'string',
           required: true,
           enum: [
             'search',
+            'propose_revision',
             'load',
             'record_plan',
             'revise_plan',
@@ -1362,8 +1377,13 @@ export function apply(ctx: Context, config: Partial<Config> = {}): void {
             'revise',
           ],
           description:
-            'Use search, load, record_plan, or revise_plan. Discovery aliases are accepted only for resilient provider interoperability.',
+            'Use search, load, record_plan, revise_plan, or propose_revision. Discovery aliases are accepted only for resilient provider interoperability.',
         },
+        method_id: { type: 'string', description: 'For propose_revision: company- prefixed advisory method ID; global doctrine cannot be replaced.' },
+        prior_version: { type: 'integer', description: 'For propose_revision: current approved company version, or 0 for a new method.' },
+        method_body: { type: 'object', additionalProperties: true, description: 'Exact proposed title, description, content, domains, intents, parentGlobalIds, limitations.' },
+        rationale: { type: 'string', description: 'Evidence-backed reason for the company-local method revision.' },
+        evidence_refs: { type: 'array', items: { type: 'string' }, description: 'Exact supporting task or artifact references; not claims of completion.' },
         query: { type: 'string', description: 'Complete task objective for search.' },
         level: { type: 'string', enum: ['global', 'local'], description: 'Optional playbook level filter.' },
         domains: {
@@ -1410,6 +1430,15 @@ export function apply(ctx: Context, config: Partial<Config> = {}): void {
       async execute(args, execution) {
         const input = record(args as JsonValue, 'arguments')
         const operation = normalizeOperation(input['operation'])
+        if (operation === 'propose_revision') {
+          if (!ctx.hivemindMemory.proposeMethod) throw new Error('hivemind-playbooks: company proposal provider unavailable')
+          return ctx.hivemindMemory.proposeMethod({ method_id: input['method_id'] ?? null,
+            prior_version: input['prior_version'] ?? null, body: input['method_body'] ?? null,
+            rationale: input['rationale'] ?? null, evidence_refs: input['evidence_refs'] ?? [] }, execution.signal)
+        }
+        const catalogResult = await catalogFor(execution.signal)
+        const catalog = catalogResult.playbooks
+        const byId = new Map(catalog.map(playbook => [playbook.id, playbook]))
         if (operation === 'search') {
           const queryText = input['query'] === undefined ? '' : text(input['query'], 'query', maxObjectiveChars)
           const requestedLevel =
@@ -1427,7 +1456,7 @@ export function apply(ctx: Context, config: Partial<Config> = {}): void {
           )
             throw new TypeError(`hivemind-playbooks: limit must be from 1 to ${maxSearchResults}`)
           const query = tokens(queryText)
-          const ranked = PLAYBOOKS.filter(
+          const ranked = catalog.filter(
             playbook => requestedLevel === undefined || playbook.level === requestedLevel,
           )
             .map(playbook => ({ playbook, score: score(playbook, query, requestedDomains) }))
@@ -1453,6 +1482,7 @@ export function apply(ctx: Context, config: Partial<Config> = {}): void {
           const compact = candidates.map(({ playbook, score: relevance }) => ({
             id: playbook.id,
             version: playbook.version,
+            ...(playbook.companyRevision === undefined ? {} : { approved_company_version: playbook.companyRevision }),
             level: playbook.level,
             title: playbook.title,
             description: playbook.description,
@@ -1463,6 +1493,7 @@ export function apply(ctx: Context, config: Partial<Config> = {}): void {
           return {
             status: 'ready',
             operation: 'search',
+            company_methods_status: catalogResult.companyMethods,
             candidates: compact,
             recommended_plan: {
               playbook_ids: compact.map(playbook => playbook.id),
@@ -1478,11 +1509,13 @@ export function apply(ctx: Context, config: Partial<Config> = {}): void {
         if (ids.length === 0 || ids.length > maxSelectedPlaybooks)
           throw new TypeError(`hivemind-playbooks: playbook_ids must contain 1 to ${maxSelectedPlaybooks} items`)
         if (new Set(ids).size !== ids.length) throw new TypeError('hivemind-playbooks: playbook_ids must be unique')
+        if (catalogResult.companyMethods === 'unavailable' && ids.some(id => id.startsWith('company-')))
+          throw new Error('hivemind-playbooks: approved company catalog unavailable; do not substitute an older or global method')
         const selected = selectionWithParents(ids, byId)
         if (operation === 'load') {
           const agent = currentAgent(execution.agent)
           const loaded = loadedByAgent.get(agent) ?? new Set<string>()
-          for (const playbook of selected) loaded.add(playbook.id)
+          for (const playbook of selected) loaded.add(`${playbook.id}@${playbook.version}`)
           loadedByAgent.set(agent, loaded)
           const context = latestOperatingContext(agent)
           agent.session.append('hivemind/playbooks-loaded', {
@@ -1504,11 +1537,11 @@ export function apply(ctx: Context, config: Partial<Config> = {}): void {
         }
         const agent = currentAgent(execution.agent)
         const loaded = loadedByAgent.get(agent) ?? new Set<string>()
-        const loadedNow = selected.filter(playbook => !loaded.has(playbook.id))
+        const loadedNow = selected.filter(playbook => !loaded.has(`${playbook.id}@${playbook.version}`))
         // record_plan is a durable boundary, not a trivia test for a model. Load
         // the exact selected methods here when needed so a harmless call-order
         // variation cannot stop a company task and force an unnecessary question.
-        for (const playbook of loadedNow) loaded.add(playbook.id)
+        for (const playbook of loadedNow) loaded.add(`${playbook.id}@${playbook.version}`)
         loadedByAgent.set(agent, loaded)
         // The plan is an observability receipt, never a task gate. Keep the
         // public call contract flat: several model providers lose arbitrary keys
@@ -1690,6 +1723,10 @@ export function apply(ctx: Context, config: Partial<Config> = {}): void {
               `hivemind-playbooks: playbook ${outsideReceipt[0]} was not returned by the current operating context`,
             )
         }
+        const catalogResult = await catalogFor(execution.signal)
+        if (catalogResult.companyMethods === 'unavailable' && requestedIds.some(id => id.startsWith('company-')))
+          throw new Error('hivemind-playbooks: approved company catalog unavailable; do not substitute an older or global method')
+        const byId = new Map(catalogResult.playbooks.map(playbook => [playbook.id, playbook]))
         const selected = selectionWithParents(requestedIds, byId)
         const objective = text(input['objective'], 'objective', maxObjectiveChars)
         const approach = text(input['approach'], 'approach', maxObjectiveChars)
@@ -1707,8 +1744,8 @@ export function apply(ctx: Context, config: Partial<Config> = {}): void {
           ? requestedWorkstreams
           : [{ id: 'execute_outcome', objective: approach, actor: { kind: 'main' } }])
         const loaded = loadedByAgent.get(agent) ?? new Set<string>()
-        const loadedNow = selected.filter(playbook => !loaded.has(playbook.id))
-        for (const playbook of loadedNow) loaded.add(playbook.id)
+        const loadedNow = selected.filter(playbook => !loaded.has(`${playbook.id}@${playbook.version}`))
+        for (const playbook of loadedNow) loaded.add(`${playbook.id}@${playbook.version}`)
         loadedByAgent.set(agent, loaded)
         const alreadyReceipted =
           previouslyLoaded !== undefined &&

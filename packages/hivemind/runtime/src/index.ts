@@ -1386,6 +1386,22 @@ export function apply(ctx: Context, config: Config): void {
         ...(request.project === undefined && scope.project !== undefined ? { project: scope.project } : {}),
       }
     },
+    async approvedMethods(signal) {
+      const authority = await resolveAuthority(ctx, config)
+      if (authority.pathPrefix === undefined) return []
+      const result = apiRecord(await hiveRequest(authority, '/advisory-methods', { method: 'GET' }, signal, config), 'approved methods')
+      if (!Array.isArray(result['methods'])) throw new HiveMindRuntimeError('invalid approved methods response')
+      return result['methods'].map(item => Object.fromEntries(Object.entries(apiRecord(item, 'approved method'))
+        .filter((entry): entry is [string, JsonValue] => entry[1] !== undefined)))
+    },
+    async proposeMethod(request, signal) {
+      const authority = await resolveAuthority(ctx, config)
+      if (authority.pathPrefix === undefined) throw new HiveMindRuntimeError('company method proposals require scoped-service authority')
+      const result = apiRecord(await hiveRequest(authority, '/advisory-methods', {
+        method: 'POST', body: JSON.stringify(request),
+      }, signal, config), 'method proposal')
+      return { ...result, instructions: 'This company method proposal is pending explicit administrator approval. Open the approval URL to review its exact body; task acceptance is independent of publication.' }
+    },
     async save(agent, request: SaveRequest, signal, execution) {
       const snapshot = await snapshotFor(agent, signal)
       const authority = await resolveAuthority(ctx, config)

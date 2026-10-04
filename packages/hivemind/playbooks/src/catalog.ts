@@ -8,6 +8,8 @@ export type PlaybookLevel = 'global' | 'local'
 export interface Playbook {
   readonly id: string
   readonly version: string
+  /** Exact approved company revision for a subsequent optimistic proposal; absent for built-ins. */
+  readonly companyRevision?: number
   readonly level: PlaybookLevel
   readonly title: string
   readonly description: string

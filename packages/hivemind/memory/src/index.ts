@@ -51,6 +51,10 @@ type ReadScope = typeof READ_SCOPES[number]
 
 export interface SaveStatusRequest { idempotencyKey: string }
 export interface MemoryProvider {
+  /** Read only approved tenant-local advisory methods, never private learning. */
+  approvedMethods?(signal: AbortSignal): Promise<readonly Record<string, JsonValue>[]>
+  /** Prepare an immutable company proposal; publication requires separate human administrator approval. */
+  proposeMethod?(request: Record<string, JsonValue>, signal: AbortSignal): Promise<Record<string, JsonValue>>
   context(agent: Agent, signal: AbortSignal): Promise<Record<string, JsonValue>>
   entities(request: EntitySearchRequest, signal: AbortSignal, execution: ToolExecution): Promise<Record<string, JsonValue>>
   recall(request: RecallRequest, signal: AbortSignal, execution: ToolExecution): Promise<Record<string, JsonValue>>
