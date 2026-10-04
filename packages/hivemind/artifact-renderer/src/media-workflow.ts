@@ -9,6 +9,7 @@ import type { GenerationFormat, GenerationReceipt } from './generation.ts'
 import { GenerationRegistry, generateArtifact } from './generation.ts'
 import { acquireMediaAdmission, type MediaOwner, type MediaAdmissionConfig } from './media-admission.ts'
 import { GenerationProviderError } from './image-provider.ts'
+import { installMediaJobPreview } from './media-output.ts'
 import { savedImageReference } from './html-assets.ts'
 import { currentDesignReference } from './design-reference.ts'
 
@@ -132,6 +133,7 @@ export function registerMediaWorkflow(
     readonly requireOwner?: boolean
   },
 ): void {
+  installMediaJobPreview(ctx)
   const activeOperations = new Set<string>()
   const controllers = new Set<AbortController>()
   const recovering = new Map<Agent, string>()
