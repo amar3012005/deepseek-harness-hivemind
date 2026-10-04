@@ -88,12 +88,32 @@ it('shows receipt-backed completed status separately from the call invitation', 
     id: 'task-1', title: 'Reviewed brief', owner: 'ravi', status: 'completed', revision: 3,
     nextWakeAt: '2026-10-04T12:00:00Z', dueAt: '2026-10-04T12:05:00Z',
   }] } })
+  const reviewed = { entries: [...snapshot.entries,
+    { type: 'event', event: { type: 'turn/start', data: { turn: 1 } } },
+    { type: 'event', event: { type: 'hivemind/hq-task-review', data: { taskId: 'task-1' } } },
+  ] } as unknown as SessionEventWindow
   const view = render(<RuntimePlanSummary sessionId={'runtime' as never} turn={1}
-    events={events} load={load} cancel={vi.fn()} t={key => en[key]} />)
+    events={{ getSnapshot: () => reviewed, subscribe: () => () => {} }} load={load} cancel={vi.fn()} t={key => en[key]} />)
   await view.findByRole('heading', { name: 'Completed work' })
   expect(view.getByText('Completed')).toBeTruthy()
   expect(view.queryByRole('button', { name: 'Cancel' })).toBeNull()
   expect(view.queryByText(/^Starts /)).toBeNull()
   expect(view.getByText('Past schedule')).toBeTruthy()
   expect(view.getByRole('button', { name: 'Start Call' }).closest('[aria-label="Assigned work"]')).toBeNull()
+})
+
+it('keeps one current summary and omits acknowledged completed work on a later invitation', async () => {
+  const updated = { entries: [...snapshot.entries,
+    { type: 'event', event: { type: 'hivemind/hq-awakening-checkpoint',
+      data: { turn: 2, stage: 'conversation', blocked: false, cards: [] } } },
+  ] } as unknown as SessionEventWindow
+  const shared = { getSnapshot: () => updated, subscribe: () => () => {} }
+  const load = vi.fn().mockResolvedValue({ ok: true, value: { ...empty, tasks: [{
+    id: 'task-1', title: 'Old completed café', status: 'completed', nextWakeAt: '2026-10-04T12:00:00Z',
+  }] } })
+  const props = { sessionId: 'runtime' as never, events: shared, load, cancel: vi.fn(), t: (key: keyof typeof en) => en[key] }
+  const view = render(<><RuntimePlanSummary {...props} turn={1} /><RuntimePlanSummary {...props} turn={2} /></>)
+  await vi.waitFor(() => expect(view.queryByRole('status')).toBeNull())
+  expect(view.queryByText('Old completed café')).toBeNull()
+  expect(view.getAllByRole('button', { name: 'Start Call' })).toHaveLength(1)
 })

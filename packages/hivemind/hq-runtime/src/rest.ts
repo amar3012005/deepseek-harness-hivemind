@@ -128,6 +128,11 @@ export async function recoverRest(ctx: Context, agent: Agent, signal?: AbortSign
   if (!isHqLead(ctx, agent)) return
   const latest = restIntents(agent.session.snapshotEvents()).at(-1)
   if (!latest) return
+  const committed = agent.session.snapshotEvents().findLast(event => event.type === 'hivemind/hq-rest-wake' && event.data.handoffId === latest.id)
+  if (committed?.type === 'hivemind/hq-rest-wake'
+    && !(await ctx.schedule.catalog()).some(item => item.id === committed.data.scheduleId && item.sessionId === agent.id)) return
+  // A deleted committed timer must not be resurrected or prevent a new turn
+  // from choosing a replacement handoff. Explicit retries still fail closed.
   await serial(ctx, agent, async () => { await checkpoint(ctx, agent); await ensureWake(ctx, agent, latest, signal) })
 }
 export async function restState(ctx: Context, agent: Agent): Promise<HqRestState> {

@@ -11,7 +11,7 @@ import {
   type HqTaskReview,
 } from './review.ts'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
-import { installRest, recoverRest, acknowledgeRestNotes, restBriefing, isHqLead } from './rest.ts'
+import { installRest, recoverRest, acknowledgeRestNotes, restBriefing, restState, isHqLead } from './rest.ts'
 import { installAwakening, awakeningContext } from './awakening.ts'
 import { investigationExpired } from './investigation.ts'
 import { wakeBriefing } from './wake-briefing.ts'
@@ -134,9 +134,10 @@ export function apply(ctx: Context): void {
     const workspace = await ctx.hivemindHq.workspace(agent)
     briefed.set(agent, turn)
     const rest = restBriefing(agent, decision.messages)
+    const currentRest = await restState(ctx, agent)
     const briefing = createUserMessage({
       source: { kind: 'plugin', plugin: 'hivemind-hq/wake-briefing', form: 'recall', sections: [rest.section] },
-      content: [{ type: 'text', text: `${wakeBriefing(workspace, agent.session.snapshotEvents(), agent.id)}\n${awakening ? '' : rest.text}` }],
+      content: [{ type: 'text', text: `${wakeBriefing(workspace, agent.session.snapshotEvents(), agent.id)}\n${awakening ? '' : rest.text}\nCurrent native rest state: ${JSON.stringify(currentRest.latest)}. A missing wake is not confirmed sleep; choose a new justified handoff when needed, without restoring a deleted timer.` }],
     })
     if (awakening) return { ...decision, messages: [briefing, ...decision.messages, createUserMessage({
       source: { kind: 'plugin', plugin: 'hivemind-hq/first-awakening', form: 'snapshot', sections: [{ name: 'hq-first-awakening', text: awakening }] },

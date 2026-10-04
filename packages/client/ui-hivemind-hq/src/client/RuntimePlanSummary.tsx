@@ -19,20 +19,28 @@ interface Props {
 }
 export function RuntimePlanSummary({ sessionId, turn, events, load, cancel, t, renderAvatar }: Props) {
   const log = useSyncExternalStore(listener => events.subscribe(listener), () => events.getSnapshot())
-  const invited = log.entries.some(entry => entry.type === 'event'
-    && String(entry.event.type) === 'hivemind/hq-awakening-checkpoint'
-    && (() => { const data = entry.event.data as unknown as { stage: string; turn: number; blocked: boolean }; return data.turn === turn && data.stage === 'conversation' && !data.blocked })())
   let eventTurn: number | undefined
-  const savedInTurn = log.entries.some((entry) => {
-    if (entry.type !== 'event') return false
+  let summaryTurn: number | undefined
+  let invitationTurn: number | undefined
+  const reviewedInTurn = new Set<string>()
+  for (const entry of log.entries) {
+    if (entry.type !== 'event') continue
     const type = String(entry.event.type)
-    if (type === 'turn/start' || type === 'step/start') {
-      eventTurn = (entry.event.data as unknown as { turn: number }).turn
+    const data = entry.event.data as unknown as { turn?: number; stage?: string; blocked?: boolean; kind?: string; taskId?: string }
+    if (type === 'turn/start' || type === 'step/start') eventTurn = data.turn
+    if (type === 'hivemind/hq-awakening-checkpoint' && data.stage === 'conversation' && !data.blocked) {
+      invitationTurn = data.turn
+      summaryTurn = data.turn
     }
-    return eventTurn === turn && type === 'hivemind/hq-calendar-item'
-      && (entry.event.data as unknown as { kind: string }).kind === 'assignment'
-  })
-  const ready = invited || savedInTurn
+    if (type === 'hivemind/hq-calendar-item' && data.kind === 'assignment') summaryTurn = eventTurn
+    if (type === 'hivemind/hq-task-review') {
+      summaryTurn = eventTurn
+      if (eventTurn === turn && data.taskId) reviewedInTurn.add(data.taskId)
+    }
+  }
+  const invited = invitationTurn === turn
+  const ownsSummary = summaryTurn === turn
+  const ready = invited || ownsSummary
   const employeeNames = new Map(log.entries.flatMap((entry) => {
     if (entry.type !== 'event' || String(entry.event.type) !== 'hivemind/hq-awakening-checkpoint') return []
     const data = entry.event.data as unknown as { cards: Array<{ employeeId?: string; title: string }> }
@@ -53,7 +61,9 @@ export function RuntimePlanSummary({ sessionId, turn, events, load, cancel, t, r
     const timer = setInterval(() => { void refresh().catch(() => {}) }, 15000)
     return () => { disposed = true; clearInterval(timer) }
   }, [ready, load, sessionId, refresh])
-  const scheduledTasks = workspace?.tasks.filter(task => task.nextWakeAt || workspace.calendar.some(item => item.taskId === task.id)) ?? []
+  const scheduledTasks = ownsSummary ? workspace?.tasks.filter(task =>
+    (task.status !== 'completed' || reviewedInTurn.has(task.id))
+    && (task.nextWakeAt || workspace.calendar.some(item => item.taskId === task.id))) ?? [] : []
   if (!ready) return null
   return <section aria-label="Runtime next steps" className={css.nextSteps}>
     {scheduledTasks.length > 0 && <section aria-label="Assigned work" className={css.assignments}>

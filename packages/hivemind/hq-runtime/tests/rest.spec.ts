@@ -146,6 +146,16 @@ describe('native Runtime voluntary rest', () => {
     expect(f.ensure).toHaveBeenCalledTimes(1)
     await expect(f.execute({ ...request, handoff_id: 'new-past', wake_at: '2029-12-31T23:00:00Z' })).rejects.toThrow('hq_rest_new_wake_must_be_future')
   })
+  it('allows recovery after deletion without resurrecting the timer and permits a new handoff', async () => {
+    const f = fixture()
+    await f.execute(); f.schedules.clear()
+    await expect(recoverRest(f.ctx, f.agent)).resolves.toBeUndefined()
+    expect(f.ensure).toHaveBeenCalledTimes(1)
+    expect((await restState(f.ctx, f.agent)).latest).toMatchObject({ ready: false, wakeStatus: null })
+    await expect(f.execute()).rejects.toThrow('hq_rest_committed_wake_missing')
+    await f.execute({ ...request, handoff_id: 'replacement', summary: 'Cancelled test; resume normal operations' })
+    expect((await restState(f.ctx, f.agent)).latest).toMatchObject({ handoffId: 'replacement', ready: true })
+  })
   it('serializes parallel rest identities and exposes exact older wake separately from latest', async () => {
     const f = fixture()
     await Promise.all([f.execute(), f.execute()])
