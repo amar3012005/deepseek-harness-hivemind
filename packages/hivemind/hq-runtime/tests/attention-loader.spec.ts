@@ -24,7 +24,7 @@ it('mounts packaged enabled attention through Loader, rejects unsigned traffic a
     ctx.provide('agents', {} as Context['agents'])
   } }
   try {
-    const attention = await import('../lib/attention.js') as typeof import('../src/attention.ts')
+    const attention = await import(new URL('../lib/attention.js', import.meta.url).href) as typeof import('../src/attention.ts')
     const configPath = join(root, 'cordis.yml')
     await writeFile(configPath, [
       "- name: '@deepseek-ai/dsh-host-webserver'", '  config:', '    host: 127.0.0.1', '    port: 0',
@@ -44,7 +44,7 @@ it('mounts packaged enabled attention through Loader, rejects unsigned traffic a
     context.loader.internal = { version: 'v2', async import(specifier: string) {
       if (!modules.has(specifier)) throw Error(`unexpected module ${specifier}`)
       return modules.get(specifier)
-    } } as NonNullable<typeof context.loader.internal>
+    } } as unknown as NonNullable<typeof context.loader.internal>
     await context.loader.create({ name: 'cordis:include', config: { path: pathToFileURL(configPath).href } })
     await context.loader.await()
     const port = context.webServer.port
