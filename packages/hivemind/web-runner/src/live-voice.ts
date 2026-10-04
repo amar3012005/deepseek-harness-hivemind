@@ -263,8 +263,8 @@ export function liveVoicePlugin(config: LiveVoiceConfig,
                 const expiry = setTimeout(() => rooms.delete(fallbackId), (initialCheckIn ? 180000 : 600000) + 30000); expiry.unref()
                 rooms.set(fallbackId, { id: fallbackId, principal: p, sessionId: id,
                   close: () => { clearTimeout(expiry); rooms.delete(fallbackId) } })
-                appendContext(agent, `Live voice system instructions:\n${prompt}\n\nAuthenticated voice context:\n${context}`)
-                await ctx.sessions.flush(agent.session)
+                appendContext(agent, `Live voice system instructions:\n${prompt}\n\nAuthenticated voice context:\n${context}\n\nGrok Runtime call reference: ${fallbackId}`)
+                if (!(await ctx.sessions.flush(agent.session))) throw new Error('voice_handoff_persistence_required')
                 reply(res, 200, result); return
               }
               const grant = await models.getAuth('openai-codex', { signal })
@@ -308,6 +308,7 @@ export function liveVoicePlugin(config: LiveVoiceConfig,
                 }).catch(() => { /* Session persistence retains the unflushed prefix for recovery. */ })
               }
               const duration = initialCheckIn ? Math.min(config.maxDurationMs, 180000) : config.maxDurationMs
+              const closingAt = Date.now() + duration - 15000
               const closingTimer = setTimeout(() => {
                 if (initialCheckIn && !closed) { closing = true; send('The baseline check-in ends in fifteen seconds. Stop asking questions now. Briefly summarize only what the administrator actually confirmed and name any remaining uncertainty. Give the warm closing from the supplied agenda, then stop speaking. A time limit does not mean the baseline was completed.') }
               }, Math.max(0, duration - 15000)); closingTimer.unref()
@@ -405,7 +406,7 @@ export function liveVoicePlugin(config: LiveVoiceConfig,
               try { await ctx.sessions.flush(agent.session) } catch { close(); throw new Error('session_unavailable') }
               if (closed) throw new Error('voice_connection_failed')
               rooms.set(roomId, { id: roomId, principal: p, sessionId: String(id), socket, close })
-              reply(res, 200, { id: roomId, sdp, ...(initialCheckIn ? { closingAfterMs: Math.max(0, duration - 15000) } : {}) })
+              reply(res, 200, { id: roomId, sdp, ...(initialCheckIn ? { closingAfterMs: Math.max(0, closingAt - Date.now()) } : {}) })
             })
           } finally { starting.delete(owner) }
         } catch (error) { reply(res, 503, { error: 'voice_unavailable', fallbackAllowed: error instanceof Error && ['voice_connection_failed', 'voice_authorization_unavailable'].includes(error.message) }) }
