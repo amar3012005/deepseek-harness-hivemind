@@ -70,7 +70,7 @@ describe('Client Session contracts', () => {
     expectTypeOf<RenameSuccess['value']['seq']>().toEqualTypeOf<SessionSeq>()
     expectTypeOf<ProjectionValueStore['apply']>().parameter(2).toEqualTypeOf<SessionSeqCursor>()
     expectTypeOf<ProjectionsBaseline['asOfSeq']>().toEqualTypeOf<SessionSeqCursor>()
-    expectTypeOf<SessionPageRequest['throughSeq']>().toEqualTypeOf<number>()
+    expectTypeOf<SessionPageRequest['throughSeq']>().toEqualTypeOf<number | undefined>()
   })
 
   it('keeps its text and image prompt parts identical to attachment intake', () => {

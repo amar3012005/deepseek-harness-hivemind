@@ -347,7 +347,7 @@ export class FakeApiClient {
     const payload = request.address.kind === 'session'
       ? {
         sessionId,
-        throughSeq: request.throughSeq,
+        ...request.throughSeq === undefined ? {} : { throughSeq: request.throughSeq },
         ...request.beforeSeq === undefined ? {} : { beforeSeq: request.beforeSeq },
         ...request.maxMessages === undefined ? {} : { maxMessages: request.maxMessages },
       }
@@ -355,14 +355,14 @@ export class FakeApiClient {
         parentSessionId: request.address.parentSessionId,
         childSessionId: request.address.childSessionId,
         mode: request.address.mode,
-        throughSeq: request.throughSeq,
+        ...request.throughSeq === undefined ? {} : { throughSeq: request.throughSeq },
         ...request.beforeSeq === undefined ? {} : { beforeSeq: request.beforeSeq },
         ...request.maxMessages === undefined ? {} : { maxMessages: request.maxMessages },
       }
     const method = request.address.kind === 'session' ? 'session.history' : 'subagent.history'
     const result = await this.record(method, payload, response ?? this.onHistory({
       sessionId,
-      throughSeq: request.throughSeq,
+      ...request.throughSeq === undefined ? {} : { throughSeq: request.throughSeq },
       ...request.beforeSeq === undefined ? {} : { beforeSeq: request.beforeSeq },
       ...request.maxMessages === undefined ? {} : { maxMessages: request.maxMessages },
     }))
@@ -372,7 +372,7 @@ export class FakeApiClient {
       value: {
         ...result.value,
         records: result.value.records
-          .filter(record => historyRecordLastSeq(record) <= request.throughSeq),
+          .filter(record => request.throughSeq === undefined || historyRecordLastSeq(record) <= request.throughSeq),
       },
     }
   }
