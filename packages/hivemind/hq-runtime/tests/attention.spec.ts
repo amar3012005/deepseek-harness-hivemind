@@ -102,6 +102,13 @@ describe('authenticated native attention seam', () => {
     expect(attentionSnapshot([mode], 'root', 2).revision).not.toBe(first.revision)
     expect(attentionSnapshot([mode, { type: 'team/task', data: { task: { id: 'task', status: 'completed', subject: 'Review' } } }], 'root', 1).revision).not.toBe(first.revision)
   })
+  it('real Gmail object preview cannot hide plain message text at native delivery', () => {
+    const source = attentionEvidence({ preview: { body: 'short', credentials: 'secret' }, message_text: 'Actual plain text' })
+    expect(source.preview).toBe('Actual plain text')
+    expect(attentionEvidence({ preview: { body: 'Fallback plain text' } }).preview).toBe('Fallback plain text')
+    expect(JSON.stringify(source)).not.toContain('secret')
+    expect(JSON.stringify(source)).not.toContain('[object Object]')
+  })
   it('source projection is bounded and excludes provider credential fields', () => {
     const source = attentionEvidence({ text: 'x'.repeat(5000), credentials: 'secret', nested: { token: 'secret' } })
     expect(source.preview).toHaveLength(1500); expect(JSON.stringify(source)).not.toContain('secret')

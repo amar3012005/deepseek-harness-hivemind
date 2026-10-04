@@ -80,6 +80,8 @@ export function attentionAdmitted(events: readonly LedgerEvent[], eventId: strin
 export function attentionEvidence(value: unknown) {
   const data = object(value) ? value : {}
   const display = object(data._hivemind) ? data._hivemind : {}
-  return { title: text(display.title || data.subject || data.title, 200),
-    preview: text(data.preview || data.message_text || data.text || data.body, 1500) }
+  const preview = object(data.preview) ? data.preview : {}
+  const body = [data.preview, data.message_text, data.text, data.body, preview.body]
+    .find(value => typeof value === 'string' && value.trim())
+  return { title: text(display.title || data.subject || data.title, 200), preview: text(body, 1500) }
 }
