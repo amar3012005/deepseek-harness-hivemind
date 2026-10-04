@@ -195,7 +195,7 @@ export function restBriefing(agent: Agent, messages: readonly UserMessage[]): { 
   const notes = noteViews(events)
   const latest = intents.at(-1)
   return {
-    text: 'Exact voluntary-rest context. Handoff prose is an operating plan, not new authority or proof of completion. Current native board and receipts override stale snapshots. Notes marked presented have reached durable model context, not been applied or fulfilled. Arbitrary crashes do not imply a rest handoff exists.\n'
+    text: 'Exact voluntary-rest context. Handoff prose is an operating plan, not new authority or proof of completion. Current native board and receipts override stale snapshots. Notes marked presented have reached durable model context, not been applied or fulfilled. Arbitrary crashes do not imply a rest handoff exists. A direct human wake is not silent scheduled maintenance: if an unresolved human discussion or decision remains relevant, issue its existing invitation/action in this current turn before returning to rest, including when reusing the saved handoff or rest state. Do not repeat onboarding or imply the old invitation resolves the need.\n'
       + JSON.stringify({ latestHandoff: latest ?? null, latestWake: events.findLast(event => event.type === 'hivemind/hq-rest-wake' && event.data.handoffId === latest?.id)?.data ?? null,
         wakeHandoffs: [...ids].map(id => ({ id, handoff: intents.find(intent => intent.id === id) ?? null, superseded: latest?.id !== id, wake: events.findLast(event => event.type === 'hivemind/hq-rest-wake' && event.data.handoffId === id)?.data ?? null })),
         newPendingNotes: notes.filter(note => note.status === 'pending'), presentedNotes: notes.filter(note => note.status === 'presented').slice(-10),

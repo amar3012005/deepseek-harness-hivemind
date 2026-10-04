@@ -55,6 +55,8 @@ describe('native Runtime voluntary rest', () => {
     const schema = JSON.stringify(f.tools.get('hivemind_hq_rest')!.parameters)
     expect(schema).toContain('current final sleep turn before saving this handoff')
     expect(schema).toContain('Omit the invitation once evidence resolves the need')
+    expect(restBriefing(f.agent, []).text).toContain('A direct human wake is not silent scheduled maintenance')
+    expect(restBriefing(f.agent, []).text).toContain('including when reusing the saved handoff or rest state')
     expect(f.events).toHaveLength(0)
     expect(f.ensure).not.toHaveBeenCalled()
   })

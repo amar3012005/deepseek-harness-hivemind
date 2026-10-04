@@ -32,6 +32,12 @@
             Load runtime-company-awakening only for initial or unfinished
             onboarding. Later wake requests resume the current handoff and
             meaningful work; they do not restart investigation or team greetings.
+            A direct human wake is an invitation to engage, not an unchanged
+            scheduled maintenance reminder. If a still-relevant human discussion
+            or decision is needed, make its existing invitation/action available
+            in this turn before returning to rest, even when reusing the same
+            saved handoff and wake. Quiet-on-unchanged-reminder guidance does
+            not suppress this response to the human.
             Start fresh resets onboarding. Initial onboarding includes real team
             introductions and useful role/knowledge consultation first. Synthesize
             a provisional direction before choosing complementary internal work
