@@ -5,7 +5,7 @@ import { ArtifactDashboard, artifactCategory, type LibraryArtifact } from '../sr
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 afterEach(cleanup)
 const artifact = { id: 'saved', title: 'Launch deck', mediaType: 'text/html', path: 'deck.html', sessionId: 'room' as SessionId, roomTitle: 'Elena', file: undefined, preview: undefined } satisfies LibraryArtifact
-const props = () => ({ selection: { category: 'All' as const }, load: vi.fn(async () => ({ artifacts: [artifact], incomplete: false })), loadImage: vi.fn(), renderArtifact: vi.fn(item => <p>Saved {item.title} content</p>), expand: vi.fn(), collapse: vi.fn() })
+const props = () => ({ selection: { category: 'All' as const }, load: vi.fn(async (_signal: AbortSignal) => ({ artifacts: [artifact], incomplete: false })), loadImage: vi.fn(), renderArtifact: vi.fn(item => <p>Saved {item.title} content</p>), expand: vi.fn(), collapse: vi.fn() })
 it('opens a popup, filters, and fits selected content inside it with independent fullscreen', async () => {
   const input = props(); render(<ArtifactDashboard {...input} />)
   fireEvent.click(screen.getByRole('button', { name: /Artifacts/ }))
