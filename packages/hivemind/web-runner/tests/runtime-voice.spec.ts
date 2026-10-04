@@ -11,12 +11,12 @@ describe('Runtime operator voice context', () => {
   it('opens Runtime once after session start with the initial agenda', () => {
     const opening = runtimeVoiceOpening(true, true, 'opening')
     expect(opening('turn.done')).toBeUndefined()
-    expect(opening('session.started')).toMatchObject({ type: 'session.instructions.append',
-      event_id: 'opening', delegation_id: null, content: expect.stringContaining('first-check-in opening') })
+    expect(opening('session.started')).toMatchObject({ type: 'session.context.append',
+      event_id: 'opening', channel: 'speakable', content: [{ type: 'input_text', text: expect.stringContaining('first-check-in opening') }] })
     expect(opening('session.started')).toBeUndefined()
   })
   it('continues later agendas and leaves ordinary HIVEMIND calls unchanged', () => {
-    expect(runtimeVoiceOpening(true, false, 'later')('session.started')?.content).toContain('do not restart onboarding')
+    expect(runtimeVoiceOpening(true, false, 'later')('session.started')?.content[0]?.text).toContain('do not restart onboarding')
     expect(runtimeVoiceOpening(false, true, 'ordinary')('session.started')).toBeUndefined()
     expect(RUNTIME_VOICE_INSTRUCTIONS).toContain('Lead the conversation')
     expect(RUNTIME_VOICE_INSTRUCTIONS).toContain('Allow thinking pauses and interruptions')

@@ -22,10 +22,13 @@ export function runtimeVoiceOpening(runtime: boolean, initialCheckIn: boolean, e
   return (type: string | undefined) => {
     if (!runtime || sent || type !== 'session.started') return undefined
     sent = true
-    return { type: 'session.instructions.append', event_id: eventId, delegation_id: null,
-      content: initialCheckIn
-        ? 'Begin speaking now as Runtime, in the administrator\'s profile language if known, otherwise English. Deliver the first-check-in opening from your supplied agenda, using only the known first name and company name; never invent them. Then pause and listen. Lead the three-minute baseline conversation with one focused follow-up at a time, allowing pauses and interruptions.'
-        : 'Begin speaking now as Runtime, in the administrator\'s profile language if known, otherwise English. Briefly welcome them back, state the current discussion purpose from confirmed room context and ask one focused question. Then pause and listen. Lead the discussion and choose relevant follow-ups; do not restart onboarding, invent an agenda or talk over the administrator.' }
+    const text = initialCheckIn
+      ? 'Begin speaking now as Runtime, in the administrator\'s profile language if known, otherwise English. Deliver the first-check-in opening from your supplied agenda, using only the known first name and company name; never invent them. Then pause and listen. Lead the three-minute baseline conversation with one focused follow-up at a time, allowing pauses and interruptions.'
+      : 'Begin speaking now as Runtime, in the administrator\'s profile language if known, otherwise English. Briefly welcome them back, state the current discussion purpose from confirmed room context and ask one focused question. Then pause and listen. Lead the discussion and choose relevant follow-ups; do not restart onboarding, invent an agenda or talk over the administrator.'
+    // The deployed subscription protocol uses the existing context append wire
+    // contract; public GPT-Live instructions.append is rejected on this route.
+    return { type: 'session.context.append', event_id: eventId, channel: 'speakable',
+      content: [{ type: 'input_text', text }] }
   }
 }
 
