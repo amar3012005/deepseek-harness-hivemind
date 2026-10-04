@@ -189,11 +189,11 @@ describe('HIVE native session routes', () => {
     install(harness.sessions)
     await vi.waitFor(() => { expect(harness.refresh).toHaveBeenCalledOnce() })
     expect(harness.create).not.toHaveBeenCalled()
-    expect(harness.open).toHaveBeenLastCalledWith('session-recent')
-    expect(window.location.pathname).toBe(`${HIVE_OVERVIEW_PATH}/session/session-recent`)
+    expect(harness.open).not.toHaveBeenCalled()
+    expect(window.location.pathname).toBe(`${HIVE_OVERVIEW_PATH}/session/session-not-recent`)
   })
 
-  it('moves away from a deleted current route without recreating the deleted id', async () => {
+  it('preserves a missing current route without recreating the deleted id', async () => {
     window.history.replaceState(null, '', `${HIVE_OVERVIEW_PATH}/session/session-older`)
     const harness = fixture(state('session-older'))
     install(harness.sessions)
@@ -202,9 +202,9 @@ describe('HIVE native session routes', () => {
     next.byId = remaining
     next.ids = next.ids.filter(id => id !== sid('session-older'))
     harness.set(next)
-    await vi.waitFor(() => { expect(harness.open).toHaveBeenLastCalledWith('session-recent') })
+    await vi.waitFor(() => { expect(harness.refresh).toHaveBeenCalled() })
     expect(harness.create).not.toHaveBeenCalled()
-    expect(window.location.pathname).toBe(`${HIVE_OVERVIEW_PATH}/session/session-recent`)
+    expect(window.location.pathname).toBe(`${HIVE_OVERVIEW_PATH}/session/session-older`)
   })
 
   it('does not promote a known subagent into the root conversation surface', () => {

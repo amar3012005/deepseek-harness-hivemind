@@ -164,8 +164,9 @@ export function setupHivemindSessionRouting(
       return
     }
     // A route identifies an existing durable Session; it is never permission
-    // to create a new one. Refresh once to cover a boot/list race, then fall
-    // back to the newest real root if the host still does not project it.
+    // to create a new one. Refresh once to cover a boot/list race, then
+    // retain the exact address if the host still does not project it. A
+    // bounded list or interrupted refresh is not evidence of deletion.
     const attempt = ++generation
     resolving = true
     void sessions.refresh().then(() => {
@@ -180,10 +181,17 @@ export function setupHivemindSessionRouting(
         applyingRoute = false
         return
       }
-      replace(currentBase)
-      selectOrCreate(refreshed, false)
+      if (refreshed.byId[sessionId] !== undefined) {
+        // A known session in another product surface retains mode routing.
+        replace(currentBase)
+        selectOrCreate(refreshed, false)
+        return
+      }
+      initialized = true
+      observedCurrent = sessionId
     }).catch(() => {
-      if (!disposed && attempt === generation) replace(currentBase)
+      // Preserve the durable address through transport loss. The native list
+      // reconnect supplies the next authoritative snapshot.
     }).finally(() => { resolving = false })
   }
 
@@ -286,8 +294,7 @@ export function setupHivemindSessionRouting(
       if (route.kind === 'session' && rootForRoute(state, route.sessionId) === undefined && !resolving) {
         initialized = false
         observedCurrent = undefined
-        replace(currentBase)
-        selectOrCreate(state, false)
+        applyLocation()
       }
       return
     }
