@@ -12,7 +12,7 @@ const events = [
   { type: 'hivemind/generation-created', data: { artifactId: 'saved', mediaType: 'image/png', preview } },
 ]
 const value = { text: '{"artifact_id":"saved"}', job: { id: 'media-1', kind: 'media', status: 'completed' } }
-const agent = (snapshot = events) => ({ session: { snapshotEvents: () => snapshot } }) as unknown as Agent
+const agent = (snapshot: readonly unknown[] = events) => ({ session: { snapshotEvents: () => snapshot } }) as unknown as Agent
 
 it('delivers actual saved image pixels through the real native tool result pipeline', async () => {
   const ctx = new Context()
@@ -36,7 +36,7 @@ it('preserves ownership, terminal receipt matching, policy changes, bounds and i
   let hook!: (exec: ToolExecution, result: ToolExecutionResult, next: () => Promise<PostToolDecision>) => Promise<PostToolDecision>
   installMediaJobPreview({ on: (_event: string, callback: typeof hook) => { hook = callback } } as unknown as Context)
   const execution = { name: 'job_output', arguments: { job_id: 'media-1' }, agent: agent(), signal: new AbortController().signal } as unknown as ToolExecution
-  const result = { isError: false, value, content: [{ type: 'text', text: value.text }] } as ToolExecutionResult
+  const result: Extract<ToolExecutionResult, { isError: false }> = { isError: false, value, content: [{ type: 'text', text: value.text }] }
   const accept = async (): Promise<PostToolDecision> => ({ kind: 'accept' })
   expect(await hook(execution, result, accept)).toMatchObject({ content: expect.arrayContaining([{ type: 'image', attachment: preview }]) })
   for (const invalid of [
@@ -48,7 +48,7 @@ it('preserves ownership, terminal receipt matching, policy changes, bounds and i
   }
   const rewritten: PostToolDecision = { kind: 'accept', content: [{ type: 'text', text: 'Policy-controlled content' }] }
   expect(await hook(execution, result, async () => rewritten)).toBe(rewritten)
-  expect(await hook(execution, { ...result, isError: true }, accept)).toEqual({ kind: 'accept' })
+  expect(await hook(execution, { isError: true, error: { message: 'Failed job' }, content: result.content }, accept)).toEqual({ kind: 'accept' })
   expect(await hook(execution, { ...result, content: [...result.content, { type: 'image', attachment: preview } as never] }, accept)).toEqual({ kind: 'accept' })
   const oversized = { ...events[1]!, data: { ...events[1]!.data, preview: { ...preview, bytes: 31 * 1024 * 1024 } } }
   expect(await hook({ ...execution, agent: agent([events[0]!, oversized]) }, result, accept)).toEqual({ kind: 'accept' })
