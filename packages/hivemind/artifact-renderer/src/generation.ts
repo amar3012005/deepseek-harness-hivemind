@@ -204,14 +204,14 @@ export function registerGenerationTools(
   })))
   ctx.effect(() => ctx.tools.register(defineTool({
     name: 'hivemind_generate',
-    description: 'Create a finished Markdown report, PDF, presentation, spreadsheet, or web file using a configured generator. For format "web", provide complete self-contained HTML directly; generator discovery is unnecessary. For image/text HTML or PDF use source_format html with saved_image_ids and hive-asset:<attachment ID> placeholders. Image and video must use hivemind_media_generate so their long-running lifecycle is tracked. Returns a stored artifact, not a published campaign or sent message.',
+    description: 'Create a finished Markdown report, PDF, presentation, spreadsheet, or web file using a configured generator. For format "web", provide complete self-contained HTML directly; generator discovery is unnecessary. For image/text HTML or PDF use source_format html with saved_image_ids and hive-asset:<saved ID> placeholders. Image and video must use hivemind_media_generate so their long-running lifecycle is tracked. Returns a stored artifact, not a published campaign or sent message.',
     parameters: {
       format: { type: 'string', required: true, enum: ['markdown_report', 'pdf', 'presentation', 'spreadsheet', 'web'] },
       title: { type: 'string', required: true },
       content: { type: 'string', required: true, description: 'For web, complete self-contained HTML. For another known format, provide that generator’s source content. Use discovery only when the representation is unknown.' },
       design_profile: { type: 'string', enum: ['executive', 'editorial', 'campaign', 'product', 'data'], description: 'Optional HIVE visual baseline. Use campaign for marketing, executive for leadership documents, product for product UI, data for KPI dashboards, and editorial for narrative reports. It is applied locally and recorded in the durable receipt; it never opens an external design app.' },
       source_format: { type: 'string', enum: ['html'], description: 'For web or PDF, complete self-contained HTML. PDF uses print CSS/page breaks; omitted PDF remains Markdown.' },
-      saved_image_ids: { type: 'array', items: { type: 'string' }, description: 'Up to twenty current-session saved image attachment IDs. Use hive-asset:<attachment ID> in HTML img src or CSS url; exact bytes are embedded server-side. No URLs or filesystem paths.' },
+      saved_image_ids: { type: 'array', items: { type: 'string' }, description: 'Up to twenty current-session saved image artifact IDs or attachment IDs. Use hive-asset:<saved ID> in HTML img src or CSS url; exact bytes are embedded server-side. No URLs or filesystem paths.' },
       reference_images: { type: 'array', items: { type: 'string' }, description: 'Optional public HTTPS brand/product image URLs for image generation.' },
     },
     output,

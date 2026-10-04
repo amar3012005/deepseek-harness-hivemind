@@ -17,13 +17,13 @@ export async function embedHtmlAssets(
       const data = event.data as unknown as Record<string, unknown>
       if (String(event.type) === 'hivemind/generation-created') {
         const file = data['file'] as FileAttachmentRef | undefined
-        if (file?.attachmentId === id && String(data['mediaType']).startsWith('image/')) ref = file
+        if (file && (file.attachmentId === id || data['artifactId'] === id) && String(data['mediaType']).startsWith('image/')) ref = file
       }
       if (String(event.type) === 'hivemind/room-message-received' && data['targetId'] === agent.session.id && typeof data['senderId'] === 'string' && Array.isArray(data['artifactIds']) && Array.isArray(data['artifacts'])) {
         for (const item of data['artifacts']) {
           if (typeof item !== 'object' || item === null) continue
           const asset = item as { artifactId?: string; producerSessionId?: string; file?: FileAttachmentRef }
-          if (asset.file?.attachmentId === id && asset.producerSessionId === data['senderId'] && data['artifactIds'].includes(asset.artifactId)) ref = asset.file
+          if (asset.file && (asset.file.attachmentId === id || asset.artifactId === id) && asset.producerSessionId === data['senderId'] && data['artifactIds'].includes(asset.artifactId)) ref = asset.file
         }
       }
     }

@@ -9,7 +9,7 @@ const image = createCanvas(8, 8).toBuffer('image/png')
 const ref = { attachmentId: 'saved-image', name: 'image.png', bytes: image.length }
 const agent = (events: unknown[]) => ({ session: { id: 'room', snapshotEvents: () => events } }) as unknown as Agent
 const ctx = { attachments: { async *readFileStream() { yield image } } } as unknown as Context
-const own = [{ type: 'hivemind/generation-created', data: { mediaType: 'image/png', file: ref } }]
+const own = [{ type: 'hivemind/generation-created', data: { artifactId: 'saved-artifact', mediaType: 'image/png', file: ref } }]
 const html = '<html><head><style>@page{size:320px 180px;margin:0}.slide{height:180px;break-after:page}.slide:last-child{break-after:auto}</style></head><body style="margin:0"><section class="slide">First slide<img src="hive-asset:saved-image"></section><section class="slide">Second slide</section></body></html>'
 
 it('embeds exact saved image bytes and rejects missing, oversized and unresolved references', async () => {
@@ -62,4 +62,11 @@ it('supports ten slide images without imposing the editing tool five-image limit
   const html = `<html>${ids.map(id => `<img src="hive-asset:${id}">`).join('')}</html>`
   const embedded = await embedHtmlAssets(ctx, agent(events), html, ids, new AbortController().signal)
   expect(embedded.match(/data:image\/png;base64/g)).toHaveLength(10)
+})
+
+it('resolves the native background media artifact ID to its exact file attachment', async () => {
+  const source = html.replaceAll('hive-asset:saved-image', 'hive-asset:saved-artifact')
+  const result = await embedHtmlAssets(ctx, agent(own), source, ['saved-artifact'], new AbortController().signal)
+  expect(result).toContain(image.toString('base64'))
+  await expect(embedHtmlAssets(ctx, agent(own), source, ['invented-artifact'], new AbortController().signal)).rejects.toThrow('unavailable')
 })

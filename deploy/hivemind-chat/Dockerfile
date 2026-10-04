@@ -38,14 +38,21 @@ ARG DSH_CLIENT_COMMIT_HASH
 LABEL org.opencontainers.image.revision=${DSH_CLIENT_COMMIT_HASH}
 LABEL com.singulance.service=harness-runner
 ARG DSH_CLIENT_TITLE="SINGULANCE · HIVE-MIND"
-ENV NODE_ENV=production DSH_HOME=/var/lib/dsh PORT=3080 DSH_CLIENT_TITLE=${DSH_CLIENT_TITLE}
+ENV NODE_ENV=production DSH_HOME=/var/lib/dsh PORT=3080 DSH_CLIENT_TITLE=${DSH_CLIENT_TITLE} PLAYWRIGHT_BROWSERS_PATH=/opt/dsh-browsers
 WORKDIR /opt/deepseek-harness
 COPY --from=build /opt/deepseek-harness /opt/deepseek-harness
+# Use the workspace lockfile's Playwright CLI so the installed Chromium matches
+# the renderer's version. System libraries and shared browser bytes are required
+# at runtime; a root-owned home cache is not available to the node user.
+RUN node packages/hivemind/artifact-renderer/node_modules/playwright/cli.js install --with-deps chromium \
+  && chmod -R a+rX /opt/dsh-browsers \
+  && rm -rf /var/lib/apt/lists/*
 COPY deploy/hivemind-chat/entrypoint.sh /usr/local/bin/hivemind-harness-entrypoint
 RUN chmod 0755 /usr/local/bin/hivemind-harness-entrypoint \
   && mkdir -p /var/lib/dsh/hivemind-chat \
   && chown -R node:node /var/lib/dsh
 USER node
+RUN node -e "const {chromium}=require('./packages/hivemind/artifact-renderer/node_modules/playwright'); (async()=>{const b=await chromium.launch({headless:true});try{const p=await b.newPage({javaScriptEnabled:false});await p.setContent('<html><body>Renderer ready</body></html>');const pdf=await p.pdf();if(!pdf.length)throw Error('empty PDF')}finally{await b.close()}})().catch(e=>{console.error(e);process.exit(1)})"
 EXPOSE 3080
 HEALTHCHECK --interval=15s --timeout=5s --start-period=30s --retries=3 CMD ["node", "-e", "fetch('http://127.0.0.1:'+process.env.PORT+'/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
 ENTRYPOINT ["hivemind-harness-entrypoint"]
