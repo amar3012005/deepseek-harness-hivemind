@@ -1,7 +1,7 @@
 import { expect, it, vi } from 'vitest'
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
-import { awakeningContext } from '../src/awakening.ts'
+import { awakeningContext, installAwakening } from '../src/awakening.ts'
 
 vi.mock('../src/rest.ts', () => ({ isHqLead: () => true }))
 
@@ -27,4 +27,23 @@ it('does not reinsert awakening guidance after its conversation checkpoint', asy
   ]
   const agent = { session: { snapshotEvents: () => events } } as unknown as Agent
   expect(await awakeningContext({} as Context, agent, 2, [])).toBe('')
+})
+
+
+it.each([
+  ['conversation', undefined, undefined, true],
+  ['conversation', 'artifact-id', undefined, false],
+  ['conversation', undefined, '/api/image.png', false],
+  ['company', undefined, undefined, false],
+  ['strategy', undefined, undefined, false],
+])('allows receipt-free invitations only without references (%s, %s, %s)', async (stage, reference, image, allowed) => {
+  const register = vi.fn()
+  const ctx = { effect: (callback: () => unknown) => callback(),
+    tools: { register }, sessions: { flush: async () => true } } as unknown as Context
+  installAwakening(ctx)
+  const tool = register.mock.calls[0]![0]
+  const agent = { session: { snapshotEvents: () => [{ type: 'hivemind/hq-awakening-start', data: {} }], append: vi.fn() } }
+  const result = tool.execute({ stage, summary: 'Please call when ready.', evidence_refs: [], ...(reference ? { reference } : {}), ...(image ? { image } : {}) }, { agent })
+  if (allowed) await expect(result).resolves.toMatchObject({ status: 'checkpoint_saved' })
+  else await expect(result).rejects.toThrow('hq_awakening_receipt_required')
 })

@@ -66,11 +66,11 @@ function safeImage(value: unknown): string | undefined {
 export function installAwakening(ctx: Context): void {
   ctx.effect(() => ctx.tools.register(defineTool({
     name: 'hivemind_hq_awakening',
-    description: 'Checkpoint the first Runtime investigation and show inspected evidence or authenticated team cards. Native tools perform retrieval and actions. Evidence references must occur in successful tool receipts in this room. Calling team loads real employee profiles. A checkpoint never schedules, delegates, grants authority or proves task completion.',
+    description: 'Checkpoint the first Runtime investigation and show inspected evidence or authenticated team cards. Native tools perform retrieval and actions. Evidence references must occur in successful tool receipts in this room. Calling team loads real employee profiles. A conversation checkpoint records an invitation, not a placed call or action proof. A checkpoint never schedules, delegates, grants authority or proves task completion.',
     parameters: {
       stage: { type: 'string', required: true, enum: [...awakeningStages] },
       summary: { type: 'string', required: true, description: 'Short evidence-backed finding or concrete gap, not hidden reasoning.' },
-      evidence_refs: { type: 'array', required: true, items: { type: 'string' }, description: 'Exact source URLs, artifact IDs or receipt identifiers returned by native tools. Use an empty list only for team discovery or a blocked stage.' },
+      evidence_refs: { type: 'array', required: true, items: { type: 'string' }, description: 'Exact source URLs, artifact IDs or receipt identifiers returned by native tools. Use an empty list only for team discovery, a blocked stage, or a conversation invitation without artifact/image references.' },
       blocked: { type: 'boolean', description: 'Set true only when this stage has a concrete unresolved gap; defaults to false.' },
       title: { type: 'string', description: 'Optional inspected artifact or page title.' },
       image: { type: 'string', description: 'Optional exact authenticated same-origin image path already returned by a successful receipt.' },
@@ -119,7 +119,7 @@ export function installAwakening(ctx: Context): void {
         cards.push({ title: args.title.slice(0, 180), detail: summary,
           ...(reference ? { reference } : {}), ...(image ? { image } : {}) })
       }
-      if (!args.blocked && stage !== 'team' && receipts.length === 0) throw new Error('hq_awakening_receipt_required')
+      if (!args.blocked && stage !== 'team' && !(stage === 'conversation' && !args.reference && !args.image) && receipts.length === 0) throw new Error('hq_awakening_receipt_required')
       const checkpoint: AwakeningCheckpoint = { stage, summary, receiptSeqs: [...new Set(matched.map(event => event.seq))],
         blocked: args.blocked === true,
         turn: events.findLast(event => event.type === 'turn/start')?.data.turn ?? 0, recordedAt: new Date().toISOString(), cards }
