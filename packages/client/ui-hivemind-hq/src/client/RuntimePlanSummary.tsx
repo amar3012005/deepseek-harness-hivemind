@@ -24,6 +24,8 @@ export function RuntimePlanSummary({ sessionId, turn, events, load, cancel, t, r
   let summaryTurn: number | undefined
   let invitationTurn: number | undefined
   let latestTurn: number | undefined
+  let pendingInvitation = false
+  let hasRestReceipt = false
   const reviewedInTurn = new Set<string>()
   let reviewRevision = 0
   for (const entry of log.entries) {
@@ -36,8 +38,11 @@ export function RuntimePlanSummary({ sessionId, turn, events, load, cancel, t, r
     }
     if (type === 'hivemind/hq-awakening-checkpoint' && data.stage === 'conversation' && !data.blocked) {
       invitationTurn = data.turn
+      pendingInvitation = true
       summaryTurn = data.turn
     }
+    if (type === 'hivemind/voice-baseline-outcome' && (data as { status?: string }).status === 'complete') pendingInvitation = false
+    if (type === 'hivemind/hq-rest-confirmed') hasRestReceipt = true
     if (type === 'hivemind/hq-calendar-item' && data.kind === 'assignment') summaryTurn = eventTurn
     if (type === 'hivemind/hq-task-review') {
       summaryTurn = eventTurn
@@ -45,7 +50,8 @@ export function RuntimePlanSummary({ sessionId, turn, events, load, cancel, t, r
       if (eventTurn === turn && data.taskId) reviewedInTurn.add(data.taskId)
     }
   }
-  const invited = invitationTurn === turn && (latestTurn === undefined || latestTurn === turn)
+  const currentTurn = latestTurn === undefined || latestTurn === turn
+  const invited = currentTurn && pendingInvitation && (invitationTurn === turn || hasRestReceipt)
   const ownsSummary = summaryTurn === turn
   const preservesClosure = reviewedInTurn.size > 0
   const ready = invited || ownsSummary || preservesClosure

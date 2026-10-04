@@ -186,3 +186,32 @@ it('reloads authoritative state immediately when accepted review arrives live', 
   await vi.waitFor(() => { listeners.forEach(fn => fn()); expect(view.getByText('Completed')).toBeTruthy() })
   expect(view.queryByText(/In progress/)).toBeNull()
 })
+
+function resumedInvitationSnapshot(status: 'complete' | 'incomplete') {
+  return { entries: [...snapshot.entries,
+    { type: 'event', event: { type: 'hivemind/hq-rest-confirmed', data: {} } },
+    { type: 'event', event: { type: 'turn/start', data: { turn: 2 } } },
+    { type: 'event', event: { type: 'hivemind/voice-baseline-outcome', data: { status } } },
+  ] } as unknown as SessionEventWindow
+}
+it('carries an unresolved invitation to the latest completed rest turn without repeating a checkpoint', async () => {
+  const log = resumedInvitationSnapshot('incomplete')
+  const shared = { getSnapshot: () => log, subscribe: () => () => {} }
+  const load = vi.fn().mockResolvedValue({ ok: true, value: empty })
+  const props = { sessionId: 'runtime' as never, events: shared, load, cancel: vi.fn(), t: (key: keyof typeof en) => en[key] }
+  const view = render(<><FinalRuntimePlanSummary {...props} turn={{ turn: 1, end: {} } as never} />
+    <FinalRuntimePlanSummary {...props} turn={{ turn: 2, end: {} } as never} /></>)
+  expect(view.getAllByRole('button', { name: 'Start Call' })).toHaveLength(1)
+})
+it('keeps the pending invitation hidden during active work and stops after baseline resolution', () => {
+  const load = vi.fn()
+  const log = resumedInvitationSnapshot('incomplete')
+  const props = { sessionId: 'runtime' as never, load, cancel: vi.fn(), t: (key: keyof typeof en) => en[key] }
+  const view = render(<FinalRuntimePlanSummary {...props} turn={{ turn: 2, end: undefined } as never}
+    events={{ getSnapshot: () => log, subscribe: () => () => {} }} />)
+  expect(view.queryByRole('button', { name: 'Start Call' })).toBeNull()
+  const complete = resumedInvitationSnapshot('complete')
+  view.rerender(<FinalRuntimePlanSummary {...props} turn={{ turn: 2, end: {} } as never}
+    events={{ getSnapshot: () => complete, subscribe: () => () => {} }} />)
+  expect(view.queryByRole('button', { name: 'Start Call' })).toBeNull()
+})
