@@ -58,7 +58,7 @@ export function HiveLiveVoiceButton({ sessionId, useInput, t }: Props) {
       window.removeEventListener('hivemind:room-call-status-request', request)
     }
   }, [sessionId])
-  const toggle = async () => {
+  const toggle = async (alternate = false) => {
     if (state !== 'idle') { stop(); return }
     const ticket = ++generation.current
     setState('connecting'); setError(false); setBusy(false)
@@ -94,6 +94,10 @@ export function HiveLiveVoiceButton({ sessionId, useInput, t }: Props) {
       const peer = new RTCPeerConnection()
       const audio = new Audio(); audio.autoplay = true
       local = { peer, stream, audio }; connection.current = local
+      if (alternate) {
+        if (!await recover()) throw new Error('voice_fallback_unavailable')
+        return
+      }
       stream.getTracks().forEach(track => peer.addTrack(track, stream))
       peer.ontrack = (event) => {
         audio.srcObject = event.streams[0] ?? new MediaStream([event.track])
@@ -161,6 +165,13 @@ export function HiveLiveVoiceButton({ sessionId, useInput, t }: Props) {
         {state !== 'idle' ? <svg width="20" height="20" viewBox="0 0 20 20" aria-hidden><path d="m5 5 10 10M15 5 5 15" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /></svg> : <svg width="20" height="20" viewBox="0 0 20 20" aria-hidden><path d="M3 8v4m3-7v10m4-13v16m4-13v10m3-7v4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" /></svg>}
       </button>
     </Tooltip>
+    {state === 'idle' && <details className={css.options}>
+      <summary aria-label={t('voice.options')}>⋯</summary>
+      <button type="button" onClick={(event) => {
+        event.currentTarget.closest('details')?.removeAttribute('open')
+        void toggle(true)
+      }}>{t('voice.alternate')}</button>
+    </details>}
     {busy && <span role="status">{t('voice.busy')}</span>}
     {state !== 'idle' && <span className={css.caption} hidden>{caption || t(state === 'connecting' ? 'voice.connecting' : 'voice.listening')}</span>}
   </div>

@@ -6,3 +6,7 @@
 .utility:hover { color: var(--dsw-alias-label-primary); }
 .utility:focus-visible { outline: 2px solid var(--dsw-alias-label-secondary); outline-offset: 3px; }
 .caption { display: none; }
+
+.options { position: relative; color: var(--dsw-alias-label-secondary); }
+.options summary { cursor: pointer; list-style: none; padding: 6px; }
+.options button { position: absolute; right: 0; bottom: 100%; white-space: nowrap; padding: 10px 14px; border: 1px solid var(--dsw-alias-label-secondary); border-radius: 8px; background: var(--dsw-alias-bg-base, #fff); color: var(--dsw-alias-label-primary); cursor: pointer; }

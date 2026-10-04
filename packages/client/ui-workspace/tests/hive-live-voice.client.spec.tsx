@@ -4,6 +4,8 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { HiveLiveVoiceButton } from '../src/client/HiveLiveVoiceButton.tsx'
 
 vi.mock('@deepseek-ai/dsh-client-ui-primitives', () => ({ Tooltip: ({ children }: { children: React.ReactNode }) => children }))
+vi.mock('../src/client/grok-voice.ts', () => ({ startGrokVoice: vi.fn(async () => ({ close: vi.fn(), id: 'grok-call' })) }))
+import { startGrokVoice } from '../src/client/grok-voice.ts'
 const t = ((key: string) => key) as never
 const input = (draft = '') => ((select: (value: { draft: string }) => unknown) => select({ draft })) as never
 class Peer {
@@ -21,6 +23,21 @@ class Peer {
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.restoreAllMocks() })
 
 describe('native HIVEMIND live voice composer', () => {
+  it('explicit alternate voice uses microphone consent and existing Grok adapter without primary start', async () => {
+    const media = vi.fn(async () => ({ getTracks: () => [{ stop: vi.fn() }] }))
+    Object.defineProperty(navigator, 'mediaDevices', { configurable: true, value: { getUserMedia: media } })
+    vi.stubGlobal('RTCPeerConnection', Peer)
+    vi.stubGlobal('Audio', class { autoplay = false; pause = vi.fn() })
+    const fetcher = vi.fn(async () => ({ ok: true }))
+    vi.stubGlobal('fetch', fetcher)
+    render(<HiveLiveVoiceButton sessionId={'session-1' as never} useInput={input()} t={t} />)
+    fireEvent.click(screen.getByText('voice.alternate'))
+    await waitFor(() => { expect(startGrokVoice).toHaveBeenCalledOnce() })
+    expect(media).toHaveBeenCalledOnce()
+    expect(fetcher).not.toHaveBeenCalled()
+    expect(Peer.instance.createOffer).not.toHaveBeenCalled()
+  })
+
   it('acknowledges an invitation and starts the existing voice API even with a typed draft', async () => {
     Object.defineProperty(navigator, 'mediaDevices', { configurable: true, value: { getUserMedia: vi.fn(async () => ({ getTracks: () => [{ stop: vi.fn() }] })) } })
     vi.stubGlobal('RTCPeerConnection', Peer)
