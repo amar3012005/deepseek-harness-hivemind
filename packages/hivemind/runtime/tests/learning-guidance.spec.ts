@@ -38,3 +38,11 @@ it('preserves useful user context without inventing learning or shared publicati
   expect(completionLearningSkill.content).toContain('shared company-brain writes retain their existing policy')
   expect(completionLearningSkill.content).toContain('do not duplicate it or save giant transcripts')
 })
+
+it('reconciles memory-dependent answers against newer corrections and evidence', () => {
+  expect(completionLearningSkill.content).toContain('even without a new task')
+  expect(completionLearningSkill.content).toContain('latest human corrections and confirmed same-chat receipts')
+  expect(completionLearningSkill.content).toContain('superseded context as history')
+  expect(completionLearningSkill.content).toContain('unconfirmed commercial authority')
+  expect(completionLearningSkill.content).toContain('explicit direction already given')
+})
