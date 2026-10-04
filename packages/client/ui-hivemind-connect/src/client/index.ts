@@ -578,9 +578,11 @@ export function apply(ctx: ClientContext): void {
     ctx.slots.inject('conversation.chat.node', () => ctx.slots.register({
       name: 'conversation.chat.node', key: 'runtime-awakening-stage',
       children: { 'hivemind.runtime.plan': { kind: 'list', scope: 'session' } },
-      inject: sessionId => ({ events: employeeEvents(sessionId) }),
-    }, ({ node, events, renderSlot }) => createElement(RuntimeAwakening, {
-      turn: node.data.turn, checkpointSeq: node.data.seq, events, renderSlot,
+      inject: sessionId => ({ events: employeeEvents(sessionId), openArtifact: (artifactId: string) => {
+        rightSidebar?.openTabIn(sessionId, 'hivemind-workbench-preview', { params: { artifactId } })
+      } }),
+    }, ({ node, events, renderSlot, openArtifact }) => createElement(RuntimeAwakening, {
+      turn: node.data.turn, checkpointSeq: node.data.seq, events, renderSlot, openArtifact,
     })))
     ctx.slots.inject('conversation.chat.turnTail', () => ctx.slots.register({
       name: 'conversation.chat.turnTail', priority: 40,

@@ -53,7 +53,35 @@ it('keeps human summary visible and full persona behind the native Work details 
   const view = render(<RuntimeAwakening events={{ getSnapshot: () => snapshot, subscribe: () => () => {} }}
     turn={1} checkpointSeq={1} renderSlot={() => null} />)
   expect(view.getByText('I met Ravi and checked his availability.')).toBeTruthy()
+  expect(view.getByRole('list', { name: 'Your team' })).toBeTruthy()
+  expect(view.getAllByText('Ravi').length).toBeGreaterThan(0)
   expect(view.queryByText(detail)).toBeNull()
   fireEvent.click(view.getByRole('button', { name: 'Work details' }))
   expect(view.getByText(detail)).toBeTruthy()
+})
+
+it('shows the grounded strategy as an Awakening Plan without invented tasks', () => {
+  const snapshot = { entries: [{ type: 'event', event: { type: 'hivemind/hq-awakening-checkpoint', seq: 1,
+    data: { stage: 'strategy', turn: 1, summary: 'Review current customer needs before publishing.', blocked: false,
+      cards: [{ title: 'Provisional customer priorities', detail: 'Review current customer needs before publishing.' }] } } }] } as unknown as SessionEventWindow
+  const view = render(<RuntimeAwakening events={{ getSnapshot: () => snapshot, subscribe: () => () => {} }}
+    turn={1} checkpointSeq={1} renderSlot={() => null} />)
+  expect(view.getByText('Awakening Plan')).toBeTruthy()
+  expect(view.getByText('Provisional customer priorities')).toBeTruthy()
+  expect(view.getByText('Review current customer needs before publishing.')).toBeTruthy()
+  expect(view.queryByText('Scheduled work')).toBeNull()
+})
+
+it('opens an exact saved HTML plan receipt through the shared Preview even when its title matches the summary', () => {
+  const snapshot = { entries: [
+    { type: 'event', event: { type: 'hivemind/generation-created', seq: 1, data: { artifactId: 'plan-1', mediaType: 'text/html' } } },
+    { type: 'event', event: { type: 'hivemind/hq-awakening-checkpoint', seq: 2, data: {
+      stage: 'strategy', turn: 1, summary: 'Initial priorities', cards: [{ title: 'Initial priorities', detail: 'Initial priorities', reference: 'plan-1' }], blocked: false,
+    } } },
+  ] } as unknown as SessionEventWindow
+  const openArtifact = vi.fn()
+  const view = render(<RuntimeAwakening events={{ getSnapshot: () => snapshot, subscribe: () => () => {} }}
+    turn={1} checkpointSeq={2} openArtifact={openArtifact} renderSlot={() => null} />)
+  fireEvent.click(view.getByRole('button', { name: 'Open plan' }))
+  expect(openArtifact).toHaveBeenCalledExactlyOnceWith('plan-1')
 })

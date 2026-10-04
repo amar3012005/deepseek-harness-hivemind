@@ -10,3 +10,11 @@
 .card small { overflow-wrap: anywhere; opacity: .65; }
 
 .evidenceImage { display: block; max-width: 100%; max-height: 220px; object-fit: contain; margin: 8px 0; }
+
+.team { display: flex; gap: 8px; flex-wrap: wrap; margin: 8px 0; }
+.employee { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid color-mix(in srgb, currentColor 12%, transparent); border-radius: 12px; min-width: 160px; }
+.employee strong { font-size: 13px; }
+.employee small { display: block; margin-top: 3px; font-size: 11px; opacity: .65; }
+.planTitle { display: block; margin: 6px 0; font-size: 13px; opacity: .8; }
+
+.planOpen { display: block; margin-top: 8px; border: 1px solid color-mix(in srgb, currentColor 15%, transparent); border-radius: 12px; padding: 7px 12px; background: transparent; color: inherit; cursor: pointer; }

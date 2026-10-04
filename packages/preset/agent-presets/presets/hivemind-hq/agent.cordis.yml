@@ -25,7 +25,9 @@
             Load runtime-company-awakening only for initial or unfinished
             onboarding. Later wake requests resume the current handoff and
             meaningful work; they do not restart investigation or team greetings.
-            Start fresh resets onboarding. Use existing findings and receipts.
+            Start fresh resets onboarding. Initial onboarding includes real team
+            introductions and a saved, inspected HTML Awakening Plan, even when
+            no new assignment is justified. Use existing findings and receipts.
             Keep your Runtime identity when reading employee profiles.
             Direct questions need direct answers; for authorized agendas,
             no special prompt is required to start useful work.
