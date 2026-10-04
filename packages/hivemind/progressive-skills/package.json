@@ -10,10 +10,11 @@
   "exports": { ".": { "types": "./lib/types/index.d.ts", "default": "./lib/index.js" }, "./src/*": "./src/*", "./package.json": "./package.json" },
   "files": ["lib/index.js", "lib/types/**/*.d.ts"],
   "license": "MIT",
-  "dependencies": { "@deepseek-ai/schemastery": "workspace:^", "@deepseek-ai/dsh-hivemind-progressive-browser": "workspace:^" },
+  "dependencies": { "@deepseek-ai/dsh-hivemind-artifact-renderer": "workspace:^", "@deepseek-ai/schemastery": "workspace:^", "@deepseek-ai/dsh-hivemind-progressive-browser": "workspace:^" },
   "peerDependencies": {
     "@deepseek-ai/cordis": "workspace:^",
     "@deepseek-ai/dsh-agent": "workspace:^",
+    "@deepseek-ai/dsh-attachment": "workspace:^",
     "@deepseek-ai/dsh-skill": "workspace:^",
     "@deepseek-ai/dsh-tools": "workspace:^",
     "@deepseek-ai/dsh-util-values": "workspace:^"
@@ -21,6 +22,7 @@
   "devDependencies": {
     "@deepseek-ai/cordis": "workspace:^",
     "@deepseek-ai/dsh-agent": "workspace:^",
+    "@deepseek-ai/dsh-attachment": "workspace:^",
     "@deepseek-ai/dsh-skill": "workspace:^",
     "@deepseek-ai/dsh-tools": "workspace:^",
     "@deepseek-ai/dsh-util-values": "workspace:^"

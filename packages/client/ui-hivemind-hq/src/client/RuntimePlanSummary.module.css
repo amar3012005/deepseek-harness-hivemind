@@ -1,17 +1,17 @@
 .task { display: flex; align-items: flex-start; gap: 12px; padding: 14px 0; border-bottom: 1px solid color-mix(in srgb, currentColor 8%, transparent); }
-.date { flex: 0 0 42px; display: grid; place-items: center; border-radius: 10px; padding: 5px 0; background: color-mix(in srgb, #3974ed 8%, transparent); }
+.date { flex: 0 0 42px; display: grid; place-items: center; border-radius: 4px; padding: 5px 0; background: color-mix(in srgb, #b9441b 8%, transparent); }
 .date small { font-size: 10px; text-transform: uppercase; opacity: .7; }
 .date strong { font-size: 20px; line-height: 1.2; }
 .identity { flex-shrink: 0; padding-top: 5px; }
 .body { min-width: 0; flex: 1; font-size: 14px; }
 .meta { margin-top: 4px; font-size: 12px; line-height: 1.4; opacity: .65; overflow-wrap: anywhere; }
-.cancel { border: 1px solid color-mix(in srgb, currentColor 15%, transparent); border-radius: 16px; background: transparent; color: inherit; padding: 6px 12px; font: inherit; font-size: 12px; cursor: pointer; }
+.cancel { border: 1px solid color-mix(in srgb, currentColor 15%, transparent); border-radius: 6px; background: transparent; color: inherit; padding: 6px 12px; font: inherit; font-size: 12px; cursor: pointer; }
 .cancel:disabled { opacity: .5; }
 @media (max-width: 420px) { .task { gap: 8px; flex-wrap: wrap; } .body { flex-basis: calc(100% - 96px); } .cancel { margin-left: auto; } }
 
 .nextSteps { margin-top: 16px; }
-.assignments { border: 1px solid color-mix(in srgb, currentColor 12%, transparent); border-radius: 16px; padding: 16px; margin-bottom: 16px; }
-.assignments h3 { margin: 0 0 4px; font-size: 14px; }
+.assignments { border: 1px solid color-mix(in srgb, currentColor 12%, transparent); border-radius: 6px; padding: 20px; background: color-mix(in srgb, #e8bd83 7%, transparent); margin-bottom: 16px; }
+.assignments h3 { margin: 0 0 4px; font-size: 18px; letter-spacing: -.02em; }
 .completedIcon { flex: 0 0 42px; display: grid; place-items: center; height: 42px; border-radius: 50%; color: #16804a; background: color-mix(in srgb, #16804a 10%, transparent); font-size: 22px; }
 .completedLabel { color: #16804a; font-weight: 600; }
 .history { margin-top: 8px; font-size: 12px; opacity: .7; }

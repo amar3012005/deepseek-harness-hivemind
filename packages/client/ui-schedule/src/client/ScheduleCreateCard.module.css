@@ -4,8 +4,8 @@
    with one inset overlay button making the whole row open the task. */
 
 .card {
-  --card-fill: var(--dsw-static-neutral-50);
-  --card-hover: var(--dsw-static-neutral-100);
+  --card-fill: color-mix(in srgb, #e8bd83 10%, var(--dsw-static-neutral-50));
+  --card-hover: color-mix(in srgb, #e8bd83 15%, var(--dsw-static-neutral-100));
   position: relative;
   box-sizing: border-box;
   display: flex;
@@ -15,7 +15,7 @@
   padding: 8px 10px;
   overflow: hidden;
   border: 0.5px solid var(--dsw-alias-border-l1);
-  border-radius: 18px;
+  border-radius: 6px;
   background: var(--card-fill);
   color: var(--dsw-alias-label-primary);
   transition: background-color 120ms ease;
@@ -69,9 +69,9 @@
   width: 40px;
   height: 40px;
   border: 0.5px solid var(--dsw-alias-border-l2);
-  border-radius: 10px;
+  border-radius: 4px;
   background: var(--card-fill);
-  color: var(--dsw-alias-label-secondary);
+  color: #b9441b;
 }
 
 .leading svg {

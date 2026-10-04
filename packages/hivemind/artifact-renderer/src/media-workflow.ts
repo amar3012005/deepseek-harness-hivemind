@@ -9,6 +9,7 @@ import type { GenerationFormat, GenerationReceipt } from './generation.ts'
 import { GenerationRegistry, generateArtifact } from './generation.ts'
 import { acquireMediaAdmission, type MediaOwner, type MediaAdmissionConfig } from './media-admission.ts'
 import { GenerationProviderError } from './image-provider.ts'
+import { currentDesignReference } from './design-reference.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Events {
@@ -94,6 +95,13 @@ async function referenceFiles(ctx: Context, agent: Agent, ids: readonly string[]
     }
   }
   if (references.length > 5) throw new Error('Native image editing accepts at most five reference images')
+  if (references.length === 0) {
+    const selected = currentDesignReference(agent.session.snapshotEvents())
+    if (selected) {
+      const image = await ctx.attachments.readImage(selected.preview)
+      references.push({ data: image.data })
+    }
+  }
   return references
 }
 

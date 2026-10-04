@@ -9,6 +9,8 @@ import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import type {} from '@deepseek-ai/dsh-hivemind-progressive-browser'
 
 import { THINK_SKILLS } from './think-skills.ts'
+import type {} from '@deepseek-ai/dsh-hivemind-artifact-renderer'
+import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 
 export const name = 'hivemind-progressive-skills'
 export const inject = ['tools', 'skills', 'hivemindActionToolkits']
@@ -51,7 +53,10 @@ function activeAgent(agent: Agent | undefined): Agent {
 
 const output = {
   schema: { type: 'object' as const, additionalProperties: true, properties: {} },
-  render: (_args: unknown, value: JsonValue) => [{ type: 'text' as const, text: JSON.stringify(value) }],
+  render: (_args: unknown, value: JsonValue) => {
+    const preview = typeof value === 'object' && value !== null && !Array.isArray(value) ? value.private_reference_image : undefined
+    return [{ type: 'text' as const, text: JSON.stringify(value) }, ...(preview ? [{ type: 'image' as const, attachment: preview as unknown as ImageAttachmentRef }] : [])]
+  },
 }
 
 /** Register compact search and exact loading over all model-invocable scoped skills. */
@@ -67,6 +72,8 @@ export function apply(ctx: Context, config: Partial<Config> = {}): void {
       operation: { type: 'string', required: true, enum: ['search', 'load'] },
       query: { type: 'string', description: 'Complete specialized capability, method, or output need.' },
       name: { type: 'string', description: 'Exact skill name returned by search.' },
+      brand_dna_missing: { type: 'boolean', description: 'For design-artifact: true only after recall confirms no approved Brand DNA. Loads one private visual exemplar before authoring; false preserves brand or supplied reference priority.' },
+      design_purpose: { type: 'string', enum: ['editorial', 'presentation', 'illustration', 'marketing', 'minimal'], description: 'For design-artifact: intended visual composition.' },
       limit: { type: 'integer', description: `Maximum compact search candidates, from 1 to ${maxSearchResults}. Larger requests are capped.` },
     },
     output,
@@ -102,7 +109,9 @@ export function apply(ctx: Context, config: Partial<Config> = {}): void {
         if (!ctx.hivemindActionToolkits) throw new Error('Cloudflare action toolkit is not configured; skill instructions alone do not enable these tools')
         await ctx.hivemindActionToolkits.load(agent, skillName)
       }
-      return { status: 'ready', operation: 'load', skill: { name: skill.name, description: skill.description, content: skill.content, ...('resourceBase' in skill ? { resource_base: skill.resourceBase } : {}) } }
+      const reference = skillName === 'design-artifact' && input.brand_dna_missing === true
+        ? await ctx.serial('hivemind/design-reference', { agent, purpose: String(input.design_purpose ?? 'editorial') }) : undefined
+      return { status: 'ready', operation: 'load', ...(reference ? { private_reference_image: reference.preview as unknown as JsonValue, private_reference_id: reference.id, reference_policy: 'Private provisional visual direction. Inspect pixels before authoring; never copy logos, words, claims or identity. This is not approved Brand DNA.' } : {}), skill: { name: skill.name, description: skill.description, content: skill.content, ...('resourceBase' in skill ? { resource_base: skill.resourceBase } : {}) } }
     },
     presentCall(args) { return { card: 'generic', title: 'Use a specialized skill', kind: 'read', rawInput: String(args.operation ?? '') } },
   }))

@@ -19,8 +19,10 @@ import { higgsfieldVideoProvider } from './higgsfield-video-provider.ts'
 import { registerMediaWorkflow } from './media-workflow.ts'
 import { inspectPdf } from './pdf-inspection.ts'
 import { registerCalculator } from './calculator.ts'
+import { registerPrivateDesignReferences } from './design-reference.ts'
 import { designProfiles, designTheme, evaluateMarkdownDesignQuality, type DesignProfile, type DesignQuality } from './design-kit.ts'
 export type { GenerationReceipt } from './generation.ts'
+export type { DesignReference } from './design-reference.ts'
 
 export const name = 'hivemind-artifact-renderer'
 export const inject = ['tools', 'attachments', 'jobs', 'sessions']
@@ -83,6 +85,7 @@ export abstract class ArtifactRenderer extends Service {
 }
 
 export interface Config {
+  privateDesignReferenceDirectory?: string
   provider: 'markdown-pdf'
   outputDirectory: string
   attachmentOnly?: boolean
@@ -113,6 +116,7 @@ export interface Config {
 }
 
 export const Config: z<Config> = z.object({
+  privateDesignReferenceDirectory: z.string().default('/tmp/dsh/private-design-references'),
   provider: z.const('markdown-pdf').default('markdown-pdf'),
   outputDirectory: z.string().default('.hivemind/artifacts'),
   attachmentOnly: z.boolean().default(false),
@@ -307,6 +311,7 @@ export function registerArtifactTool(ctx: Context, config: Config): void {
 
 /** Mount the selected provider and compact model-facing render tool. */
 export function apply(ctx: Context, config: Config): void {
+  registerPrivateDesignReferences(ctx, config.privateDesignReferenceDirectory ?? '')
   registerCalculator(ctx)
   if (config.provider === 'markdown-pdf') ctx.plugin(MarkdownArtifactRenderer, config)
   ctx.inject(['hivemindArtifactRenderer'], (rendererCtx) => {

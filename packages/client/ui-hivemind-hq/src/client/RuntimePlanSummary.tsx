@@ -83,7 +83,7 @@ export function RuntimePlanSummary({ sessionId, turn, events, load, cancel, t, r
           {!completed && date && <div className={css.date} aria-hidden><small>{date.toLocaleString(undefined, { month: 'short' })}</small><strong>{date.getDate()}</strong></div>}
           <div className={css.identity}>{renderAvatar?.({ employeeId: owner })}</div>
           <div className={css.body}><strong>{task.title}</strong>
-            <div className={css.meta}>{employeeNames.get(owner) ?? task.owner} · {completed ? <span className={css.completedLabel}>Completed</span> : task.status === 'deleted' ? 'Cancelled' : task.status}</div>
+            <div className={css.meta}>{employeeNames.get(owner) ?? task.owner} · {completed ? <span className={css.completedLabel}>Completed</span> : task.status === 'deleted' ? 'Cancelled' : task.status === 'pending' ? (assignment ? 'Scheduled' : 'Assigned') : task.status === 'in_progress' ? 'In progress' : task.status}</div>
             {completed && <details className={css.history}><summary>Past schedule</summary>
               {start && <div className={css.meta}>Started {format(start)}</div>}
               {assignment?.endsAt && <div className={css.meta}>Work window ended {format(assignment.endsAt)}</div>}

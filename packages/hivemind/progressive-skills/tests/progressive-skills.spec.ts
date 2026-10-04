@@ -11,6 +11,7 @@ function setup() {
     { name: 'private-command', description: 'Human only', invocation: { modelInvocable: false, userInvocable: true } },
   ]
   const ctx = {
+    serial: async () => ({ id: 'owner-private-editorial', sha256: 'hash', preview: { attachmentId: 'private-pixels', mediaType: 'image/png', width: 800, height: 600, bytes: 100 } }),
     tools: { register(tool: ToolDefinition) { tools.set(tool.name, tool); return () => {} } },
     skills: {
       register() { return () => {} },
@@ -26,10 +27,17 @@ function setup() {
 }
 
 describe('hivemind progressive skills', () => {
+  it('returns actual native reference pixels with design guidance only when Brand DNA is missing', async () => {
+    const { tool, agent } = setup()
+    const execution = { agent, signal: new AbortController().signal } as never
+    const value = await tool.execute({ operation: 'load', name: 'design-artifact', brand_dna_missing: true, design_purpose: 'presentation' }, execution)
+    expect(value).toMatchObject({ private_reference_id: 'owner-private-editorial', private_reference_image: { attachmentId: 'private-pixels' } })
+    expect(await tool.execute({ operation: 'load', name: 'design-artifact', brand_dna_missing: false }, execution)).not.toHaveProperty('private_reference_image')
+  })
   it('returns compact model-invocable candidates and loads one exact body', async () => {
     const { tool, agent } = setup()
     const execution = { agent, signal: new AbortController().signal } as never
-    await expect(tool.execute({ operation: 'search', query: 'create an investor presentation', limit: 5 }, execution)).resolves.toMatchObject({ candidates: [{ name: 'presentation-design' }] })
+    await expect(tool.execute({ operation: 'search', query: 'create an investor presentation', limit: 5 }, execution)).resolves.toMatchObject({ candidates: expect.arrayContaining([expect.objectContaining({ name: 'presentation-design' })]) })
     await expect(tool.execute({ operation: 'load', name: 'presentation-design' }, execution)).resolves.toMatchObject({ skill: { name: 'presentation-design', content: 'Create the deck and inspect every slide.' } })
   })
 

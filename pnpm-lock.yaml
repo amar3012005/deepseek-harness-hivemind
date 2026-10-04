@@ -7040,9 +7040,6 @@ importers:
         specifier: ^4.4.3
         version: 4.4.3
     devDependencies:
-      '@deepseek-ai/dsh-hivemind-artifact-renderer':
-        specifier: workspace:^
-        version: link:../artifact-renderer
       '@deepseek-ai/cordis':
         specifier: workspace:^
         version: link:../../../vendor/cordis
@@ -7058,6 +7055,9 @@ importers:
       '@deepseek-ai/dsh-experimental-agent-team':
         specifier: workspace:^
         version: link:../../experimental/agent-team
+      '@deepseek-ai/dsh-hivemind-artifact-renderer':
+        specifier: workspace:^
+        version: link:../artifact-renderer
       '@deepseek-ai/dsh-hivemind-employee-delegation':
         specifier: workspace:^
         version: link:../employee-delegation
@@ -7220,6 +7220,9 @@ importers:
 
   packages/hivemind/progressive-skills:
     dependencies:
+      '@deepseek-ai/dsh-hivemind-artifact-renderer':
+        specifier: workspace:^
+        version: link:../artifact-renderer
       '@deepseek-ai/dsh-hivemind-progressive-browser':
         specifier: workspace:^
         version: link:../progressive-browser
@@ -7233,6 +7236,9 @@ importers:
       '@deepseek-ai/dsh-agent':
         specifier: workspace:^
         version: link:../../core/agent
+      '@deepseek-ai/dsh-attachment':
+        specifier: workspace:^
+        version: link:../../attachment/attachment
       '@deepseek-ai/dsh-skill':
         specifier: workspace:^
         version: link:../../skill/skill

@@ -3,6 +3,8 @@
   "compilerOptions": { "rootDir": "src", "outDir": "lib/types", "tsBuildInfoFile": "lib/tsconfig.tsbuildinfo" },
   "include": ["src/**/*.ts"],
   "references": [
+    { "path": "../artifact-renderer" },
+    { "path": "../../attachment/attachment" },
     { "path": "../progressive-browser" },
     { "path": "../../../vendor/cordis" },
     { "path": "../../../vendor/schemastery" },

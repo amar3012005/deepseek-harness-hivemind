@@ -58,6 +58,7 @@ it('shows the final call after completion, with saved assignment start, window, 
   const view = render(<FinalRuntimePlanSummary sessionId={'runtime' as never} turn={{ turn: 1, end: {} } as never}
     events={events} load={load} cancel={vi.fn()} t={key => en[key]} />)
   expect(await view.findByText('Write the brief')).toBeTruthy()
+  expect(view.getByText(/Scheduled/)).toBeTruthy()
   expect(view.getByText(/^Starts /)).toBeTruthy()
   expect(view.getByText(/^Work window ends /)).toBeTruthy()
   expect(view.getByText(/^Due /)).toBeTruthy()
@@ -116,4 +117,16 @@ it('keeps one current summary and omits acknowledged completed work on a later i
   await vi.waitFor(() => expect(view.queryByRole('status')).toBeNull())
   expect(view.queryByText('Old completed café')).toBeNull()
   expect(view.getAllByRole('button', { name: 'Start Call' })).toHaveLength(1)
+})
+
+it('labels active native work as in progress rather than scheduled', async () => {
+  const load = vi.fn().mockResolvedValue({ ok: true, value: { ...empty, tasks: [{
+    id: 'task-1', title: 'Active brief', owner: 'ravi', status: 'in_progress', revision: 2,
+    nextWakeAt: '2026-10-04T12:00:00Z',
+  }] } })
+  const view = render(<RuntimePlanSummary sessionId={'runtime' as never} turn={1}
+    events={events} load={load} cancel={vi.fn()} t={key => en[key]} />)
+  expect(await view.findByText(/In progress/)).toBeTruthy()
+  expect(view.queryByText(/Scheduled/)).toBeNull()
+  expect(view.queryByRole('button', { name: 'Cancel' })).toBeNull()
 })

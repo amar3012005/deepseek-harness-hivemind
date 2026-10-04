@@ -31,14 +31,14 @@ it('does not reinsert awakening guidance after its conversation checkpoint', asy
 })
 
 
-it('does not restart completed onboarding for a later human wake command', async () => {
+it.each(['Wake up, Chief! Continue our agenda.', 'Wakeup Chief'])('does not restart completed onboarding for a later human wake command: %s', async (text) => {
   const append = vi.fn()
   const events = [
     { type: 'hivemind/hq-awakening-start', data: { version: 1, turn: 1 } },
     { type: 'hivemind/hq-awakening-checkpoint', data: { stage: 'conversation', blocked: false } },
   ]
   const agent = { session: { snapshotEvents: () => events, append } } as unknown as Agent
-  const messages = [{ source: { kind: 'user' }, content: [{ type: 'text', text: 'Wake up, Chief! Continue our agenda.' }] }] as never
+  const messages = [{ source: { kind: 'user' }, content: [{ type: 'text', text }] }] as never
   expect(await awakeningContext({} as Context, agent, 4, messages)).toBe('')
   expect(append).not.toHaveBeenCalled()
 })
@@ -78,6 +78,13 @@ it.each(['conversation', 'company', 'strategy'])('only a plain invitation is adm
 
 it.each([
   ['Wake up, Chief!', 'user', true],
+  ['Wakeup Chief', 'user', true],
+  ['Wakeup, Chief! Review our current work.', 'user', true],
+  ['Wakeup Chiefly', 'user', false],
+  ['Please explain Wakeup Chief', 'user', false],
+  ['"Wakeup Chief" is the command', 'user', false],
+  ['Wakeup Chief', 'schedule', false],
+  ['Wakeup Chief', 'plugin', false],
   ['Wake up, Chief! I want to grow our LinkedIn presence over the next week.', 'user', true],
   ['wake up chief: Review this agenda', 'user', true],
   ['Wake up Chiefly', 'user', false],
