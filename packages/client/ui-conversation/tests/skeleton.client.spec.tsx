@@ -689,3 +689,14 @@ describe('ConversationRoot resident composer', () => {
     expect(b.view.container.querySelector('[data-width-handle]')).toBeNull()
   })
 })
+
+it('shows a truthful waiting state while a blank session is replaying', () => {
+  const b = mount(sessionSnapshotOf({ blank: true, openState: 'loading' }))
+  expect(b.view.getByText('Loading conversation…')).toBeTruthy()
+})
+it('shows the actual open error instead of an empty conversation or perpetual spinner', () => {
+  const b = mount(sessionSnapshotOf({ blank: true, openState: 'error',
+    openError: { code: 'unavailable', message: 'Session access denied' } as never }))
+  expect(b.view.getByRole('alert').textContent).toContain('Session access denied')
+  expect(b.view.queryByText('Loading conversation…')).toBeNull()
+})

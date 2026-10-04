@@ -26,7 +26,7 @@ export interface Checkpoint {
 }
 const titles: Record<string, string> = { company: 'Understanding your company', evidence: 'Inspecting the evidence', team: 'Getting to know your team', memory: 'Learning from previous work', strategy: 'Building the initial strategy', conversation: 'Discussing your next agenda', remembered: 'Ready to continue' }
 export function RuntimeAwakening(
-  { events, turn, checkpointSeq, renderSlot }: { events: EventSource; turn: number; checkpointSeq?: number }
+  { events, turn, checkpointSeq }: { events: EventSource; turn: number; checkpointSeq?: number }
     & Pick<PropsRenderSlots<'hivemind.runtime.plan'>, 'renderSlot'>,
 ) {
   const window = useSyncExternalStore(listener => events.subscribe(listener), () => events.getSnapshot())
@@ -48,10 +48,6 @@ export function RuntimeAwakening(
     return !unchanged && (checkpointSeq === undefined || entry.event.seq === checkpointSeq)
       ? [{ ...item, cards, seq: entry.event.seq }] : []
   })
-  const invitationSeq = window.entries.find(entry => entry.type === 'event'
-    && String(entry.event.type) === 'hivemind/hq-awakening-checkpoint'
-    && (() => { const data = entry.event.data as unknown as Checkpoint; return data.turn === turn && data.stage === 'conversation' && !data.blocked })())
-  const firstInvitation = invitationSeq?.type === 'event' ? invitationSeq.event.seq : undefined
   if (!checkpoints.length) return null
   const stages = checkpoints.map((item) => {
     const redundant = item.cards.length === 1 && item.cards[0]?.detail === item.summary
@@ -64,7 +60,6 @@ export function RuntimeAwakening(
       <p>{item.summary}</p>
       {item.cards.length > 0 && <CheckpointDetails cards={item.cards} />}
     </section>)}
-    {stages.some(item => item.stage === 'conversation' && item.seq === firstInvitation) && renderSlot('hivemind.runtime.plan', { turn })}
   </section>
 }
 

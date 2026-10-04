@@ -212,6 +212,7 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
      * selector that accepts the owner renders; an all-declined chain is empty.
      */
     'conversation.chat.turnTail': { kind: 'chain'; scope: 'session'; owner: TurnTailOwnerProps }
+    'conversation.chat.turnFooter': { kind: 'list'; scope: 'session'; owner: TurnTailOwnerProps }
     /**
      * Ordered actions for one finalized assistant message. Each entry receives
      * the durable message id; a fresh `id` adds an action and reusing one replaces

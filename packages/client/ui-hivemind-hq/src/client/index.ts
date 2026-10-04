@@ -1,5 +1,5 @@
 import type {} from '@deepseek-ai/dsh-client-ui-chat/client'
-import { RuntimePlanSummary } from './RuntimePlanSummary.tsx'
+import { FinalRuntimePlanSummary } from './RuntimePlanSummary.tsx'
 /** Native header contribution over generated, tenant-authorized HQ Remote contracts. */
 import { createElement, useState, useSyncExternalStore } from 'react'
 import type { Context } from '@deepseek-ai/cordis'
@@ -43,8 +43,8 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
           ?? child.sessions.list.getSnapshot().byId[props.sessionId]?.agentPreset)
       return preset === 'hivemind-hq' ? createElement(HqControlAction, props) : null
     }
-    child.slots.inject('hivemind.runtime.plan', () => child.slots.register({
-      name: 'hivemind.runtime.plan', id: 'runtime-saved-plan', locale: 'hivemind.hq',
+    child.slots.inject('conversation.chat.turnFooter', () => child.slots.register({
+      name: 'conversation.chat.turnFooter', id: 'runtime-final-invitation', locale: 'hivemind.hq',
       children: { 'hivemind.runtime.planAvatar': { kind: 'single', scope: 'session' } },
       inject: sessionId => ({
         sessionId, events: child.sessions.binding(sessionId)?.eventSource,
@@ -52,7 +52,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
         cancel: (id: typeof sessionId, request: { taskId: string; expectedRevision: number }) =>
           child.remote.hivemindHq.cancelScheduledTask(id, request),
       }),
-    }, ({ events, renderSlot, ...props }) => events ? createElement(RuntimePlanSummary, { ...props, events, renderAvatar: identity => renderSlot('hivemind.runtime.planAvatar', identity) }) : null))
+    }, ({ events, renderSlot, turn, ...props }) => events ? createElement(FinalRuntimePlanSummary, { ...props, turn, events, renderAvatar: identity => renderSlot('hivemind.runtime.planAvatar', identity) }) : null))
     const panel = 'hivemind-company-calendar' as MainPanelId
     const workspace: Omit<CompanyWorkspaceProps, 'sessionId'> = {
       progress: (id, taskId) => child.remote.hivemindHq.taskProgress(id, taskId),

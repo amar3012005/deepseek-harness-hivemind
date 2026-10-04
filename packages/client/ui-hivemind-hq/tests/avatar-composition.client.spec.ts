@@ -15,7 +15,7 @@ it('composes actual chat and Runtime plan entries without duplicate avatar decla
     slots: {
       inject: (_name: string, callback: () => unknown) => callback(),
       register: (options: { name: string }, component: unknown) => {
-        if (options.name === 'conversation.chat.node' || options.name === 'hivemind.runtime.plan') {
+        if (options.name === 'conversation.chat.node' || options.name === 'conversation.chat.turnFooter') {
           return core.register(options as never, component as never)
         }
         return () => {}

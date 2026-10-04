@@ -1178,8 +1178,9 @@ declare module '@deepseek-ai/dsh-client-ui-sidebar-right/client' {
   }
 }
 
-export function ArtifactPreview({ useTabInfo, t, read }: PropsRuntime<'sidebar.right.pane.tab'> & PropsLocale<typeof NS> & {
+export function ArtifactPreview({ useTabInfo, t, read, loadImage }: PropsRuntime<'sidebar.right.pane.tab'> & PropsLocale<typeof NS> & {
   read: (id: FileAttachmentRef['attachmentId']) => Promise<{ ok: boolean; value?: { attachment: FileAttachmentRef; data: string } }>
+  loadImage?: (ref: ImageAttachmentRef) => Promise<string>
 }) {
   const info = useTabInfo()
   const params = info.tab.navigation.params as { artifact: ArtifactData } | undefined
@@ -1192,6 +1193,11 @@ export function ArtifactPreview({ useTabInfo, t, read }: PropsRuntime<'sidebar.r
     let active = true
     let created: string | undefined
     setUrl(undefined); setText(undefined); setFailed(false)
+    if (!file && (!artifact?.preview || !loadImage)) setFailed(true)
+    if (!file && artifact?.preview && loadImage) {
+      void loadImage(artifact.preview).then((value) => { if (active) setUrl(value) })
+        .catch(() => { if (active) setFailed(true) })
+    }
     if (file) void read(file.attachmentId).then(async (result) => {
       if (!result.ok || result.value?.attachment.attachmentId !== file.attachmentId) throw new Error('Artifact unavailable')
       const blob = fileArtifactBlob(result.value.data, artifact?.mediaType ?? 'application/octet-stream', file.bytes)
@@ -1205,17 +1211,18 @@ export function ArtifactPreview({ useTabInfo, t, read }: PropsRuntime<'sidebar.r
       }
     }).catch(() => { if (active) setFailed(true) })
     return () => { active = false; if (created) URL.revokeObjectURL(created) }
-  }, [file?.attachmentId])
+  }, [file?.attachmentId, artifact?.preview?.attachmentId])
   if (!artifact) return null
   const textPreview = artifact.mediaType.startsWith('text/') || /\.(md|markdown|txt)$/i.test(file?.name ?? artifact.path)
   return <div className={css.artifactPreviewBody} data-preview-alignment={textPreview ? 'top' : 'center'}><h3>{artifact.title}</h3>
-    {failed ? <p role="alert">{t('artifact.failed')}</p> : null}
+    {failed ? <p role="alert">{t('artifact.failed')}</p> : !url && text === undefined ? <p role="status">{t('artifact.loading')}</p> : null}
     {text !== undefined ? artifact.mediaType === 'text/markdown' || /\.(md|markdown)$/i.test(file?.name ?? artifact.path)
       ? <MarkdownText text={text} labels={{ code: { copyLabel: t('artifact.copy'), copiedLabel: t('artifact.copied') }, footnotes: t('artifact.footnotes') }} />
       : <pre>{text}</pre> : null}
     {url && artifact.mediaType.startsWith('image/') ? <img src={url} alt={artifact.title} />
       : url && artifact.mediaType.startsWith('video/') ? <video src={url} controls />
-        : url && (artifact.mediaType === 'application/pdf' || artifact.mediaType === 'text/html') ? <iframe src={url} title={artifact.title} sandbox="" /> : null}
+        : url && artifact.mediaType === 'application/pdf' ? <iframe src={url} title={artifact.title} />
+          : url && artifact.mediaType === 'text/html' ? <iframe src={url} title={artifact.title} sandbox="" /> : null}
     {url ? <a href={url} download={file?.name}>{t('artifact.open')}</a> : null}
   </div>
 }
@@ -1227,7 +1234,7 @@ export const inject = ['sidebarRightTabs', 'uiConversation', 'slots', 'locale', 
 export function apply(ctx: ClientContext): void {
   const previewKey = 'hivemind-artifact-preview'
   ctx.effect(() => ctx.sidebarRightTabs.register({ id: previewKey, kind: previewKey, patterns: ['dsh-resource://hivemind-artifact/**'], title: () => ctx.locale.bind(NS)('artifact.preview') }))
-  ctx.slots.inject('sidebar.right.pane.tab', () => ctx.slots.register({ name: 'sidebar.right.pane.tab', key: previewKey, locale: NS }, props => <ArtifactPreview {...props} read={attachmentId => ctx.remote.session.fileAttachment({ sessionId: props.sessionId, attachmentId })} />))
+  ctx.slots.inject('sidebar.right.pane.tab', () => ctx.slots.register({ name: 'sidebar.right.pane.tab', key: previewKey, locale: NS }, props => <ArtifactPreview {...props} read={attachmentId => ctx.remote.session.fileAttachment({ sessionId: props.sessionId, attachmentId })} loadImage={ref => ctx.uiConversation.imageUrl(props.sessionId, ref)} />))
   for (const definition of operatingRunDefinitions) ctx.uiConversation.events.register(definition)
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-hivemind-operating-run: dictionaries')
   ctx.slots.inject('conversation.chat.node', () => [

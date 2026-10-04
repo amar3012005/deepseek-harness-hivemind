@@ -110,15 +110,24 @@ type WorkbenchProps = PropsRuntime<'sidebar.right.pane.tab'> & PropsLocale<'hive
   selectArtifact: (id: string) => void
 }
 
-function ReceiptImage({ attachment, loadImage }: { attachment: ImageAttachmentRef | undefined; loadImage: WorkbenchProps['loadImage'] }) {
+export function ReceiptImage({ attachment, loadImage }: { attachment: ImageAttachmentRef | undefined; loadImage: WorkbenchProps['loadImage'] }) {
   const [url, setUrl] = useState<string>()
+  const [failed, setFailed] = useState(false)
+  const load = useRef(loadImage)
+  load.current = loadImage
   useEffect(() => {
     let active = true
     setUrl(undefined)
-    if (attachment !== undefined) void loadImage(attachment).then((value) => { if (active) setUrl(value) }, () => {})
+    setFailed(false)
+    if (attachment !== undefined) void load.current(attachment).then(
+      (value) => { if (active) setUrl(value) }, () => { if (active) setFailed(true) },
+    )
     return () => { active = false }
-  }, [attachment?.attachmentId, loadImage])
-  return url === undefined ? null : <img className={css.workbenchImage} src={url} alt="Generated preview" />
+  }, [attachment?.attachmentId])
+  if (attachment === undefined) return null
+  if (failed) return <p role="alert" className={css.workbenchPath}>Image preview could not be loaded.</p>
+  if (url === undefined) return <div role="status" className={css.previewLoading}>Loading image preview…</div>
+  return <img className={css.workbenchImage} src={url} alt="Generated preview" />
 }
 
 function PdfReceipt({ artifact, loadPdf, loadImage, t }: { artifact: Artifact; loadPdf: WorkbenchProps['loadPdf']; loadImage: WorkbenchProps['loadImage']; t: WorkbenchProps['t'] }) {

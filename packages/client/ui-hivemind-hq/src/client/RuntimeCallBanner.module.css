@@ -1,0 +1,12 @@
+.banner { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 12px 24px; padding: 22px; border: 1px solid color-mix(in srgb, #3974ed 22%, transparent); border-radius: 20px; background: linear-gradient(125deg, color-mix(in srgb, #3974ed 7%, transparent), color-mix(in srgb, currentColor 2%, transparent)); }
+.identity { grid-column: 1 / -1; display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 600; opacity: .8; }
+.voiceMark { width: 32px; height: 32px; display: grid; place-items: center; border-radius: 50%; background: color-mix(in srgb, #3974ed 12%, transparent); color: #3974ed; }
+.copy { min-width: 0; }
+.copy strong { font-size: 16px; line-height: 1.4; }
+.copy p { margin: 7px 0 0; font-size: 13px; line-height: 1.5; opacity: .7; }
+.action { min-height: 42px; padding: 0 20px; border: 0; border-radius: 24px; background: #3974ed; color: white; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap; }
+.action:hover { background: #2d62cf; }
+.action:focus-visible { outline: 2px solid #3974ed; outline-offset: 3px; }
+.action:disabled { opacity: .55; cursor: default; }
+.error { grid-column: 1 / -1; margin: 0; font-size: 13px; color: var(--dsw-alias-state-error-primary); }
+@media (max-width: 520px) { .banner { grid-template-columns: 1fr; padding: 18px; gap: 12px; } .action { justify-self: start; } }

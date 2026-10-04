@@ -2,8 +2,10 @@
 import { useEffect, useState } from 'react'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { HqKey } from './locales.ts'
+import type { ReactNode } from 'react'
+import css from './RuntimeCallBanner.module.css'
 interface CallStatus { state: 'idle' | 'connecting' | 'live'; error: boolean; busy: boolean }
-export function RuntimeCallBanner({ sessionId, t }: { sessionId: SessionId; t: (key: HqKey) => string }) {
+export function RuntimeCallBanner({ sessionId, t, avatar }: { sessionId: SessionId; t: (key: HqKey) => string; avatar?: ReactNode }) {
   const [status, setStatus] = useState<CallStatus>()
   const [unavailable, setUnavailable] = useState(false)
   useEffect(() => {
@@ -18,11 +20,12 @@ export function RuntimeCallBanner({ sessionId, t }: { sessionId: SessionId; t: (
     return () => { window.removeEventListener('hivemind:room-call-status', update) }
   }, [sessionId])
   const active = status !== undefined && status.state !== 'idle'
-  return <aside data-runtime-call-banner style={{ padding: 16, borderRadius: 14, background: 'var(--dsw-static-neutral-50)' }}>
-    <strong>{t('call.title')}</strong><p>{t('call.detail')}</p>
-    <button type="button" disabled={active} onClick={() => {
+  return <aside data-runtime-call-banner className={css.banner}>
+    <div className={css.identity}>{avatar ?? <span aria-hidden className={css.voiceMark}>✦</span>}<span>Runtime</span></div>
+    <div className={css.copy}><strong>{t('call.title')}</strong><p>{t('call.detail')}</p></div>
+    <button className={css.action} type="button" disabled={active} onClick={() => {
       setUnavailable(window.dispatchEvent(new CustomEvent('hivemind:start-room-call', { cancelable: true, detail: { sessionId } })))
     }}>{t(status?.state === 'connecting' ? 'call.connecting' : status?.state === 'live' ? 'call.live' : 'call.start')}</button>
-    {(unavailable || status?.error || status?.busy) && <p role="alert">{t(unavailable ? 'call.unavailable' : status?.busy ? 'call.busy' : 'call.failed')}</p>}
+    {(unavailable || status?.error || status?.busy) && <p className={css.error} role="alert">{t(unavailable ? 'call.unavailable' : status?.busy ? 'call.busy' : 'call.failed')}</p>}
   </aside>
 }

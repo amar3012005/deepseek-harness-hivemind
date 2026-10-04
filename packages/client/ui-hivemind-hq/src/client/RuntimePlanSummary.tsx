@@ -1,4 +1,6 @@
 /** Final saved plan with native cancellation and the existing room voice transport. */
+import type { TurnLocation } from '@deepseek-ai/dsh-client-ui-conversation/client'
+import css from './RuntimePlanSummary.module.css'
 import { RuntimeCallBanner } from './RuntimeCallBanner.tsx'
 import type { HqKey } from './locales.ts'
 import { useCallback, useEffect, useState, useSyncExternalStore } from 'react'
@@ -48,19 +50,37 @@ export function RuntimePlanSummary({ sessionId, turn, events, load, cancel, t, r
       <p>Here are the saved assignments. Cancelling a prerequisite also cancels its pending dependent tasks.</p>
     </>}
     {!workspace && <p role="status">Loading saved tasks…</p>}
-    {scheduledTasks.map(task => <article key={task.id} style={{ padding: '12px 0', borderBottom: '1px solid #e4e7eb' }}>
-      {renderAvatar?.({ employeeId: workspace?.calendar.find(item => item.kind === 'assignment' && item.taskId === task.id)?.owner ?? task.owner })}<strong>{task.title}</strong><p>{employeeNames.get(workspace?.calendar.find(item => item.kind === 'assignment' && item.taskId === task.id)?.owner) ?? task.owner} · {task.status === 'deleted' ? 'Cancelled' : task.status}</p>
-      <p>{task.nextWakeAt ? new Date(task.nextWakeAt).toLocaleString(undefined, { timeZoneName: 'short' }) : 'No pending trigger'}</p>
-      {task.status === 'pending' && <button type="button" disabled={pending !== undefined} onClick={() => {
-        setPending(task.id); setError(undefined)
-        void cancel(sessionId, { taskId: task.id, expectedRevision: task.revision }).then(async (result) => {
-          if (!result.ok) throw result.error
-          if (!result.value.cancelled) throw new Error('Cancellation was not confirmed. Refresh and try again.')
-          await refresh()
-        }).catch((cause: unknown) => setError(cause instanceof Error ? cause.message : 'Cancellation failed.')).finally(() => setPending(undefined))
-      }}>{pending === task.id ? 'Cancelling…' : 'Cancel task'}</button>}
-    </article>)}
+    {scheduledTasks.map((task) => {
+      const assignment = workspace?.calendar.find(item => item.kind === 'assignment' && item.taskId === task.id)
+      const owner = assignment?.owner ?? task.owner
+      const start = assignment?.startsAt ?? task.nextWakeAt
+      const date = start === undefined ? undefined : new Date(start)
+      const format = (value: string) => new Date(value).toLocaleString(undefined, { timeZoneName: 'short' })
+      return <article key={task.id} className={css.task}>
+        {date && <div className={css.date} aria-hidden><small>{date.toLocaleString(undefined, { month: 'short' })}</small><strong>{date.getDate()}</strong></div>}
+        <div className={css.identity}>{renderAvatar?.({ employeeId: owner })}</div>
+        <div className={css.body}><strong>{task.title}</strong>
+          <div className={css.meta}>{employeeNames.get(owner) ?? task.owner} · {task.status === 'deleted' ? 'Cancelled' : task.status}</div>
+          {start && <div className={css.meta}>Starts {format(start)}</div>}
+          {assignment?.endsAt && <div className={css.meta}>Work window ends {format(assignment.endsAt)}</div>}
+          {task.dueAt && <div className={css.meta}>Due {format(task.dueAt)}</div>}
+        </div>
+        {task.status === 'pending' && <button className={css.cancel} type="button" disabled={pending !== undefined} onClick={() => {
+          setPending(task.id); setError(undefined)
+          void cancel(sessionId, { taskId: task.id, expectedRevision: task.revision }).then(async (result) => {
+            if (!result.ok) throw result.error
+            if (!result.value.cancelled) throw new Error('Cancellation was not confirmed. Refresh and try again.')
+            await refresh()
+          }).catch((cause: unknown) => setError(cause instanceof Error ? cause.message : 'Cancellation failed.')).finally(() => setPending(undefined))
+        }}>{pending === task.id ? 'Cancelling…' : 'Cancel'}</button>}
+      </article>
+    })}
     {error && <p role="alert">{error}</p>}
-    <RuntimeCallBanner sessionId={sessionId} t={t} />
+    <RuntimeCallBanner sessionId={sessionId} t={t} avatar={renderAvatar?.({ employeeId: 'runtime', name: 'Runtime' })} />
   </section>
+}
+
+/** Additive native footer is absent until this turn has actually finished. */
+export function FinalRuntimePlanSummary({ turn, ...props }: Omit<Props, 'turn'> & { turn: TurnLocation }) {
+  return turn.end === undefined ? null : <RuntimePlanSummary {...props} turn={turn.turn} />
 }

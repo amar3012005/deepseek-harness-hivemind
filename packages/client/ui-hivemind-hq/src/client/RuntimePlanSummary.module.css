@@ -1,0 +1,10 @@
+.task { display: flex; align-items: flex-start; gap: 12px; padding: 14px 0; border-bottom: 1px solid color-mix(in srgb, currentColor 8%, transparent); }
+.date { flex: 0 0 42px; display: grid; place-items: center; border-radius: 10px; padding: 5px 0; background: color-mix(in srgb, #3974ed 8%, transparent); }
+.date small { font-size: 10px; text-transform: uppercase; opacity: .7; }
+.date strong { font-size: 20px; line-height: 1.2; }
+.identity { flex-shrink: 0; padding-top: 5px; }
+.body { min-width: 0; flex: 1; font-size: 14px; }
+.meta { margin-top: 4px; font-size: 12px; line-height: 1.4; opacity: .65; overflow-wrap: anywhere; }
+.cancel { border: 1px solid color-mix(in srgb, currentColor 15%, transparent); border-radius: 16px; background: transparent; color: inherit; padding: 6px 12px; font: inherit; font-size: 12px; cursor: pointer; }
+.cancel:disabled { opacity: .5; }
+@media (max-width: 420px) { .task { gap: 8px; flex-wrap: wrap; } .body { flex-basis: calc(100% - 96px); } .cancel { margin-left: auto; } }

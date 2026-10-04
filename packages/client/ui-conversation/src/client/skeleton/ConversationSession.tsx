@@ -229,7 +229,13 @@ export function ConversationSession({
     // the machine mirror, not this seed effect.
   }, [inputActions])
 
-  if (session.blank && conversationPhase(session, conversation) === 'blank') return null
+  if (session.blank && conversationPhase(session, conversation) === 'blank') {
+    if (session.openState === 'loading') return <div className={css.sessionWaiting} role="status">Loading conversation…</div>
+    if (session.openState === 'error' && session.openError !== null) {
+      return <div className={css.sessionWaiting} role="alert">Conversation could not be loaded: {session.openError.message}</div>
+    }
+    return null
+  }
   return (
     <div className={css.viewArea}>
       {active !== undefined && renderSlot('conversation.view', {
