@@ -4,7 +4,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { defineTool } from '@deepseek-ai/dsh-tools'
-import { completedTaskMemory, sessionOwner } from './continuity.ts'
+import { sessionOwner } from './continuity.ts'
 import type {} from '@deepseek-ai/dsh-hivemind-employee-directory'
 
 interface RoomDelivery {
@@ -49,13 +49,29 @@ export function installAgentMessaging(ctx: Context): void {
       // intermediate progress, not a separate employee conversation turn.
       const pending = events.filter(event => event.type === 'turn/end'
         && !confirmed(`response-${event.seq}`)
-        && (event.data.reason.kind === 'error' || completedTaskMemory(agent.id, owner, events, event.data.turn) !== undefined))
+        && (event.data.reason.kind === 'error' || event.data.reason.kind === 'completed'))
       if (pending.length === 0) return
       const directory = await scope.hivemindEmployeeDirectory.profiles(signal)
       if (!directory.profiles.some(profile => profile['id'] === owner.id)) return
       for (const event of pending) {
-        const input = events.findLast(value => value.seq < event.seq && value.type === 'user/message')
+        if (event.type !== 'turn/end') continue
+        const turn = event.data.turn
+        const start = events.findLast(item => item.type === 'turn/start' && item.data.turn === turn)
+        // Quiet room inputs may be committed before turn/start. Never reach
+        // back across the previous terminal turn to infer an assignment.
+        const previousEnd = events.findLast(item => item.type === 'turn/end' && item.seq < event.seq)
+        const input = events.findLast(value => value.seq > (previousEnd?.seq ?? -1) && value.seq < event.seq
+          && value.type === 'user/message' && ['user', 'schedule', 'hivemind-agent-message'].includes(value.data.source.kind))
+        let chiefQuestion = false
         let taskId: string | undefined
+        if (input?.type === 'user/message' && String(input.data.source.kind) === 'hivemind-agent-message') {
+          const source = input.data.source as { messageId?: string }
+          const received = events.findLast(value => String(value.type) === 'hivemind/room-message-received'
+            && (value.data as { id?: string }).id === source.messageId)
+          const packet = received?.data as { senderEmployee?: string; kind?: string; taskId?: string } | undefined
+          chiefQuestion = packet?.senderEmployee === 'runtime' && packet.kind === 'question'
+          if (packet?.senderEmployee === 'runtime') taskId = packet.taskId
+        }
         if (input?.type === 'user/message' && ['schedule', 'hivemind-agent-message'].includes(input.data.source.kind)) {
           for (const block of input.data.content) {
             if (block.type !== 'text') continue
@@ -66,8 +82,10 @@ export function installAgentMessaging(ctx: Context): void {
             if (line) taskId = (JSON.parse(line.slice('HQ_EMPLOYEE_ASSIGNMENT='.length)) as { taskId: string }).taskId
           }
         }
+        // General direct turns stay in the employee room. The model can send
+        // meaningful company updates explicitly through the existing tool.
+        if (taskId === undefined && !chiefQuestion) continue
         if (event.type === 'turn/end') {
-          const start = events.findLast(item => item.type === 'turn/start' && item.data.turn === event.data.turn)
           const artifactIds = events.filter(item => item.seq > (start?.seq ?? -1) && item.seq < event.seq
             && ['hivemind/generation-created', 'hivemind/artifact-created'].includes(String(item.type)))
             .flatMap((item) => {
@@ -78,8 +96,6 @@ export function installAgentMessaging(ctx: Context): void {
             await rooms.deliverAgentMessage(agent, { key: `response-${event.seq}`, target: 'runtime', kind: 'update', text: employeeFailureSummary(event.data.reason.error.code), artifactIds: [...new Set(artifactIds)], ...(taskId === undefined ? {} : { taskId }) }, signal)
             continue
           }
-          const response = completedTaskMemory(agent.id, owner, events, event.data.turn)
-          if (!response) continue
           const manualRuntimeReply = events.some((item) => {
             if (item.seq <= (start?.seq ?? -1) || item.seq >= event.seq || item.type !== 'tool/call'
               || item.data.name !== 'hivemind_agent_message') return false
@@ -91,6 +107,7 @@ export function installAgentMessaging(ctx: Context): void {
           })
           if (manualRuntimeReply) continue
           const answer = events.findLast(item => item.type === 'assistant/message' && item.data.turn === event.data.turn && !item.data.interrupted)
+          if (!answer) continue
           const text = answer?.type === 'assistant/message' ? answer.data.message.content.filter(block => block.type === 'text').map(block => block.text).join('\n').trim().slice(0, 1200) : ''
           await rooms.deliverAgentMessage(agent, {
             key: `response-${event.seq}`, target: 'runtime', kind: 'update',
