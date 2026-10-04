@@ -6,6 +6,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
+import type { PostToolDecision } from '@deepseek-ai/dsh-tools'
 
 export interface DesignReference { id: string; preview: ImageAttachmentRef; sha256: string }
 declare module '@deepseek-ai/cordis' {
@@ -28,7 +29,8 @@ export function referenceOwnerKey(orgId: string, userId: string): string {
 }
 export function currentDesignReference(events: readonly SessionEvent[]): DesignReference | undefined {
   const latestMessage = events.findLastIndex(item => item.type === 'user/message'
-    && (item.data.source.kind !== 'plugin' || !('form' in item.data.source) || item.data.source.form === undefined))
+    && (['user', 'schedule', 'agent-message'].includes(item.data.source.kind)
+      || (item.data.source.kind === 'plugin' && (!('form' in item.data.source) || item.data.source.form === undefined))))
   const boundary = Math.max(latestMessage, events.findLastIndex(item => item.type === 'turn/start'))
   const selected = events.slice(boundary + 1).findLast(item => item.type === 'hivemind/design-reference-selected')
   return selected?.type === 'hivemind/design-reference-selected' ? selected.data : undefined
@@ -78,5 +80,31 @@ export function registerPrivateDesignReferences(ctx: Context, directory: string)
     agent.session.append('hivemind/design-reference-selected', result)
     if (!(await ctx.sessions.flush(agent.session))) throw new Error('Private reference receipt could not be saved')
     return result
+  })
+  installNativeDesignSkillReference(ctx)
+}
+
+/** Enrich native skill results before they are logged and sent to the next model request. */
+export function installNativeDesignSkillReference(ctx: Context): void {
+  ctx.on('tools/post-execute', async (execution, result, next): Promise<PostToolDecision> => {
+    const decision = await next()
+    if (decision.kind !== 'accept' || 'value' in decision || result.isError || execution.name !== 'skill'
+      || !execution.agent || typeof execution.arguments !== 'object' || execution.arguments === null
+      || !('name' in execution.arguments) || execution.arguments.name !== 'design-artifact') return decision
+    const agent = execution.agent
+    const events = agent.session.snapshotEvents()
+    const message = events.findLast(item => item.type === 'user/message'
+      && ['user', 'schedule', 'agent-message'].includes(item.data.source.kind))
+    if (message?.type === 'user/message' && message.data.source.kind === 'user' && message.data.content.some(block => block.type === 'image')) return decision
+    execution.signal.throwIfAborted()
+    const reference = currentDesignReference(events) ?? await ctx.serial('hivemind/design-reference', { agent, purpose: 'editorial' })
+    execution.signal.throwIfAborted()
+    if (!reference) return decision
+    const content = decision.content ?? result.content
+    if (content.some(block => block.type === 'image' && 'attachment' in block && block.attachment.attachmentId === reference.preview.attachmentId)) return decision
+    return { ...decision, content: [...content,
+      { type: 'text', text: 'Private visual design reference, supplied as actual pixels before authoring. Approved Brand DNA and explicit current user references take priority. When approved Brand DNA is absent, use this saved owner reference to shape composition, typography, spacing, color balance and illustration. A remembered homepage is factual context, not approved Brand DNA, and must not suppress this reference. For an Awakening Plan, put every real scheduled employee assignment first, then the strategy explaining it; distinguish confirmed schedules from proposals. Inspect these pixels now before writing HTML/CSS or the generation brief. Adapt the design to the company; never copy reference logos, words, claims or identity. Do not display or deliver this private reference itself.' },
+      { type: 'image', attachment: reference.preview },
+    ] }
   })
 }
