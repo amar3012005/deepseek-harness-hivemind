@@ -24,6 +24,7 @@ import type {} from '@deepseek-ai/dsh-hivemind-artifact-renderer'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import type { FileAttachmentRef, ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import type { Context } from '@deepseek-ai/cordis'
+import { parseAtInput } from '@deepseek-ai/dsh-schedule'
 import { TeamTaskId } from '@deepseek-ai/dsh-experimental-agent-team'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import type {} from '@deepseek-ai/dsh-session'
@@ -298,7 +299,14 @@ export function apply(ctx: Context): void {
           const unchanged = existing !== undefined && existing.owner === input.employee_id
             && Date.parse(existing.startsAt) === Date.parse(input.starts_at)
             && Date.parse(existing.endsAt) === Date.parse(input.ends_at)
-          if (!unchanged && Date.parse(input.starts_at) <= Date.now()) throw new Error('hq_schedule_start_must_be_future')
+          const start = parseAtInput(input.starts_at)
+          const end = parseAtInput(input.ends_at)
+          if (end <= start) throw new Error('hq_schedule_end_must_follow_start')
+          if (!unchanged && start <= Date.now()) throw new Error('hq_schedule_start_must_be_future')
+          const contract = contracts.find(value => value.taskId === task.id)
+          if (!contract) throw new Error('hq_contract_required')
+          if (!unchanged && Date.parse(contract.dueAt) <= start)
+            throw new Error('hq_schedule_deadline_must_follow_start')
           const result = await ctx.hivemindHq.plan(root, {
             expectedRevision: existing ? unchanged ? existing.revision - 1 : existing.revision : 0,
             item: unchanged ? existing : { id: existing?.id ?? `initial-${task.id}`, revision: (existing?.revision ?? 0) + 1,
@@ -478,6 +486,8 @@ export function apply(ctx: Context): void {
           const existing = contracts.find(item => item.taskId === contract.taskId)
           if (existing && JSON.stringify(existing) !== JSON.stringify(contract))
             throw new Error('hq_contract_exists')
+          if (!existing && Date.parse(contract.dueAt) <= Date.now())
+            throw new Error('hq_contract_new_deadline_must_be_future')
           if (!existing) root.session.append('hivemind/hq-task-contract', contract)
           if (!(await ctx.sessions.flush(root.session)))
             throw new Error('hq_contract_persistence_required')

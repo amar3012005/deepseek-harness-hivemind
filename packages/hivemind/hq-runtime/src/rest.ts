@@ -6,6 +6,7 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import { createUserMessage, type UserMessage } from '@deepseek-ai/dsh-llm'
 import { parseAtInput } from '@deepseek-ai/dsh-schedule'
+import { deriveBrowserTimeZoneContext, createTimestampFormatter, formatTimestamp } from '@deepseek-ai/dsh-time-context'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { HqRestNote, HqRestNoteRequest, HqRestNoteResult, HqRestState } from './types.ts'
 
@@ -204,7 +205,44 @@ export function restBriefing(agent: Agent, messages: readonly UserMessage[]): { 
     section: { name: NOTE_SECTION, text: JSON.stringify(notes.filter(note => note.status === 'pending').map(note => note.id)) },
   }
 }
+/** Resolve the latest confirmed native browser zone without guessing company location.
+ * @param events - Current session-owned native messages.
+ * @param iso - Exact persisted UTC instant.
+ * @returns Explicit authoritative display plus original instant.
+ */
+export function restWakeDisplay(
+  events: readonly SessionEvent[], iso: string,
+): { iso: string; timeZone: string; local: string; zoneSource: string } {
+  let zone = 'UTC'
+  let zoneSource = 'UTC fallback; no confirmed browser zone'
+  for (const event of events.toReversed()) {
+    if (event.type !== 'user/message') continue
+    const context = deriveBrowserTimeZoneContext([event.data])
+    if (context.kind !== 'resolved') continue
+    zone = context.timeZone
+    zoneSource = 'latest native human-confirmed browser zone'
+    break
+  }
+  return { iso, timeZone: zone, local: formatTimestamp(Date.parse(iso), createTimestampFormatter(zone), zone), zoneSource }
+}
+
 export function installRest(ctx: Context): void {
+  ctx.effect(() => ctx.tools.register(defineTool({
+    name: 'hivemind_hq_rest_state',
+    description: 'Read the current saved Runtime handoff and native wake without rewriting them or scheduling work. Use before reusing unchanged rest; copy exact saved content only for an identical writer retry. A changed handoff needs a new ID. Wake ISO values ending Z are UTC instants; narrate the supplied local display and explicit zone, never relabel UTC digits as local time.',
+    parameters: {},
+    output: { schema: { type: 'object', additionalProperties: true, properties: {} }, render: (_args, result) => [{ type: 'text', text: JSON.stringify(result) }] },
+    isConcurrencySafe: () => true,
+    async execute(_args, execution) {
+      const agent = execution.agent
+      if (!agent || !isHqLead(ctx, agent)) throw new Error('hq_rest_requires_hq_lead')
+      const state = await ctx.hivemindHq.restState(agent)
+      const events = agent.session.snapshotEvents()
+      const handoff = restIntents(events).at(-1) ?? null
+      const iso = state.latest?.effectiveWakeAt ?? state.latest?.requestedWakeAt
+      return JSON.parse(JSON.stringify({ state, handoff, wakeDisplay: iso ? restWakeDisplay(events, iso) : null }))
+    },
+  })))
   const sleepChecks = new WeakMap<Agent, { turn: number; repairs: number }>()
   ctx.effect(() => ctx.on('agent/turn-stopping', async ({ agent, turn, signal }) => {
     if (signal.aborted || !isHqLead(ctx, agent) || !ctx.hivemindHq.mode(agent).enabled) return
@@ -252,7 +290,7 @@ export function installRest(ctx: Context): void {
           const prior = { id: intent.id, requestedWakeAt: intent.requestedWakeAt, summary: intent.summary,
             nextSteps: [...intent.nextSteps], blockers: [...intent.blockers] }
           if (!isDeepStrictEqual(prior, request)) {
-            throw new Error(`hq_rest_identity_conflict: handoff_id ${JSON.stringify(intent.id)} is already saved with different content (wake_at ${intent.requestedWakeAt}). For unchanged rest, read the current rest state in your native briefing and reuse the confirmed handoff without rewriting it. For a changed handoff, use a new handoff_id. An identical retry must preserve the original wake_at, summary, next_steps and blockers.`)
+            throw new Error(`hq_rest_identity_conflict: handoff_id ${JSON.stringify(intent.id)} is already saved with different content (wake_at ${intent.requestedWakeAt}). For unchanged rest, call hivemind_hq_rest_state to inspect the current rest state and reuse the confirmed handoff without rewriting it. For a changed handoff, use a new handoff_id. An identical retry must preserve the original wake_at, summary, next_steps and blockers.`)
           }
         } else {
           if (Date.parse(request.requestedWakeAt) <= Date.now()) throw new Error('hq_rest_new_wake_must_be_future')
@@ -275,7 +313,8 @@ export function installRest(ctx: Context): void {
           goals?.disarm(agent)
         }
         return { status: ownWake.status === 'active' ? 'rest_ready' : 'wake_committed_inactive', superseded: restIntents(agent.session.snapshotEvents()).at(-1)?.id !== intent.id, requestedWakeAt: intent.requestedWakeAt,
-          ...binding, autonomyPaused: !ctx.hivemindHq.mode(agent).enabled, wakeStatus: ownWake.status,
+          ...binding, wakeDisplay: restWakeDisplay(agent.session.snapshotEvents(), binding.effectiveWakeAt),
+          autonomyPaused: !ctx.hivemindHq.mode(agent).enabled, wakeStatus: ownWake.status,
           instructions: 'Handoff and native wake are checkpointed. Finish this turn; ordinary idle is rest. Paused mode does not automatically wake. A delivered or inactive wake is not a promise of a future wake.' }
       })
     },

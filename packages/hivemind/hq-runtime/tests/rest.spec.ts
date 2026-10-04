@@ -3,9 +3,10 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import type { ToolDefinition } from '@deepseek-ai/dsh-tools'
+import { createBrowserTimeZoneConfirmation } from '@deepseek-ai/dsh-time-context'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { HqControl } from '../src/control.ts'
-import { installRest, recoverRest, restState, restScheduleId, restBriefing, acknowledgeRestNotes, leaveRestNote } from '../src/rest.ts'
+import { installRest, recoverRest, restState, restScheduleId, restBriefing, acknowledgeRestNotes, leaveRestNote, restWakeDisplay } from '../src/rest.ts'
 
 const request = { handoff_id: 'rest-test', wake_at: '2030-01-01T01:00:00Z', summary: 'Review the existing task', next_steps: ['Inspect current receipts'], blockers: ['Waiting for evidence'] }
 function fixture() {
@@ -41,7 +42,7 @@ function fixture() {
     tools: { register: (tool: ToolDefinition) => { tools.set(tool.name, tool); return () => {} } },
     agentTeams: { membership: (subject: Agent) => ({ role: 'lead', root: subject }) },
     sessions: { flush }, schedule: { catalog: async () => [...schedules.values()], ensure, delete: remove },
-    hivemindHq: { workspace: async () => ({ tasks: [{ id: 'task-3', revision: 2, status: 'in_progress', owner: 'Ravi', artifactIds: ['saved-report'], reviewStatus: 'uncertain' }] }), mode: () => ({ enabled: false }) },
+    hivemindHq: { restState: (subject: Agent) => restState(ctx, subject), workspace: async () => ({ tasks: [{ id: 'task-3', revision: 2, status: 'in_progress', owner: 'Ravi', artifactIds: ['saved-report'], reviewStatus: 'uncertain' }] }), mode: () => ({ enabled: false }) },
   } as unknown as Context
   installRest(ctx)
   const execute = (args = request) => tools.get('hivemind_hq_rest')!.execute(args, { agent, signal: new AbortController().signal } as never)
@@ -129,7 +130,7 @@ describe('native Runtime voluntary rest', () => {
     expect(f.events.filter(event => event.type === 'hivemind/hq-rest-intent')).toHaveLength(1)
     expect(f.events.filter(event => event.type === 'hivemind/hq-rest-wake')).toHaveLength(1)
     await expect(f.execute({ ...request, summary: 'Changed plan' })).rejects.toThrow('hq_rest_identity_conflict')
-    await expect(f.execute({ ...request, summary: 'Changed plan' })).rejects.toThrow('read the current rest state in your native briefing')
+    await expect(f.execute({ ...request, summary: 'Changed plan' })).rejects.toThrow('call hivemind_hq_rest_state to inspect the current rest state')
     await expect(f.execute({ ...request, summary: 'Changed plan' })).rejects.toThrow('use a new handoff_id')
     expect(f.events.filter(event => event.type === 'hivemind/hq-rest-intent')).toHaveLength(1)
   })
@@ -237,4 +238,27 @@ describe('human quiet note admission', () => {
     await expect(control.leaveRestNote(other, { id: 'note-cross', text: 'No authority' })).rejects.toThrow('hq_human_control_requires_hq_root')
     expect(f.events).toHaveLength(0)
   })
+})
+
+
+it('reads exact rest state without mutation, scheduling or reopening a past receipt', async () => {
+  const f = fixture()
+  await f.execute()
+  const before = structuredClone(f.events)
+  vi.setSystemTime(new Date('2030-01-02T00:00:00Z'))
+  const tool = f.tools.get('hivemind_hq_rest_state')!
+  const result = await tool.execute({}, { agent: f.agent, signal: new AbortController().signal } as never)
+  expect(JSON.stringify(result)).toContain(request.handoff_id)
+  expect(JSON.stringify(result)).toContain('2030-01-01T01:00:00.000Z')
+  expect(f.events).toEqual(before)
+  expect(f.ensure).toHaveBeenCalledOnce()
+  const other = { session: { header: { agentPreset: 'hyperagents' }, snapshotEvents: () => [], ownEvents: () => [] } } as unknown as Agent
+  await expect(tool.execute({}, { agent: other } as never)).rejects.toThrow('hq_rest_requires_hq_lead')
+})
+
+it('formats persisted UTC instants in the actual confirmed zone with explicit UTC fallback', () => {
+  const iso = '2026-10-05T07:00:00.000Z'
+  const events = [{ type: 'user/message', data: createBrowserTimeZoneConfirmation('Europe/Berlin') }] as SessionEvent[]
+  expect(restWakeDisplay(events, iso)).toMatchObject({ iso, timeZone: 'Europe/Berlin', local: '2026-10-05T09:00:00+02:00[Europe/Berlin]' })
+  expect(restWakeDisplay([], iso)).toMatchObject({ iso, timeZone: 'UTC', local: '2026-10-05T07:00:00+00:00[UTC]' })
 })
