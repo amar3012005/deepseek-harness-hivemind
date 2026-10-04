@@ -1,5 +1,6 @@
 import { expect, it, vi } from 'vitest'
 import type { Context } from '@deepseek-ai/cordis'
+import type { ToolDefinition } from '@deepseek-ai/dsh-tools'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { awakeningContext, installAwakening } from '../src/awakening.ts'
 
@@ -37,13 +38,27 @@ it.each([
   ['company', undefined, undefined, false],
   ['strategy', undefined, undefined, false],
 ])('allows receipt-free invitations only without references (%s, %s, %s)', async (stage, reference, image, allowed) => {
-  const register = vi.fn()
+  const register = vi.fn<(tool: ToolDefinition) => void>()
   const ctx = { effect: (callback: () => unknown) => callback(),
     tools: { register }, sessions: { flush: async () => true } } as unknown as Context
   installAwakening(ctx)
-  const tool = register.mock.calls[0]![0]
+  const tool = register.mock.calls[0]?.[0]
+  if (!tool) throw new Error('tool missing')
   const agent = { session: { snapshotEvents: () => [{ type: 'hivemind/hq-awakening-start', data: {} }], append: vi.fn() } }
-  const result = tool.execute({ stage, summary: 'Please call when ready.', evidence_refs: [], ...(reference ? { reference } : {}), ...(image ? { image } : {}) }, { agent })
+  const result = tool.execute({ stage, summary: 'Please call when ready.', evidence_refs: [], ...(reference ? { reference } : {}), ...(image ? { image } : {}) }, { agent } as never)
   if (allowed) await expect(result).resolves.toMatchObject({ status: 'checkpoint_saved' })
   else await expect(result).rejects.toThrow('hq_awakening_receipt_required')
+})
+
+
+it.each(['conversation', 'company', 'strategy'])('only a plain invitation is admitted outside awakening (%s)', async (stage) => {
+  const register = vi.fn<(tool: ToolDefinition) => void>()
+  installAwakening({ effect: (callback: () => unknown) => callback(), tools: { register },
+    sessions: { flush: async () => true } } as unknown as Context)
+  const agent = { session: { snapshotEvents: () => [], append: vi.fn() } }
+  const tool = register.mock.calls[0]?.[0]
+  if (!tool) throw new Error('tool missing')
+  const result = tool.execute({ stage, summary: 'Please call when ready.', evidence_refs: [] }, { agent } as never)
+  if (stage === 'conversation') await expect(result).resolves.toMatchObject({ status: 'checkpoint_saved' })
+  else await expect(result).rejects.toThrow('hq_awakening_not_started')
 })

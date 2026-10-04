@@ -65,3 +65,20 @@ it('shows the final call after completion, with saved assignment start, window, 
   expect(view.getByRole('button', { name: 'Start Call' })).toBeTruthy()
   expect(view.container.textContent?.indexOf('Due ')).toBeLessThan(view.container.textContent?.indexOf(en['call.title']) ?? 0)
 })
+
+it('shows actual saved assignments on an ordinary scheduling turn without a call invitation', async () => {
+  const scheduleSnapshot = { entries: [
+    { type: 'event', event: { type: 'turn/start', data: { turn: 2 } } },
+    { type: 'event', event: { type: 'hivemind/hq-calendar-item', data: { kind: 'assignment' } } },
+  ] } as unknown as SessionEventWindow
+  const scheduleEvents = { getSnapshot: () => scheduleSnapshot, subscribe: () => () => {} }
+  const load = vi.fn().mockResolvedValue({ ok: true, value: { ...empty, tasks: [{
+    id: 'task-1', title: 'Launch brief', owner: 'ravi', status: 'pending', revision: 1,
+    nextWakeAt: '2026-10-04T12:00:00Z', dueAt: '2026-10-04T12:05:00Z',
+  }] } })
+  const view = render(<RuntimePlanSummary sessionId={'runtime' as never} turn={2}
+    events={scheduleEvents} load={load} cancel={vi.fn()} t={key => en[key]} />)
+  await vi.waitFor(() => expect(view.getByText('Launch brief')).toBeTruthy())
+  expect(view.getByRole('button', { name: 'Cancel' })).toBeTruthy()
+  expect(view.queryByRole('button', { name: 'Start Call' })).toBeNull()
+})

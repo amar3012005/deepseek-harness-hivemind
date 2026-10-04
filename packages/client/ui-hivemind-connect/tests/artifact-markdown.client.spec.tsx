@@ -18,3 +18,12 @@ it('shows a read failure rather than inventing document contents', async () => {
   await waitFor(() => expect(document.querySelector('[role="alert"]')?.textContent).toBe('workbench.textUnavailable'))
   expect(document.querySelector('[data-artifact-markdown]')).toBeNull()
 })
+
+it('renders received HTML with the native sandboxed document view', async () => {
+  const html = '<!doctype html><h1>Launch deck</h1><script>window.bad = true</script>'
+  render(<TextReceipt file={{ ...file, name: 'brief.html' }} mediaType="text/html"
+    loadText={async () => html} t={key => key} />)
+  await waitFor(() => expect(document.querySelector('iframe')?.getAttribute('srcdoc')).toBe(html))
+  expect(document.querySelector('iframe')?.getAttribute('sandbox')).toBe('')
+  expect(document.querySelector('[data-artifact-markdown]')).toBeNull()
+})

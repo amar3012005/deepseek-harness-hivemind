@@ -1,7 +1,6 @@
 /** Progressive, provider-neutral PDF artifact rendering for HIVE-MIND. */
 
 import { randomUUID } from 'node:crypto'
-import { fileURLToPath } from 'node:url'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { isAbsolute, join, normalize, relative, resolve } from 'node:path'
 import { Context, Service } from '@deepseek-ai/cordis'
@@ -18,7 +17,7 @@ import { codexImageProvider } from './codex-image-provider.ts'
 import { openRouterImageProvider } from './image-provider.ts'
 import { higgsfieldVideoProvider } from './higgsfield-video-provider.ts'
 import { registerMediaWorkflow } from './media-workflow.ts'
-import { createCanvas } from '@napi-rs/canvas'
+import { inspectPdf } from './pdf-inspection.ts'
 import { registerCalculator } from './calculator.ts'
 import { designProfiles, designTheme, evaluateMarkdownDesignQuality, type DesignProfile, type DesignQuality } from './design-kit.ts'
 export type { GenerationReceipt } from './generation.ts'
@@ -52,6 +51,33 @@ declare module '@deepseek-ai/cordis' {
 /** Swappable document-rendering provider used by the model-facing consumer. */
 export abstract class ArtifactRenderer extends Service {
   constructor(ctx: Context) { super(ctx, 'hivemindArtifactRenderer') }
+  /** Read verified existing PDF bytes without generating a replacement artifact. */
+  async inspectSavedPdf(file: FileAttachmentRef, signal: AbortSignal, pages: readonly number[] = [1]): Promise<{
+    page_count: number
+    preview_page: number
+    preview: ImageAttachmentRef
+    pages: { page: number; preview: ImageAttachmentRef }[]
+  }> {
+    const maxBytes = 50_000_000
+    if (file.bytes > maxBytes) throw new Error('PDF inspection exceeds bounded file size')
+    const chunks: Uint8Array[] = []
+    let bytes = 0
+    for await (const chunk of this.ctx.attachments.readFileStream(file, signal)) {
+      bytes += chunk.byteLength
+      if (bytes > maxBytes) throw new Error('PDF inspection exceeds bounded file size')
+      chunks.push(chunk)
+    }
+    const data = new Uint8Array(bytes)
+    let offset = 0
+    for (const chunk of chunks) { data.set(chunk, offset); offset += chunk.byteLength }
+    const inspected = await inspectPdf(data, signal, false, pages)
+    const saved = await Promise.all(inspected.previews.map(async item => ({ page: item.page,
+      preview: await this.ctx.attachments.saveImage({ data: item.data, mediaType: 'image/png', name: `pdf-page-${item.page}.png` }),
+    })))
+    const first = saved[0]
+    if (!first) throw new Error('PDF inspection returned no page')
+    return { page_count: inspected.pageCount, preview_page: first.page, preview: first.preview, pages: saved }
+  }
   /** Render one Markdown document to PDF and first-page preview. */
   abstract render(request: ArtifactRenderRequest): Promise<ArtifactRenderResult>
 }
@@ -181,28 +207,7 @@ export class MarkdownArtifactRenderer extends ArtifactRenderer {
       renderImage: async () => { throw new Error('Markdown images are disabled for PDF rendering') },
     })
     request.signal.throwIfAborted()
-    const { getDocument } = await import('pdfjs-dist/legacy/build/pdf.mjs')
-    // PDFKit emits the standard Helvetica fonts by reference. PDF.js can read
-    // their text operators without these files, but its Node canvas renderer
-    // silently omits the glyphs on Linux while still drawing rules and table
-    // borders. Resolve the font assets from the installed pdfjs-dist package
-    // so the saved first-page PNG matches the PDF content in production.
-    const standardFontDataUrl = fileURLToPath(new URL('.', import.meta.resolve('pdfjs-dist/standard_fonts/FoxitSans.pfb')))
-    const loading = getDocument({ data: new Uint8Array(pdf), useSystemFonts: false, standardFontDataUrl })
-    const pdfDocument = await loading.promise
-    let preview: Uint8Array
-    const pageCount = pdfDocument.numPages
-    try {
-      const first = await pdfDocument.getPage(1)
-      const text = await first.getTextContent()
-      if (!text.items.some(item => 'str' in item && item.str.trim().length > 0)) {
-        throw new Error('PDF rendering produced no readable text; artifact was not delivered')
-      }
-      const view = first.getViewport({ scale: 1.5 })
-      const canvas = createCanvas(Math.ceil(view.width), Math.ceil(view.height))
-      await first.render({ canvas: canvas as unknown as HTMLCanvasElement, canvasContext: canvas.getContext('2d') as unknown as CanvasRenderingContext2D, viewport: view }).promise
-      preview = await canvas.encode('png')
-    } finally { await loading.destroy() }
+    const { pageCount, preview } = await inspectPdf(new Uint8Array(pdf), request.signal, true)
     if (!this.config.attachmentOnly) await writeFile(path, pdf, { flag: 'wx', signal: request.signal })
     return { provider: 'markdown-pdf', path, pdf: new Uint8Array(pdf), preview, pageCount }
   }
@@ -335,14 +340,14 @@ export function apply(ctx: Context, config: Config): void {
       rendererCtx.effect(() => registry.register(provider))
     }
     rendererCtx.effect(() => registry.register({
-      id: config.provider, format: 'pdf', instructions: 'Provide the finished report as Markdown, or use source_format html for complete self-contained image/text HTML with print CSS. Saved image placeholders require saved_image_ids. For Markdown PDF plus inline preview use hivemind_artifact_render. HTML PDF returns the actual PDF without a screen thumbnail.',
+      id: config.provider, format: 'pdf', instructions: 'Provide the finished report as Markdown, or use source_format html for complete self-contained image/text HTML with print CSS. Saved image placeholders require saved_image_ids. For Markdown PDF plus inline preview use hivemind_artifact_render. PDF receipts include actual page count and a first-page raster preview.',
       async generate(request) {
         if (request.sourceFormat === 'html') return webProvider.generate({ ...request, htmlPdf: true })
         const rendered = await rendererCtx.hivemindArtifactRenderer.render({
           ...request, markdown: request.content, pageSize: 'A4',
           ...(request.designProfile === undefined ? {} : { designProfile: request.designProfile }),
         })
-        return { data: rendered.pdf, extension: 'pdf', mediaType: 'application/pdf', designQuality: evaluateMarkdownDesignQuality(request.content, request.designProfile) }
+        return { pageCount: rendered.pageCount, preview: { data: rendered.preview, mediaType: 'image/png' }, data: rendered.pdf, extension: 'pdf', mediaType: 'application/pdf', designQuality: evaluateMarkdownDesignQuality(request.content, request.designProfile) }
       },
     }))
     registerGenerationTools(rendererCtx, registry, config.outputDirectory, config.maxMarkdownChars, config.attachmentOnly)

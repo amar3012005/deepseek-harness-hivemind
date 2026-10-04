@@ -7040,6 +7040,9 @@ importers:
         specifier: ^4.4.3
         version: 4.4.3
     devDependencies:
+      '@deepseek-ai/dsh-hivemind-artifact-renderer':
+        specifier: workspace:^
+        version: link:../artifact-renderer
       '@deepseek-ai/cordis':
         specifier: workspace:^
         version: link:../../../vendor/cordis

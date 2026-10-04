@@ -66,7 +66,7 @@ function safeImage(value: unknown): string | undefined {
 export function installAwakening(ctx: Context): void {
   ctx.effect(() => ctx.tools.register(defineTool({
     name: 'hivemind_hq_awakening',
-    description: 'Checkpoint the first Runtime investigation and show inspected evidence or authenticated team cards. Native tools perform retrieval and actions. Evidence references must occur in successful tool receipts in this room. Calling team loads real employee profiles. A conversation checkpoint records an invitation, not a placed call or action proof. A checkpoint never schedules, delegates, grants authority or proves task completion.',
+    description: 'Checkpoint the first Runtime investigation and show inspected evidence or authenticated team cards. Native tools perform retrieval and actions. Evidence references must occur in successful tool receipts in this room. Calling team loads real employee profiles. A plain conversation invitation is also available outside first awakening. A conversation checkpoint records an invitation, not a placed call or action proof. A checkpoint never schedules, delegates, grants authority or proves task completion.',
     parameters: {
       stage: { type: 'string', required: true, enum: [...awakeningStages] },
       summary: { type: 'string', required: true, description: 'Short evidence-backed finding or concrete gap, not hidden reasoning.' },
@@ -82,7 +82,7 @@ export function installAwakening(ctx: Context): void {
       const agent = execution.agent
       if (!agent || !isHqLead(ctx, agent)) throw new Error('hq_awakening_requires_runtime')
       const events = agent.session.snapshotEvents()
-      if (!events.some(event => event.type === 'hivemind/hq-awakening-start')) throw new Error('hq_awakening_not_started')
+      if (!(args.stage === 'conversation' && !args.reference && !args.image) && !events.some(event => event.type === 'hivemind/hq-awakening-start')) throw new Error('hq_awakening_not_started')
       const stage = args.stage
       if (!awakeningStages.includes(stage)) throw new Error('hq_awakening_invalid_stage')
       const summary = args.summary.trim()

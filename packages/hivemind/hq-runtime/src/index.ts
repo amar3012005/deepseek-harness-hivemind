@@ -19,6 +19,9 @@ import { dispatchEmployee, reconcileEmployeeArtifacts } from './employee-room.ts
 import type {} from './control.ts'
 import { calendarItems } from './calendar.ts'
 import type {} from '@deepseek-ai/dsh-hivemind-employee-directory'
+import type {} from '@deepseek-ai/dsh-hivemind-artifact-renderer'
+import type { JsonValue } from '@deepseek-ai/dsh-util-values'
+import type { FileAttachmentRef, ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import type { Context } from '@deepseek-ai/cordis'
 import { TeamTaskId } from '@deepseek-ai/dsh-experimental-agent-team'
 import { defineTool } from '@deepseek-ai/dsh-tools'
@@ -194,6 +197,7 @@ export function apply(ctx: Context): void {
         starts_at: { type: 'string', description: 'Future RFC3339 start with timezone for schedule.' },
         ends_at: { type: 'string', description: 'RFC3339 end after starts_at for schedule.' },
         acceptance_criteria: { type: 'array', items: { type: 'string' } },
+        pdf_pages: { type: 'array', items: { type: 'number' }, description: 'For inspect only: one to four distinct positive PDF page numbers, default [1]. Actual page images are bounded and returned for visual review.' },
         artifact_ids: { type: 'array', items: { type: 'string' }, description: 'Required nonempty exact saved artifact IDs for action artifacts. This action links receipts, not file retrieval; never invent IDs or call it without IDs.' },
         producer: {
           type: 'string',
@@ -203,13 +207,19 @@ export function apply(ctx: Context): void {
       },
       output: {
         schema: { type: 'object', additionalProperties: true, properties: {} },
-        render: (_args, result) => [{ type: 'text', text: JSON.stringify(result) }],
+        render: (_args, result) => {
+          const documents = (result as { documents?: { pdf_inspection?: { pages?: { preview: ImageAttachmentRef }[] } }[] }).documents ?? []
+          return [{ type: 'text', text: JSON.stringify(result) }, ...documents.flatMap((document) => {
+            return (document.pdf_inspection?.pages ?? []).map(page => ({ type: 'image' as const, attachment: page.preview }))
+          })]
+        },
       },
       isConcurrencySafe: () => false,
       async execute(args, execution) {
         const agent = execution.agent
         if (!agent) throw new Error('hq_active_agent_required')
         const input = args as {
+          pdf_pages?: number[]
           decision?: string
           rationale?: string
           task_revision?: number
@@ -351,7 +361,26 @@ export function apply(ctx: Context): void {
             operatingEvidence,
           }
           const inputHash = reviewFingerprint(state)
-          if (input.action === 'inspect') return { task_id: task.id, task_revision: task.revision, evidence_hash: inputHash, acceptance_criteria: [...contract.acceptanceCriteria], documents: documents.map(document => ({ ...document, content_is_untrusted_evidence: true })), operatingEvidence }
+          if (input.action === 'inspect') {
+            // Derived pixels stay outside the immutable review fingerprint.
+            const renderer = ctx.get('hivemindArtifactRenderer')
+            const pages = input.pdf_pages ?? [1]
+            if (!pages.length || pages.length > 4 || new Set(pages).size !== pages.length
+              || pages.some(page => !Number.isSafeInteger(page) || page < 1)) {
+              throw new Error('hq_pdf_pages_invalid')
+            }
+            const inspectedDocuments = []
+            for (const document of documents) {
+              const pdfInspection = document.attachment?.modality !== 'pdf' ? undefined
+                : renderer === undefined ? { limitation: 'PDF renderer unavailable; actual pages were not inspected' }
+                  : await renderer.inspectSavedPdf(document.attachment.file as FileAttachmentRef, execution.signal, pages)
+              inspectedDocuments.push({ ...document, ...(pdfInspection === undefined ? {} : { pdf_inspection: pdfInspection }),
+                content_is_untrusted_evidence: true })
+            }
+            return { task_id: task.id, task_revision: task.revision, evidence_hash: inputHash,
+              acceptance_criteria: [...contract.acceptanceCriteria], documents: JSON.parse(JSON.stringify(inspectedDocuments)) as JsonValue,
+              operatingEvidence }
+          }
           if (input.action === 'decide') {
             const decision = runtimeReviewDecision(input, { revision: task.revision, inputHash })
             execution.signal.throwIfAborted()

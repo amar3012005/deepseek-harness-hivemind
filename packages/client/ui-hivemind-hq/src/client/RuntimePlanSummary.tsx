@@ -19,9 +19,20 @@ interface Props {
 }
 export function RuntimePlanSummary({ sessionId, turn, events, load, cancel, t, renderAvatar }: Props) {
   const log = useSyncExternalStore(listener => events.subscribe(listener), () => events.getSnapshot())
-  const ready = log.entries.some(entry => entry.type === 'event'
+  const invited = log.entries.some(entry => entry.type === 'event'
     && String(entry.event.type) === 'hivemind/hq-awakening-checkpoint'
     && (() => { const data = entry.event.data as unknown as { stage: string; turn: number; blocked: boolean }; return data.turn === turn && data.stage === 'conversation' && !data.blocked })())
+  let eventTurn: number | undefined
+  const savedInTurn = log.entries.some((entry) => {
+    if (entry.type !== 'event') return false
+    const type = String(entry.event.type)
+    if (type === 'turn/start' || type === 'step/start') {
+      eventTurn = (entry.event.data as unknown as { turn: number }).turn
+    }
+    return eventTurn === turn && type === 'hivemind/hq-calendar-item'
+      && (entry.event.data as unknown as { kind: string }).kind === 'assignment'
+  })
+  const ready = invited || savedInTurn
   const employeeNames = new Map(log.entries.flatMap((entry) => {
     if (entry.type !== 'event' || String(entry.event.type) !== 'hivemind/hq-awakening-checkpoint') return []
     const data = entry.event.data as unknown as { cards: Array<{ employeeId?: string; title: string }> }
@@ -76,7 +87,7 @@ export function RuntimePlanSummary({ sessionId, turn, events, load, cancel, t, r
       </article>
     })}
     {error && <p role="alert">{error}</p>}
-    <RuntimeCallBanner sessionId={sessionId} t={t} avatar={renderAvatar?.({ employeeId: 'runtime', name: 'Runtime' })} />
+    {invited && <RuntimeCallBanner sessionId={sessionId} t={t} avatar={renderAvatar?.({ employeeId: 'runtime', name: 'Runtime' })} />}
   </section>
 }
 

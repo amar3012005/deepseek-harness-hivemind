@@ -11,7 +11,7 @@ function coldReorder(value: unknown): unknown {
   if (typeof value !== 'object' || value === null) return value
   return Object.fromEntries(Object.entries(value).reverse().map(([key, item]) => [key, coldReorder(item)]))
 }
-function mount() {
+function mount(inspectSavedPdf?: ReturnType<typeof vi.fn>) {
   const producerEvents = [{ type: 'hivemind/generation-created', seq: 9, data: { artifactId: 'report' } },
     { type: 'hivemind/generation-created', seq: 10, data: { artifactId: 'revision' } },
     { type: 'tool/call', data: { callId: 'saved', name: 'hivemind_generate', arguments: JSON.stringify({ content: '# Saved report' }) } },
@@ -33,6 +33,7 @@ function mount() {
     agentTeams: { guardTaskUpdates: (value: typeof guard) => { guard = value; return () => {} }, membership: () => ({ role, root: agent }),
       getTask: () => ({ id: 'task-1', status: 'in_progress', subject: 'Report', revision: 2, description: 'Saved report', writeScopes: [] }),
       listMembers: () => [{ name: 'ravi', id: 'ravi-session' }, { name: 'other', id: 'other-session' }] },
+    get: () => inspectSavedPdf ? { inspectSavedPdf } : undefined,
     agents: { get: () => undefined }, sessions: { flush }, schedule: { ensure },
     sessionPersistence: { open: async () => ({ read: async () => ({ events: producerEvents }), close: async () => {} }) },
   } as unknown as Context
@@ -56,6 +57,32 @@ describe('native HQ durable receipt replay', () => {
     expect(f.complete()).toBeTypeOf('string')
     f.setRole('teammate')
     await expect(f.execute(input)).rejects.toThrow('hq_lead_required')
+  })
+  it('inspects existing validated PDFs without changing the review fingerprint', async () => {
+    const inspect = vi.fn(async (_file: unknown, _signal: unknown, _pages?: unknown) => ({ page_count: 2, preview_page: 1, preview: { attachmentId: 'pixels' } }))
+    const f = mount(inspect)
+    f.producerEvents.splice(0, f.producerEvents.length, { type: 'hivemind/generation-created', seq: 9,
+      data: { artifactId: 'report', mediaType: 'application/pdf',
+        file: { attachmentId: `sha256:${'a'.repeat(64)}`, name: 'report.pdf', bytes: 42 } } } as never)
+    const first = await f.execute({ action: 'inspect', task_id: 'task-1', pdf_pages: [1, 2] }) as { evidence_hash: string; documents: unknown[] }
+    expect(first.documents[0]).toMatchObject({ pdf_inspection: { page_count: 2, preview_page: 1 } })
+    expect(inspect).toHaveBeenCalledTimes(1)
+    expect(inspect.mock.calls[0]?.[2]).toEqual([1, 2])
+    const second = await f.execute({ action: 'inspect', task_id: 'task-1' }) as { evidence_hash: string }
+    expect(second.evidence_hash).toBe(first.evidence_hash)
+    await f.execute({ action: 'decide', task_id: 'task-1', decision: 'accepted', rationale: 'PDF pixels match the brief.',
+      task_revision: 2, evidence_hash: first.evidence_hash })
+    expect(inspect).toHaveBeenCalledTimes(2)
+  })
+  it('reports a missing PDF renderer and rejects invalid page requests without reading pixels', async () => {
+    const f = mount()
+    f.producerEvents.splice(0, f.producerEvents.length, { type: 'hivemind/generation-created', seq: 9,
+      data: { artifactId: 'report', mediaType: 'application/pdf',
+        file: { attachmentId: `sha256:${'a'.repeat(64)}`, name: 'report.pdf', bytes: 42 } } } as never)
+    const result = await f.execute({ action: 'inspect', task_id: 'task-1' }) as { documents: unknown[] }
+    expect(result.documents[0]).toMatchObject({ pdf_inspection: { limitation: 'PDF renderer unavailable; actual pages were not inspected' } })
+    await expect(f.execute({ action: 'inspect', task_id: 'task-1', pdf_pages: [0] })).rejects.toThrow('hq_pdf_pages_invalid')
+    await expect(f.execute({ action: 'inspect', task_id: 'task-1', pdf_pages: [1, 1] })).rejects.toThrow('hq_pdf_pages_invalid')
   })
   it('inspects and decides a committed binary without claiming text extraction', async () => {
     const f = mount()

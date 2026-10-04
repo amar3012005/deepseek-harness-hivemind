@@ -6,6 +6,7 @@ import { resolve, relative, isAbsolute, join } from 'node:path'
 import type { FileAttachmentRef, ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { MediaOwner } from './media-admission.ts'
+import { inspectPdf } from './pdf-inspection.ts'
 import { embedHtmlAssets } from './html-assets.ts'
 import type { DesignProfile, DesignQuality } from './design-kit.ts'
 
@@ -32,6 +33,7 @@ export interface GenerationRequest {
 }
 /** Bytes created by the provider; no delivery claim is made until storage succeeds. */
 export interface GeneratedFile {
+  readonly pageCount?: number
   readonly data: Uint8Array
   readonly extension: string
   readonly mediaType: string
@@ -85,6 +87,7 @@ export interface GenerationReceipt {
   readonly path: string
   readonly file: FileAttachmentRef
   readonly sha256: string
+  readonly pageCount?: number
   readonly preview?: ImageAttachmentRef
   readonly designProfile?: DesignProfile
   readonly designQuality?: DesignQuality
@@ -157,7 +160,8 @@ export async function generateArtifact(
     await writeFile(path, generated.data, { flag: 'wx', mode: 0o600, signal })
   }
   const file = await ctx.attachments.saveFile({ data: generated.data, name: filename })
-  const generatedPreview = generated.preview ?? (provider.format === 'image' && (
+  const inspection = generated.mediaType === 'application/pdf' && generated.pageCount === undefined ? await inspectPdf(generated.data, signal) : undefined
+  const generatedPreview = (inspection ? { data: inspection.preview, mediaType: 'image/png' as const, nameSuffix: '-page-1.png' } : generated.preview) ?? (provider.format === 'image' && (
     generated.mediaType === 'image/png' || generated.mediaType === 'image/jpeg' || generated.mediaType === 'image/webp'
   ) ? { data: generated.data, mediaType: generated.mediaType } : undefined)
   const preview = generatedPreview === undefined
@@ -178,6 +182,7 @@ export async function generateArtifact(
     provider: provider.id,
     path,
     file,
+    ...((inspection?.pageCount ?? generated.pageCount) === undefined ? {} : { pageCount: inspection?.pageCount ?? generated.pageCount }),
     sha256: createHash('sha256').update(generated.data).digest('hex'),
     ...(preview === undefined ? {} : { preview, content: [{ type: 'image', attachment: preview }] }),
     ...(input.designProfile === undefined ? {} : { designProfile: input.designProfile }),
@@ -247,6 +252,7 @@ export function registerGenerationTools(
         ...(receipt.preview === undefined ? {} : { preview: receipt.preview }),
         ...(receipt.designProfile === undefined ? {} : { design_profile: receipt.designProfile }),
         ...(receipt.designQuality === undefined ? {} : { design_quality: receipt.designQuality }),
+        ...(receipt.pageCount === undefined ? {} : { page_count: receipt.pageCount, preview_page: 1 }),
         status: 'created', validation: 'file_created; deterministic design checks complement optional visual review',
       }
     },
