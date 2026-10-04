@@ -29,6 +29,15 @@ const categories: ArtifactCategory[] = ['All', 'Images', 'Videos', 'HTML', 'PDFs
 
 /** Presentation over native saved receipts; never starts work or generates previews. */
 export function ArtifactDashboard({ load, loadImage, renderArtifact, page = false, hostSeat = false, expand, collapse, selection }: Props) {
+  const [seat, setSeat] = useState<HTMLElement | null>(() => hostSeat ? document.querySelector('[data-hivemind-artifacts-seat]') : null)
+  useEffect(() => {
+    if (!hostSeat) return
+    const update = () => { setSeat(document.querySelector('[data-hivemind-artifacts-seat]')) }
+    update()
+    const observer = new MutationObserver(update)
+    observer.observe(document.body, { childList: true, subtree: true })
+    return () => { observer.disconnect() }
+  }, [hostSeat])
   const [open, setOpen] = useState(page)
   const [fullscreen, setFullscreen] = useState(false)
   const [selected, setSelected] = useState<LibraryArtifact | undefined>(selection.selected)
@@ -98,7 +107,6 @@ export function ArtifactDashboard({ load, loadImage, renderArtifact, page = fals
       </div>
     </div>
   </div>
-  const seat = hostSeat ? document.querySelector<HTMLElement>('[data-hivemind-artifacts-seat]') : undefined
   if (hostSeat && !seat) return null
   const triggerButton = !page && <button ref={trigger} type="button" className={css.trigger} aria-haspopup="dialog" aria-expanded={open} onClick={() => { setOpen(true) }}>▧ <span>Artifacts</span></button>
   return <>

@@ -68,3 +68,11 @@ it('places the dashboard entry in the host sidebar seat', async () => {
   await screen.findByRole('dialog', { name: 'Artifacts' })
   view.unmount(); seat.remove()
 })
+
+it('waits for the authenticated host sidebar to mount', async () => {
+  const view = render(<ArtifactDashboard {...props()} hostSeat />)
+  const seat = document.createElement('div'); seat.setAttribute('data-hivemind-artifacts-seat', '')
+  document.body.append(seat)
+  await waitFor(() => expect(seat.querySelector('button')?.textContent).toContain('Artifacts'))
+  view.unmount(); seat.remove()
+})
