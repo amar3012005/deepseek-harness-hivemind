@@ -414,6 +414,9 @@ export function apply(ctx: ClientContext): void {
           throw error
         } finally { delete document.documentElement.dataset.agentRoomOpening }
       }
+      let scheduledRooms = new Set<string>()
+      let scheduleRead = 0
+      let disposed = false
       const publish = () => {
         const state = ctx.sessions.list.getSnapshot()
         const current = state.current
@@ -429,11 +432,27 @@ export function apply(ctx: ClientContext): void {
           const message = (row.projectionValues as { hyperagentLatestMessage?: string | null } | undefined)?.hyperagentLatestMessage
           let preview = ''
           try { preview = message ? (JSON.parse(message) as { text: string }).text : '' } catch { /* Missing legacy projection. */ }
-          return [{ id: employee?.id ?? 'runtime', sessionId: id, preview, running: row.running, unread: row.completed === true, updatedAt: row.updatedAt }]
+          return [{ id: employee?.id ?? 'runtime', sessionId: id, preview, running: row.running, unread: row.completed === true, actionRequired: String(ctx.uiSession.pendingInteractions.getSnapshot().get(id)?.kind) === 'approval', scheduled: scheduledRooms.has(id), updatedAt: row.updatedAt }]
         })
         ;(window as unknown as { __HIVEMIND_AGENT_ROOMS__: unknown }).__HIVEMIND_AGENT_ROOMS__ = rooms
         window.dispatchEvent(new CustomEvent('hivemind:agent-rooms', { detail: { rooms } }))
       }
+      const refreshSchedules = async (): Promise<void> => {
+        const request = ++scheduleRead
+        try {
+          const result = await ctx.remote.schedule.catalog()
+          if (disposed || request !== scheduleRead) return
+          scheduledRooms = new Set(result.ok ? result.value.filter(task => task.status === 'active').map(task => task.sessionId) : [])
+        } catch {
+          if (disposed || request !== scheduleRead) return
+          scheduledRooms = new Set()
+        }
+        publish()
+      }
+      const stopApproval = ctx.uiSession.pendingInteractions.subscribe(publish)
+      const stopSchedule = ctx.remote.$on('schedule/changed', () => { void refreshSchedules() })
+      const stopReset = ctx.on('connection/reset', () => { scheduledRooms = new Set(); publish(); void refreshSchedules() })
+      void refreshSchedules()
       const stop = ctx.sessions.list.subscribe(publish)
       window.addEventListener('hivemind:request-agent-rooms', publish)
       publish()
@@ -441,6 +460,10 @@ export function apply(ctx: ClientContext): void {
       host.__HIVEMIND_SELECT_AGENT__ = bridge
       host.__HIVEMIND_START_AGENT__ = start
       return () => {
+        disposed = true
+        stopApproval()
+        stopSchedule()
+        stopReset()
         stop()
         window.removeEventListener('hivemind:request-agent-rooms', publish)
         if (host.__HIVEMIND_SELECT_AGENT__ === bridge) delete host.__HIVEMIND_SELECT_AGENT__

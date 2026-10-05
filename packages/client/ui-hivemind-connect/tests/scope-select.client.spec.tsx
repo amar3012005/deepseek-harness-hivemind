@@ -48,6 +48,15 @@ describe('HIVE-MIND hero branding', () => {
     expect(view.getByText('Beyond Horizon Of Intelligence')).toBeTruthy()
   })
 
+  it.each([['hivemind-hq', 'RUNTIME : Lets Shape your company together'], ['hivemind-hyperagents', 'Hyperagents : Lets do the real work.']])('shows the first-entry heading for %s', (preset, text) => {
+    const view = render(<div data-testid="welcome" data-conversation-intro-headline><span /><span><span>Old title</span><span>Preview</span></span></div>)
+    const dispose = setupSingulanceHeadline(() => preset)
+    expect(view.getByText(text)).toBeTruthy()
+    expect(view.getByTestId('welcome').style.display).toBe('')
+    dispose()
+    expect(view.getByText('Old title')).toBeTruthy()
+  })
+
   it('renders the hero mark at the doubled 48px size', () => {
     // The component default is part of the visual contract; inspect its
     // rendered SVG rather than duplicating the sizing rule in test setup.

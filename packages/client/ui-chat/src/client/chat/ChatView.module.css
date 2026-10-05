@@ -79,6 +79,7 @@
 
 /* The orb and text share the existing turn-status seat. */
 .turnStatus {
+  --dsh-chat-flow-gap: 6px;
   align-self: flex-start;
   flex: none;
   display: inline-flex;

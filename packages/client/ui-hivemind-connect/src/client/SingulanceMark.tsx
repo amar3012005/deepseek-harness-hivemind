@@ -1,5 +1,4 @@
-import { useSyncExternalStore, type SVGProps } from 'react'
-import { EmployeeAvatar, RuntimeAvatar } from './HyperagentEmployee.tsx'
+import type { SVGProps } from 'react'
 import type { RoomIdentity } from './room-identity.ts'
 
 export interface SingulanceMarkProps extends Omit<SVGProps<SVGSVGElement>, 'width' | 'height'> {
@@ -33,33 +32,37 @@ export function SingulanceMark({ size = 48, className, ...props }: SingulanceMar
   </svg>
 }
 
-/** Keep the first-entry portrait bound to the same native room summary as its title. */
+/** Use the shared company mark above first-entry agent composers. */
 export function RoomHeroMark({ size = 34, className, identity }: {
   size?: number | undefined
   className?: string | undefined
   identity: { getSnapshot(): string; subscribe(listener: () => void): () => void }
 }) {
-  const encoded = useSyncExternalStore(identity.subscribe, identity.getSnapshot)
-  const value = JSON.parse(encoded) as RoomIdentity | null
-  return value === null ? <SingulanceMark size={size} className={className} />
-    : <span className={className} data-hivemind-hero-brand="singulance" aria-label={`${value.name}, ${value.role}`}>
-      {value.employee ? <EmployeeAvatar employee={value.employee} size={size} /> : <RuntimeAvatar size={size} />}
-    </span>
+  void identity
+  return <SingulanceMark size={size} className={className} />
 }
 
-/** Keep the composer free of introductory slogans; identity lives in the environment. */
+/** Show the requested welcome only in the native empty-room hero. */
 export function setupSingulanceHeadline(
-  _getPreset?: () => unknown,
+  getPreset?: () => unknown,
   subscribe?: (refresh: () => void) => () => void,
-  _getIdentity?: () => RoomIdentity | undefined,
+  getIdentity?: () => RoomIdentity | undefined,
 ): () => void {
-  const originals = new Map<HTMLElement, string>()
+  const originals = new Map<HTMLElement, { display: string; title: string }>()
   const apply = (): void => {
     if (typeof document === 'undefined') return
     for (const headline of document.querySelectorAll('[data-conversation-intro-headline]')) {
       if (!(headline instanceof HTMLElement)) continue
-      if (!originals.has(headline)) originals.set(headline, headline.style.display)
-      headline.style.display = 'none'
+      const title = headline.lastElementChild?.firstElementChild
+      if (!(title instanceof HTMLElement)) continue
+      if (!originals.has(headline)) originals.set(headline, { display: headline.style.display, title: title.textContent ?? '' })
+      const preset = getPreset?.()
+      const identity = getIdentity?.()
+      const runtime = preset === 'hivemind-hq' || identity?.name === 'Runtime'
+      const agent = runtime || preset === 'hivemind-hyperagents' || identity?.employee !== undefined
+      headline.style.display = agent ? (originals.get(headline)?.display ?? '') : 'none'
+      const text = runtime ? 'RUNTIME : Lets Shape your company together' : 'Hyperagents : Lets do the real work.'
+      if (agent && title.textContent !== text) title.textContent = text
       headline.setAttribute('data-hivemind-hero-headline', '')
     }
   }
@@ -70,8 +73,10 @@ export function setupSingulanceHeadline(
   return () => {
     unsubscribe?.()
     observer.disconnect()
-    for (const [headline, display] of originals) {
-      headline.style.display = display
+    for (const [headline, original] of originals) {
+      headline.style.display = original.display
+      const title = headline.lastElementChild?.firstElementChild
+      if (title instanceof HTMLElement) title.textContent = original.title
       headline.removeAttribute('data-hivemind-hero-headline')
     }
   }

@@ -405,6 +405,7 @@ export type ConversationSlotProps =
     | 'conversation.session' | 'conversation.session.header' | 'conversation.room.header'
     | 'conversation.composer' | 'conversation.composer.bar'
     | 'conversation.input.dock'
+    | 'conversation.sidebar.viewTabs'
     | 'conversation.hero.brand.mark'
     | 'conversation.hero.workspace'
     | 'conversation.hero.scope'
