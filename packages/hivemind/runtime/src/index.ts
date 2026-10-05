@@ -1,3 +1,4 @@
+import { administratorMessageTool } from './administrator-messaging.ts'
 /**
  * Governed HIVE-MIND identity, context, recall, and HyperAgent discovery.
  *
@@ -1105,6 +1106,12 @@ export function apply(ctx: Context, config: Config): void {
       ? { method: 'POST', body: JSON.stringify(input.payload) } : { method: 'GET' }, input.signal,
     { ...config, requestTimeoutMs: 185_000, responseMaxBytes: 41_000_000 })
   }))
+  if (config.companyAwakeningEnabled) ctx.effect(() => ctx.tools.register(administratorMessageTool(async (agent, input, signal) => {
+    if (config.authorityMode !== 'scoped-service') throw new HiveMindRuntimeError('Administrator messaging requires scoped service authority')
+    const authority = await resolveAuthority(ctx, config, agent)
+    const result = apiRecord(await hiveRequest(authority, '/administrator-message', { method: 'POST', body: JSON.stringify(input) }, signal, config), 'administrator message receipt')
+    return Object.fromEntries(Object.entries(result).filter((entry): entry is [string, JsonValue] => entry[1] !== undefined))
+  })))
   installArtifactProductionGuidance(ctx)
   installCompanyStrategyGuidance(ctx)
   installCompletionLearningGuidance(ctx)
