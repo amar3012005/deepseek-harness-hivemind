@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 import { useState } from 'react'
+import { assignmentMessageText } from './assignment-message.ts'
 import type { ChatViewSlotProps } from '../contract/slots.ts'
 import { DisclosureRow, FileTypeIcon, fileSizeText, IconContextInjectionOutline16, ReferenceIcon } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ContextMessageNode } from '../contract/snapshot.ts'
@@ -45,12 +46,23 @@ export function ContextInjectionRow({ content, source, provenance, form, openArt
   // Team delivery stores the complete message envelope, not the truncated notice summary.
   if (agentMessage) {
     const text = content.filter(block => block.type === 'text').map(block => block.text).join('')
-    let message: { senderName?: unknown; senderEmployee?: unknown; text?: unknown; artifacts?: unknown } | undefined
+    let message: {
+      id?: unknown
+      senderId?: unknown
+      kind?: unknown
+      taskId?: unknown
+      senderName?: unknown
+      senderEmployee?: unknown
+      text?: unknown
+      artifacts?: unknown
+    } | undefined
     try { message = JSON.parse(text) as typeof message } catch { /* Older records retain the existing disclosure. */ }
     if (typeof message?.text === 'string' && typeof message.senderName === 'string') {
+      const visibleText = assignmentMessageText(message, source)
+        ?? (message.text.startsWith(`${message.senderName}:`) ? message.text.slice(message.senderName.length + 1).trimStart() : message.text)
       return <div className={css.messageRow}>{avatar?.({ ...(typeof message.senderEmployee === 'string' ? { employeeId: message.senderEmployee } : {}), name: message.senderName })}<article className={css.messageBubble} aria-label={`Message from ${message.senderName}`}>
         <strong className={css.sender}>{message.senderName}</strong>
-        <p className={css.messageText}>{message.text.startsWith(`${message.senderName}:`) ? message.text.slice(message.senderName.length + 1).trimStart() : message.text}</p>
+        <p className={css.messageText}>{visibleText}</p>
         <div className={messageCss.attachmentRow} data-team-artifacts>
           {content.filter(block => block.type === 'file').map((block, index) => {
             const artifact = Array.isArray(message.artifacts) ? message.artifacts.find((item: unknown) => {

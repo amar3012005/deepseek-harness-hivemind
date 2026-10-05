@@ -54,3 +54,20 @@ describe('incoming teammate artifact bubble', () => {
     expect(openArtifact).not.toHaveBeenCalled()
   })
 })
+
+it('shows a validated native assignment naturally while keeping its entire payload in Agent message', () => {
+  const text = 'HQ_EMPLOYEE_ASSIGNMENT={"rootId":"root-room","taskId":"task-1"}\n'
+    + JSON.stringify({ expectedOutcome: 'Research the launch audience', objective: 'Exact detailed objective', acceptanceCriteria: ['Saved evidence'] })
+    + '\nLong internal operating guidance.'
+  const source = { kind: 'hivemind-agent-message', messageId: 'notice-1', senderId: 'root-room' } as never
+  const view = render(<ContextInjectionRow {...props} source={source} content={[{ type: 'text', text: JSON.stringify({
+    id: 'notice-1', senderId: 'root-room', senderEmployee: 'runtime', senderName: 'Runtime', kind: 'question', taskId: 'task-1', text,
+  }) }]} />)
+  const bubble = view.getByRole('article', { name: 'Message from Runtime' })
+  expect(bubble.querySelector('p')?.textContent).toBe('I’ve assigned you this work: Research the launch audience')
+  const details = bubble.querySelector('details')!
+  expect(details.open).toBe(false)
+  expect(details.textContent).toContain('HQ_EMPLOYEE_ASSIGNMENT=')
+  expect(details.textContent).toContain('Long internal operating guidance.')
+  expect(details.textContent).toContain('Exact detailed objective')
+})
