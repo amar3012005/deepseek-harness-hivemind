@@ -313,7 +313,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
     }, action)
   }), 'hivemind-web-runner: principal execution scope')
   ctx.effect(() => ctx.connection.registerPrincipalRpcGuard(async (principal, endpoint, args, signal) => {
-    if (!await principalMembershipActive(projectCatalogBase, serviceToken(principal, projectCatalogSecret), signal)) {
+    if (!await principalMembershipActive(projectCatalogBase.origin, serviceToken(principal, projectCatalogSecret), signal)) {
       return { code: 'auth/unauthorized', message: 'authorization unavailable or membership inactive', details: {} }
     }
     const ids = referencedSessionIds(args)

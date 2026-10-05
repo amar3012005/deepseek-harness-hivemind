@@ -140,7 +140,7 @@ it('rejects a direct employee recovery after canonical identity or human request
   h.room.mockResolvedValue('another-room')
   expect(await h.guard()).toBe(false)
   h.room.mockResolvedValue(h.agent.id)
-  h.setEvents([...h.directEvents, { type: 'user/message', seq: SessionSeq(4), time: 0, data: createUserMessage({ source: { kind: 'user' }, content: [{ type: 'text', text: 'Stop working.' }] }) }])
+  h.setEvents([...h.directEvents, { type: 'user/message', seq: SessionSeq(4), time: 0, surfaceOp: 'append', data: createUserMessage({ source: { kind: 'user' }, content: [{ type: 'text', text: 'Stop working.' }] }) }])
   expect(await h.guard()).toBe(false)
 })
 it('does not arm direct employee work without a pinned canonical owner or a human request', async () => {
