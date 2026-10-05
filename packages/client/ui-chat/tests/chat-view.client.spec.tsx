@@ -780,6 +780,46 @@ describe('ChatView', () => {
     expect(first.getAttribute('aria-busy')).toBeNull()
   })
 
+  it('corrects the first paged jump after the pager unmount shifts its target', async () => {
+    const resizeCallbacks: (() => void)[] = []
+    class ResizeObserverStub {
+      constructor(callback: ResizeObserverCallback) { resizeCallbacks.push(() => callback([], this as unknown as ResizeObserver)) }
+      observe() {}
+      disconnect() {}
+    }
+    vi.stubGlobal('ResizeObserver', ResizeObserverStub)
+    const later = [userInTurn(8, 'third prompt', 3), assistant(9, 'third response', 3)]
+    const h = makeHarness({ nodes: later }, { hasMore: true })
+    h.setOutline([{ turn: 1, seq: 1, prompt: 'first prompt', response: '' }, { turn: 3, seq: 8, prompt: 'third prompt', response: '' }])
+    let releaseJump: (() => void) | undefined
+    h.loadThrough.mockImplementation(() => new Promise<void>((resolve) => { releaseJump = resolve }))
+    const view = render(<h.ChatView {...h.props} />)
+    const scroller = view.container.querySelector('[class*="scroll"]') as HTMLElement
+    Object.defineProperty(scroller, 'scrollHeight', { value: 2000, writable: true })
+    Object.defineProperty(scroller, 'clientHeight', { value: 400, writable: true })
+    let targetTop = 300
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+      const top = this.dataset.chatTurn === '1' ? targetTop - scroller.scrollTop : 0
+      return { top, bottom: top + 40 } as DOMRect
+    })
+    fireEvent.click(view.getByRole('button', { name: '加载并跳转到第 1 轮' }))
+    act(() => { h.setSession({ loadingOlder: true }); h.setChat({ nodes: [userInTurn(1, 'first prompt', 1), assistant(2, 'first response', 1), ...later], turnTimings: new Map([[1, { startTime: 1_000 }], [3, { startTime: 8_000 }]]) }) })
+    fireEvent(scroller, new Event('scrollend'))
+    await act(async () => {})
+    expect(scroller.scrollTop).toBe(276)
+    targetTop = 380
+    await act(async () => { h.setSession({ loadingOlder: false }); releaseJump?.() })
+    expect(scroller.scrollTop).toBe(356)
+    targetTop = 460
+    act(() => { for (const callback of resizeCallbacks) callback() })
+    expect(scroller.scrollTop).toBe(436)
+    readerScroll(scroller, 500)
+    targetTop = 540
+    act(() => { for (const callback of resizeCallbacks) callback() })
+    expect(scroller.scrollTop).toBe(500)
+    expect(view.getByRole('button', { name: '跳转到第 1 轮' }).getAttribute('aria-busy')).toBeNull()
+  })
+
   it('hands a windowless tool result to the Tool seat with an empty tool name', () => {
     const h = makeHarness({
       nodes: [{ ...toolResult(3, 'w1'), call: null }],

@@ -381,6 +381,7 @@ export function ChatView({
   const jumpLandedRef = useRef(false)
   const [busyJumpTurn, setBusyJumpTurn] = useState<number | null>(null)
   /** Bumped when a loadThrough completion settles, after its last page's commit. */
+  const settledJumpRef = useRef<{ key: string; turn: number } | null>(null)
   const [jumpSettleTick, setJumpSettleTick] = useState(0)
   /** Window head at the last settle-time repage; an unmoved head falls back instead of repaging forever. */
   const jumpRepageHeadRef = useRef<number | null>(null)
@@ -458,6 +459,7 @@ export function ChatView({
   }, [scheduleActiveTurn])
 
   const toBottom = (el: HTMLElement): void => {
+    settledJumpRef.current = null
     anchorRef.current = null
     // Returning to the live tail supersedes a jump still landing.
     pendingJumpRef.current = null
@@ -512,6 +514,7 @@ export function ChatView({
       // place; a first landing, or an untouched one, takes the correction.
       if (!landedEarlier || held?.key === item.anchor.key) {
         landOnRowRef.current(local, el, row, pending.turn)
+        settledJumpRef.current = { key: item.anchor.key, turn: pending.turn }
       }
       return true
     }
@@ -613,6 +616,7 @@ export function ChatView({
     // the current ownership state.
     const floor = Math.max(0, el.scrollHeight - el.clientHeight)
     const movedByReader = readerMovedScroll(el.scrollTop, floor, observedTopRef.current)
+    if (movedByReader) settledJumpRef.current = null
     const isAtBottom = movedByReader
       ? floor - el.scrollTop <= FOLLOW_THRESHOLD + 1
       : atBottomRef.current
@@ -680,6 +684,11 @@ export function ChatView({
   followRef.current = () => {
     if (scrollSamplePendingRef.current) return
     const local = listRef.current
+    if (local !== null && !atBottomRef.current && settledJumpRef.current !== null) {
+      const held = settledJumpRef.current
+      const row = anchorElement(local, held.key)
+      if (row !== null) landOnRowRef.current(local, scrollerOf(local), row, held.turn)
+    }
     if (local !== null && atBottomRef.current) {
       const el = scrollerOf(local)
       el.scrollTop = el.scrollHeight
@@ -710,7 +719,7 @@ export function ChatView({
   // A failed/empty page leaves the head unchanged. Once the request leaves
   // its busy state there is no future prepend for the saved anchor to own.
   useEffect(() => {
-    if (!loadingOlder) anchorRef.current = null
+    if (!loadingOlder && pendingJumpRef.current === null) anchorRef.current = null
   }, [loadingOlder])
 
   // Jump settlement: every loadThrough completion bumps the tick after its
@@ -727,6 +736,7 @@ export function ChatView({
     const el = scrollerOf(local)
     // The settling landing runs after the load-earlier button's unmount
     // commit, so the target row cannot drift once the jump clears.
+    if (loadingOlder) return
     if (realizePendingJump(local, el, true)) return
     const uncovered = firstSeq === null || firstSeq > pending.seq
     if (uncovered && hasMore) {
@@ -807,6 +817,7 @@ export function ChatView({
     pendingJumpRef.current = null
     setBusyJumpTurn(current => current === null ? current : null)
     landOnRowRef.current(local, el, row, item.turn)
+    settledJumpRef.current = { key: item.anchor.key, turn: item.turn }
     // A pending older page still has to compensate the prepended height, so
     // navigation moves that anchor to the new position instead of dropping it.
     const landed = loadingOlder ? pagingAnchor(local, el) : null
