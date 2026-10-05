@@ -350,7 +350,7 @@ export function ConversationRoot({
       {(hero || !requiresWorkspace) && heroWorkspaceRow}
       {zone !== undefined && renderSlot('conversation.input.dock', zone)}
       {sessionId !== undefined && /^\/hivemind\/app\/employee\/harness(?:\/|$)/u.test(window.location.pathname) && (
-        <div className={css.composerViews}>{renderSlot('conversation.sidebar.viewTabs', {})}</div>
+        <div className={css.composerViews}>{renderSlot('conversation.composer.viewTabs', {})}</div>
       )}
       {inputBar}
       {hero && renderSlot('conversation.hero.dock', { sessionId })}

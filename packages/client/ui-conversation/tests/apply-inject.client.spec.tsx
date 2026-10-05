@@ -68,6 +68,9 @@ async function bench() {
   runtime.slots.installLocale(locale)
   await runtime.root.declare({
     'main': { kind: 'keyed', scope: 'root' },
+    // The HIVE rail already owns this global declaration. Composer placement
+    // must not redeclare it during native plugin boot.
+    'conversation.sidebar.viewTabs': { kind: 'single', scope: 'session' },
   }, (_props: { renderSlot?: unknown }) => null)
 
   const feature = await runtime.mount({ inject: [...inject], apply })

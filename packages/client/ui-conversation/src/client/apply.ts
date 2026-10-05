@@ -266,7 +266,7 @@ export function apply(ctx: Context, config: Config = Config({})): void {
       'conversation.composer': { kind: 'chain', scope: 'session' },
       'conversation.composer.bar': { kind: 'single', scope: 'session-maybe' },
       'conversation.input.dock': { kind: 'list', scope: 'session' },
-      'conversation.sidebar.viewTabs': { kind: 'single', scope: 'session' },
+      'conversation.composer.viewTabs': { kind: 'single', scope: 'session' },
       'conversation.hero.brand.mark': { kind: 'single', scope: 'root' },
       'conversation.hero.workspace': { kind: 'single', scope: 'root' },
       'conversation.hero.scope': { kind: 'single', scope: 'root' },
@@ -339,8 +339,8 @@ export function apply(ctx: Context, config: Config = Config({})): void {
     }),
   }, ConversationSessionHeader)
 
-  const registerConversationSidebarViewTabs = () => slots.register({
-    name: 'conversation.sidebar.viewTabs',
+  const registerConversationSidebarViewTabs = (name: 'conversation.sidebar.viewTabs' | 'conversation.composer.viewTabs' = 'conversation.sidebar.viewTabs') => slots.register({
+    name,
     store: conversationStore,
     inject: (sessionId: SessionId, actions: BoundActions<typeof conversationStore>): ConversationSidebarViewTabsInjected => ({
       hooks: { conversationViews },
@@ -454,6 +454,7 @@ export function apply(ctx: Context, config: Config = Config({})): void {
     yield registerConversationSession()
     yield registerConversationHeader()
     yield registerComposerBar()
+    yield registerConversationSidebarViewTabs('conversation.composer.viewTabs')
   })
 
   // The HIVE rail owns the child declaration. Waiting on that root slot keeps

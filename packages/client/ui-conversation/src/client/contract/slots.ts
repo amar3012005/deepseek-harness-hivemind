@@ -126,6 +126,7 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
     'conversation.room.header': { kind: 'list'; scope: 'session' }
     /** Optional alternate native placement for the Session view navigation. */
     'conversation.sidebar.viewTabs': { kind: 'single'; scope: 'session' }
+    'conversation.composer.viewTabs': { kind: 'single'; scope: 'session' }
     /** Optional replacement for one Session breadcrumb title. */
     'conversation.session.header.lineage': {
       kind: 'single'
@@ -405,7 +406,7 @@ export type ConversationSlotProps =
     | 'conversation.session' | 'conversation.session.header' | 'conversation.room.header'
     | 'conversation.composer' | 'conversation.composer.bar'
     | 'conversation.input.dock'
-    | 'conversation.sidebar.viewTabs'
+    | 'conversation.composer.viewTabs'
     | 'conversation.hero.brand.mark'
     | 'conversation.hero.workspace'
     | 'conversation.hero.scope'
