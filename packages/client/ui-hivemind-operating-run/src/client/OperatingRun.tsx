@@ -276,7 +276,13 @@ function methodsData(event: SessionEventLike): MethodsData {
 }
 
 function workstreamIdentity(event: SessionEventLike): string | undefined {
-  return string(record(event.data)?.['workstreamId'])
+  const data = record(event.data)
+  const id = string(data?.['workstreamId'])
+  if (id === undefined) return undefined
+  const run = string(data?.['runId'])
+  const plan = string(data?.['planId'])
+  // Names such as assessment are reused across native runs. Keep each saved lifecycle separate.
+  return run === undefined && plan === undefined ? id : JSON.stringify([run ?? null, plan ?? null, id])
 }
 
 function workstreamStart(event: SessionEventLike): WorkstreamData {
@@ -572,8 +578,7 @@ const workstreamDefinition: ConversationNodeDefinition<WorkstreamData> = {
     const id = workstreamIdentity(event)
     if (id === undefined) return null
     if (event.type === 'hivemind/workstream-started') return { id, role: 'start' }
-    return event.type === 'hivemind/workstream-progress' ||
-      event.type === 'hivemind/workstream-approval' ||
+    return event.type === 'hivemind/workstream-approval' ||
       event.type === 'hivemind/workstream-completed' ||
       event.type === 'hivemind/workstream-failed'
       ? { id, role: 'update' }
@@ -707,11 +712,15 @@ const receiptDefinition: ConversationNodeDefinition<ReceiptData> = {
   target: 'chat',
   match: (event) => {
     const observed = event as unknown as { readonly type: string; readonly data: unknown; readonly seq: number }
+    // Research may report progress before explicit workstream start; preserve its own exact event anchor.
+    if (observed.type === 'hivemind/workstream-progress') return { id: `workstream-progress:${observed.seq}`, role: 'start' }
     if (observed.type !== 'hivemind/operating-receipt') return null
     const id = receiptIdentity(observed as unknown as SessionEventLike)
     return id === undefined ? null : { id, role: 'start' }
   },
-  start: (_context, match) => receiptData(match.event as unknown as SessionEventLike),
+  start: (_context, match) => match.event.type === 'hivemind/workstream-progress'
+    ? { kind: 'workstream progress', title: 'Work progress', status: 'running', summary: text(record(match.event.data)?.['summary'], '') }
+    : receiptData(match.event as unknown as SessionEventLike),
   update: (_context, match) => receiptData(match.event as unknown as SessionEventLike),
   buildViewNode: context =>
     context.start === undefined
@@ -1049,15 +1058,15 @@ function EmployeePanel({ node, t }: PanelProps<'hivemind-operating-employee'>) {
 function ReceiptPanel({ node, t }: PanelProps<'hivemind-operating-receipt'>) {
   return (
     <Card
-      title={t('receipt.title')}
+      title={t(node.data.kind === 'workstream progress' ? 'receipt.progress' : 'receipt.title')}
       state={node.data.status}
       statusText={t(`state.${node.data.status}` as OperatingRunKey)}
     >
-      <div className={css.objective}>{node.data.title}</div>
-      <div className={css.meta}>
+      {node.data.kind !== 'workstream progress' && <div className={css.objective}>{node.data.title}</div>}
+      {node.data.kind !== 'workstream progress' && <div className={css.meta}>
         <span className={css.chip}>{node.data.kind}</span>
         {node.data.toolName === undefined ? null : <span>{node.data.toolName}</span>}
-      </div>
+      </div>}
       {node.data.summary === undefined ? null : <div className={css.output}>{node.data.summary}</div>}
     </Card>
   )

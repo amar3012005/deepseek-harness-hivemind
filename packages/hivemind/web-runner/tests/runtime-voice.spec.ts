@@ -41,12 +41,13 @@ describe('Runtime operator voice context', () => {
       voice('Completed live voice conversation:\nuser: Hello, I have to leave.')]
     expect(needsAwakeningCallAgenda(events)).toBe(true)
   })
-  it('requires an explicit same-call outcome and retains interrupted calls as pending', () => {
+  it('uses awakening only on the first recorded call while keeping an interrupted baseline incomplete', () => {
     const call = { type: 'hivemind/voice-call-ended', data: { callId: 'call-one', provider: 'codex', initialCheckIn: true, interrupted: false, hadUserSpeech: true, transcript: 'user: Customer research first.\nassistant: Understood.' } } as SessionEvent
     const complete = { type: 'hivemind/voice-baseline-outcome', data: { callId: 'call-one', status: 'complete', summary: 'Direction confirmed; sales unknown.', remaining: [] } } as unknown as SessionEvent
     expect(needsAwakeningCallAgenda([call, complete])).toBe(false)
     expect(needsAwakeningCallAgenda([complete])).toBe(true)
-    expect(needsAwakeningCallAgenda([{ ...call, data: { ...call.data, interrupted: true } } as SessionEvent, complete])).toBe(true)
+    expect(needsAwakeningCallAgenda([call])).toBe(false)
+    expect(needsAwakeningCallAgenda([{ ...call, data: { ...call.data, interrupted: true } } as SessionEvent, complete])).toBe(false)
     const agent = { session: { snapshotEvents: () => [call] } } as unknown as Agent
     expect(() => validateVoiceOutcome(agent, 'another-call', 'complete')).toThrow('baseline_call_receipt_required')
     const interrupted = { session: { snapshotEvents: () => [{ ...call, data: { ...call.data, interrupted: true } }] } } as unknown as Agent

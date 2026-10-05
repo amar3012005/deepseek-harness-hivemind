@@ -250,3 +250,22 @@
     scroll-behavior: auto;
   }
 }
+
+/* Date jumping shares native turn anchors; keep the established left mark rail untouched. */
+.dayJump {
+  position: absolute;
+  right: 8px;
+  top: 8px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 8px;
+  border: 1px solid color-mix(in srgb, currentColor 12%, transparent);
+  border-radius: 8px;
+  background: var(--dsh-background, Canvas);
+  color: inherit;
+  font-size: 11px;
+  pointer-events: auto;
+}
+.dayJump select { max-width: 165px; color: inherit; background: transparent; border: 0; font: inherit; }
+@media (max-width: 640px) { .dayJump span { display: none; } .dayJump select { max-width: 130px; } }

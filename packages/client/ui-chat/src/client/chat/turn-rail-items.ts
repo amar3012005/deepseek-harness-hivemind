@@ -97,3 +97,19 @@ export function mergeTurnRailItems(
   if (byTurn.size === 0) return EMPTY_ITEMS
   return [...byTurn.values()].sort((left, right) => left.turn - right.turn)
 }
+
+/** First known native turn per browser-local calendar day; unloaded anchors retain native paging. */
+export function turnRailDays(
+  items: readonly TurnRailItem[], locale?: string,
+): readonly { key: string; label: string; item: TurnRailItem }[] {
+  const days = new Map<string, { key: string; label: string; item: TurnRailItem }>()
+  for (const item of items) {
+    if (item.time === undefined || !Number.isFinite(item.time)) continue
+    const date = new Date(item.time)
+    if (!Number.isFinite(date.getTime())) continue
+    const key = `${date.getFullYear()}-${date.getMonth() + 1}-${date.getDate()}`
+    if (!days.has(key)) days.set(key, { key, label: date.toLocaleDateString(locale,
+      { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' }), item })
+  }
+  return [...days.values()]
+}

@@ -198,3 +198,44 @@ describe('HIVE-MIND operating-run projection', () => {
     expect(nodes(value)[4]?.data).toMatchObject({ receiptCounts: [{ kind: 'browser', count: 1 }, { kind: 'artifact', count: 1 }, { kind: 'connected_action', count: 1 }] })
   })
 })
+
+it('keeps reused workstream names separate when older updates arrive before their start', () => {
+  const value = new ConversationNodeAssembler(new Definitions(), new Views())
+  const fields = (runId: string) => ({ runId, planId: `plan-${runId}`, workstreamId: 'assessment' })
+  value.replaceWindow([event(30, 'hivemind/workstream-started', {
+    ...fields('new'), objective: 'Current assessment', actor: { kind: 'main' },
+  })], true)
+  value.activateTarget('chat')
+  expect(() => value.prepend([event(20, 'hivemind/workstream-completed', {
+    ...fields('old'), summary: 'Earlier assessment finished', evidenceIds: [], artifactIds: [],
+  })], true)).not.toThrow()
+  value.prepend([event(10, 'hivemind/workstream-started', {
+    ...fields('old'), objective: 'Earlier assessment', actor: { kind: 'main' },
+  })], false)
+  value.flush()
+  expect(nodes(value).map(node => node.data)).toEqual(expect.arrayContaining([
+    expect.objectContaining({ objective: 'Earlier assessment', status: 'completed', summary: 'Earlier assessment finished' }),
+    expect.objectContaining({ objective: 'Current assessment', status: 'running' }),
+  ]))
+  expect(nodes(value).map(node => node.anchorSeq).sort((a, b) => a - b)).toEqual([10, 30])
+})
+
+it('preserves real pre-start progress without claiming the workstream started early', () => {
+  const fields = { runId: '21afc34b', planId: '7cdf99a8', workstreamId: 'assessment' }
+  const progress = event(128, 'hivemind/workstream-progress', { ...fields, summary: 'Research evidence gathered.' })
+  const started = event(146, 'hivemind/workstream-started', { ...fields, planRevision: 1,
+    objective: 'Assess positioning', actor: { kind: 'main' } })
+  const completed = event(215, 'hivemind/workstream-completed', { ...fields,
+    summary: 'Assessment finished.', evidenceIds: [], artifactIds: [] })
+  for (const paged of [false, true]) {
+    const value = new ConversationNodeAssembler(new Definitions(), new Views())
+    value.replaceWindow(paged ? [started, completed] : [progress, started, completed], paged)
+    value.activateTarget('chat')
+    if (paged) value.prepend([progress], false)
+    value.flush()
+    const rows = [...nodes(value)].sort((a, b) => a.anchorSeq - b.anchorSeq)
+    expect(rows.map(row => row.anchorSeq)).toEqual([128, 146])
+    expect(rows[0]?.data).toMatchObject({ title: 'Work progress', summary: 'Research evidence gathered.' })
+    expect(rows[1]?.data).toMatchObject({ objective: 'Assess positioning', status: 'completed', summary: 'Assessment finished.' })
+  }
+})

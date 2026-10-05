@@ -3,7 +3,7 @@ import {
   type CSSProperties, type MouseEvent, type PointerEvent,
 } from 'react'
 import type { ChatViewSlotProps } from '../contract/slots.ts'
-import type { TurnRailItem } from './turn-rail-items.ts'
+import { turnRailDays, type TurnRailItem } from './turn-rail-items.ts'
 import css from './TurnNavigator.module.css'
 
 interface TurnNavigatorProps {
@@ -81,6 +81,8 @@ function sameRailScrollState(left: RailScrollState, right: RailScrollState): boo
 }
 
 function TurnNavigatorRail({ items: allItems, activeTurn: originalActiveTurn, busyTurn, onNavigate, t }: TurnNavigatorProps) {
+  const agentRoom = /^\/hivemind\/app\/employee\/harness(?:\/|$)/u.test(window.location.pathname)
+  const historyDays = turnRailDays(allItems, document.documentElement.lang || undefined)
   const dreaming = window.location.pathname === '/hivemind/app/overview/dreaming' || new URLSearchParams(window.location.search).has('dreamingParent')
   const dayDate = (item: TurnRailItem): string | undefined => item.time === undefined
     ? undefined : new Date(item.time).toLocaleDateString('de-DE')
@@ -158,6 +160,16 @@ function TurnNavigatorRail({ items: allItems, activeTurn: originalActiveTurn, bu
   if (scrollState.canScrollDown) fadeClasses.push(css.fadeBottom)
   return (
     <div className={css.slot}>
+      {agentRoom && historyDays.length > 0 && <label className={css.dayJump}>
+        <span>{t('chat.turnNavigation.day')}</span>
+        <select aria-label={t('chat.turnNavigation.day')} value="" onChange={(event) => {
+          const day = historyDays.find(value => value.key === event.target.value)
+          if (day) onNavigate(day.item)
+        }}>
+          <option value="" disabled>{t('chat.turnNavigation.chooseDate')}</option>
+          {historyDays.map(day => <option key={day.key} value={day.key}>{day.label}</option>)}
+        </select>
+      </label>}
       <nav
         className={css.frame}
         style={frameStyle(items.length, scrollState.top)}

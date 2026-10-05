@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { describe, expect, it } from 'vitest'
-import { mergeTurnRailItems } from '../src/client/chat/turn-rail-items.ts'
+import { mergeTurnRailItems, turnRailDays } from '../src/client/chat/turn-rail-items.ts'
 import type { TurnNavigationItem } from '../src/client/contract/snapshot.ts'
 
 function loadedItem(turn: number, prompt = `p${String(turn)}`, response = `r${String(turn)}`): TurnNavigationItem {
@@ -74,4 +74,17 @@ describe('mergeTurnRailItems', () => {
       { turn: 6, prompt: 'kept', response: '', anchor: { kind: 'unloaded', seq: 7 } },
     ])
   })
+})
+
+it('groups native history by local day and preserves unloaded anchors for date jumps', () => {
+  const items = mergeTurnRailItems([], [
+    { turn: 1, seq: 0, time: new Date(2026, 9, 5, 10).getTime() },
+    { turn: 2, seq: 5, time: new Date(2026, 9, 5, 18).getTime() },
+    { turn: 3, seq: 9, time: new Date(2026, 9, 6, 9).getTime() },
+    { turn: 4, seq: 12 },
+  ])
+  const days = turnRailDays(items)
+  expect(days.map(day => day.item.turn)).toEqual([1, 3])
+  expect(days[0]?.item.anchor).toEqual({ kind: 'unloaded', seq: 0 })
+  expect(days[0]?.label).toContain('2026')
 })
