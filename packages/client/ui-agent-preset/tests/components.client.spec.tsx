@@ -18,7 +18,7 @@ import type { AgentPresetSettingsState } from '../src/client/settings-store.ts'
 import type { AgentPresetSeatState } from '../src/client/seat-store.ts'
 import { en } from '../src/client/locales.ts'
 
-afterEach(cleanup)
+afterEach(() => { cleanup(); window.history.replaceState({}, '', '/') })
 
 const ROSTER_READY: AgentPresetSettingsState = {
   status: 'ready',
@@ -326,4 +326,12 @@ describe('the session-header label', () => {
     expect(absent.load).not.toHaveBeenCalled()
     expect(unknown.load).not.toHaveBeenCalled()
   })
+})
+
+it.each(['/hivemind/app/employee/harness', '/hivemind/app/employee/harness/session/saved'])('keeps preset mechanics hidden on the actual agent route %s', (path) => {
+  window.history.replaceState({}, '', path)
+  renderSeat()
+  renderLabel({ blank: false, projectionValues: { agentPreset: 'standard' } })
+  expect(screen.queryByRole('button')).toBeNull()
+  expect(screen.queryByText(en.presetStandardName)).toBeNull()
 })

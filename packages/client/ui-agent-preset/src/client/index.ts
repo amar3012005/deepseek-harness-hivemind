@@ -121,20 +121,11 @@ export function apply(ctx: ClientContext): void {
     })
 
     scope.effect(() => {
-      let autoPresetSessionId: string | undefined
       const applySeat = (): void => {
-        const state = scope.sessions.list.getSnapshot()
-        const id = state.current
-        const session = id === undefined ? undefined : state.byId[id]
-        // The employee Harness route uses the same native session surface,
-        // with HyperAgents as its starting composition. Existing conversations
-        // retain their recorded preset; only a blank session receives it.
-        if (window.location.pathname.startsWith('/hivemind/app/employee/harness/')
-          && id !== undefined && session?.blank && id !== autoPresetSessionId) {
-          autoPresetSessionId = id
-          if (!['hivemind-hyperagents', 'hivemind-hq'].includes(session.projectionValues?.agentPreset ?? session.agentPreset ?? '')) seat.stage('hivemind-hyperagents')
-        }
-        void seat.apply()
+        // Persistent employee rooms get their composition from authenticated
+        // native room creation, never from a staged pick in another room.
+        const employeeRoute = /^\/hivemind\/app\/employee\/harness(?:\/|$)/u.test(window.location.pathname)
+        void seat.apply(employeeRoute)
       }
       // Connecting a workspace either creates a blank session or reuses one,
       // and either way the chip's pick predates it — so the stage is applied

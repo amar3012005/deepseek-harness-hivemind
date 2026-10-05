@@ -375,7 +375,13 @@ export function ConversationRoot({
   )
 
   return (
-    <div ref={rootResizeRef} className={css.root} data-agent-room={window.location.pathname.startsWith('/hivemind/app/employee/harness/') || undefined} data-phase={phase} data-dreaming-ready={dreamingReady || undefined}>
+    <div
+      ref={rootResizeRef}
+      className={css.root}
+      data-agent-room={/^\/hivemind\/app\/employee\/harness(?:\/|$)/u.test(window.location.pathname) || undefined}
+      data-phase={phase}
+      data-dreaming-ready={dreamingReady || undefined}
+    >
       {sessionId === undefined ? null : renderSlot('conversation.session.header', {})}
       {sessionId === undefined ? null : renderSlot('conversation.room.header', {})}
       <div className={css.body}>

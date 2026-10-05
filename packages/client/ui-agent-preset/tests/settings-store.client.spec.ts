@@ -324,6 +324,19 @@ describe('the new-session chip controller', () => {
     expect(controller.store.getSnapshot().current).toBe('standard')
   })
 
+  it('discards another room staged choice when an authenticated employee room arrives', async () => {
+    const writes: Recorded[] = []
+    const state: { current?: SeatSession } = {}
+    const controller = chip(ROSTER, () => state.current, { writes })
+    await controller.load()
+    await controller.select('minimal')
+    state.current = { id: 'runtime' as SessionId, blank: true, projectionValues: { agentPreset: 'hivemind-hq' } }
+    await controller.apply(true)
+    await controller.apply()
+    expect(writes).toEqual([])
+    expect(controller.store.getSnapshot().current).toBe('hivemind-hq')
+  })
+
   it('applies the stage to the blank session the flow lands on', async () => {
     const writes: Recorded[] = []
     const current = {

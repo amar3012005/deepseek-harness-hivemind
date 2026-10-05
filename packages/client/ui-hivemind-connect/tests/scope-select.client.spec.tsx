@@ -1,8 +1,10 @@
 // @vitest-environment jsdom
-import { describe, expect, it, vi } from 'vitest'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { ScopeSelect } from '../src/client/ScopeSelect.tsx'
 import { setupSingulanceHeadline, SingulanceMark } from '../src/client/SingulanceMark.tsx'
+
+afterEach(() => { cleanup(); window.history.replaceState({}, '', '/') })
 
 describe('HIVE-MIND read scope control', () => {
   it('uses the native folder mark for the Full scope read union', () => {
@@ -51,4 +53,10 @@ describe('HIVE-MIND hero branding', () => {
     expect(rendered.container.querySelector('svg')?.getAttribute('width')).toBe('48')
     expect(rendered.container.querySelector('svg')?.getAttribute('height')).toBe('48')
   })
+})
+
+it.each(['/hivemind/app/employee/harness', '/hivemind/app/employee/harness/session/saved'])('keeps scope out of the compact agent composer at %s', (path) => {
+  window.history.replaceState({}, '', path)
+  const view = render(<ScopeSelect sessionId={'session-1' as never} initialScope="full" onSelect={vi.fn()} />)
+  expect(view.queryByLabelText('HIVE-MIND read scope')).toBeNull()
 })

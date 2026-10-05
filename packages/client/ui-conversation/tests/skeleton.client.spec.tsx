@@ -700,3 +700,13 @@ it('shows the actual open error instead of an empty conversation or perpetual sp
   expect(b.view.getByRole('alert').textContent).toContain('Session access denied')
   expect(b.view.queryByText('Loading conversation…')).toBeNull()
 })
+
+it.each(['/hivemind/app/employee/harness', '/hivemind/app/employee/harness/session/saved'])('keeps native Environment header and compact agent layout at %s', (path) => {
+  window.history.replaceState({}, '', path)
+  const b = mount(sessionSnapshotOf({ blank: true }))
+  const header = b.view.container.querySelector('header')
+  expect(header?.getAttribute('aria-hidden')).toBeNull()
+  expect(header?.hasAttribute('data-hivemind-employee-header')).toBe(true)
+  expect(b.view.container.querySelector('[data-agent-room]')).not.toBeNull()
+  expect(b.slotCalls).toContain('conversation.session.header.utilities')
+})

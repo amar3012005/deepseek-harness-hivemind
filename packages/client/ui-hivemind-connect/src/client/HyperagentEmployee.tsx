@@ -116,7 +116,7 @@ export function HyperagentEmployeePicker({ sessionId, useSessions, useEmployeeEv
   const [error, setError] = useState<boolean | string>(false)
   const [options, setOptions] = useState<EmployeeOption[]>([])
   const [menuHeight, setMenuHeight] = useState(360)
-  if (window.location.pathname.startsWith('/hivemind/app/employee/harness/')) return null
+  if (/^\/hivemind\/app\/employee\/harness(?:\/|$)/u.test(window.location.pathname)) return null
   if (!isHyperagentPreset(preset) && locked) return null
   const selected = owner == null ? fromLog : projectedEmployee(owner)
   const toggle = (): void => {
@@ -247,7 +247,7 @@ export function HyperagentPanelToggle({ sessionId, useSessions, useEmployeeEvent
     (state.byId[sessionId]?.projectionValues?.hyperagentOwner ?? state.byId[sessionId]?.projectionValues?.hyperagentSelection))
   const fromLog = useEmployeeEvents(selectedEmployee)
   const selected = owner == null ? fromLog : projectedEmployee(owner)
-  const isOsRoute = isHyperagentPreset(preset) || (typeof window !== 'undefined' && window.location.pathname.startsWith('/hivemind/app/employee/harness/'))
+  const isOsRoute = isHyperagentPreset(preset) || (typeof window !== 'undefined' && /^\/hivemind\/app\/employee\/harness(?:\/|$)/u.test(window.location.pathname))
   // Embedded app sessions use BrainConnections as the single Environment owner.
   const sharedEnvironment = typeof window !== 'undefined' && window.location.pathname.startsWith('/hivemind/app/')
   const [dismissed, setDismissed] = useState(false)

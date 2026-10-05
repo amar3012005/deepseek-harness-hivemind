@@ -126,7 +126,7 @@ export function AgentPresetSeat({ load, select, introduced, useAgentPresetSeat, 
   // The employee Harness route is the HyperAgents workspace. Its composition
   // is selected as the blank session starts; the chip is context, not a mode
   // switch back to HIVE-MIND chat.
-  if (window.location.pathname.startsWith('/hivemind/app/employee/harness/')) return null
+  if (/^\/hivemind\/app\/employee\/harness(?:\/|$)/u.test(window.location.pathname)) return null
 
   // One wrapper span: the chip is a flex row with a gap, so loose character
   // spans would each pick up the gap between them.

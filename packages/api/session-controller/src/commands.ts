@@ -120,7 +120,7 @@ export class SessionCommandController {
     }
     const cwd = workspace?.path ?? request.cwd ?? this.defaultCwd
     let adopted: Agent
-    let restoreRuntimePreset = false
+    let restorePreset: string | undefined
     try {
       adopted = await this.agents.ensureSession(
         sessionId,
@@ -130,12 +130,12 @@ export class SessionCommandController {
       )
     } catch (error) {
       // Reopen only the authenticated canonical room. Legacy Runtime rooms
-      // can retain the HyperAgent preset; the native selector restores HQ
+      // can retain an older chat/employee preset; the native selector restores HQ
       // after opening. Explicit IDs and unrelated preset conflicts stay strict.
       const legacyRuntime = roomId !== undefined && room === 'runtime'
         && error instanceof ApiSessionPresetConflict
         && error.requestedPreset === 'hivemind-hq'
-        && error.existingPreset === 'hivemind-hyperagents'
+        && ['hivemind-hyperagents', 'hivemind-chat'].includes(error.existingPreset ?? '')
       if (legacyRuntime) {
         const saved = await this.readSessionState(sessionId)
         const owner = saved.events.find(event => (event.type as string) === 'hivemind/session-owner')?.data as { id?: unknown; slug?: unknown } | undefined
@@ -147,7 +147,7 @@ export class SessionCommandController {
         && error.existingPreset === 'hivemind-chat')) {
         try {
           adopted = await this.agents.ensureSession(sessionId, cwd, true)
-          restoreRuntimePreset = legacyRuntime
+          restorePreset = legacyRuntime ? 'hivemind-hq' : 'hivemind-hyperagents'
         } catch (adoptionError) {
           this.rejectCreation(sessionId, adoptionError)
         }
@@ -155,7 +155,17 @@ export class SessionCommandController {
         this.rejectCreation(sessionId, error)
       }
     }
-    if (restoreRuntimePreset) await this.ctx.agentPresets.select(adopted, 'hivemind-hq')
+    if (restorePreset !== undefined) {
+      const presets = this.ctx.get('agentPresets')
+      if (presets === undefined) {
+        throw new RemoteError('agent-preset/unavailable', 'The native agent profile service is unavailable.', { sessionId })
+      }
+      try {
+        await presets.select(adopted, restorePreset)
+      } catch (error) {
+        this.rejectCreation(sessionId, error)
+      }
+    }
     if (workspace !== undefined) {
       try {
         await workspace.attachSession(sessionId)

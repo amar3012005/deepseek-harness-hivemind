@@ -87,7 +87,7 @@ export function ConversationSessionHeader({
   const conversation = useConversation(s => s)
   // Both embedded modes keep header utilities available on a new session.
   const embeddedRoute = typeof window !== 'undefined'
-    && /^\/hivemind\/app\/(?:employee\/harness|overview)\//u.test(window.location.pathname)
+    && /^\/hivemind\/app\/(?:employee\/harness|overview)(?:\/|$)/u.test(window.location.pathname)
   const dreaming = typeof window !== 'undefined' && (window.location.pathname === '/hivemind/app/overview/dreaming'
     || new URLSearchParams(window.location.search).has('dreamingParent'))
   const hideChrome = !embeddedRoute && session.blank && conversationPhase(session, conversation) === 'blank'
@@ -97,7 +97,9 @@ export function ConversationSessionHeader({
       className={clsx(css.header, hideChrome && css.headerHidden)}
       aria-hidden={hideChrome || undefined}
       data-dreaming-header={dreaming || undefined}
-      data-hivemind-employee-header={embeddedRoute && window.location.pathname.startsWith('/hivemind/app/employee/harness/') || undefined}
+      data-hivemind-employee-header={
+        embeddedRoute && /^\/hivemind\/app\/employee\/harness(?:\/|$)/u.test(window.location.pathname) || undefined
+      }
     >
       {!hideChrome && (
         <>

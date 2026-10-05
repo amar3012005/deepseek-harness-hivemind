@@ -141,7 +141,8 @@ export class AgentPresetSeatController {
    * changing, because the session may appear either before or after the pick.
    * @returns once the switch settled, or immediately when there is nothing to do.
    */
-  async apply(): Promise<void> {
+  async apply(preserveRecordedPreset = false): Promise<void> {
+    if (preserveRecordedPreset) this.staged = undefined
     const staged = this.staged
     const session = this.currentSession()
     if (staged === undefined) {

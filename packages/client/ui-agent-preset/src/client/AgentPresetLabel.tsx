@@ -55,7 +55,7 @@ export function AgentPresetLabel({
     if (preset !== undefined) void load()
   }, [preset, load])
 
-  if (preset === undefined || preset === 'hivemind-chat' || window.location.pathname.startsWith('/hivemind/app/employee/harness/')) return null
+  if (preset === undefined || preset === 'hivemind-chat' || /^\/hivemind\/app\/employee\/harness(?:\/|$)/u.test(window.location.pathname)) return null
 
   const option = options.find(entry => entry.id === preset)
   const text = option === undefined ? undefined : presetDisplayText(option, t)

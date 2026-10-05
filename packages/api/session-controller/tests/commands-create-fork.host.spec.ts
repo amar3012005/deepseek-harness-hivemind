@@ -100,6 +100,36 @@ describe('Session creation failures', () => {
     await ctx.fiber.dispose()
   })
 
+  it.each([
+    ['runtime', 'hivemind-hq', 'hivemind-chat'],
+    ['runtime', 'hivemind-hq', 'hivemind-hyperagents'],
+    ['ravi-patel', 'hivemind-hyperagents', 'hivemind-chat'],
+  ])('restores canonical %s through a guarded native context', async (room, requested, existing) => {
+    const ctx = await baseContext()
+    ctx.provide('workspaceRegistry', { get: () => undefined, list: () => [] } as never)
+    const id = SessionId('session-guarded-preset')
+    const session = ctx.sessions.create(id, { meta: { cwd: '/default' } })
+    ctx.provide('sessionPersistence', { employeeRoomId: async () => id } as never)
+    const adopted = { id, session } as Agent
+    const ensureSession = vi.fn().mockRejectedValueOnce(new ApiSessionPresetConflict(id, requested, existing))
+      .mockResolvedValue(adopted)
+    const select = vi.fn(async () => requested)
+    const provider = ctx.plugin((inner: Context) => { inner.provide('agentPresets', { select } as never) })
+    await provider.await()
+    let controller!: SessionCommandController
+    const owner = ctx.plugin(Object.assign((inner: Context) => {
+      expect(() => inner.agentPresets).toThrow('without inject')
+      controller = new SessionCommandController(inner, controllerAgents({ ensureSession }), '/default')
+    }, { inject: ['sessions', 'agents', 'sessionPersistence', 'workspaceRegistry'] }))
+    await owner.await()
+    await expect(controller.create({ hyperagentRoom: room })).resolves.toMatchObject({ sessionId: id })
+    expect(select).toHaveBeenCalledWith(adopted, requested)
+    select.mockRejectedValueOnce(new RemoteError('agent-preset/locked', 'Profile is locked after work starts.', {}))
+    ensureSession.mockRejectedValueOnce(new ApiSessionPresetConflict(id, requested, existing))
+    await expect(controller.create({ hyperagentRoom: room })).rejects.toMatchObject({ code: 'agent-preset/locked' })
+    await ctx.fiber.dispose()
+  })
+
   it('mints an identity with the default cwd when no explicit target is supplied', async () => {
     const ctx = await baseContext()
     ctx.provide('workspaceRegistry', { get: () => undefined, list: () => [] } as never)
