@@ -724,3 +724,6 @@
 }
 
 .sessionWaiting { min-height: 180px; padding: 24px; display: grid; place-items: center; color: var(--dsw-alias-label-secondary); font-size: 13px; }
+
+/* Agent reading width remains stable when the native composer width is dragged. */
+.root[data-agent-room] { --dsh-transcript-width: 720px; }

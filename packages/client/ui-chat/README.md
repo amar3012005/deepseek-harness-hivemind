@@ -78,3 +78,5 @@ None.
 </details>
 
 **Runtime invariant:** No companion is published. Conversation and Slot registration enforce Chat target consistency.
+
+Agent rooms show one identity avatar on the last visible bubble of each consecutive sender group. Technical rows do not break a group; human input and sender changes do. Received messages keep their exact envelope in the existing Agent message disclosure.

@@ -20,9 +20,10 @@ export function AgentChatAvatar({ employeeId, name, events, identity, load }: {
     }).catch(() => { /* Identity falls back without inventing an avatar. */ })
     return () => { disposed = true }
   }, [load])
-  if (employeeId === 'runtime' || (employeeId === undefined && name === undefined && owner === null)) return <RuntimeAvatar size={32} />
+  const avatar = (content: import('react').ReactNode) => <span data-chat-agent-avatar style={{ width: 32, flexShrink: 0, alignSelf: 'flex-end' }}>{content}</span>
+  if (employeeId === 'runtime' || (employeeId === undefined && name === undefined && owner === null)) return avatar(<RuntimeAvatar size={32} />)
   const employee = employeeId === undefined && name === undefined ? owner
     : directory.find(item => item.id === employeeId)
-  return employee ? <EmployeeAvatar employee={employee} size={32} />
-    : <span aria-hidden style={{ width: 32, height: 32, flexShrink: 0, borderRadius: '50%', display: 'grid', placeItems: 'center', background: 'var(--dsw-static-neutral-100)' }}>{name?.slice(0, 1) ?? '?'}</span>
+  return avatar(employee ? <EmployeeAvatar employee={employee} size={32} />
+    : <span aria-hidden style={{ width: 32, height: 32, flexShrink: 0, borderRadius: '50%', display: 'grid', placeItems: 'center', background: 'var(--dsw-static-neutral-100)' }}>{name?.slice(0, 1) ?? '?'}</span>)
 }

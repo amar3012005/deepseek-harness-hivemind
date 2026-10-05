@@ -70,7 +70,7 @@ export function ContextInjectionRow({ content, source, provenance, form, openArt
           })}
         </div>
         <details className={css.messageDetails}>
-          <summary>Work details</summary>
+          <summary>Agent message</summary>
           <div className={css.body} data-context-injection-body data-context-form={rendered ?? undefined}>{body}</div>
         </details>
       </article></div>

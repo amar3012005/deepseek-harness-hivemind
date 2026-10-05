@@ -51,6 +51,7 @@ export function ScopeSelect({ sessionId, locked = false, initialScope, initialPr
     }
   }
 
+  if (window.location.pathname.startsWith('/hivemind/app/employee/harness/')) return null
   return <label className={css.root}>
     <IconFolderClose16 className={css.icon} aria-hidden />
     <select

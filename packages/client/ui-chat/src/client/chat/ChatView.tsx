@@ -9,8 +9,11 @@ import type { SessionSeq } from '@deepseek-ai/dsh-session/types'
 import { Button, IconChevronDownOutline14, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
 import { ThinkingOrb } from 'thinking-orbs'
 import type { ChatViewSlotProps, OpenFileOptions } from '../contract/slots.ts'
+import type { ChatNode } from '../contract/chat-nodes.ts'
 import type { ChatSnapshot } from '../contract/snapshot.ts'
 import { PendingSteeringBubble, PendingSubmissionBubble } from './MessageItem.tsx'
+import { avatarGroupEnds } from './avatar-groups.ts'
+import { hasAssistantReplyContent } from '../contract/assistant-content.ts'
 import { ChatNodeSeat } from './ChatNodeSeat.tsx'
 import { TurnNavigator } from './TurnNavigator.tsx'
 import { mergeTurnRailItems, type TurnRailItem } from './turn-rail-items.ts'
@@ -236,6 +239,19 @@ const ChatNodeList = memo(function ChatNodeList({ order, useChat, ...seatProps }
     return snapshot.nodes.get(key)?.kind === 'turn-tail' && turn !== undefined
       ? [...(artifacts.get(turn) ?? []), key] : [key]
   })
+  const groupEnds = avatarGroupEnds(displayOrder.map((key) => {
+    const node = snapshot.nodes.get(key) as ChatNode | undefined
+    if (node?.kind === 'assistant-step' && hasAssistantReplyContent(node.data.blocks)) return { key, speaker: 'room-owner' }
+    if (node?.kind === 'context' && typeof node.data.source === 'object' && node.data.source !== null
+      && 'kind' in node.data.source && node.data.source.kind === 'hivemind-agent-message') {
+      try {
+        const text = node.data.content.filter(block => block.type === 'text').map(block => block.text).join('')
+        const envelope = JSON.parse(text) as { senderEmployee?: string; senderName?: string }
+        return { key, speaker: envelope.senderEmployee ?? envelope.senderName ?? key }
+      } catch { return { key, boundary: true } }
+    }
+    return { key, boundary: node?.kind === 'user' || node?.kind === 'steering' }
+  }))
   let previousDay: string | undefined
   const agentRoom = window.location.pathname.includes('/employee/harness')
   return displayOrder.flatMap((nodeKey) => {
@@ -244,7 +260,7 @@ const ChatNodeList = memo(function ChatNodeList({ order, useChat, ...seatProps }
     const day = time === undefined ? undefined : new Date(time).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })
     const header = agentRoom && day !== undefined && day !== previousDay
     if (day !== undefined) previousDay = day
-    const seat = <ChatNodeSeat key={nodeKey} nodeKey={nodeKey} {...seatProps} />
+    const seat = <ChatNodeSeat key={nodeKey} nodeKey={nodeKey} avatarGroupEnd={groupEnds.has(nodeKey)} {...seatProps} />
     return header ? [<div key={`date-${nodeKey}`} className={css.roomDate}>{day}</div>, seat] : [seat]
   })
 })

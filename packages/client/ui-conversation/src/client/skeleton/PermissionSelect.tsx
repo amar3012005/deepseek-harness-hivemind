@@ -167,8 +167,8 @@ export function PermissionSelect({ value, locked, command, t }: PermissionSelect
             {permissionGlyph(currentValue) !== undefined && (
               <span className={css.triggerIcon} aria-hidden>{permissionGlyph(currentValue)}</span>
             )}
-            <span className={css.triggerLabel}>{currentLabel}</span>
-            <span className={clsx(css.chevron, open && css.chevronOpen)} aria-hidden>
+            {!window.location.pathname.startsWith('/hivemind/app/employee/harness') && <span className={css.triggerLabel}>{currentLabel}</span>}
+            <span hidden={window.location.pathname.startsWith('/hivemind/app/employee/harness')} className={clsx(css.chevron, open && css.chevronOpen)} aria-hidden>
               <IconChevronDownOutline14 />
             </span>
           </button>

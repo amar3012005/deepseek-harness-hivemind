@@ -10,6 +10,7 @@ import { useSearchableHidden } from './searchable-hidden.ts'
 import css from './ChatView.module.css'
 
 interface ChatNodeSeatProps extends ChatNodeOwnerProps {
+  readonly avatarGroupEnd?: boolean
   readonly nodeKey: string
   readonly useChatNode: ChatViewSlotProps['useChatNode']
   readonly useChatNodeProcess: ChatViewSlotProps['useChatNodeProcess']
@@ -37,7 +38,7 @@ function turnOf(node: ChatNode | undefined): number | undefined {
 
 /** Subscribe, apply Turn-process visibility, and dispatch one stable Context key. */
 export const ChatNodeSeat = memo(function ChatNodeSeat({
-  nodeKey, useChatNode, useChatNodeProcess, historyIncomplete, compactTranscript,
+  nodeKey, avatarGroupEnd = true, useChatNode, useChatNodeProcess, historyIncomplete, compactTranscript,
   cwd, openFile, openArtifact, inspectCall, forkAt,
   loadImage, renderMessageImages, fileMentions, useStore, actions, renderSlot, t,
 }: ChatNodeSeatProps) {
@@ -148,6 +149,7 @@ export const ChatNodeSeat = memo(function ChatNodeSeat({
     <div
       ref={wrapperRef}
       className={css.flowItem}
+      data-avatar-group-end={avatarGroupEnd}
       data-chat-anchor-key={routedNode.key}
       data-chat-flow-key={routedNode.key}
       data-chat-flow-kind={routedNode.kind}

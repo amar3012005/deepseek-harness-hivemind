@@ -140,7 +140,7 @@ export function installAgentMessaging(ctx: Context): void {
         recipient: { type: 'string', required: true, description: 'runtime, or an exact authenticated employee ID or unique slug from the directory. Use the exact ID if a slug is ambiguous.' },
         kind: { type: 'string', required: true, enum: ['question', 'reply', 'update'] },
         message_key: { type: 'string', required: true, description: 'Stable unique key for this message, reused unchanged on retry.' },
-        message: { type: 'string', required: true },
+        message: { type: 'string', required: true, description: 'Short natural colleague-to-colleague message: explain the outcome, uncertainty and next step plainly. Put exact artifact receipt IDs in artifact_ids and task identity in task_id, not in the visible text. The complete envelope remains available to the receiving agent and in Agent message details.' },
         task_id: { type: 'string' }, reply_to: { type: 'string' },
         artifact_ids: { type: 'array', items: { type: 'string' }, description: 'Exact locally saved artifact receipt IDs to include; not filenames or invented IDs.' },
       },

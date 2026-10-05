@@ -36,6 +36,8 @@ describe('incoming teammate artifact bubble', () => {
     const button = view.getByRole('button', { name: 'Open café-brief.pdf in Preview' })
     expect(button.closest('details')).toBeNull()
     expect(view.container.querySelector('details')?.open).toBe(false)
+    expect(view.getByText('Agent message')).toBeTruthy()
+    expect(view.container.querySelector('details')?.textContent).toContain('saved-brief')
     fireEvent.click(button)
     expect(openArtifact).toHaveBeenCalledWith('saved-brief')
   })

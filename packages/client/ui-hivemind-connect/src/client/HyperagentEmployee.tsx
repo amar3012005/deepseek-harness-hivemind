@@ -116,6 +116,7 @@ export function HyperagentEmployeePicker({ sessionId, useSessions, useEmployeeEv
   const [error, setError] = useState<boolean | string>(false)
   const [options, setOptions] = useState<EmployeeOption[]>([])
   const [menuHeight, setMenuHeight] = useState(360)
+  if (window.location.pathname.startsWith('/hivemind/app/employee/harness/')) return null
   if (!isHyperagentPreset(preset) && locked) return null
   const selected = owner == null ? fromLog : projectedEmployee(owner)
   const toggle = (): void => {

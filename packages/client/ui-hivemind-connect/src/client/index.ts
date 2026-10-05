@@ -454,7 +454,7 @@ export function apply(ctx: ClientContext): void {
   })
   ctx.slots.inject('conversation.session.header.utilities', () => ctx.slots.register({
     name: 'conversation.session.header.utilities', id: 'brain-connections', locale: NS, order: 99,
-    inject: sessionId => ({ sessionId, showDetails: () => { rightSidebar?.openTabIn(sessionId, 'hivemind-employee') } }),
+    inject: sessionId => ({ sessionId, isPreviewOpen: () => rightSidebar?.isExpanded() === true && rightSidebar.active()?.kind === 'hivemind-workbench-preview', showDetails: () => { rightSidebar?.openTabIn(sessionId, 'hivemind-employee') } }),
   }, BrainConnections))
   // Put the panel/preview affordance in the conversation header's far-right
   // corner, matching the native “door” control. A higher-priority seat shadows

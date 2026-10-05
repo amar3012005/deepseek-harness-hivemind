@@ -43,3 +43,5 @@ The model sees nothing from this browser-only plugin. The paired runtime adds au
 ## Dev Note
 
 Keep OAuth callbacks and credential reads in ICARUS or the Host runtime; do not move token handling into browser code.
+
+Agent room composers omit scope, mode and employee-picker labels without changing native selection or authority. The shared Environment uses the native Preview panel geometry: apps collapse while Preview is open, the panel yields at 45% viewport width, and its header control preserves explicit reopening and dismissal.
