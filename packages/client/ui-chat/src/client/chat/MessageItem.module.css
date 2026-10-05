@@ -346,3 +346,6 @@
   font-size: 12px;
   line-height: 15px;
 }
+
+/* Agent-room user replies use one consistent blue treatment. */
+:global([data-agent-room]) .bubble { background: color-mix(in srgb, #3b82f6 16%, var(--dsw-alias-bg-base, #fff)); }

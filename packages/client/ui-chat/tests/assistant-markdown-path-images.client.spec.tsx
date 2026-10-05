@@ -72,3 +72,24 @@ describe('AssistantMarkdown local-path images', () => {
     expect(container.textContent).toContain('diagram')
   })
 })
+
+
+describe('agent reply bubble scope', () => {
+  it('keeps complete final replies bubbled in agent rooms', () => {
+    const previous = window.location.pathname
+    window.history.replaceState({}, '', '/hivemind/app/employee/harness/session/ravi')
+    const view = render(<AssistantMarkdown blocks={[textBlock('The complete result is ready.')]} streaming={false}
+      finalAnswer renderMessageImages={renderMessageImages} t={t} />)
+    expect(view.container.querySelector('[data-readable-reply]')?.textContent).toContain('The complete result is ready.')
+    window.history.replaceState({}, '', previous)
+  })
+  it('preserves the full final answer outside a bubble in Brain', () => {
+    const previous = window.location.pathname
+    window.history.replaceState({}, '', '/hivemind/app/overview/session/brain')
+    const view = render(<AssistantMarkdown blocks={[textBlock('The complete result is ready.')]} streaming={false}
+      finalAnswer renderMessageImages={renderMessageImages} t={t} />)
+    expect(view.container.querySelector('[data-readable-reply]')).toBeNull()
+    expect(view.container.textContent).toContain('The complete result is ready.')
+    window.history.replaceState({}, '', previous)
+  })
+})

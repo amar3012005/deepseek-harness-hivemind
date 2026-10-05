@@ -76,5 +76,5 @@
   max-width: 100%;
   padding: 14px 18px;
   border-radius: 18px 18px 18px 4px;
-  background: color-mix(in srgb, currentColor 5%, transparent);
+  background: var(--dsh-agent-bubble-color, color-mix(in srgb, currentColor 5%, transparent));
 }

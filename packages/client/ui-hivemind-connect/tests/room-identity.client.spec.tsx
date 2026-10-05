@@ -2,6 +2,7 @@
 import { afterEach, expect, it } from 'vitest'
 import { act, cleanup, render } from '@testing-library/react'
 import { roomIdentity } from '../src/client/room-identity.ts'
+import { AgentChatAvatar } from '../src/client/AgentChatAvatar.tsx'
 import { RoomHeroMark } from '../src/client/SingulanceMark.tsx'
 afterEach(cleanup)
 it('distinguishes pending first entry, saved Runtime owner and the employee identity', () => {
@@ -19,6 +20,8 @@ it('recognizes a legacy null-owner chief only after native HQ restoration', () =
   expect(roomIdentity('hivemind-hyperagents', legacy)).toBeUndefined()
 })
 it('updates the first-entry portrait from the current room identity snapshot', async () => {
+  const previousPath = window.location.pathname
+  window.history.replaceState({}, '', '/hivemind/app/employee/harness')
   let value = JSON.stringify(roomIdentity(undefined, undefined, true))
   const listeners = new Set<() => void>()
   const identity = { getSnapshot: () => value, subscribe: (listener: () => void) => {
@@ -32,4 +35,26 @@ it('updates the first-entry portrait from the current room identity snapshot', a
   })
   expect(view.queryByLabelText('Runtime, Opening our workspace…')).toBeNull()
   expect(view.getByLabelText('Runtime, AI Chief of Staff')).toBeTruthy()
+  window.history.replaceState({}, '', previousPath)
+})
+
+it('keeps the same employee color across own-room and incoming messages with top aligned portraits', async () => {
+  const employee = { id: 'authorized-ravi', name: 'Ravi', role: 'Researcher' }
+  const load = async () => [employee]
+  const identity = { getSnapshot: () => JSON.stringify(employee), subscribe: () => () => {} }
+  const view = render(<>
+    <AgentChatAvatar identity={identity} load={load} />
+    <AgentChatAvatar employeeId={employee.id} name={employee.name} load={load} />
+  </>)
+  await act(async () => { await Promise.resolve() })
+  const portraits = view.container.querySelectorAll('[data-chat-agent-avatar]')
+  expect(portraits.length).toBe(2)
+  expect(portraits[0]?.getAttribute('data-chat-agent-color')).toBe(portraits[1]?.getAttribute('data-chat-agent-color'))
+  expect((portraits[0] as HTMLElement).style.alignSelf).toBe('flex-start')
+})
+it('uses the same gray identity for Runtime own-room and incoming messages', async () => {
+  const load = async () => []
+  const view = render(<><AgentChatAvatar load={load} /><AgentChatAvatar employeeId="runtime" name="Runtime" load={load} /></>)
+  await act(async () => { await Promise.resolve() })
+  expect([...view.container.querySelectorAll('[data-chat-agent-avatar]')].map(node => node.getAttribute('data-chat-agent-color'))).toEqual(['runtime', 'runtime'])
 })
