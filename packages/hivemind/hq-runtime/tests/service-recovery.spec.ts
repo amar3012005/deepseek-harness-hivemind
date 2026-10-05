@@ -19,6 +19,16 @@ describe('service interruption eligibility', () => {
     expect(serviceInterrupted([...saved(), { type: 'turn/start', seq: 3, time: 0, data: { turn: 5 } }], 4)).toBe(false)
     expect(serviceInterrupted([...saved(), { type: 'hivemind/hq-rest-confirmed', seq: 3, time: 0, data: {} } as SessionEvent], 4)).toBe(false)
   })
+  it('holds unanswered plan-review questions, including crash-repaired unknown results', () => {
+    const question = { type: 'tool/call', seq: 3, time: 0,
+      data: { turn: 4, step: 1, callId: 'question', name: 'ask_user_question', arguments: '{}' } } as SessionEvent
+    const result = (isError: boolean) => ({ type: 'tool/result', seq: 4, time: 0,
+      data: { turn: 4, step: 1, message: { role: 'user', source: { kind: 'tool', callId: 'question' },
+        content: [{ type: 'tool-result', toolCallId: 'question', isError, content: [] }] } } } as SessionEvent)
+    expect(serviceInterrupted([...saved(), question], 4)).toBe(false)
+    expect(serviceInterrupted([...saved(), question, result(true)], 4)).toBe(false)
+    expect(serviceInterrupted([...saved(), question, result(false)], 4)).toBe(true)
+  })
   it('holds pending or cancelled human approval, preserving a granted approval', () => {
     const asked = { type: 'approval/asked', seq: 3, time: 0, data: { id: 'approval' } } as SessionEvent
     const decided = (outcome: string) => ({ type: 'approval/decided', seq: 4, time: 0, data: { id: 'approval', outcome } } as SessionEvent)

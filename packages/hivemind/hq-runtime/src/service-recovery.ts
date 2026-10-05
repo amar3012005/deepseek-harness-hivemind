@@ -24,6 +24,11 @@ export function serviceInterrupted(events: readonly SessionEvent[], turn: number
   if (end?.type !== 'turn/end' || !(end.data.reason.kind === 'interrupted'
     || (end.data.reason.kind === 'aborted' && end.data.reason.reason.kind === 'disposed'))) return false
   if (events.some(event => event.seq > start.seq && event.type === 'hivemind/hq-rest-confirmed')) return false
+  // Native questions are tool-backed; an interrupted or repaired question is not a human answer.
+  const answered = new Set(events.flatMap(event => event.type === 'tool/result'
+    ? event.data.message.content.flatMap(block => block.type === 'tool-result' && !block.isError ? [block.toolCallId] : []) : []))
+  if (events.some(event => event.seq > start.seq && event.type === 'tool/call'
+    && event.data.name === 'ask_user_question' && !answered.has(event.data.callId))) return false
   // Pending/cancelled human approval is not authorization to try again after restart.
   const decisions = new Map<string, string>()
   for (const event of events) {
