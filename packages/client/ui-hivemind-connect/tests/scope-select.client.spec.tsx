@@ -32,7 +32,7 @@ describe('HIVE-MIND read scope control', () => {
 })
 
 describe('HIVE-MIND hero branding', () => {
-  it('replaces the oversized headline with a left-alignable Brain label', () => {
+  it('hides the introductory headline without changing its text', () => {
     const view = render(<div>
       <div data-testid="headline"><span><svg data-hivemind-hero-brand="singulance" /></span><span><span>Beyond Horizon Of Intelligence</span><span>Preview</span></span></div>
     </div>)
@@ -40,9 +40,11 @@ describe('HIVE-MIND hero branding', () => {
     Object.defineProperty(view.getByText('Beyond Horizon Of Intelligence'), 'getAnimations', { value: () => [] })
     const dispose = setupSingulanceHeadline()
     expect(view.getByTestId('headline').hasAttribute('data-hivemind-hero-headline')).toBe(true)
-    expect(view.getByText('BRAIN · Remember what matters.')).toBeTruthy()
+    expect(view.getByTestId('headline').style.display).toBe('none')
+    expect(view.getByText('Beyond Horizon Of Intelligence')).toBeTruthy()
     dispose()
     expect(view.getByTestId('headline').hasAttribute('data-hivemind-hero-headline')).toBe(false)
+    expect(view.getByTestId('headline').style.display).toBe('')
     expect(view.getByText('Beyond Horizon Of Intelligence')).toBeTruthy()
   })
 
