@@ -1214,7 +1214,8 @@ export function ArtifactPreview({ useTabInfo, t, read, loadImage }: PropsRuntime
   }, [file?.attachmentId, artifact?.preview?.attachmentId])
   if (!artifact) return null
   const textPreview = artifact.mediaType.startsWith('text/') || /\.(md|markdown|txt)$/i.test(file?.name ?? artifact.path)
-  return <div className={css.artifactPreviewBody} data-preview-alignment={textPreview ? 'top' : 'center'}><h3>{artifact.title}</h3>
+  const fillPreview = artifact.mediaType === 'application/pdf' || artifact.mediaType === 'text/html'
+  return <div className={css.artifactPreviewBody} data-preview-fill={fillPreview || undefined} data-preview-alignment={textPreview ? 'top' : 'center'}>{!fillPreview && <h3>{artifact.title}</h3>}
     {failed ? <p role="alert">{t('artifact.failed')}</p> : !url && text === undefined ? <p role="status">{t('artifact.loading')}</p> : null}
     {text !== undefined ? artifact.mediaType === 'text/markdown' || /\.(md|markdown)$/i.test(file?.name ?? artifact.path)
       ? <MarkdownText text={text} labels={{ code: { copyLabel: t('artifact.copy'), copiedLabel: t('artifact.copied') }, footnotes: t('artifact.footnotes') }} />

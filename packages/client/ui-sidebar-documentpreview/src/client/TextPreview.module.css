@@ -304,3 +304,6 @@
   white-space: nowrap;
   text-overflow: ellipsis;
 }
+
+.body[data-document-viewport] { padding: 0; margin: 0; scrollbar-gutter: auto; white-space: normal; }
+.body[data-document-viewport$='/html'] { overflow: hidden; }

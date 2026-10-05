@@ -4,6 +4,7 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
 import { Context } from '@deepseek-ai/cordis'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
+import type { FileAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import { ToolCallId } from '@deepseek-ai/dsh-llm'
 import { inspectSavedImage, registerArtifactInspection, savedDocumentReference, readSavedText } from '../src/artifact-inspection.ts'
 
@@ -43,7 +44,7 @@ it('returns actual image attachment in the native model result', async () => {
 })
 
 const html = '<!doctype html><html><body><h1>30-day customer acquisition</h1><p>Saved strategy, not a filename.</p></body></html>'
-const documentFile = { attachmentId: 'shared-html-file', name: 'gtm.html', bytes: Buffer.byteLength(html) }
+const documentFile = { attachmentId: 'shared-html-file', name: 'gtm.html', bytes: Buffer.byteLength(html) } as FileAttachmentRef
 const received = { type: 'hivemind/room-message-received', data: { targetId: 'room', senderId: 'sofia-room', artifactIds: ['html-artifact'], artifacts: [{ artifactId: 'html-artifact', producerSessionId: 'sofia-room', mediaType: 'text/html', file: documentFile }] } }
 it('reads exact shared HTML through native tool output without job or task', async () => {
   const native = new Context(); await native.plugin(SystemPrompt); await native.plugin(ToolRuntime)

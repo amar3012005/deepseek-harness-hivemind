@@ -29,8 +29,7 @@ export function WebsitePreview({ sources, selected, select, t }: {
       </select>
       <a href={url} target="_blank" rel="noopener noreferrer">{t('website.open')}</a>
     </div>
-    <p className={css.workbenchPath}>{url}</p>
-    <p role={failed ? 'alert' : 'note'} className={css.workbenchPath}>{t(failed ? 'website.failed' : 'website.embedding')}</p>
+    {failed && <p role="alert" className={css.workbenchPath}>{t('website.failed')}</p>}
     {!failed && <iframe ref={frame} key={url} className={css.workbenchPdf} title={t('website.title')} src={url}
       sandbox="allow-scripts" referrerPolicy="no-referrer" />}
   </article>

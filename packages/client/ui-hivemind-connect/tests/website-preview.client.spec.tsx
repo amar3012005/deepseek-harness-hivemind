@@ -11,7 +11,7 @@ it('uses the exact public source directly, with an always available external fal
   expect(view.getByTitle('website.title').getAttribute('src')).toBe(source.url)
   expect(view.getByTitle('website.title').getAttribute('sandbox')).toBe('allow-scripts')
   expect(view.getByRole('link').getAttribute('href')).toBe(source.url)
-  expect(view.getByRole('note').textContent).toBe('website.embedding')
+  expect(view.queryByRole('note')).toBeNull()
   fireEvent.error(view.getByTitle('website.title'))
   expect(view.queryByTitle('website.title')).toBeNull()
   expect(view.getByRole('alert').textContent).toBe('website.failed')

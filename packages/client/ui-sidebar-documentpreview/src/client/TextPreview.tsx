@@ -269,6 +269,7 @@ export function TextPreview({
       <div
         ref={bodyRef}
         className={clsx(css.body, state.wrap && css.wrap)}
+        data-document-viewport={selected.id.endsWith('/html') || selected.id.endsWith('/pdf') ? selected.id : undefined}
         data-textpreview-body
         data-textpreview-wrap={state.wrap ? '' : undefined}
         onScroll={(event) => {

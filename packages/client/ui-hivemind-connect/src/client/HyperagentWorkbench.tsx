@@ -208,14 +208,15 @@ export function HyperagentWorkbench({
   const website = data.sources.find(source => source.url === (selectedSource?.url ?? params?.sourceUrl))
     ?? (lastArtifact === undefined ? data.sources.at(-1) : undefined)
   const textPreview = lastArtifact !== undefined && (lastArtifact.mediaType.startsWith('text/') || /\.(md|markdown|txt)$/i.test(lastArtifact.path))
-  return <div className={css.workbench} data-hivemind-workbench={kind} data-preview-alignment={kind === 'preview' ? website !== undefined || textPreview ? 'top' : 'center' : undefined}>
+  const fillPreview = kind === 'preview' && (website !== undefined || lastArtifact?.mediaType === 'application/pdf' || lastArtifact?.mediaType === 'text/html')
+  return <div className={css.workbench} data-preview-fill={fillPreview || undefined} data-hivemind-workbench={kind} data-preview-alignment={kind === 'preview' ? website !== undefined || textPreview ? 'top' : 'center' : undefined}>
     {kind === 'preview' && (website !== undefined
       ? <WebsitePreview sources={data.sources.map(source => ({ ...source, seq: 0 }))}
         selected={{ ...website, seq: 0 }}
         select={url => setSelectedSource(data.sources.find(source => source.url === url) ?? null)} t={t} />
       : lastArtifact === undefined
         ? <p className={css.workbenchEmpty}>{t('workbench.emptyPreview')}</p>
-        : <article><span className={css.workbenchEyebrow}>{lastArtifact.mediaType}</span><h2>{lastArtifact.title}</h2>{lastArtifact.producerName !== undefined && <p>From {lastArtifact.producerName}</p>}{lastArtifact.mediaType === 'application/pdf' && lastArtifact.file !== undefined
+        : <article>{!fillPreview && <><span className={css.workbenchEyebrow}>{lastArtifact.mediaType}</span><h2>{lastArtifact.title}</h2>{lastArtifact.producerName !== undefined && <p>From {lastArtifact.producerName}</p>}</>}{lastArtifact.mediaType === 'application/pdf' && lastArtifact.file !== undefined
           ? <PdfReceipt artifact={lastArtifact} loadPdf={loadPdf} loadImage={loadImage} t={t} />
           : <><div className={css.workbenchActions}><button type="button" className={css.workbenchOpen} disabled={lastArtifact.file === undefined} onClick={() => { openArtifact(lastArtifact, 'download') }}>{t('workbench.download')}</button></div>{lastArtifact.file !== undefined && (lastArtifact.mediaType.startsWith('text/') || /\.(md|markdown|txt)$/i.test(lastArtifact.path))
             ? <TextReceipt file={lastArtifact.file} mediaType={lastArtifact.mediaType} loadText={loadText} t={t} />

@@ -109,3 +109,10 @@
 .personaText { white-space: pre-wrap; line-height: 1.65; overflow-wrap: anywhere; }
 
 .previewLoading { min-height: 180px; width: min(100%, 420px); display: grid; place-items: center; border-radius: 12px; background: color-mix(in srgb, currentColor 4%, transparent); font-size: 13px; opacity: .65; }
+
+/* Native pane geometry drives document viewports continuously during resize. */
+.workbench[data-preview-fill] { box-sizing: border-box; height: 100%; min-height: 0; padding: 0; overflow: hidden; }
+.workbench[data-preview-fill] > article { display: flex; flex-direction: column; flex: 1; min-height: 0; max-width: none; margin: 0; }
+.workbench[data-preview-fill] .workbenchActions { flex: none; padding: 8px; margin: 0; }
+.workbench[data-preview-fill] .workbenchOpen { flex: none; margin: 0; }
+.workbench[data-preview-fill] .workbenchPdf { flex: 1; width: 100%; height: 100%; min-height: 0; margin: 0; border: 0; border-radius: 0; }
