@@ -128,3 +128,8 @@
 
 .workbench [data-icon-download] { align-self: flex-end; display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; padding: 0; box-sizing: border-box; }
 .workbench .imagePreviewToolbar [data-icon-download] { padding: 0; }
+
+/* Source actions retain a readable hit target in narrow Preview panes. */
+.workbench [data-website-preview] .workbenchActions { align-items: center; min-width: 0; }
+.workbench [data-website-preview] .workbenchActions select { flex: 1; min-width: 0; }
+.workbench [data-website-preview] .workbenchActions > a { flex: none; white-space: nowrap; }
