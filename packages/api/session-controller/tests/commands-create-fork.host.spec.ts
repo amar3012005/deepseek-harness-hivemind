@@ -124,7 +124,7 @@ describe('Session creation failures', () => {
     await owner.await()
     await expect(controller.create({ hyperagentRoom: room })).resolves.toMatchObject({ sessionId: id })
     expect(select).toHaveBeenCalledWith(adopted, requested)
-    select.mockRejectedValueOnce(new RemoteError('agent-preset/locked', 'Profile is locked after work starts.', {}))
+    select.mockRejectedValueOnce(new RemoteError('agent-preset/locked', 'Profile is locked after work starts.', { sessionId: id, agentPreset: requested }))
     ensureSession.mockRejectedValueOnce(new ApiSessionPresetConflict(id, requested, existing))
     await expect(controller.create({ hyperagentRoom: room })).rejects.toMatchObject({ code: 'agent-preset/locked' })
     await ctx.fiber.dispose()
