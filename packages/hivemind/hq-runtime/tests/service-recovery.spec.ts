@@ -1,10 +1,12 @@
 import { describe, expect, it, vi } from 'vitest'
+import { createToolResultMessage } from '@deepseek-ai/dsh-llm'
+import { ToolCallId } from '@deepseek-ai/dsh-llm/brand'
 import type { Context } from '@deepseek-ai/cordis'
 import { SessionSeq, type SessionEvent } from '@deepseek-ai/dsh-session'
 import { installServiceRecovery, serviceInterrupted } from '../src/service-recovery.ts'
 function saved(reason: unknown = { kind: 'interrupted' }): SessionEvent[] {
-  return [{ type: 'turn/start', seq: 1, time: 0, data: { turn: 4 } },
-    { type: 'turn/end', seq: 2, time: 0, data: { turn: 4, reason } }] as SessionEvent[]
+  return [{ type: 'turn/start', seq: SessionSeq(1), time: 0, data: { turn: 4 } },
+    { type: 'turn/end', seq: SessionSeq(2), time: 0, data: { turn: 4, reason } }] as SessionEvent[]
 }
 describe('service interruption eligibility', () => {
   it('allows only native crash repair or service disposal', () => {
@@ -17,33 +19,32 @@ describe('service interruption eligibility', () => {
   })
   it('does not reopen a later turn or committed rest', () => {
     expect(serviceInterrupted([...saved(), { type: 'turn/start', seq: SessionSeq(3), time: 0, data: { turn: 5 } }], 4)).toBe(false)
-    expect(serviceInterrupted([...saved(), { type: 'hivemind/hq-rest-confirmed', seq: 3, time: 0, data: {} } as SessionEvent], 4)).toBe(false)
+    expect(serviceInterrupted([...saved(), { type: 'hivemind/hq-rest-confirmed', seq: SessionSeq(3), time: 0, data: {} } as SessionEvent], 4)).toBe(false)
   })
   it('holds unanswered plan-review questions, including crash-repaired unknown results', () => {
-    const question = { type: 'tool/call', seq: 3, time: 0,
+    const question = { type: 'tool/call', seq: SessionSeq(3), time: 0,
       data: { turn: 4, step: 1, callId: 'question', name: 'ask_user_question', arguments: '{}' } } as SessionEvent
-    const result = (isError: boolean) => ({ type: 'tool/result', seq: 4, time: 0,
-      data: { turn: 4, step: 1, message: { role: 'user', source: { kind: 'tool', callId: 'question' },
-        content: [{ type: 'tool-result', toolCallId: 'question', isError, content: [] }] } } } as SessionEvent)
+    const result = (isError: boolean) => ({ type: 'tool/result', seq: SessionSeq(4), time: 0,
+      data: { turn: 4, step: 1, message: createToolResultMessage({ callId: ToolCallId('question'), isError, content: [] }) } } as SessionEvent)
     expect(serviceInterrupted([...saved(), question], 4)).toBe(false)
     expect(serviceInterrupted([...saved(), question, result(true)], 4)).toBe(false)
     expect(serviceInterrupted([...saved(), question, result(false)], 4)).toBe(true)
   })
   it('holds pending or cancelled human approval, preserving a granted approval', () => {
-    const asked = { type: 'approval/asked', seq: 3, time: 0, data: { id: 'approval' } } as SessionEvent
-    const decided = (outcome: string) => ({ type: 'approval/decided', seq: 4, time: 0, data: { id: 'approval', outcome } } as SessionEvent)
+    const asked = { type: 'approval/asked', seq: SessionSeq(3), time: 0, data: { id: 'approval' } } as SessionEvent
+    const decided = (outcome: string) => ({ type: 'approval/decided', seq: SessionSeq(4), time: 0, data: { id: 'approval', outcome } } as SessionEvent)
     expect(serviceInterrupted([...saved(), asked], 4)).toBe(false)
     expect(serviceInterrupted([...saved(), asked, decided('cancelled')], 4)).toBe(false)
     expect(serviceInterrupted([...saved(), asked, decided('allowed-once')], 4)).toBe(true)
   })
 })
 function harness() {
-  let events = [{ type: 'hivemind/hq-mode', seq: 0, time: 0, data: { revision: 1, enabled: true, changedAt: 0 } },
+  let events = [{ type: 'hivemind/hq-mode', seq: SessionSeq(0), time: 0, data: { revision: 1, enabled: true, changedAt: 0 } },
     ...saved()] as SessionEvent[]
   const agent = { id: 'root', status: 'idle', inbox: { nextStep: [], nextTurn: [] },
     session: { id: 'root', header: { agentPreset: 'hivemind-chat' },
       ownEvents: () => events, snapshotEvents: () => events } }
-  events.unshift({ type: 'agent-preset/selected', seq: 0, time: 0, data: { agentPreset: 'hivemind-hq' } } as SessionEvent)
+  events.unshift({ type: 'agent-preset/selected', seq: SessionSeq(0), time: 0, data: { agentPreset: 'hivemind-hq' } } as SessionEvent)
   const hooks = new Map<string, (...args: unknown[]) => unknown>()
   type Request = { title: string; after_seconds: number; prompt: string }
   type Task = { sessionId: string; record: Request & { id: string; scheduledAt: string } }
@@ -101,7 +102,7 @@ it('acknowledges a durable native delivery key without requesting another contin
   const record = h.record().record
   const deliveryKey = createHash('sha256').update(`${record.id}:${record.scheduledAt}`).digest('hex')
   h.agent.status = 'running'
-  h.setEvents([...h.events(), { seq: 3, time: 0, type: 'agent/inbox/spliced', data: {
+  h.setEvents([...h.events(), { seq: SessionSeq(3), time: 0, type: 'agent/inbox/spliced', data: {
     inserted: [{ source: { kind: 'schedule', deliveryKey } }],
   } } as SessionEvent])
   expect(await h.guard()).toBe(true)
