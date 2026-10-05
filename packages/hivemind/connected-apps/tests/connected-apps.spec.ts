@@ -247,6 +247,16 @@ describe('progressive Composio bridge', () => {
     expect(JSON.stringify(projected)).not.toContain('provider evidence')
   })
 
+  it('projects exact nested schema paths without including sibling fields', () => {
+    const projected = compactComposioExecutionReceipt({ data: {
+      answer: 'Supported search answer', citations: ['https://example.com/news'], private_body: 'omit this',
+    } }, undefined, ['data.answer', 'data.citations'])
+    expect(projected).toMatchObject({
+      'data.answer': 'Supported search answer', 'data.citations': ['https://example.com/news'], projection_status: 'complete',
+    })
+    expect(JSON.stringify(projected)).not.toContain('omit this')
+  })
+
   it('marks requested result projections complete only when every field is present', () => {
     expect(compactComposioExecutionReceipt({ subject: 'Draft title', id: 'draft-1' }, undefined, ['subject', 'id']))
       .toMatchObject({ projection_status: 'complete', subject: 'Draft title', id: 'draft-1' })

@@ -294,6 +294,12 @@
         databaseUrlEnv: DATABASE_URL
 
 # Host scheduling is tenant-scoped for BRAIN and HyperAgents roots.
+- id: web-fetch-http
+  config:
+    # Modern company pages can place article content after a large navigation
+    # and style preamble. Keep the existing byte, timeout and network bounds.
+    maxBodyChars: 500000
+
 - id: ui-schedule
   disabled: false
 

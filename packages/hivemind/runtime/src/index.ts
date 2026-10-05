@@ -1590,7 +1590,11 @@ export function apply(ctx: Context, config: Config): void {
       output: jsonOutput,
       isConcurrencySafe: () => true,
       async execute(args, execution) {
-        const authority = await resolveAuthority(attachmentCtx, config)
+        // Retained onboarding evidence lives on Core's existing signed read
+        // boundary, including Brain rooms whose ordinary recall uses ICARUS.
+        const authority = config.onboardingServiceApiBase
+          ? scopedServiceAuthority(attachmentCtx, config)
+          : await resolveAuthority(attachmentCtx, config)
         const id = args.operation === 'inspect' ? nonEmptyString(args.source_id, 'onboarding source ID') : undefined
         if (id && !/^[A-Za-z0-9-]{1,80}$/.test(id)) throw new HiveMindRuntimeError('invalid onboarding source ID')
         const onboardingAuthority = config.onboardingServiceApiBase

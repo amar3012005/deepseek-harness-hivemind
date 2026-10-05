@@ -1262,6 +1262,11 @@ function projectRequestedFields(value: unknown, requested: ReadonlySet<string>):
   }
   if (!record(value)) return undefined
   const projected: Record<string, JsonValue> = {}
+  for (const field of requested) {
+    if (!field.includes('.')) continue
+    const selected = exactResultPath(value, field)
+    if (selected.found) projected[field] = compactProviderValue(selected.value)
+  }
   for (const [key, item] of Object.entries(value)) {
     if (requested.has(key)) {
       projected[key] = compactProviderValue(item)
@@ -1274,12 +1279,25 @@ function projectRequestedFields(value: unknown, requested: ReadonlySet<string>):
   return Object.keys(projected).length === 0 ? undefined : projected
 }
 
+/** Resolve an exact schema path without guessing aliases or exposing siblings. */
+function exactResultPath(value: unknown, field: string): { found: boolean; value?: unknown } {
+  let current: unknown = value
+  for (const key of field.split('.')) {
+    if (!key || !record(current) || !Object.prototype.hasOwnProperty.call(current, key)) return { found: false }
+    current = current[key]
+  }
+  return { found: true, value: current }
+}
+
 function presentRequestedFields(value: unknown, requested: ReadonlySet<string>, found = new Set<string>()): Set<string> {
   if (Array.isArray(value)) {
     for (const item of value) presentRequestedFields(item, requested, found)
     return found
   }
   if (!record(value)) return found
+  for (const field of requested) {
+    if (field.includes('.') && exactResultPath(value, field).found) found.add(field)
+  }
   for (const [key, item] of Object.entries(value)) {
     if (requested.has(key)) found.add(key)
     presentRequestedFields(item, requested, found)
