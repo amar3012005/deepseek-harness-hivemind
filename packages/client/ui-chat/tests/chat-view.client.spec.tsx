@@ -780,7 +780,7 @@ describe('ChatView', () => {
     expect(first.getAttribute('aria-busy')).toBeNull()
   })
 
-  it('corrects the first paged jump after the pager unmount shifts its target', async () => {
+  it.each([1, 0.9])('corrects the first paged jump through layout changes at scale %s', async (scale) => {
     const resizeCallbacks: (() => void)[] = []
     class ResizeObserverStub {
       constructor(callback: ResizeObserverCallback) { resizeCallbacks.push(() => callback([], this as unknown as ResizeObserver)) }
@@ -797,10 +797,11 @@ describe('ChatView', () => {
     const scroller = view.container.querySelector('[class*="scroll"]') as HTMLElement
     Object.defineProperty(scroller, 'scrollHeight', { value: 2000, writable: true })
     Object.defineProperty(scroller, 'clientHeight', { value: 400, writable: true })
+    Object.defineProperty(scroller, 'offsetHeight', { value: 400, writable: true })
     let targetTop = 300
     const geometry = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
-      const top = this.dataset.chatTurn === '1' ? targetTop - scroller.scrollTop : 0
-      return { top, bottom: top + 40 } as DOMRect
+      const top = this.dataset.chatTurn === '1' ? (targetTop - scroller.scrollTop) * scale : 0
+      return { top, bottom: top + 40 * scale, height: (this === scroller ? 400 : 40) * scale } as DOMRect
     })
     fireEvent.click(view.getByRole('button', { name: '加载并跳转到第 1 轮' }))
     act(() => { h.setSession({ loadingOlder: true }); h.setChat({ nodes: [userInTurn(1, 'first prompt', 1), assistant(2, 'first response', 1), ...later], turnTimings: new Map([[1, { startTime: 1_000 }], [3, { startTime: 8_000 }]]) }) })

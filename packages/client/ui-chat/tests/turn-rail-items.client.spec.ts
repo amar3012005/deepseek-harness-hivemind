@@ -101,9 +101,10 @@ it('groups late command anchors by authoritative turn start, not the command day
   expect(days.find(day => day.key === '2026-10-4')?.item.turn).toBe(40)
 })
 
-it('pages a partial turn head before treating its later mounted row as a day anchor', () => {
+it('keeps a mounted native system turn navigable without a loaded timestamp', () => {
   const time = new Date(2026, 9, 5, 8, 18).getTime()
   const items = mergeTurnRailItems([{ turn: 41, anchorKey: 'partial-answer', prompt: '', response: '' }],
     [{ turn: 41, seq: 3406, time }])
-  expect(turnRailDays(items)[0]?.item.anchor).toEqual({ kind: 'unloaded', seq: 3406 })
+  expect(turnRailDays(items)[0]?.item.anchor).toEqual({ kind: 'loaded', key: 'partial-answer' })
+  expect(turnRailDays(items)[0]?.item.time).toBe(time)
 })

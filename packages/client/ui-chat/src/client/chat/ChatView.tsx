@@ -77,7 +77,10 @@ function turnAtLine(list: HTMLElement, line: number): number | null {
 
 /** Row position in scrollport coordinates (viewport-independent). */
 function flowTop(row: HTMLElement, scrollport: HTMLElement): number {
-  return row.getBoundingClientRect().top - scrollport.getBoundingClientRect().top
+  const viewport = scrollport.getBoundingClientRect()
+  const scale = scrollport.offsetHeight > 0 ? viewport.height / scrollport.offsetHeight : 1
+  // DOM rectangles are visual pixels under CSS zoom; scrollTop uses layout pixels.
+  return (row.getBoundingClientRect().top - viewport.top) / (Number.isFinite(scale) && scale > 0 ? scale : 1)
 }
 
 /** Select a visible stable node/call identity, falling back only when layout
@@ -758,6 +761,10 @@ export function ChatView({
       const turn = Number(row.dataset.chatTurn)
       if (!Number.isSafeInteger(turn) || turn < pending.turn) continue
       landOnRowRef.current(local, el, row, turn)
+      const key = row.dataset.chatAnchorKey
+      settledJumpRef.current = key === undefined ? null : { key, turn }
+      anchorRef.current = null
+      jumpLandedRef.current = false
       break
     }
     pendingJumpRef.current = null

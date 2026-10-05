@@ -92,9 +92,7 @@ export function mergeTurnRailItems(
       turn: item.turn,
       prompt: item.prompt !== '' ? item.prompt : preview?.prompt ?? '',
       response: item.response !== '' ? item.response : preview?.response ?? '',
-      anchor: item.time === undefined && preview?.time !== undefined
-        ? preview.anchor
-        : { kind: 'loaded', key: item.anchorKey },
+      anchor: { kind: 'loaded', key: item.anchorKey },
     })
   }
   if (byTurn.size === 0) return EMPTY_ITEMS
