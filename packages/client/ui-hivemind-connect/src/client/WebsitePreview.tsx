@@ -42,16 +42,19 @@ export function WebsitePreviewUpdates({ events, open }: {
   const window = useSyncExternalStore(listener => events.subscribe(listener), () => events.getSnapshot())
   const latest = websiteSources(window).filter(source => source.visited)
     .sort((a, b) => (a.visitedSeq ?? a.seq) - (b.visitedSeq ?? b.seq)).at(-1)
-  const last = useRef({ events, seq: latest?.visitedSeq ?? latest?.seq ?? -1 })
+  // Paging can correlate an old call with an already loaded result. Only
+  // receipts beyond the observed event tail are new live arrivals.
+  const tailSeq = window.entries.reduce((tail, entry) => entry.type === 'event' ? Math.max(tail, entry.event.seq) : tail, -1)
+  const last = useRef({ events, seq: tailSeq })
   useEffect(() => {
     if (last.current.events !== events) {
-      last.current = { events, seq: latest?.visitedSeq ?? latest?.seq ?? -1 }
+      last.current = { events, seq: tailSeq }
       return
     }
-    if (latest === undefined || (latest.visitedSeq ?? latest.seq) <= last.current.seq) return
-    last.current.seq = latest.visitedSeq ?? latest.seq
-    open(latest.url)
-  }, [events, latest?.seq, latest?.url, open])
+    const previousTail = last.current.seq
+    last.current.seq = Math.max(previousTail, tailSeq)
+    if (latest !== undefined && (latest.visitedSeq ?? latest.seq) > previousTail) open(latest.url)
+  }, [events, tailSeq, latest?.seq, latest?.visitedSeq, latest?.url, open])
   return null
 }
 export function WebsiteSourceCard({ sources, open, t }: { sources: readonly WebsiteSource[]; open: (url: string) => void; t: Translate }) {

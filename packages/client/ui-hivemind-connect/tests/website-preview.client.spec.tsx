@@ -87,3 +87,14 @@ it('retains search candidates alongside visited URLs without treating search res
   expect(sources.find(source => source.url.endsWith('/a'))?.visited).toBe(true)
   expect(sources.find(source => source.url.endsWith('/b'))?.visited).toBe(false)
 })
+
+it('does not open an old result newly correlated by history prepend', () => {
+  const result = { type: 'event', event: { type: 'tool/result', seq: 30, data: { message: { source: { callId: 'old' }, content: [{ content: [{ type: 'text', text: '[]' }] }] } } } }
+  let window = { entries: [result, { type: 'event', event: { type: 'turn/end', seq: 40, data: {} } }] } as unknown as SessionEventWindow
+  const events = { getSnapshot: () => window, subscribe: () => () => {} }
+  const open = vi.fn()
+  const view = render(<WebsitePreviewUpdates events={events} open={open} />)
+  window = { entries: [{ type: 'event', event: { type: 'tool/call', seq: 20, data: { callId: 'old', name: 'browser_markdown', arguments: JSON.stringify({ url: source.url }) } } }, ...window.entries] } as unknown as SessionEventWindow
+  view.rerender(<WebsitePreviewUpdates events={events} open={open} />)
+  expect(open).not.toHaveBeenCalled()
+})
