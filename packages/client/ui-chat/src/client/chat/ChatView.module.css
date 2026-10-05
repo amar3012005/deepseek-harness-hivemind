@@ -79,7 +79,6 @@
 
 /* The orb and text share the existing turn-status seat. */
 .turnStatus {
-  --dsh-chat-flow-gap: 6px;
   align-self: flex-start;
   flex: none;
   display: inline-flex;
@@ -242,4 +241,9 @@
   max-width: var(--dsh-transcript-width, 720px);
   margin-left: max(0px, calc((100% - var(--dsh-composer-card-max-width)) / 2));
   margin-right: auto;
+}
+
+/* Compact activity spacing belongs to Runtime and employee rooms. */
+.turnStatus[data-agent-room] {
+  --dsh-chat-flow-gap: 6px;
 }

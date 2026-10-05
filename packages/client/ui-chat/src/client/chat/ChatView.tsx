@@ -195,7 +195,7 @@ function TurnStatus({ startTime, working, t }: {
   // has clearly been running for a while.
   const showClock = elapsedMs >= 15_000
   return (
-    <div className={css.turnStatus} role="status" aria-live="polite">
+    <div className={css.turnStatus} data-agent-room={window.location.pathname.includes('/employee/harness') || undefined} role="status" aria-live="polite">
       <ThinkingOrb className={css.activityOrb} state={working ? 'solving' : 'searching'} size={32} aria-hidden="true" />
       <span className={css.turnStatusLabel}>{working ? t('chat.working') : t('chat.thinking')}</span>
       {showClock && (
@@ -260,7 +260,7 @@ const ChatNodeList = memo(function ChatNodeList({ order, useChat, ...seatProps }
     const day = time === undefined ? undefined : new Date(time).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })
     const header = agentRoom && day !== undefined && day !== previousDay
     if (day !== undefined) previousDay = day
-    const seat = <ChatNodeSeat key={nodeKey} nodeKey={nodeKey} avatarGroupEnd={groupEnds.has(nodeKey)} {...seatProps} />
+    const seat = <ChatNodeSeat key={nodeKey} nodeKey={nodeKey} avatarGroupEnd={!agentRoom || groupEnds.has(nodeKey)} {...seatProps} />
     return header ? [<div key={`date-${nodeKey}`} className={css.roomDate}>{day}</div>, seat] : [seat]
   })
 })
