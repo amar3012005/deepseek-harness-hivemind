@@ -137,7 +137,7 @@ describe('hivemind playbooks', () => {
       on(name: string, listener: (...args: unknown[]) => unknown) { listeners.set(name, listener); return () => {} },
     } as never,
     { progressiveToolDisclosure: true, nativeTeamCoordination: true, employeeSubagentPlanning: true })
-    const coordination = ['hivemind_hq_contract', 'hivemind_hq_rest', 'team_task_list', 'team_task_get', 'team_task_create', 'team_task_update', 'spawn_teammate', 'list_agents', 'send_message', 'wait_agent', 'interrupt_agent',
+    const coordination = ['hivemind_hq_contract', 'hivemind_hq_rest', 'hivemind_administrator_message', 'team_task_list', 'team_task_get', 'team_task_create', 'team_task_update', 'spawn_teammate', 'list_agents', 'send_message', 'wait_agent', 'interrupt_agent',
       'schedule_create', 'schedule_list', 'schedule_update', 'schedule_delete']
     for (const name of coordination) tools.set(name, { name } as ToolDefinition)
     const assembly = { sections: [], contexts: [], variables: {}, tools: [...tools.values()].map(tool => ({ name: tool.name, description: '', inputSchema: { type: 'object' } })) }
