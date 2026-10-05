@@ -1,3 +1,4 @@
+import { claimLiveArtifactPreview } from './live-artifact-preview.ts'
 /** Browser projection of durable HyperAgents operating activity. */
 
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
@@ -116,6 +117,7 @@ interface EvaluationData {
 }
 
 interface ArtifactData {
+  readonly receiptTime: number
   readonly title: string
   readonly path: string
   readonly provider: string
@@ -429,6 +431,7 @@ function artifactData(event: SessionEventLike): ArtifactData {
   const preview = record(data['preview']) ?? {}
   const previewName = string(preview['name'])
   return {
+    receiptTime: event.time,
     title: text(data['title'], 'Rendered document'),
     path: text(data['path'], String(event.type) === 'hivemind/browser-capture' ? text(file?.['name'], 'Website screenshot.png') : ''),
     provider: text(data['provider'], ''),
@@ -1097,7 +1100,7 @@ function ArtifactTypeIcon({ mediaType, name }: { mediaType: string; name: string
   </svg></span>
 }
 
-const presentedArtifacts = new Set<string>()
+
 
 function ArtifactThumbnail({ attachment, load, title, unavailable }: {
   attachment: ImageAttachmentRef
@@ -1119,16 +1122,16 @@ function ArtifactThumbnail({ attachment, load, title, unavailable }: {
   return url ? <img src={url} alt={title} style={{ width: '100%', height: 'auto' }} onError={() => { setFailed(true) }} /> : null
 }
 
-function ArtifactPanel({ sessionId, node, t, read, loadImage, openPreview }: PanelProps<'hivemind-artifact'> & { read: (id: FileAttachmentRef['attachmentId']) => Promise<{ ok: boolean; value?: { attachment: FileAttachmentRef; data: string } }> ; loadImage: (ref: ImageAttachmentRef) => Promise<string>; openPreview: () => void }) {
+function ArtifactPanel({ sessionId, node, t, read, loadImage, openPreview, registeredAt }: PanelProps<'hivemind-artifact'> & { read: (id: FileAttachmentRef['attachmentId']) => Promise<{ ok: boolean; value?: { attachment: FileAttachmentRef; data: string } }> ; loadImage: (ref: ImageAttachmentRef) => Promise<string>; openPreview: () => void; registeredAt: number }) {
   const [busy, setBusy] = useState(false)
   const [failed, setFailed] = useState(false)
   useEffect(() => {
     if (node.data.file === undefined) return
     const key = `${sessionId}:${node.id}`
-    if (presentedArtifacts.has(key)) return
-    presentedArtifacts.add(key)
+    const turn = node.location.kind === 'turn' || node.location.kind === 'step' ? node.location.turn : undefined
+    if (!claimLiveArtifactPreview(key, node.data.receiptTime, registeredAt, turn?.status)) return
     openPreview()
-  }, [sessionId, node.id, node.data.file?.attachmentId, openPreview])
+  }, [sessionId, node.id, node.data.file?.attachmentId, openPreview, registeredAt])
   return (
     <div className={css.artifactResult}>
       {node.data.preview === undefined ? null : <div className={css.artifactHeroImage}><ArtifactThumbnail attachment={node.data.preview} load={loadImage} title={node.data.title} unavailable={t('artifact.thumbnailUnavailable')} /></div>}
@@ -1245,6 +1248,7 @@ export const inject = ['sidebarRightTabs', 'uiConversation', 'slots', 'locale', 
 
 /** Register durable event projections; sessions lacking HIVE events produce no nodes. */
 export function apply(ctx: ClientContext): void {
+  const registeredAt = Date.now()
   const previewKey = 'hivemind-artifact-preview'
   ctx.effect(() => ctx.sidebarRightTabs.register({ id: previewKey, kind: previewKey, patterns: ['dsh-resource://hivemind-artifact/**'], title: () => ctx.locale.bind(NS)('artifact.preview') }))
   ctx.slots.inject('sidebar.right.pane.tab', () => ctx.slots.register({ name: 'sidebar.right.pane.tab', key: previewKey, locale: NS }, props => <ArtifactPreview {...props} read={attachmentId => ctx.remote.session.fileAttachment({ sessionId: props.sessionId, attachmentId })} loadImage={ref => ctx.uiConversation.imageUrl(props.sessionId, ref)} />))
@@ -1277,6 +1281,7 @@ export function apply(ctx: ClientContext): void {
     ctx.slots.register({ name: 'conversation.chat.node', key: 'hivemind-artifact', locale: NS }, props => (
       <ArtifactPanel
         {...props}
+        registeredAt={registeredAt}
         read={attachmentId => ctx.remote.session.fileAttachment({ sessionId: props.sessionId, attachmentId })}
         loadImage={ref => ctx.uiConversation.imageUrl(props.sessionId, ref)}
         openPreview={() => ctx.sidebarRight.openResourceIn(props.sessionId, `dsh-resource://hivemind-artifact/${props.node.id}`, { params: { artifact: props.node.data } })}
