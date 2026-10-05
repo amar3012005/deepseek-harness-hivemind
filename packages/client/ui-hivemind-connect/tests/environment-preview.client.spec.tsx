@@ -84,3 +84,26 @@ it('preserves non-Preview employee detail behavior and closed state', () => {
   expect(isEnvironmentPreviewOpen({ isExpanded: () => true, active: () => ({ kind: 'hivemind-employee' }) })).toBe(false)
   expect(isEnvironmentPreviewOpen({ isExpanded: () => false, active: () => ({ kind: 'hivemind-artifact-preview' }) })).toBe(false)
 })
+
+it.each([0.9, 1])('keeps Environment before the native Preview boundary at zoom %s', async (scale) => {
+  vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} })
+  vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => ({ accounts: [] }) })))
+  const panel = document.createElement('div')
+  panel.dataset.sidebarRightPanel = 'push'; panel.dataset.sidebarRightOpen = ''
+  const layoutWidth = window.innerWidth * 0.3
+  Object.defineProperty(panel, 'offsetWidth', { value: layoutWidth })
+  let left = window.innerWidth - layoutWidth * scale
+  panel.getBoundingClientRect = () => ({ width: layoutWidth * scale, left } as DOMRect)
+  document.body.append(panel)
+  const props = {
+    sessionId: 'test', showDetails: vi.fn(), isPreviewOpen: () => true,
+    useSessions: (select: (value: unknown) => unknown) => select({ byId: { test: { agentPreset: 'hivemind-hq' } }, jobsBySession: {} }),
+  }
+  const view = render(<BrainConnections {...props as unknown as Parameters<typeof BrainConnections>[0]} />)
+  const environment = view.getByRole('region', { name: 'HIVEMIND connected apps' })
+  expect(Number.parseFloat(environment.style.right)).toBeCloseTo(layoutWidth + 8)
+  // A native slide changes position without changing the observed width.
+  await act(async () => { left -= 20; fireEvent(panel, new Event('transitionend')) })
+  expect(Number.parseFloat(environment.style.right)).toBeCloseTo(layoutWidth + 20 / scale + 8)
+  expect(Number.parseFloat(environment.style.maxWidth)).toBeCloseTo(left / scale - 16)
+})

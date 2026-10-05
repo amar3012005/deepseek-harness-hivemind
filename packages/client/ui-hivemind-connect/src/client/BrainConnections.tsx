@@ -17,7 +17,7 @@ export function BrainConnections({ sessionId, useSessions, environmentActivity, 
   const [open, setOpen] = useState(true)
   const [appsOpen, setAppsOpen] = useState(true)
   const [wideOpen, setWideOpen] = useState(false)
-  const [preview, setPreview] = useState({ open: false, wide: false, inset: 0 })
+  const [preview, setPreview] = useState({ open: false, wide: false, inset: 0, available: 0 })
   const [accounts, setAccounts] = useState<{ id: string; toolkit: string }[]>()
   const [error, setError] = useState(false)
   const dreaming = window.location.pathname.endsWith('/dreaming') || new URLSearchParams(window.location.search).has('dreamingParent')
@@ -40,10 +40,14 @@ export function BrainConnections({ sessionId, useSessions, environmentActivity, 
       const visible = panel?.hasAttribute('data-sidebar-right-open') === true && (isPreviewOpen?.() ?? true)
       const bounds = panel?.getBoundingClientRect()
       const width = bounds?.width ?? 0
+      // Native DOM bounds include CSS zoom; fixed style coordinates do not.
+      const scale = panel && panel.offsetWidth > 0 ? width / panel.offsetWidth : 1
       setPreview((previous) => {
         const next = { open: visible, wide: visible && width >= window.innerWidth * 0.45,
-          inset: visible ? Math.max(0, window.innerWidth - (bounds?.left ?? window.innerWidth)) : 0 }
-        return previous.open === next.open && previous.wide === next.wide && previous.inset === next.inset ? previous : next
+          available: visible ? Math.max(0, (bounds?.left ?? 0) / (scale || 1) - 16) : 0,
+          inset: visible ? Math.max(0, window.innerWidth - (bounds?.left ?? window.innerWidth)) / (scale || 1) : 0 }
+        return previous.open === next.open && previous.wide === next.wide
+          && previous.inset === next.inset && previous.available === next.available ? previous : next
       })
     }
     const resize = new ResizeObserver(measure)
@@ -51,9 +55,10 @@ export function BrainConnections({ sessionId, useSessions, environmentActivity, 
     const bind = () => {
       const next = document.querySelector<HTMLElement>('[data-sidebar-right-panel]')
       if (next !== panel) {
-        resize.disconnect(); mutation.disconnect(); panel = next
+        resize.disconnect(); mutation.disconnect(); panel?.removeEventListener('transitionend', measure); panel = next
         if (panel) {
           resize.observe(panel)
+          panel.addEventListener('transitionend', measure)
           mutation.observe(panel, { attributes: true, attributeFilter: ['data-sidebar-right-open'], childList: true, subtree: true })
         }
       }
@@ -64,7 +69,7 @@ export function BrainConnections({ sessionId, useSessions, environmentActivity, 
     mounts.observe(document.body, { childList: true, subtree: true })
     window.addEventListener('resize', measure)
     bind()
-    return () => { resize.disconnect(); mutation.disconnect(); mounts.disconnect(); window.removeEventListener('resize', measure) }
+    return () => { panel?.removeEventListener('transitionend', measure); resize.disconnect(); mutation.disconnect(); mounts.disconnect(); window.removeEventListener('resize', measure) }
   }, [sessionId, isPreviewOpen])
   useEffect(() => { setWideOpen(false) }, [preview.wide])
   const showApps = appsOpen && !preview.open
@@ -91,6 +96,6 @@ export function BrainConnections({ sessionId, useSessions, environmentActivity, 
   if (hero) return null
   return <div className={css.chatControl}>
     <button className={css.chatButton} type="button" aria-expanded={showPanel} aria-label="HIVEMIND environment" onClick={() => { if (preview.wide) { setOpen(true); setWideOpen(value => !value) } else setOpen(value => !value) }}>{hyperagents && <span className={css.compactIdentity}>{employee ? <EmployeeAvatar employee={employee} size={24} /> : <RuntimeAvatar size={24} />}<strong>{identity?.name ?? 'Runtime'}</strong></span>}{busy && <span className={css.activityDot} aria-label="Background work running" />}<svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M3 5h14M3 10h14M3 15h14" stroke="currentColor" strokeWidth="1.5" /><circle cx="7" cy="5" r="2" fill="white" stroke="currentColor"/><circle cx="13" cy="10" r="2" fill="white" stroke="currentColor"/><circle cx="8" cy="15" r="2" fill="white" stroke="currentColor"/></svg></button>
-    {showPanel && <section className={css.chatPanel} style={preview.open ? { position: 'fixed', right: preview.inset + 8, top: 76 } : undefined} aria-label="HIVEMIND connected apps">{content}</section>}
+    {showPanel && <section className={css.chatPanel} style={preview.open ? { position: 'fixed', right: preview.inset + 8, top: 76, maxWidth: preview.available } : undefined} aria-label="HIVEMIND connected apps">{content}</section>}
   </div>
 }
