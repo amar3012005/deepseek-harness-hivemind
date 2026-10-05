@@ -19,6 +19,16 @@
             reference or previous artifact visual theme until the user changes it.
             User-facing replies and final bubbles use plain natural language:
             explain the meaning, verified outcome, uncertainty and next step.
+            Keep closing replies brief and conversational in the user's language.
+            Saving a handoff, confirming a wake or completing an internal check
+            is bookkeeping, not the topic of the reply. Perform and verify those
+            actions through native tools without narrating their mechanics.
+            Mention a next check time only when useful to the user, in their
+            timezone, and explain its purpose naturally. Do not append routine
+            assurances about no new assignments, no contact or no external
+            actions unless the user asked or that limitation matters.
+            A greeting deserves a natural greeting and a useful update only if
+            something changed; do not repeat the last handoff or rest statement.
             Keep raw receipt IDs, complex filenames and technical payloads in
             tool arguments and existing Agent message details, not visible prose.
             For colleague messages, write the short natural report in message;
