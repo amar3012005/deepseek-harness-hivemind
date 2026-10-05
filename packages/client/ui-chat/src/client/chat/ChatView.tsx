@@ -13,6 +13,7 @@ import type { ChatNode } from '../contract/chat-nodes.ts'
 import type { ChatSnapshot } from '../contract/snapshot.ts'
 import { PendingSteeringBubble, PendingSubmissionBubble } from './MessageItem.tsx'
 import { avatarGroupEnds } from './avatar-groups.ts'
+import { agentActivity, type AgentActivityKey } from './agent-activity.ts'
 import { hasAssistantReplyContent } from '../contract/assistant-content.ts'
 import { ChatNodeSeat } from './ChatNodeSeat.tsx'
 import { TurnNavigator } from './TurnNavigator.tsx'
@@ -169,12 +170,13 @@ function runningTurnStartTime(timeline: ConversationTimelineSnapshot): number | 
 }
 
 /** Turn-level model activity label retained across first-token, tool, and streaming phases. */
-function TurnStatus({ startTime, working, t }: {
+function TurnStatus({ startTime, working, activity, t }: {
   /** The running turn's logged `turn/start` time; null falls back to mount
    *  time when that boundary is outside the window. */
   startTime: number | null
   /** A live tool call means the turn is doing work beyond model preparation. */
   working: boolean
+  activity?: AgentActivityKey | undefined
   /** The owning view's locale seat. */
   t: ChatViewSlotProps['t']
 }) {
@@ -197,7 +199,7 @@ function TurnStatus({ startTime, working, t }: {
   return (
     <div className={css.turnStatus} data-agent-room={window.location.pathname.includes('/employee/harness') || undefined} role="status" aria-live="polite">
       <ThinkingOrb className={css.activityOrb} state={working ? 'solving' : 'searching'} size={32} aria-hidden="true" />
-      <span className={css.turnStatusLabel}>{working ? t('chat.working') : t('chat.thinking')}</span>
+      <span className={css.turnStatusLabel}>{activity === undefined ? working ? t('chat.working') : t('chat.thinking') : t(activity)}</span>
       {showClock && (
         <span className={css.turnStatusClock} aria-hidden>
           {formatRunDuration(elapsedMs, t)}
@@ -862,7 +864,13 @@ export function ChatView({
               double-render the same wait. */}
           {/* Turn-level loading signal: rides the whole running turn (first-token
               wait, tool execution, streaming) so it never flickers per step. */}
-          {running && <TurnStatus startTime={runningTurnStart} working={runningCalls.length > 0} t={t} />}
+          {running && <TurnStatus
+            startTime={runningTurnStart}
+            working={runningCalls.length > 0}
+            activity={/^\/hivemind\/app\/employee\/harness(?:\/|$)/u.test(window.location.pathname)
+              ? agentActivity(runningCalls) : undefined}
+            t={t}
+          />}
           {pendingSteering.map(item => (
             <PendingSteeringBubble
               key={item.id}
