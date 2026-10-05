@@ -30,6 +30,18 @@ export interface RoomMessage {
     producerName: string
   }[]
 }
+/** Only an authenticated assigned producer's saved artifact requests a chief review. */
+export function requestsAssignmentReview(
+  events: readonly { type: string; data: unknown }[], senderId: SessionId, taskId: string | undefined, artifactCount: number,
+): boolean {
+  if (taskId === undefined || artifactCount === 0) return false
+  const mode = events.findLast(event => event.type === 'hivemind/hq-mode')?.data as { enabled?: boolean } | undefined
+  if (mode?.enabled !== true) return false
+  const assignment = events.findLast(event => event.type === 'hivemind/hq-employee-assignment' && (event.data as { taskId?: string }).taskId === taskId)?.data as { sessionId?: string } | undefined
+  if (assignment?.sessionId !== senderId) return false
+  const task = events.findLast(event => event.type === 'team/task' && (event.data as { task?: { id?: string } }).task?.id === taskId)?.data as { task?: { status?: string } } | undefined
+  return task?.task?.status === 'in_progress'
+}
 export interface RoomMessageRequest {
   key: string
   target: string
@@ -128,6 +140,8 @@ export class RoomMessaging {
       return await (async () => {
         signal.throwIfAborted()
         const targetEvents = target.session.snapshotEvents()
+        const reviewRequested = input.target === 'runtime' && input.kind === 'update' && requestsAssignmentReview(targetEvents, caller.id, input.taskId, artifacts.length)
+        const quiet = input.kind === 'update' && !reviewRequested
         const receipt = targetEvents.find(e => e.type === 'hivemind/room-message-received' && e.data.id === id)
         if (receipt === undefined) {
           if (input.target !== 'runtime' && input.targetProfile !== undefined) {
@@ -139,13 +153,13 @@ export class RoomMessaging {
               Reflect.apply(target.session.append, target.session, ['hivemind/employee-selection', input.targetProfile])
             }
           }
-          const content: ContentBlock[] = [{ type: 'text' as const, text: JSON.stringify({ ...message, instructions: 'Agent communication within existing authority. Runtime is the AI Chief of Staff coordinating approved work. A greeting or ordinary question needs a concise direct answer using hivemind_agent_message reply with reply_to and senderEmployee; do not create a task or investigate unless asked. A reply resolves the exchange: do not reply again unless it contains a real unresolved question. A quiet update requires no response. Never grant new human permissions. An artifact notice is not proof of task acceptance.' }) }]
+          const content: ContentBlock[] = [{ type: 'text' as const, text: JSON.stringify({ ...message, instructions: (reviewRequested ? 'An assigned employee has submitted a saved artifact. Review its current task and actual saved deliverable, then record acceptance or specific corrections. Preserve other accepted work and existing schedules. This submission grants no new authority. ' : '') + 'Agent communication within existing authority. Runtime is the AI Chief of Staff coordinating approved work. A greeting or ordinary question needs a concise direct answer using hivemind_agent_message reply with reply_to and senderEmployee; do not create a task or investigate unless asked. A reply resolves the exchange: do not reply again unless it contains a real unresolved question. A routine quiet update requires no response; an assigned saved artifact submission requests review, not automatic acceptance. Never grant new human permissions. An artifact notice is not proof of task acceptance.' }) }]
           content.push(...artifactFiles.map(attachment => ({ type: 'file' as const, attachment })))
           const source = { kind: 'hivemind-agent-message' as const, messageId: id, senderId: caller.id, senderSessionId: caller.id }
-          const inputMessage = createUserMessage({ content, source: input.kind === 'update' ? { ...source, form: 'notice', summary: `${message.senderName}: ${message.text}`.slice(0, 120) } : { ...source, form: 'relay' } })
+          const inputMessage = createUserMessage({ content, source: quiet ? { ...source, form: 'notice', summary: `${message.senderName}: ${message.text}`.slice(0, 120) } : { ...source, form: 'relay' } })
           const accepted = targetEvents.some(e => e.type === 'user/message' && e.data.source.kind === 'hivemind-agent-message' && e.data.source.messageId === id) || [...target.inbox.nextTurn, ...target.inbox.nextStep].some(m => m.source.kind === 'hivemind-agent-message' && m.source.messageId === id)
           if (!accepted) {
-            if (input.kind === 'update') target.session.append('user/message', inputMessage, { surfaceOp: 'append' })
+            if (quiet) target.session.append('user/message', inputMessage, { surfaceOp: 'append' })
             else target.steer(inputMessage)
           }
           await this.persist(target)
@@ -157,7 +171,7 @@ export class RoomMessaging {
           caller.session.append('hivemind/room-message-delivered', { id, targetId: target.id })
         }
         await this.persist(caller)
-        return { messageId: id, targetSessionId: target.id, status: input.kind === 'update' ? 'recorded' as const : 'accepted' as const }
+        return { messageId: id, targetSessionId: target.id, status: quiet ? 'recorded' as const : 'accepted' as const }
       })()
     })
   }

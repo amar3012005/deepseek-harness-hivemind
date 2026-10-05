@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
-import { RoomMessaging, roomMessageId } from '../src/room-messaging.ts'
+import { RoomMessaging, roomMessageId, requestsAssignmentReview } from '../src/room-messaging.ts'
 
 function fixture() {
   const agents = new Map<string, Agent>()
@@ -124,4 +124,29 @@ describe('Persistent agent room messaging', () => {
     await expect(messaging.send(caller, request, signal)).rejects.toThrow('use_native_team_mailbox')
     expect(() => roomMessageId('room', '../other')).toThrow('key_invalid')
   })
+})
+
+it('wakes Runtime once for a verified assigned artifact and keeps paused submissions quiet', async () => {
+  const { caller, ravi, messaging } = fixture()
+  caller.session.append('hivemind/hq-mode', { enabled: true } as never)
+  caller.session.append('hivemind/hq-employee-assignment', { taskId: 'task-3', sessionId: 'ravi' } as never)
+  caller.session.append('team/task', { task: { id: 'task-3', status: 'in_progress' } } as never)
+  ravi.session.append('hivemind/generation-created', { artifactId: 'saved', file: { type: 'file', id: 'file', name: 'brief.html' } } as never)
+  const request = { key: 'submission', target: 'runtime', kind: 'update' as const, text: 'Ready for review.', taskId: 'task-3', artifactIds: ['saved'] }
+  expect((await messaging.send(ravi, request, signal)).status).toBe('accepted')
+  await messaging.send(ravi, request, signal)
+  expect(caller.steer).toHaveBeenCalledTimes(1)
+  caller.session.append('hivemind/hq-mode', { enabled: false } as never)
+  expect((await messaging.send(ravi, { ...request, key: 'paused' }, signal)).status).toBe('recorded')
+  expect(caller.steer).toHaveBeenCalledTimes(1)
+})
+
+it.each([
+  ['wrong producer', 'other', 'in_progress', 1],
+  ['no saved artifact', 'ravi', 'in_progress', 0],
+  ['already completed', 'ravi', 'completed', 1],
+  ['deleted assignment', 'ravi', 'deleted', 1],
+])('keeps %s quiet', (_label, producer, status, count) => {
+  const events = [{ type: 'hivemind/hq-mode', data: { enabled: true } }, { type: 'hivemind/hq-employee-assignment', data: { taskId: 'task', sessionId: producer } }, { type: 'team/task', data: { task: { id: 'task', status } } }]
+  expect(requestsAssignmentReview(events, 'ravi' as never, 'task', count)).toBe(false)
 })
