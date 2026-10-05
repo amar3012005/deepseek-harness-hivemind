@@ -86,15 +86,15 @@ it('does not publish when authenticated target read fails', async () => {
   expect(append).not.toHaveBeenCalled()
 })
 
-it('publishes the saved assignment during active work and later completion separately without waking', async () => {
-  let input = events()
+it('publishes selected Runtime assignments from a legacy Brain header during active work', async () => {
+  let input = [...events(), { seq: 7, time: 1001, type: 'agent-preset/selected', data: { agentPreset: 'hivemind-hq' } }] as SessionEvent[]
   const hooks = new Map<string, (...args: unknown[]) => void>()
   const received: SessionEvent[] = []
   const target = { id: 'employee-room', status: 'running', runMaintenance: async (fn: () => Promise<void>) => fn(), session: {
     ownEvents: () => received,
     append: vi.fn((type: string, data: unknown) => received.push({ type, data } as SessionEvent)),
   } }
-  const root = { id: 'root', session: { id: 'root', header: { agentPreset: 'hivemind-hq' }, snapshotEvents: () => input } }
+  const root = { id: 'root', session: { id: 'root', header: { agentPreset: 'hivemind-chat' }, snapshotEvents: () => input } }
   const read = vi.fn(async () => ({})), open = vi.fn(async () => ({ read, close: async () => {} }))
   const wake = vi.fn()
   const ctx = {
@@ -109,8 +109,8 @@ it('publishes the saved assignment during active work and later completion separ
   await vi.waitFor(() => { expect(target.session.append).toHaveBeenCalledOnce() })
   expect(received[0]?.type === 'hivemind/employee-task-snapshot' && received[0].data.task.status).toBe('pending')
   expect(target.status).toBe('running')
-  input = events('completed')
-  input.push({ seq: 7, time: 2000, type: 'team/task', data: input[1]!.data } as SessionEvent)
+  input = [...events('completed'), { seq: 7, time: 1001, type: 'agent-preset/selected', data: { agentPreset: 'hivemind-hq' } }] as SessionEvent[]
+  input.push({ seq: 8, time: 2000, type: 'team/task', data: input[1]!.data } as SessionEvent)
   hooks.get('session/event')!(root.session, input.at(-1))
   await vi.waitFor(() => { expect(target.session.append).toHaveBeenCalledTimes(2) })
   const result = received[1]

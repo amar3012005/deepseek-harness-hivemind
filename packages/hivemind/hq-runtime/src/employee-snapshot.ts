@@ -55,6 +55,12 @@ export function employeeTaskSnapshot(
  * @param ctx - Authorized host session, agent and persistence services.
  */
 export function installEmployeeSnapshots(ctx: Context): void {
+  const isRuntime = (agent: Agent): boolean => {
+    let preset = agent.session.header.agentPreset
+    for (const event of agent.session.snapshotEvents())
+      if (event.type === 'agent-preset/selected') preset = event.data.agentPreset
+    return preset === 'hivemind-hq'
+  }
   const tails = new Map<string, Promise<void>>()
   const pending = new Map<string, { root: Agent; taskId: string; targetId: string }>()
   const enqueue = (root: Agent, taskId: string): void => {
@@ -93,7 +99,7 @@ export function installEmployeeSnapshots(ctx: Context): void {
   ctx.effect(() => ctx.on('session/event', (session, event) => {
     if (!['team/task', 'hivemind/hq-calendar-item', 'hivemind/hq-task-review', 'hivemind/hq-task-artifacts', 'hivemind/hq-employee-assignment'].includes(event.type)) return
     const root = ctx.agents.get(session.id)
-    if (!root || root.session.header.agentPreset !== 'hivemind-hq') return
+    if (!root || !isRuntime(root)) return
     const data = event.data as { taskId?: string; task?: { id: string } }
     const taskId = data.taskId ?? data.task?.id
     if (taskId) enqueue(root, taskId)
@@ -108,7 +114,7 @@ export function installEmployeeSnapshots(ctx: Context): void {
   }, { global: true }))
   // Cold restoration repairs a missed display publication from authoritative state.
   ctx.effect(() => ctx.on('agent/session-start', ({ agent }) => {
-    if (agent.session.header.agentPreset !== 'hivemind-hq') return
+    if (!isRuntime(agent)) return
     const tasks = new Set(agent.session.ownEvents().flatMap(event => event.type === 'hivemind/hq-employee-assignment' ? [event.data.taskId] : []))
     for (const taskId of tasks) enqueue(agent, taskId)
   }, { global: true }))
