@@ -12,6 +12,7 @@ import type {} from '@deepseek-ai/dsh-hivemind-execution-scope'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { projectHyperagentProfiles } from '@deepseek-ai/dsh-hivemind-employee-directory'
+import { principalMembershipActive } from './principal-membership.ts'
 import { registerMediaAuth } from './media-auth.ts'
 import { liveVoicePlugin, type LiveVoiceConfig } from './live-voice.ts'
 
@@ -311,7 +312,10 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
       ...principal['project_id'] === undefined ? {} : { projectId: principal['project_id'] },
     }, action)
   }), 'hivemind-web-runner: principal execution scope')
-  ctx.effect(() => ctx.connection.registerPrincipalRpcGuard(async (_principal, endpoint, args, signal) => {
+  ctx.effect(() => ctx.connection.registerPrincipalRpcGuard(async (principal, endpoint, args, signal) => {
+    if (!await principalMembershipActive(projectCatalogBase, serviceToken(principal, projectCatalogSecret), signal)) {
+      return { code: 'auth/unauthorized', message: 'authorization unavailable or membership inactive', details: {} }
+    }
     const ids = referencedSessionIds(args)
     if (endpoint === 'session/create' && ids.size > 0) {
       return { code: 'session/not-found', message: 'session not found', details: {} }
