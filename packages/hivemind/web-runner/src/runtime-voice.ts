@@ -72,12 +72,9 @@ Then stop and let them talk.
 - Never treat a vague phrase as a confirmed fact. Never ask more than one question per turn.
 - Never run past the 3-minute close, and never keep listening after the closing line.`
 
-/** Initial agenda remains pending until an actual spoken check-in is saved.
- * @param events - Native authenticated room history.
- * @returns Whether this room still needs the first operator check-in.
+/** The timed awakening agenda is used for the first recorded initial call only.
+ * An incomplete baseline remains a context gap, not a reason to repeat onboarding.
  */
 export function needsAwakeningCallAgenda(events: readonly SessionEvent[]): boolean {
-  return !events.some(event => event.type === 'hivemind/voice-baseline-outcome' && event.data.status === 'complete'
-    && events.some(call => call.type === 'hivemind/voice-call-ended' && call.data.callId === event.data.callId
-      && call.data.initialCheckIn && !call.data.interrupted && call.data.hadUserSpeech && call.data.transcript.trim()))
+  return !events.some(event => event.type === 'hivemind/voice-call-ended' && event.data.initialCheckIn)
 }
