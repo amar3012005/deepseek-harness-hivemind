@@ -12,12 +12,13 @@ import type {} from '@deepseek-ai/dsh-hivemind-execution-scope'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { projectHyperagentProfiles } from '@deepseek-ai/dsh-hivemind-employee-directory'
+import { registerRunnerDrainStatus } from './runner-drain.ts'
 import { principalMembershipActive } from './principal-membership.ts'
 import { registerMediaAuth } from './media-auth.ts'
 import { liveVoicePlugin, type LiveVoiceConfig } from './live-voice.ts'
 
 export const name = 'hivemind-web-runner'
-export const inject = ['webServer', 'connection', 'sessionPersistence', 'hivemindExecutionScope']
+export const inject = ['webServer', 'connection', 'sessionPersistence', 'hivemindExecutionScope', 'agents']
 
 const EXCHANGE_PATH = '/api/hivemind/embed/exchange'
 const ESTABLISH_PATH = '/api/hivemind/session/establish'
@@ -298,6 +299,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
   if (Buffer.byteLength(projectCatalogSecret, 'utf8') < 32) {
     throw new Error('hivemind-web-runner: project catalog service secret must be at least 32 bytes')
   }
+  registerRunnerDrainStatus(ctx, projectCatalogSecret)
   const redis = createClient({ url: env(config.redisUrlEnv) }) as RedisClientType
   redis.on('error', (error) => { ctx.logger.warn('hivemind-web-runner: Redis error', error) })
   await redis.connect()
