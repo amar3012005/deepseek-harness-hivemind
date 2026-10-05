@@ -71,22 +71,18 @@ export function installEmployeeSnapshots(ctx: Context): void {
       if ('error' in resolved) throw resolved.error
       const target: Agent = resolved.agent
       targetId = target.id
-      if (target.status === 'running') {
-        if (pending.size >= 128 && !pending.has(key)) throw new Error('hq_employee_snapshot_pending_capacity')
-        pending.set(key, { root, taskId, targetId })
-        return
-      }
-      // Remove before maintenance emits idle, so our own publication cannot retry itself.
+      // A display receipt does not drive the agent or edit its model context.
+      // Like native quiet message receipts, publish it during active work so
+      // the saved assignment is visible before a later completion replaces it.
       pending.delete(key)
-      await target.runMaintenance(async () => {
-        const previous = target.session.ownEvents().findLast(e => e.type === 'hivemind/employee-task-snapshot' && e.data.rootSessionId === root.id && e.data.task.id === taskId)
-        if (previous?.type === 'hivemind/employee-task-snapshot') {
-          if (previous.data.sourceSequence >= snapshot.sourceSequence) return
-          if (isDeepStrictEqual({ ...previous.data, sourceSequence: 0 }, { ...snapshot, sourceSequence: 0 })) return
-        }
-        target.session.append('hivemind/employee-task-snapshot', snapshot)
-        if (!await ctx.sessions.flush(target.session)) throw new Error('hq_employee_snapshot_persistence_required')
-      })
+      const previous = target.session.ownEvents().findLast(e => e.type === 'hivemind/employee-task-snapshot' && e.data.rootSessionId === root.id && e.data.task.id === taskId)
+      const unchanged = previous?.type === 'hivemind/employee-task-snapshot'
+        && (previous.data.sourceSequence >= snapshot.sourceSequence
+          || isDeepStrictEqual({ ...previous.data, sourceSequence: 0 }, { ...snapshot, sourceSequence: 0 }))
+      if (!unchanged) target.session.append('hivemind/employee-task-snapshot', snapshot)
+      // A failed flush may leave the exact receipt in memory; retry persistence,
+      // not append, on the existing idle/cold-restoration repair seam.
+      if (!await ctx.sessions.flush(target.session)) throw new Error('hq_employee_snapshot_persistence_required')
     }).catch((error: unknown) => {
       if (targetId !== undefined && (pending.size < 128 || pending.has(key))) pending.set(key, { root, taskId, targetId })
       ctx.logger.warn(`Employee task snapshot pending: ${error instanceof Error ? error.message : String(error)}`)

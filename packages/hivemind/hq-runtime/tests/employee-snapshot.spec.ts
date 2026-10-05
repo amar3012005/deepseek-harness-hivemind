@@ -86,7 +86,7 @@ it('does not publish when authenticated target read fails', async () => {
   expect(append).not.toHaveBeenCalled()
 })
 
-it('retries an exact busy target on native idle with the latest source revision and no wake', async () => {
+it('publishes the saved assignment during active work and later completion separately without waking', async () => {
   let input = events()
   const hooks = new Map<string, (...args: unknown[]) => void>()
   const received: SessionEvent[] = []
@@ -106,17 +106,19 @@ it('retries an exact busy target on native idle with the latest source revision 
   } as unknown as Context
   installEmployeeSnapshots(ctx)
   hooks.get('session/event')!(root.session, input[2])
-  await vi.waitFor(() => { expect(read).toHaveBeenCalledOnce() })
-  expect(target.session.append).not.toHaveBeenCalled()
-  input = events('completed')
-  target.status = 'idle'
-  hooks.get('agent/status')!({ agent: target, status: 'idle' })
   await vi.waitFor(() => { expect(target.session.append).toHaveBeenCalledOnce() })
-  const result = received[0]
+  expect(received[0]?.type === 'hivemind/employee-task-snapshot' && received[0].data.task.status).toBe('pending')
+  expect(target.status).toBe('running')
+  input = events('completed')
+  input.push({ seq: 7, time: 2000, type: 'team/task', data: input[1]!.data } as SessionEvent)
+  hooks.get('session/event')!(root.session, input.at(-1))
+  await vi.waitFor(() => { expect(target.session.append).toHaveBeenCalledTimes(2) })
+  const result = received[1]
   if (result?.type !== 'hivemind/employee-task-snapshot') throw new Error('snapshot_missing')
   expect(result.data.task.status).toBe('completed')
   expect(result.data.task.revision).toBe(3)
+  target.status = 'idle'
   hooks.get('agent/status')!({ agent: target, status: 'idle' })
-  expect(target.session.append).toHaveBeenCalledOnce()
+  expect(target.session.append).toHaveBeenCalledTimes(2)
   expect(wake).not.toHaveBeenCalled()
 })
