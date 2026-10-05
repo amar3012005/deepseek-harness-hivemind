@@ -728,8 +728,7 @@
 /* Agent reading width remains stable when the native composer width is dragged. */
 .root[data-agent-room] { --dsh-transcript-width: 720px; }
 
-/* Native view controls share the composer left edge without widening chat. */
+/* Agent composers keep the normal chat surface; native diagnostic views remain registered. */
 .root[data-agent-room] .composerViews {
-  align-self: flex-start;
-  padding-left: var(--dsh-composer-side-clearance, 0px);
+  display: none;
 }

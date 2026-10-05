@@ -195,7 +195,9 @@ export function apply(ctx: Context, config: Config = Config({})): void {
     if (active !== undefined) uiConversation.binding(sessionId).activate(active.id)
   }
   const restoreView = (sessionId: SessionId): void => {
-    activateView(sessionId, readConversationViewPreference(sessionId))
+    activateView(sessionId, /^\/hivemind\/app\/employee\/harness(?:\/|$)/u.test(window.location.pathname)
+      ? 'chat'
+      : readConversationViewPreference(sessionId))
   }
   const restoreCurrentView = (): void => {
     if (ctx.fiber.uid === null) return
