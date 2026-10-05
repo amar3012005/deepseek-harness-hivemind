@@ -60,7 +60,13 @@ export function setupSingulanceHeadline(
       const identity = getIdentity?.()
       const runtime = preset === 'hivemind-hq' || identity?.name === 'Runtime'
       const agent = runtime || preset === 'hivemind-hyperagents' || identity?.employee !== undefined
-      headline.style.display = agent ? (originals.get(headline)?.display ?? '') : 'none'
+      headline.style.display = originals.get(headline)?.display ?? ''
+      if (!agent) {
+        const original = originals.get(headline)
+        if (original && title.textContent !== original.title) title.textContent = original.title
+        headline.removeAttribute('data-hivemind-hero-headline')
+        continue
+      }
       const text = runtime ? 'RUNTIME : Lets Shape your company together' : 'Hyperagents : Lets do the real work.'
       if (agent && title.textContent !== text) title.textContent = text
       headline.setAttribute('data-hivemind-hero-headline', '')
