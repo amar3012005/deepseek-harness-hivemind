@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { createToolResultMessage } from '@deepseek-ai/dsh-llm'
+import { createToolResultMessage, createUserMessage } from '@deepseek-ai/dsh-llm'
 import { ToolCallId } from '@deepseek-ai/dsh-llm/brand'
 import type { Context } from '@deepseek-ai/cordis'
 import { SessionSeq, type SessionEvent } from '@deepseek-ai/dsh-session'
@@ -64,7 +64,7 @@ function harness() {
     sessionController: { resolveAgent: async () => ({ agent }) }, logger: { warn: vi.fn() } } as unknown as Context
   installServiceRecovery(ctx)
   const arm = () => hooks.get('agent/pre-step')!({ agent, turn: 4 }, async () => ({ kind: 'enter', messages: [] }))
-  return { agent, ensure, remove, read, hooks, arm, guard: () => guard!(agent, record),
+  return { ctx, agent, ensure, remove, read, hooks, arm, guard: () => guard!(agent, record),
     record: () => record, events: () => events, setEvents: (value: SessionEvent[]) => { events = value } }
 }
 it('arms exactly one tenant-scoped native receipt and never delivers while work runs', async () => {
@@ -108,4 +108,56 @@ it('acknowledges a durable native delivery key without requesting another contin
   expect(await h.guard()).toBe(true)
   expect(h.ensure).toHaveBeenCalledOnce()
   expect(h.read).not.toHaveBeenCalled()
+})
+
+function directHarness() {
+  const h = harness()
+  h.agent.session.header.agentPreset = 'hivemind-hyperagents'
+  vi.spyOn(h.ctx.agentTeams, 'tryMembership').mockReturnValue(undefined)
+  const room = vi.fn(async () => h.agent.id)
+  Object.assign(h.ctx.sessionPersistence, { employeeRoomId: room })
+  const events = [
+    { type: 'hivemind/session-owner', seq: SessionSeq(0), time: 0, data: { id: 'employee', slug: 'employee', name: 'Employee', role: 'Analyst' } },
+    { type: 'turn/start', seq: SessionSeq(1), time: 0, data: { turn: 4 } },
+    { type: 'user/message', seq: SessionSeq(2), time: 0, data: createUserMessage({ source: { kind: 'user' }, content: [{ type: 'text', text: 'Review this document.' }] }) },
+    { type: 'turn/end', seq: SessionSeq(3), time: 0, data: { turn: 4, reason: { kind: 'interrupted' } } },
+  ] as SessionEvent[]
+  h.setEvents(events)
+  return { ...h, room, directEvents: events }
+}
+it('recovers an exact human request in the canonical pinned employee room without inventing HQ autonomy', async () => {
+  const h = directHarness()
+  await h.arm(); await h.arm()
+  expect(h.ensure).toHaveBeenCalledOnce()
+  expect(h.record().record.prompt).toContain('"employeeId":"employee"')
+  expect(h.record().record.prompt).not.toContain('modeRevision')
+  expect(await h.guard()).toBe(true)
+  expect(h.room).toHaveBeenCalledWith('employee')
+})
+it('rejects a direct employee recovery after canonical identity or human request changes', async () => {
+  const h = directHarness()
+  await h.arm()
+  h.room.mockResolvedValue('another-room')
+  expect(await h.guard()).toBe(false)
+  h.room.mockResolvedValue(h.agent.id)
+  h.setEvents([...h.directEvents, { type: 'user/message', seq: SessionSeq(4), time: 0, data: createUserMessage({ source: { kind: 'user' }, content: [{ type: 'text', text: 'Stop working.' }] }) }])
+  expect(await h.guard()).toBe(false)
+})
+it('does not arm direct employee work without a pinned canonical owner or a human request', async () => {
+  const h = directHarness()
+  h.room.mockResolvedValue('another-room')
+  await h.arm()
+  expect(h.ensure).not.toHaveBeenCalled()
+  h.room.mockResolvedValue(h.agent.id)
+  h.setEvents(h.directEvents.filter(event => event.type !== 'user/message'))
+  await h.arm()
+  expect(h.ensure).not.toHaveBeenCalled()
+})
+it('does not recover direct employee work after explicit Stop or paused room mode', async () => {
+  const h = directHarness()
+  await h.arm()
+  h.setEvents([...h.directEvents, { type: 'hivemind/hq-mode', seq: SessionSeq(4), time: 0, data: { revision: 2, enabled: false, changedAt: 0 } }])
+  expect(await h.guard()).toBe(false)
+  h.setEvents(h.directEvents.map(event => event.type === 'turn/end' ? { ...event, data: { turn: 4, reason: { kind: 'aborted', reason: { kind: 'user' } } } } : event))
+  expect(await h.guard()).toBe(false)
 })

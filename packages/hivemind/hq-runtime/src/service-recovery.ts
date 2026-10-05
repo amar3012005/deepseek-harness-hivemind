@@ -4,12 +4,32 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
+import { isAgentLoopRequest } from '@deepseek-ai/dsh-llm'
 import { ScheduleId } from '@deepseek-ai/dsh-schedule'
 import { hqMode } from './mode.ts'
 import { TeamTaskId } from '@deepseek-ai/dsh-experimental-agent-team'
 import { currentEmployeeWork } from './employee-room.ts'
 const MARKER = '[HIVEMIND SERVICE RECOVERY]\n'
-interface Recovery { sessionId: string; rootId: string; turn: number; modeRevision: number }
+type Recovery = { sessionId: string; turn: number } & (
+  | { rootId: string; modeRevision: number; employeeId?: never; requestSeq?: never }
+  | { employeeId: string; requestSeq: number; rootId?: never; modeRevision?: never }
+)
+/** A direct employee chat is authorized by its exact saved human request, not HQ autonomy. */
+function directHumanRequest(events: readonly SessionEvent[], turn: number): number | undefined {
+  const start = events.findLast(event => event.type === 'turn/start')
+  if (start?.type !== 'turn/start' || start.data.turn !== turn) return
+  const request = events.findLast(event => event.type === 'user/message' && event.seq > start.seq)
+  return request?.type === 'user/message' && request.data.source.kind === 'user' ? request.seq : undefined
+}
+function pinnedEmployee(events: readonly SessionEvent[]): string | undefined {
+  const owner = events.find(event => String(event.type) === 'hivemind/session-owner')?.data as { id?: unknown } | undefined
+  return typeof owner?.id === 'string' && owner.id.trim() !== '' ? owner.id : undefined
+}
+async function canonicalEmployee(ctx: Context, agent: Agent, employeeId: string): Promise<boolean> {
+  const persistence = ctx.sessionPersistence as typeof ctx.sessionPersistence & { employeeRoomId?: (key: string) => Promise<SessionId> }
+  return pinnedEmployee(agent.session.ownEvents()) === employeeId && persistence.employeeRoomId !== undefined
+    && await persistence.employeeRoomId(employeeId) === agent.id
+}
 const keyOf = (turn: number) => `hivemind-service-recovery-turn-${turn}`
 const idOf = (sessionId: string, turn: number) => ScheduleId(`schedule-${createHash('sha256').update(`${sessionId}\0${keyOf(turn)}`).digest('hex')}`)
 function effectivePreset(agent: Agent): string | undefined {
@@ -45,9 +65,14 @@ function recoveryFrom(prompt: string): Recovery | undefined {
     const value: unknown = JSON.parse(prompt.slice(MARKER.length).split('\n')[0] ?? '')
     if (typeof value !== 'object' || value === null) return
     const ref = value as Partial<Recovery>
-    if (typeof ref.sessionId !== 'string' || typeof ref.rootId !== 'string'
-      || typeof ref.turn !== 'number' || !Number.isSafeInteger(ref.turn) || ref.turn < 0
-      || typeof ref.modeRevision !== 'number' || !Number.isSafeInteger(ref.modeRevision) || ref.modeRevision < 1) return
+    if (typeof ref.sessionId !== 'string' || typeof ref.turn !== 'number' || !Number.isSafeInteger(ref.turn) || ref.turn < 0) return
+    const team = typeof ref.rootId === 'string' && typeof ref.modeRevision === 'number'
+      && Number.isSafeInteger(ref.modeRevision) && ref.modeRevision >= 1
+      && ref.employeeId === undefined && ref.requestSeq === undefined
+    const direct = typeof ref.employeeId === 'string' && ref.employeeId.trim() !== ''
+      && typeof ref.requestSeq === 'number' && Number.isSafeInteger(ref.requestSeq) && ref.requestSeq >= 0
+      && ref.rootId === undefined && ref.modeRevision === undefined
+    if (!team && !direct) return
     return ref as Recovery
   } catch { return }
 }
@@ -66,6 +91,13 @@ export function installServiceRecovery(ctx: Context): void {
       && event.data.inserted.some(message => message.source.kind === 'schedule' && message.source.deliveryKey === deliveryKey))) return true
     if (agent.status === 'running' || agent.inbox.nextStep.length || agent.inbox.nextTurn.length
       || !serviceInterrupted(events, ref.turn)) return false
+    if (typeof ref.employeeId === 'string') {
+      const mode = events.findLast(event => event.type === 'hivemind/hq-mode')
+      return effectivePreset(agent) === 'hivemind-hyperagents'
+        && mode?.data.enabled !== false && !ctx.agentTeams.tryMembership(agent) && !currentEmployeeWork(agent)
+        && directHumanRequest(events, ref.turn) === ref.requestSeq
+        && await canonicalEmployee(ctx, agent, ref.employeeId)
+    }
     const handle = await ctx.sessionPersistence.open(SessionId(ref.rootId), 'read')
     try { await handle.read() } finally { await handle.close() }
     const resolved = await ctx.sessionController.resolveAgent(SessionId(ref.rootId))
@@ -77,21 +109,43 @@ export function installServiceRecovery(ctx: Context): void {
     if (work && (work.rootId !== root.id || ['completed', 'deleted'].includes(ctx.agentTeams.getTask(root, TeamTaskId(work.taskId)).status))) return false
     return effectivePreset(agent) === 'hivemind-hq' || effectivePreset(agent) === 'hivemind-hyperagents'
   }))
-  ctx.effect(() => ctx.on('agent/pre-step', async ({ agent, turn }, next) => {
-    const decision = await next()
-    if (decision.kind === 'reject' || armed.get(agent) === turn) return decision
+  const arm = async (agent: Agent, turn: number): Promise<void> => {
+    if (armed.get(agent) === turn) return
     const preset = effectivePreset(agent)
-    if (preset !== 'hivemind-hq' && preset !== 'hivemind-hyperagents') return decision
+    if (preset !== 'hivemind-hq' && preset !== 'hivemind-hyperagents') return
     const root = preset === 'hivemind-hq' ? agent : ctx.agentTeams.tryMembership(agent)?.root
-    if (!root) return decision
-    const mode = hqMode(root.session.snapshotEvents())
-    if (!mode.enabled) return decision
+    let ref: Recovery
+    if (root) {
+      const mode = hqMode(root.session.snapshotEvents())
+      if (!mode.enabled) return
+      ref = { sessionId: agent.id, rootId: root.id, turn, modeRevision: mode.revision }
+    } else {
+      const events = agent.session.ownEvents()
+      const employeeId = pinnedEmployee(events)
+      const requestSeq = directHumanRequest(events, turn)
+      if (preset !== 'hivemind-hyperagents' || employeeId === undefined || requestSeq === undefined
+        || currentEmployeeWork(agent) || events.findLast(event => event.type === 'hivemind/hq-mode')?.data.enabled === false
+        || !await canonicalEmployee(ctx, agent, employeeId)) return
+      ref = { sessionId: agent.id, employeeId, requestSeq, turn }
+    }
     if (!await ctx.sessions.flush(agent.session)) throw new Error('service_recovery_source_persistence_required')
-    const ref: Recovery = { sessionId: agent.id, rootId: root.id, turn, modeRevision: mode.revision }
     await ctx.schedule.ensure(agent.id, keyOf(turn), { title: 'Service interruption recovery', after_seconds: 1,
       prompt: MARKER + JSON.stringify(ref) + '\nThe service stopped during your unfinished work. Resume the existing native plan from saved state, private handoff and exact receipts. Reconcile any TOOL_OUTCOME_UNKNOWN before retrying: verify saved/external state for writes, and retry only proven absent or idempotent work. Do not repeat completed work or awakening. Preserve existing schedules and permissions. Explain meaningful progress naturally.' })
     armed.set(agent, turn)
+  }
+  ctx.effect(() => ctx.on('agent/pre-step', async ({ agent, turn }, next) => {
+    const decision = await next()
+    if (decision.kind !== 'reject') await arm(agent, turn)
     return decision
+  }, { global: true }))
+  // Native streaming begins after accepted incoming messages are committed.
+  ctx.effect(() => ctx.on('llm/stream', async function* (options, next) {
+    if (isAgentLoopRequest(options) && options.sessionId) {
+      const agent = ctx.agents.get(SessionId(options.sessionId))
+      const start = agent?.session.ownEvents().findLast(event => event.type === 'turn/start')
+      if (agent?.status === 'running' && start?.type === 'turn/start') await arm(agent, start.data.turn)
+    }
+    yield* next()
   }, { global: true }))
   ctx.effect(() => ctx.on('agent/turn-ended', ({ agent, turn, reason }) => {
     if (armed.get(agent) !== turn || reason.kind === 'interrupted'
