@@ -10,6 +10,7 @@ import { describe, expect, it, vi } from 'vitest'
 import {
   ApiSessionAgentController,
   ApiSessionCwdConflict,
+  ApiSessionPresetConflict,
 } from '../src/agent.ts'
 import { SessionCommandController } from '../src/commands.ts'
 import { installSessionReadTestServices, testSessionPersistence } from './test-remote.ts'
@@ -67,6 +68,34 @@ describe('Session creation failures', () => {
       expect(releaseOwned).toHaveBeenCalledTimes(mode === 'present' ? 0 : 1)
       expect(ensureSession).toHaveBeenCalledOnce()
       if (mode === 'absent-owned') expect(releaseOwned.mock.invocationCallOrder[0]).toBeLessThan(ensureSession.mock.invocationCallOrder[0]!)
+    }
+    await ctx.fiber.dispose()
+  })
+
+  it.each(['runtime', 'lead', 'employee'] as const)('reconciles canonical legacy HQ only for %s ownership', async (ownerKind) => {
+    const ctx = await baseContext()
+    ctx.provide('workspaceRegistry', { get: () => undefined, list: () => [] } as never)
+    const id = SessionId('session-canonical-legacy-hq')
+    const session = ctx.sessions.create(id, { meta: { cwd: '/default' } })
+    vi.spyOn(session, 'snapshotEvents').mockReturnValue([{ type: 'hivemind/session-owner', data: {
+      id: ownerKind === 'employee' ? 'employee-id' : null, slug: ownerKind,
+    } }] as never)
+    ctx.provide('sessionPersistence', { employeeRoomId: async () => id } as never)
+    const conflict = new ApiSessionPresetConflict(id, 'hivemind-hq', 'hivemind-hyperagents')
+    const adopted = { id, session } as Agent
+    const ensureSession = vi.fn().mockRejectedValueOnce(conflict).mockResolvedValue(adopted)
+    const select = vi.fn(async () => 'hivemind-hq')
+    ctx.provide('agentPresets', { select } as never)
+    const controller = new SessionCommandController(ctx, controllerAgents({ ensureSession }), '/default')
+    if (ownerKind === 'employee') {
+      await expect(controller.create({ hyperagentRoom: 'runtime' })).rejects.toMatchObject({ code: 'agent-preset/conflict' })
+      expect(ensureSession).toHaveBeenCalledTimes(1)
+      expect(select).not.toHaveBeenCalled()
+    } else {
+      const result = await controller.create({ hyperagentRoom: 'runtime' })
+      expect(result.sessionId).toBe(id)
+      expect(ensureSession).toHaveBeenLastCalledWith(id, '/default', true)
+      expect(select).toHaveBeenCalledWith(adopted, 'hivemind-hq')
     }
     await ctx.fiber.dispose()
   })

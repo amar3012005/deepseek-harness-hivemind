@@ -120,6 +120,7 @@ export class SessionCommandController {
     }
     const cwd = workspace?.path ?? request.cwd ?? this.defaultCwd
     let adopted: Agent
+    let restoreRuntimePreset = false
     try {
       adopted = await this.agents.ensureSession(
         sessionId,
@@ -128,15 +129,25 @@ export class SessionCommandController {
         room === undefined ? request.agentPreset : room === 'runtime' ? 'hivemind-hq' : 'hivemind-hyperagents',
       )
     } catch (error) {
-      // A tenant-resolved employee room may have been switched to Brain.
-      // Reopen that same room; native employee selection restores its mode.
-      // Explicit session adoption and HQ preset admission stay strict.
-      if (roomId !== undefined && room !== 'runtime'
+      // Reopen only the authenticated canonical room. Legacy Runtime rooms
+      // can retain the HyperAgent preset; the native selector restores HQ
+      // after opening. Explicit IDs and unrelated preset conflicts stay strict.
+      const legacyRuntime = roomId !== undefined && room === 'runtime'
+        && error instanceof ApiSessionPresetConflict
+        && error.requestedPreset === 'hivemind-hq'
+        && error.existingPreset === 'hivemind-hyperagents'
+      if (legacyRuntime) {
+        const saved = await this.readSessionState(sessionId)
+        const owner = saved.events.find(event => (event.type as string) === 'hivemind/session-owner')?.data as { id?: unknown; slug?: unknown } | undefined
+        if (owner !== undefined && (owner.id !== null || !['runtime', 'lead'].includes(String(owner.slug)))) this.rejectCreation(sessionId, error)
+      }
+      if (legacyRuntime || (roomId !== undefined && room !== 'runtime'
         && error instanceof ApiSessionPresetConflict
         && error.requestedPreset === 'hivemind-hyperagents'
-        && error.existingPreset === 'hivemind-chat') {
+        && error.existingPreset === 'hivemind-chat')) {
         try {
           adopted = await this.agents.ensureSession(sessionId, cwd, true)
+          restoreRuntimePreset = legacyRuntime
         } catch (adoptionError) {
           this.rejectCreation(sessionId, adoptionError)
         }
@@ -144,6 +155,7 @@ export class SessionCommandController {
         this.rejectCreation(sessionId, error)
       }
     }
+    if (restoreRuntimePreset) await this.ctx.agentPresets.select(adopted, 'hivemind-hq')
     if (workspace !== undefined) {
       try {
         await workspace.attachSession(sessionId)
