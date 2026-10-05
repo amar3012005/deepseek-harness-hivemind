@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import type { Context } from '@deepseek-ai/cordis'
-import { employeeTaskSnapshot, installEmployeeSnapshots } from '../src/employee-snapshot.ts'
+import { employeeTaskSnapshot, installEmployeeSnapshots, publishEmployeeSnapshot } from '../src/employee-snapshot.ts'
 function events(status = 'pending', reviewStatus = 'accepted', reviewer = 'runtime'): SessionEvent[] {
   return [
     { seq: 1, time: 1000, type: 'hivemind/hq-employee-assignment', data: { taskId: 'task-1', employeeId: 'employee', employeeName: 'Sofia', memberName: 'sofia', sessionId: 'employee-room', personaSha256: 'digest' } },
@@ -121,4 +121,27 @@ it('publishes selected Runtime assignments from a legacy Brain header during act
   hooks.get('agent/status')!({ agent: target, status: 'idle' })
   expect(target.session.append).toHaveBeenCalledTimes(2)
   expect(wake).not.toHaveBeenCalled()
+})
+
+
+it('awaits the exact scheduled display receipt before scheduling is acknowledged', async () => {
+  const input = events()
+  const received: SessionEvent[] = []
+  const target = { id: 'employee-room', status: 'running', session: {
+    ownEvents: () => received,
+    append: (type: string, data: unknown) => received.push({ type, data } as SessionEvent),
+  } }
+  const root = { id: 'root', session: { snapshotEvents: () => input } }
+  let persisted = false
+  const ctx = {
+    sessions: { flush: async (session: unknown) => { if (session === target.session) persisted = true; return true } },
+    sessionPersistence: { open: async () => ({ read: async () => ({}), close: async () => {} }) },
+    sessionController: { resolveAgent: async () => ({ agent: target }) },
+  } as unknown as Context
+  await publishEmployeeSnapshot(ctx, root as never, 'task-1')
+  expect(persisted).toBe(true)
+  expect(received[0]?.type).toBe('hivemind/employee-task-snapshot')
+  expect(target.status).toBe('running')
+  await publishEmployeeSnapshot(ctx, root as never, 'task-1')
+  expect(received).toHaveLength(1)
 })

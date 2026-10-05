@@ -51,6 +51,31 @@ export function employeeTaskSnapshot(
       ...(task.status === 'completed' && accepted ? { completedAt: new Date(taskEvent.time).toISOString() } : {}) } }
 }
 
+/** Publish one display receipt inside the authenticated scheduling transaction. */
+export async function publishEmployeeSnapshot(ctx: Context, root: Agent, taskId: string): Promise<string | undefined> {
+  if (!await ctx.sessions.flush(root.session)) throw new Error('hq_employee_snapshot_source_persistence_required')
+  const snapshot = employeeTaskSnapshot(root.session.snapshotEvents(), taskId, root.id)
+  if (!snapshot?.task.sessionId) return undefined
+  // Native authenticated persistence proves this exact room remains readable.
+  const handle = await ctx.sessionPersistence.open(SessionId(snapshot.task.sessionId), 'read')
+  try { await handle.read() } finally { await handle.close() }
+  const resolved = await ctx.sessionController.resolveAgent(SessionId(snapshot.task.sessionId))
+  if ('error' in resolved) throw resolved.error
+  const target: Agent = resolved.agent
+  // A display receipt does not drive the agent or edit its model context.
+  // Like native quiet message receipts, publish it during active work so
+  // the saved assignment is visible before a later completion replaces it.
+  const previous = target.session.ownEvents().findLast(e => e.type === 'hivemind/employee-task-snapshot' && e.data.rootSessionId === root.id && e.data.task.id === taskId)
+  const unchanged = previous?.type === 'hivemind/employee-task-snapshot'
+    && (previous.data.sourceSequence >= snapshot.sourceSequence
+      || isDeepStrictEqual({ ...previous.data, sourceSequence: 0 }, { ...snapshot, sourceSequence: 0 }))
+  if (!unchanged) target.session.append('hivemind/employee-task-snapshot', snapshot)
+  // A failed flush may leave the exact receipt in memory; retry persistence,
+  // not append, on the existing idle/cold-restoration repair seam.
+  if (!await ctx.sessions.flush(target.session)) throw new Error('hq_employee_snapshot_persistence_required')
+  return target.id
+}
+
 /** Publish changed derived views through native session lifecycle observers.
  * @param ctx - Authorized host session, agent and persistence services.
  */
@@ -67,28 +92,9 @@ export function installEmployeeSnapshots(ctx: Context): void {
     const key = `${root.id}:${taskId}`
     let targetId: string | undefined
     const run = (tails.get(key) ?? Promise.resolve()).then(async () => {
-      if (!await ctx.sessions.flush(root.session)) throw new Error('hq_employee_snapshot_source_persistence_required')
-      const snapshot = employeeTaskSnapshot(root.session.snapshotEvents(), taskId, root.id)
-      if (!snapshot?.task.sessionId) return
-      // Native authenticated persistence proves this exact room remains readable.
-      const handle = await ctx.sessionPersistence.open(SessionId(snapshot.task.sessionId), 'read')
-      try { await handle.read() } finally { await handle.close() }
-      const resolved = await ctx.sessionController.resolveAgent(SessionId(snapshot.task.sessionId))
-      if ('error' in resolved) throw resolved.error
-      const target: Agent = resolved.agent
-      targetId = target.id
-      // A display receipt does not drive the agent or edit its model context.
-      // Like native quiet message receipts, publish it during active work so
-      // the saved assignment is visible before a later completion replaces it.
+      targetId = employeeTaskSnapshot(root.session.snapshotEvents(), taskId, root.id)?.task.sessionId
+      targetId = await publishEmployeeSnapshot(ctx, root, taskId)
       pending.delete(key)
-      const previous = target.session.ownEvents().findLast(e => e.type === 'hivemind/employee-task-snapshot' && e.data.rootSessionId === root.id && e.data.task.id === taskId)
-      const unchanged = previous?.type === 'hivemind/employee-task-snapshot'
-        && (previous.data.sourceSequence >= snapshot.sourceSequence
-          || isDeepStrictEqual({ ...previous.data, sourceSequence: 0 }, { ...snapshot, sourceSequence: 0 }))
-      if (!unchanged) target.session.append('hivemind/employee-task-snapshot', snapshot)
-      // A failed flush may leave the exact receipt in memory; retry persistence,
-      // not append, on the existing idle/cold-restoration repair seam.
-      if (!await ctx.sessions.flush(target.session)) throw new Error('hq_employee_snapshot_persistence_required')
     }).catch((error: unknown) => {
       if (targetId !== undefined && (pending.size < 128 || pending.has(key))) pending.set(key, { root, taskId, targetId })
       ctx.logger.warn(`Employee task snapshot pending: ${error instanceof Error ? error.message : String(error)}`)

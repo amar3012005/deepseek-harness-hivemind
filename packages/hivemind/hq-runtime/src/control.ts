@@ -5,7 +5,8 @@ import { createBrowserTimeZoneConfirmation } from '@deepseek-ai/dsh-time-context
 import type {} from '@deepseek-ai/dsh-agent-presets'
 import type {} from '@deepseek-ai/dsh-experimental-agent-team'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
-import { installEmployeeSnapshots } from './employee-snapshot.ts'
+import { installServiceRecovery } from './service-recovery.ts'
+import { installEmployeeSnapshots, publishEmployeeSnapshot } from './employee-snapshot.ts'
 import { restState as loadRestState, leaveRestNote as saveRestNote } from './rest.ts'
 import type { HqRestState, HqRestNoteRequest, HqRestNoteResult } from './types.ts'
 import { hqMode, type HqModeState } from './mode.ts'
@@ -78,6 +79,7 @@ export class HqControl extends TypertRemoteService {
     super(ctx, 'hivemindHq')
     installEmployeeDelivery(ctx)
     installEmployeeSnapshots(ctx)
+    installServiceRecovery(ctx)
     ctx.effect(() => ctx.on('agent/session-start', ({ agent }) => {
       if (!isHq(agent)) return
       // Cold restoration can occur inside Schedule's serialized dispatch. Its
@@ -402,6 +404,8 @@ export class HqControl extends TypertRemoteService {
       if (!(await this.ctx.sessions.flush(root.session)))
         throw new Error('hq_calendar_wake_persistence_required')
     }
+    // Publish before acknowledging scheduling, under the caller's authenticated scope.
+    await publishEmployeeSnapshot(this.ctx, root, task.id)
     const rooms = Reflect.get(this.ctx, 'sessionController') as { deliverAgentMessage: (caller: Agent, input: { key: string; target: string; kind: 'update'; text: string; taskId: string }, signal: AbortSignal) => Promise<unknown> }
     await rooms.deliverAgentMessage(root, { key: `hq-plan-notice-${item.id}-${item.revision}`, target: item.owner, kind: 'update', taskId: task.id,
       text: `Runtime assigned ${item.title}. Start ${item.startsAt}; deadline ${taskContracts(root.session.snapshotEvents()).find(value => value.taskId === task.id)?.dueAt}. This saved future assignment will trigger your room at its start after dependencies are accepted. Acknowledge only if a human asks; this quiet notice grants no new authority.` }, new AbortController().signal)
