@@ -325,7 +325,7 @@ export function apply(ctx: Context, config: Config): void {
     registerArtifactTool(rendererCtx, config)
     const registry = new GenerationRegistry()
     const { imageModel, imageBaseURL, imageApiKeyEnv } = config
-    if (config.imageMuseFallback) rendererCtx.effect(() => registry.register(museImageProvider(config.imageTimeoutMs ?? 180_000), true))
+    if (config.imageMuseFallback) rendererCtx.effect(() => registry.register(museImageProvider(config.imageTimeoutMs ?? 180_000, input => rendererCtx.serial('hivemind/muse-image', input)), true))
     if (config.imageProvider === 'codex') {
       rendererCtx.effect(() => registry.register(codexImageProvider({
         command: config.codexImageCommand ?? '/opt/deepseek-harness/packages/subagent/subagent-codex/node_modules/@openai/codex/bin/codex.js',

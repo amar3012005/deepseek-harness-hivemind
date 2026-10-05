@@ -71,7 +71,7 @@ HTML/PDF generation also accepts `use_latest_uploaded_images`, the same opt-in u
 
 ### Optional Muse recovery
 
-`imageMuseFallback: true` registers the Muse secondary through the existing Cloudflare AI Gateway. It does not change the primary provider or let the model select arbitrary providers. Readiness requires the gateway account, gateway ID and gateway token, plus the configured OpenRouter BYOK alias or key. The shared `hivemind-image-generation` instruction is registered through the native skill service.
+`imageMuseFallback: true` registers the Muse secondary through the existing Cloudflare AI Gateway. It does not change the primary provider or let the model select arbitrary providers. The scoped native Runtime bridge calls the existing signed Core authority route. Gateway credentials remain in Core/Control Plane; the runner needs only its existing scoped service authority. Readiness requires the Core gateway account, gateway ID and gateway token, plus the configured OpenRouter BYOK alias or key. The shared `hivemind-image-generation` instruction is registered through the native skill service.
 
 When a primary image turn durably ends with `CONFIRMED_IMAGE_NO_OUTPUT`, its native job output includes the failed operation ID. The agent can promptly call the same media tool with `fallback_from_operation` and unchanged creative inputs. The server validates that receipt and creates a distinct, linked Muse operation. This is instructed native recovery, not a hidden cross-provider retry loop. Pending/unknown outcomes, policy rejections and unconfirmed image outputs do not qualify. Resume always resolves the provider from the original saved operation; Muse unknown outcomes cannot be regenerated automatically.
 

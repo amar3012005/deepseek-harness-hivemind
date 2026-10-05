@@ -1089,7 +1089,22 @@ function registerWebConnectRoutes(ctx: Context, config: Config): void {
  * @param config - validated deployment budgets and file locations.
  * @returns Nothing; Cordis owns the registered effects.
  */
+declare module '@deepseek-ai/cordis' {
+  interface Events {
+    /** Scoped native Muse transport; gateway credentials remain in Core. @mode serial */
+    'hivemind/muse-image'(input: { signal: AbortSignal; owner?: { orgId: string; userId: string; sessionId: string }; payload?: { prompt: string; aspect_ratio: string; references: string[] } }): Promise<unknown>
+  }
+}
 export function apply(ctx: Context, config: Config): void {
+  ctx.effect(() => ctx.on('hivemind/muse-image', async (input) => {
+    if (config.authorityMode !== 'scoped-service') throw new Error('Muse requires scoped service authority')
+    const principal = ctx.hivemindExecutionScope.require()
+    if (input.payload && (!input.owner || input.owner.orgId !== principal.orgId || input.owner.userId !== principal.userId)) throw new Error('Muse media owner does not match current principal')
+    const authority = scopedServiceAuthority(ctx, config)
+    return hiveRequest(authority, '/media/muse-image', input.payload
+      ? { method: 'POST', body: JSON.stringify(input.payload) } : { method: 'GET' }, input.signal,
+    { ...config, requestTimeoutMs: 185_000, responseMaxBytes: 41_000_000 })
+  }))
   installArtifactProductionGuidance(ctx)
   installCompanyStrategyGuidance(ctx)
   installCompletionLearningGuidance(ctx)

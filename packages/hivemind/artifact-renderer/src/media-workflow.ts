@@ -239,6 +239,12 @@ export function registerMediaWorkflow(
           return creative
         }
         if (!isDeepStrictEqual(normalized(original), normalized(args))) throw new Error('Fallback creative inputs changed; saved references and brief must be preserved')
+        const originalInputsHash = createHash('sha256').update(JSON.stringify({ session: String(agent.session.header.id),
+          id: original['operation_id'] ?? '', kind, title, brief, references, artifacts: args.reference_artifact_ids ?? [],
+          inputs: files.map(file => createHash('sha256').update(file.data).digest('hex')),
+          source: args.source_artifact_id ?? '', duration: args.duration_seconds ?? null,
+          aspect: args.aspect_ratio ?? '', transparent: args.transparent_background ?? false })).digest('hex')
+        if (originalInputsHash !== source.data.operationId) throw new Error('Fallback reference pixels changed since the original operation')
         provider = registry.get('image', 'openrouter:meta/muse-image')
       }
       const availability = await provider.availability?.()
