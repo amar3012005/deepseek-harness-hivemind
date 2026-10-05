@@ -20,7 +20,9 @@ export function museImageProvider(timeoutMs: number, bridge: MuseBridge): Genera
     id: 'openrouter:meta/muse-image', format: 'image',
     instructions: 'Provide the finished image brief and verified visual constraints.',
     async availability() {
-      const result = await bridge({ signal: AbortSignal.timeout(10_000) }) as { ready?: boolean } | undefined
+      let result: { ready?: boolean } | undefined
+      try { result = await bridge({ signal: AbortSignal.timeout(10_000) }) as { ready?: boolean } | undefined }
+      catch { result = undefined }
       return result?.ready ? { ready: true } : { ready: false, code: 'IMAGE_GATEWAY_UNAVAILABLE', action: 'Enable the authorized Core image gateway bridge.' }
     },
     async generate(request) {
