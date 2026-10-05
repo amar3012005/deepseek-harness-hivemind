@@ -395,8 +395,16 @@ export function apply(ctx: ClientContext): void {
             ? await selectEmployee(sessionId, null, true)
             : alreadyUsed || roomOwner?.id === id || await selectEmployee(sessionId, id)
           if (selected) {
-          // Team navigation opens an agent workspace even while its first
-          // draft is blank. Do not wait for a user turn to choose the route.
+            if (id === 'runtime' && !alreadyUsed) {
+              const actx = ctx.sessions.scope(sessionId)
+              const conversation = ctx.get('conversation')
+              if (actx !== undefined && conversation !== undefined) {
+                const input = conversation.input.for(actx)
+                if (!input.state.getSnapshot().draft.trim()) input.setDraft('Wakeup ! chief')
+              }
+            }
+            // Team navigation opens an agent workspace even while its first
+            // draft is blank. Do not wait for a user turn to choose the route.
             window.history.replaceState(window.history.state, '', `/hivemind/app/employee/harness/session/${encodeURIComponent(sessionId)}`)
             window.dispatchEvent(new PopStateEvent('popstate'))
           }

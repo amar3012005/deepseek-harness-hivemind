@@ -33,7 +33,7 @@ declare module '@deepseek-ai/dsh-session/types' {
     'hivemind/hq-awakening-checkpoint': AwakeningCheckpoint
   }
 }
-const trigger = /^(?:wake\s+up|wakeup)\s*,?\s*chief(?=$|[\s!.,:;—-])/iu
+const trigger = /^(?:wake\s+up|wakeup)\s*[!,]?\s*chief(?=$|[\s!.,:;—-])/iu
 export async function awakeningContext(ctx: Context, agent: Agent, turn: number, messages: readonly UserMessage[]): Promise<string> {
   if (!isHqLead(ctx, agent)) return ''
   let started = agent.session.snapshotEvents().some(event => event.type === 'hivemind/hq-awakening-start')

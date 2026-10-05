@@ -79,6 +79,7 @@ it.each(['conversation', 'company', 'strategy'])('only a plain invitation is adm
 it.each([
   ['Wake up, Chief!', 'user', true],
   ['Wakeup Chief', 'user', true],
+  ['Wakeup ! chief', 'user', true],
   ['Wakeup, Chief! Review our current work.', 'user', true],
   ['Wakeup Chiefly', 'user', false],
   ['Please explain Wakeup Chief', 'user', false],

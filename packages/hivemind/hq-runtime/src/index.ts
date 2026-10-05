@@ -91,7 +91,7 @@ export function apply(ctx: Context): void {
       investigationMasks.delete(agent)
     }
     const latestHuman = agent.session.snapshotEvents().findLast(event => event.type === 'user/message' && event.data.source.kind === 'user')
-    const wake = latestHuman?.type === 'user/message' && /^(?:wake\s+up|wakeup)\s*,?\s*chief\s*!?\s*$/iu.test(latestHuman.data.content.flatMap(block => block.type === 'text' ? [block.text] : []).join('').trim())
+    const wake = latestHuman?.type === 'user/message' && /^(?:wake\s+up|wakeup)\s*[!,]?\s*chief\s*!?\s*$/iu.test(latestHuman.data.content.flatMap(block => block.type === 'text' ? [block.text] : []).join('').trim())
     if (wake && isHqLead(ctx, agent)) {
       const mode = agent.session.snapshotEvents().findLast(event => event.type === 'hivemind/hq-public-investigation')
       if (mode?.type === 'hivemind/hq-public-investigation' && mode.data.enabled) {

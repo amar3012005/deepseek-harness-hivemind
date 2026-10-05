@@ -110,6 +110,8 @@ export function HiveSessionProjection({
       ?? navigator.clipboard?.writeText(url.toString())
     void sharing?.catch((reason: unknown) => { console.warn('session share rejected:', reason) })
   }
+  // Team profiles already live in the host sidebar; do not repeat room history.
+  if (hyperagentRoute) return null
   const now = Date.now()
   const locale = document.documentElement.lang || navigator.language || 'en'
   const content = <div data-agent-room-history={hyperagentRoute || undefined} className={`${css.root} ${osRail === null ? '' : css.osRoot}`}>

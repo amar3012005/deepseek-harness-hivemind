@@ -151,7 +151,6 @@ describe('HIVE native session projection', () => {
 describe('title-first HIVE Recents', () => {
   it.each([
     ['/hivemind/app/overview', 'hivemind-chat'],
-    ['/hivemind/app/employee/harness/new', 'hivemind-hyperagents'],
   ])('shows titles and full hover timestamps in %s', (path, preset) => {
     const before = window.location.href
     window.history.replaceState(null, '', path)
@@ -170,4 +169,19 @@ describe('title-first HIVE Recents', () => {
       expect(row.className).toContain('recentRow')
     } finally { window.history.replaceState(null, '', before) }
   })
+})
+
+it('does not duplicate agent rooms in a recent-chat list', () => {
+  const before = window.location.href
+  window.history.replaceState(null, '', '/hivemind/app/employee/harness/session/runtime')
+  try {
+    const sessions = list(summary('runtime', 1, { agentPreset: 'hivemind-hq' }))
+    const view = render(<HiveSessionProjection
+      {...runtime} renderSlot={renderSlot} SessionProvider={SessionProvider}
+      useSessions={selector => selector(sessions)} useSessionPendingInteraction={selector => selector(noAttention)}
+      createSession={vi.fn()} openSession={vi.fn()} {...actions} t={t}
+    />)
+    expect(view.container.textContent).toBe('')
+    expect(screen.queryByRole('treeitem')).toBeNull()
+  } finally { window.history.replaceState(null, '', before) }
 })
