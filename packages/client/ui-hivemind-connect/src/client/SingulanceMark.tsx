@@ -39,8 +39,8 @@ export function SingulanceMark({ size = 48, className, ...props }: SingulanceMar
 
 /** Keep the first-entry portrait bound to the same native room summary as its title. */
 export function RoomHeroMark({ size = 34, className, identity }: {
-  size?: number
-  className?: string
+  size?: number | undefined
+  className?: string | undefined
   identity: { getSnapshot(): string; subscribe(listener: () => void): () => void }
 }) {
   const encoded = useSyncExternalStore(identity.subscribe, identity.getSnapshot)
