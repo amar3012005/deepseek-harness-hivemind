@@ -380,8 +380,9 @@ export function ChatView({
   /** Whether the in-flight jump already landed mid-paging (settle then only corrects an untouched landing). */
   const jumpLandedRef = useRef(false)
   const [busyJumpTurn, setBusyJumpTurn] = useState<number | null>(null)
-  /** Bumped when a loadThrough completion settles, after its last page's commit. */
+  /** Keep the chosen reading line through asynchronous row sizing until reader movement. */
   const settledJumpRef = useRef<{ key: string; turn: number } | null>(null)
+  /** Bumped when a loadThrough completion settles, after its last page's commit. */
   const [jumpSettleTick, setJumpSettleTick] = useState(0)
   /** Window head at the last settle-time repage; an unmoved head falls back instead of repaging forever. */
   const jumpRepageHeadRef = useRef<number | null>(null)
@@ -788,6 +789,7 @@ export function ChatView({
 
   // Identity feeds the memoized rail; a fresh closure per render would defeat it.
   const navigateToTurn = useCallback((item: TurnRailItem): void => {
+    settledJumpRef.current = null
     const local = listRef.current
     if (local === null) return
     const el = scrollerOf(local)
