@@ -1,15 +1,17 @@
 /** Product identity avatar over the authorized employee directory and room owner. */
 import { useEffect, useState, useSyncExternalStore } from 'react'
 import type { SessionEventWindow } from '@deepseek-ai/dsh-api-session-controller/client'
-import { EmployeeAvatar, RuntimeAvatar, selectedEmployee, type EmployeeOption } from './HyperagentEmployee.tsx'
-export function AgentChatAvatar({ employeeId, name, events, load }: {
+import { EmployeeAvatar, RuntimeAvatar, selectedEmployee, projectedEmployee, type EmployeeOption } from './HyperagentEmployee.tsx'
+export function AgentChatAvatar({ employeeId, name, events, identity, load }: {
   employeeId?: string
   name?: string
   events?: { subscribe(listener: () => void): () => void; getSnapshot(): SessionEventWindow }
+  identity?: { subscribe(listener: () => void): () => void; getSnapshot(): string | null | undefined }
   load: () => Promise<EmployeeOption[]>
 }) {
   const window = useSyncExternalStore(listener => events?.subscribe(listener) ?? (() => {}), () => events?.getSnapshot())
-  const owner = window === undefined ? null : selectedEmployee(window)
+  const savedIdentity = useSyncExternalStore(listener => identity?.subscribe(listener) ?? (() => {}), () => identity?.getSnapshot())
+  const owner = projectedEmployee(savedIdentity) ?? (window === undefined ? null : selectedEmployee(window))
   const [directory, setDirectory] = useState<EmployeeOption[]>([])
   useEffect(() => {
     let disposed = false

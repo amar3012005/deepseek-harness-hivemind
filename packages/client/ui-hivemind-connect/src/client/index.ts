@@ -267,11 +267,20 @@ export function apply(ctx: ClientContext): void {
   }
   let chatDirectory: Promise<EmployeeOption[]> | undefined
   const chatEmployees = () => chatDirectory ??= listEmployees().catch((error) => { chatDirectory = undefined; throw error })
+  const chatIdentity = (sessionId: SessionId) => ({
+    subscribe: (listener: () => void) => ctx.sessions.list.subscribe(listener),
+    getSnapshot: () => {
+      const values = ctx.sessions.list.getSnapshot().byId[sessionId]?.projectionValues
+      return values?.hyperagentOwner ?? values?.hyperagentSelection
+    },
+  })
   ctx.slots.inject('schedule.task.avatar', () => ctx.slots.register({ name: 'schedule.task.avatar' }, ({ targetSessionId, employeeId }) => {
     if (!window.location.pathname.includes('/employee/harness')) return null
     if (employeeId !== undefined) return createElement(AgentChatAvatar, { employeeId, load: chatEmployees })
     const binding = ctx.sessions.binding(targetSessionId)
-    return binding === undefined ? null : createElement(AgentChatAvatar, { events: binding.eventSource, load: chatEmployees })
+    return binding === undefined ? null : createElement(AgentChatAvatar, {
+      events: binding.eventSource, identity: chatIdentity(targetSessionId), load: chatEmployees,
+    })
   }))
   for (const name of ['conversation.chat.assistantAvatar', 'conversation.chat.contextAvatar', 'hivemind.runtime.planAvatar', 'hivemind.employee.taskAvatar'] as const) ctx.slots.inject(name, () => ctx.slots.register({
     name,
@@ -279,7 +288,7 @@ export function apply(ctx: ClientContext): void {
     ? createElement(AgentChatAvatar, {
       ...(employeeId === undefined ? {} : { employeeId }),
       ...(senderName === undefined ? {} : { name: senderName }),
-      events: employeeEvents(sessionId), load: chatEmployees,
+      events: employeeEvents(sessionId), identity: chatIdentity(sessionId), load: chatEmployees,
     }) : null))
   ctx.inject(['remote.commands', 'remote.agentPresets'], (ctx: ClientContext) => {
     const selectEmployee = async (sessionId: SessionId, id: string | null, runtime = false): Promise<boolean> => {
