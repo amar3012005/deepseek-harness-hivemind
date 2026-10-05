@@ -20,7 +20,7 @@ import type {} from '@deepseek-ai/dsh-api-remotes/client'
 import { Avatar } from '@humation/react'
 import { humation1 } from '@humation/assets-humation-1'
 import { type ReactNode, useEffect, useRef, useState } from 'react'
-import { MarkdownText } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconDownloadOutline16, MarkdownText } from '@deepseek-ai/dsh-client-ui-primitives'
 import { ImageProgress } from './ImageProgress.tsx'
 import { fileArtifactBlob, saveArtifact } from './download.ts'
 import css from './OperatingRun.module.css'
@@ -1215,7 +1215,10 @@ export function ArtifactPreview({ useTabInfo, t, read, loadImage }: PropsRuntime
   if (!artifact) return null
   const textPreview = artifact.mediaType.startsWith('text/') || /\.(md|markdown|txt)$/i.test(file?.name ?? artifact.path)
   const fillPreview = artifact.mediaType === 'application/pdf' || artifact.mediaType === 'text/html'
-  return <div className={css.artifactPreviewBody} data-preview-fill={fillPreview || undefined} data-preview-alignment={textPreview ? 'top' : 'center'}>{!fillPreview && <h3>{artifact.title}</h3>}
+  const agentPreview = /^\/hivemind\/app\/employee\/harness(?:\/|$)/u.test(window.location.pathname)
+  return <div className={css.artifactPreviewBody} data-agent-preview={agentPreview || undefined} data-preview-fill={fillPreview || undefined} data-preview-alignment={textPreview ? 'top' : 'center'}>
+    {agentPreview && url ? <a className={css.artifactDownload} href={url} download={file?.name} aria-label={t('artifact.open')} title={t('artifact.open')}><IconDownloadOutline16 /></a> : null}
+    {!fillPreview && <h3>{artifact.title}</h3>}
     {failed ? <p role="alert">{t('artifact.failed')}</p> : !url && text === undefined ? <p role="status">{t('artifact.loading')}</p> : null}
     {text !== undefined ? artifact.mediaType === 'text/markdown' || /\.(md|markdown)$/i.test(file?.name ?? artifact.path)
       ? <MarkdownText text={text} labels={{ code: { copyLabel: t('artifact.copy'), copiedLabel: t('artifact.copied') }, footnotes: t('artifact.footnotes') }} />
@@ -1224,7 +1227,7 @@ export function ArtifactPreview({ useTabInfo, t, read, loadImage }: PropsRuntime
       : url && artifact.mediaType.startsWith('video/') ? <video src={url} controls />
         : url && artifact.mediaType === 'application/pdf' ? <iframe src={url} title={artifact.title} />
           : url && artifact.mediaType === 'text/html' ? <iframe src={url} title={artifact.title} sandbox="" /> : null}
-    {url ? <a href={url} download={file?.name}>{t('artifact.open')}</a> : null}
+    {url && !agentPreview ? <a href={url} download={file?.name}>{t('artifact.open')}</a> : null}
   </div>
 }
 

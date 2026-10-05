@@ -125,3 +125,6 @@
 .workbench .imagePreviewToolbar .workbenchOpen { flex: none; margin: 0; padding: 5px 9px; font-size: 12px; }
 .imagePreviewCanvas { flex: 1; min-height: 0; min-width: 0; display: flex; align-items: center; justify-content: center; overflow: hidden; padding: 12px; }
 .workbench[data-preview-image] .imagePreviewCanvas .workbenchImage { width: auto; height: auto; max-width: 100%; max-height: 100%; margin: 0; border: 0; border-radius: 0; object-fit: contain; }
+
+.workbench [data-icon-download] { align-self: flex-end; display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; padding: 0; box-sizing: border-box; }
+.workbench .imagePreviewToolbar [data-icon-download] { padding: 0; }

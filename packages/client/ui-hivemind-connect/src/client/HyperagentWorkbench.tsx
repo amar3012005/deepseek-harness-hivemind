@@ -5,7 +5,7 @@ import type { FileAttachmentRef, ImageAttachmentRef } from '@deepseek-ai/dsh-att
 import type { SessionEventWindow } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { SnapshotSelectorHook } from '@deepseek-ai/dsh-client-store'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
-import { MarkdownText } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconDownloadOutline16, MarkdownText } from '@deepseek-ai/dsh-client-ui-primitives'
 import css from './HyperagentEmployee.module.css'
 
 declare module '@deepseek-ai/dsh-client-ui-sidebar-right/client' {
@@ -14,6 +14,10 @@ declare module '@deepseek-ai/dsh-client-ui-sidebar-right/client' {
   }
 }
 const lastViewedArtifacts = new Map<string, string>()
+const agentPreview = () => /^\/hivemind\/app\/employee\/harness(?:\/|$)/u.test(window.location.pathname)
+function DownloadLabel({ label }: { label: string }) {
+  return agentPreview() ? <IconDownloadOutline16 /> : <>{label}</>
+}
 
 type Kind = 'preview' | 'artifacts' | 'computer' | 'sources'
 
@@ -154,7 +158,7 @@ export function PdfReceipt({ artifact, loadPdf, loadImage, t }: { artifact: Arti
   }, [artifact.file?.attachmentId])
   return url === undefined
     ? <>{failed && <p className={css.workbenchPath} role="status">{t('workbench.pdfUnavailable')}</p>}<ReceiptImage attachment={artifact.preview} loadImage={loadImage} /></>
-    : <><a className={css.workbenchOpen} href={url} download={artifact.file?.name}>{t('workbench.downloadPdf')}</a><iframe className={css.workbenchPdf} src={url} title={artifact.title} /></>
+    : <><a className={css.workbenchOpen} href={url} download={artifact.file?.name} aria-label={t('workbench.downloadPdf')} title={t('workbench.downloadPdf')} data-icon-download={agentPreview() || undefined}><DownloadLabel label={t('workbench.downloadPdf')} /></a><iframe className={css.workbenchPdf} src={url} title={artifact.title} /></>
 }
 
 /** Render authenticated receipt contents with the shared native Markdown primitive. */
@@ -218,11 +222,11 @@ export function HyperagentWorkbench({
       : lastArtifact === undefined
         ? <p className={css.workbenchEmpty}>{t('workbench.emptyPreview')}</p>
         : <article>{imagePreview ? <>
-          <header className={css.imagePreviewToolbar}><h2 title={lastArtifact.title}>{lastArtifact.title}</h2><button type="button" className={css.workbenchOpen} disabled={lastArtifact.file === undefined} onClick={() => { openArtifact(lastArtifact, 'download') }}>{t('workbench.download')}</button></header>
+          <header className={css.imagePreviewToolbar}><h2 title={lastArtifact.title}>{lastArtifact.title}</h2><button type="button" className={css.workbenchOpen} disabled={lastArtifact.file === undefined} aria-label={t('workbench.download')} title={t('workbench.download')} data-icon-download={agentPreview() || undefined} onClick={() => { openArtifact(lastArtifact, 'download') }}><DownloadLabel label={t('workbench.download')} /></button></header>
           <div className={css.imagePreviewCanvas}><ReceiptImage attachment={lastArtifact.preview} loadImage={loadImage} /></div>
         </> : <>{!fillPreview && <><span className={css.workbenchEyebrow}>{lastArtifact.mediaType}</span><h2>{lastArtifact.title}</h2>{lastArtifact.producerName !== undefined && <p>From {lastArtifact.producerName}</p>}</>}{lastArtifact.mediaType === 'application/pdf' && lastArtifact.file !== undefined
           ? <PdfReceipt artifact={lastArtifact} loadPdf={loadPdf} loadImage={loadImage} t={t} />
-          : <><div className={css.workbenchActions}><button type="button" className={css.workbenchOpen} disabled={lastArtifact.file === undefined} onClick={() => { openArtifact(lastArtifact, 'download') }}>{t('workbench.download')}</button></div>{lastArtifact.file !== undefined && (lastArtifact.mediaType.startsWith('text/') || /\.(md|markdown|txt)$/i.test(lastArtifact.path))
+          : <><div className={css.workbenchActions}><button type="button" className={css.workbenchOpen} disabled={lastArtifact.file === undefined} aria-label={t('workbench.download')} title={t('workbench.download')} data-icon-download={agentPreview() || undefined} onClick={() => { openArtifact(lastArtifact, 'download') }}><DownloadLabel label={t('workbench.download')} /></button></div>{lastArtifact.file !== undefined && (lastArtifact.mediaType.startsWith('text/') || /\.(md|markdown|txt)$/i.test(lastArtifact.path))
             ? <TextReceipt file={lastArtifact.file} mediaType={lastArtifact.mediaType} loadText={loadText} t={t} />
             : <ReceiptImage attachment={lastArtifact.preview} loadImage={loadImage} />}</>}</>}</article>)}
     {kind === 'artifacts' && <>
