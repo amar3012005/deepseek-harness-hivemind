@@ -56,8 +56,7 @@ export function setupSingulanceHeadline(
   const originals = new Map<HTMLElement, string>()
   const apply = (): void => {
     if (typeof document === 'undefined') return
-    for (const mark of document.querySelectorAll('[data-hivemind-hero-brand="singulance"]')) {
-      const headline = mark.closest('div')
+    for (const headline of document.querySelectorAll('[data-conversation-intro-headline]')) {
       if (!(headline instanceof HTMLElement)) continue
       if (!originals.has(headline)) originals.set(headline, headline.style.display)
       headline.style.display = 'none'

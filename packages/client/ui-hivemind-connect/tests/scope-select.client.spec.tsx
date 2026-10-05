@@ -34,7 +34,7 @@ describe('HIVE-MIND read scope control', () => {
 describe('HIVE-MIND hero branding', () => {
   it('hides the introductory headline without changing its text', () => {
     const view = render(<div>
-      <div data-testid="headline"><span><span data-hivemind-hero-brand="singulance"><img alt="Runtime" /></span></span><span><span>Beyond Horizon Of Intelligence</span><span>Preview</span></span></div>
+      <div data-testid="headline" data-conversation-intro-headline><span><span data-hivemind-hero-brand="singulance"><img alt="Runtime" /></span></span><span><span>Beyond Horizon Of Intelligence</span><span>Preview</span></span></div>
     </div>)
     vi.stubGlobal('matchMedia', vi.fn(() => ({ matches: true })))
     Object.defineProperty(view.getByText('Beyond Horizon Of Intelligence'), 'getAnimations', { value: () => [] })
