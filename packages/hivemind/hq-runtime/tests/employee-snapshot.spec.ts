@@ -13,6 +13,13 @@ function events(status = 'pending', reviewStatus = 'accepted', reviewer = 'runti
   ] as unknown as SessionEvent[]
 }
 describe('employee-only native snapshots', () => {
+  it('omits absent optional fields for lossless native JSON persistence', () => {
+    const input = events().filter(e => !['hivemind/hq-task-contract', 'hivemind/hq-task-review'].includes(e.type))
+    const result = employeeTaskSnapshot(input, 'task-1', 'root')!
+    expect(result).toEqual(JSON.parse(JSON.stringify(result)))
+    expect(result.task).not.toHaveProperty('dueAt')
+    expect(result.task).not.toHaveProperty('reviewStatus')
+  })
   it('shows exact saved window and only selected assignment', () => {
     const result = employeeTaskSnapshot(events(), 'task-1', 'root')!
     expect(result.employeeName).toBe('Sofia')

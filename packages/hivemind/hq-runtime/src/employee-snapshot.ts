@@ -45,9 +45,10 @@ export function employeeTaskSnapshot(
     task: { id: task.id, revision: task.revision, title: task.subject, objective: task.description,
       status: task.status === 'completed' && !accepted ? 'in_progress' : task.status,
       owner: binding.data.memberName, sessionId: binding.data.sessionId, dependencies: [...task.blockedBy],
-      authority: [...task.writeScopes], dueAt: contract?.dueAt, acceptanceCriteria: [...(contract?.acceptanceCriteria ?? [])],
+      authority: [...task.writeScopes], ...(contract?.dueAt === undefined ? {} : { dueAt: contract.dueAt }),
+      acceptanceCriteria: [...(contract?.acceptanceCriteria ?? [])],
       artifactIds: links?.type === 'hivemind/hq-task-artifacts' ? [...links.data.artifactIds] : [],
-      reviewStatus: review?.type === 'hivemind/hq-task-review' ? review.data.status : undefined,
+      ...(review?.type === 'hivemind/hq-task-review' ? { reviewStatus: review.data.status } : {}),
       ...(task.status === 'completed' && accepted ? { completedAt: new Date(taskEvent.time).toISOString() } : {}) } }
 }
 
