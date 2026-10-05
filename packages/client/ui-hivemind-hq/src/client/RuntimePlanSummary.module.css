@@ -16,3 +16,5 @@
 .completedLabel { color: #16804a; font-weight: 600; }
 .history { margin-top: 8px; font-size: 12px; opacity: .7; }
 .history summary { cursor: pointer; }
+
+.restClosure { margin: 12px 0; font-size: 14px; line-height: 1.5; opacity: .8; }

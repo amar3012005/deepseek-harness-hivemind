@@ -215,3 +215,35 @@ it('keeps the pending invitation hidden during active work and stops after basel
     events={{ getSnapshot: () => complete, subscribe: () => () => {} }} />)
   expect(view.queryByRole('button', { name: 'Start Call' })).toBeNull()
 })
+
+it('always displays the confirmed handoff and wake on the finished rest turn', async () => {
+  const log = { entries: [
+    { type: 'event', event: { type: 'turn/start', data: { turn: 3 } } },
+    { type: 'event', event: { type: 'hivemind/hq-rest-confirmed', data: {
+      handoffId: 'saved-handoff', scheduleId: 'saved-wake', effectiveWakeAt: '2026-10-07T15:10:00.000Z',
+    } } },
+  ] } as unknown as SessionEventWindow
+  const props = { sessionId: 'runtime' as never, events: { getSnapshot: () => log, subscribe: () => () => {} },
+    load: vi.fn().mockResolvedValue({ ok: true, value: empty }), cancel: vi.fn(), t: (key: keyof typeof en) => en[key] }
+  const view = render(<FinalRuntimePlanSummary {...props} turn={{ turn: 3, end: {} } as never} />)
+  expect(view.getByText(/your progress is saved/)).toBeTruthy()
+  expect(view.container.querySelector('time')?.dateTime).toBe('2026-10-07T15:10:00.000Z')
+  expect(view.queryByRole('button', { name: 'Start Call' })).toBeNull()
+  await vi.waitFor(() => expect(view.queryByText('Loading saved tasks…')).toBeNull())
+})
+
+it('does not claim rest for an unconfirmed intent or reuse another turn’s handoff', () => {
+  for (const type of ['hivemind/hq-rest-intent', 'hivemind/hq-rest-confirmed']) {
+    const log = { entries: [
+      { type: 'event', event: { type: 'turn/start', data: { turn: 2 } } },
+      { type: 'event', event: { type, data: {
+        handoffId: 'old', scheduleId: 'old', effectiveWakeAt: '2026-10-07T15:10:00.000Z',
+      } } },
+      { type: 'event', event: { type: 'turn/start', data: { turn: 3 } } },
+    ] } as unknown as SessionEventWindow
+    const view = render(<FinalRuntimePlanSummary sessionId={'runtime' as never} turn={{ turn: 3, end: {} } as never}
+      events={{ getSnapshot: () => log, subscribe: () => () => {} }} load={vi.fn()} cancel={vi.fn()} t={key => en[key]} />)
+    expect(view.queryByText(/your progress is saved/)).toBeNull()
+    view.unmount()
+  }
+})

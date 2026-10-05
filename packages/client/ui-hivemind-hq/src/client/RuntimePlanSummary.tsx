@@ -26,12 +26,18 @@ export function RuntimePlanSummary({ sessionId, turn, events, load, cancel, t, r
   let latestTurn: number | undefined
   let pendingInvitation = false
   let hasRestReceipt = false
+  let restWakeAt: string | undefined
+  let replyLanguage = 'en'
   const reviewedInTurn = new Set<string>()
   let reviewRevision = 0
   for (const entry of log.entries) {
     if (entry.type !== 'event') continue
     const type = String(entry.event.type)
     const data = entry.event.data as unknown as { turn?: number; stage?: string; blocked?: boolean; kind?: string; taskId?: string }
+    if (type === 'command/run') {
+      const command = data as { name?: string; args?: string }
+      if (command.name === 'hivemind-language') replyLanguage = command.args?.trim() || 'en'
+    }
     if (type === 'turn/start' || type === 'step/start') {
       eventTurn = data.turn
       if (data.turn !== undefined) latestTurn = data.turn
@@ -42,7 +48,14 @@ export function RuntimePlanSummary({ sessionId, turn, events, load, cancel, t, r
       summaryTurn = data.turn
     }
     if (type === 'hivemind/voice-baseline-outcome' && (data as { status?: string }).status === 'complete') pendingInvitation = false
-    if (type === 'hivemind/hq-rest-confirmed') hasRestReceipt = true
+    if (type === 'hivemind/hq-rest-confirmed') {
+      hasRestReceipt = true
+      const receipt = data as { handoffId?: string; scheduleId?: string; effectiveWakeAt?: string }
+      if (eventTurn === turn && receipt.handoffId && receipt.scheduleId
+        && receipt.effectiveWakeAt && Number.isFinite(Date.parse(receipt.effectiveWakeAt))) {
+        restWakeAt = receipt.effectiveWakeAt
+      }
+    }
     if (type === 'hivemind/hq-calendar-item' && data.kind === 'assignment') summaryTurn = eventTurn
     if (type === 'hivemind/hq-task-review') {
       summaryTurn = eventTurn
@@ -54,7 +67,7 @@ export function RuntimePlanSummary({ sessionId, turn, events, load, cancel, t, r
   const invited = currentTurn && pendingInvitation && (invitationTurn === turn || hasRestReceipt)
   const ownsSummary = summaryTurn === turn
   const preservesClosure = reviewedInTurn.size > 0
-  const ready = invited || ownsSummary || preservesClosure
+  const ready = invited || ownsSummary || preservesClosure || (currentTurn && restWakeAt !== undefined)
   const employeeNames = new Map(log.entries.flatMap((entry) => {
     if (entry.type !== 'event' || String(entry.event.type) !== 'hivemind/hq-awakening-checkpoint') return []
     const data = entry.event.data as unknown as { cards: Array<{ employeeId?: string; title: string }> }
@@ -107,6 +120,13 @@ export function RuntimePlanSummary({ sessionId, turn, events, load, cancel, t, r
       {error && <p role="alert">{error}</p>}
     </section>}
     {!workspace && <p role="status">Loading saved tasks…</p>}
+    {currentTurn && restWakeAt && <p role="status" className={css.restClosure}>
+      {replyLanguage === 'de' ? 'Ich pausiere hier; der Fortschritt ist gespeichert.' : t('rest.saved')} {' '}
+      {replyLanguage === 'de' ? 'Nächste Prüfung:' : t('rest.next')} {' '}
+      <time dateTime={restWakeAt}>{new Date(restWakeAt).toLocaleString(undefined, {
+        dateStyle: 'medium', timeStyle: 'short',
+      })}</time> {' '}({Intl.DateTimeFormat().resolvedOptions().timeZone}).
+    </p>}
     {invited && <RuntimeCallBanner sessionId={sessionId} t={t} avatar={renderAvatar?.({ employeeId: 'runtime', name: 'Runtime' })} />}
   </section>
 }
