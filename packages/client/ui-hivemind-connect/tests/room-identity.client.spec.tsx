@@ -19,7 +19,7 @@ it('recognizes a legacy null-owner chief only after native HQ restoration', () =
   expect(roomIdentity('hivemind-hq', legacy)).toEqual({ name: 'Runtime', role: 'AI Chief of Staff' })
   expect(roomIdentity('hivemind-hyperagents', legacy)).toBeUndefined()
 })
-it('updates the first-entry portrait from the current room identity snapshot', async () => {
+it('preserves the company hero mark while the room identity becomes ready', async () => {
   const previousPath = window.location.pathname
   window.history.replaceState({}, '', '/hivemind/app/employee/harness')
   let value = JSON.stringify(roomIdentity(undefined, undefined, true))
@@ -28,13 +28,12 @@ it('updates the first-entry portrait from the current room identity snapshot', a
     listeners.add(listener); return () => { listeners.delete(listener) }
   } }
   const view = render(<RoomHeroMark identity={identity} />)
-  expect(view.getByLabelText('Runtime, Opening our workspace…')).toBeTruthy()
+  expect(view.container.querySelector('[data-hivemind-hero-brand="singulance"]')).toBeTruthy()
   await act(async () => {
     value = JSON.stringify(roomIdentity('hivemind-hq', JSON.stringify({ id: null, slug: 'runtime', name: 'Runtime', role: 'AI Chief of Staff' })))
     listeners.forEach(listener => listener())
   })
-  expect(view.queryByLabelText('Runtime, Opening our workspace…')).toBeNull()
-  expect(view.getByLabelText('Runtime, AI Chief of Staff')).toBeTruthy()
+  expect(view.container.querySelector('[data-hivemind-hero-brand="singulance"]')).toBeTruthy()
   window.history.replaceState({}, '', previousPath)
 })
 
