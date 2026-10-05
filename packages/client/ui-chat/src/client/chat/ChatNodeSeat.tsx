@@ -47,7 +47,7 @@ export const ChatNodeSeat = memo(function ChatNodeSeat({
   const turn = turnOf(routedNode)
   const processPresentation = useChatNodeProcess(nodeKey)
   const processSpec = processPresentation?.spec
-  const quietWork = window.location.pathname.includes('/employee/harness')
+  const quietWork = /^\/hivemind\/app\/(?:overview|employee\/harness)(?:\/|$)/u.test(window.location.pathname)
   const disclosureStep = processSpec?.answerStep ?? -1
   const storedEntry = useStore(state => processSpec === undefined
     ? undefined
@@ -71,9 +71,12 @@ export const ChatNodeSeat = memo(function ChatNodeSeat({
     && (!historyIncomplete || quietWork || processSpec.dreamSynthesis === true)
   const processMember = routedNode !== undefined
     && processWindowReady
-    && (!TURN_PROCESS_INDEPENDENT_KINDS.has(routedNode.kind) || (routedNode.kind === 'system-prompt' && (quietWork || processSpec.dreamSynthesis === true)))
+    && (!TURN_PROCESS_INDEPENDENT_KINDS.has(routedNode.kind)
+      || (quietWork && routedNode.kind === 'turn-error')
+      || (routedNode.kind === 'system-prompt' && (quietWork || processSpec.dreamSynthesis === true)))
     && routedNode.anchorSeq >= processSpec.processStartSeq
-    && routedNode.anchorSeq < (processSpec.answerAnchorSeq ?? Number.POSITIVE_INFINITY)
+    && ((quietWork && routedNode.kind === 'turn-error')
+      || routedNode.anchorSeq < (processSpec.answerAnchorSeq ?? Number.POSITIVE_INFINITY))
   const processAnswer = routedNode !== undefined
     && processWindowReady
     && routedNode.kind === 'assistant-step'
@@ -105,7 +108,7 @@ export const ChatNodeSeat = memo(function ChatNodeSeat({
   const incomingTeamReply = routedNode?.kind === 'context'
     && typeof routedNode.data.source === 'object' && routedNode.data.source !== null
     && 'kind' in routedNode.data.source && routedNode.data.source.kind === 'hivemind-agent-message'
-  const preserveReply = incomingTeamReply || ((quietWork || document.documentElement.dataset.dshMode === 'hivemind-chat')
+  const preserveReply = incomingTeamReply || (quietWork
     && routedNode?.kind === 'assistant-step'
     && processSpec?.dreamSynthesis !== true
     && hasAssistantReplyContent(routedNode.data.blocks))
@@ -172,7 +175,7 @@ export const ChatNodeSeat = memo(function ChatNodeSeat({
     </div>
   )
   // Failed calls without a finalized process range still belong to technical details.
-  return document.documentElement.dataset.dshMode === 'hivemind-chat'
+  return quietWork
     && routedNode.kind === 'tool-call' && 'kind' in routedNode.data.root
     && routedNode.data.root.kind === 'tool-result' && routedNode.data.root.isError && !foldable
     ? <details><summary>Work details</summary>{rendered}</details>

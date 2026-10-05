@@ -22,7 +22,7 @@ export const AssistantNodeView = memo(function AssistantNodeView({
   )
   const reasoningHidden = turnProcess !== undefined
     && turnProcess.foldable
-    && (window.location.pathname.includes('/employee/harness')
+    && (/^\/hivemind\/app\/(?:overview|employee\/harness)(?:\/|$)/u.test(window.location.pathname)
       || (turnProcess.spec.answerStep === data.step && turnProcess.spec.inlineReasoning)
       || (turnProcess.spec.answerStep !== null && data.step < turnProcess.spec.answerStep))
     && !turnProcess.open
@@ -32,6 +32,7 @@ export const AssistantNodeView = memo(function AssistantNodeView({
       {renderSlot?.('conversation.chat.assistantAvatar', {})}
       <AssistantMarkdown
         blocks={data.blocks}
+        finalAnswer={owner !== undefined}
         streaming={data.status === 'running'}
         interrupted={data.status === 'interrupted'}
         renderMessageImages={renderMessageImages}

@@ -58,7 +58,7 @@ export const TurnProcessNodeView = memo(function TurnProcessNodeView({
           turnProcess.setOpen(!open)
         }}
       >
-        <span className={css.label}>{turnProcess.spec.dreamSynthesis === true ? 'Exploration details' : window.location.pathname.includes('/employee/harness') ? 'Work details' : label}</span>
+        <span className={css.label}>{turnProcess.spec.dreamSynthesis === true ? 'Exploration details' : /^\/hivemind\/app\/(?:overview|employee\/harness)(?:\/|$)/u.test(window.location.pathname) ? 'Work details' : label}</span>
         <IconChevronDownOutline14 className={css.chevron} />
       </button>
       {renderSlot?.('conversation.chat.workUpdates', { turn: node.data.turn })}

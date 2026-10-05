@@ -122,8 +122,9 @@ function ModelRetryItem({ node, active, t }: {
 }
 
 /** Persistent, turn-positioned feedback for a terminal failure. */
-function TurnErrorItem({ node, t }: {
+function TurnErrorItem({ node, t, grouped = false }: {
   node: TurnErrorNode
+  grouped?: boolean
   t: ChatViewSlotProps['t']
 }) {
   const technicalDetails = (
@@ -136,7 +137,7 @@ function TurnErrorItem({ node, t }: {
       {node.code !== undefined && <code className={css.turnErrorCode}>{node.code}</code>}
     </div>
   )
-  return document.documentElement.dataset.dshMode === 'hivemind-chat'
+  return !grouped && /^\/hivemind\/app\/(?:overview|employee\/harness)(?:\/|$)/u.test(window.location.pathname)
     ? <details><summary>Work details</summary>{technicalDetails}</details>
     : technicalDetails
 }
@@ -366,7 +367,7 @@ export const RetryNodeView = memo(function RetryNodeView({ node, t }: ChatNodeVi
 })
 
 /** Terminal turn-error keyed Chat renderer. */
-export const TurnErrorNodeView = memo(function TurnErrorNodeView({ node, t }: ChatNodeViewProps<'turn-error'>) {
+export const TurnErrorNodeView = memo(function TurnErrorNodeView({ node, t, turnProcess }: ChatNodeViewProps<'turn-error'>) {
   const data = node.data
   useEffect(() => {
     if (data.code !== 'plan_limit_exceeded' || typeof window === 'undefined') return
@@ -383,7 +384,7 @@ export const TurnErrorNodeView = memo(function TurnErrorNodeView({ node, t }: Ch
   // The embedding host owns the common upgrade dialog. Avoid rendering a
   // second generic failure row behind that dialog for a plan-limit outcome.
   if (data.code === 'plan_limit_exceeded') return null
-  return <TurnErrorItem node={data} t={t} />
+  return <TurnErrorItem node={data} t={t} grouped={turnProcess?.foldable === true} />
 })
 
 /** Max-tokens turn-end notice keyed Chat renderer. */

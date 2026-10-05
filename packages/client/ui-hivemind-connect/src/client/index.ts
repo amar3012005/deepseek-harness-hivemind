@@ -1,3 +1,4 @@
+import { BrainModeIcon } from './BrainModeIcon.tsx'
 import { roomIdentity } from './room-identity.ts'
 import { isEnvironmentPreviewOpen } from './environment-preview.ts'
 import { websiteRead, type WebsiteRead } from './website-sources.ts'
@@ -291,7 +292,9 @@ export function apply(ctx: ClientContext): void {
       ...(employeeId === undefined ? {} : { employeeId }),
       ...(senderName === undefined ? {} : { name: senderName }),
       events: employeeEvents(sessionId), identity: chatIdentity(sessionId), load: chatEmployees,
-    }) : null))
+    }) : name === 'conversation.chat.assistantAvatar' && /^\/hivemind\/app\/overview(?:\/|$)/u.test(window.location.pathname)
+      ? createElement('span', { 'data-chat-agent-avatar': true, style: { width: 32, flexShrink: 0, alignSelf: 'flex-end' } }, createElement(BrainModeIcon, { size: 32 }))
+      : null))
   ctx.inject(['remote.commands', 'remote.agentPresets'], (ctx: ClientContext) => {
     const selectEmployee = async (sessionId: SessionId, id: string | null, runtime = false): Promise<boolean> => {
       if (ctx.sessions.binding(sessionId) === undefined) throw new Error('Session is not ready. Please reopen it.')

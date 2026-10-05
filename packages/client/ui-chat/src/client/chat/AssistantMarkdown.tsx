@@ -37,6 +37,8 @@ export function localPathMediaUrl(protocol: string, origin: string, value: strin
 export interface AssistantMarkdownProps {
   blocks: readonly AssistantBlock[]
   streaming: boolean
+  /** Authoritative turn closing answer retains the native full-width prose presentation. */
+  finalAnswer?: boolean | undefined
   /** Frozen partial of an aborted turn: rendered with a stopped marker. */
   interrupted?: boolean | undefined
   /** Render consecutive image blocks through the attachment slot. */
@@ -54,7 +56,7 @@ export interface AssistantMarkdownProps {
 /** Reasoning block as the Think variant summary row (figma 39:28304). */
 export const AssistantMarkdown = memo(function AssistantMarkdown({
   blocks, streaming, interrupted, renderMessageImages,
-  reasoningHidden = false, revealProcess, mentions, t,
+  reasoningHidden = false, revealProcess, mentions, t, finalAnswer = false,
 }: AssistantMarkdownProps) {
   // Stable per locale revision (t identity changes on switch): a fresh object
   // per render would rebuild MarkdownText's component table every chunk.
@@ -144,7 +146,8 @@ export const AssistantMarkdown = memo(function AssistantMarkdown({
         )
     }
   }
-  const readableReply = document.documentElement.dataset.dshHyperagentOs !== undefined
+  const readableReply = /^\/hivemind\/app\/(?:overview|employee\/harness)(?:\/|$)/u.test(window.location.pathname)
+    && !finalAnswer
     && blocks.some(block => block.kind === 'text' && visibleAssistantText(block.text).trim() !== '')
   return (
     <div className={css.root} data-streaming={streaming || undefined}>
