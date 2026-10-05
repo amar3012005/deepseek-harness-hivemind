@@ -220,6 +220,24 @@
   }
 }
 
+/* Agent rooms keep the native jump rail beside the outer sidebar. The
+   conversation scrollport owns this edge, so Preview resizing cannot move
+   the rail to the composer or Environment's right-hand gutter. */
+:global([data-agent-room]) .slot {
+  display: block;
+}
+
+:global([data-agent-room]) .frame {
+  left: calc(4px - (var(--dsh-composer-side-clearance) + 16px));
+  right: auto;
+  width: 24px;
+}
+
+:global([data-agent-room]) .preview {
+  left: calc(100% + 10px);
+  right: auto;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .frame,
   .scroller,

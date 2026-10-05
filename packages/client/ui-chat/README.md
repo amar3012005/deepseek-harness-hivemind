@@ -80,3 +80,5 @@ None.
 **Runtime invariant:** No companion is published. Conversation and Slot registration enforce Chat target consistency.
 
 Agent rooms show one identity avatar on the last visible bubble of each consecutive sender group. Technical rows do not break a group; human input and sender changes do. Received messages keep their exact envelope in the existing Agent message disclosure.
+
+Agent rooms keep the native turn-navigation rail visible at the conversation's left edge, directly beside the outer sidebar, including narrow and Preview-resized layouts. Its keyboard navigation, history paging and turn previews remain unchanged.
