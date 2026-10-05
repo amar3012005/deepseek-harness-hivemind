@@ -52,7 +52,7 @@ it('binds a Preview mounted after the Environment effect and follows its edge', 
   await act(async () => { document.body.append(panel) })
   expect(view.getByRole('button', { name: /Connected apps/ }).getAttribute('aria-expanded')).toBe('false')
   expect(Number.parseFloat(view.getByRole('region', { name: 'HIVEMIND connected apps' }).style.right)).toBeCloseTo(width + 8)
-  await act(async () => { width = window.innerWidth * 0.45; fireEvent(window, new Event('resize')) })
+  await act(async () => { width = window.innerWidth * 0.45 - 0.01; fireEvent(window, new Event('resize')) })
   expect(view.queryByRole('region', { name: 'HIVEMIND connected apps' })).toBeNull()
   expect(view.getByRole('button', { name: 'HIVEMIND environment' }).textContent).toContain('Runtime')
   fireEvent.click(view.getByRole('button', { name: 'HIVEMIND environment' }))
@@ -77,7 +77,7 @@ it.each(['hivemind-artifact-preview', 'text', 'hivemind-workbench-preview'])('us
   }
   const view = render(<BrainConnections {...props as unknown as Parameters<typeof BrainConnections>[0]} />)
   expect(view.getByRole('button', { name: /Connected apps/ }).getAttribute('aria-expanded')).toBe('false')
-  await act(async () => { width = window.innerWidth * 0.45; fireEvent(window, new Event('resize')) })
+  await act(async () => { width = window.innerWidth * 0.45 - 0.01; fireEvent(window, new Event('resize')) })
   expect(view.queryByRole('region', { name: 'HIVEMIND connected apps' })).toBeNull()
   expect(view.getByRole('button', { name: 'HIVEMIND environment' }).textContent).toContain('Runtime')
   fireEvent.click(view.getByRole('button', { name: 'HIVEMIND environment' }))

@@ -43,7 +43,7 @@ export function BrainConnections({ sessionId, useSessions, environmentActivity, 
       // Native DOM bounds include CSS zoom; fixed style coordinates do not.
       const scale = panel && panel.offsetWidth > 0 ? width / panel.offsetWidth : 1
       setPreview((previous) => {
-        const next = { open: visible, wide: visible && width >= window.innerWidth * 0.45,
+        const next = { open: visible, wide: visible && width + 0.5 >= window.innerWidth * 0.45,
           available: visible ? Math.max(0, (bounds?.left ?? 0) / (scale || 1) - 16) : 0,
           inset: visible ? Math.max(0, window.innerWidth - (bounds?.left ?? window.innerWidth)) / (scale || 1) : 0 }
         return previous.open === next.open && previous.wide === next.wide
