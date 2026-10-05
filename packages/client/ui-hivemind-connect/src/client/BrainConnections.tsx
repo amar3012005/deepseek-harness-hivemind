@@ -1,5 +1,6 @@
 import type { PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import { useEffect, useState } from 'react'
+import { roomIdentity } from './room-identity.ts'
 import { SessionCredits } from './SessionCredits.tsx'
 import css from './DreamingConnectors.module.css'
 import { EmployeeAvatar, RuntimeAvatar, projectedEmployee } from './HyperagentEmployee.tsx'
@@ -8,6 +9,9 @@ export function BrainConnections({ sessionId, useSessions, environmentActivity, 
   const preset = useSessions(state => state.byId[sessionId]?.projectionValues?.agentPreset ?? state.byId[sessionId]?.agentPreset)
   const employee = useSessions(state => projectedEmployee(
     (state.byId[sessionId]?.projectionValues?.hyperagentOwner ?? state.byId[sessionId]?.projectionValues?.hyperagentSelection)))
+  const ownerValue = useSessions(state => state.byId[sessionId]?.projectionValues?.hyperagentOwner
+    ?? state.byId[sessionId]?.projectionValues?.hyperagentSelection)
+  const identity = roomIdentity(preset, ownerValue)
   const busy = useSessions(state => (state.jobsBySession[sessionId] ?? []).some(job => job.status === 'running' || job.status === 'stopping'))
   const running = useSessions(state => state.byId[sessionId]?.running === true)
   const [open, setOpen] = useState(true)
@@ -71,7 +75,7 @@ export function BrainConnections({ sessionId, useSessions, environmentActivity, 
     <div className={css.identity}>
       {employee ? <EmployeeAvatar employee={employee} size={40} />
         : hyperagents ? <RuntimeAvatar size={52} /> : <span className={css.avatar}>H</span>}
-      <span><strong>{employee?.name ?? (hyperagents ? 'Run Time' : 'HIVEMIND-Chat')}</strong><small>{employee?.role ?? (hyperagents ? 'AI Chief of Staff' : 'Your company brain')}</small>{hyperagents && <small className={css.agentStatus}><i className={running || busy ? css.workingDot : css.readyDot} aria-hidden="true" />{running || busy ? 'Working' : 'Ready'}</small>}</span></div>
+      <span><strong>{identity?.name ?? (hyperagents ? 'Runtime' : 'HIVEMIND-Chat')}</strong><small>{identity?.role ?? (hyperagents ? 'AI Chief of Staff' : 'Your company brain')}</small>{hyperagents && <small className={css.agentStatus}><i className={running || busy ? css.workingDot : css.readyDot} aria-hidden="true" />{running || busy ? 'Working' : 'Ready'}</small>}</span></div>
     <button type="button" className={css.connectorHeading} aria-expanded={showApps} onClick={() => { setAppsOpen(value => !value) }}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M9 3v5M15 3v5M7 8h10v4a5 5 0 0 1-5 5v4M7 8v4" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" /></svg><span>Connected apps</span><span aria-hidden="true">{showApps ? '⌄' : '›'}</span></button>
     {showApps && <>
       {error ? <p role="status">Apps could not be loaded. Reopen this page to try again.</p> : accounts === undefined ? <p>Loading connected apps…</p> :
@@ -86,7 +90,7 @@ export function BrainConnections({ sessionId, useSessions, environmentActivity, 
   </>
   if (hero) return null
   return <div className={css.chatControl}>
-    <button className={css.chatButton} type="button" aria-expanded={showPanel} aria-label="HIVEMIND environment" onClick={() => { if (preview.wide) { setOpen(true); setWideOpen(value => !value) } else setOpen(value => !value) }}>{preview.wide && <span className={css.compactIdentity}>{employee ? <EmployeeAvatar employee={employee} size={24} /> : <RuntimeAvatar size={24} />}<strong>{employee?.name ?? 'Run Time'}</strong></span>}{busy && <span className={css.activityDot} aria-label="Background work running" />}<svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M3 5h14M3 10h14M3 15h14" stroke="currentColor" strokeWidth="1.5" /><circle cx="7" cy="5" r="2" fill="white" stroke="currentColor"/><circle cx="13" cy="10" r="2" fill="white" stroke="currentColor"/><circle cx="8" cy="15" r="2" fill="white" stroke="currentColor"/></svg></button>
+    <button className={css.chatButton} type="button" aria-expanded={showPanel} aria-label="HIVEMIND environment" onClick={() => { if (preview.wide) { setOpen(true); setWideOpen(value => !value) } else setOpen(value => !value) }}>{hyperagents && <span className={css.compactIdentity}>{employee ? <EmployeeAvatar employee={employee} size={24} /> : <RuntimeAvatar size={24} />}<strong>{identity?.name ?? 'Runtime'}</strong></span>}{busy && <span className={css.activityDot} aria-label="Background work running" />}<svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M3 5h14M3 10h14M3 15h14" stroke="currentColor" strokeWidth="1.5" /><circle cx="7" cy="5" r="2" fill="white" stroke="currentColor"/><circle cx="13" cy="10" r="2" fill="white" stroke="currentColor"/><circle cx="8" cy="15" r="2" fill="white" stroke="currentColor"/></svg></button>
     {showPanel && <section className={css.chatPanel} style={preview.open ? { position: 'fixed', right: preview.inset + 8, top: 76 } : undefined} aria-label="HIVEMIND connected apps">{content}</section>}
   </div>
 }

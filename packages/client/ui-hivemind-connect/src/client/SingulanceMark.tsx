@@ -1,4 +1,6 @@
-import type { SVGProps } from 'react'
+import { useSyncExternalStore, type SVGProps } from 'react'
+import { EmployeeAvatar, RuntimeAvatar } from './HyperagentEmployee.tsx'
+import type { RoomIdentity } from './room-identity.ts'
 import { isHyperagentPreset } from './HyperagentEmployee.tsx'
 
 const HERO_HEADLINE = 'BRAIN · Remember what matters.'
@@ -35,10 +37,25 @@ export function SingulanceMark({ size = 48, className, ...props }: SingulanceMar
   </svg>
 }
 
+/** Keep the first-entry portrait bound to the same native room summary as its title. */
+export function RoomHeroMark({ size = 34, className, identity }: {
+  size?: number
+  className?: string
+  identity: { getSnapshot(): string; subscribe(listener: () => void): () => void }
+}) {
+  const encoded = useSyncExternalStore(identity.subscribe, identity.getSnapshot)
+  const value = JSON.parse(encoded) as RoomIdentity | null
+  return value === null ? <SingulanceMark size={size} className={className} />
+    : <span className={className} data-hivemind-hero-brand="singulance" aria-label={`${value.name}, ${value.role}`}>
+      {value.employee ? <EmployeeAvatar employee={value.employee} size={size} /> : <RuntimeAvatar size={size} />}
+    </span>
+}
+
 /** Replace the native headline with the current product's compact label. */
 export function setupSingulanceHeadline(
   getPreset?: () => unknown,
   subscribe?: (refresh: () => void) => () => void,
+  getIdentity?: () => RoomIdentity | undefined,
 ): () => void {
   const originals = new Map<HTMLElement, string>()
   const transitions = new Map<HTMLElement, string>()
@@ -47,7 +64,8 @@ export function setupSingulanceHeadline(
     const preset = getPreset?.()
     const hyperagent = isHyperagentPreset(preset)
       || (preset == null && window.location.pathname.startsWith('/hivemind/app/employee/harness/'))
-    const desired = hyperagent ? HYPERAGENT_HEADLINE : HERO_HEADLINE
+    const identity = getIdentity?.()
+    const desired = identity ? `${identity.name} · ${identity.role}` : hyperagent ? HYPERAGENT_HEADLINE : HERO_HEADLINE
     for (const mark of document.querySelectorAll('[data-hivemind-hero-brand="singulance"]')) {
       const headline = mark.closest('span')?.parentElement
       const title = headline?.lastElementChild?.firstElementChild

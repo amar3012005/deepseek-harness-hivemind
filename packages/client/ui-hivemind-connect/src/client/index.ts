@@ -1,3 +1,4 @@
+import { roomIdentity } from './room-identity.ts'
 import { isEnvironmentPreviewOpen } from './environment-preview.ts'
 import { websiteRead, type WebsiteRead } from './website-sources.ts'
 import { WebsitePreviewUpdates, WebsiteSourceCard } from './WebsitePreview.tsx'
@@ -30,7 +31,7 @@ import { ComposioConnectionCard } from './ComposioConnectionCard.tsx'
 import {
   connectionPresentationOf, PendingConnectionAuthorization,
 } from './connection-question.ts'
-import { setupSingulanceHeadline, SingulanceMark } from './SingulanceMark.tsx'
+import { setupSingulanceHeadline, RoomHeroMark } from './SingulanceMark.tsx'
 import { setupHivemindSessionRouting } from './session-route.ts'
 import { setupConnectionCallbackReturn } from './connection-callback.ts'
 import type {} from '@deepseek-ai/dsh-client-ui-tool/client'
@@ -390,8 +391,9 @@ export function apply(ctx: ClientContext): void {
             entry.type === 'event' && ['turn/start', 'hivemind/session-owner'].includes(entry.event.type as string)) === true
           // Authenticated room lookup already selected this employee's room.
           // A restored persistent owner must never be assigned again.
-          const selected = id === 'runtime' || alreadyUsed || roomOwner?.id === id
-            || await selectEmployee(sessionId, id === 'runtime' ? null : id, id === 'runtime')
+          const selected = id === 'runtime'
+            ? await selectEmployee(sessionId, null, true)
+            : alreadyUsed || roomOwner?.id === id || await selectEmployee(sessionId, id)
           if (selected) {
           // Team navigation opens an agent workspace even while its first
           // draft is blank. Do not wait for a user turn to choose the route.
@@ -701,14 +703,25 @@ export function apply(ctx: ClientContext): void {
     document.title = 'SINGULANCE · HIVE-MIND'
     return () => { document.title = previous }
   }, 'ui-hivemind-connect: white-label document title')
+  const currentRoomIdentity = () => {
+    const list = ctx.sessions.list.getSnapshot()
+    const row = list.current === undefined ? undefined : list.byId[list.current]
+    return roomIdentity(row?.projectionValues?.agentPreset ?? row?.agentPreset,
+      row?.projectionValues?.hyperagentOwner ?? row?.projectionValues?.hyperagentSelection,
+      list.current === undefined && window.location.pathname === '/hivemind/app/employee/harness')
+  }
+  const heroIdentity = {
+    getSnapshot: () => JSON.stringify(currentRoomIdentity() ?? null),
+    subscribe: (refresh: () => void) => ctx.sessions.list.subscribe(refresh),
+  }
   ctx.slots.inject('conversation.hero.brand.mark', () =>
-    ctx.slots.register({ name: 'conversation.hero.brand.mark' }, SingulanceMark))
+    ctx.slots.register({ name: 'conversation.hero.brand.mark' }, props => createElement(RoomHeroMark, { ...props, identity: heroIdentity })))
   ctx.effect(() => setupSingulanceHeadline(
     () => {
       const list = ctx.sessions.list.getSnapshot()
       return list.current === undefined ? undefined : list.byId[list.current]?.projectionValues?.agentPreset
     },
-    refresh => ctx.sessions.list.subscribe(refresh),
+    refresh => ctx.sessions.list.subscribe(refresh), currentRoomIdentity,
   ), 'ui-hivemind-connect: Singulance hero headline')
   ctx.slots.inject('tool.call.toolview', function* () {
     const registration = (key: string) => ctx.slots.register({

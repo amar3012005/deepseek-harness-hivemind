@@ -34,6 +34,7 @@ describe('HIVE-MIND hero branding', () => {
     const view = render(<div>
       <div data-testid="headline"><span><svg data-hivemind-hero-brand="singulance" /></span><span><span>Beyond Horizon Of Intelligence</span><span>Preview</span></span></div>
     </div>)
+    Object.defineProperty(view.getByText('Beyond Horizon Of Intelligence'), 'getAnimations', { value: () => [] })
     const dispose = setupSingulanceHeadline()
     expect(view.getByTestId('headline').hasAttribute('data-hivemind-hero-headline')).toBe(true)
     expect(view.getByText('BRAIN · Remember what matters.')).toBeTruthy()
