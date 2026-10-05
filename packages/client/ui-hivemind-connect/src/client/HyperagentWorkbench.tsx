@@ -208,19 +208,23 @@ export function HyperagentWorkbench({
   const website = data.sources.find(source => source.url === (selectedSource?.url ?? params?.sourceUrl))
     ?? (lastArtifact === undefined ? data.sources.at(-1) : undefined)
   const textPreview = lastArtifact !== undefined && (lastArtifact.mediaType.startsWith('text/') || /\.(md|markdown|txt)$/i.test(lastArtifact.path))
-  const fillPreview = kind === 'preview' && (website !== undefined || lastArtifact?.mediaType === 'application/pdf' || lastArtifact?.mediaType === 'text/html')
-  return <div className={css.workbench} data-preview-fill={fillPreview || undefined} data-hivemind-workbench={kind} data-preview-alignment={kind === 'preview' ? website !== undefined || textPreview ? 'top' : 'center' : undefined}>
+  const imagePreview = kind === 'preview' && website === undefined && lastArtifact?.mediaType.startsWith('image/') === true
+  const fillPreview = kind === 'preview' && (imagePreview || website !== undefined || lastArtifact?.mediaType === 'application/pdf' || lastArtifact?.mediaType === 'text/html')
+  return <div className={css.workbench} data-preview-fill={fillPreview || undefined} data-preview-image={imagePreview || undefined} data-hivemind-workbench={kind} data-preview-alignment={kind === 'preview' ? website !== undefined || textPreview ? 'top' : 'center' : undefined}>
     {kind === 'preview' && (website !== undefined
       ? <WebsitePreview sources={data.sources.map(source => ({ ...source, seq: 0 }))}
         selected={{ ...website, seq: 0 }}
         select={url => setSelectedSource(data.sources.find(source => source.url === url) ?? null)} t={t} />
       : lastArtifact === undefined
         ? <p className={css.workbenchEmpty}>{t('workbench.emptyPreview')}</p>
-        : <article>{!fillPreview && <><span className={css.workbenchEyebrow}>{lastArtifact.mediaType}</span><h2>{lastArtifact.title}</h2>{lastArtifact.producerName !== undefined && <p>From {lastArtifact.producerName}</p>}</>}{lastArtifact.mediaType === 'application/pdf' && lastArtifact.file !== undefined
+        : <article>{imagePreview ? <>
+          <header className={css.imagePreviewToolbar}><h2 title={lastArtifact.title}>{lastArtifact.title}</h2><button type="button" className={css.workbenchOpen} disabled={lastArtifact.file === undefined} onClick={() => { openArtifact(lastArtifact, 'download') }}>{t('workbench.download')}</button></header>
+          <div className={css.imagePreviewCanvas}><ReceiptImage attachment={lastArtifact.preview} loadImage={loadImage} /></div>
+        </> : <>{!fillPreview && <><span className={css.workbenchEyebrow}>{lastArtifact.mediaType}</span><h2>{lastArtifact.title}</h2>{lastArtifact.producerName !== undefined && <p>From {lastArtifact.producerName}</p>}</>}{lastArtifact.mediaType === 'application/pdf' && lastArtifact.file !== undefined
           ? <PdfReceipt artifact={lastArtifact} loadPdf={loadPdf} loadImage={loadImage} t={t} />
           : <><div className={css.workbenchActions}><button type="button" className={css.workbenchOpen} disabled={lastArtifact.file === undefined} onClick={() => { openArtifact(lastArtifact, 'download') }}>{t('workbench.download')}</button></div>{lastArtifact.file !== undefined && (lastArtifact.mediaType.startsWith('text/') || /\.(md|markdown|txt)$/i.test(lastArtifact.path))
             ? <TextReceipt file={lastArtifact.file} mediaType={lastArtifact.mediaType} loadText={loadText} t={t} />
-            : <ReceiptImage attachment={lastArtifact.preview} loadImage={loadImage} />}</>}</article>)}
+            : <ReceiptImage attachment={lastArtifact.preview} loadImage={loadImage} />}</>}</>}</article>)}
     {kind === 'artifacts' && <>
       <header className={css.galleryHeader}><strong>{t('workbench.artifacts')}</strong><select aria-label={t('workbench.filter')} value={filter} onChange={(event) => { setFilter(event.target.value) }}><option value="all">{t('workbench.all')}</option>{[...new Set(data.artifacts.map(artifact => artifact.mediaType))].map(type => <option key={type} value={type}>{type}</option>)}</select><button type="button" onClick={() => { setView(view === 'stack' ? 'grid' : 'stack') }}>{t(view === 'stack' ? 'workbench.grid' : 'workbench.stack')}</button></header>
       {data.artifacts.length === 0 ? <p className={css.workbenchEmpty}>{t('workbench.emptyArtifacts')}</p> : <div className={css.artifactGallery} data-view={view}>{[...data.artifacts].reverse().filter(artifact => filter === 'all' || artifact.mediaType === filter).map((artifact, index) => <button key={artifact.id} type="button" className={css.artifactCard} style={{ zIndex: data.artifacts.length - index }} onClick={() => { choose(artifact) }} aria-label={`${t('workbench.open')}: ${artifact.title}`}>
