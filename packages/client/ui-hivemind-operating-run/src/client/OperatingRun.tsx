@@ -553,9 +553,10 @@ const assistantPresentationDefinition: ConversationNodeDefinition<AssistantPrese
 const methodsDefinition: ConversationNodeDefinition<MethodsData> = {
   kind: 'hivemind-operating-methods',
   target: 'chat',
+  // Each load is a receipt, not the single start of an operating run.
   match: event =>
     event.type === 'hivemind/playbooks-loaded'
-      ? { id: string(record(event.data)?.['runId']) ?? String(event.seq), role: 'start' }
+      ? { id: `${string(record(event.data)?.['runId']) ?? 'load'}:${event.seq}`, role: 'start' }
       : null,
   start: (_context, match) => methodsData(match.event),
   update: context => context.state,

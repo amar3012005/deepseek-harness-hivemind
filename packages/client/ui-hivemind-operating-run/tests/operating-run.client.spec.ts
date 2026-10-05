@@ -239,3 +239,20 @@ it('preserves real pre-start progress without claiming the workstream started ea
     expect(rows[1]?.data).toMatchObject({ objective: 'Assess positioning', status: 'completed', summary: 'Assessment finished.' })
   }
 })
+
+it('preserves distinct method loads for the same run across reload and overlapping history pages', () => {
+  const runId = '3a554265-af85-475d-810d-f27d9739973e'
+  const first = event(128, 'hivemind/playbooks-loaded', { runId, playbooks: [{ id: 'research', version: '1' }] })
+  const second = event(146, 'hivemind/playbooks-loaded', { runId, playbooks: [{ id: 'review', version: '2' }] })
+  const full = assemble([first, second])
+  const paged = assemble([second])
+  expect(() => paged.prepend([first, second], false)).not.toThrow()
+  expect(() => paged.prepend([first], false)).not.toThrow()
+  paged.flush()
+  const receipt = (value: ConversationNodeAssembler) => [...nodes(value)].sort((a, b) => a.anchorSeq - b.anchorSeq).map(node => ({
+    key: node.key, anchorSeq: node.anchorSeq, data: node.data,
+  }))
+  expect(receipt(paged)).toEqual(receipt(full))
+  expect(nodes(paged)).toHaveLength(2)
+  expect(nodes(paged).map(node => node.anchorSeq).sort((a, b) => a - b)).toEqual([128, 146])
+})
