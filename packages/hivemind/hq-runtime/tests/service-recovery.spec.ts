@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { Context } from '@deepseek-ai/cordis'
-import type { SessionEvent } from '@deepseek-ai/dsh-session'
+import { SessionSeq, type SessionEvent } from '@deepseek-ai/dsh-session'
 import { installServiceRecovery, serviceInterrupted } from '../src/service-recovery.ts'
 function saved(reason: unknown = { kind: 'interrupted' }): SessionEvent[] {
   return [{ type: 'turn/start', seq: 1, time: 0, data: { turn: 4 } },
@@ -16,7 +16,7 @@ describe('service interruption eligibility', () => {
     }
   })
   it('does not reopen a later turn or committed rest', () => {
-    expect(serviceInterrupted([...saved(), { type: 'turn/start', seq: 3, time: 0, data: { turn: 5 } }], 4)).toBe(false)
+    expect(serviceInterrupted([...saved(), { type: 'turn/start', seq: SessionSeq(3), time: 0, data: { turn: 5 } }], 4)).toBe(false)
     expect(serviceInterrupted([...saved(), { type: 'hivemind/hq-rest-confirmed', seq: 3, time: 0, data: {} } as SessionEvent], 4)).toBe(false)
   })
   it('holds unanswered plan-review questions, including crash-repaired unknown results', () => {
@@ -82,9 +82,9 @@ it('excludes paused or newly resumed autonomy and pending native input', async (
   h.agent.inbox.nextTurn.push({} as never)
   expect(await h.guard()).toBe(false)
   h.agent.inbox.nextTurn.length = 0
-  h.setEvents([...h.events(), { type: 'hivemind/hq-mode', seq: 3, time: 0, data: { revision: 2, enabled: false, changedAt: 0 } }])
+  h.setEvents([...h.events(), { type: 'hivemind/hq-mode', seq: SessionSeq(3), time: 0, data: { revision: 2, enabled: false, changedAt: 0 } }])
   expect(await h.guard()).toBe(false)
-  h.setEvents([...h.events(), { type: 'hivemind/hq-mode', seq: 4, time: 0, data: { revision: 3, enabled: true, changedAt: 0 } }])
+  h.setEvents([...h.events(), { type: 'hivemind/hq-mode', seq: SessionSeq(4), time: 0, data: { revision: 3, enabled: true, changedAt: 0 } }])
   expect(await h.guard()).toBe(false)
 })
 it('cleans normal stops but retains service-disposal receipt for background native dispatch', async () => {
