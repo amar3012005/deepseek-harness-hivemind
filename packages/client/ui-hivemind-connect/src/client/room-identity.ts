@@ -7,6 +7,9 @@ export function roomIdentity(preset: unknown, owner: string | null | undefined, 
   if (owner) {
     try {
       const value = JSON.parse(owner) as { id?: unknown; slug?: unknown; name?: unknown; role?: unknown }
+      if (value.id === null && value.slug === 'lead' && preset === 'hivemind-hq') {
+        return { name: 'Runtime', role: 'AI Chief of Staff' }
+      }
       if (value.id === null && value.slug === 'runtime' && typeof value.name === 'string' && typeof value.role === 'string') {
         return { name: value.name, role: value.role }
       }
