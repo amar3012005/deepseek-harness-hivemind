@@ -31,9 +31,13 @@ export const TurnTailNodeView = memo(function TurnTailNodeView({
     && (closing === null || closing.finalNode.messageId !== undefined)
     ? <span className={css.stopped} role="status">{t('message.stopped')}</span>
     : null
-  if (closing === null) return tail === null && stopped === null
-    ? null
-    : <div className={css.root}>{stopped}{tail}</div>
+  // Saved agent-room controls survive an empty/failed model completion.
+  if (closing === null) {
+    const footer = agentRoom ? renderSlot('conversation.chat.turnFooter', owner) : null
+    return tail === null && stopped === null && footer === null
+      ? null
+      : <div className={css.root}>{stopped}{tail}{footer}</div>
+  }
   const runMs = turn.start === undefined || turn.end === undefined
     ? undefined
     : Math.max(0, turn.end.time - turn.start.time)
