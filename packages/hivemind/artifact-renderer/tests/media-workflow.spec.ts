@@ -1,3 +1,4 @@
+import { ConfirmedImageNoOutputError } from '../src/image-provider.ts'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -9,6 +10,7 @@ import { GenerationRegistry, type GenerationRequest } from '../src/generation.ts
 import { registerMediaWorkflow } from '../src/media-workflow.ts'
 
 interface StartReceipt {
+  provider: string
   request: string
   owner: { orgId: string; userId: string; sessionId: string }
   workflowId: string
@@ -43,7 +45,8 @@ async function setup(
   registry.register({ id: ownership ? 'codex:gpt-image-2' : 'test-image', format: 'image', instructions: 'test', ...(availability ? { availability } : {}), generate: (request) => { requests.push(request); return generate(request.signal) } })
   registerMediaWorkflow(ctx as never, registry, 'artifacts', { maxBriefChars: 1000, imageAttempts: 3, retryBaseDelayMs: 1, ...(ownership ? { requireOwner: true, admission: { path: join(cwd, 'queue.sqlite'), globalConcurrency: 2, tenantConcurrency: 1, maxQueued: 3, dailyUserLimit: 50 } } : {}) })
   const agent = { session: { id: 'session', header: { cwd, id: 'session' }, append(type: string, data: unknown) { events.push({ type, data }) }, snapshotEvents() { return events } } } as unknown as Agent
-  return { cwd, tools, events, agent, requests, listeners, dispose: () => disposers.forEach(dispose => dispose()), hooks: () => hooks! }
+  return { registry, cwd, tools, events, agent, requests, listeners,
+    dispose: () => disposers.forEach(dispose => dispose()), hooks: () => hooks! }
 }
 
 async function start(harness: Awaited<ReturnType<typeof setup>>) {
@@ -119,4 +122,30 @@ describe('durable media workflow', () => {
       expect(harness.events.at(-1)?.data).toMatchObject({ status: 'killed' })
     } finally { harness.dispose(); await rm(harness.cwd, { recursive: true, force: true }) }
   })
+})
+
+it('uses a distinct linked Muse operation only after a confirmed primary no-output receipt', async () => {
+  const harness = await setup(async () => { throw new ConfirmedImageNoOutputError('Primary completed with no output') })
+  const fallbackRequests: GenerationRequest[] = []
+  harness.registry.register({ id: 'openrouter:meta/muse-image', format: 'image', instructions: 'secondary', availability: async () => ({ ready: true }), generate: async (request) => { fallbackRequests.push(request); return { data: Uint8Array.of(1), extension: 'png', mediaType: 'image/png' } } }, true)
+  try {
+    await start(harness); const failed = await harness.hooks().done
+    const receipt = JSON.parse(failed.output!) as { operation_id: string }
+    expect(failed.status).toBe('failed')
+    const args = { kind: 'image', title: 'Draft', brief: 'A complete visual brief.', fallback_from_operation: receipt.operation_id }
+    await expect(harness.tools.get('hivemind_media_generate')!.execute({ ...args, brief: 'Changed' }, { agent: harness.agent, signal: new AbortController().signal } as never)).rejects.toThrow('inputs changed')
+    await harness.tools.get('hivemind_media_generate')!.execute(args, { agent: harness.agent, signal: new AbortController().signal } as never)
+    expect((await harness.hooks().done).status).toBe('completed')
+    expect(fallbackRequests[0]?.operationId).not.toBe(receipt.operation_id)
+    expect(fallbackRequests[0]?.content).toBe('A complete visual brief.')
+    expect((harness.events.filter(e => e.type === 'hivemind/media-workflow-started').at(-1)?.data as StartReceipt).provider).toBe('openrouter:meta/muse-image')
+  } finally { harness.dispose(); await rm(harness.cwd, { recursive: true, force: true }) }
+})
+it('does not permit Muse fallback on an unknown provider outcome', async () => {
+  const harness = await setup(async () => { throw new Error('Image outcome is unknown') })
+  try {
+    await start(harness); const failed = await harness.hooks().done
+    const receipt = JSON.parse(failed.output!) as { operation_id: string }
+    await expect(harness.tools.get('hivemind_media_generate')!.execute({ kind: 'image', title: 'Draft', brief: 'A complete visual brief.', fallback_from_operation: receipt.operation_id }, { agent: harness.agent, signal: new AbortController().signal } as never)).rejects.toThrow('confirmed primary')
+  } finally { harness.dispose(); await rm(harness.cwd, { recursive: true, force: true }) }
 })

@@ -47,3 +47,8 @@ export function openRouterImageProvider(config: ImageProviderConfig): Generation
     },
   }
 }
+
+/** Only a terminal provider turn with no confirmed output may trigger another provider. */
+export class ConfirmedImageNoOutputError extends GenerationProviderError {
+  constructor(message: string) { super(message, 'CONFIRMED_IMAGE_NO_OUTPUT', false) }
+}

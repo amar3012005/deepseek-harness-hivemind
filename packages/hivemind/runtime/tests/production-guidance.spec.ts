@@ -1,7 +1,7 @@
 import { expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import SkillRegistry from '@deepseek-ai/dsh-skill'
-import { installArtifactProductionGuidance, artifactProductionSkill } from '../src/production-guidance.ts'
+import { installArtifactProductionGuidance, artifactProductionSkill, imageGenerationSkill } from '../src/production-guidance.ts'
 
 it('provides only a native summary until production guidance is loaded and disposes it', async () => {
   const ctx = new Context()
@@ -23,6 +23,10 @@ it('provides only a native summary until production guidance is loaded and dispo
   expect(loaded?.content).toContain('operation lease and capabilities [artifact]')
   expect(loaded?.content).toContain('not the capability lease')
   expect(loaded?.content).toContain('Do not force artifact production for casual replies')
+  const image = await registry.get(imageGenerationSkill.name)
+  expect(image?.content).toContain('fallback_from_operation')
+  expect(image?.content).toContain('actual saved pixels')
   dispose?.()
+  expect(await registry.get(imageGenerationSkill.name)).toBeUndefined()
   expect(await registry.get(artifactProductionSkill.name)).toBeUndefined()
 })

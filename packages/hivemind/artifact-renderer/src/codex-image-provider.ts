@@ -1,3 +1,4 @@
+import { ConfirmedImageNoOutputError } from './image-provider.ts'
 /** Native Codex image bridge with private, replayable per-operation state. */
 import { spawn } from 'node:child_process'
 import { existsSync } from 'node:fs'
@@ -246,7 +247,8 @@ async function runImage(config: CodexImageConfig, root: string, request: Generat
       if (turnError) { await saveState(root, { ...state, status: 'failed' }); throw new Error(turnError) }
       if (!image || image.status !== 'completed' || typeof image.savedPath !== 'string' || image.failure) {
         await saveState(root, { ...state, status: 'failed' })
-        throw new Error('Codex image turn ended without output; this operation was not regenerated')
+        if (!image) throw new ConfirmedImageNoOutputError('Codex image turn completed without an image output')
+        throw new Error('Codex image turn ended with an unconfirmed or failed image output; no cross-provider retry')
       }
       const output = await storedOutput(root, image.savedPath)
       await saveState(root, { ...state, status: 'completed', filename: image.savedPath })

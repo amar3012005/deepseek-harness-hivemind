@@ -1,3 +1,4 @@
+import { isDeepStrictEqual } from 'node:util'
 /** Durable model-facing media workflow over replaceable generation providers and native jobs. */
 import { createHash, randomUUID } from 'node:crypto'
 import { isAbsolute, relative, resolve } from 'node:path'
@@ -8,7 +9,7 @@ import { defineTool, type ToolRunContext } from '@deepseek-ai/dsh-tools'
 import type { GenerationFormat, GenerationReceipt } from './generation.ts'
 import { GenerationRegistry, generateArtifact } from './generation.ts'
 import { acquireMediaAdmission, type MediaOwner, type MediaAdmissionConfig } from './media-admission.ts'
-import { GenerationProviderError } from './image-provider.ts'
+import { GenerationProviderError, ConfirmedImageNoOutputError } from './image-provider.ts'
 import { installMediaJobPreview } from './media-output.ts'
 import { savedImageReference } from './html-assets.ts'
 import { currentDesignReference } from './design-reference.ts'
@@ -171,8 +172,9 @@ export function registerMediaWorkflow(
   })
   const mediaTool = defineTool({
     name: 'hivemind_media_generate',
-    description: 'Generate or edit an image directly with a complete creative brief; no capability discovery or lease is required. Video also uses this native background job tool. Use one complete brief; the workflow validates inputs, uses the configured provider, stores the artifact, and wakes this session on completion. Track the returned job_id with native job tools. Reuse operation_id on recovery. Set resume_operation only to reconcile an interrupted operation; do not change the ID to blindly regenerate. The completion artifact and preview are already visible; answer without generating again.',
+    description: 'Before a new image task, load the shared hivemind-image-generation skill through the native skill tool. Generate or edit an image directly with a complete creative brief; no capability discovery or lease is required. Video also uses this native background job tool. Use one complete brief; the workflow validates inputs, uses the configured provider, stores the artifact, and wakes this session on completion. Track the returned job_id with native job tools. Reuse operation_id on recovery. Set resume_operation only to reconcile an interrupted operation; do not change the ID to blindly regenerate. The completion artifact and preview are already visible; answer without generating again.',
     parameters: {
+      fallback_from_operation: { type: 'string', description: 'Exact prior operation ID from a confirmed-no-output failure receipt; only the configured Muse secondary can recover it, using unchanged creative inputs and a new operation identity. Never use for unknown outcomes or policy rejections.' },
       kind: { type: 'string', required: true, enum: ['image', 'video'] },
       title: { type: 'string', required: true },
       brief: { type: 'string', required: true, description: 'Complete creative brief including audience, composition, brand constraints, exact copy, and exclusions.' },
@@ -206,9 +208,7 @@ export function registerMediaWorkflow(
       if (kind === 'video' && args.aspect_ratio !== undefined && !['16:9', '9:16', '1:1'].includes(args.aspect_ratio)) throw new Error('Video aspect_ratio must be 16:9, 9:16 or 1:1')
       const references = args.reference_images ?? []
       if (references.length > 8 || references.some((value) => { try { const url = new URL(value); return url.protocol !== 'https:' || Boolean(url.username || url.password) } catch { return true } })) throw new Error('reference_images must contain at most eight public HTTPS URLs')
-      const provider = registry.get(kind as GenerationFormat)
-      const availability = await provider.availability?.()
-      if (availability && !availability.ready) return { status: 'awaiting_input', code: availability.code, action: availability.action, provider: provider.id }
+      let provider = registry.get(kind as GenerationFormat)
       if (kind === 'video' && (args.operation || args.reference_artifact_ids?.length || args.use_latest_uploaded_images
         || args.transparent_background !== undefined)) throw new Error('Image editing options do not apply to video')
       if (args.operation_id !== undefined && (!args.operation_id.trim() || args.operation_id.length > 120)) {
@@ -216,16 +216,34 @@ export function registerMediaWorkflow(
       }
       const files = await referenceFiles(ctx, agent, args.reference_artifact_ids ?? [], args.use_latest_uploaded_images === true)
       if (args.operation === 'edit' && files.length === 0) throw new Error('Image editing requires a session-owned reference image')
-      if (files.length > 0 && provider.id !== 'codex:gpt-image-2') throw new Error('Session-owned editing requires the native image provider')
+
       const owner = config.requireOwner ? await ctx.serial('hivemind/media-owner', { sessionId: String(agent.session.header.id) }) : undefined
       if (config.requireOwner && (!owner?.orgId || !owner.userId || owner.sessionId !== String(agent.session.header.id))) throw new Error('Authenticated media ownership is unavailable')
       const operationId = createHash('sha256').update(JSON.stringify({ session: String(agent.session.header.id),
-        id: args.operation_id ?? '', kind, title, brief, references, artifacts: args.reference_artifact_ids ?? [],
+        id: args.operation_id ?? '', ...(args.fallback_from_operation ? { fallback: args.fallback_from_operation } : {}), kind, title, brief, references, artifacts: args.reference_artifact_ids ?? [],
         inputs: files.map(file => createHash('sha256').update(file.data).digest('hex')),
         source: args.source_artifact_id ?? '', duration: args.duration_seconds ?? null, aspect: args.aspect_ratio ?? '', transparent: args.transparent_background ?? false })).digest('hex')
       if (recovering.has(agent) && recovering.get(agent) !== operationId) throw new Error('Media recovery inputs changed; original operation was not regenerated')
       const previous = agent.session.snapshotEvents().findLast(item => item.type === 'hivemind/media-workflow-started'
         && item.data.operationId === operationId)
+      if (previous?.type === 'hivemind/media-workflow-started') provider = registry.get(kind as GenerationFormat, previous.data.provider)
+      else if (args.fallback_from_operation) {
+        if (kind !== 'image') throw new Error('Muse fallback applies only to images')
+        const source = agent.session.snapshotEvents().findLast(item => item.type === 'hivemind/media-workflow-started' && item.data.operationId === args.fallback_from_operation)
+        const terminal = source?.type === 'hivemind/media-workflow-started' ? agent.session.snapshotEvents().findLast(item => item.type === 'hivemind/media-workflow-ended' && item.data.workflowId === source.data.workflowId) : undefined
+        if (source?.type !== 'hivemind/media-workflow-started' || terminal?.type !== 'hivemind/media-workflow-ended' || terminal.data.status !== 'failed' || !terminal.data.diagnostic?.startsWith('CONFIRMED_IMAGE_NO_OUTPUT:') || source.data.provider === 'openrouter:meta/muse-image') throw new Error('Fallback requires a confirmed primary no-output failure; unknown or unconfirmed outcomes cannot switch provider')
+        if (!source.data.request) throw new Error('Fallback original request receipt unavailable')
+        const original = JSON.parse(source.data.request) as Record<string, unknown>
+        const normalized = (input: Record<string, unknown>) => {
+          const { operation_id: _id, resume_operation: _resume, fallback_from_operation: _fallback, ...creative } = input
+          return creative
+        }
+        if (!isDeepStrictEqual(normalized(original), normalized(args))) throw new Error('Fallback creative inputs changed; saved references and brief must be preserved')
+        provider = registry.get('image', 'openrouter:meta/muse-image')
+      }
+      const availability = await provider.availability?.()
+      if (availability && !availability.ready) return { status: 'awaiting_input', code: availability.code, action: availability.action, provider: provider.id }
+      if (files.length > 0 && !['codex:gpt-image-2', 'openrouter:meta/muse-image'].includes(provider.id)) throw new Error('Session-owned editing requires a configured pixel-reference provider')
       const dispatchState = owner ? admission?.status(owner, operationId) : undefined
       if (previous?.type === 'hivemind/media-workflow-started') {
         const ended = agent.session.snapshotEvents().findLast(item => item.type === 'hivemind/media-workflow-ended'
@@ -260,7 +278,8 @@ export function registerMediaWorkflow(
             try {
               const receipt = await generateArtifact(ctx, registry, outputDirectory, {
                 ...(owner ? { owner } : {}), ...(reconcileOnly ? { reconcileOnly: true } : {}),
-                format: kind, title, content: brief, referenceImages: references, operationId, referenceFiles: files,
+                format: kind, providerId: provider.id, title, content: brief,
+                referenceImages: references, operationId, referenceFiles: files,
                 ...(args.transparent_background === undefined ? {} : { transparentBackground: args.transparent_background }),
                 ...(sourcePath ? { sourcePath } : {}), ...(args.aspect_ratio ? { aspectRatio: args.aspect_ratio } : {}),
                 ...(args.duration_seconds === undefined ? {} : { durationSeconds: args.duration_seconds }),
@@ -282,11 +301,11 @@ export function registerMediaWorkflow(
           const base = {
             ...(owner ? { owner } : {}), operationId, workflowId, jobId, kind, title, provider: provider.id, attemptLimit, startedAt,
           }
-          const diagnostic = error instanceof Error ? error.message.slice(0, 500) : String(error).slice(0, 500)
+          const diagnostic = error instanceof ConfirmedImageNoOutputError ? `CONFIRMED_IMAGE_NO_OUTPUT: ${error.message.slice(0, 450)}` : error instanceof Error ? error.message.slice(0, 500) : String(error).slice(0, 500)
           agent.session.append('hivemind/media-workflow-ended', { ...base, status: killed ? 'killed' : 'failed', attempts, finishedAt: Date.now(), diagnostic })
           await ctx.sessions.flush(agent.session)
           admission?.finish(operationId, killed ? 'killed' : 'failed')
-          return { status: killed ? 'killed' as const : 'failed' as const, detail: diagnostic, output: JSON.stringify({ workflow_id: workflowId, status: killed ? 'killed' : 'failed', diagnostic }) }
+          return { status: killed ? 'killed' as const : 'failed' as const, detail: diagnostic, output: JSON.stringify({ workflow_id: workflowId, operation_id: operationId, status: killed ? 'killed' : 'failed', diagnostic, ...(error instanceof ConfirmedImageNoOutputError ? { recovery: 'Use fallback_from_operation with this operation_id and unchanged creative inputs if the configured Muse secondary is available. It creates a distinct saved operation; do not regenerate unknown outcomes.' } : {}) }) }
         } finally {
           release?.(); controllers.delete(jobController); activeOperations.delete(operationId)
         }

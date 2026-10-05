@@ -24,8 +24,58 @@ A production blocker is actionable even before a future deadline. An employee sh
 Narrate meaningful findings and progress plainly outside Work details. Return the useful deliverable and a concise explanation, not a technical README packet.`,
 } as const
 
+export const imageGenerationSkill = {
+  name: 'hivemind-image-generation',
+  description: 'Load for image generation or editing: prepare a grounded visual brief, use approved branding and actual references, inspect saved pixels, and recover confirmed no-output failures through the native media tool. Not for image analysis or video.',
+  invocation: { modelInvocable: true, userInvocable: false }, source: 'runtime',
+  content: `# Image generation
+
+Prepare one grounded, art-directed brief, then use the native \`hivemind_media_generate\` tool. The server selects the image provider; do not choose a model, expose provider credentials, or introduce a second generation workflow.
+
+## Gather only the context that changes the image
+
+- Preserve the user's requested subject, format, language, exact copy and visual direction. Resolve references such as “another version” from the current conversation and completed artifact receipts.
+- For company, product, customer or campaign imagery, use relevant context already available. If brand identity, audience, positioning or current product facts are missing, make one focused \`hivemind_meta\` recall using the actual company and task. Request only recall arguments from its current schema; do not fill unrelated operations or optional fields with empty strings.
+- When \`hyperagents_memory\` is available, recall relevant prior visual corrections, preferences or production learnings not already in context. Keep private agent memory separate from shared company facts. Avoid duplicate recall on every variation.
+- In modes exposing \`hivemind_playbooks\`, reuse selected guidance or retrieve the applicable global creative/branding method and a matching local visual playbook. Search actual candidates; never invent a playbook ID. Load only guidance relevant to this artifact. An absent local playbook is a gap, not a reason to manufacture one or stop useful work.
+- In ordinary chat without playbook tools, use company recall, conversation and this skill. Do not start task planning, directory discovery or employee delegation merely to generate an image.
+- General imagery unrelated to company work needs no company retrieval. Missing nonessential context can remain unspecified. Ask one concise question only when a missing detail materially prevents a useful result; the user's generation request already authorizes producing the requested draft.
+
+## Build the complete creative brief
+
+Give the image provider visual instructions, not a request to research the company. Include:
+
+- Purpose, audience and destination: campaign poster, website hero, product illustration, social post or personal concept.
+- Subject and visual idea: a specific focal motif, supporting elements and what the scene should communicate.
+- Composition: hierarchy, framing, subject placement, negative space and safe areas for profile overlays or later text placement.
+- Art direction: medium, shape language, lighting, texture, contrast and a coherent palette. Use verified brand colors and typography where known. A new creative direction is a proposal, not an established brand rule.
+- Exact readable text, spelling, language and hierarchy, or explicitly no text. Do not invent slogans, product capabilities, customers, certifications or performance claims.
+- Requested aspect ratio and any supplied dimensions. Use the tool's actual supported arguments; put layout intent in the brief when there is no dimension field. Do not claim exact exported dimensions unless the artifact verifies them.
+- References and edit scope: what must remain recognizable, what changes, and what must stay untouched. For edits, use session-owned uploaded images or authorized artifact IDs. Use public reference URLs only when actually supplied or verified. Never invent IDs, fetch private files through a public URL, or include credentials or unnecessary private correspondence in the brief.
+- Focused exclusions for known pitfalls: clutter, generic stock imagery, inaccurate copy, distorted logo, misplaced focal point, unwanted text. Avoid long contradictory style lists.
+
+For an existing logo or brand asset, use the authorized reference rather than describing an imagined replacement. If exact typography or logo fidelity is essential, inspect the result and report limitations instead of claiming pixel-perfect compliance.
+
+## Generate, inspect and deliver
+
+1. Load this skill once for the current image task, prepare the brief from the relevant evidence, and call \`hivemind_media_generate\` with \`kind: image\`, a useful title and that brief. Use the actual registered schema. Provider selection remains server-owned.
+2. Reuse the same operation identity and unchanged inputs for recovery. Track the returned job with native job tools only when needed; do not resubmit while it runs. An unknown outcome requires reconciliation, not a fresh operation ID. A deliberate new variation is a new operation.
+3. Keep the native progress and artifact presentation in use. Completion requires a confirmed artifact receipt; a running job, assistant claim or empty output is not an image.
+4. Inspect actual saved pixels with hivemind_artifact_inspect after leasing artifact when needed; a saved receipt or browser URL alone is not inspection. Check readable text, factual accuracy, composition, brand references and destination safe areas. If inspection is unavailable, say so only when it affects confidence; do not claim a visual review occurred.
+5. Correct a material defect with a focused edit when authorized. Avoid unrequested generation loops or charging for extra variants. Deliver the existing artifact/preview with a short description of the actual result and any material limitation. Do not generate again simply to obtain another display link.
+
+Saving to company memory, publishing or sending the image is a separate action governed by its existing permissions. Record a private reusable correction only when supported by an actual result and the relevant memory tool is available.
+
+For a confirmed primary no-output failure, the native media result may supply an operation_id and configured Muse fallback recovery. Reuse the exact creative brief, reference_artifact_ids or latest uploaded images and supported aspect ratio; call the same native media tool with fallback_from_operation set to that failed operation ID. The server validates the failed parent and creates a distinct operation with the same authorized pixels. If Muse is unavailable or the request is unsupported, report that concrete gap. Unknown outcomes, pending work, policy rejections and unconfirmed outputs must never switch providers: reconcile the original operation with unchanged inputs and its original provider. Do not mint a new operation to hide an unknown outcome.
+`,
+} as const
+
 export function installArtifactProductionGuidance(ctx: Context): void {
   ctx.inject(['skills'], (scope) => {
-    scope.effect(() => scope.skills.register(artifactProductionSkill))
+    scope.effect(() => {
+      const removeProduction = scope.skills.register(artifactProductionSkill)
+      const removeImage = scope.skills.register(imageGenerationSkill)
+      return () => { removeImage(); removeProduction() }
+    })
   })
 }

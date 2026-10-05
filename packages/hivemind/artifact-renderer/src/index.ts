@@ -1,3 +1,4 @@
+import { museImageProvider } from './muse-image-provider.ts'
 import { registerArtifactInspection } from './artifact-inspection.ts'
 /** Progressive, provider-neutral PDF artifact rendering for HIVE-MIND. */
 
@@ -92,6 +93,7 @@ export interface Config {
   outputDirectory: string
   attachmentOnly?: boolean
   maxMarkdownChars: number
+  imageMuseFallback?: boolean
   imageProvider?: 'codex' | 'openrouter'
   codexImageCommand?: string
   codexImageStateDirectory?: string
@@ -124,6 +126,7 @@ export const Config: z<Config> = z.object({
   outputDirectory: z.string().default('.hivemind/artifacts'),
   attachmentOnly: z.boolean().default(false),
   maxMarkdownChars: z.natural().min(1_000).max(2_000_000).default(400_000),
+  imageMuseFallback: z.boolean().default(false),
   imageProvider: z.union(['codex', 'openrouter']).default('openrouter'),
   codexImageCommand: z.string().default('/opt/deepseek-harness/packages/subagent/subagent-codex/node_modules/@openai/codex/bin/codex.js'),
   codexImageStateDirectory: z.string().default('/tmp/dsh/storages/media-codex'),
@@ -322,6 +325,7 @@ export function apply(ctx: Context, config: Config): void {
     registerArtifactTool(rendererCtx, config)
     const registry = new GenerationRegistry()
     const { imageModel, imageBaseURL, imageApiKeyEnv } = config
+    if (config.imageMuseFallback) rendererCtx.effect(() => registry.register(museImageProvider(config.imageTimeoutMs ?? 180_000), true))
     if (config.imageProvider === 'codex') {
       rendererCtx.effect(() => registry.register(codexImageProvider({
         command: config.codexImageCommand ?? '/opt/deepseek-harness/packages/subagent/subagent-codex/node_modules/@openai/codex/bin/codex.js',

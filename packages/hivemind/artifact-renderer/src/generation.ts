@@ -55,9 +55,15 @@ export interface GenerationProvider {
 }
 /** Registry is scoped to its consumer plugin and rejects accidental replacement. */
 export class GenerationRegistry {
+  private readonly alternatives = new Map<string, GenerationProvider>()
   private readonly providers = new Map<GenerationFormat, GenerationProvider>()
   /** Register a provider and return its exact removal effect. */
-  register(provider: GenerationProvider): () => void {
+  register(provider: GenerationProvider, secondary = false): () => void {
+    if (secondary) {
+      if (this.alternatives.has(provider.id)) throw new Error('Duplicate secondary provider')
+      this.alternatives.set(provider.id, provider)
+      return () => { if (this.alternatives.get(provider.id) === provider) this.alternatives.delete(provider.id) }
+    }
     if (this.providers.has(provider.format)) throw new Error(`Generation provider already registered: ${provider.format}`)
     this.providers.set(provider.format, provider)
     return () => { if (this.providers.get(provider.format) === provider) this.providers.delete(provider.format) }
@@ -67,8 +73,10 @@ export class GenerationRegistry {
     return [...this.providers.values()].map(p => ({ format: p.format, provider: p.id, tool: p.format === 'image' || p.format === 'video' ? 'hivemind_media_generate' : 'hivemind_generate', instructions: p.instructions }))
   }
   /** Resolve an exact format, with a useful error for unavailable providers. */
-  get(format: GenerationFormat): GenerationProvider {
-    const provider = this.providers.get(format)
+  get(format: GenerationFormat, id?: string): GenerationProvider {
+    const primary = this.providers.get(format)
+    const provider = id === undefined || id === primary?.id ? primary : this.alternatives.get(id)
+    if (provider && provider.format !== format) throw new Error('Provider format mismatch')
     if (provider === undefined) throw new Error(`No ${format} generator configured. Available: ${this.list().map(p => p.format).join(', ')}`)
     return provider
   }
@@ -112,6 +120,7 @@ export async function generateArtifact(
     readonly savedImageIds?: readonly string[]
     readonly sourceFormat?: 'html'
     readonly format: GenerationFormat
+    readonly providerId?: string
     readonly title: string
     readonly content: string
     readonly owner?: MediaOwner
@@ -135,7 +144,7 @@ export async function generateArtifact(
     const rel = relative(resolve(cwd), root)
     if (isAbsolute(outputDirectory) || rel === '..' || rel.startsWith('../') || rel.startsWith('..\\')) throw new Error('Artifact directory must be inside the workspace')
   }
-  const provider = registry.get(input.format)
+  const provider = registry.get(input.format, input.providerId)
   const generated = await provider.generate({
     title: input.title, content: input.content, cwd, signal,
     ...(input.sourceFormat === undefined ? {} : { sourceFormat: input.sourceFormat }),
