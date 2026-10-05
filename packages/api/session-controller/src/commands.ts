@@ -158,7 +158,9 @@ export class SessionCommandController {
     if (restorePreset !== undefined) {
       const presets = this.ctx.get('agentPresets')
       if (presets === undefined) {
-        throw new RemoteError('agent-preset/unavailable', 'The native agent profile service is unavailable.', { sessionId })
+        throw new RemoteError('agent-preset/invalid', 'The native agent profile service is unavailable.', {
+          agentPreset: restorePreset, reason: 'The native agent profile service is unavailable.',
+        })
       }
       try {
         await presets.select(adopted, restorePreset)
