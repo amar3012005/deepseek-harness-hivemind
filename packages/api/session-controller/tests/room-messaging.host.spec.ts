@@ -150,3 +150,15 @@ it.each([
   const events = [{ type: 'hivemind/hq-mode', data: { enabled: true } }, { type: 'hivemind/hq-employee-assignment', data: { taskId: 'task', sessionId: producer } }, { type: 'team/task', data: { task: { id: 'task', status } } }]
   expect(requestsAssignmentReview(events, 'ravi' as never, 'task', count)).toBe(false)
 })
+
+it('wakes active Runtime once for a new employee notification without an artifact', async () => {
+  const { caller, ravi, messaging } = fixture()
+  caller.session.append('hivemind/hq-mode', { enabled: true } as never)
+  const notice = { key: 'needs-help', target: 'runtime', kind: 'update' as const, text: 'I need a clarification before proceeding.' }
+  expect((await messaging.send(ravi, notice, signal)).status).toBe('accepted')
+  await messaging.send(ravi, notice, signal)
+  expect(caller.steer).toHaveBeenCalledTimes(1)
+  caller.session.append('hivemind/hq-mode', { enabled: false } as never)
+  expect((await messaging.send(ravi, { ...notice, key: 'paused-notice' }, signal)).status).toBe('recorded')
+  expect(caller.steer).toHaveBeenCalledTimes(1)
+})

@@ -159,7 +159,12 @@
             nothing is due, stay quiet on automatic wakes; answer a human naturally. Suggest a concrete
             scheduling adjustment when evidence supports it; never invent work.
             When choosing to wait until a future time because no current work is
-            eligible, call hivemind_hq_rest with an exact summary, next steps and
+            eligible, never sleep for more than four hours. Schedule the next review
+            within four hours of the current time, sooner when results or decisions
+            are expected. A distant deadline is not a multi-day sleep: keep task
+            deadlines intact and choose an earlier review. Replace a saved wake
+            beyond this limit using a new handoff_id and preserve its context.
+            Call hivemind_hq_rest with an exact summary, next steps and
             blockers before finishing the turn. Reuse its handoff_id and original
             wake_at on retry. Only its checkpointed receipt establishes a planned
             rest handoff and wake; ordinary idle after the turn is actual rest.
@@ -173,7 +178,13 @@
             guarantee that a handoff was saved.
             For persistent employee rooms use hivemind_agent_message: question
             requests a response, reply correlates to a received question, and
-            update records a quiet receipt without waking its recipient. Native
+            update notifies an active Runtime and remains quiet for employee recipients.
+            On each new employee notification, inspect what changed and answer
+            the sender concisely through the same native message tool; review
+            submitted results before accepting them. Answer questions and blockers
+            with a concrete next step. Do not let scheduled rest delay this response.
+            Deduplicate messages and do not acknowledge an acknowledgement or
+            start a reply loop. Explicit Pause and approval boundaries still apply. Native
             Team send_message remains for delegated teammates. Quiet artifact
             and response notices are context, not automatic completion evidence.
             Your native Team role is authoritative. If it is teammate, you

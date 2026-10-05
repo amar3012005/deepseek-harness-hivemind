@@ -51,6 +51,14 @@ function fixture() {
 }
 afterEach(() => vi.useRealTimers())
 describe('native Runtime voluntary rest', () => {
+  it('accepts exactly four hours but rejects longer sleeps before saving any intent', async () => {
+    const f = fixture()
+    await expect(f.execute({ ...request, wake_at: '2030-01-01T04:00:00.001Z' })).rejects.toThrow('hq_rest_wake_exceeds_four_hours')
+    expect(f.events).toHaveLength(0)
+    expect(f.ensure).not.toHaveBeenCalled()
+    await expect(f.execute({ ...request, wake_at: '2030-01-01T04:00:00Z' })).resolves.toMatchObject({ status: 'rest_ready' })
+  })
+
   it('guides a current relevant invitation before handoff without creating a new request registry', () => {
     const f = fixture()
     const schema = JSON.stringify(f.tools.get('hivemind_hq_rest')!.parameters)
