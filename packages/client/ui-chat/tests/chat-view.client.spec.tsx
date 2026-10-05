@@ -798,7 +798,7 @@ describe('ChatView', () => {
     Object.defineProperty(scroller, 'scrollHeight', { value: 2000, writable: true })
     Object.defineProperty(scroller, 'clientHeight', { value: 400, writable: true })
     let targetTop = 300
-    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+    const geometry = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
       const top = this.dataset.chatTurn === '1' ? targetTop - scroller.scrollTop : 0
       return { top, bottom: top + 40 } as DOMRect
     })
@@ -818,6 +818,7 @@ describe('ChatView', () => {
     act(() => { for (const callback of resizeCallbacks) callback() })
     expect(scroller.scrollTop).toBe(500)
     expect(view.getByRole('button', { name: '跳转到第 1 轮' }).getAttribute('aria-busy')).toBeNull()
+    geometry.mockRestore()
   })
 
   it('hands a windowless tool result to the Tool seat with an empty tool name', () => {
