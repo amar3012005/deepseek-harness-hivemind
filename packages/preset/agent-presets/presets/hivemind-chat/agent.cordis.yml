@@ -209,6 +209,7 @@
         outputDirectory: .hivemind/artifacts
         attachmentOnly: true
         imageProvider: codex
+        imageMuseFallback: true
         mediaRequireOwner: true
         mediaGlobalConcurrency: 4
         mediaTenantConcurrency: 1
