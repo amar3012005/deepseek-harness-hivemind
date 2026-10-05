@@ -88,3 +88,22 @@ it('groups native history by local day and preserves unloaded anchors for date j
   expect(days[0]?.item.anchor).toEqual({ kind: 'unloaded', seq: 0 })
   expect(days[0]?.label).toContain('2026')
 })
+
+it('groups late command anchors by authoritative turn start, not the command day', () => {
+  const previousDay = new Date(2026, 9, 4, 18, 58).getTime()
+  const nextDay = new Date(2026, 9, 5, 8, 18).getTime()
+  const items = mergeTurnRailItems([
+    { turn: 40, time: nextDay, anchorKey: 'late-command', prompt: '', response: '' },
+    { turn: 41, time: nextDay, anchorKey: 'first-oct5', prompt: '', response: '' },
+  ], [{ turn: 40, seq: 3302, time: previousDay }, { turn: 41, seq: 3406, time: nextDay }])
+  const days = turnRailDays(items)
+  expect(days.find(day => day.key === '2026-10-5')?.item.turn).toBe(41)
+  expect(days.find(day => day.key === '2026-10-4')?.item.turn).toBe(40)
+})
+
+it('pages a partial turn head before treating its later mounted row as a day anchor', () => {
+  const time = new Date(2026, 9, 5, 8, 18).getTime()
+  const items = mergeTurnRailItems([{ turn: 41, anchorKey: 'partial-answer', prompt: '', response: '' }],
+    [{ turn: 41, seq: 3406, time }])
+  expect(turnRailDays(items)[0]?.item.anchor).toEqual({ kind: 'unloaded', seq: 3406 })
+})

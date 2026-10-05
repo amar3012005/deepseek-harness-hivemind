@@ -87,11 +87,14 @@ export function mergeTurnRailItems(
   for (const item of loaded) {
     const preview = byTurn.get(item.turn)
     byTurn.set(item.turn, {
-      time: item.time ?? preview?.time,
+      // The server outline records turn/start; late command rows are not its calendar day.
+      time: preview?.time ?? item.time,
       turn: item.turn,
       prompt: item.prompt !== '' ? item.prompt : preview?.prompt ?? '',
       response: item.response !== '' ? item.response : preview?.response ?? '',
-      anchor: { kind: 'loaded', key: item.anchorKey },
+      anchor: item.time === undefined && preview?.time !== undefined
+        ? preview.anchor
+        : { kind: 'loaded', key: item.anchorKey },
     })
   }
   if (byTurn.size === 0) return EMPTY_ITEMS

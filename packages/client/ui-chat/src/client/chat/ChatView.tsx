@@ -738,8 +738,8 @@ export function ChatView({
     // The settling landing runs after the load-earlier button's unmount
     // commit, so the target row cannot drift once the jump clears.
     if (loadingOlder) return
-    if (realizePendingJump(local, el, true)) return
     const uncovered = firstSeq === null || firstSeq > pending.seq
+    if (!uncovered && realizePendingJump(local, el, true)) return
     if (uncovered && hasMore) {
       // A plain pull owns the pager right now: hold the jump (busy stays)
       // instead of degrading to a wrong landing.
