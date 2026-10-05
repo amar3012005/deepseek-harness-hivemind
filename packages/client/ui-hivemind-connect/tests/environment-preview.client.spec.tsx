@@ -31,3 +31,28 @@ it('collapses apps with native Preview, hides the wide panel, and retains explic
   await act(async () => { panel.removeAttribute('data-sidebar-right-open'); fireEvent(window, new Event('resize')) })
   expect(view.queryByRole('region', { name: 'HIVEMIND connected apps' })).toBeNull()
 })
+
+it('binds a Preview mounted after the Environment effect and follows its edge', async () => {
+  window.history.replaceState({}, '', '/hivemind/app/employee/harness/session/test')
+  vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} })
+  vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => ({ accounts: [] }) })))
+  const props = {
+    sessionId: 'test', showDetails: vi.fn(), isPreviewOpen: () => true,
+    useSessions: (select: (value: unknown) => unknown) => select({ byId: { test: { agentPreset: 'hivemind-hq' } }, jobsBySession: {} }),
+  }
+  const view = render(<BrainConnections {...props as unknown as Parameters<typeof BrainConnections>[0]} />)
+  const panel = document.createElement('div')
+  panel.dataset.sidebarRightPanel = 'push'; panel.dataset.sidebarRightOpen = ''
+  let width = window.innerWidth * 0.3
+  panel.getBoundingClientRect = () => ({ width, left: window.innerWidth - width } as DOMRect)
+  await act(async () => { document.body.append(panel) })
+  expect(view.getByRole('button', { name: /Connected apps/ }).getAttribute('aria-expanded')).toBe('false')
+  expect(Number.parseFloat(view.getByRole('region', { name: 'HIVEMIND connected apps' }).style.right)).toBeCloseTo(width + 8)
+  await act(async () => { width = window.innerWidth * 0.45; fireEvent(window, new Event('resize')) })
+  expect(view.queryByRole('region', { name: 'HIVEMIND connected apps' })).toBeNull()
+  expect(view.getByRole('button', { name: 'HIVEMIND environment' }).textContent).toContain('Run Time')
+  fireEvent.click(view.getByRole('button', { name: 'HIVEMIND environment' }))
+  expect(view.getByRole('region', { name: 'HIVEMIND connected apps' })).toBeTruthy()
+  await act(async () => { panel.remove() })
+  expect(view.getByRole('button', { name: /Connected apps/ }).getAttribute('aria-expanded')).toBe('true')
+})
