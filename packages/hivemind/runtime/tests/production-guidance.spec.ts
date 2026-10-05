@@ -30,3 +30,11 @@ it('provides only a native summary until production guidance is loaded and dispo
   expect(await registry.get(imageGenerationSkill.name)).toBeUndefined()
   expect(await registry.get(artifactProductionSkill.name)).toBeUndefined()
 })
+
+it('defaults substantial delegated work to HTML while preserving explicit formats and saved context', () => {
+  expect(artifactProductionSkill.content).toContain('delegated investor narratives, research reports and checklists')
+  expect(artifactProductionSkill.content).toContain('default to a saved HTML artifact')
+  expect(artifactProductionSkill.content).toContain('preserve explicit task formats and Runtime review')
+  expect(artifactProductionSkill.content).toContain('recall the relevant private handoff')
+  expect(artifactProductionSkill.content).toContain('do not reconstruct identifiers or regenerate accepted work')
+})

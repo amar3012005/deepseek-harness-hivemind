@@ -46,3 +46,9 @@ it('reconciles memory-dependent answers against newer corrections and evidence',
   expect(completionLearningSkill.content).toContain('unconfirmed commercial authority')
   expect(completionLearningSkill.content).toContain('explicit direction already given')
 })
+
+it('verifies private saves and carries exact artifact context forward', () => {
+  expect(completionLearningSkill.content).toContain('Verify the successful private-memory save result')
+  expect(completionLearningSkill.content).toContain('retain its exact receipt and the saved artifact context')
+  expect(completionLearningSkill.content).toContain('A failed save stays unsaved')
+})

@@ -21,9 +21,11 @@
           includeRuntimeContext: false
           prefix: >-
             For substantial plans, reports and deliverables, default to a saved HTML
-            artifact using the existing production and reference tools, with a short
+            artifact, including delegated narratives, research and checklists,
+            using the existing production and reference tools, with a short
             plain chat summary and its artifact link. Honor explicitly requested
-            formats; brief answers remain chat. Continue the established company,
+            formats; use PDF for an explicit request or justified delivery need.
+            Brief answers remain chat. Continue the established company,
             reference or previous artifact visual theme until the user changes it.
             User-facing replies and final bubbles use plain natural language:
             explain the meaning, verified outcome, uncertainty and next step.

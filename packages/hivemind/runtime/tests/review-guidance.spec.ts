@@ -43,3 +43,9 @@ it('advertises only a summary until the native registry loads the body', async (
   dispose()
   expect(await registry.get(submissionReviewSkill.name)).toBeUndefined()
 })
+
+it('links employee evidence with exact native producer identity before review', () => {
+  expect(submissionReviewSkill.content).toContain('exact native Team producer name from list_agents')
+  expect(submissionReviewSkill.content).toContain('never the display name, employee ID or default lead')
+  expect(submissionReviewSkill.content).toContain('recall the relevant private handoff')
+})
