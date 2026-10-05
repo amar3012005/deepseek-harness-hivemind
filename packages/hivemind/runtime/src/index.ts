@@ -446,7 +446,7 @@ function allowedServiceBase(value: unknown, allowedOrigins: string[] = []): URL 
   return new URL(url.origin)
 }
 
-function scopedServiceAuthority(ctx: Context, config: Config): IcarusAuthority {
+function scopedServiceAuthority(ctx: Context, config: Config, actor?: Agent): IcarusAuthority {
   const principal = ctx.hivemindExecutionScope.require()
   const envName = config.serviceSecretEnv?.trim() || 'HIVE_HARNESS_RUNNER_SERVICE_SECRET'
   const secret = process.env[envName]
@@ -458,6 +458,8 @@ function scopedServiceAuthority(ctx: Context, config: Config): IcarusAuthority {
     iss: 'hivemind-harness-runner', aud: 'hivemind-control-plane-harness-proxy',
     sub: principal.userId, org_id: principal.orgId, profile: principal.profile,
     ...(principal.projectId === undefined ? {} : { project_id: principal.projectId }),
+    ...(actor?.session.header.agentPreset === 'hivemind-hq' && sessionOwner(actor.session.snapshotEvents())?.slug === 'runtime'
+      ? { operating_role: 'runtime', operating_session: actor.session.header.id } : {}),
     iat: now, exp: now + 30, jti: randomUUID(),
   }
   const input = `${base64url({ alg: 'HS256', typ: 'JWT' })}.${base64url(claims)}`
@@ -469,9 +471,9 @@ function scopedServiceAuthority(ctx: Context, config: Config): IcarusAuthority {
   }
 }
 
-async function resolveAuthority(ctx: Context, config: Config): Promise<IcarusAuthority> {
+async function resolveAuthority(ctx: Context, config: Config, actor?: Agent): Promise<IcarusAuthority> {
   return config.authorityMode === 'scoped-service'
-    ? scopedServiceAuthority(ctx, config)
+    ? scopedServiceAuthority(ctx, config, actor)
     : loadAuthority(config.icarusConfigPath, config.responseMaxBytes)
 }
 
@@ -1418,7 +1420,19 @@ export function apply(ctx: Context, config: Config): void {
       const result = apiRecord(await hiveRequest(authority, '/advisory-methods', {
         method: 'POST', body: JSON.stringify(request),
       }, signal, config), 'method proposal')
-      return { ...result, instructions: 'This company method proposal is pending explicit administrator approval. Open the approval URL to review its exact body; task acceptance is independent of publication.' }
+      return { ...result, instructions: 'This company method draft awaits Runtime review. Runtime can inspect and publish the exact version; employees must return it to Runtime. Task acceptance is independent of publication.' }
+    },
+    async reviewMethod(request, execution) {
+      const publishing = request['operation'] === 'publish_revision'
+      const agent = execution.agent
+      if (publishing && (agent?.session.header.agentPreset !== 'hivemind-hq' || sessionOwner(agent.session.snapshotEvents())?.slug !== 'runtime'))
+        throw new HiveMindRuntimeError('Only the persistent Runtime owner can publish company-local methods')
+      const authority = await resolveAuthority(ctx, config, publishing ? agent : undefined)
+      if (authority.pathPrefix === undefined) throw new HiveMindRuntimeError('company methods require scoped-service authority')
+      const result = apiRecord(await hiveRequest(authority, '/advisory-methods', {
+        method: 'POST', body: JSON.stringify(request),
+      }, execution.signal, config), 'method review')
+      return Object.fromEntries(Object.entries(result).filter((entry): entry is [string, JsonValue] => entry[1] !== undefined))
     },
     async save(agent, request: SaveRequest, signal, execution) {
       const snapshot = await snapshotFor(agent, signal)

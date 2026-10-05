@@ -28,11 +28,12 @@ it('native search/load sees a later approved version and proposal does not load 
   const events: Array<{ type: string; data: unknown }> = []
   let approved = method
   let proposed: unknown
+  let reviewed: unknown
   let outage = false
   apply({ tools: { register(tool: import('@deepseek-ai/dsh-tools').ToolDefinition) { tools.set(tool.name, tool); return () => {} } },
     hivemindMemory: { approvedMethods: async () => { if (outage) throw new Error('Provider unavailable'); return [approved] }, proposeMethod: async (input: unknown) => {
       proposed = input; return { status: 'pending', approval_url: 'https://api.example/approve' }
-    } }, on: () => () => {},
+    }, reviewMethod: async (input: unknown) => { reviewed = input; return { status: 'approved', version: 3 } } }, on: () => () => {},
   } as never, { maxSearchResults: 6, maxSelectedPlaybooks: 4, maxObjectiveChars: 2000, maxOperatingEmployees: 4 })
   const agent = { session: { snapshotEvents: () => events, append: (type: string, data: unknown) => events.push({ type, data }) } }
   const execution = { agent, signal: new AbortController().signal } as never
@@ -52,6 +53,10 @@ it('native search/load sees a later approved version and proposal does not load 
     .toMatchObject({ status: 'pending' })
   expect(proposed).toMatchObject({ prior_version: 2, body: { content: 'Pending third version' } })
   expect(events).toHaveLength(count)
+  await tool.execute({ operation: 'inspect_revision', revision_id: 'saved-revision' }, execution)
+  expect(reviewed).toMatchObject({ operation: 'inspect_revision', revision_id: 'saved-revision' })
+  await tool.execute({ operation: 'publish_revision', revision_id: 'saved-revision', content_hash: 'exact-hash' }, execution)
+  expect(reviewed).toMatchObject({ operation: 'publish_revision', revision_id: 'saved-revision', content_hash: 'exact-hash' })
   outage = true
   const available = await tool.execute({ operation: 'search', query: 'research' }, execution)
   expect(available).toMatchObject({ company_methods_status: 'unavailable' })

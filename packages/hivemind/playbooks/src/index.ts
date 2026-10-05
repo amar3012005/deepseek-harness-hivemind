@@ -439,7 +439,7 @@ function currentAgent(agent: Agent | undefined): Agent {
   return agent
 }
 
-function normalizeOperation(value: JsonValue | undefined): 'search' | 'load' | 'record_plan' | 'revise_plan' | 'propose_revision' {
+function normalizeOperation(value: JsonValue | undefined): 'search' | 'load' | 'record_plan' | 'revise_plan' | 'propose_revision' | 'inspect_revision' | 'publish_revision' {
   const operation = text(value, 'operation', 40)
   // Discovery aliases are accepted at the provider boundary so a concise
   // natural-language request cannot strand the run before a playbook exists.
@@ -447,6 +447,8 @@ function normalizeOperation(value: JsonValue | undefined): 'search' | 'load' | '
   if (operation === 'search' || operation === 'brief' || operation === 'discover' || operation === 'select')
     return 'search'
   if (operation === 'propose_revision') return 'propose_revision'
+  if (operation === 'inspect_revision') return 'inspect_revision'
+  if (operation === 'publish_revision') return 'publish_revision'
   if (operation === 'load') return 'load'
   if (operation === 'record_plan' || operation === 'record' || operation === 'plan') return 'record_plan'
   if (operation === 'revise_plan' || operation === 'revise') return 'revise_plan'
@@ -1358,7 +1360,7 @@ export function apply(ctx: Context, config: Partial<Config> = {}): void {
     defineTool({
       name: 'hivemind_playbooks',
       description:
-        'Progressively discover and load company operating playbooks, then record the adaptive playbook selection for a substantial HyperAgents run. Search first with the user objective and optional domains; load only useful IDs. record_plan atomically loads its selected playbooks if they were not already loaded, so an ordering error cannot strand a governed run. If no playbook fits, continue with native Harness reasoning instead of inventing a method. propose_revision prepares a company-local advisory change with evidence, rationale and prior_version; only explicit administrator approval publishes it. Global methods are stable. Pending proposals never block satisfactory task completion. Search/load read approved versions afresh. Do not call for greetings or simple direct answers, and do not treat a run plan as a completed task.',
+        'Progressively discover and load company operating playbooks, then record the adaptive playbook selection for a substantial HyperAgents run. Search first with the user objective and optional domains; load only useful IDs. record_plan atomically loads its selected playbooks if they were not already loaded, so an ordering error cannot strand a governed run. If no playbook fits, continue with native Harness reasoning instead of inventing a method. propose_revision prepares a company-local advisory change with evidence, rationale and prior_version; Runtime inspects and publishes the exact saved version with publish_revision; employees return drafts to Runtime for final review. Global methods are stable. Pending proposals never block satisfactory task completion. Search/load read approved versions afresh. Do not call for greetings or simple direct answers, and do not treat a run plan as a completed task.',
       parameters: {
         operation: {
           type: 'string',
@@ -1366,6 +1368,8 @@ export function apply(ctx: Context, config: Partial<Config> = {}): void {
           enum: [
             'search',
             'propose_revision',
+            'inspect_revision',
+            'publish_revision',
             'load',
             'record_plan',
             'revise_plan',
@@ -1379,6 +1383,8 @@ export function apply(ctx: Context, config: Partial<Config> = {}): void {
           description:
             'Use search, load, record_plan, revise_plan, or propose_revision. Discovery aliases are accepted only for resilient provider interoperability.',
         },
+        revision_id: { type: 'string', description: 'Exact saved revision ID for inspect_revision or publish_revision.' },
+        content_hash: { type: 'string', description: 'Exact content_hash from inspecting the saved revision; required for Runtime publication.' },
         method_id: { type: 'string', description: 'For propose_revision: company- prefixed advisory method ID; global doctrine cannot be replaced.' },
         prior_version: { type: 'integer', description: 'For propose_revision: current approved company version, or 0 for a new method.' },
         method_body: { type: 'object', additionalProperties: true, description: 'Exact proposed title, description, content, domains, intents, parentGlobalIds, limitations.' },
@@ -1391,7 +1397,7 @@ export function apply(ctx: Context, config: Partial<Config> = {}): void {
           items: { type: 'string' },
           description: 'Optional relevant disciplines or capabilities.',
         },
-        limit: { type: 'integer', description: 'Maximum compact candidates to return.' },
+        limit: { type: 'integer', description: `Maximum compact candidates to return: 1 through ${maxSearchResults}.` },
         playbook_ids: {
           type: 'array',
           items: { type: 'string' },
@@ -1426,10 +1432,15 @@ export function apply(ctx: Context, config: Partial<Config> = {}): void {
       },
       output,
       isConcurrencySafe: args =>
-        !['record_plan', 'record', 'plan', 'revise_plan', 'revise'].includes(String(args.operation)),
+        !['publish_revision', 'propose_revision', 'record_plan', 'record', 'plan', 'revise_plan', 'revise'].includes(String(args.operation)),
       async execute(args, execution) {
         const input = record(args as JsonValue, 'arguments')
         const operation = normalizeOperation(input['operation'])
+        if (operation === 'inspect_revision' || operation === 'publish_revision') {
+          if (!ctx.hivemindMemory.reviewMethod) throw new Error('hivemind-playbooks: method review provider unavailable')
+          return ctx.hivemindMemory.reviewMethod({ operation, revision_id: input['revision_id'] ?? null,
+            content_hash: input['content_hash'] ?? null }, execution)
+        }
         if (operation === 'propose_revision') {
           if (!ctx.hivemindMemory.proposeMethod) throw new Error('hivemind-playbooks: company proposal provider unavailable')
           return ctx.hivemindMemory.proposeMethod({ method_id: input['method_id'] ?? null,

@@ -1289,3 +1289,24 @@ describe('HQ automatic private wake recall', () => {
     expect(fetchMock).toHaveBeenCalledTimes(3)
   })
 })
+
+it('signs publication authority only for the persistent Runtime owner', async () => {
+  process.env.TEST_HIVE_RUNNER_SECRET = 'runner-service-secret-that-is-at-least-32-bytes'
+  const packets: Array<Record<string, unknown>> = []
+  vi.stubGlobal('fetch', vi.fn(async (_url: unknown, init: RequestInit) => {
+    const token = String((init.headers as Record<string, string>)['authorization']).replace(/^Bearer /, '')
+    packets.push(JSON.parse(Buffer.from(token.split('.')[1]!, 'base64url').toString()))
+    return jsonResponse({ status: 'approved', version: 1 })
+  }))
+  const harness = mount({ ...config('unused'), authorityMode: 'scoped-service', serviceApiBase: 'http://control.test', serviceHttpOrigins: ['http://control.test'], serviceSecretEnv: 'TEST_HIVE_RUNNER_SECRET' })
+  const subject = (preset: string, slug: string) => ({ session: {
+    header: { id: 'session-runtime-publication-test', agentPreset: preset },
+    snapshotEvents: () => [{ type: 'hivemind/session-owner', data: { id: null, slug, name: slug, role: 'staff' } }],
+  } }) as unknown as Agent
+  const request = { operation: 'publish_revision', revision_id: 'revision', content_hash: 'exact-hash' }
+  await expect(harness.memory?.reviewMethod?.(request, execContext(subject('hivemind-hyperagents', 'sofia')))).rejects.toThrow('persistent Runtime')
+  await expect(harness.memory?.reviewMethod?.(request, execContext(subject('hivemind-hq', 'sofia')))).rejects.toThrow('persistent Runtime')
+  expect(packets).toHaveLength(0)
+  await expect(harness.memory?.reviewMethod?.(request, execContext(subject('hivemind-hq', 'runtime')))).resolves.toMatchObject({ status: 'approved' })
+  expect(packets[0]).toMatchObject({ operating_role: 'runtime', operating_session: 'session-runtime-publication-test' })
+})

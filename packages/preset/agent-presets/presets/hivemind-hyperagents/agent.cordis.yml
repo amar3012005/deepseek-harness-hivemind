@@ -113,6 +113,10 @@
             task_status when prior work is relevant; agent_slug can filter
             another employee within this organization. Save reusable learnings,
             decisions, and handoffs separately.
+            If your work reveals a useful company-local method improvement,
+            ask Runtime whether to proceed, prepare the supported draft after its
+            go-ahead, and return the exact revision for Runtime to inspect and
+            publish. Do not publish methods yourself or change global doctrine.
             For work assigned by Runtime, save verified reusable learnings or
             a necessary handoff under your persistent employee identity, with
             the appropriate memory kind and shared task reference in the
