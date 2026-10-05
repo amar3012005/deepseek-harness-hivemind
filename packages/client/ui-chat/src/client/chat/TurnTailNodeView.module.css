@@ -7,3 +7,8 @@
 .actions {
   margin-left: -6px;
 }
+
+.stopped {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+}

@@ -24,7 +24,16 @@ export const TurnTailNodeView = memo(function TurnTailNodeView({
   const closing = data.closing
   const owner: TurnTailOwnerProps = { turn, seq: closing?.finalNode.seq ?? data.seq, openFile }
   const tail = renderSlotChain('conversation.chat.turnTail', owner)
-  if (closing === null) return tail === null ? null : <div className={css.root}>{tail}</div>
+  const agentRoom = /^\/hivemind\/app\/employee\/harness(?:\/|$)/u.test(window.location.pathname)
+  // Frozen partials already show Stopped. A turn with no partial, or only
+  // earlier settled narration, still needs its authoritative end surfaced.
+  const stopped = agentRoom && isLatestTurn && turn.end?.data.reason.kind === 'interrupted'
+    && (closing === null || closing.finalNode.messageId !== undefined)
+    ? <span className={css.stopped} role="status">{t('message.stopped')}</span>
+    : null
+  if (closing === null) return tail === null && stopped === null
+    ? null
+    : <div className={css.root}>{stopped}{tail}</div>
   const runMs = turn.start === undefined || turn.end === undefined
     ? undefined
     : Math.max(0, turn.end.time - turn.start.time)
@@ -41,6 +50,7 @@ export const TurnTailNodeView = memo(function TurnTailNodeView({
       data-turn-tail={data.turn}
       data-actions-reveal={isLatestTurn ? 'always' : 'hover'}
     >
+      {stopped}
       {tail}
       <MessageIconActions
         text={assistantText(closing.blocks)}
