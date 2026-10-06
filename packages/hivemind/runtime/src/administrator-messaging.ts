@@ -5,7 +5,11 @@ import { sessionOwner } from './continuity.ts'
 
 /** Only the persistent Chief can send a company-scoped human notification. */
 export function requireAdministratorMessageOwner(agent: Agent | undefined): Agent {
-  if (agent?.session.header.agentPreset !== 'hivemind-hq' || agent.session.header.parentSession !== undefined
+  let preset = agent?.session.header.agentPreset
+  for (const event of agent?.session.snapshotEvents() ?? []) {
+    if (event.type === 'agent-preset/selected') preset = event.data.agentPreset
+  }
+  if (!agent || preset !== 'hivemind-hq' || agent.session.header.parentSession !== undefined
     || sessionOwner(agent.session.snapshotEvents())?.slug !== 'runtime' || sessionOwner(agent.session.snapshotEvents())?.id !== null) throw new Error('Only the persistent Runtime can message the administrator')
   return agent
 }
