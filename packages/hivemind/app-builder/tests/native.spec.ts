@@ -56,9 +56,17 @@ describe('native optional App Builder', () => {
       expect(seen[0]!.body).toEqual({ spec, operationId: 'fixture:create' })
       expect(seen[0]!.path).toBe('/internal/v1/harness-chat/core/api/app-runtime/apps')
       const before = seen.length
+      const kanban = { ...spec, views: [{ id: 'board', name: 'Board', type: 'kanban', entityId: 'company', groupByFieldId: 'name' }] }
+      await expect(call('hivemind_app_create_draft', { spec: kanban, operation_id: 'invalid:kanban' })).rejects.toThrow('kanban requires an enum field')
+      await expect(call('hivemind_app_patch', { app_id: id, expected_version: 1, spec: kanban, operation_id: 'invalid:patch' })).rejects.toThrow('views[0].groupByFieldId')
+      await expect(call('hivemind_app_create_draft', { spec: { ...kanban, views: [{ ...kanban.views[0], groupByFieldId: undefined }] }, operation_id: 'missing:group' })).rejects.toThrow()
+      expect(seen).toHaveLength(before)
+      const validKanban = { ...kanban, entities: [{ ...spec.entities[0], fields: [{ id: 'name', name: 'Name', type: 'enum', options: ['Open', 'Closed'] }] }] }
+      expect(await call('hivemind_app_create_draft', { spec: validKanban, operation_id: 'valid:kanban' })).toEqual({ app })
+      const afterKanban = seen.length
       await expect(call('hivemind_app_create_draft', { spec, operation_id: 'new', organization_id: 'other' })).rejects.toThrow('not a declared property')
       await expect(ctx.hivemindExecutionScope.run({ ...principal, projectId: id }, () => ctx.tools.get('hivemind_app_get')!.execute({ app_id: id }, execution))).rejects.toThrow('project-scoped')
-      expect(seen).toHaveLength(before)
+      expect(seen).toHaveLength(afterKanban)
       await fiber.dispose()
       expect(ctx.tools.get('hivemind_app_get')).toBeUndefined()
       expect(await ctx.skills.get('create-crm')).toBeUndefined()

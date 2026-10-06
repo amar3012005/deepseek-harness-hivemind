@@ -3,6 +3,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { assertSupportedJsonSchema, validateJsonSchemaValue, type JsonSchemaNode } from '@deepseek-ai/dsh-tools'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
+import { validateKanbanGrouping } from './kanban-validation.ts'
 import { appSpecSchema } from './appspec-schema.ts'
 import { request, trustedOrigin, type TransportConfig } from './transport.ts'
 import type {} from '@deepseek-ai/dsh-skill'
@@ -48,12 +49,12 @@ interface Operation {
 }
 const encodedApp = (input: Record<string, JsonValue>) => `/${encodeURIComponent(input.app_id as string)}`
 const operations: Operation[] = [
-  { name: 'hivemind_app_create_draft', description: 'Create a data-only application draft. Use stable lowercase entity/field/view identifiers. Nothing is published. SQL, scripts, workflow definitions and executable UI are unsupported.',
+  { name: 'hivemind_app_create_draft', description: 'Create a data-only application draft. Use stable lowercase entity/field/view identifiers. Every kanban view must set groupByFieldId to an enum field in its entity, with defined options; text fields cannot group a kanban. Nothing is published. SQL, scripts, workflow definitions and executable UI are unsupported.',
     properties: { spec: appSpecSchema, operation_id: operation }, output: appResult, method: 'POST', route: () => '',
     body: i => ({ spec: i.spec, operationId: i.operation_id }) },
   { name: 'hivemind_app_get', description: 'Read the current application definition and version before editing. Tenant access is checked by the server.',
     properties: { app_id: appId }, output: appResult, method: 'GET', route: encodedApp },
-  { name: 'hivemind_app_patch', description: 'Replace a draft specification using the current expected version. Include every retained entity, field and view. Existing records are preserved; incompatible changes require a data migration and may be rejected.',
+  { name: 'hivemind_app_patch', description: 'Replace a draft specification using the current expected version. Include every retained entity, field and view. Kanban groupByFieldId must reference an enum field in the entity referenced by the view, with defined options. Existing records are preserved; incompatible changes require a data migration and may be rejected.',
     properties: { app_id: appId, expected_version: version, spec: appSpecSchema, operation_id: operation }, output: appResult, method: 'PATCH', route: encodedApp,
     body: i => ({ expectedVersion: i.expected_version, spec: i.spec, operationId: i.operation_id }) },
   { name: 'hivemind_app_validate', description: 'Validate a persisted draft using authoritative server business rules before preview or publication.',
@@ -99,6 +100,7 @@ export function apply(ctx: Context, config: Config): void {
         if (input.operation_id !== undefined && !/^[A-Za-z0-9._:-]{1,180}$/.test(input.operation_id as string)) throw new TypeError('app-builder: operation_id must contain 1–180 ASCII letters, numbers, dots, underscores, colons or hyphens')
         if (input.expected_version !== undefined && (!Number.isSafeInteger(input.expected_version) || (input.expected_version as number) < 1)) throw new TypeError('app-builder: expected_version must be a positive safe integer')
         if (input.limit !== undefined && ((input.limit as number) < 1 || (input.limit as number) > 25)) throw new TypeError('app-builder: limit must be 1–25')
+        if (input.spec !== undefined) validateKanbanGrouping(input.spec)
         const body = operation.body?.(input)
         if (body !== undefined && Buffer.byteLength(JSON.stringify(body)) > config.maxRequestBytes) throw new TypeError('app-builder: request exceeds configured byte limit')
         const result = await request(ctx, config, operation.route(input), operation.method, body, exec.signal)

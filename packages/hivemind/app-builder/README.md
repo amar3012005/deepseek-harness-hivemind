@@ -16,7 +16,7 @@ Optional Cordis consumer for the Core App Runtime v1 API. It registers native to
 | `hivemind_app_create_record` | Create typed record data with an operation ID |
 | `hivemind_app_update_record` | Update record fields with version comparison and an operation ID |
 
-The tool dialect uses closed input objects and the native `validateJsonSchemaValue` executor validation. Output declarations validate canonical app, record, validation and page envelopes. AppSpec tool schema is generated from Core `core/src/app-runtime/contract.js` export `APP_SPEC_TOOL_SCHEMA`, schemaVersion 1. Core remains authoritative for identifiers, limits, referenced entities, migration checks, record types and tenant membership. Keep the generated schema synchronized when that version changes; it is not imported across repositories at runtime.
+The tool dialect uses closed input objects and the native `validateJsonSchemaValue` executor validation. Output declarations validate canonical app, record, validation and page envelopes. AppSpec tool schema is generated from Core `core/src/app-runtime/contract.js` export `APP_SPEC_TOOL_SCHEMA`, schemaVersion 1. Core remains authoritative for identifiers, limits, referenced entities, migration checks, record types and tenant membership. Draft creation and patch also reject Kanban grouping on a missing or non-enum field in the view entity before HTTP, with guidance to select an enum or use a table. Keep the generated schema synchronized when that version changes; it is not imported across repositories at runtime.
 
 ## Authority and recovery
 

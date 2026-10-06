@@ -133,3 +133,5 @@ calls queue one native follow-up to reconcile confirmed answers, keeping unanswe
 or interrupted topics open. Confirmation never expands external action authority
 or publishes company memory. Deploy the Core kind-constraint migration and Core
 API before this runner; no existing production records are migrated automatically.
+
+Runtime initial voice baseline outcomes can omit the technical call ID. The tool selects the latest saved initial same-room check-in; later calls never substitute for the initial witness, and completion still requires user speech, a nonempty transcript and an uninterrupted call. Explicit incorrect IDs are rejected with repair guidance.

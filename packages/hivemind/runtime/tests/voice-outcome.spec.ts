@@ -16,7 +16,7 @@ function fixture(interrupted = false, empty = false) {
   installVoiceOutcome({ effect: (run: () => void) => run(),
     tools: { register: (value: ToolDefinition) => { tool = value; return () => {} } },
     sessions: { flush } } as unknown as Context)
-  return { agent, append, flush, execute: (args: unknown) => tool!.execute(args as never, { agent } as never) }
+  return { events, agent, append, flush, execute: (args: unknown) => tool!.execute(args as never, { agent } as never) }
 }
 describe('native initial voice outcome', () => {
   it('saves explicit assessment once and requires the exact same-room call', async () => {
@@ -43,4 +43,30 @@ it('records an empty terminal call as incomplete but never as complete', async (
   await expect(f.execute(args)).rejects.toThrow('interrupted_baseline_remains_pending')
   await expect(f.execute({ ...args, status: 'incomplete' })).resolves.toMatchObject({ saved: true, status: 'incomplete' })
   expect(f.append).toHaveBeenCalledOnce()
+})
+
+it('selects a saved initial witness when omitted and never selects a newer later call', async () => {
+  const f = fixture()
+  f.events.push({ type: 'hivemind/voice-call-ended', data: { callId: '22222222-2222-4222-8222-222222222222',
+    provider: 'codex', initialCheckIn: false, interrupted: false, hadUserSpeech: true, transcript: 'user: Later update.' } } as unknown as SessionEvent)
+  await expect(f.execute({ status: 'complete', summary: 'Initial baseline established.' })).resolves.toMatchObject({ callId, saved: true })
+})
+
+it('does not fabricate a witness or treat a later-only call as an initial check-in', async () => {
+  const f = fixture()
+  f.events.splice(0)
+  await expect(f.execute({ status: 'complete', summary: 'Missing call.' })).rejects.toThrow('no initial check-in is saved')
+  f.events.push({ type: 'hivemind/voice-call-ended', data: { callId, provider: 'codex', initialCheckIn: false,
+    interrupted: false, hadUserSpeech: true, transcript: 'user: Later update.' } } as unknown as SessionEvent)
+  await expect(f.execute({ status: 'complete', summary: 'Later call.' })).rejects.toThrow('no initial check-in is saved')
+  expect(f.append).not.toHaveBeenCalled()
+})
+
+it('automatic selection preserves speech and interruption guards', async () => {
+  const f = fixture(true)
+  await expect(f.execute({ status: 'complete', summary: 'Interrupted initial call.' })).rejects.toThrow('interrupted_baseline_remains_pending')
+  const noSpeech = fixture()
+  const event = noSpeech.events[0]!
+  if (event.type === 'hivemind/voice-call-ended') event.data.hadUserSpeech = false
+  await expect(noSpeech.execute({ status: 'complete', summary: 'No user speech.' })).rejects.toThrow('interrupted_baseline_remains_pending')
 })
