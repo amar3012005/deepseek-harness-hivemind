@@ -163,7 +163,10 @@
 
 /* On mobile an employee Preview is a focused native screen, not a narrow desktop split. */
 @media (max-width: 900px) {
-  .frame:has(:global([data-agent-room])) { grid-template-columns: 0 minmax(0, 1fr) 0 !important; }
+  .frame:has(:global([data-agent-room])) { grid-template-columns: minmax(0, 1fr) 0 !important; }
+  .frame:has(:global([data-agent-room])) .centerCol { grid-column: 1 !important; }
+  .frame:has(:global([data-agent-room])) .rightbarCol { grid-column: 2; }
+  .frame:has(:global([data-agent-room])) .sidebarCol { display: none; }
   .frame:has(:global([data-agent-room])) .handle { display: none; }
   .frame:has(:global([data-agent-room])) :global([data-sidebar-right-panel]) { position: fixed; inset: 56px 0 0; width: 100% !important; max-width: none; z-index: 45; }
   .frame:has(:global([data-agent-room])) :global([data-sidebar-right-panel]) button { min-height: 40px; }
