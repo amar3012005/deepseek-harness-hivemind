@@ -363,7 +363,6 @@ export function ConversationRoot({
   const composerSeat = (
     <div ref={seatResizeRef} className={css.composerSeat} data-composer-seat="">
       {composer}
-      {renderSlot('conversation.composer.footer', {})}
     </div>
   )
 
@@ -397,6 +396,9 @@ export function ConversationRoot({
             onEnd={onHandleEnd}
           />
         ))}
+      </div>
+      <div className={css.pageFooter} data-conversation-page-footer="">
+        {renderSlot('conversation.composer.footer', {})}
       </div>
     </div>
   )

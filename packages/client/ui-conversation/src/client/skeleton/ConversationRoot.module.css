@@ -390,6 +390,21 @@
   min-height: 0;
 }
 
+/* Page-owned controls stay below the scrolling transcript and composer.
+   Flex layout reserves their height, including an expanded connection panel. */
+.pageFooter {
+  flex: none;
+  align-self: center;
+  width: min(var(--dsh-composer-card-max-width), 100%);
+  min-width: 0;
+  box-sizing: border-box;
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+.pageFooter:empty {
+  display: none;
+}
+
 .scrollBody {
   display: flex;
   flex: 1;
