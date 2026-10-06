@@ -51,6 +51,10 @@
     "./attention": {
       "types": "./lib/types/attention.d.ts",
       "default": "./lib/attention.js"
+    },
+    "./lifecycle-host": {
+      "types": "./lib/types/lifecycle-host.d.ts",
+      "default": "./lib/lifecycle-host.js"
     }
   },
   "files": [

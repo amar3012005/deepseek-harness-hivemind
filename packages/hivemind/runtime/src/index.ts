@@ -1094,6 +1094,8 @@ function registerWebConnectRoutes(ctx: Context, config: Config): void {
  */
 declare module '@deepseek-ai/cordis' {
   interface Events {
+    /** Fresh administrator-authorized Core registry attestation. @mode serial */
+    'hivemind/employee-lifecycle-proof'(input: { employeeId: string; signal: AbortSignal }): Promise<unknown>
     /** Scoped native Muse transport; gateway credentials remain in Core. @mode serial */
     'hivemind/muse-image'(input: { signal: AbortSignal; owner?: { orgId: string; userId: string; sessionId: string }; payload?: { prompt: string; aspect_ratio: string; references: string[] } }): Promise<unknown>
   }
@@ -1107,6 +1109,11 @@ export function apply(ctx: Context, config: Config): void {
     return hiveRequest(authority, '/media/muse-image', input.payload
       ? { method: 'POST', body: JSON.stringify(input.payload) } : { method: 'GET' }, input.signal,
     { ...config, requestTimeoutMs: 185_000, responseMaxBytes: 41_000_000 })
+  }))
+  ctx.effect(() => ctx.on('hivemind/employee-lifecycle-proof', async (input: { employeeId: string; signal: AbortSignal }) => {
+    if (config.authorityMode !== 'scoped-service') throw new HiveMindRuntimeError('Lifecycle proof requires scoped service authority')
+    const authority = await resolveAuthority(ctx, config)
+    return hiveRequest(authority, '/employee-lifecycle-proof', { method: 'POST', body: JSON.stringify({ employee_id: input.employeeId }) }, input.signal, config)
   }))
   if (config.companyAwakeningEnabled) ctx.effect(() => ctx.tools.register(administratorMessageTool(async (agent, input, signal) => {
     if (config.authorityMode !== 'scoped-service') throw new HiveMindRuntimeError('Administrator messaging requires scoped service authority')
@@ -1185,6 +1192,25 @@ export function apply(ctx: Context, config: Config): void {
     }))
   })
   ctx.effect(() => ctx.on('tools/pre-execute', async (execution, next): Promise<PreToolDecision> => {
+    // Enforce current registry authority before every dispatch, including cached,
+    // nested, newly registered tools and danger-full-access sessions.
+    const employeeOwner = execution.agent && sessionOwner(execution.agent.session.snapshotEvents())
+    if (employeeOwner?.id && config.authorityMode === 'scoped-service') {
+      const authority = await resolveAuthority(ctx, config)
+      const directory = hyperagentDirectory(await hiveRequest(authority, '/v1/hyperagents/profiles', { method: 'GET' }, execution.signal, config))
+      const profile = directory.profiles.find(item => item['id'] === employeeOwner.id)
+      if (!profile) return { kind: 'deny', reason: 'This employee is no longer authorized.' }
+      const lifecycle = (profile['policy_rules'] as { native_lifecycle?: { phase?: string; kind?: string; expires_at?: string } } | undefined)?.native_lifecycle
+      const closing = lifecycle && (lifecycle.phase !== 'active' || (lifecycle.kind === 'temporary' &&
+        (!lifecycle.expires_at || Date.parse(lifecycle.expires_at) <= Date.now())))
+      if (closing) {
+        const safe = new Set(['hyperagents_memory', 'hivemind_agent_message', 'hivemind_artifact_inspect', 'read_document', 'team_task_get', 'team_task_list'])
+        if (!safe.has(execution.name)) return { kind: 'deny', reason: 'This employee is closing out; new business actions are unavailable.' }
+        if (execution.name === 'hivemind_agent_message' && (execution.arguments as { recipient?: string })?.recipient !== 'runtime') {
+          return { kind: 'deny', reason: 'Closeout messages must report to Runtime.' }
+        }
+      }
+    }
     const presets = ctx.get('permissionPresets') as { current(session: Agent['session']): string } | undefined
     const fullAccess = execution.agent !== undefined && presets?.current(execution.agent.session) === 'danger-full-access'
     if (fullAccess && [HIVE_CREATE_PROJECT_TOOL, HIVE_WEB_SEARCH_TOOL, 'web_fetch',

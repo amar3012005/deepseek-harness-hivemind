@@ -14,9 +14,10 @@ function fixture() {
   const task = { id: 'task-1', status: 'pending', ready: true }
   const close = vi.fn(async () => {})
   const open = vi.fn(async () => ({ read: async () => ({ events }), close }))
-  const ctx = { sessionPersistence: { open }, sessionController: { resolveAgent: async () => ({ agent: root }) }, agentTeams: { listMembers: () => [{ id: target.id, ownership: 'persistent' }], getTask: () => task } } as unknown as Context
+  const profile = { id: 'employee', status: 'draft', policy_rules: { native_lifecycle: { phase: 'active', kind: 'durable' } } }
+  const ctx = { get: (name: string) => name === 'hivemindEmployeeDirectory' ? { profiles: async () => ({ profiles: [profile] }) } : undefined, sessionPersistence: { open }, sessionController: { resolveAgent: async () => ({ agent: root }) }, agentTeams: { listMembers: () => [{ id: target.id, ownership: 'persistent' }], getTask: () => task } } as unknown as Context
   const ref = { rootId: root.id, taskId: 'task-1' }
-  return { events, task, ctx, target, ref, open, close }
+  return { events, task, ctx, target, ref, open, close, profile }
 }
 const signal = new AbortController().signal
 describe('HQ persistent employee delivery', () => {
@@ -56,6 +57,13 @@ describe('HQ persistent employee delivery', () => {
     await expect(allowsEmployeeWork(f.ctx, { id: 'other-room' } as Agent, f.ref, signal)).rejects.toThrow('target_not_authorized')
     f.open.mockRejectedValueOnce(new Error('tenant denied'))
     await expect(allowsEmployeeWork(f.ctx, f.target, f.ref, signal)).rejects.toThrow('tenant denied')
+  })
+  it('denies newly closed registry authority for an existing persistent room', async () => {
+    const f = fixture()
+    f.profile.policy_rules.native_lifecycle.phase = 'closing'
+    expect(await allowsEmployeeWork(f.ctx, f.target, f.ref, signal)).toBe(false)
+    f.profile.policy_rules.native_lifecycle.phase = 'archived'
+    expect(await allowsEmployeeWork(f.ctx, f.target, f.ref, signal)).toBe(false)
   })
   it('retains paused, dependency-blocked, terminal and future work before model admission', async () => {
     const f = fixture()

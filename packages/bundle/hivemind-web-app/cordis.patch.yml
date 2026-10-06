@@ -251,6 +251,10 @@
       config: {connectionStringEnv: DATABASE_URL, schema: hivemind, maxConnections: 4, statementTimeoutMs: 15000}
 
     # Optional server-to-server attention seam; no subscriptions or wakes until explicitly enabled.
+    - id: hivemind-employee-lifecycle-host
+      name: '@deepseek-ai/dsh-hivemind-hq-runtime/lifecycle-host'
+      config: {enabled: false, serviceSecretEnv: HIVE_HARNESS_RUNNER_SERVICE_SECRET}
+
     - id: hivemind-runtime-attention
       name: '@deepseek-ai/dsh-hivemind-hq-runtime/attention'
       config: {enabled: false, serviceSecretEnv: HIVE_HARNESS_RUNNER_SERVICE_SECRET, connectionStringEnv: DATABASE_URL, schema: hivemind, triggerSchema: hivemind, maxConnections: 4, statementTimeoutMs: 15000}
