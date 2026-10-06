@@ -151,7 +151,7 @@ function TurnNavigatorRail({ items: allItems, activeTurn: originalActiveTurn, bu
     syncScrollState()
   }, [activeTurn, items])
 
-  if (items.length < (dreaming ? 1 : 2)) return null
+  if (items.length < (dreaming ? 1 : 2) && !mobileDaysOpen) return null
   const previewIndex = items.findIndex(item => item.turn === previewTurn)
   const preview = previewIndex < 0 ? undefined : items[previewIndex]
   const previewPosition = previewIndex < 0 ? undefined : itemPosition(previewIndex)
@@ -170,6 +170,7 @@ function TurnNavigatorRail({ items: allItems, activeTurn: originalActiveTurn, bu
   return (
     <div className={css.slot}>
       <Modal trapFocus open={mobileDaysOpen} onClose={() => { setMobileDaysOpen(false) }} title="Chat history" closeLabel="Close history">
+        {historyDays.length === 0 && <p>No messages in this room yet.</p>}
         {historyDays.map(day => <button key={day.key} type="button" className={css.mobileDay} onClick={() => { onNavigate(day.item); setMobileDaysOpen(false) }}>{day.label}</button>)}
       </Modal>
       {agentRoom && historyDays.length > 0 && <label className={css.dayJump}>
