@@ -139,7 +139,7 @@ describe('native automatic Brain route', () => {
     for await (const _ of ctx.llm.stream({ ...request, sessionId: 'employee-room' as NonNullable<GenerateOptions['sessionId']> })) { /* drain */ }
     expect(planCalls).toBe(1); expect(platformCalls).toBe(2)
     await expect((async () => {
-      for await (const _ of ctx.llm.stream({ ...request, sessionId: 'unowned' as GenerateOptions['sessionId'] })) { /* drain */ }
+      for await (const _ of ctx.llm.stream({ ...request, sessionId: 'unowned' as NonNullable<GenerateOptions['sessionId']> })) { /* drain */ }
     })()).rejects.toThrow('owned_brain_session_required')
     expect(planCalls).toBe(1); expect(platformCalls).toBe(2)
   })
