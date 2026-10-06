@@ -14,3 +14,10 @@
 /* Agent composers keep one circular voice action; startup recovery remains automatic. */
 :global([data-agent-room]) .options { display: none; }
 :global([data-agent-room]) .button { flex: 0 0 36px; min-width: 36px; padding: 0; aspect-ratio: 1; }
+
+/* Brain and employee composers share the reference's black circular call action. */
+:global([data-native-chat]) .button { width: 40px; height: 40px; flex: 0 0 40px; padding: 0; background: #0a0a0a; color: #fff; border-radius: 50%; aspect-ratio: 1; }
+:global([data-native-chat]) .options { display: none; }
+@media (max-width: 900px) {
+  :global([data-native-chat]) .utility { display: none; }
+}

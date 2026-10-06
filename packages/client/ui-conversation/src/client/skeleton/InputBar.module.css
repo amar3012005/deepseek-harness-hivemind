@@ -391,28 +391,42 @@
 .attachments { display: contents; }
 /* Brain's phone composer shares the native editor and send/stop state. */
 @media (max-width: 600px) {
-  :global([data-brain-chat]) .root { padding: 6px 8px max(8px, env(safe-area-inset-bottom)); }
-  :global([data-brain-chat]) .card { display: grid; grid-template-columns: 36px minmax(0, 1fr) 36px auto; align-items: center; gap: 0; padding: 2px 4px; border-radius: 28px; background: #fff; border: 1px solid #deddd8; box-shadow: none; }
-  :global([data-brain-chat]) .scroll { grid-column: 2; grid-row: 1; margin: 0; max-height: 120px; }
-  :global([data-brain-chat]) .input { min-height: 40px; padding: 8px 4px; font-size: 16px; line-height: 24px; }
-  :global([data-brain-chat]) .hero .input { min-height: 40px; }
-  :global([data-brain-chat]) .placeholder { inset: 8px 4px auto; font-size: 0; white-space: nowrap; overflow: hidden; }
+  :global([data-native-chat]) .root { padding: 6px 8px max(8px, env(safe-area-inset-bottom)); }
+  :global([data-native-chat]) .card { display: grid; grid-template-columns: 36px minmax(0, 1fr) 36px auto; align-items: center; gap: 0; padding: 2px 4px; border-radius: 28px; background: #fff; border: 1px solid #deddd8; box-shadow: none; }
+  :global([data-native-chat]) .scroll { grid-column: 2; grid-row: 1; margin: 0; max-height: 120px; }
+  :global([data-native-chat]) .input { min-height: 40px; padding: 8px 4px; font-size: 16px; line-height: 24px; }
+  :global([data-native-chat]) .hero .input { min-height: 40px; }
+  :global([data-native-chat]) .placeholder { inset: 8px 4px auto; font-size: 16px; white-space: nowrap; overflow: hidden; }
+  :global([data-brain-chat]) .placeholder { font-size: 0; }
   :global([data-brain-chat]) .placeholder::before { content: 'Message Brain'; font-size: 16px; }
-  :global([data-brain-chat]) .row, :global([data-brain-chat]) .tools { display: contents; }
-  :global([data-brain-chat]) .add { grid-column: 1; grid-row: 1; width: 36px; height: 40px; background: transparent; }
-  :global([data-brain-chat]) .add svg { width: 22px; height: 22px; }
-  :global([data-brain-chat]) .brainConnectors { display: grid; place-items: center; grid-column: 3; grid-row: 1; width: 36px; height: 40px; padding: 0; border: 0; background: transparent; color: #50534f; cursor: pointer; }
-  :global([data-brain-chat]) .brainConnectors:disabled { opacity: .4; }
-  :global([data-brain-chat]) .trailing { grid-column: 4; grid-row: 1; gap: 2px; margin: 0; }
-  :global([data-brain-chat]) .primary { width: 40px; height: 40px; transform: none; background: #117dff; }
-  :global([data-brain-chat]) :global([data-hivemind-dictation]) { display: none; }
-  :global([data-brain-chat]) :global([data-hivemind-live-voice]) button { width: 40px; height: 40px; }
-  :global([data-brain-chat]) .attachments { display: block; grid-column: 1 / -1; grid-row: 1; min-width: 0; }
-  :global([data-brain-chat]) .attachments:empty { display: none; }
-  :global([data-brain-chat]) .card:has(.attachments:not(:empty)) .scroll,
-  :global([data-brain-chat]) .card:has(.attachments:not(:empty)) .add,
-  :global([data-brain-chat]) .card:has(.attachments:not(:empty)) .brainConnectors,
-  :global([data-brain-chat]) .card:has(.attachments:not(:empty)) .trailing { grid-row: 2; }
-  :global([data-brain-chat]) .accessory { grid-column: 1 / -1; }
-  :global([data-brain-chat]) :global([data-hivemind-live-voice]) details { display: none; }
+  :global([data-native-chat]) .row, :global([data-native-chat]) .tools { display: contents; }
+  :global([data-native-chat]) .add { grid-column: 1; grid-row: 1; width: 36px; height: 40px; background: transparent; }
+  :global([data-native-chat]) .add svg { width: 22px; height: 22px; }
+  :global([data-native-chat]) .brainConnectors { display: grid; place-items: center; grid-column: 3; grid-row: 1; width: 36px; height: 40px; padding: 0; border: 0; background: transparent; color: #50534f; cursor: pointer; }
+  :global([data-native-chat]) .brainConnectors:disabled { opacity: .4; }
+  :global([data-native-chat]) .trailing { grid-column: 4; grid-row: 1; gap: 2px; margin: 0; }
+  :global([data-native-chat]) .primary { width: 40px; height: 40px; transform: none; background: #117dff; }
+  :global([data-native-chat]) :global([data-hivemind-dictation]) { display: none; }
+  :global([data-native-chat]) :global([data-hivemind-live-voice]) button { width: 40px; height: 40px; }
+  :global([data-native-chat]) .attachments { display: block; grid-column: 1 / -1; grid-row: 1; min-width: 0; }
+  :global([data-native-chat]) .attachments:empty { display: none; }
+  :global([data-native-chat]) .card:has(.attachments:not(:empty)) .scroll,
+  :global([data-native-chat]) .card:has(.attachments:not(:empty)) .add,
+  :global([data-native-chat]) .card:has(.attachments:not(:empty)) .brainConnectors,
+  :global([data-native-chat]) .card:has(.attachments:not(:empty)) .trailing { grid-row: 2; }
+  :global([data-native-chat]) .accessory { grid-column: 1 / -1; }
+  :global([data-native-chat]) :global([data-hivemind-live-voice]) details { display: none; }
+}
+
+/* Shared product composer: white rounded card and native circular actions. */
+:global([data-native-chat]) .card { background: #fff; color: #242424; --dsw-alias-label-primary: #242424; --dsw-alias-label-secondary: #818181; --dsw-alias-label-tertiary: #999; border: 1px solid #ececec; border-radius: 32px; box-shadow: 0 2px 12px rgb(0 0 0 / 3%); }
+:global([data-native-chat]) .primary { background: #0a0a0a; color: #fff; border-radius: 50%; }
+:global([data-native-chat]) .primary:hover:not(:disabled) { background: #262626; }
+@media (min-width: 901px) {
+  :global([data-native-chat]) .card { gap: 8px; padding-top: 12px; }
+  :global([data-native-chat]) .row { padding: 0 12px 10px; }
+  :global([data-native-chat]) .trailing { gap: 12px; }
+}
+@media (max-width: 900px) {
+  :global([data-native-chat]) :global([data-hivemind-dictation]) { display: none; }
 }
