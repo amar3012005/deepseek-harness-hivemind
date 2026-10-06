@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { SessionEventWindow } from '@deepseek-ai/dsh-api-session-controller/client'
-import { employeeMenuHeight, employeeOwnershipLocked, isHyperagentPreset, projectedEmployee, selectedEmployee } from '../src/client/HyperagentEmployee.tsx'
+import { employeeAppearance, employeeMenuHeight, employeeOwnershipLocked, isHyperagentPreset, projectedEmployee, selectedEmployee } from '../src/client/HyperagentEmployee.tsx'
 import { workbenchSnapshot } from '../src/client/HyperagentWorkbench.tsx'
 
 function events(...rows: Array<{ id: string | null; name?: string; role?: string }>): SessionEventWindow {
@@ -68,5 +68,21 @@ describe('returned employee artifacts', () => {
       artifacts: [{ artifactId: 'unknown', file: { attachmentId: 'f', name: 'brief.pdf', bytes: 42 } }],
     } } }] } as unknown as SessionEventWindow
     expect(workbenchSnapshot(window).artifacts).toEqual([])
+  })
+})
+
+describe('saved Humation appearance', () => {
+  const appearance = { version:1,provider:'humation',template:'humation-1',asset_version:'1.0.1',seed:'saved',
+    selections:{ head:'hm1-p-000001',body:'hm1-p-000025',bottom:'hm1-p-000033',item:'hm1-p-000041',glasses:'hm1-p-000056' },
+    colors:{ stroke:'000000',hair:'000000',skin:'FFFFFF',clothes:'FFFFFF',bottom:'000000' },background:'transparent',crop:'avatar' }
+  it('retains canonical customization on a cold persisted owner', () => {
+    expect(projectedEmployee(JSON.stringify({ id:'saved',name:'Alex',role:'Specialist',appearance }))?.appearance)
+      .toEqual(employeeAppearance(appearance))
+    expect(employeeAppearance(appearance)?.selections['item']).toBe('hm1-p-000041')
+  })
+  it('rejects cross-slot and unsupported asset metadata without changing legacy defaults', () => {
+    expect(employeeAppearance({ ...appearance,selections:{ ...appearance.selections,head:'hm1-p-000025' } })).toBeUndefined()
+    expect(employeeAppearance({ ...appearance,asset_version:'unknown' })).toBeUndefined()
+    expect(projectedEmployee(JSON.stringify({ id:'legacy',name:'Legacy',role:'Researcher' }))?.appearance).toBeUndefined()
   })
 })

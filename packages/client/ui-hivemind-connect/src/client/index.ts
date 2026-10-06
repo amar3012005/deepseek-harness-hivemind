@@ -45,7 +45,7 @@ import { createConnectorMentionSource } from './ConnectorMentions.ts'
 import { ContextualFollowUps, selectContextualFollowUps } from './ContextualFollowUps.tsx'
 import {
   HyperagentEmployeePicker, HyperagentEmployeePanel, HyperagentPanelToggle,
-  type EmployeeOption, selectedEmployee, projectedEmployee, EmployeeAvatar,
+  type EmployeeOption, selectedEmployee, projectedEmployee, EmployeeAvatar, employeeAppearance,
 } from './HyperagentEmployee.tsx'
 import { ArtifactDashboard, ArtifactMedia, type LibraryArtifact, type DashboardSelection } from './ArtifactDashboard.tsx'
 import { workbenchSnapshot, HyperagentWorkbench, PdfReceipt, TextReceipt, ReceiptImage } from './HyperagentWorkbench.tsx'
@@ -265,7 +265,8 @@ export function apply(ctx: ClientContext): void {
       if (typeof profile.id !== 'string' || typeof profile.name !== 'string') return []
       const role = typeof profile.role_archetype === 'string' ? profile.role_archetype : 'employee'
       const avatarUrl = typeof profile.avatar_url === 'string' ? profile.avatar_url : undefined
-      return [{ id: profile.id, name: profile.name, role, ...(typeof profile.persona === 'string' ? { persona: profile.persona } : {}), ...(Array.isArray(profile.tools) && profile.tools.every(tool => typeof tool === 'string') ? { allowedTools: profile.tools.filter((tool): tool is string => typeof tool === 'string') } : {}), ...(typeof profile.created_at === 'string' ? { createdAt: profile.created_at } : {}), ...(avatarUrl === undefined ? {} : { avatarUrl }) }]
+      const policy = (profile.policy_rules ?? profile.policyRules) as Record<string, unknown> | undefined
+      return [{ id: profile.id, name: profile.name, role, appearance: employeeAppearance(policy?.['appearance']), ...(typeof profile.persona === 'string' ? { persona: profile.persona } : {}), ...(Array.isArray(profile.tools) && profile.tools.every(tool => typeof tool === 'string') ? { allowedTools: profile.tools.filter((tool): tool is string => typeof tool === 'string') } : {}), ...(typeof profile.created_at === 'string' ? { createdAt: profile.created_at } : {}), ...(avatarUrl === undefined ? {} : { avatarUrl }) }]
     })
   }
   let chatDirectory: Promise<EmployeeOption[]> | undefined

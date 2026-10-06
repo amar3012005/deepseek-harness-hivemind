@@ -9,11 +9,37 @@ import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots
 import css from './HyperagentEmployee.module.css'
 import { workbenchSnapshot } from './HyperagentWorkbench.tsx'
 
+export interface EmployeeAppearance {
+  seed: string
+  selections: Record<string, string>
+  colors: Record<string, string>
+  background: string
+  crop: 'avatar'
+}
+
+/** Visual metadata only; reject IDs outside the installed local manifest. */
+export function employeeAppearance(value: unknown): EmployeeAppearance | undefined {
+  if (!value || typeof value !== 'object') return undefined
+  const appearance = value as Record<string, unknown>
+  if (appearance['version'] !== 1 || appearance['provider'] !== 'humation'
+    || appearance['template'] !== humation1.template.id || appearance['asset_version'] !== humation1.template.version
+    || appearance['crop'] !== 'avatar' || typeof appearance['seed'] !== 'string') return undefined
+  const selections = appearance['selections'] as Record<string, string> | undefined
+  const colors = appearance['colors'] as Record<string, string> | undefined
+  if (!selections || !colors || !['head', 'body', 'bottom', 'item', 'glasses'].every(slot =>
+    humation1.parts.some(part => part.selectionSlot === slot && part.id === selections?.[slot]))
+    || !['stroke', 'hair', 'skin', 'clothes', 'bottom'].every(slot => /^[0-9a-f]{6}$/iu.test(colors?.[slot] ?? ''))
+    || !(appearance['background'] === 'transparent' || /^[0-9a-f]{6}$/iu.test(String(appearance['background'])))) return undefined
+  return { seed: appearance['seed'], selections, colors,
+    background: appearance['background'] as string, crop: 'avatar' }
+}
+
 export interface EmployeeOption {
   id: string
   name: string
   role: string
   avatarUrl?: string
+  appearance?: EmployeeAppearance | undefined
   allowedTools?: string[]
   persona?: string
   createdAt?: string
@@ -31,9 +57,10 @@ declare module '@deepseek-ai/dsh-session-projection/types' {
 export function projectedEmployee(value: string | null | undefined): EmployeeOption | null {
   if (value == null) return null
   try {
-    const owner = JSON.parse(value) as { id: string | null; name: string; role: string; avatarUrl?: string }
+    const owner = JSON.parse(value) as { id: string | null; name: string; role: string; avatarUrl?: string; appearance?: unknown }
     return owner.id === null ? null : {
-      id: owner.id, name: owner.name, role: owner.role, ...(owner.avatarUrl ? { avatarUrl: owner.avatarUrl } : {}),
+      id: owner.id, name: owner.name, role: owner.role,
+      ...(owner.avatarUrl ? { avatarUrl: owner.avatarUrl } : {}), appearance: employeeAppearance(owner.appearance),
     }
   } catch { return null }
 }
@@ -53,27 +80,30 @@ export function RuntimeAvatar({ size }: { size: number }) {
 export function EmployeeAvatar({ employee, size }: { employee: EmployeeOption; size: number }) {
   const color = laneColors[employee.role.toLowerCase()] ?? '#ec4899'
   return <span className={css.avatar} style={{ width: size, height: size, background: `color-mix(in srgb, ${color} 10%, transparent)`, boxShadow: `0 0 0 1.5px ${color}22` }}>
-    {employee.avatarUrl?.startsWith('https://')
-      ? <img src={employee.avatarUrl} alt="" width={size} height={size} />
-      : <Avatar assets={humation1} seed={employee.id} size={size} colors={{ clothes: color }} background="transparent" title={employee.name} />}
+    {employee.appearance
+      ? <Avatar assets={humation1} {...employee.appearance} size={size} title={employee.name} />
+      : employee.avatarUrl?.startsWith('https://')
+        ? <img src={employee.avatarUrl} alt="" width={size} height={size} />
+        : <Avatar assets={humation1} seed={employee.id} size={size} colors={{ clothes: color }} background="transparent" title={employee.name} />}
   </span>
 }
 
 export function selectedEmployee(window: SessionEventWindow): EmployeeOption | null {
   const owner = window.entries.find(entry => entry.type === 'event' && (entry.event.type as string) === 'hivemind/session-owner')
   if (owner?.type === 'event') {
-    const value = owner.event.data as { id: string | null; name: string; role: string; avatarUrl?: string }
+    const value = owner.event.data as { id: string | null; name: string; role: string; avatarUrl?: string; appearance?: unknown }
     return value.id === null ? null : {
-      id: value.id, name: value.name, role: value.role, ...(value.avatarUrl ? { avatarUrl: value.avatarUrl } : {}),
+      id: value.id, name: value.name, role: value.role,
+      ...(value.avatarUrl ? { avatarUrl: value.avatarUrl } : {}), appearance: employeeAppearance(value.appearance),
     }
   }
   for (let index = window.entries.length - 1; index >= 0; index -= 1) {
     const entry = window.entries[index]
     if (entry?.type !== 'event' || (entry.event.type as string) !== 'hivemind/employee-selection') continue
-    const value = entry.event.data as { id: string | null; name?: string; role?: string; avatarUrl?: string }
+    const value = entry.event.data as { id: string | null; name?: string; role?: string; avatarUrl?: string; appearance?: unknown }
     return value.id === null ? null : {
       id: value.id, name: value.name ?? value.id, role: value.role ?? 'employee',
-      ...(typeof value.avatarUrl === 'string' ? { avatarUrl: value.avatarUrl } : {}),
+      ...(typeof value.avatarUrl === 'string' ? { avatarUrl: value.avatarUrl } : {}), appearance: employeeAppearance(value.appearance),
     }
   }
   return null

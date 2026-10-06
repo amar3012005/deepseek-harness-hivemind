@@ -1,3 +1,4 @@
+import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import { z } from 'zod'
 import type { ProjectionDefinition } from '@deepseek-ai/dsh-session-projection'
 import { createHash } from 'node:crypto'
@@ -11,6 +12,7 @@ export interface SessionOwner {
   role: string
   persona?: string | undefined
   avatarUrl?: string | undefined
+  appearance?: JsonValue | undefined
 }
 
 /** Server-produced completion packet; models cannot supply or execute this action. */
@@ -129,7 +131,7 @@ declare module '@deepseek-ai/dsh-session-projection/types' {
 
 const ownerSchema = z.object({
   id: z.string().nullable(), slug: z.string(), name: z.string(), role: z.string(),
-  persona: z.string().optional(), avatarUrl: z.string().optional(),
+  persona: z.string().optional(), avatarUrl: z.string().optional(), appearance: z.custom<JsonValue>().optional(),
 }).nullable()
 
 /** Serve ownership independently of the paginated history window. */
@@ -142,6 +144,7 @@ export const sessionOwnerProjection = {
     view: state => state === null ? null : JSON.stringify({
       id: state.id, slug: state.slug, name: state.name, role: state.role,
       ...(state.avatarUrl ? { avatarUrl: state.avatarUrl } : {}),
+      ...(state.appearance ? { appearance: state.appearance } : {}),
     }),
   },
 } satisfies ProjectionDefinition<'hyperagentOwner', SessionOwner | null>

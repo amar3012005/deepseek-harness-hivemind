@@ -1,5 +1,5 @@
 import type {} from '@deepseek-ai/dsh-schedule'
-import { employeeLifecycleTool } from './employee-lifecycle.ts'
+import { employeeLifecycleTool, employeeProfileTool } from './employee-lifecycle.ts'
 import { administratorMessageTool } from './administrator-messaging.ts'
 /**
  * Governed HIVE-MIND identity, context, recall, and HyperAgent discovery.
@@ -457,12 +457,17 @@ function scopedServiceAuthority(ctx: Context, config: Config, actor?: Agent): Ic
     throw new HiveMindRuntimeError(`scoped service secret ${envName} is unavailable or too short`)
   }
   const now = Math.floor(Date.now() / 1000)
+  const owner = actor && sessionOwner(actor.session.snapshotEvents())
+  const preset = (actor?.session.ownEvents().findLast(event => String(event.type) === 'agent-preset/selected')?.data as { agentPreset?:string } | undefined)?.agentPreset
+    ?? actor?.session.header.agentPreset
   const claims = {
     iss: 'hivemind-harness-runner', aud: 'hivemind-control-plane-harness-proxy',
     sub: principal.userId, org_id: principal.orgId, profile: principal.profile,
     ...(principal.projectId === undefined ? {} : { project_id: principal.projectId }),
-    ...(actor?.session.header.agentPreset === 'hivemind-hq' && sessionOwner(actor.session.snapshotEvents())?.slug === 'runtime'
-      ? { operating_role: 'runtime', operating_session: actor.session.header.id } : {}),
+    ...(actor && preset === 'hivemind-hq' && owner?.slug === 'runtime' && owner.id === null
+      ? { operating_role: 'runtime', operating_session: actor.session.header.id }
+      : actor && preset === 'hivemind-hyperagents' && owner?.id && actor.session.header.parentSession === undefined
+        ? { operating_role:'employee-profile',operating_session:actor.id,operating_employee_id:owner.id } : {}),
     iat: now, exp: now + 30, jti: randomUUID(),
   }
   const input = `${base64url({ alg: 'HS256', typ: 'JWT' })}.${base64url(claims)}`
@@ -1122,6 +1127,12 @@ export function apply(ctx: Context, config: Config): void {
     return Object.fromEntries(Object.entries(result).filter((entry): entry is [string, JsonValue] => entry[1] !== undefined))
   })))
   if (config.companyAwakeningEnabled) ctx.inject(['schedule'], (lifecycleCtx) => {
+    lifecycleCtx.effect(() => lifecycleCtx.tools.register(employeeProfileTool(async (agent, input, signal) => {
+      if (!config.serviceApiBase) throw new HiveMindRuntimeError('Employee profile changes require tenant-scoped service authority')
+      const authority = await resolveAuthority(ctx, config, agent)
+      const result = apiRecord(await hiveRequest(authority, '/employee-lifecycle', { method:'POST',body:JSON.stringify(input) }, signal, config), 'employee profile receipt')
+      return Object.fromEntries(Object.entries(result).filter((entry): entry is [string, JsonValue] => entry[1] !== undefined))
+    })))
     lifecycleCtx.effect(() => lifecycleCtx.tools.register(employeeLifecycleTool(async (agent, input, signal) => {
       if (config.authorityMode !== 'scoped-service') throw new HiveMindRuntimeError('Employee lifecycle requires scoped service authority')
       const authority = await resolveAuthority(ctx, config, agent)
@@ -1811,6 +1822,13 @@ export function apply(ctx: Context, config: Config): void {
             const deny = agent.ctx.tools.schemas(agent).map(tool => tool.name).filter(name => !safe.has(name))
             closingRestrictions.set(agent, agent.ctx.tools.restrict({ deny }))
           }
+          const policy = profile['policy_rules'] as Record<string, JsonValue> | undefined
+          return { ...existing,
+            name: typeof profile['name'] === 'string' ? profile['name'] : existing.name,
+            role: typeof profile['role_archetype'] === 'string' ? profile['role_archetype'] : existing.role,
+            ...(typeof profile['persona'] === 'string' ? { persona:profile['persona'].slice(0,12000) } : {}),
+            ...(policy?.['appearance'] ? { appearance:policy['appearance'] } : {}) }
+
         }
         return existing
       }
@@ -1827,6 +1845,7 @@ export function apply(ctx: Context, config: Config): void {
           id: selected.id, slug: nonEmptyString(profile['slug'], 'employee slug'), name: selected.name, role: selected.role,
           ...(typeof profile['persona'] === 'string' ? { persona: profile['persona'].slice(0, 4000) } : {}),
           ...(typeof profile['avatar_url'] === 'string' && profile['avatar_url'].startsWith('https://') ? { avatarUrl: profile['avatar_url'] } : {}),
+          ...((profile['policy_rules'] as Record<string, JsonValue> | undefined)?.['appearance'] ? { appearance:(profile['policy_rules'] as Record<string, JsonValue>)['appearance'] } : {}),
         }
       }
       // Only the first durable owner wins across overlapping async preparations.
