@@ -19,7 +19,7 @@ it('does not put the Brain connection control in Runtime or employee rooms', () 
 })
 it('removes callback code from the page and submits it without tokens', async () => {
   window.history.replaceState(null, '', '/hivemind/app/overview?code=fixture-code&state=fixture-state')
-  const fetcher = vi.fn(async () => new Response(JSON.stringify({ available: true, connected: true, models: ['fixture-gpt'], selected_model: 'fixture-gpt', platform_fallback: false })))
+  const fetcher = vi.fn(async (_url: string, _init?: RequestInit) => new Response(JSON.stringify({ available: true, connected: true, models: ['fixture-gpt'], selected_model: 'fixture-gpt', platform_fallback: false })))
   vi.stubGlobal('fetch', fetcher); render(<ChatgptPlanConnection />)
   await waitFor(() => expect(screen.getByRole('button', { name: 'Your ChatGPT is connected' })).toBeTruthy())
   expect(window.location.search).toBe('')
