@@ -36,7 +36,13 @@ describe('native optional App Builder', () => {
       await ctx.plugin(Tools)
       await ctx.plugin(Skills)
       await ctx.plugin(ExecutionScope)
-      const fiber = await ctx.plugin(plugin, { serviceApiBase: `http://127.0.0.1:${address.port}`, serviceSecretEnv: 'APP_BUILDER_FIXTURE_SECRET' })
+      const fiber = await ctx.plugin(plugin, {
+        serviceApiBase: `http://127.0.0.1:${address.port}`,
+        serviceSecretEnv: 'APP_BUILDER_FIXTURE_SECRET',
+        requestTimeoutMs: 30_000,
+        maxResponseBytes: 1_048_576,
+        maxRequestBytes: 262_144,
+      })
       expect(ctx.tools.schemas().filter(tool => tool.name.startsWith('hivemind_app_'))).toHaveLength(9)
       expect((await ctx.skills.get('create-crm'))?.content).toContain('operation_id')
       const execution = { signal: new AbortController().signal } as never
