@@ -749,6 +749,22 @@ describe('current selection (migrated from ui-layout, arbitrated into the list s
 })
 
 describe('binding and stage lifecycle', () => {
+  it('does not launch a deferred reconnect pull after owner disposal', async () => {
+    const b = bench()
+    await b.ctx.plugin(() => undefined)
+    const old = deferred<Awaited<ReturnType<typeof b.api.onList>>>()
+    let pulls = 0
+    b.api.onList = () => { pulls += 1; return old.promise }
+    const initial = b.svc.refresh()
+    b.svc.handleConnected()
+    await b.ctx.fiber.dispose()
+    old.reject(new DOMException('Disposed carrier', 'AbortError'))
+    await initial
+    b.svc.handleConnected()
+    await b.svc.refresh()
+    expect(pulls).toBe(1)
+  })
+
   it('pulls one fresh list after a reconnect supersedes an aborting initial request', async () => {
     const b = bench()
     const old = deferred<Awaited<ReturnType<typeof b.api.onList>>>()
