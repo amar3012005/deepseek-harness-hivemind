@@ -257,6 +257,12 @@
             config:
               progressiveToolDisclosure: true
               employeeSubagentPlanning: false
+          - id: hivemind-app-builder
+            name: '@deepseek-ai/dsh-hivemind-app-builder'
+            disabled: !!js process.env.HIVE_APP_RUNTIME_ENABLED !== 'true'
+            config:
+              serviceApiBase: !!js process.env.HIVEMIND_CONNECTED_RECEIPT_SERVICE_URL
+              serviceSecretEnv: HIVE_HARNESS_RUNNER_SERVICE_SECRET
           - id: hivemind-progressive-skills
             name: '@deepseek-ai/dsh-hivemind-progressive-skills'
           - id: hivemind-operating-workstreams
