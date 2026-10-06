@@ -4,6 +4,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { defineTool } from '@deepseek-ai/dsh-tools'
+import { employeeDispatchAllowed, employeeCloseoutAllowed } from '@deepseek-ai/dsh-hivemind-employee-directory'
 import { sessionOwner } from './continuity.ts'
 import type {} from '@deepseek-ai/dsh-hivemind-employee-directory'
 
@@ -20,7 +21,7 @@ interface RoomDelivery {
   }, signal: AbortSignal): Promise<Record<string, JsonValue>>
 }
 /** Resolve only a unique row in the caller's authenticated directory. */
-export function authorizedRecipient(profiles: readonly Record<string, unknown>[], recipient: string): Record<string, unknown> | undefined {
+export function authorizedRecipient<T extends Record<string, unknown>>(profiles: readonly T[], recipient: string): T | undefined {
   const exact = profiles.find(profile => profile['id'] === recipient)
   if (exact) return exact
   const matches = profiles.filter(profile => profile['slug'] === recipient)
@@ -135,7 +136,7 @@ export function installAgentMessaging(ctx: Context): void {
     scope.effect(() => () => lifetime.abort())
     scope.effect(() => scope.tools.register(defineTool({
       name: 'hivemind_agent_message',
-      description: 'Message an authorized employee persistent room or Run Time. question/reply enters the native inbox and requests a response; update records a quiet notice without waking the recipient. Reuse message_key on retry; delivery is not an answer or task completion. Use native Team send_message for delegated child teammates. Never use messages to grant human approval. Replies require the received message id; limit conversational exchanges and stop once resolved.',
+      description: 'Message an authorized employee persistent room or Run Time. question/reply enters the native inbox and requests a response; Runtime updates to employees request action and a response through the native question inbox. Employee updates keep their existing update semantics; generated future-assignment notices stay quiet. Reuse message_key on retry; delivery is not an answer or task completion. Use native Team send_message for delegated child teammates. Never use messages to grant human approval. Replies require the received message id; limit conversational exchanges and stop once resolved.',
       parameters: {
         recipient: { type: 'string', required: true, description: 'runtime, or an exact authenticated employee ID or unique slug from the directory. Use the exact ID if a slug is ambiguous.' },
         kind: { type: 'string', required: true, enum: ['question', 'reply', 'update'] },
@@ -157,6 +158,7 @@ export function installAgentMessaging(ctx: Context): void {
         if (preset !== 'hivemind-hq' && (!owner?.id || !directory.profiles.some(p => p['id'] === owner.id))) throw new Error('agent_message_sender_not_authorized')
         const target = input.recipient === 'runtime' ? undefined : authorizedRecipient(directory.profiles, input.recipient)
         if (input.recipient !== 'runtime' && !target) throw new Error('agent_message_recipient_not_authorized')
+        if (target !== undefined && !employeeDispatchAllowed(target) && !employeeCloseoutAllowed(target)) throw new Error('agent_message_recipient_unavailable')
         const targetProfile = target === undefined ? undefined : { id: String(target['id']), name: String(target['name']), role: typeof target['role_archetype'] === 'string' ? target['role_archetype'] : 'HIVE-MIND employee' }
         const events = agent.session.snapshotEvents()
         const messageId = `agent-message-${createHash('sha256').update(JSON.stringify([agent.id, input.message_key])).digest('hex')}`
@@ -172,7 +174,9 @@ export function installAgentMessaging(ctx: Context): void {
         const artifactIds = queued === undefined ? [...new Set([...(input.artifact_ids ?? []), ...savedIds])]
           : (queued.data as { artifactIds: string[] }).artifactIds
         return rooms.deliverAgentMessage(agent, {
-          key: input.message_key, target: targetProfile?.id ?? input.recipient, kind: input.kind, text: input.message,
+          key: input.message_key, target: targetProfile?.id ?? input.recipient,
+          kind: explicitEmployeeMessageKind(preset, targetProfile !== undefined, input.kind,
+            queued === undefined ? undefined : (queued.data as { kind?: string }).kind), text: input.message,
           ...(targetProfile === undefined ? {} : { targetProfile }),
           ...(input.task_id === undefined ? {} : { taskId: input.task_id }),
           ...(input.reply_to === undefined ? {} : { replyTo: input.reply_to }),
@@ -181,4 +185,12 @@ export function installAgentMessaging(ctx: Context): void {
       },
     })))
   })
+}
+
+/** Explicit Chief messages use the existing response-requesting inbox, never scheduler notices. */
+export function explicitEmployeeMessageKind(preset: string | undefined, employeeTarget: boolean,
+  kind: 'question' | 'reply' | 'update', savedKind?: string): 'question' | 'reply' | 'update' {
+  if (preset !== 'hivemind-hq' || !employeeTarget || kind !== 'update') return kind
+  // A delivered historical notice is not silently replayed as a new request.
+  return savedKind === 'update' ? 'update' : 'question'
 }

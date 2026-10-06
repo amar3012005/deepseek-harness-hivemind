@@ -1,7 +1,7 @@
 import { expect, it, vi } from 'vitest'
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
-import { authorizedRecipient, installAgentMessaging } from '../src/agent-messaging.ts'
+import { authorizedRecipient, installAgentMessaging, explicitEmployeeMessageKind } from '../src/agent-messaging.ts'
 
 it('resolves authenticated unique slugs without accepting missing or ambiguous recipients', () => {
   const row = { id: 'employee-id', slug: 'ravi-patel' }
@@ -116,4 +116,37 @@ it.each([['completed', false], ['error', false], ['completed', true], ['error', 
   await callbacks.get('agent/turn-ended')!({ agent })
   if (!chief) await callbacks.get('agent/pre-step')!({ agent, signal: new AbortController().signal }, async () => {})
   expect(deliverAgentMessage).toHaveBeenCalledTimes(chief ? 1 : 0)
+})
+
+it('admits explicit Runtime updates to employees as response requests without changing other directions or receipts', () => {
+  expect(explicitEmployeeMessageKind('hivemind-hq', true, 'update')).toBe('question')
+  expect(explicitEmployeeMessageKind('hivemind-hq', true, 'update', 'question')).toBe('question')
+  expect(explicitEmployeeMessageKind('hivemind-hq', true, 'update', 'update')).toBe('update')
+  expect(explicitEmployeeMessageKind('hivemind-hyperagents', true, 'update')).toBe('update')
+  expect(explicitEmployeeMessageKind('hivemind-hyperagents', false, 'update')).toBe('update')
+  expect(explicitEmployeeMessageKind('hivemind-hq', true, 'reply')).toBe('reply')
+})
+
+
+it('normalizes a registered Chief update before delivery and rejects a paused recipient', async () => {
+  const deliverAgentMessage = vi.fn(async () => ({ ok: true }))
+  const profile = { id: 'employee', slug: 'sofia', name: 'Sofia', status: 'active' }
+  const register = vi.fn()
+  const scope = {
+    effect: (effect: () => unknown) => effect(), on: vi.fn(() => () => {}),
+    tools: { register }, sessionController: { deliverAgentMessage },
+    hivemindEmployeeDirectory: { profiles: async () => ({ profiles: [profile] }) },
+  }
+  installAgentMessaging({ inject: (_names: unknown, callback: (value: unknown) => void) => callback(scope) } as unknown as Context)
+  const tool = register.mock.calls[0]![0] as { execute: (args: unknown, execution: unknown) => Promise<unknown> }
+  const agent = { id: 'chief', session: { header: { agentPreset: 'hivemind-hq' },
+    snapshotEvents: () => [], ownEvents: () => [] } }
+  const args = { recipient: 'sofia', kind: 'update', message_key: 'correction', message: 'Please revise the saved brief.' }
+  const execution = { agent, signal: new AbortController().signal }
+  await tool.execute(args, execution)
+  expect(deliverAgentMessage).toHaveBeenCalledExactlyOnceWith(agent,
+    expect.objectContaining({ kind: 'question', target: 'employee', key: 'correction' }), execution.signal)
+  profile.status = 'paused'
+  await expect(tool.execute(args, execution)).rejects.toThrow('agent_message_recipient_unavailable')
+  expect(deliverAgentMessage).toHaveBeenCalledTimes(1)
 })

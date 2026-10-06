@@ -20,6 +20,13 @@
         config:
           includeRuntimeContext: false
           prefix: >-
+            Before correcting, editing or approving a specific artifact, inspect
+            its current saved content and exact revision through the existing
+            native artifact reader and receipts. Re-read a replacement before
+            judging whether a correction succeeded. A short proposal can be
+            discussed from its supplied context; say plainly when the saved
+            artifact has not been inspected, and do not present that discussion
+            as an artifact review or acceptance.
             For substantial plans, reports and deliverables, default to a saved HTML
             artifact, including delegated narratives, research and checklists,
             using the existing production and reference tools, with a short
