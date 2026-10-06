@@ -253,6 +253,8 @@ export class SessionManager {
    * @returns when every Session Remote iterator has completed teardown.
    */
   async dispose(): Promise<void> {
+    this.disposed = true
+    this.listReconnectPending = false
     for (const timer of this.catalogDebounce.values()) clearTimeout(timer)
     this.catalogDebounce.clear()
     this.catalogStale.clear()
@@ -449,10 +451,12 @@ export class SessionManager {
 
   // ---- List API ----
 
+  private disposed = false
   private listReconnectPending = false
 
   /** Full refresh via session.list (single-flight: an in-flight call is reused). */
   refreshList(): Promise<void> {
+    if (this.disposed) return Promise.resolve()
     if (this.listInflight !== null) return this.listInflight
     this.listState = 'loading'
     this.listError = null
@@ -463,7 +467,7 @@ export class SessionManager {
     this.listInflight = (async () => {
       try {
         const result = await this.remote.session.list({})
-        if (this.listReconnectPending) return
+        if (this.disposed || this.listReconnectPending) return
         if (result.ok) {
           const baseline: SessionSummary[] = this.listPhase === 'pending'
             ? [...result.value.items]
@@ -512,7 +516,7 @@ export class SessionManager {
           this.listError = result.error
         }
       } catch (error) {
-        if (this.listReconnectPending) return
+        if (this.disposed || this.listReconnectPending) return
         if (!isRemoteFailure(error)) throw error
         this.listState = 'error'
         this.listError = error
@@ -520,7 +524,7 @@ export class SessionManager {
         this.listMutations = null
         this.listInflight = null
         this.notifier.markDirty()
-        if (this.listReconnectPending) {
+        if (!this.disposed && this.listReconnectPending) {
           this.listReconnectPending = false
           void this.refreshList()
         }
@@ -809,6 +813,7 @@ export class SessionManager {
    * Opened Session follow streams resume independently through API Gateway.
    */
   handleConnected(): void {
+    if (this.disposed) return
     if (this.listInflight !== null) this.listReconnectPending = true
     else void this.refreshList()
     const selectedAddress = this.selected === undefined ? undefined : this.addresses.get(this.selected)
