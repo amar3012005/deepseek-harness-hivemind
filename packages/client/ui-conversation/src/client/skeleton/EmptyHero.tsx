@@ -1,7 +1,7 @@
 // The composer remains in ConversationRoot so switching out of the blank-draft
 // phase does not remount its textarea.
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { ReactNode, RefObject } from 'react'
 import {
   FISH_LOGO_PATH, FISH_LOGO_VIEWBOX, IconChevronDownOutline14, IconFolderClose16, IconFolderOpen16,
@@ -131,7 +131,18 @@ function HeroFish({ hovering }: { hovering: boolean }) {
  */
 export function HeroShell({ t, renderSlot, children }: HeroShellProps) {
   const [hovering, setHovering] = useState(false)
-  const brainRoom = /^\/hivemind\/app\/overview(?:\/session\/[^/]+)?\/?$/.test(window.location.pathname)
+  const brainRoom = /^\/hivemind\/app\/overview(?:\/(?:new|session\/[^/]+))?\/?$/.test(window.location.pathname)
+  const [mobileGreeting, setMobileGreeting] = useState('')
+  useEffect(() => {
+    if (!brainRoom) return
+    const host = document.querySelector('[data-mobile-brain-greeting]')
+    if (host === null) return
+    const read = () => setMobileGreeting(host.getAttribute('data-mobile-brain-greeting') ?? '')
+    read()
+    const observer = new MutationObserver(read)
+    observer.observe(host, { attributes: true, attributeFilter: ['data-mobile-brain-greeting'] })
+    return () => observer.disconnect()
+  }, [brainRoom])
   return (
     <div className={css.root}>
       <div className={css.stack}>
@@ -152,7 +163,7 @@ export function HeroShell({ t, renderSlot, children }: HeroShellProps) {
           </span>
           <span className={css.titleGroup}>
             {/* Own element: keeps the headline text addressable apart from the badge. */}
-            {brainRoom ? <span>BRAIN: “Let's remember what matters.”</span> : <>
+            {brainRoom ? <><span className={css.desktopHeadline}>BRAIN: “Let's remember what matters.”</span><span className={css.mobileGreeting}>{mobileGreeting || 'Let’s remember what matters.'}</span></> : <>
               <span>{t('hero.headline')}</span>
               <span className={css.previewBadge}>{t('hero.preview')}</span>
             </>}

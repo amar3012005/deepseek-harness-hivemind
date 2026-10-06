@@ -233,3 +233,11 @@
 /* Brain identity follows the composer’s leading edge. */
 .headline[data-brain-intro] { justify-content: flex-start; }
 .headline[data-brain-intro] .titleGroup { justify-content: flex-start; }
+
+.mobileGreeting { display: none; }
+@media (max-width: 600px) {
+  .headline[data-brain-intro] { justify-content: center; font-size: 24px; line-height: 1.25; }
+  .headline[data-brain-intro] .titleGroup { justify-content: center; text-align: center; }
+  .headline[data-brain-intro] .fishHitbox, .headline[data-brain-intro] .desktopHeadline { display: none; }
+  .headline[data-brain-intro] .mobileGreeting { display: block; }
+}

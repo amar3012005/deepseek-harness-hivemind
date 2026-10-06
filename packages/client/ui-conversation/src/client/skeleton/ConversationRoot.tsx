@@ -335,14 +335,14 @@ export function ConversationRoot({
 
   const composerBar = (
     <div className={clsx(css.composerStack, hero && css.composerHero)}>
-      {hero && <HeroShell t={t} renderSlot={renderSlot} />}
+      {hero && <div className={css.heroIntroduction}><HeroShell t={t} renderSlot={renderSlot} /></div>}
       {(hero || !requiresWorkspace) && heroWorkspaceRow}
       {zone !== undefined && renderSlot('conversation.input.dock', zone)}
       {sessionId !== undefined && /^\/hivemind\/app\/employee\/harness(?:\/|$)/u.test(window.location.pathname) && (
         <div className={css.composerViews}>{renderSlot('conversation.composer.viewTabs', {})}</div>
       )}
-      {inputBar}
-      {hero && renderSlot('conversation.hero.dock', { sessionId })}
+      <div className={css.composerInput}>{inputBar}</div>
+      {hero && <div className={css.heroSuggestions}>{renderSlot('conversation.hero.dock', { sessionId })}</div>}
     </div>
   )
 
