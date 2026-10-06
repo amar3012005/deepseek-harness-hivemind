@@ -749,6 +749,24 @@ describe('current selection (migrated from ui-layout, arbitrated into the list s
 })
 
 describe('binding and stage lifecycle', () => {
+  it('retries an errored same-current open on explicit selection without repulling a healthy window', async () => {
+    const b = bench()
+    await feedList(b, [{ id: 's1' }])
+    let attempt = 0
+    b.api.onHistory = () => Promise.resolve(++attempt === 1
+      ? err(new RemoteError('gateway/internal', 'Fixture initial open failed', {}))
+      : ok({ records: [], hasMore: false }))
+    b.svc.open(sid('s1'))
+    const binding = b.svc.binding(sid('s1'))!
+    await vi.waitFor(() => expect(binding.session.getSnapshot().openState).toBe('error'))
+    expect(b.api.followStarts).toHaveLength(1)
+    b.svc.open(sid('s1'))
+    await vi.waitFor(() => expect(binding.session.getSnapshot().openState).toBe('open'))
+    expect(b.api.followStarts).toHaveLength(2)
+    b.svc.open(sid('s1'))
+    expect(b.api.followStarts).toHaveLength(2)
+  })
+
   it('binding() is pure resolution: no staging, no deferred sweep', async () => {
     const b = bench()
     await feedList(b, [{ id: 's1' }, { id: 's2' }])

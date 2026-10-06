@@ -530,16 +530,19 @@ export class ClientSessions implements ISessions {
     // A masked gap (current blanked while the selection's session is
     // transiently absent) holds the stage: tearing down on the gap would
     // destroy exactly the frozen scope the mask exists to preserve.
-    if (current === undefined || snapshot.byId[current] === undefined || current === this.watched) return
-    this.watched = current
-    this.sweepDeferred()
+    if (current === undefined || snapshot.byId[current] === undefined) return
+    const changed = current !== this.watched
+    if (changed) {
+      this.watched = current
+      this.sweepDeferred()
+    }
     const record = this.resolve(current)
     /* v8 ignore next 3 -- defensive: current is always a listed id (open()
      * validates and the projection masks absent selections), so resolve
      * cannot miss; kept so a future current writer cannot crash the notify. */
     if (record !== undefined) {
       void record.session.open()
-      void this.manager.refreshSubagents(current)
+      if (changed) void this.manager.refreshSubagents(current)
     }
   }
 

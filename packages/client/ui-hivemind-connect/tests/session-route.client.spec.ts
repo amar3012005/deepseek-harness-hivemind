@@ -6,6 +6,7 @@ import {
   HIVE_EMPLOYEE_HARNESS_PATH,
   HIVE_OVERVIEW_PATH,
   hivemindSessionPath,
+  isHivemindRoute,
   parseHivemindSessionRoute,
   setupHivemindSessionRouting,
 } from '../src/client/session-route.ts'
@@ -79,6 +80,23 @@ function install(sessions: ISessions): void {
 }
 
 describe('HIVE native session routes', () => {
+  it('recognizes official agent surfaces without changing unrelated native routes', () => {
+    expect(isHivemindRoute(HIVE_EMPLOYEE_HARNESS_PATH)).toBe(true)
+    expect(isHivemindRoute(`${HIVE_EMPLOYEE_HARNESS_PATH}/session/session-older`)).toBe(true)
+    expect(isHivemindRoute(HIVE_OVERVIEW_PATH)).toBe(true)
+    expect(isHivemindRoute('/chat/session/session-older')).toBe(false)
+  })
+
+  it('activates a durable exact route even when its selection was already restored', () => {
+    window.history.replaceState({}, '', `${HIVE_EMPLOYEE_HARNESS_PATH}/session/session-older`)
+    const harness = fixture(hyperagentState('session-older'))
+    install(harness.sessions)
+    expect(harness.open).toHaveBeenCalledExactlyOnceWith(sid('session-older'))
+    expect(harness.create).not.toHaveBeenCalled()
+    harness.set(hyperagentState('session-older'))
+    expect(harness.open).toHaveBeenCalledTimes(1)
+  })
+
   it('does not pull HIVE sidebar navigation back into chat', () => {
     const harness = fixture(state())
     install(harness.sessions)

@@ -12,7 +12,7 @@ function routeBase(pathname: string): string {
     ? HIVE_EMPLOYEE_HARNESS_PATH : HIVE_OVERVIEW_PATH
 }
 
-function isHivemindRoute(pathname: string): boolean {
+export function isHivemindRoute(pathname: string): boolean {
   return pathname.startsWith(HIVE_OVERVIEW_PATH)
     || pathname.startsWith(EMPLOYEE_SESSION_PATH_PREFIX)
     || pathname === HIVE_EMPLOYEE_HARNESS_PATH
@@ -158,7 +158,7 @@ export function setupHivemindSessionRouting(
       applyingRoute = true
       initialized = true
       observedCurrent = sessionId
-      if (state.current !== sessionId) sessions.open(sessionId)
+      sessions.open(sessionId)
       replace(sessionPath(sessionId))
       applyingRoute = false
       return
@@ -176,7 +176,7 @@ export function setupHivemindSessionRouting(
         applyingRoute = true
         initialized = true
         observedCurrent = sessionId
-        if (refreshed.current !== sessionId) sessions.open(sessionId)
+        sessions.open(sessionId)
         replace(sessionPath(sessionId))
         applyingRoute = false
         return

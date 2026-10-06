@@ -34,7 +34,7 @@ import {
   connectionPresentationOf, PendingConnectionAuthorization,
 } from './connection-question.ts'
 import { setupSingulanceHeadline, RoomHeroMark } from './SingulanceMark.tsx'
-import { setupHivemindSessionRouting } from './session-route.ts'
+import { isHivemindRoute, setupHivemindSessionRouting } from './session-route.ts'
 import { setupConnectionCallbackReturn } from './connection-callback.ts'
 import type {} from '@deepseek-ai/dsh-client-ui-tool/client'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
@@ -773,7 +773,7 @@ export function apply(ctx: ClientContext): void {
     yield registration('mcp__composio__COMPOSIO_MANAGE_CONNECTIONS')
   })
   ctx.effect(() => {
-    if (document.documentElement.dataset.dshMode === 'hivemind-chat') {
+    if (document.documentElement.dataset.dshMode === 'hivemind-chat' || isHivemindRoute(window.location.pathname)) {
       return setupHivemindSessionRouting(ctx.sessions)
     }
     let creating = false
