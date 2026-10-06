@@ -262,3 +262,13 @@
   :global([data-native-chat]) .column { --dsh-chat-flow-gap: 10px; }
   :global([data-native-chat]) .roomDate { padding: 10px 0 6px; font-size: 11px; }
 }
+
+/* Brain day dividers are mobile-only; desktop's existing flow stays intact. */
+.roomDate[data-brain-date] { display: none; }
+@media (max-width: 600px) {
+  :global([data-brain-chat]) .scroll { padding: 8px 10px; }
+  :global([data-brain-chat]) .column { --dsh-chat-flow-gap: 8px; }
+  :global([data-brain-chat]) .roomDate[data-brain-date] { display: block; align-self: center; width: fit-content; margin: 12px auto 4px; padding: 3px 12px; border-radius: 8px; background: #fff; color: #6b6b65; font-size: 11px; }
+  :global([data-brain-chat]) .activityOrb { display: none; }
+  :global([data-brain-chat]) .turnStatus { min-height: 24px; padding-left: 4px; }
+}

@@ -753,3 +753,12 @@
   .root[data-native-chat] { background: #faf9f4; color: #242424; }
   .root[data-native-chat] .header:not(.headerHidden) { min-height: 48px; }
 }
+
+@media (max-width: 600px) {
+  .root[data-brain-chat] { --dsh-composer-side-clearance: 0px; --dsh-content-font-size: 15px; --dsh-content-font-delta: 0px; background: #faf9f4; }
+  :global(html[data-dsh-mode='hivemind-chat']) .root[data-brain-chat] .header:not(.headerHidden) { display: none; }
+  .root[data-brain-chat] .composerSeat { background: #faf9f4; }
+  .root[data-brain-chat] .scrollBody { margin: 0; scrollbar-gutter: auto; }
+  .root[data-brain-chat] :global([data-chat-agent-avatar]) { display: none; }
+  .root[data-brain-chat] :global([data-assistant-message]) { gap: 0 !important; }
+}

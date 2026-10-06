@@ -1,0 +1,26 @@
+import { readFileSync } from 'node:fs'
+import { expect, it } from 'vitest'
+const source = (file: string): string => readFileSync(new URL(`../src/client/skeleton/${file}`, import.meta.url), 'utf8')
+it('limits the compact composer and external Add-sheet bridge to phone Brain routes', () => {
+  const input = source('InputBar.tsx')
+  expect(input).toContain("window.matchMedia('(max-width: 600px)').matches")
+  expect(input).toContain('if (!isMobileBrain() || locked || machineBusy) return')
+  expect(input).toContain('hivemind:mobile-brain-add')
+  expect(input).toContain('hivemind:mobile-brain-action')
+  expect(input).toContain('if (!canAcceptDrop) return')
+  expect(input).toContain('target.current?.click()')
+  expect(input).toContain('else onToggleCommandMenu()')
+})
+it('preserves native voice, send, stop and hides dictation only in phone Brain', () => {
+  const css = source('InputBar.module.css')
+  expect(css).toContain(':global([data-brain-chat]) :global([data-hivemind-dictation]) { display: none; }')
+  expect(css).toContain(':global([data-brain-chat]) .scroll { grid-column: 2; grid-row: 1;')
+  expect(source('InputBar.tsx')).toContain('onClick={onPrimary}')
+  expect(source('InputBar.tsx')).toContain('onClick={stop}')
+  expect(source('InputBar.tsx')).toContain("renderSlot('conversation.input.right', {})")
+})
+it('removes only the message avatar marker and retains media', () => {
+  const css = source('ConversationRoot.module.css')
+  expect(css).toContain('.root[data-brain-chat] :global([data-chat-agent-avatar]) { display: none; }')
+  expect(css).not.toContain('.root[data-brain-chat] img { display: none')
+})

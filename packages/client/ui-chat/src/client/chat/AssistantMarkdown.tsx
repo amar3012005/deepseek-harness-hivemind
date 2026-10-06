@@ -151,7 +151,7 @@ export const AssistantMarkdown = memo(function AssistantMarkdown({
     && blocks.some(block => block.kind === 'text' && visibleAssistantText(block.text).trim() !== '')
   return (
     <div className={css.root} data-streaming={streaming || undefined}>
-      <div className={css.body} data-readable-reply={readableReply || undefined}>
+      <div className={css.body} data-assistant-text={blocks.some(block => block.kind === 'text' && visibleAssistantText(block.text).trim() !== '') || undefined} data-readable-reply={readableReply || undefined}>
         {rendered}
         {interrupted && <span className={css.stopped}>{t('message.stopped')}</span>}
       </div>

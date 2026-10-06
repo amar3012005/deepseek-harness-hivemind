@@ -386,3 +386,26 @@
   :global([data-native-chat]) :global([data-hivemind-live-voice]) button,
   :global([data-native-chat]) :global([data-hivemind-dictation]) button { width: 44px; height: 44px; border-radius: 50%; }
 }
+
+.brainConnectors { display: none; }
+/* Brain's phone composer shares the native editor and send/stop state. */
+@media (max-width: 600px) {
+  :global([data-brain-chat]) .root { padding: 6px 8px max(8px, env(safe-area-inset-bottom)); }
+  :global([data-brain-chat]) .card { display: grid; grid-template-columns: 36px minmax(0, 1fr) 36px auto; align-items: center; gap: 0; padding: 2px 4px; border-radius: 28px; background: #fff; border: 1px solid #deddd8; box-shadow: none; }
+  :global([data-brain-chat]) .scroll { grid-column: 2; grid-row: 1; margin: 0; max-height: 120px; }
+  :global([data-brain-chat]) .input { min-height: 40px; padding: 8px 4px; font-size: 16px; line-height: 24px; }
+  :global([data-brain-chat]) .hero .input { min-height: 40px; }
+  :global([data-brain-chat]) .placeholder { inset: 8px 4px auto; font-size: 0; white-space: nowrap; overflow: hidden; }
+  :global([data-brain-chat]) .placeholder::before { content: 'Message Brain'; font-size: 16px; }
+  :global([data-brain-chat]) .row, :global([data-brain-chat]) .tools { display: contents; }
+  :global([data-brain-chat]) .add { grid-column: 1; grid-row: 1; width: 36px; height: 40px; background: transparent; }
+  :global([data-brain-chat]) .add svg { width: 22px; height: 22px; }
+  :global([data-brain-chat]) .brainConnectors { display: grid; place-items: center; grid-column: 3; grid-row: 1; width: 36px; height: 40px; padding: 0; border: 0; background: transparent; color: #50534f; cursor: pointer; }
+  :global([data-brain-chat]) .brainConnectors:disabled { opacity: .4; }
+  :global([data-brain-chat]) .trailing { grid-column: 4; grid-row: 1; gap: 2px; margin: 0; }
+  :global([data-brain-chat]) .primary { width: 40px; height: 40px; transform: none; background: #117dff; }
+  :global([data-brain-chat]) :global([data-hivemind-dictation]) { display: none; }
+  :global([data-brain-chat]) :global([data-hivemind-live-voice]) button { width: 40px; height: 40px; }
+  :global([data-brain-chat]) .accessory { grid-column: 1 / -1; }
+  :global([data-brain-chat]) :global([data-hivemind-live-voice]) details { display: none; }
+}

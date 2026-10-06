@@ -355,3 +355,9 @@
   :global([data-native-chat]) .bubble { padding: 8px 12px; border-radius: 18px; background: #eaf1ff; }
   :global([data-native-chat]) .fileCard { flex: 0 1 240px; max-width: 100%; min-height: 56px; }
 }
+
+@media (max-width: 600px) {
+  :global([data-brain-chat]) .userStack { max-width: 90%; gap: 3px; }
+  :global([data-brain-chat]) .bubble { padding: 8px 11px; border-radius: 14px 14px 3px 14px; background: #eaf1ff; font-size: 15px; line-height: 22px; }
+  :global([data-brain-chat]) .attachmentRow { justify-content: center; }
+}

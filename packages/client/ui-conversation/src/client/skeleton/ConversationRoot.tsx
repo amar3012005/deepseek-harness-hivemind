@@ -384,6 +384,7 @@ export function ConversationRoot({
       data-agent-room={/^\/hivemind\/app\/employee\/harness(?:\/|$)/u.test(window.location.pathname) || undefined}
       data-native-chat={
         /^\/hivemind\/app\/(?:overview|employee\/harness)(?:\/(?:new|session\/[^/]+))?\/?$/u.test(window.location.pathname) || undefined}
+      data-brain-chat={/^\/hivemind\/app\/overview(?:\/(?:new|session\/[^/]+))?\/?$/u.test(window.location.pathname) || undefined}
       data-phase={phase}
       data-dreaming-ready={dreamingReady || undefined}
     >

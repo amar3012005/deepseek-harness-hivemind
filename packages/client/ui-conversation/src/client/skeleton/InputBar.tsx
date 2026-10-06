@@ -39,6 +39,12 @@ import { PermissionSelect } from './PermissionSelect.tsx'
 import css from './InputBar.module.css'
 import { MobileAddSheet } from './MobileAddSheet.tsx'
 
+function isMobileBrain(): boolean {
+  return window.matchMedia('(max-width: 600px)').matches
+    && /^\/hivemind\/app\/overview(?:\/(?:new|session\/[^/]+))?\/?$/u.test(window.location.pathname)
+}
+
+
 declare module '@deepseek-ai/dsh-session-projection/types' { interface SessionProjectionMap { hyperagentOwner: string | null; hyperagentSelection: string | null } }
 
 export type InputBarProps = ComposerBarProps
@@ -274,9 +280,25 @@ export const InputBar = memo(function InputBar({
       if (typeof value !== 'string' || inputActions === undefined || locked) return
       inputActions.setDraft(`Use ${value}. ${draft}`)
     }
+    const brainAction = (event: Event): void => {
+      if (!isMobileBrain() || locked || machineBusy) return
+      const kind = (event as CustomEvent<{ kind?: string }>).detail?.kind
+      if (kind === 'photo' || kind === 'camera' || kind === 'file') {
+        if (!canAcceptDrop) return
+        const target = kind === 'photo' ? photoInputRef : kind === 'camera' ? cameraInputRef : fileInputRef
+        target.current?.click()
+      } else if (kind === 'search' || kind === 'research') {
+        const prefix = kind === 'search' ? 'Search relevant memories and sources for' : 'Research in depth with sources and an evidence-based report:'
+        inputActions?.setDraft(`${prefix} ${draft}`)
+      }
+    }
+    window.addEventListener('hivemind:mobile-brain-action', brainAction)
     window.addEventListener('hivemind:connector-selected', selectConnector)
-    return () => window.removeEventListener('hivemind:connector-selected', selectConnector)
-  }, [inputActions, draft, locked])
+    return () => {
+      window.removeEventListener('hivemind:connector-selected', selectConnector)
+      window.removeEventListener('hivemind:mobile-brain-action', brainAction)
+    }
+  }, [inputActions, draft, locked, machineBusy, canAcceptDrop])
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const onPickFiles = (e: ChangeEvent<HTMLInputElement>): void => {
     const picked = e.target.files === null ? [] : [...e.target.files]
@@ -531,7 +553,9 @@ export const InputBar = memo(function InputBar({
                 disabled={locked || (toggleCommandMenu === undefined && inputActions === undefined)}
                 onMouseDown={keepFocus}
                 onClick={() => {
-                  if (window.matchMedia('(max-width: 900px)').matches && document.querySelector('[data-native-chat]')) {
+                  if (isMobileBrain()) {
+                    window.dispatchEvent(new Event('hivemind:mobile-brain-add'))
+                  } else if (window.matchMedia('(max-width: 900px)').matches && document.querySelector('[data-native-chat]')) {
                     setMobileAddOpen(true)
                   }
                   else onToggleCommandMenu()
@@ -540,6 +564,13 @@ export const InputBar = memo(function InputBar({
                 <IconPlusOutline16 size={14} />
               </button>
             </Tooltip>
+            <button type="button" className={css.brainConnectors} aria-label="Apps and connectors"
+              disabled={locked} onMouseDown={keepFocus}
+              onClick={() => window.dispatchEvent(new Event('hivemind:mobile-connectors'))}>
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden>
+                <path d="M8 3v5m8-5v5M6 8h12v3a6 6 0 0 1-6 6v4M6 11h12" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </button>
             <Tooltip label={t('file.attach')} side="top" delayMs={500}>
               <button
                 type="button"

@@ -28,7 +28,7 @@ export const AssistantNodeView = memo(function AssistantNodeView({
     && !turnProcess.open
   const revealProcess = useCallback(() => { turnProcess?.setOpen(true) }, [turnProcess])
   return (
-    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+    <div data-assistant-message style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
       {renderSlot?.('conversation.chat.assistantAvatar', {})}
       <AssistantMarkdown
         blocks={data.blocks}
