@@ -8,6 +8,7 @@ import { ScheduleId } from '@deepseek-ai/dsh-schedule'
 import type { UserMessage } from '@deepseek-ai/dsh-llm'
 import type {} from '@deepseek-ai/dsh-api-session-controller'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
+import { employeeDispatchAllowed } from '@deepseek-ai/dsh-hivemind-employee-directory'
 import { employeePersona, profileSnapshot } from '@deepseek-ai/dsh-hivemind-employee-delegation'
 import type {} from './index.ts'
 import { calendarItems } from './calendar.ts'
@@ -65,6 +66,7 @@ export async function prepareEmployee(ctx: Context, root: Agent, taskId: string,
   if (!service) throw new Error('hq_employee_directory_required')
   const directory = await service.profiles(signal)
   const raw = directory.profiles.find(profile => profile['id'] === employeeId)
+  if (!employeeDispatchAllowed(raw)) throw new Error('hq_employee_not_authorized')
   if (!raw) throw new Error('hq_employee_not_authorized')
   const profile = profileSnapshot(raw)
   const slug = raw['slug']
@@ -122,11 +124,7 @@ export async function allowsEmployeeWork(ctx: Context, target: Agent, ref: WorkR
   if (!directoryService) throw new Error('hq_employee_directory_required')
   const directory = await directoryService.profiles(signal)
   const profile = directory.profiles.find(value => value['id'] === assignment.data.employeeId)
-  if (!profile || profile['status'] === 'paused') return false
-  const policy = profile['policy_rules'] as { native_lifecycle?: { phase?: string; kind?: string; expires_at?: string } } | undefined
-  const lifecycle = policy?.native_lifecycle
-  if (lifecycle && (lifecycle.phase !== 'active' ||
-    (lifecycle.kind === 'temporary' && (!lifecycle.expires_at || Date.parse(lifecycle.expires_at) <= Date.now())))) return false
+  if (!employeeDispatchAllowed(profile)) return false
   const task = ctx.agentTeams.getTask(root, TeamTaskId(ref.taskId))
   if (!hqMode(events).enabled || (task.status === 'pending' && !task.ready) || ['completed', 'deleted'].includes(task.status)) return false
   const currentPlan = calendarItems(events).find(item => item.taskId === ref.taskId)

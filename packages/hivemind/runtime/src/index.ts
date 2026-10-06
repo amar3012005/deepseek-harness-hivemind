@@ -41,7 +41,7 @@ import type {} from '@deepseek-ai/dsh-attachment'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { contextPlugin } from '@deepseek-ai/dsh-hivemind-context'
 import { memoryPlugin, type EntitySearchRequest, type RecallRequest, type SaveRequest, type SaveStatusRequest } from '@deepseek-ai/dsh-hivemind-memory'
-import { hyperagentDirectory, projectHyperagentProfiles } from '@deepseek-ai/dsh-hivemind-employee-directory'
+import { employeeDispatchAllowed, employeeCloseoutAllowed, employeeCloseoutToolAllowed, hyperagentDirectory, projectHyperagentProfiles } from '@deepseek-ai/dsh-hivemind-employee-directory'
 import { completedTaskMemory, pendingTaskMemories, sessionOwner, sessionOwnerProjection, employeeSelectionProjection, employeeLatestMessageProjection, type SessionOwner } from './continuity.ts'
 
 declare module '@deepseek-ai/cordis' {
@@ -1219,14 +1219,9 @@ export function apply(ctx: Context, config: Config): void {
       const directory = hyperagentDirectory(await hiveRequest(authority, '/v1/hyperagents/profiles', { method: 'GET' }, execution.signal, config))
       const profile = directory.profiles.find(item => item['id'] === employeeOwner.id)
       if (!profile) return { kind: 'deny', reason: 'This employee is no longer authorized.' }
-      const lifecycle = (profile['policy_rules'] as { native_lifecycle?: { phase?: string; kind?: string; expires_at?: string } } | undefined)?.native_lifecycle
-      const closing = lifecycle && (lifecycle.phase !== 'active' || (lifecycle.kind === 'temporary' &&
-        (!lifecycle.expires_at || Date.parse(lifecycle.expires_at) <= Date.now())))
-      if (closing) {
-        const safe = new Set(['hyperagents_memory', 'hivemind_agent_message', 'hivemind_artifact_inspect', 'read_document', 'team_task_get', 'team_task_list'])
-        if (!safe.has(execution.name)) return { kind: 'deny', reason: 'This employee is closing out; new business actions are unavailable.' }
-        if (execution.name === 'hivemind_agent_message' && (execution.arguments as { recipient?: string })?.recipient !== 'runtime') {
-          return { kind: 'deny', reason: 'Closeout messages must report to Runtime.' }
+      if (!employeeDispatchAllowed(profile)) {
+        if (!employeeCloseoutAllowed(profile) || !employeeCloseoutToolAllowed(execution.name, execution.arguments)) {
+          return { kind: 'deny', reason: 'This employee is unavailable for business work; only authorized closeout evidence may be preserved.' }
         }
       }
     }
@@ -1806,17 +1801,16 @@ export function apply(ctx: Context, config: Config): void {
           const directory = hyperagentDirectory(await hiveRequest(authority, '/v1/hyperagents/profiles', { method: 'GET' }, signal, config))
           const profile = directory.profiles.find(value => value['id'] === existing.id)
           if (!profile) throw new HiveMindRuntimeError('persistent employee is no longer authorized')
-          const policy = profile['policy_rules'] as { native_lifecycle?: { phase?: string; kind?: string; expires_at?: string } } | undefined
-          const lifecycle = policy?.native_lifecycle
-          const closing = lifecycle && (lifecycle.phase !== 'active' || (lifecycle.kind === 'temporary' &&
-            (!lifecycle.expires_at || Date.parse(lifecycle.expires_at) <= Date.now())))
-          if (closing) {
-            closingRestrictions.get(agent)?.()
-            const safe = new Set(['hyperagents_memory', 'hivemind_agent_message', 'hivemind_artifact_inspect', 'read_document', 'team_task_get', 'team_task_list'])
+          if (!employeeDispatchAllowed(profile) && !employeeCloseoutAllowed(profile)) {
+            throw new HiveMindRuntimeError('persistent employee is unavailable for work')
+          }
+          closingRestrictions.get(agent)?.()
+          closingRestrictions.delete(agent)
+          if (employeeCloseoutAllowed(profile)) {
+            const safe = new Set(['hyperagents_memory', 'hivemind_agent_message', 'hivemind_artifact_inspect'])
             const deny = agent.ctx.tools.schemas(agent).map(tool => tool.name).filter(name => !safe.has(name))
             closingRestrictions.set(agent, agent.ctx.tools.restrict({ deny }))
           }
-
         }
         return existing
       }
@@ -1828,7 +1822,7 @@ export function apply(ctx: Context, config: Config): void {
         const authority = await resolveAuthority(ctx, config)
         const directory = hyperagentDirectory(await hiveRequest(authority, '/v1/hyperagents/profiles', { method: 'GET' }, signal, config))
         const profile = directory.profiles.find(item => item['id'] === selected.id)
-        if (profile === undefined) throw new HiveMindRuntimeError('selected session owner is no longer authorized')
+        if (profile === undefined || !employeeDispatchAllowed(profile)) throw new HiveMindRuntimeError('selected session owner is unavailable for work')
         owner = {
           id: selected.id, slug: nonEmptyString(profile['slug'], 'employee slug'), name: selected.name, role: selected.role,
           ...(typeof profile['persona'] === 'string' ? { persona: profile['persona'].slice(0, 4000) } : {}),

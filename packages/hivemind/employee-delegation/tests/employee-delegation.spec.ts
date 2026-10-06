@@ -352,3 +352,14 @@ describe('hivemind employee delegation', () => {
     expect(starts).toBe(0)
   })
 })
+
+it('requires reviewed persistent assignments for registry-native employees while preserving legacy delegation', async () => {
+  const { requireReviewedEmployeePath } = await import('../src/index.ts')
+  expect(() => requireReviewedEmployeePath({ id: 'legacy', status: 'running' })).not.toThrow()
+  expect(() => requireReviewedEmployeePath({ id: 'native', status: 'draft', policy_rules: {
+    native_lifecycle: { version: 1, phase: 'active', kind: 'durable' },
+  } })).toThrow('native_employee_requires_persistent_reviewed_assignment')
+  expect(() => requireReviewedEmployeePath({ id: 'expired', status: 'draft', policy_rules: {
+    native_lifecycle: { version: 1, phase: 'active', kind: 'temporary', expires_at: 'invalid' },
+  } })).toThrow('employee_not_available_for_work')
+})

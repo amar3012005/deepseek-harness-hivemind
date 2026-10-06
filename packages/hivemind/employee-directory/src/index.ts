@@ -1,3 +1,4 @@
+export { employeeDispatchAllowed, employeeCloseoutAllowed, employeeCloseoutToolAllowed } from './lifecycle.ts'
 /** Validated HIVE-MIND employee and HyperAgent directory projections. @module @deepseek-ai/dsh-hivemind-employee-directory */
 
 import { Service, type Context } from '@deepseek-ai/cordis'

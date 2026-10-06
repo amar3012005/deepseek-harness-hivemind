@@ -1,3 +1,4 @@
+import { employeeDispatchAllowed } from '@deepseek-ai/dsh-hivemind-employee-directory'
 /** Authenticated employee delegation over the native Harness subagent seam. @module @deepseek-ai/dsh-hivemind-employee-delegation */
 
 import { createHash, randomUUID } from 'node:crypto'
@@ -374,6 +375,7 @@ export function apply(ctx: Context, config: Partial<Config> = {}): void {
       const employees = assignments.map((assignment) => {
         const rawProfile = profiles.get(assignment.employeeId)
         if (rawProfile === undefined) throw new Error(`hivemind-employee-delegation: employee ${assignment.employeeId} is not in the authenticated organization directory`)
+        requireReviewedEmployeePath(rawProfile)
         return { assignment, rawProfile, employee: profileSnapshot(rawProfile) }
       })
       const panelId = `panel-${randomUUID()}`
@@ -512,6 +514,7 @@ export function apply(ctx: Context, config: Partial<Config> = {}): void {
       const directory = await ctx.hivemindEmployeeDirectory.profiles(exec.signal)
       const rawProfile = directory.profiles.find(profile => profile['id'] === employeeId)
       if (rawProfile === undefined) throw new Error('hivemind-employee-delegation: employee is not in the authenticated organization directory')
+      requireReviewedEmployeePath(rawProfile)
       const employee = profileSnapshot(rawProfile)
       // Production composition always supplies the operating-run service. The
       // optional form keeps this delegation capability usable in narrow test
@@ -686,4 +689,13 @@ export function apply(ctx: Context, config: Partial<Config> = {}): void {
     },
     presentCall(args) { return { card: 'generic', title: 'Delegate to HIVE-MIND employee', kind: 'read', rawInput: String(args.employee_id ?? '') } },
   }))
+}
+
+/** Registry-created employees work through persistent reviewed Teams assignments. */
+export function requireReviewedEmployeePath(profile: Record<string, JsonValue>): void {
+  if (!employeeDispatchAllowed(profile)) throw new Error('employee_not_available_for_work')
+  const rules = profile['policy_rules']
+  if (typeof rules === 'object' && rules !== null && !Array.isArray(rules) && rules['native_lifecycle'] !== undefined) {
+    throw new Error('native_employee_requires_persistent_reviewed_assignment')
+  }
 }

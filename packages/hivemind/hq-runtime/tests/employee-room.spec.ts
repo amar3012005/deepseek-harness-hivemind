@@ -14,7 +14,7 @@ function fixture() {
   const task = { id: 'task-1', status: 'pending', ready: true }
   const close = vi.fn(async () => {})
   const open = vi.fn(async () => ({ read: async () => ({ events }), close }))
-  const profile = { id: 'employee', status: 'draft', policy_rules: { native_lifecycle: { phase: 'active', kind: 'durable' } } }
+  const profile = { id: 'employee', status: 'draft', policy_rules: { native_lifecycle: { version: 1, phase: 'active', kind: 'durable' } } }
   const ctx = { get: (name: string) => name === 'hivemindEmployeeDirectory' ? { profiles: async () => ({ profiles: [profile] }) } : undefined, sessionPersistence: { open }, sessionController: { resolveAgent: async () => ({ agent: root }) }, agentTeams: { listMembers: () => [{ id: target.id, ownership: 'persistent' }], getTask: () => task } } as unknown as Context
   const ref = { rootId: root.id, taskId: 'task-1' }
   return { events, task, ctx, target, ref, open, close, profile }
@@ -80,4 +80,13 @@ describe('HQ persistent employee delivery', () => {
     expect(await allowsEmployeeWork(f.ctx, f.target, f.ref, signal)).toBe(false)
     expect(await allowsEmployeeWork(f.ctx, f.target, { ...f.ref, itemId: 'plan', revision: 0 }, signal)).toBe(false)
   })
+})
+
+it('fails closed for malformed deadline or unsupported registry versions before scheduled work admission', async () => {
+  const f = fixture()
+  for (const state of [{ version: 2, phase: 'active', kind: 'durable' },
+    { version: 1, phase: 'active', kind: 'temporary', expires_at: 'invalid' }]) {
+    Object.assign(f.profile.policy_rules.native_lifecycle, state)
+    expect(await allowsEmployeeWork(f.ctx, f.target, f.ref, signal)).toBe(false)
+  }
 })
