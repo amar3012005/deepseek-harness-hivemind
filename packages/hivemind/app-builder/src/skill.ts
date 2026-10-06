@@ -12,6 +12,8 @@ export const crmBuilderSkill: SkillRegistration = {
 
 Use the user's original requirements to prepare an AppSpec version 1. Existing Runtime and HyperAgents retain ownership of planning and delegation. Do not alter profiles, runtimes, Prisma schemas or generated executable code.
 
+Before calling any hivemind_app_* tool, call hivemind_capabilities with operation lease and capabilities [apps]. This reveals the installed original tool schemas on the next model step. If the receipt contains no hivemind_app_* tools, organization App Runtime is unavailable in this session; explain the missing capability and stop. Do not lease connected, workspace or unrelated lanes to compensate. Reset the capability lease when this phase is complete.
+
 1. Understand the user's entities, fields, relationships and intended work. Ask only for required missing decisions. Default to a small useful companies/contacts/deals workspace when that matches the request.
 2. Use stable lowercase identifiers and recognizable display names. Supported fields are text, number, date, enum, boolean and reference. Dates use YYYY-MM-DD. Reference fields require targetEntityId; enum fields require options. Views are table, kanban and record. Kanban requires groupByFieldId naming an enum field. Workflow definitions are not supported in AppSpec v1.
 3. For existing work, call hivemind_app_get first and preserve all retained definitions. hivemind_app_patch replaces the complete spec using expected_version; it is not a JSON patch. Incompatible schema changes need a separate data migration.

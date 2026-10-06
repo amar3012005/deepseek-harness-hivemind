@@ -170,6 +170,7 @@ interface RequestAssemblyBudget {
 }
 
 type CapabilityLane =
+  | 'apps'
   | 'research'
   | 'web'
   | 'browser'
@@ -237,6 +238,7 @@ const AGENT_LOCAL_TOOLS = new Set([
 ])
 
 const CAPABILITY_TOOLS: Readonly<Record<CapabilityLane, readonly string[]>> = {
+  apps: ['hivemind_app_create_draft', 'hivemind_app_get', 'hivemind_app_patch', 'hivemind_app_validate', 'hivemind_app_preview', 'hivemind_app_publish', 'hivemind_app_query_records', 'hivemind_app_create_record', 'hivemind_app_update_record'],
   connected: ['hivemind_connected_task'],
   research: ['hivemind_research_answer', 'hivemind_research_gather', 'hivemind_research_request', 'hivemind_research_status'],
   web: ['web_search', 'web_fetch'],
@@ -277,6 +279,7 @@ const CAPABILITY_TOOLS: Readonly<Record<CapabilityLane, readonly string[]>> = {
 }
 
 const CAPABILITY_DESCRIPTIONS: Readonly<Record<CapabilityLane, string>> = {
+  apps: 'Organization CRM drafts, schemas, views, publication and records. Load create-crm and lease apps; available only when the organization App Runtime is enabled.',
   connected: 'Authenticated application discovery, connection continuation and approved execution through Composio.',
   research: 'Governed multi-source external research jobs with evidence receipts.',
   web: 'Quick public-web discovery and direct text retrieval when a governed research job is unnecessary.',
@@ -309,6 +312,7 @@ const PROGRESSIVE_SECTION_NAMES = new Set(Object.values(CAPABILITY_SECTIONS).fla
 
 function recommendedSkills(capabilities: ReadonlySet<CapabilityLane>): string[] {
   const skills: string[] = []
+  if (capabilities.has('apps')) skills.push('create-crm')
   if (capabilities.has('artifact')) skills.push('hivemind-artifact-production', 'hivemind-document-design')
   if (capabilities.has('artifact') && capabilities.has('visual')) skills.push('hivemind-brand-dna')
   return skills

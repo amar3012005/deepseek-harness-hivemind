@@ -15,3 +15,18 @@ AppSpec v1 tool schemas mirror Core's native dialect export. Actual native regis
 ## Verification
 
 Focused native registry testing exercises tool schema registration, discoverable skill, signed HTTP request conversion, invalid tenant arguments, project denial before dispatch and disposal. Core-backed publication and renderer integration require the isolated application fixture. No production release occurs in this task.
+
+## Progressive model visibility correction
+
+The original opt-in package registered valid tools, but full Runtime/HyperAgents
+request assembly applies the existing Playbooks capability allow-list. Because
+that router had no App Runtime lane, registered CRM tools were neither advertised
+nor executable after any lease. A package-only Loader proof missed this boundary.
+
+The native `apps` lane now reveals the nine original App Runtime schemas on demand.
+`create-crm` instructs the model to lease that lane first and stop if no tools are
+installed. Core tools stay compact; Brain and flag-disabled presets remain absent.
+The file-backed Loader proof now composes exact shipped AppBuilder and Playbooks
+rows, uses a real agent ToolRuntime scope and systemPrompt.assemble, checks all
+nine unmodified schemas after leasing, executes a signed preview read via the full
+tool pipeline, and confirms reset hides schemas and returns UNKNOWN_TOOL.

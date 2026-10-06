@@ -1,5 +1,6 @@
 /** Real file-backed Loader proof using exact shipped preset enablement and configuration. */
 import type {} from '@deepseek-ai/dsh-tools'
+import type { Agent } from '@deepseek-ai/dsh-agent'
 import type {} from '@deepseek-ai/dsh-skill'
 import type {} from '@deepseek-ai/dsh-hivemind-execution-scope'
 import { Context } from '@deepseek-ai/cordis'
@@ -25,11 +26,11 @@ if (!['localhost', '127.0.0.1'].includes(new URL(origin).hostname)) throw Error(
 process.env.HIVEMIND_CONNECTED_RECEIPT_SERVICE_URL = origin
 process.env.HIVE_HARNESS_RUNNER_SERVICE_SECRET = secret
 
-function find(value: unknown): EntryOptions | undefined {
-  if (Array.isArray(value)) return value.map(find).find(Boolean)
+function find(value: unknown, id: string): EntryOptions | undefined {
+  if (Array.isArray(value)) return value.map(item => find(item, id)).find(Boolean)
   if (!value || typeof value !== 'object') return undefined
-  if ('id' in value && value.id === 'hivemind-app-builder') return value as EntryOptions
-  return Object.values(value).map(find).find(Boolean)
+  if ('id' in value && value.id === id) return value as EntryOptions
+  return Object.values(value).map(item => find(item, id)).find(Boolean)
 }
 const results = []
 for (const [preset, enabled] of [
@@ -38,7 +39,9 @@ for (const [preset, enabled] of [
 ] as const) {
   process.env.HIVE_APP_RUNTIME_ENABLED = String(enabled)
   const presetFile = `${root}/packages/preset/agent-presets/presets/${preset}/agent.cordis.yml`
-  const row = find(yaml.load(readFileSync(presetFile, 'utf8'), { schema: entryListSchema }))
+  const presetDefinition = yaml.load(readFileSync(presetFile, 'utf8'), { schema: entryListSchema })
+  const row = find(presetDefinition, 'hivemind-app-builder')
+  const playbooks = find(presetDefinition, 'hivemind-playbooks')
   const dir = mkdtempSync(join(tmpdir(), 'crm-loader-proof-'))
   const file = join(dir, 'cordis.yml')
   const source = (path: string) => pathToFileURL(`${root}/${path}/${face === 'lib' ? 'lib/index.js' : 'src/index.ts'}`).href
@@ -48,9 +51,11 @@ for (const [preset, enabled] of [
     { id: 'skills', name: source('packages/skill/skill') },
     { id: 'scope', name: source('packages/hivemind/execution-scope') },
     ...(row ? [{ ...row, name: source('packages/hivemind/app-builder') }] : []),
+    ...(playbooks ? [{ ...playbooks, name: source('packages/hivemind/playbooks') }] : []),
   ]
   writeFileSync(file, yaml.dump(configs, { schema: entryListSchema }))
   const ctx = new Context()
+  ctx.provide('hivemindMemory', {} as never)
   try {
     await ctx.plugin(Loader, { baseUrl: pathToFileURL(`${dir}/`).href })
     ctx.loader.builtins.include = Include
@@ -58,14 +63,44 @@ for (const [preset, enabled] of [
     await ctx.loader.await()
     const mounted = !!ctx.tools.get('hivemind_app_get')
     if (mounted !== (!!row && enabled)) throw Error('preset flag mismatch')
-    if (mounted) {
+    if (playbooks) {
+      const { createScope } = await import(source('packages/core/scope')) as typeof import('@deepseek-ai/dsh-scope')
+      const events: Array<{ type: string; data: unknown }> = []
+      const agent = { session: {
+        id: 'crm-progressive-preview',
+        append(type: string, data: unknown) { events.push({ type, data }); return { seq: events.length } },
+        snapshotEvents() { return events },
+      } } as unknown as Agent
+      let scope!: ReturnType<typeof createScope>
+      await ctx.plugin(Object.assign((inner: Context) => { scope = createScope(inner, agent) }, { inject: ['systemPrompt', 'tools'] }))
+      ;(agent as unknown as { ctx: Context }).ctx = scope.ctx.extend({ agent })
+      const original = ctx.tools.schemas().filter(tool => tool.name.startsWith('hivemind_app_'))
+      const initial = await ctx.systemPrompt.assemble({ agent, scope: agent })
+      if (initial.tools.some(tool => tool.name.startsWith('hivemind_app_'))) throw Error('Apps leaked before lease')
       const principal = { orgId, userId, profile: 'hivemind-chat' as const, variation: preset === 'hivemind-hq' ? 'hivemind-hq' : 'hyperagents' }
-      if (!(await ctx.skills.get('create-crm'))?.content) throw Error('skill absent')
-      await ctx.hivemindExecutionScope.run(principal, () => ctx.tools.get('hivemind_app_get')!.execute(
-        { app_id: appId }, { signal: new AbortController().signal } as never,
-      ))
+      const execute = (name: string, args: Record<string, unknown>) => ctx.hivemindExecutionScope.run(principal, () => ctx.tools.execute({
+        name, arguments: args as never, callId: `crm-preview-${name}` as never, agent, signal: new AbortController().signal,
+      }))
+      const lease = await execute('hivemind_capabilities', { operation: 'lease', capabilities: ['apps'] })
+      if (lease.isError) throw Error('Apps lease failed: ' + JSON.stringify(lease))
+      const next = await ctx.systemPrompt.assemble({ agent, scope: agent })
+      const revealed = next.tools.filter(tool => tool.name.startsWith('hivemind_app_'))
+      if (revealed.length !== (mounted ? 9 : 0)) throw Error('Apps lease did not project exactly installed tools')
+      for (const tool of original) if (JSON.stringify(tool) !== JSON.stringify(revealed.find(value => value.name === tool.name))) throw Error('Native schema changed: ' + tool.name)
+      if (mounted) {
+        const skill = await ctx.skills.get('create-crm')
+        if (!skill?.content.includes('capabilities [apps]')) throw Error('CRM skill misses apps lease guidance')
+        const read = await execute('hivemind_app_get', { app_id: appId })
+        if (read.isError) throw Error('Scoped authenticated read failed: ' + JSON.stringify(read))
+      }
+      const reset = await execute('hivemind_capabilities', { operation: 'reset' })
+      if (reset.isError) throw Error('Reset failed')
+      const afterReset = await ctx.systemPrompt.assemble({ agent, scope: agent })
+      if (afterReset.tools.some(tool => tool.name.startsWith('hivemind_app_'))) throw Error('Apps remained visible after reset')
+      const denied = await execute('hivemind_app_get', { app_id: appId })
+      if (!denied.isError || !JSON.stringify(denied).includes('UNKNOWN_TOOL')) throw Error('Reset did not close tool execution')
     }
-    results.push({ preset, enabled, mounted, skill: mounted ? 'create-crm' : null })
+    results.push({ preset, enabled, mounted, skill: mounted ? 'create-crm' : null, progressive: !!playbooks })
   } finally {
     await ctx.fiber.dispose()
     rmSync(dir, { recursive: true, force: true })
