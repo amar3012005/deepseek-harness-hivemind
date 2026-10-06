@@ -1,3 +1,4 @@
+export { roomMessageId } from './room-messaging.ts'
 /** Session Remote owner: cold reads, explicit Agent commands, and live control state. */
 
 import { hostname } from 'node:os'

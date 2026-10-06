@@ -95,3 +95,41 @@ it('admits setup through the attested Chief and rechecks closeout before deliver
   expect((await call()).status).toBe(503)
   expect(deliveries).toHaveLength(2)
 })
+it('asks Chief to confirm responsibilities before one welcome and persisted joining milestone',async()=>{
+  const fixture=await harness();contexts.push(fixture.ctx);new ExecutionScope(fixture.ctx)
+  const chief=agentFor(fixture.ctx,'profile-chief'),employee=agentFor(fixture.ctx,'profile-employee')
+  fixture.resolve.mockResolvedValue({ agent:chief })
+  const deliveries:Array<{ caller:unknown;key:string;text:string;target:string }>=[]
+  Object.assign(fixture.ctx.sessionController,{
+    resolvePersistentEmployeeRoom:async()=>employee,
+    deliverAgentMessage:async(caller:unknown,message:{ key:string;text:string;target:string })=>{
+      deliveries.push({ caller,...message });return { messageId:message.key,targetSessionId:employee.id,status:'accepted' }
+    },
+  })
+  const profile={ name:'Alex',role:'Research',profileRevision:2,creationHash:'b'.repeat(64) }
+  let review=true
+  fixture.ctx.on('hivemind/employee-lifecycle-proof',async()=>({
+    employeeId:input.employeeId,revision:1,kind:'durable',phase:'active',expiresAt:null,
+    chief:{ sessionId:chief.id,userId:input.userId },chiefs:[{ sessionId:chief.id,userId:input.userId }],rooms:[],
+    ...(review?{ profileReview:{ ...profile,persona:'Agreed responsibilities' } }:{ joined:{ ...profile,at:'2026-10-06T12:00:00.000Z' } }),
+  }))
+  const server=createServer();servers.push(server)
+  fixture.ctx.provide('webServer',{ register:({ handler }:{ handler:RequestListener })=>{server.on('request',handler);return()=>{}} } as never)
+  process.env['EMPLOYEE_FIXTURE_SECRET']=secret;apply(fixture.ctx,{ enabled:true,serviceSecretEnv:'EMPLOYEE_FIXTURE_SECRET' })
+  await new Promise<void>(resolve=>server.listen(0,'127.0.0.1',resolve))
+  const address=server.address();if(!address||typeof address==='string')throw Error('missing server')
+  const call=()=>fetch(`http://127.0.0.1:${address.port}/internal/hivemind/employee-lifecycle`,{ method:'POST',headers:{ authorization:token(input),'content-type':'application/json' },body:JSON.stringify(input) })
+  expect((await call()).status).toBe(200)
+  expect(deliveries[0]).toMatchObject({ caller:employee,target:'runtime' })
+  expect(deliveries[0]?.text).toContain('Agreed responsibilities')
+  expect(employee.session.ownEvents().filter(event=>String(event.type)==='hivemind/employee-selection')).toHaveLength(0)
+  review=false
+  expect((await call()).status).toBe(200)
+  expect(deliveries[1]).toMatchObject({ caller:chief,target:input.employeeId })
+  expect(deliveries[1]?.text).toContain('inspect our actual company context')
+  expect((await call()).status).toBe(200)
+  expect(deliveries).toHaveLength(2)
+  const joined=employee.session.ownEvents().filter(event=>String(event.type)==='hivemind/employee-selection')
+  expect(joined).toHaveLength(1)
+  expect(joined[0]?.data).toMatchObject({ name:'Alex',role:'Research',joining:{ at:'2026-10-06T12:00:00.000Z',profileRevision:2 } })
+})

@@ -272,3 +272,9 @@
   :global([data-brain-chat]) .activityOrb { display: none; }
   :global([data-brain-chat]) .turnStatus { min-height: 24px; padding-left: 4px; }
 }
+
+/* Native SlotOutlet retains its display:contents anchor when a keyed renderer
+   declines. Such empty agent rows must not each add a transcript gap. */
+:global([data-agent-room]) .flowItem:has(> :global([data-slot='conversation.chat.node']):empty) {
+  display: none;
+}

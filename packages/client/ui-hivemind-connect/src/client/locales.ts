@@ -10,7 +10,7 @@ export type HivemindConnectKey =
   | 'composio.continue'
   | 'composio.dismiss'
   | 'composio.connected' | 'composio.connectionVerified'
-  | 'employee.ownerLocked' | 'employee.initial' | 'employee.auto' | 'employee.autoDetail' | 'employee.label' | 'employee.loading' | 'employee.unavailable'
+  | 'employee.joined' | 'employee.ownerLocked' | 'employee.initial' | 'employee.auto' | 'employee.autoDetail' | 'employee.label' | 'employee.loading' | 'employee.unavailable'
   | 'employee.environment' | 'employee.hide' | 'employee.working' | 'employee.ready' | 'employee.panel' | 'employee.toggle'
   | 'employee.settings' | 'employee.connectApps' | 'employee.creditsUsed'
   | 'workbench.filter' | 'workbench.all' | 'workbench.grid' | 'workbench.stack' | 'workbench.lastViewed'
@@ -20,6 +20,7 @@ export type HivemindConnectKey =
   | 'workbench.emptyPreview' | 'workbench.emptyArtifacts' | 'workbench.emptyComputer' | 'workbench.emptySources' | 'workbench.pdfUnavailable' | 'workbench.browserCapture' | 'workbench.open' | 'workbench.download' | 'workbench.downloadPdf'
 
 export const en: Record<HivemindConnectKey, string> = {
+  'employee.joined': '{name} joined our team',
   'activity.search': 'Searching public sources…', 'activity.website': 'Reading website…', 'activity.capture': 'Capturing website…', 'activity.memory': 'Working with memory…', 'activity.draft': 'Drafting an artifact…', 'activity.team': 'Coordinating with the team…',
   'workbench.filter': 'Filter', 'workbench.all': 'All files', 'workbench.grid': 'Grid view', 'workbench.stack': 'Stack view', 'workbench.lastViewed': 'Last viewed',
   connect: 'Connect HIVE-MIND',
@@ -76,6 +77,7 @@ export const en: Record<HivemindConnectKey, string> = {
 }
 
 export const zh: Record<HivemindConnectKey, string> = {
+  'employee.joined': '{name} 已加入我们的团队',
   'activity.search': '正在搜索公开来源…', 'activity.website': '正在阅读网站…', 'activity.capture': '正在截取网站…', 'activity.memory': '正在处理记忆…', 'activity.draft': '正在编写成果…', 'activity.team': '正在与团队协调…',
   'workbench.filter': '筛选', 'workbench.all': '全部文件', 'workbench.grid': '网格视图', 'workbench.stack': '堆叠视图', 'workbench.lastViewed': '最近查看',
   connect: '连接 HIVE-MIND',

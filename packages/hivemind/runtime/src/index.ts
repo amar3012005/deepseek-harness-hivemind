@@ -66,7 +66,7 @@ declare module '@deepseek-ai/dsh-session/types' {
     /** Search routing receipt, containing no credentials or raw upstream errors. */
     'hivemind/web-search-route': { provider: 'native' | 'existing'; fallback: boolean }
     /** User-selected employee identity for inline HyperAgents work. */
-    'hivemind/employee-selection': { id: string | null; name?: string; role?: string; avatarUrl?: string; appearance?: JsonValue }
+    'hivemind/employee-selection': { id: string | null; name?: string; role?: string; avatarUrl?: string; appearance?: JsonValue; joining?: { at: string; creationHash: string; profileRevision: number } }
     /** Recognizes the legacy selected reply language event; new selections use command/run. */
     'hivemind/reply-language': { language: string }
     /** Legacy JEV routing audit from completed turns; retained for session replay only. */

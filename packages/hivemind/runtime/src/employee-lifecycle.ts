@@ -9,7 +9,7 @@ type SendProfile = (agent: Agent, input: Record<string, JsonValue>, signal: Abor
 export function employeeLifecycleTool(send: SendProfile) {
   return defineTool({
     name: 'hivemind_employee_lifecycle',
-    description: 'Runtime only: create a company employee without granting connectors or credentials, inspect closeout, begin closeout, or archive after Core verifies accepted work and saved private learning. Use a stable creation_key for replay. Assign work separately through native Teams and Schedule. Temporary employees require an explicit future deadline. Creation does not authorize external actions.',
+    description: 'Runtime only: create a company employee without granting connectors or credentials, inspect closeout, begin closeout, or archive after Core verifies accepted work and saved private learning. Use a stable creation_key for replay. When a new employee reports agreed responsibility notes, inspect their current saved profile and company context, then configure a useful biography and operating instructions within the existing permitted skills/tools. Use the exact current expected_profile_revision. A confirmed configure receipt admits one native welcome and first context check-in; do not separately duplicate that awakening. Assign work separately through native Teams and Schedule. Temporary employees require an explicit future deadline. Creation does not authorize external actions.',
     parameters: {
       operation: { type: 'string', required: true, enum: ['create', 'configure', 'begin_closeout', 'inspect_closeout', 'archive'] },
       creation_key: { type: 'string', description: 'Stable replay identity for creation.' },
@@ -32,7 +32,7 @@ export function employeeLifecycleTool(send: SendProfile) {
 export function employeeProfileTool(send: SendProfile) {
   return defineTool({
     name: 'hivemind_employee_profile',
-    description: 'Save the responsibilities/biography explicitly agreed with the user in your own persistent room. First recall your current authenticated profile and ask a concise native question with grounded suggestions and free-text when responsibilities are unclear. Confirm the user answer before saving; do not invent agreement. Use current profile_revision (default 1). This edits only your own name, role and persona; it never grants tools, connectors, credentials, permissions or company-memory authority. Report success only after the saved receipt.',
+    description: 'Save the responsibility notes explicitly agreed with the user in your own persistent room for Runtime to review and complete your company-relevant profile. First recall your current authenticated profile and ask a concise native question with grounded suggestions and free-text when responsibilities are unclear. Confirm the user answer before saving; do not invent agreement. The saved proposal is not a Runtime-confirmed profile; wait for its native welcome before your first company-context check-in. Use current profile_revision (default 1). This edits only your own name, role and persona; it never grants tools, connectors, credentials, permissions or company-memory authority. Report success only after the saved receipt.',
     parameters: {
       expected_profile_revision: { type: 'number', required: true },
       persona: { type: 'string' }, role: { type: 'string' }, name: { type: 'string' },

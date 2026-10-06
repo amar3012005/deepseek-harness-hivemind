@@ -8,14 +8,14 @@ import { SessionId } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-host-webserver'
 import type {} from '@deepseek-ai/dsh-hivemind-execution-scope'
 import type {} from '@deepseek-ai/dsh-schedule'
-import type {} from '@deepseek-ai/dsh-api-session-controller'
+import { roomMessageId } from '@deepseek-ai/dsh-api-session-controller'
 export const name = 'hivemind-employee-lifecycle-host'
-export const inject = ['webServer', 'hivemindExecutionScope', 'schedule', 'sessionController']
+export const inject = ['webServer', 'hivemindExecutionScope', 'schedule', 'sessionController', 'sessions']
 export interface Config { enabled: boolean; serviceSecretEnv: string }
 export const Config: Schema<Config> = Schema.object({ enabled: Schema.boolean().default(false), serviceSecretEnv: Schema.string().default('HIVE_HARNESS_RUNNER_SERVICE_SECRET') })
 const requestSchema = z.object({ orgId:z.uuid(), userId:z.uuid(), employeeId:z.uuid() }).strict()
 const roomSchema = z.object({ sessionId:z.string().min(1).max(180), userId:z.uuid() }).strict()
-const proofSchema = z.object({ employeeId:z.uuid(),revision:z.number().int().positive(),kind:z.enum(['durable','temporary']),phase:z.enum(['active','closing','archived']),expiresAt:z.string().nullable(),rooms:z.array(roomSchema).max(1000),chiefs:z.array(roomSchema).max(1000),chief:roomSchema.nullable(),onboarding:z.object({ name:z.string().min(1).max(100),role:z.string().min(1).max(40),creationHash:z.string().regex(/^[a-f0-9]{64}$/u) }).strict().optional() }).strict()
+const proofSchema = z.object({ employeeId:z.uuid(),revision:z.number().int().positive(),kind:z.enum(['durable','temporary']),phase:z.enum(['active','closing','archived']),expiresAt:z.string().nullable(),rooms:z.array(roomSchema).max(1000),chiefs:z.array(roomSchema).max(1000),chief:roomSchema.nullable(),onboarding:z.object({ name:z.string().min(1).max(100),role:z.string().min(1).max(40),creationHash:z.string().regex(/^[a-f0-9]{64}$/u) }).strict().optional(),profileReview:z.object({ name:z.string().min(1).max(100),role:z.string().min(1).max(40),persona:z.string().min(1).max(12000),profileRevision:z.number().int().positive(),creationHash:z.string().regex(/^[a-f0-9]{64}$/u) }).strict().optional(),joined:z.object({ name:z.string().min(1).max(100),role:z.string().min(1).max(40),profileRevision:z.number().int().positive(),creationHash:z.string().regex(/^[a-f0-9]{64}$/u),at:z.iso.datetime() }).strict().optional() }).strict()
 declare module '@deepseek-ai/cordis' {
   interface Events {
     /** Read only Core's current administrator-authorized registry attestation. @mode serial */
@@ -103,6 +103,52 @@ export function apply(ctx:Context,config:Config):void {
             targetProfile: { id: input.employeeId, name: proof.onboarding.name, role: proof.onboarding.role },
             text: 'Welcome to our team. Please introduce yourself and ask our administrator which responsibilities they want you to own. Once they answer, confirm and save what you agreed. Your existing permissions stay the same.',
           }, signal)
+        }
+        const profile = proof.profileReview ?? proof.joined
+        if (proof.phase === 'active' && profile !== undefined) {
+          if (!proof.chief || proof.chief.userId !== input.userId
+            || (proof.expiresAt !== null && Date.parse(proof.expiresAt) <= Date.now())) throw Error('employee_profile_chief_required')
+          const signal = AbortSignal.timeout(15000)
+          const chief = await ctx.sessionController.resolveAgent(SessionId(proof.chief.sessionId))
+          if ('error' in chief) throw chief.error
+          const employee = await ctx.sessionController.resolvePersistentEmployeeRoom(input.employeeId, {
+            id: input.employeeId, name: profile.name, role: profile.role,
+          }, signal)
+          const current = proofSchema.parse(await ctx.serial('hivemind/employee-lifecycle-proof', { employeeId:input.employeeId,signal }))
+          const currentProfile = proof.profileReview !== undefined ? current.profileReview : current.joined
+          if (current.phase !== 'active' || current.revision !== proof.revision
+            || current.chief?.sessionId !== proof.chief.sessionId
+            || currentProfile?.profileRevision !== profile.profileRevision
+            || currentProfile.creationHash !== profile.creationHash) throw Error('employee_lifecycle_changed')
+          if (proof.profileReview !== undefined) {
+            await ctx.sessionController.deliverAgentMessage(employee, {
+              key: `employee-profile-review-${input.employeeId}-${profile.profileRevision}`,
+              target:'runtime',kind:'question',
+              text: `Our administrator has chosen my responsibilities: ${profile.role}. Please complete my company-relevant biography and operating instructions using our actual context and existing permitted capabilities, then confirm the saved profile. My agreed responsibility notes are: ${proof.profileReview.persona}. Employee: ${input.employeeId}; current profile revision: ${profile.profileRevision}. Do not expand tools, connectors, permissions or company-memory authority.`,
+            }, signal)
+          } else if (proof.joined !== undefined) {
+            const alreadyJoined = employee.session.ownEvents().some(event => String(event.type)==='hivemind/employee-selection'
+              && (event.data as { joining?:{ creationHash?:string } }).joining?.creationHash===profile.creationHash)
+            const key = `employee-welcome-${input.employeeId}-${profile.creationHash}`
+            const saved = chief.agent.session.ownEvents().find(event => event.type === 'hivemind/room-message-queued' && event.data.id === roomMessageId(chief.agent.id,key))
+            if (!alreadyJoined) await ctx.sessionController.deliverAgentMessage(chief.agent, {
+              key,
+              target:input.employeeId,kind:'question',
+              targetProfile:{ id:input.employeeId,name:profile.name,role:profile.role },
+              text:saved?.type === 'hivemind/room-message-queued' ? saved.data.text : `Welcome to our team, ${profile.name}. Your responsibilities as ${profile.role} are confirmed. For your first check-in, recall your saved profile and private handoff, inspect our actual company context and relevant current saved artifacts using existing permitted skills and tools, and propose one concrete useful next step to our administrator. Tell me what you learned and what you recommend through our native agent messages. Do not begin business work, contact anyone, change company memory, or expand permissions without the existing authority. Keep your introduction and proposal concise and natural.`,
+            },signal)
+            // This presentation receipt is not agent input. Once per durable creation,
+            // after the exact Chief-confirmed profile and accepted welcome delivery.
+            const joined = employee.session.ownEvents().some(event => String(event.type)==='hivemind/employee-selection'
+              && (event.data as { joining?:{ creationHash?:string } }).joining?.creationHash===profile.creationHash)
+            if (!joined) {
+              Reflect.apply(employee.session.append,employee.session,['hivemind/employee-selection',{
+                id:input.employeeId,name:profile.name,role:profile.role,
+                joining:{ at:proof.joined.at,creationHash:profile.creationHash,profileRevision:profile.profileRevision },
+              }])
+              if (!await ctx.sessions.flush(employee.session)) throw Error('employee_joining_persistence_required')
+            }
+          }
         }
         if(proof.kind==='temporary' && proof.phase==='active') {
           if(!proof.chief || proof.chief.userId!==input.userId || !proof.expiresAt || !Number.isFinite(Date.parse(proof.expiresAt))) throw Error('employee_closeout_chief_required')

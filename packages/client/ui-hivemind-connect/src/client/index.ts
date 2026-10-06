@@ -1,3 +1,4 @@
+import { employeeJoining, EmployeeJoiningMilestone, type EmployeeJoining } from './employee-joining.tsx'
 import { BrainModeIcon } from './BrainModeIcon.tsx'
 import { roomIdentity } from './room-identity.ts'
 import { isEnvironmentPreviewOpen } from './environment-preview.ts'
@@ -51,7 +52,7 @@ import { ArtifactDashboard, ArtifactMedia, type LibraryArtifact, type DashboardS
 import { workbenchSnapshot, HyperagentWorkbench, PdfReceipt, TextReceipt, ReceiptImage } from './HyperagentWorkbench.tsx'
 
 declare module '@deepseek-ai/dsh-client-ui-chat/client' {
-  interface ChatNodeDataMap { 'hivemind-website-source': WebsiteRead; 'hivemind-scheduled-work': ScheduledWork; 'runtime-awakening-stage': { turn: number; seq: number } }
+  interface ChatNodeDataMap { 'hivemind-employee-joining': EmployeeJoining; 'hivemind-website-source': WebsiteRead; 'hivemind-scheduled-work': ScheduledWork; 'runtime-awakening-stage': { turn: number; seq: number } }
 }
 
 const awakeningStage: ConversationNodeDefinition<{ turn: number; seq: number }> = {
@@ -193,6 +194,7 @@ export function apply(ctx: ClientContext): void {
     key: 'hivemind-language',
   }, () => null))
   ctx.inject(['uiConversation'], (scope: ClientContext) => {
+    scope.effect(() => scope.uiConversation.events.register(employeeJoining))
     scope.effect(() => scope.uiConversation.events.register(awakeningStage))
     scope.effect(() => scope.uiConversation.events.register(scheduledWork))
     scope.effect(() => scope.uiConversation.events.register(websiteRead))
@@ -678,6 +680,11 @@ export function apply(ctx: ClientContext): void {
         rightSidebar?.openTabIn(sessionId, 'hivemind-workbench-preview', { params: { sourceUrl } })
       } }),
     }, WebsitePreviewUpdates))
+    ctx.slots.inject('conversation.chat.node', () => ctx.slots.register({
+      name: 'conversation.chat.node', key: 'hivemind-employee-joining', locale: NS,
+    }, ({ node, t }) => createElement(EmployeeJoiningMilestone, {
+      receipt: node.data, label: t('employee.joined', { name: node.data.name }),
+    })))
     ctx.slots.inject('conversation.chat.node', () => ctx.slots.register({
       name: 'conversation.chat.node', key: 'hivemind-scheduled-work',
       children: { 'schedule.confirmed.tasks': { kind: 'single', scope: 'session' } },

@@ -1,0 +1,2 @@
+.milestone { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 6px 0; color: var(--dsw-alias-label-secondary); font-size: 12px; }
+.check { color: #178348; font-weight: 700; }
