@@ -4,7 +4,6 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { defineTool } from '@deepseek-ai/dsh-tools'
-import { employeeDispatchAllowed, employeeCloseoutAllowed } from '@deepseek-ai/dsh-hivemind-employee-directory'
 import { sessionOwner } from './continuity.ts'
 import type {} from '@deepseek-ai/dsh-hivemind-employee-directory'
 
@@ -158,7 +157,7 @@ export function installAgentMessaging(ctx: Context): void {
         if (preset !== 'hivemind-hq' && (!owner?.id || !directory.profiles.some(p => p['id'] === owner.id))) throw new Error('agent_message_sender_not_authorized')
         const target = input.recipient === 'runtime' ? undefined : authorizedRecipient(directory.profiles, input.recipient)
         if (input.recipient !== 'runtime' && !target) throw new Error('agent_message_recipient_not_authorized')
-        if (target !== undefined && !employeeDispatchAllowed(target) && !employeeCloseoutAllowed(target)) throw new Error('agent_message_recipient_unavailable')
+        if (target !== undefined && (target['status'] === 'paused' || target['status'] === 'archived' || target['archived_at'] || target['archivedAt'])) throw new Error('agent_message_recipient_unavailable')
         const targetProfile = target === undefined ? undefined : { id: String(target['id']), name: String(target['name']), role: typeof target['role_archetype'] === 'string' ? target['role_archetype'] : 'HIVE-MIND employee' }
         const events = agent.session.snapshotEvents()
         const messageId = `agent-message-${createHash('sha256').update(JSON.stringify([agent.id, input.message_key])).digest('hex')}`
