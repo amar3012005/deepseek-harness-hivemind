@@ -7,7 +7,7 @@ import { sessionOwner } from './continuity.ts'
 export function requireAdministratorMessageOwner(agent: Agent | undefined): Agent {
   let preset = agent?.session.header.agentPreset
   for (const event of agent?.session.snapshotEvents() ?? []) {
-    if (event.type === 'agent-preset/selected') preset = event.data.agentPreset
+    if (String(event.type) === 'agent-preset/selected') preset = (event.data as { agentPreset: string }).agentPreset
   }
   if (!agent || preset !== 'hivemind-hq' || agent.session.header.parentSession !== undefined
     || sessionOwner(agent.session.snapshotEvents())?.slug !== 'runtime' || sessionOwner(agent.session.snapshotEvents())?.id !== null) throw new Error('Only the persistent Runtime can message the administrator')
