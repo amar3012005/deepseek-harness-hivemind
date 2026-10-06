@@ -1,3 +1,5 @@
+import { SingulanceMark } from './SingulanceMark.tsx'
+import { ChatgptMark } from './ChatgptMark.tsx'
 import { useEffect, useState } from 'react'
 import css from './ChatgptPlanConnection.module.css'
 interface Status {
@@ -59,7 +61,12 @@ export function ChatgptPlanConnection() {
   }
   return <div className={css.root}>
     <button type="button" className={css.link} aria-expanded={open} onClick={() => setOpen(!open)}>
-      {status?.connected ? 'Your ChatGPT is connected' : 'Connect to your ChatGPT'}
+      <span className={css.connectionMarks} aria-hidden="true">
+        <SingulanceMark size={30} />
+        <span className={css.connectionDots}><i /><i /><i /><i /><i /></span>
+        <ChatgptMark />
+      </span>
+      <span>{status?.connected ? 'Your ChatGPT is connected' : 'Connect to your ChatGPT'}</span>
     </button>
     {open && <section className={css.panel} aria-label="Your ChatGPT connection">
       <strong>Your ChatGPT</strong>
