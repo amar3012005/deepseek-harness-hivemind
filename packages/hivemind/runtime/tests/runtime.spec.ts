@@ -1301,6 +1301,7 @@ it('signs publication authority only for the persistent Runtime owner', async ()
   const harness = mount({ ...config('unused'), authorityMode: 'scoped-service', serviceApiBase: 'http://control.test', serviceHttpOrigins: ['http://control.test'], serviceSecretEnv: 'TEST_HIVE_RUNNER_SECRET' })
   const subject = (preset: string, slug: string) => ({ session: {
     header: { id: 'session-runtime-publication-test', agentPreset: preset },
+    ownEvents: () => [],
     snapshotEvents: () => [{ type: 'hivemind/session-owner', data: { id: null, slug, name: slug, role: 'staff' } }],
   } }) as unknown as Agent
   const request = { operation: 'publish_revision', revision_id: 'revision', content_hash: 'exact-hash' }
@@ -1309,4 +1310,12 @@ it('signs publication authority only for the persistent Runtime owner', async ()
   expect(packets).toHaveLength(0)
   await expect(harness.memory?.reviewMethod?.(request, execContext(subject('hivemind-hq', 'runtime')))).resolves.toMatchObject({ status: 'approved' })
   expect(packets[0]).toMatchObject({ operating_role: 'runtime', operating_session: 'session-runtime-publication-test' })
+})
+
+describe('employee profile tool composition', () => {
+  it('exposes bounded own-profile refinement without enabling Chief awakening tools', () => {
+    const harness = mount({ ...config('unused'), authorityMode: 'scoped-service', privateMemoryEnabled: true, companyAwakeningEnabled: false })
+    expect(tool(harness, 'hivemind_employee_profile').name).toBe('hivemind_employee_profile')
+    expect(harness.tools.has('hivemind_employee_lifecycle')).toBe(false)
+  })
 })

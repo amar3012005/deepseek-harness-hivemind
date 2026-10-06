@@ -1126,13 +1126,14 @@ export function apply(ctx: Context, config: Config): void {
     const result = apiRecord(await hiveRequest(authority, '/administrator-message', { method: 'POST', body: JSON.stringify(input) }, signal, config), 'administrator message receipt')
     return Object.fromEntries(Object.entries(result).filter((entry): entry is [string, JsonValue] => entry[1] !== undefined))
   })))
-  if (config.companyAwakeningEnabled) ctx.inject(['schedule'], (lifecycleCtx) => {
-    lifecycleCtx.effect(() => lifecycleCtx.tools.register(employeeProfileTool(async (agent, input, signal) => {
+  if (config.agentFeaturesEnabled && config.privateMemoryEnabled) ctx.effect(() => ctx.tools.register(
+    employeeProfileTool(async (agent, input, signal) => {
       if (!config.serviceApiBase) throw new HiveMindRuntimeError('Employee profile changes require tenant-scoped service authority')
       const authority = await resolveAuthority(ctx, config, agent)
       const result = apiRecord(await hiveRequest(authority, '/employee-lifecycle', { method:'POST',body:JSON.stringify(input) }, signal, config), 'employee profile receipt')
       return Object.fromEntries(Object.entries(result).filter((entry): entry is [string, JsonValue] => entry[1] !== undefined))
     })))
+  if (config.companyAwakeningEnabled) ctx.inject(['schedule'], (lifecycleCtx) => {
     lifecycleCtx.effect(() => lifecycleCtx.tools.register(employeeLifecycleTool(async (agent, input, signal) => {
       if (config.authorityMode !== 'scoped-service') throw new HiveMindRuntimeError('Employee lifecycle requires scoped service authority')
       const authority = await resolveAuthority(ctx, config, agent)
