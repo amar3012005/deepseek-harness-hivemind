@@ -66,7 +66,7 @@ declare module '@deepseek-ai/dsh-session/types' {
     /** Search routing receipt, containing no credentials or raw upstream errors. */
     'hivemind/web-search-route': { provider: 'native' | 'existing'; fallback: boolean }
     /** User-selected employee identity for inline HyperAgents work. */
-    'hivemind/employee-selection': { id: string | null; name?: string; role?: string; avatarUrl?: string }
+    'hivemind/employee-selection': { id: string | null; name?: string; role?: string; avatarUrl?: string; appearance?: JsonValue }
     /** Recognizes the legacy selected reply language event; new selections use command/run. */
     'hivemind/reply-language': { language: string }
     /** Legacy JEV routing audit from completed turns; retained for session replay only. */
@@ -1355,11 +1355,13 @@ export function apply(ctx: Context, config: Config): void {
           const role = typeof selected['role_archetype'] === 'string' ? selected['role_archetype'] : 'employee'
           const avatarUrl = typeof selected['avatar_url'] === 'string' && selected['avatar_url'].startsWith('https://')
             ? selected['avatar_url'] : undefined
+          const appearance = (selected['policy_rules'] as Record<string, JsonValue> | undefined)?.['appearance']
           // Re-check after the directory request: a concurrently admitted turn may pin ownership.
           if (config.privateMemoryEnabled && agent.session.snapshotEvents().some(event => event.type === 'turn/start')) {
             return { kind: 'error', text: 'The session already started. Its owner cannot change.' }
           }
-          agent.session.append('hivemind/employee-selection', { id, name, role, ...(avatarUrl === undefined ? {} : { avatarUrl }) })
+          agent.session.append('hivemind/employee-selection', { id, name, role,
+            ...(avatarUrl === undefined ? {} : { avatarUrl }), ...(appearance === undefined ? {} : { appearance }) })
           return { kind: 'success', text: `selected ${name}` }
         },
       }))
