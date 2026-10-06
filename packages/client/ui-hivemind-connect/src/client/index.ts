@@ -658,6 +658,22 @@ export function apply(ctx: ClientContext): void {
     }
   })
   ctx.inject(['conversation'], () => {
+    ctx.effect(() => {
+      let sending = false
+      const sendPrompt = async (prompt: string): Promise<boolean> => {
+        if (sending || typeof prompt !== 'string' || !prompt.trim()) return false
+        const id = ctx.sessions.list.getSnapshot().current
+        const scope = id === undefined ? undefined : ctx.sessions.scope(id)
+        const conversation = scope?.get('conversation')
+        if (conversation === undefined) return false
+        sending = true
+        try { await conversation.send(prompt); return true }
+        finally { sending = false }
+      }
+      const host = window as unknown as { __HIVEMIND_SEND_PROMPT__?: typeof sendPrompt }
+      host.__HIVEMIND_SEND_PROMPT__ = sendPrompt
+      return () => { if (host.__HIVEMIND_SEND_PROMPT__ === sendPrompt) delete host.__HIVEMIND_SEND_PROMPT__ }
+    }, 'ui-hivemind-connect: native suggestion admission')
     const sendFollowUp = (prompt: string): void => {
       const sessionId = ctx.sessions.list.getSnapshot().current
       const scope = sessionId === undefined ? undefined : ctx.sessions.scope(sessionId)
