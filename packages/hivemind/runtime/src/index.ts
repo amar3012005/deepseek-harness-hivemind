@@ -10,6 +10,7 @@ import { administratorMessageTool } from './administrator-messaging.ts'
 export type {} from './voice-outcome.ts'
 export type {} from './runtime-decision-memory.ts'
 import { installRuntimeDecisionMemory } from './runtime-decision-memory.ts'
+import { privateMemoryFailure } from './private-memory-errors.ts'
 import { installVoiceOutcome } from './voice-outcome.ts'
 import { installAgentMessaging } from './agent-messaging.ts'
 import { installRequestFallback } from './request-recovery.ts'
@@ -560,6 +561,12 @@ async function hiveRequest(
       throw new HiveMindRuntimeError('HIVE-MIND redirect refused')
     }
     if (!response.ok) {
+      if (path === '/v1/hyperagents/operating-memory') {
+        let failure: ReturnType<typeof privateMemoryFailure>
+        try { failure = privateMemoryFailure(await readResponseJson(response, Math.min(config.responseMaxBytes, 4096))) }
+        catch { /* Never expose arbitrary provider bodies. */ }
+        if (failure) throw new HiveMindRuntimeError(failure.message, { status: response.status, code: failure.code })
+      }
       if (path === '/employee-lifecycle') {
         let code: string | undefined
         try { code = lifecycleBusinessError(await readResponseJson(response, Math.min(config.responseMaxBytes, 4096))) }
