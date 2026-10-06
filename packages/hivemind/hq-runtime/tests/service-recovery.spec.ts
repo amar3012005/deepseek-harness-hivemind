@@ -169,6 +169,7 @@ it('recovers only an exact actionable Chief request with the same enabled author
   const chief = { id: 'chief', session: { header: { agentPreset: 'hivemind-hq' },
     ownEvents: () => chiefEvents, snapshotEvents: () => chiefEvents } }
   vi.spyOn(h.ctx.sessionController, 'resolveAgent').mockResolvedValue({ agent: chief } as never)
+  vi.mocked(h.ctx.agentTeams.tryMembership).mockReturnValue({ root: chief } as never)
   const receipt = { type: 'hivemind/room-message-received', seq: SessionSeq(0), time: 0,
     data: { id: 'chief-correction', senderId: 'chief', senderEmployee: 'runtime', kind: 'question' } } as SessionEvent
   const request = { type: 'user/message', seq: SessionSeq(2), time: 0,

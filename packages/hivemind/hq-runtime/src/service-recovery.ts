@@ -140,28 +140,27 @@ export function installServiceRecovery(ctx: Context): void {
     const preset = effectivePreset(agent)
     if (preset !== 'hivemind-hq' && preset !== 'hivemind-hyperagents') return
     const root = preset === 'hivemind-hq' ? agent : ctx.agentTeams.tryMembership(agent)?.root
+    const events = agent.session.ownEvents()
+    const employeeId = pinnedEmployee(events)
+    const chief = preset === 'hivemind-hyperagents' ? chiefRequest(events, turn) : undefined
     let ref: Recovery
-    if (root) {
+    // A fresh explicit request supersedes historical membership or completed work.
+    if (chief && employeeId !== undefined && await canonicalEmployee(ctx, agent, employeeId)) {
+      const resolved = await ctx.sessionController.resolveAgent(SessionId(chief.rootId))
+      if ('error' in resolved) throw resolved.error
+      const mode = hqMode(resolved.agent.session.snapshotEvents())
+      if (effectivePreset(resolved.agent) !== 'hivemind-hq' || !mode.enabled) return
+      ref = { sessionId: agent.id, employeeId, ...chief, turn, modeRevision: mode.revision }
+    } else if (root) {
       const mode = hqMode(root.session.snapshotEvents())
       if (!mode.enabled) return
       ref = { sessionId: agent.id, rootId: root.id, turn, modeRevision: mode.revision }
     } else {
-      const events = agent.session.ownEvents()
-      const employeeId = pinnedEmployee(events)
-      const chief = chiefRequest(events, turn)
-      if (chief && employeeId !== undefined && await canonicalEmployee(ctx, agent, employeeId)) {
-        const resolved = await ctx.sessionController.resolveAgent(SessionId(chief.rootId))
-        if ('error' in resolved) throw resolved.error
-        const mode = hqMode(resolved.agent.session.snapshotEvents())
-        if (effectivePreset(resolved.agent) !== 'hivemind-hq' || !mode.enabled) return
-        ref = { sessionId: agent.id, employeeId, ...chief, turn, modeRevision: mode.revision }
-      } else {
-        const requestSeq = directHumanRequest(events, turn)
-        if (preset !== 'hivemind-hyperagents' || employeeId === undefined || requestSeq === undefined
+      const requestSeq = directHumanRequest(events, turn)
+      if (preset !== 'hivemind-hyperagents' || employeeId === undefined || requestSeq === undefined
         || currentEmployeeWork(agent) || events.findLast(event => event.type === 'hivemind/hq-mode')?.data.enabled === false
         || !await canonicalEmployee(ctx, agent, employeeId)) return
-        ref = { sessionId: agent.id, employeeId, requestSeq, turn }
-      }
+      ref = { sessionId: agent.id, employeeId, requestSeq, turn }
     }
     if (!await ctx.sessions.flush(agent.session)) throw new Error('service_recovery_source_persistence_required')
     await ctx.schedule.ensure(agent.id, keyOf(turn), { title: 'Service interruption recovery', after_seconds: 1,
