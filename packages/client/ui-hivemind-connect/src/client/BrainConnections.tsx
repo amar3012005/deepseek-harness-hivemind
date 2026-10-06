@@ -14,19 +14,20 @@ export function BrainConnections({ sessionId, useSessions, environmentActivity, 
   const identity = roomIdentity(preset, ownerValue)
   const busy = useSessions(state => (state.jobsBySession[sessionId] ?? []).some(job => job.status === 'running' || job.status === 'stopping'))
   const running = useSessions(state => state.byId[sessionId]?.running === true)
-  const agentRoute = window.location.pathname.startsWith('/hivemind/app/employee/harness')
+  const nativeChatRoute = /^\/hivemind\/app\/(?:overview|employee\/harness)(?:\/(?:new|session\/[^/]+))?\/?$/u
+    .test(window.location.pathname)
   const [compact, setCompact] = useState(() => (window.matchMedia?.('(max-width: 900px)').matches ?? false))
-  const [open, setOpen] = useState(() => !agentRoute || !(window.matchMedia?.('(max-width: 900px)').matches ?? false))
+  const [open, setOpen] = useState(() => !nativeChatRoute || !(window.matchMedia?.('(max-width: 900px)').matches ?? false))
   const controlRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
     const query = window.matchMedia?.('(max-width: 900px)')
     if (!query) return
-    const resize = () => { setCompact(query.matches); if (agentRoute && query.matches) setOpen(false) }
+    const resize = () => { setCompact(query.matches); if (nativeChatRoute && query.matches) setOpen(false) }
     query.addEventListener('change', resize)
     return () => query.removeEventListener('change', resize)
-  }, [agentRoute])
+  }, [nativeChatRoute])
   useEffect(() => {
-    if (!agentRoute || !compact || !open) return
+    if (!nativeChatRoute || !compact || !open) return
     const previous = document.activeElement as HTMLElement | null
     const focusable = () => [...(controlRef.current?.querySelectorAll<HTMLElement>('[role="dialog"] button, [role="dialog"] a[href], [role="dialog"] input, [role="dialog"] select') ?? [])]
       .filter(element => !element.hasAttribute('disabled'))
@@ -41,7 +42,7 @@ export function BrainConnections({ sessionId, useSessions, environmentActivity, 
     }
     document.addEventListener('keydown', dismiss)
     return () => { document.removeEventListener('keydown', dismiss); (controlRef.current?.querySelector<HTMLButtonElement>('button') ?? previous)?.focus() }
-  }, [agentRoute, compact, open])
+  }, [nativeChatRoute, compact, open])
   const [appsOpen, setAppsOpen] = useState(true)
   const [wideOpen, setWideOpen] = useState(false)
   const [preview, setPreview] = useState({ open: false, wide: false, inset: 0, available: 0 })
@@ -100,7 +101,7 @@ export function BrainConnections({ sessionId, useSessions, environmentActivity, 
   }, [sessionId, isPreviewOpen])
   useEffect(() => { setWideOpen(false) }, [preview.wide])
   const showApps = appsOpen && !preview.open
-  const showPanel = open && (agentRoute && compact || !preview.wide || wideOpen)
+  const showPanel = open && (nativeChatRoute && compact || !preview.wide || wideOpen)
   if ((!brain && !hyperagents) || dreaming) return null
   const content = <>
     <div className={css.environmentHeading}><span className={css.dots} aria-hidden="true"><i /><i /><i /></span><span>Environment</span><button type="button" onClick={() => { setOpen(false); setWideOpen(false) }}>Hide</button></div>
@@ -121,9 +122,9 @@ export function BrainConnections({ sessionId, useSessions, environmentActivity, 
     <SessionCredits sessionId={sessionId} />
   </>
   if (hero) return null
-  return <div ref={controlRef} className={css.chatControl} data-mobile-agent-environment={agentRoute && compact || undefined} style={preview.open && !(agentRoute && compact) ? { position: 'fixed', right: preview.inset + 8, top: 64, zIndex: 20 } : undefined}>
-    <button className={css.chatButton} type="button" aria-expanded={showPanel} aria-label="HIVEMIND environment" onClick={() => { if (preview.wide && !(agentRoute && compact)) { setOpen(true); setWideOpen(value => !value) } else setOpen(value => !value) }}>{hyperagents && !showPanel && <span className={css.compactIdentity}>{employee ? <EmployeeAvatar employee={employee} size={24} /> : <RuntimeAvatar size={24} />}<strong>{identity?.name ?? 'Runtime'}</strong></span>}{busy && <span className={css.activityDot} aria-label="Background work running" />}<svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M3 5h14M3 10h14M3 15h14" stroke="currentColor" strokeWidth="1.5" /><circle cx="7" cy="5" r="2" fill="white" stroke="currentColor"/><circle cx="13" cy="10" r="2" fill="white" stroke="currentColor"/><circle cx="8" cy="15" r="2" fill="white" stroke="currentColor"/></svg></button>
-    {showPanel && agentRoute && compact && <button type="button" className={css.mobileBackdrop} aria-label="Close environment" onClick={() => { setOpen(false) }} /> }
-    {showPanel && <section className={css.chatPanel} style={preview.open && !(agentRoute && compact) ? { position: 'fixed', right: preview.inset + 8, top: 108, maxWidth: preview.available } : undefined} role={agentRoute && compact ? 'dialog' : undefined} aria-modal={agentRoute && compact || undefined} aria-label="HIVEMIND connected apps">{content}</section>}
+  return <div ref={controlRef} className={css.chatControl} data-mobile-agent-environment={nativeChatRoute && compact || undefined} style={preview.open && !(nativeChatRoute && compact) ? { position: 'fixed', right: preview.inset + 8, top: 64, zIndex: 20 } : undefined}>
+    <button className={css.chatButton} type="button" aria-expanded={showPanel} aria-label="HIVEMIND environment" onClick={() => { if (preview.wide && !(nativeChatRoute && compact)) { setOpen(true); setWideOpen(value => !value) } else setOpen(value => !value) }}>{hyperagents && !showPanel && <span className={css.compactIdentity}>{employee ? <EmployeeAvatar employee={employee} size={24} /> : <RuntimeAvatar size={24} />}<strong>{identity?.name ?? 'Runtime'}</strong></span>}{busy && <span className={css.activityDot} aria-label="Background work running" />}<svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M3 5h14M3 10h14M3 15h14" stroke="currentColor" strokeWidth="1.5" /><circle cx="7" cy="5" r="2" fill="white" stroke="currentColor"/><circle cx="13" cy="10" r="2" fill="white" stroke="currentColor"/><circle cx="8" cy="15" r="2" fill="white" stroke="currentColor"/></svg></button>
+    {showPanel && nativeChatRoute && compact && <button type="button" className={css.mobileBackdrop} aria-label="Close environment" onClick={() => { setOpen(false) }} /> }
+    {showPanel && <section className={css.chatPanel} style={preview.open && !(nativeChatRoute && compact) ? { position: 'fixed', right: preview.inset + 8, top: 108, maxWidth: preview.available } : undefined} role={nativeChatRoute && compact ? 'dialog' : undefined} aria-modal={nativeChatRoute && compact || undefined} aria-label="HIVEMIND connected apps">{content}</section>}
   </div>
 }

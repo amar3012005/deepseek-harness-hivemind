@@ -369,3 +369,11 @@
 .trailing:has([data-voice-active]) [data-native-composer-primary],
 .trailing:has([data-voice-active]) [data-hivemind-dictation],
 .trailing:has([data-voice-active]) [data-composer-context-meter] { display: none; }
+
+/* Compact native phone composer; controls keep their existing tools and touch targets. */
+@media (max-width: 900px) {
+  :global([data-native-chat]) .card { gap: 4px; padding-top: 6px; border-radius: 24px; font-size: 16px; line-height: 24px; }
+  :global([data-native-chat]) .row { gap: 4px; padding: 0 6px 4px; }
+  :global([data-native-chat]) .tools, :global([data-native-chat]) .modes, :global([data-native-chat]) .trailing { gap: 4px; }
+  :global([data-native-chat]) .add, :global([data-native-chat]) .primary { width: 44px; height: 44px; border-radius: 50%; }
+}

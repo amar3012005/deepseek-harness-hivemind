@@ -272,6 +272,6 @@
 @media (max-width: 640px) { .dayJump span { display: none; } .dayJump select { max-width: 130px; } }
 
 @media (max-width: 900px) {
-  :global([data-agent-room]) .dayJump { position: absolute; right: auto; z-index: 9; min-height: 40px; box-sizing: border-box; padding: 0 8px; }
-  :global([data-agent-room]) .dayJump select { min-height: 40px; max-width: 180px; }
+  :global([data-native-chat]) .dayJump { position: absolute; right: auto; z-index: 9; min-height: 40px; box-sizing: border-box; padding: 0 8px; }
+  :global([data-native-chat]) .dayJump select { min-height: 40px; max-width: 180px; }
 }

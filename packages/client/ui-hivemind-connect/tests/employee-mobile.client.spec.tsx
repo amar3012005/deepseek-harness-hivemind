@@ -29,12 +29,25 @@ it.each([375, 390, 768])('keeps employee Environment closed at %spx until explic
   fireEvent.click(view.getByRole('button', { name: 'Close environment' }))
   expect(view.queryByRole('dialog')).toBeNull()
 })
-it('preserves Brain Environment defaults on the same small screen', () => {
+it.each([375, 390, 768])('keeps native Brain Environment dismissible at %spx', (width) => {
   window.history.replaceState({}, '', '/hivemind/app/overview/session/test')
-  vi.stubGlobal('matchMedia', () => ({ matches: true, addEventListener() {}, removeEventListener() {} }))
+  vi.stubGlobal('matchMedia', () => ({ matches: width <= 900, addEventListener() {}, removeEventListener() {} }))
+  vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} })
+  vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => ({ accounts: [] }) })))
+  const view = render(<BrainConnections {...props('hivemind-chat') as unknown as Parameters<typeof BrainConnections>[0]} />)
+  expect(view.getByRole('button', { name: 'HIVEMIND environment' }).getAttribute('aria-expanded')).toBe('false')
+  fireEvent.click(view.getByRole('button', { name: 'HIVEMIND environment' }))
+  expect(view.getByRole('dialog').getAttribute('aria-modal')).toBe('true')
+  fireEvent.keyDown(document, { key: 'Escape' })
+  expect(view.queryByRole('dialog')).toBeNull()
+})
+
+it('preserves desktop Brain Environment defaults', () => {
+  window.history.replaceState({}, '', '/hivemind/app/overview/session/test')
+  vi.stubGlobal('matchMedia', () => ({ matches: false, addEventListener() {}, removeEventListener() {} }))
   vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} })
   vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => ({ accounts: [] }) })))
   const view = render(<BrainConnections {...props('hivemind-chat') as unknown as Parameters<typeof BrainConnections>[0]} />)
   expect(view.getByRole('button', { name: 'HIVEMIND environment' }).getAttribute('aria-expanded')).toBe('true')
-  expect(view.queryByRole('button', { name: 'Close environment' })).toBeNull()
+  expect(view.queryByRole('dialog')).toBeNull()
 })
