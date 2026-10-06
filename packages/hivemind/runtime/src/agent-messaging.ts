@@ -142,7 +142,7 @@ export function installAgentMessaging(ctx: Context): void {
         message_key: { type: 'string', required: true, description: 'Stable unique key for this message, reused unchanged on retry.' },
         message: { type: 'string', required: true, description: 'Short natural colleague-to-colleague message: explain the outcome, uncertainty and next step plainly. Put exact artifact receipt IDs in artifact_ids and task identity in task_id, not in the visible text. The complete envelope remains available to the receiving agent and in Agent message details.' },
         task_id: { type: 'string' }, reply_to: { type: 'string' },
-        artifact_ids: { type: 'array', items: { type: 'string' }, description: 'Exact locally saved artifact receipt IDs to include; not filenames or invented IDs.' },
+        artifact_ids: { type: 'array', items: { type: 'string' }, description: 'Only artifact IDs with a saved file/PDF event in this sender room. IDs received from another employee are not sender-owned attachments; use task_id and a precise text reference for a correction, or ask the authorized producer to share its saved file. Never invent receipts.' },
       },
       output: { schema: { type: 'object', properties: {}, additionalProperties: true }, render: (_args, result) => [{ type: 'text', text: JSON.stringify(result) }] },
       isConcurrencySafe: () => false,
@@ -162,7 +162,7 @@ export function installAgentMessaging(ctx: Context): void {
           throw new Error('employee_closeout_may_only_report_to_runtime')
         }
         const target = input.recipient === 'runtime' ? undefined : authorizedRecipient(directory.profiles, input.recipient)
-        if (input.recipient !== 'runtime' && !target) throw new Error('agent_message_recipient_not_authorized')
+        if (input.recipient !== 'runtime' && !target) throw new Error('agent_message_recipient_not_authorized: no exact ID or unique slug matches the authenticated employee directory. Read hivemind_hq_contract action list for employee IDs; delegated child teammates use native Team send_message. Do not guess names, session IDs or retry an unauthorized recipient.')
         if (target !== undefined && (target['status'] === 'paused' || target['status'] === 'archived' || target['archived_at'] || target['archivedAt'])) throw new Error('agent_message_recipient_unavailable')
         const targetProfile = target === undefined ? undefined : { id: String(target['id']), name: String(target['name']), role: typeof target['role_archetype'] === 'string' ? target['role_archetype'] : 'HIVE-MIND employee' }
         const events = agent.session.snapshotEvents()

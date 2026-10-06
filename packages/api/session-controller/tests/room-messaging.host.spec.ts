@@ -37,7 +37,7 @@ describe('Persistent agent room messaging', () => {
     const file = { type: 'file', id: 'stored-file', name: 'brief.pdf' }
     ravi.session.append('hivemind/generation-created', { artifactId: 'saved-artifact', file } as never)
     const request = { key: 'artifact', target: 'runtime', kind: 'update' as const, text: 'Chief, here is the brief.', taskId: 'task-3', artifactIds: ['invented-artifact'] }
-    await expect(messaging.send(ravi, request, signal)).rejects.toThrow('saved_artifact_required')
+    await expect(messaging.send(ravi, request, signal)).rejects.toThrow('artifact_ids must reference a saved file or PDF in the sender room')
     expect(caller.session.snapshotEvents()).toHaveLength(0)
     await messaging.send(ravi, { ...request, artifactIds: ['saved-artifact'] }, signal)
     const notice = caller.session.snapshotEvents().find(e => e.type === 'user/message')

@@ -126,7 +126,7 @@ export class RoomMessaging {
       const artifacts = (input.artifactIds ?? []).map((artifactId) => {
         const saved = events.findLast(e => ['hivemind/generation-created', 'hivemind/artifact-created'].includes(String(e.type)) && (e.data as { artifactId?: string }).artifactId === artifactId)?.data as { file?: FileAttachmentRef; pdf?: FileAttachmentRef; title?: string; path?: string; mediaType?: string } | undefined
         const file = saved?.file ?? saved?.pdf
-        if (!file) throw new Error('agent_message_saved_artifact_required')
+        if (!file) throw new Error('agent_message_saved_artifact_required: artifact_ids must reference a saved file or PDF in the sender room. A received artifact is not a sender-owned attachment. For a correction, reference the existing task in task_id and text without claiming an attachment; ask its authorized producer to share the saved file when needed.')
         return { artifactId, title: saved?.title ?? file.name, file, producerSessionId: caller.id, producerName: preset === 'hivemind-hq' ? 'Run Time' : owner?.name ?? 'Employee', ...(saved?.path === undefined ? {} : { path: saved.path }), ...(saved?.mediaType === undefined ? {} : { mediaType: saved.mediaType }) }
       })
       const artifactFiles = artifacts.map(artifact => artifact.file)

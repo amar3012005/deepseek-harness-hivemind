@@ -58,6 +58,17 @@ describe('native HQ durable receipt replay', () => {
     f.setRole('teammate')
     await expect(f.execute(input)).rejects.toThrow('hq_lead_required')
   })
+  it('inspects a task with no linked receipt without producing evidence or permitting review', async () => {
+    const f = mount()
+    f.events.splice(1, 1)
+    expect(await f.execute({ action: 'inspect', task_id: 'task-1' })).toMatchObject({
+      status: 'awaiting_producer_receipt', documents: [], review_ready: false,
+    })
+    expect(await f.execute({ action: 'inspect', task_id: 'task-1' })).not.toHaveProperty('evidence_hash')
+    expect(f.append).not.toHaveBeenCalled()
+    await expect(f.execute({ action: 'review', task_id: 'task-1' })).rejects.toThrow('hq_artifact_receipt_required')
+    await expect(f.execute({ action: 'decide', task_id: 'task-1', decision: 'accepted' })).rejects.toThrow('hq_artifact_receipt_required')
+  })
   it('inspects existing validated PDFs without changing the review fingerprint', async () => {
     const inspect = vi.fn(async (_file: unknown, _signal: unknown, _pages?: unknown) => ({ page_count: 2, preview_page: 1, preview: { attachmentId: 'pixels' } }))
     const f = mount(inspect)

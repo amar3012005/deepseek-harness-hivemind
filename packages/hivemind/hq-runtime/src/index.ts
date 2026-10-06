@@ -187,7 +187,7 @@ export function apply(ctx: Context): void {
           type: 'string',
           required: true,
           enum: ['list', 'attach', 'artifacts', 'inspect', 'assign', 'review', 'schedule', 'decide'],
-          description: 'assign dispatches work now; schedule assigns pending work for a future start and requires no preceding assign call. artifacts links specified saved artifact_ids; it does not retrieve files. list returns saved receipts and reviews. inspect reads linked producer document content without changing task or review state. decide records Runtime’s evidence-based acceptance or needed changes after inspect. review optionally obtains Jev advisory scores; do not poll uncertainty.',
+          description: 'assign dispatches work now; schedule assigns pending work for a future start and requires no preceding assign call. artifacts links specified saved artifact_ids; it does not retrieve files. list returns saved receipts and reviews. inspect reads linked producer document content without changing task or review state; without linked receipts it returns awaiting_producer_receipt and no review evidence hash. decide records Runtime’s evidence-based acceptance or needed changes after inspect. review optionally obtains Jev advisory scores; do not poll uncertainty.',
         },
         decision: { type: 'string', enum: ['accepted', 'needs_changes'], description: 'For decide: Runtime’s explicit acceptance or specific changes required after inspecting saved evidence.' },
         rationale: { type: 'string', description: 'For decide: concise evidence-based assessment against the acceptance criteria; explain any required changes.' },
@@ -323,7 +323,16 @@ export function apply(ctx: Context): void {
         if (input.action === 'review' || input.action === 'inspect' || input.action === 'decide') {
           const contract = contracts.find(value => value.taskId === task.id)
           if (!contract) throw new Error('hq_contract_required')
-          requireArtifactReceipts(events, task.id)
+          // Inspection is read-only discovery, not acceptance or receipt production.
+          // An unlinked task must remain inspectable without inventing evidence.
+          try { requireArtifactReceipts(events, task.id) }
+          catch (error) {
+            if (input.action !== 'inspect' || !(error instanceof Error) || error.message !== 'hq_artifact_receipt_required') throw error
+            return { task_id: task.id, task_revision: task.revision,
+              status: 'awaiting_producer_receipt', acceptance_criteria: [...contract.acceptanceCriteria],
+              documents: [], review_ready: false,
+              next_step: 'Read hivemind_hq_contract action list for linked receipts and list_agents for exact producer names. Link only an existing saved artifact from its authorized producer with action artifacts. If no receipt exists, ask that producer to save or report the blocker; do not recreate the artifact or claim review acceptance.' }
+          }
           const linksEvent = events.findLast(
             event => event.type === 'hivemind/hq-task-artifacts' && event.data.taskId === task.id,
           )
@@ -455,7 +464,7 @@ export function apply(ctx: Context): void {
           if (!contract || !input.employee_id)
             throw new Error('hq_assignment_requires_contract_and_employee')
           if (task.status === 'completed' || task.status === 'deleted')
-            throw new Error('hq_task_terminal')
+            throw new Error('hq_task_terminal: this task is completed or deleted; inspect/list remain read-only. Do not attach, assign or relink artifacts. Create a separate authorized follow-up task if new work is required.')
           if (task.status === 'pending' && !task.ready)
             throw new Error('hq_task_dependencies_unfinished')
           const planned = calendarItems(root.session.snapshotEvents()).find(
@@ -477,7 +486,7 @@ export function apply(ctx: Context): void {
         }
         if (input.action === 'attach') {
           if (task.status === 'completed' || task.status === 'deleted')
-            throw new Error('hq_task_terminal')
+            throw new Error('hq_task_terminal: this task is completed or deleted; inspect/list remain read-only. Do not attach, assign or relink artifacts. Create a separate authorized follow-up task if new work is required.')
           const contract = companyTaskContract({
             taskId: input.task_id,
             dueAt: input.due_at,
@@ -513,7 +522,7 @@ export function apply(ctx: Context): void {
           }
         }
         if (task.status === 'completed' || task.status === 'deleted')
-          throw new Error('hq_task_terminal')
+          throw new Error('hq_task_terminal: this task is completed or deleted; inspect/list remain read-only. Do not attach, assign or relink artifacts. Create a separate authorized follow-up task if new work is required.')
         if (
           input.action !== 'artifacts' ||
           !contracts.some(item => item.taskId === input.task_id)

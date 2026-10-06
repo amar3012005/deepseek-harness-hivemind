@@ -146,6 +146,8 @@ it('normalizes a registered Chief update before delivery and rejects a paused re
   await tool.execute(args, execution)
   expect(deliverAgentMessage).toHaveBeenCalledExactlyOnceWith(agent,
     expect.objectContaining({ kind: 'question', target: 'employee', key: 'correction' }), execution.signal)
+  await expect(tool.execute({ ...args, recipient: 'Sofia' }, execution)).rejects.toThrow('Read hivemind_hq_contract action list')
+  expect(deliverAgentMessage).toHaveBeenCalledTimes(1)
   profile.status = 'paused'
   await expect(tool.execute(args, execution)).rejects.toThrow('agent_message_recipient_unavailable')
   expect(deliverAgentMessage).toHaveBeenCalledTimes(1)
