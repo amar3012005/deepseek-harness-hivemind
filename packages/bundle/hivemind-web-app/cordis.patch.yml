@@ -253,7 +253,7 @@
     # Optional server-to-server attention seam; no subscriptions or wakes until explicitly enabled.
     - id: hivemind-employee-lifecycle-host
       name: '@deepseek-ai/dsh-hivemind-hq-runtime/lifecycle-host'
-      config: {enabled: false, serviceSecretEnv: HIVE_HARNESS_RUNNER_SERVICE_SECRET}
+      config: {enabled: true, serviceSecretEnv: HIVE_HARNESS_RUNNER_SERVICE_SECRET}
 
     - id: hivemind-runtime-attention
       name: '@deepseek-ai/dsh-hivemind-hq-runtime/attention'
