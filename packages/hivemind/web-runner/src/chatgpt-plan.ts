@@ -1,8 +1,9 @@
 /** Gated public Responses adapter. Core owns grants; no OAuth token enters the runner. */
+import { AsyncLocalStorage } from 'node:async_hooks'
 import type { Context } from '@deepseek-ai/cordis'
 import { createHmac, randomUUID } from 'node:crypto'
 import { LlmAdapter, LlmError, ToolCallId, attributionHeaders } from '@deepseek-ai/dsh-llm'
-import type { GenerateOptions, StreamChunk } from '@deepseek-ai/dsh-llm'
+import type { GenerateOptions, StreamChunk, LlmModelInfo } from '@deepseek-ai/dsh-llm'
 import type { HivemindPrincipal } from '@deepseek-ai/dsh-hivemind-execution-scope'
 
 export function planRequest(options: GenerateOptions): Record<string, unknown> {
@@ -143,12 +144,54 @@ export async function* planChunks(response: Response, signal?: AbortSignal, tool
   } finally { await reader.cancel().catch(() => {}); reader.releaseLock() }
 }
 
-export interface BrainPlanConfig { enabled?: boolean }
+export interface PlanAccountStatus {
+  available: boolean
+  connected: boolean
+  models: string[]
+  selected_model: string | null
+  platform_fallback: boolean
+}
+export interface BrainPlanRouting {
+  account?: () => Promise<PlanAccountStatus>
+  route?: (options: GenerateOptions) => Promise<boolean>
+  fallback?: (options: GenerateOptions) => AsyncIterable<StreamChunk>
+}
 export class BrainPlanAdapter extends LlmAdapter {
-  constructor(private readonly broker: (options: GenerateOptions) => Promise<Response>) { super() }
+  constructor(private readonly broker: (options: GenerateOptions) => Promise<Response>,
+    private readonly routing: BrainPlanRouting = {}) { super() }
+  override async listModels(provider: string): Promise<readonly LlmModelInfo[]> {
+    const account = await this.routing.account?.()
+    if (!account?.available || !account.connected) return []
+    return [{ provider, id: 'auto', name: 'Connected ChatGPT preference', inputModalities: ['text'] as const },
+      ...account.models.map(id => ({ provider, id, name: id, inputModalities: ['text'] as const }))]
+  }
   override async * stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
     if (!options.sessionId) throw new LlmError('Owned Brain session required', 'PLAN_SESSION_REQUIRED')
-    yield* planChunks(await this.broker(options), options.signal, new Set(options.tools?.map(tool => tool.name) ?? []))
+    const account = await this.routing.account?.()
+    const model = options.model === 'auto' ? account?.selected_model : options.model
+    if (!model || (account && (!account.available || !account.connected || !account.models.includes(model)))) {
+      throw new LlmError('Connect and select an available ChatGPT model first', 'PLAN_CONNECTION_REQUIRED')
+    }
+    let emitted = false
+    try {
+      const response = await this.broker({ ...options, model })
+      if (!response.ok) {
+        const body = await response.json().catch(() => null) as { error?: unknown } | null
+        const code = typeof body?.error === 'string' ? body.error : ''
+        const eligible = /^plan_upstream_(401|403|429|5[0-9]{2})$/.test(code)
+          || ['plan_reauthorization_required', 'plan_reconnect_or_refresh_required', 'plan_refresh_failed'].includes(code)
+        throw new LlmError('Connected ChatGPT provider unavailable', eligible ? 'PLAN_ELIGIBLE_FAILURE' : 'PLAN_REQUEST_REJECTED')
+      }
+      for await (const chunk of planChunks(response, options.signal, new Set(options.tools?.map(tool => tool.name) ?? []))) {
+        emitted = true
+        yield chunk
+      }
+    } catch (error) {
+      // Never splice providers after visible output or executable tool blocks; no automatic cancellation retry.
+      const eligible = error instanceof LlmError && ['PLAN_ELIGIBLE_FAILURE', 'PLAN_RESPONSE_FAILED'].includes(error.code)
+      if (emitted || options.signal?.aborted || !eligible || !account?.platform_fallback || !this.routing.fallback) throw error
+      yield* this.routing.fallback(options)
+    }
   }
 }
 
@@ -173,9 +216,59 @@ export async function requestBrainPlan(base: string, secret: string, principal: 
 
 /** Native Cordis service registration, disposed with its plugin scope. */
 export function registerBrainPlan(ctx: Context, enabled: boolean,
-  broker: (options: GenerateOptions) => Promise<Response>): void {
+  broker: (options: GenerateOptions) => Promise<Response>, routing: BrainPlanRouting = {}): void {
   if (!enabled) return
+  const bypass = new AsyncLocalStorage<boolean>()
+  const fallback = routing.fallback, route = routing.route
+  const guarded: BrainPlanRouting = { ...routing, ...(fallback ? {
+    fallback: async function* (options) {
+      const iterator = fallback(options)[Symbol.asyncIterator]()
+      try {
+        while (true) {
+          const next = await bypass.run(true, () => iterator.next())
+          if (next.done) return
+          yield next.value
+        }
+      } finally { await bypass.run(true, () => iterator.return?.()) }
+    },
+  } : {}) }
   ctx.inject(['llm'], (planCtx) => {
-    planCtx.effect(() => planCtx.llm.registerAdapter(['hivemind-chatgpt-plan-brain'], new BrainPlanAdapter(broker)))
+    const adapter = new BrainPlanAdapter(broker, guarded)
+    planCtx.effect(() => planCtx.llm.registerAdapter(['hivemind-chatgpt-plan-brain'], adapter))
+    if (route) planCtx.effect(() => planCtx.on('llm/stream', async function* (options, next) {
+      if (bypass.getStore() || options.provider === 'hivemind-chatgpt-plan-brain' || !options.sessionId) {
+        yield* next(); return
+      }
+      if (!await route(options)) { yield* next(); return }
+      yield* adapter.stream({ ...options, provider: 'hivemind-chatgpt-plan-brain', model: 'auto' })
+    }, { global: true }))
   })
+}
+
+export async function requestBrainAccount(base: string, secret: string,
+  principal: HivemindPrincipal, fetchImpl: typeof fetch = fetch): Promise<PlanAccountStatus> {
+  const response = await fetchImpl(`${base}/internal/v1/harness-chat/core/chatgpt-plan/connection/status`, {
+    headers: { ...attributionHeaders(), authorization: `Bearer ${brainBrokerToken(principal, secret)}` }, redirect: 'error',
+    signal: AbortSignal.timeout(15000),
+  })
+  if (!response.ok) throw new LlmError('Connected ChatGPT status unavailable', 'PLAN_CONNECTION_REQUIRED')
+  const value = await response.json() as PlanAccountStatus
+  if (!value || typeof value.available !== 'boolean' || typeof value.connected !== 'boolean'
+    || !Array.isArray(value.models) || value.models.some(model => typeof model !== 'string')
+    || (value.selected_model !== null && typeof value.selected_model !== 'string')
+    || typeof value.platform_fallback !== 'boolean') throw new LlmError('Invalid ChatGPT account status', 'PLAN_CONNECTION_REQUIRED')
+  return value
+}
+
+export async function requestBrainRoute(base: string, secret: string, principal: HivemindPrincipal,
+  options: GenerateOptions, fetchImpl: typeof fetch = fetch): Promise<boolean> {
+  const response = await fetchImpl(`${base}/internal/v1/harness-chat/core/chatgpt-plan/connection/route`, {
+    method: 'POST', headers: { ...attributionHeaders(), authorization: `Bearer ${brainBrokerToken(principal, secret)}`,
+      'content-type': 'application/json' }, body: JSON.stringify({ session_id: options.sessionId }),
+    redirect: 'error', signal: options.signal ? AbortSignal.any([options.signal, AbortSignal.timeout(15000)]) : AbortSignal.timeout(15000),
+  })
+  if (!response.ok) throw new LlmError('Brain plan routing could not verify ownership', 'PLAN_CONNECTION_REQUIRED')
+  const value = await response.json() as { eligible?: unknown }
+  if (typeof value.eligible !== 'boolean') throw new LlmError('Invalid Brain routing response', 'PLAN_CONNECTION_REQUIRED')
+  return value.eligible
 }

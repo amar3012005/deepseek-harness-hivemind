@@ -20,7 +20,7 @@ describe.skipIf(!core)('Cordis / loopback Core / fixture SSE preview', () => {
     const env = { HIVE_CHATGPT_PLAN_ENABLED: 'true', HIVE_CHATGPT_PLAN_APPROVED: 'true',
       HIVE_CHATGPT_PLAN_CLIENT_ID: 'fixture-client', HIVE_CHATGPT_PLAN_ENCRYPTION_KEY: 'ab'.repeat(32) }
     const principal = { orgId: '11111111-1111-4111-8111-111111111111',
-      userId: '22222222-2222-4222-8222-222222222222', profile: 'hivemind-chat', variation: 'work' }
+      userId: '22222222-2222-4222-8222-222222222222', profile: 'hivemind-chat' as const, variation: 'work' }
     const secret = 'fixture-service-secret-longer-than-thirty-two'
     let row: Record<string, unknown> | undefined
     let upstreamCalls = 0
@@ -89,7 +89,7 @@ describe.skipIf(!core)('Cordis / loopback Core / fixture SSE preview', () => {
       const options = { provider: 'hivemind-chatgpt-plan-brain', model: 'fixture-gpt', sessionId: 'owned-brain',
         messages: [{ role: 'user', content: [{ type: 'text', text: 'fixture request' }] }],
         tools: [{ name: 'lookup', description: 'fixture tool', parameters: { type: 'object', properties: {} } }],
-      } as GenerateOptions
+      } as unknown as GenerateOptions
       const chunks: StreamChunk[] = []
       for await (const chunk of ctx.llm.stream(options)) {
         if (chunk.type === 'tool-call-delta') expect(terminalSent).toBe(true)
@@ -98,7 +98,7 @@ describe.skipIf(!core)('Cordis / loopback Core / fixture SSE preview', () => {
       expect(chunks.filter(chunk => chunk.type === 'tool-call-delta')).toHaveLength(1)
       expect(chunks).toContainEqual({ type: 'usage', usage: { inputTokens: 3, outputTokens: 4, totalTokens: 7 } })
       expect(upstreamCalls).toBe(1)
-      const denied = await requestBrainPlan(brokerBase, secret, principal, { ...options, sessionId: 'not-owned' })
+      const denied = await requestBrainPlan(brokerBase, secret, principal, { ...options, sessionId: 'not-owned' as NonNullable<GenerateOptions['sessionId']> })
       expect(denied.status).toBe(403); expect(upstreamCalls).toBe(1)
     } finally {
       await Promise.all([broker, upstream].map(server => new Promise<void>(resolve => server.close(() => resolve()))))
