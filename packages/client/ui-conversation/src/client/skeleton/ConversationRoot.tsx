@@ -342,7 +342,7 @@ export function ConversationRoot({
         <div className={css.composerViews}>{renderSlot('conversation.composer.viewTabs', {})}</div>
       )}
       <div className={css.composerInput}>{inputBar}</div>
-      {hero && <div className={css.heroSuggestions}>{renderSlot('conversation.hero.dock', { sessionId })}</div>}
+      {hero && <div className={css.heroSuggestions} data-mobile-brain-suggestions="">{renderSlot('conversation.hero.dock', { sessionId })}</div>}
     </div>
   )
 
