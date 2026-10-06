@@ -23,6 +23,7 @@ import { computeColumns, RIGHTBAR_DEFAULT_RATIO, SIDEBAR_AUTO_COLLAPSE, SIDEBAR_
 import { DocumentTitle } from './DocumentTitle.tsx'
 import type { createLayoutStore } from './stores.ts'
 import css from './AppFrame.module.css'
+import { Modal } from '@deepseek-ai/dsh-client-ui-primitives'
 
 /** Full composed props: runtime share + child-slot render share + store share. */
 export type AppFrameProps =
@@ -238,6 +239,14 @@ export function AppFrame({
     <MainPanel usePanelInfo={usePanelInfo} renderSlot={renderSlot} />
   ), [usePanelInfo, renderSlot])
   const overlays = useMemo(() => renderSlot('shell.overlay', {}), [renderSlot])
+  const [mobileHistoryOpen, setMobileHistoryOpen] = useState(false)
+  useEffect(() => {
+    if (!showSessionRail) return
+    const open = () => { setMobileHistoryOpen(true) }
+    window.addEventListener('hivemind:mobile-history', open)
+    return () => window.removeEventListener('hivemind:mobile-history', open)
+  }, [showSessionRail])
+
 
   return (
     <div
@@ -255,6 +264,11 @@ export function AppFrame({
       data-dragging={dragging || undefined}
       data-external-chrome={hostOwnsChrome || undefined}
     >
+      <Modal open={mobileHistoryOpen} onClose={() => { setMobileHistoryOpen(false) }} title="Recents" closeLabel="Close history" className={css.mobileHistory}>
+        <div onClick={(event) => { if ((event.target as HTMLElement).closest('a, [data-session-id]')) setMobileHistoryOpen(false) }}>
+          {mobileHistoryOpen && renderSlot('shell.sessionRail', {})}
+        </div>
+      </Modal>
       <DocumentTitle
         productTitle={productTitle}
         useSessions={useSessions}

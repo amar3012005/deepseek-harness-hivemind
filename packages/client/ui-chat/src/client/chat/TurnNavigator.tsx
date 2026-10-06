@@ -5,6 +5,7 @@ import {
 import type { ChatViewSlotProps } from '../contract/slots.ts'
 import { turnRailDays, type TurnRailItem } from './turn-rail-items.ts'
 import css from './TurnNavigator.module.css'
+import { Modal } from '@deepseek-ai/dsh-client-ui-primitives'
 
 interface TurnNavigatorProps {
   readonly items: readonly TurnRailItem[]
@@ -83,6 +84,14 @@ function sameRailScrollState(left: RailScrollState, right: RailScrollState): boo
 function TurnNavigatorRail({ items: allItems, activeTurn: originalActiveTurn, busyTurn, onNavigate, t }: TurnNavigatorProps) {
   const agentRoom = /^\/hivemind\/app\/employee\/harness(?:\/|$)/u.test(window.location.pathname)
   const historyDays = turnRailDays(allItems, document.documentElement.lang || undefined)
+  const [mobileDaysOpen, setMobileDaysOpen] = useState(false)
+  useEffect(() => {
+    if (!agentRoom) return
+    const open = () => { setMobileDaysOpen(true) }
+    window.addEventListener('hivemind:mobile-history', open)
+    return () => window.removeEventListener('hivemind:mobile-history', open)
+  }, [agentRoom])
+
   const dreaming = window.location.pathname === '/hivemind/app/overview/dreaming' || new URLSearchParams(window.location.search).has('dreamingParent')
   const dayDate = (item: TurnRailItem): string | undefined => item.time === undefined
     ? undefined : new Date(item.time).toLocaleDateString('de-DE')
@@ -160,6 +169,9 @@ function TurnNavigatorRail({ items: allItems, activeTurn: originalActiveTurn, bu
   if (scrollState.canScrollDown) fadeClasses.push(css.fadeBottom)
   return (
     <div className={css.slot}>
+      <Modal open={mobileDaysOpen} onClose={() => { setMobileDaysOpen(false) }} title="Chat history" closeLabel="Close history">
+        {historyDays.map(day => <button key={day.key} type="button" className={css.mobileDay} onClick={() => { onNavigate(day.item); setMobileDaysOpen(false) }}>{day.label}</button>)}
+      </Modal>
       {agentRoom && historyDays.length > 0 && <label className={css.dayJump}>
         <span>{t('chat.turnNavigation.day')}</span>
         <select aria-label={t('chat.turnNavigation.day')} value="" onChange={(event) => {

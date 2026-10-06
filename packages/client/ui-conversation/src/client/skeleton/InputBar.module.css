@@ -377,3 +377,12 @@
   :global([data-native-chat]) .tools, :global([data-native-chat]) .modes, :global([data-native-chat]) .trailing { gap: 4px; }
   :global([data-native-chat]) .add, :global([data-native-chat]) .primary { width: 44px; height: 44px; border-radius: 50%; }
 }
+
+.desktopOptions { display: contents; }
+@media (max-width: 900px) {
+  :global([data-native-chat]) .desktopOptions, :global([data-native-chat]) .desktopAttachment,
+  :global([data-native-chat]) .modes { display: none; }
+  :global([data-native-chat]) .row { flex-wrap: nowrap; }
+  :global([data-native-chat]) :global([data-hivemind-live-voice]) button,
+  :global([data-native-chat]) :global([data-hivemind-dictation]) button { width: 44px; height: 44px; border-radius: 50%; }
+}

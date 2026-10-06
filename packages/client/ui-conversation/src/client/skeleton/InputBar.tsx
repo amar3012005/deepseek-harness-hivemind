@@ -37,6 +37,7 @@ import { attachmentErrorText, imageSizeText } from '../image-labels.ts'
 import { ContextMeter } from './ContextMeter.tsx'
 import { PermissionSelect } from './PermissionSelect.tsx'
 import css from './InputBar.module.css'
+import { MobileAddSheet } from './MobileAddSheet.tsx'
 
 declare module '@deepseek-ai/dsh-session-projection/types' { interface SessionProjectionMap { hyperagentOwner: string | null; hyperagentSelection: string | null } }
 
@@ -263,6 +264,19 @@ export const InputBar = memo(function InputBar({
 
   const canAcceptDrop = subagent === null && !locked && !machineBusy && addFiles !== undefined
 
+  const [mobileAddOpen, setMobileAddOpen] = useState(false)
+  const photoInputRef = useRef<HTMLInputElement | null>(null)
+  const cameraInputRef = useRef<HTMLInputElement | null>(null)
+  const closeMobileAdd = useCallback(() => { setMobileAddOpen(false) }, [])
+  useEffect(() => {
+    const selectConnector = (event: Event) => {
+      const value = (event as CustomEvent<{ name?: unknown }>).detail?.name
+      if (typeof value !== 'string' || inputActions === undefined || locked) return
+      inputActions.setDraft(`Use ${value}. ${draft}`)
+    }
+    window.addEventListener('hivemind:connector-selected', selectConnector)
+    return () => window.removeEventListener('hivemind:connector-selected', selectConnector)
+  }, [inputActions, draft, locked])
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const onPickFiles = (e: ChangeEvent<HTMLInputElement>): void => {
     const picked = e.target.files === null ? [] : [...e.target.files]
@@ -443,6 +457,24 @@ export const InputBar = memo(function InputBar({
           <div className={css.overlayAnchor}>{renderSlot('conversation.input.overlay', {})}</div>
         )}
         {accessory !== undefined && <div className={css.accessory}>{accessory}</div>}
+        {mobileAddOpen && <MobileAddSheet close={closeMobileAdd} canAttach={canAcceptDrop}
+          pick={(kind) => {
+            closeMobileAdd()
+            const target = kind === 'photo' ? photoInputRef : kind === 'camera' ? cameraInputRef : fileInputRef
+            target.current?.click()
+          }}
+          chooseMode={(mode) => {
+            const instruction = mode === 'search' ? 'Search relevant memories and sources for'
+              : 'Research in depth with sources and an evidence-based report:'
+            inputActions?.setDraft(`${instruction} ${draft}`); closeMobileAdd()
+          }}
+          controls={<>{sessionId === undefined ? accessSelect : renderSlot('conversation.input.scope', { locked, sessionId }, { fallback: accessSelect })}
+            {sessionId === undefined ? null : renderSlot('conversation.input.plan', { locked })}
+            {sessionId === undefined ? null : renderSlot('conversation.input.model', { locked: modelSeatLocked })}
+            {input === undefined || sessionId === undefined ? null : renderSlot('conversation.input.left', {})}</>}
+          commands={toggleCommandMenu === undefined ? undefined : () => { closeMobileAdd(); onToggleCommandMenu() }} />}
+        <input ref={photoInputRef} type="file" accept="image/*" multiple style={{ display: 'none' }} onChange={onPickFiles} />
+        <input ref={cameraInputRef} type="file" accept="image/*" capture="environment" style={{ display: 'none' }} onChange={onPickFiles} />
         {renderSlot('conversation.input.attachments', {
           attachments,
           canAcceptDrop,
@@ -494,10 +526,15 @@ export const InputBar = memo(function InputBar({
                 className={css.add}
                 aria-label={t('input.commands')}
                 aria-haspopup="listbox"
-                aria-expanded={commandMenuOpen}
-                disabled={locked || toggleCommandMenu === undefined}
+                aria-expanded={mobileAddOpen || commandMenuOpen}
+                disabled={locked || (toggleCommandMenu === undefined && inputActions === undefined)}
                 onMouseDown={keepFocus}
-                onClick={onToggleCommandMenu}
+                onClick={() => {
+                  if (window.matchMedia('(max-width: 900px)').matches && document.querySelector('[data-native-chat]')) {
+                    setMobileAddOpen(true)
+                  }
+                  else onToggleCommandMenu()
+                }}
               >
                 <IconPlusOutline16 size={14} />
               </button>
@@ -505,7 +542,7 @@ export const InputBar = memo(function InputBar({
             <Tooltip label={t('file.attach')} side="top" delayMs={500}>
               <button
                 type="button"
-                className={css.add}
+                className={clsx(css.add, css.desktopAttachment)}
                 aria-label={t('file.attach')}
                 disabled={subagent !== null || locked || machineBusy || addFiles === undefined}
                 onMouseDown={keepFocus}
@@ -528,13 +565,15 @@ export const InputBar = memo(function InputBar({
                 : renderSlot('conversation.input.scope', { locked, sessionId }, { fallback: accessSelect })}
               {sessionId === undefined ? null : renderSlot('conversation.input.plan', { locked })}
             </div>
-            {input === undefined || sessionId === undefined
+            <div className={css.desktopOptions}>{input === undefined || sessionId === undefined
               ? null
-              : renderSlot('conversation.input.left', {})}
+              : renderSlot('conversation.input.left', {})}</div>
           </div>
           <div className={css.trailing}>
-            {sessionId === undefined ? null : renderSlot('conversation.input.model', { locked: modelSeatLocked })}
-            <ContextMeter useProjection={useProjection} t={t} />
+            <div className={css.desktopOptions}>
+              {sessionId === undefined ? null : renderSlot('conversation.input.model', { locked: modelSeatLocked })}
+              <ContextMeter useProjection={useProjection} t={t} />
+            </div>
             {input === undefined || sessionId === undefined
               ? null
               : renderSlot('conversation.input.right', {})}

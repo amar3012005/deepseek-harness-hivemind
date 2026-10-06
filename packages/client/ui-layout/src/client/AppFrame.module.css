@@ -171,3 +171,5 @@
   .frame:has(:global([data-native-chat])) :global([data-sidebar-right-panel]) { position: fixed; inset: 56px 0 0; width: 100% !important; max-width: none; z-index: 45; }
   .frame:has(:global([data-native-chat])) :global([data-sidebar-right-panel]) button { min-height: 40px; }
 }
+
+.mobileHistory { position: fixed; bottom: 0; left: 0; right: 0; width: 100%; max-width: none; border-radius: 24px 24px 0 0; max-height: calc(100dvh - 64px); }
