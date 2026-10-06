@@ -37,3 +37,17 @@ No model requests or prompt contributions occur inside this plugin. Feature-enab
 ## Known Limitations and Deferred Work
 
 Feature-disabled compositions do not mount these tools; no production routes are enabled by this change. The registered skill becomes discoverable only in an enabled Runtime/HyperAgent scope. There is no connector execution, automation engine, relation mutation API, filtered record query, bulk mutation or data migration executor. Published CRM fields are not a replacement for Company Brain memories. Host presenters use generic native cards; dedicated preview cards belong to future frontend integration. No invariant companion is provided: this consumer has no independent replicated state to compare; Core owns durable versions and receipts.
+
+### Real Loader preview proof
+
+With an explicitly disposable authenticated Core/Control preview, set
+`CRM_NATIVE_PREVIEW_ORIGIN`, `CRM_NATIVE_PREVIEW_ORG_ID`,
+`CRM_NATIVE_PREVIEW_USER_ID`, `CRM_NATIVE_PREVIEW_SERVICE_SECRET`, and
+`CRM_NATIVE_PREVIEW_APP_ID` to an existing fixture app, then run
+`pnpm exec vitest run packages/hivemind/app-builder/tests/loader-preview.spec.ts`.
+The child process boots a file-backed Cordis Loader/Include composition using the
+exact shipped Runtime/HyperAgents App Builder configuration and feature expression.
+Source-mode module URLs preserve a single module identity. It verifies live scoped
+HTTP, skill discovery, disabled-flag absence, and Brain absence. This focused boot
+covers the capability subtree; the complete shipped runner still needs its own
+read-only boot check before release.

@@ -34,6 +34,10 @@
     "@deepseek-ai/dsh-hivemind-execution-scope": "workspace:^",
     "@deepseek-ai/dsh-util-values": "workspace:^",
     "@deepseek-ai/dsh-skill": "workspace:^",
-    "vitest": "^4.1.8"
+    "vitest": "^4.1.8",
+    "@deepseek-ai/cordis-plugin-loader": "workspace:^",
+    "@deepseek-ai/cordis-plugin-include": "workspace:^",
+    "js-yaml": "^4.2.0",
+    "@types/js-yaml": "^4.0.9"
   }
 }
