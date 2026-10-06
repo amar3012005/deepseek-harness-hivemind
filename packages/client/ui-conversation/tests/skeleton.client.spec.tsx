@@ -544,19 +544,20 @@ describe('ConversationRoot resident composer', () => {
     expect(root?.getAttribute('data-phase')).toBe('settling')
   })
 
-  it('startup auto-selection: a summary-proven blank session opens straight into the hero', () => {
+  it.each(['cold', 'loading', 'error'] as const)('stale blank summary does not replace %s replay with the hero', (openState) => {
     const b = mount(
-      sessionSnapshotOf({ blank: true, openState: 'loading' }),
+      sessionSnapshotOf({ blank: true, openState }),
       undefined,
       undefined,
       { summaryBlank: true },
     )
-    // The summary already proves the outcome, so the settling hide would only
-    // blank the column for the history round-trip.
-    const root = b.view.container.querySelector('[data-phase]')
-    expect(root?.getAttribute('data-phase')).toBe('hero')
-    expect(b.view.getByText('探索未至之境')).toBeTruthy()
-    expect(b.view.getByRole('textbox')).toBeTruthy()
+    expect(b.view.container.querySelector('[data-phase]')?.getAttribute('data-phase')).toBe('settling')
+    expect(b.view.queryByText('探索未至之境')).toBeNull()
+  })
+
+  it('successful empty replay can show the hero', () => {
+    const b = mount(sessionSnapshotOf({ blank: true, openState: 'open' }), undefined, undefined, { summaryBlank: true })
+    expect(b.view.container.querySelector('[data-phase]')?.getAttribute('data-phase')).toBe('hero')
   })
 
   it('same textarea DOM node survives the hero → active flip into the sticky scrollport', () => {
