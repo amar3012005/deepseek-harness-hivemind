@@ -1,5 +1,5 @@
 import type {} from '@deepseek-ai/dsh-schedule'
-import { employeeLifecycleTool, employeeProfileTool } from './employee-lifecycle.ts'
+import { employeeLifecycleTool, employeeProfileTool, lifecycleBusinessError } from './employee-lifecycle.ts'
 import { administratorMessageTool } from './administrator-messaging.ts'
 /**
  * Governed HIVE-MIND identity, context, recall, and HyperAgent discovery.
@@ -557,7 +557,15 @@ async function hiveRequest(
     if (response.status >= 300 && response.status < 400) {
       throw new HiveMindRuntimeError('HIVE-MIND redirect refused')
     }
-    if (!response.ok) throw new HiveMindRuntimeError(`HIVE-MIND request failed with status ${response.status}`, { status: response.status })
+    if (!response.ok) {
+      if (path === '/employee-lifecycle') {
+        let code: string | undefined
+        try { code = lifecycleBusinessError(await readResponseJson(response, Math.min(config.responseMaxBytes, 4096))) }
+        catch { /* Never expose arbitrary provider bodies. */ }
+        if (code) throw new HiveMindRuntimeError(code, { status: response.status, code })
+      }
+      throw new HiveMindRuntimeError(`HIVE-MIND request failed with status ${response.status}`, { status: response.status })
+    }
     return await readResponseJson(response, config.responseMaxBytes)
   } finally {
     operation.dispose()
