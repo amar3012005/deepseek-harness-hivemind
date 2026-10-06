@@ -1319,6 +1319,8 @@ describe('ChatView', () => {
   })
 
   it('keeps product-room terminal errors inside closed Work details', () => {
+    const previousUrl = window.location.href
+    window.history.replaceState(null, '', '/hivemind/app/overview/session/brain-test')
     document.documentElement.dataset.dshMode = 'hivemind-chat'
     try {
       const h = makeHarness({ nodes: [user(1, 'try'), turnError(2, 'INVALID_ARGUMENTS')] })
@@ -1329,10 +1331,13 @@ describe('ChatView', () => {
       expect(view.getByRole('status', { hidden: true }).closest('details')).toBe(disclosure)
     } finally {
       delete document.documentElement.dataset.dshMode
+      window.history.replaceState(null, '', previousUrl)
     }
   })
 
   it('keeps a failed tool without a final answer inside closed product Work details', () => {
+    const previousUrl = window.location.href
+    window.history.replaceState(null, '', '/hivemind/app/overview/session/brain-test')
     document.documentElement.dataset.dshMode = 'hivemind-chat'
     try {
       const h = makeHarness({ nodes: [user(1, 'try'), { ...toolResult(2, 'bad'), isError: true }] })
@@ -1340,7 +1345,8 @@ describe('ChatView', () => {
       const disclosure = view.getByText('Work details').closest('details')
       expect(disclosure?.open).toBe(false)
       expect(disclosure?.textContent).toContain('bash:bad')
-    } finally { delete document.documentElement.dataset.dshMode }
+    } finally { delete document.documentElement.dataset.dshMode
+      window.history.replaceState(null, '', previousUrl) }
   })
 
   it('renders terminal turn failures inline with their durable message and optional code', () => {
@@ -1624,6 +1630,8 @@ describe('ChatView', () => {
   })
 
   it('preserves product narration through live completion on a non-employee route', () => {
+    const previousUrl = window.location.href
+    window.history.replaceState(null, '', '/hivemind/app/overview/session/brain-test')
     document.documentElement.dataset.dshMode = 'hivemind-chat'
     try {
       const reply = assistant(2, 'I learned about our company', 1, 1)
@@ -1636,7 +1644,8 @@ describe('ChatView', () => {
       expect(row?.hasAttribute('data-turn-process-hidden')).toBe(false)
       act(() => { h.set({ nodes: [user(1, 'question'), reply, assistant(4, 'Sleeping now', 1, 2), user(6, 'next')], running: true }) })
       expect(row?.hasAttribute('hidden')).toBe(false)
-    } finally { delete document.documentElement.dataset.dshMode }
+    } finally { delete document.documentElement.dataset.dshMode
+      window.history.replaceState(null, '', previousUrl) }
   })
 
   it('keeps a live Turn expanded and folds it once at turn/end', () => {
