@@ -116,6 +116,17 @@ export async function allowsEmployeeWork(ctx: Context, target: Agent, ref: WorkR
   if (!ctx.agentTeams.listMembers(root).some(member => member.id === target.id && member.ownership === 'persistent')) {
     throw new Error('hq_persistent_assignee_required')
   }
+  // Re-read current Core registry authority even for an already bound persistent room.
+  const directoryService = ctx.get('agentPresets')?.serviceFor(root, 'hivemindEmployeeDirectory')
+    ?? ctx.get('hivemindEmployeeDirectory')
+  if (!directoryService) throw new Error('hq_employee_directory_required')
+  const directory = await directoryService.profiles(signal)
+  const profile = directory.profiles.find(value => value['id'] === assignment.data.employeeId)
+  if (!profile || profile['status'] === 'paused') return false
+  const policy = profile['policy_rules'] as { native_lifecycle?: { phase?: string; kind?: string; expires_at?: string } } | undefined
+  const lifecycle = policy?.native_lifecycle
+  if (lifecycle && (lifecycle.phase !== 'active' ||
+    (lifecycle.kind === 'temporary' && (!lifecycle.expires_at || Date.parse(lifecycle.expires_at) <= Date.now())))) return false
   const task = ctx.agentTeams.getTask(root, TeamTaskId(ref.taskId))
   if (!hqMode(events).enabled || (task.status === 'pending' && !task.ready) || ['completed', 'deleted'].includes(task.status)) return false
   const currentPlan = calendarItems(events).find(item => item.taskId === ref.taskId)

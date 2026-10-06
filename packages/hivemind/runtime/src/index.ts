@@ -1,3 +1,5 @@
+import type {} from '@deepseek-ai/dsh-schedule'
+import { employeeLifecycleTool } from './employee-lifecycle.ts'
 import { administratorMessageTool } from './administrator-messaging.ts'
 /**
  * Governed HIVE-MIND identity, context, recall, and HyperAgent discovery.
@@ -1112,6 +1114,27 @@ export function apply(ctx: Context, config: Config): void {
     const result = apiRecord(await hiveRequest(authority, '/administrator-message', { method: 'POST', body: JSON.stringify(input) }, signal, config), 'administrator message receipt')
     return Object.fromEntries(Object.entries(result).filter((entry): entry is [string, JsonValue] => entry[1] !== undefined))
   })))
+  if (config.companyAwakeningEnabled) ctx.inject(['schedule'], (lifecycleCtx) => {
+    lifecycleCtx.effect(() => lifecycleCtx.tools.register(employeeLifecycleTool(async (agent, input, signal) => {
+      if (config.authorityMode !== 'scoped-service') throw new HiveMindRuntimeError('Employee lifecycle requires scoped service authority')
+      const authority = await resolveAuthority(ctx, config, agent)
+      const result = apiRecord(await hiveRequest(authority, '/employee-lifecycle', { method: 'POST', body: JSON.stringify(input) }, signal, config), 'employee lifecycle receipt')
+      const employee = apiRecord(result['employee'], 'employee lifecycle profile')
+      const policy = apiRecord(employee['policyRules'], 'employee lifecycle policy')
+      const lifecycle = apiRecord(policy['native_lifecycle'], 'employee lifecycle state')
+      if (input['operation'] === 'create' && lifecycle['kind'] === 'temporary' && lifecycle['phase'] === 'active') {
+        const deadline = nonEmptyString(lifecycle['expires_at'], 'temporary employee deadline')
+        const id = nonEmptyString(employee['id'], 'temporary employee identity')
+        const wake = await lifecycleCtx.schedule.ensure(agent.id, `employee-closeout-${id}`, {
+          title: 'Review temporary employee closeout',
+          at: new Date(Math.max(Date.parse(deadline), Date.now() + 1000)).toISOString(),
+          prompt: `A temporary employee reached its saved deadline: ${id}. Inspect the current registry with hivemind_employee_lifecycle, begin closeout, and review actual saved work. Preserve private learning and handoff before archival. Do not dispatch new business work or claim completion from a notification alone.`,
+        })
+        result['closeout_schedule_id'] = wake.id
+      }
+      return Object.fromEntries(Object.entries(result).filter((entry): entry is [string, JsonValue] => entry[1] !== undefined))
+    })))
+  })
   installArtifactProductionGuidance(ctx)
   installCompanyStrategyGuidance(ctx)
   installCompletionLearningGuidance(ctx)
@@ -1718,6 +1741,7 @@ export function apply(ctx: Context, config: Config): void {
     ctx.effect(() => ctx.sessionProjections.register(employeeSelectionProjection))
     ctx.effect(() => ctx.sessionProjections.register(employeeLatestMessageProjection))
     if (config.authorityMode !== 'scoped-service') throw new HiveMindRuntimeError('private operating memory requires scoped-service authority')
+    const closingRestrictions = new WeakMap<Agent, () => void>()
     const ensureOwner = async (agent: Agent, signal: AbortSignal): Promise<SessionOwner> => {
       const events = agent.session.snapshotEvents()
       const existing = sessionOwner(events)
@@ -1731,7 +1755,26 @@ export function apply(ctx: Context, config: Config): void {
         if (!await ctx.sessions.flush(agent.session)) throw new HiveMindRuntimeError('Runtime owner persistence required')
         return owner
       }
-      if (existing !== undefined) return existing
+      if (existing !== undefined) {
+        if (existing.id !== null) {
+          const authority = await resolveAuthority(ctx, config)
+          const directory = hyperagentDirectory(await hiveRequest(authority, '/v1/hyperagents/profiles', { method: 'GET' }, signal, config))
+          const profile = directory.profiles.find(value => value['id'] === existing.id)
+          if (!profile) throw new HiveMindRuntimeError('persistent employee is no longer authorized')
+          const policy = profile['policy_rules'] as { native_lifecycle?: { phase?: string; kind?: string; expires_at?: string } } | undefined
+          const lifecycle = policy?.native_lifecycle
+          const closing = lifecycle && (lifecycle.phase !== 'active' || (lifecycle.kind === 'temporary' &&
+            (!lifecycle.expires_at || Date.parse(lifecycle.expires_at) <= Date.now())))
+          if (closing) {
+            closingRestrictions.get(agent)?.()
+            const safe = new Set(['hyperagents_memory', 'hivemind_agent_message', 'hivemind_artifact_inspect', 'read_document', 'team_task_get', 'team_task_list'])
+            const deny = agent.ctx.tools.schemas(agent).map(tool => tool.name).filter(name => !safe.has(name))
+            closingRestrictions.set(agent, agent.ctx.tools.restrict({ deny }))
+          }
+
+        }
+        return existing
+      }
       const selected = sessionSelectedEmployee(agent)
       let owner: SessionOwner = runtime
         ? { id: null, slug: 'runtime', name: 'Runtime', role: 'AI Chief of Staff' }
