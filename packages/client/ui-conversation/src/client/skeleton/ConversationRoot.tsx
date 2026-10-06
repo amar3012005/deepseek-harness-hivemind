@@ -313,7 +313,7 @@ export function ConversationRoot({
         },
         onClose: () => { setPickerOpen(false) },
       })}
-      {renderSlot('conversation.hero.agentPreset', {})}
+      {!/^\/hivemind\/app\/overview(?:\/session\/[^/]+)?\/?$/.test(window.location.pathname) && renderSlot('conversation.hero.agentPreset', {})}
     </div>
   )
 

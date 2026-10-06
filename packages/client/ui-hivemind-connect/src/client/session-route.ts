@@ -138,7 +138,7 @@ export function setupHivemindSessionRouting(
     }
     creating = true
     const creatingBase = currentBase
-    void sessions.create(creatingBase === HIVE_EMPLOYEE_HARNESS_PATH ? { hyperagentRoom: 'runtime' } : {}).then((sessionId) => {
+    void sessions.create(creatingBase === HIVE_EMPLOYEE_HARNESS_PATH ? { hyperagentRoom: 'runtime' } : { agentPreset: 'hivemind-chat' }).then((sessionId) => {
       if (disposed || attempt !== generation) return
       if (creatingBase === HIVE_EMPLOYEE_HARNESS_PATH) creatingOsSession = sessionId
       applyingRoute = true

@@ -36,6 +36,7 @@ export interface ISessions {
     workspaceId?: WorkspaceId
     cwd?: string
     hyperagentRoom?: string
+    agentPreset?: string
     sessionId?: SessionId
   }): Promise<SessionId>
   /**

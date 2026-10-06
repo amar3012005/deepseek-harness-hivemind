@@ -157,6 +157,7 @@ describe('HIVE native session routes', () => {
     install(harness.sessions)
     await vi.waitFor(() => { expect(harness.open).toHaveBeenCalledWith('session-created') })
     expect(harness.create).toHaveBeenCalledTimes(1)
+    expect(harness.create).toHaveBeenCalledWith({ agentPreset: 'hivemind-chat' })
     expect(window.location.pathname).toBe(hivemindSessionPath(sid('session-created')))
   })
 

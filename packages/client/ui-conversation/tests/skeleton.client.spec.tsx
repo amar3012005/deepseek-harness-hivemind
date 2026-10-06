@@ -325,6 +325,20 @@ function mount(
 }
 
 describe('Hero chrome', () => {
+  it('shows Brain identity at the composer edge without a preview badge', () => {
+    const previous = window.location.pathname
+    window.history.replaceState(null, '', '/hivemind/app/overview')
+    try {
+      const renderSlot = vi.fn<HeroShellProps['renderSlot']>(() => null)
+      const view = render(<HeroShell t={makeTranslate(en, commonEn)} renderSlot={renderSlot} />)
+      expect(view.getByText('BRAIN: “Let\'s remember what matters.”')).toBeTruthy()
+      expect(view.queryByText('Preview')).toBeNull()
+      expect(view.container.querySelector('[data-brain-intro]')).not.toBeNull()
+    } finally {
+      window.history.replaceState(null, '', previous)
+    }
+  })
+
   it('renders the English preview badge through the hero locale seat', () => {
     const renderSlot = vi.fn<HeroShellProps['renderSlot']>(() => null)
     const view = render(<HeroShell t={makeTranslate(en, commonEn)} renderSlot={renderSlot} />)

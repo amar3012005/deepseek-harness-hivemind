@@ -131,10 +131,11 @@ function HeroFish({ hovering }: { hovering: boolean }) {
  */
 export function HeroShell({ t, renderSlot, children }: HeroShellProps) {
   const [hovering, setHovering] = useState(false)
+  const brainRoom = /^\/hivemind\/app\/overview(?:\/session\/[^/]+)?\/?$/.test(window.location.pathname)
   return (
     <div className={css.root}>
       <div className={css.stack}>
-        <div className={css.headline} data-conversation-intro-headline>
+        <div className={css.headline} data-conversation-intro-headline data-brain-intro={brainRoom || undefined}>
           {/* figma 34:10412: fish 34×25 leading the headline, gap 10. */}
           <span
             className={css.fishHitbox}
@@ -151,8 +152,10 @@ export function HeroShell({ t, renderSlot, children }: HeroShellProps) {
           </span>
           <span className={css.titleGroup}>
             {/* Own element: keeps the headline text addressable apart from the badge. */}
-            <span>{t('hero.headline')}</span>
-            <span className={css.previewBadge}>{t('hero.preview')}</span>
+            {brainRoom ? <span>BRAIN: “Let's remember what matters.”</span> : <>
+              <span>{t('hero.headline')}</span>
+              <span className={css.previewBadge}>{t('hero.preview')}</span>
+            </>}
           </span>
         </div>
         <div className={css.body}>

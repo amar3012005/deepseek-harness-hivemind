@@ -229,3 +229,7 @@
   line-height: 18px;
   color: var(--dsw-alias-state-error-primary);
 }
+
+/* Brain identity follows the composer’s leading edge. */
+.headline[data-brain-intro] { justify-content: flex-start; }
+.headline[data-brain-intro] .titleGroup { justify-content: flex-start; }

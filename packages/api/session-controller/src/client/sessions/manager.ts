@@ -555,12 +555,14 @@ export class SessionManager {
       workspaceId?: WorkspaceId
       cwd?: string
       hyperagentRoom?: string
+      agentPreset?: string
       sessionId?: SessionId
     } = {},
   ): Promise<RemoteResult<{ sessionId: SessionId }>> {
     const shared = {
       ...(opts.sessionId === undefined ? {} : { sessionId: opts.sessionId }),
       ...(opts.hyperagentRoom === undefined ? {} : { hyperagentRoom: opts.hyperagentRoom }),
+      ...(opts.agentPreset === undefined ? {} : { agentPreset: opts.agentPreset }),
     }
     const payload = opts.workspaceId !== undefined
       ? { workspaceId: opts.workspaceId, ...shared }
