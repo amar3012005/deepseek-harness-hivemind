@@ -232,7 +232,7 @@ export function ConversationSession({
   }, [inputActions])
 
   if (session.blank && conversationPhase(session, conversation) === 'blank') {
-    if (session.openState === 'loading') return <div className={css.sessionWaiting} role="status">Loading conversation…</div>
+    if (session.openState === 'loading' || session.openState === 'cold') return <div className={css.sessionWaiting} role="status">Loading conversation…</div>
     if (session.openState === 'error' && session.openError !== null) {
       return <div className={css.sessionWaiting} role="alert">Conversation could not be loaded: {session.openError.message}</div>
     }
