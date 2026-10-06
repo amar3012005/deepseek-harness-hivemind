@@ -83,6 +83,16 @@ export function apply(ctx:Context,config:Config):void {
             title:'Review temporary employee closeout',at:new Date(Math.max(Date.parse(proof.expiresAt),Date.now()+1000)).toISOString(),
             prompt:`A temporary employee reached its saved deadline: ${input.employeeId}. Inspect its registry state and saved work. Begin closeout, review submitted artifacts, and retain private learning and handoff before archival. Do not assign new business work.`,
           })
+          // Archive may have completed its cleanup while this request was creating
+          // the wake. Reconcile after the native write; unknown authority removes it.
+          try {
+            const current=proofSchema.parse(await ctx.serial('hivemind/employee-lifecycle-proof',{employeeId:input.employeeId,signal:AbortSignal.timeout(8000)}))
+            if(current.employeeId!==input.employeeId || current.phase!=='active' || current.revision!==proof.revision
+              || current.chief?.sessionId!==proof.chief.sessionId || current.expiresAt!==proof.expiresAt) throw Error('employee_lifecycle_changed')
+          } catch {
+            await ctx.schedule.delete({sessionId:SessionId(proof.chief.sessionId),id:wake.id})
+            throw Error('employee_lifecycle_changed')
+          }
           reply(res,200,{status:'ready',employeeId:input.employeeId,revision:proof.revision,scheduleId:wake.id});return
         }
         reply(res,200,{status:'ready',employeeId:input.employeeId,revision:proof.revision})
