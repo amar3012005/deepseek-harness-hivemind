@@ -1,4 +1,5 @@
-import { registerBrainPlan, requestBrainPlan } from './chatgpt-plan.ts'
+import { registerPlanConnection } from './chatgpt-plan-connection.ts'
+import { registerBrainPlan, requestBrainPlan, requestBrainAccount, requestBrainRoute } from './chatgpt-plan.ts'
 /** HIVE-MIND embedded Web authentication and production health routes. */
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
@@ -63,6 +64,8 @@ export interface Config {
   liveVoice: LiveVoiceConfig
   /** Disabled until hosted plan approval, credentials and canary are ready. */
   chatgptPlanBrainEnabled?: boolean
+  chatgptPlanFallbackProvider?: string
+  chatgptPlanFallbackModel?: string
 }
 
 export const Config: z<Config> = z.object({
@@ -76,6 +79,8 @@ export const Config: z<Config> = z.object({
   serviceHttpOrigins: z.array(String).default([]),
   serviceSecretEnv: z.string().required(),
   chatgptPlanBrainEnabled: z.boolean().default(false),
+  chatgptPlanFallbackProvider: z.string().default('cloudflare-openrouter-streaming'),
+  chatgptPlanFallbackModel: z.string().default('openai/gpt-6-luna'),
   liveVoice: z.object({
     enabled: z.boolean().default(true),
     model: z.string().default('gpt-live-1-codex'),
@@ -304,7 +309,24 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
     throw new Error('hivemind-web-runner: project catalog service secret must be at least 32 bytes')
   }
   registerBrainPlan(ctx, config.chatgptPlanBrainEnabled ?? false, options =>
-    requestBrainPlan(projectCatalogBase.origin, projectCatalogSecret, ctx.hivemindExecutionScope.require(), options))
+    requestBrainPlan(projectCatalogBase.origin, projectCatalogSecret, ctx.hivemindExecutionScope.require(), options), {
+    route: (options) => {
+      let principal
+      try { principal = ctx.hivemindExecutionScope.require() } catch { return Promise.resolve(false) }
+      return requestBrainRoute(projectCatalogBase.origin, projectCatalogSecret, principal, options)
+    },
+    account: () => requestBrainAccount(projectCatalogBase.origin, projectCatalogSecret, ctx.hivemindExecutionScope.require()),
+    fallback: (options) => {
+      const provider = config.chatgptPlanFallbackProvider ?? 'cloudflare-openrouter-streaming'
+      if (provider === 'hivemind-chatgpt-plan-brain') throw new Error('ChatGPT fallback must use a platform provider')
+      return ctx.llm.stream({ ...options, provider, model: config.chatgptPlanFallbackModel ?? 'openai/gpt-6-luna' })
+    },
+  })
+  registerPlanConnection(ctx, projectCatalogBase.origin, (req) => {
+    const principal = ctx.connection.principal({ headers: { host: publicHost(req) || req.headers.host, cookie: req.headers.cookie } })
+    return principal?.profile === 'hivemind-chat' && nonEmpty(principal.user_id) && nonEmpty(principal.org_id)
+      ? serviceToken(principal, projectCatalogSecret) : undefined
+  }, req => `https://${publicHost(req) || req.headers.host}`)
   registerRunnerDrainStatus(ctx, projectCatalogSecret)
   const redis = createClient({ url: env(config.redisUrlEnv) }) as RedisClientType
   redis.on('error', (error) => { ctx.logger.warn('hivemind-web-runner: Redis error', error) })

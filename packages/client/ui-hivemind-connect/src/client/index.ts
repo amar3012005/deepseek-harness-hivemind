@@ -1,3 +1,4 @@
+import { ChatgptPlanConnection } from './ChatgptPlanConnection.tsx'
 import { employeeJoining, EmployeeJoiningMilestone, type EmployeeJoining } from './employee-joining.tsx'
 import { BrainModeIcon } from './BrainModeIcon.tsx'
 import { roomIdentity } from './room-identity.ts'
@@ -129,6 +130,7 @@ async function answerConnectionQuestion(
 
 /** Register the localized HIVE-MIND connection control above sidebar Settings. */
 export function apply(ctx: ClientContext): void {
+  ctx.slots.inject('conversation.composer.footer', () => ctx.slots.register({ name: 'conversation.composer.footer', id: 'brain-chatgpt-connection' }, ChatgptPlanConnection))
   ctx.slots.inject('schedule.manager.external', () => ctx.slots.register({ name: 'schedule.manager.external', id: 'company-dreaming', order: 0 }, DreamingAutomation))
   ctx.slots.inject('settings.general.item', () => ctx.slots.register({ name: 'settings.general.item', id: 'company-dreaming', order: 35 }, DreamingSettings))
   if (typeof window !== 'undefined' && window.location.pathname.startsWith('/hivemind/app/employee/harness/')) {

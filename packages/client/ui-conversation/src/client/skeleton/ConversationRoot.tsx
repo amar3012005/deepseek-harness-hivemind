@@ -363,6 +363,7 @@ export function ConversationRoot({
   const composerSeat = (
     <div ref={seatResizeRef} className={css.composerSeat} data-composer-seat="">
       {composer}
+      {renderSlot('conversation.composer.footer', {})}
     </div>
   )
 
