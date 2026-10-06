@@ -269,3 +269,8 @@
 }
 .dayJump select { max-width: 165px; color: inherit; background: transparent; border: 0; font: inherit; }
 @media (max-width: 640px) { .dayJump span { display: none; } .dayJump select { max-width: 130px; } }
+
+@media (max-width: 900px) {
+  :global([data-agent-room]) .dayJump { position: fixed; top: 104px; right: 12px; z-index: 9; min-height: 40px; box-sizing: border-box; padding: 0 8px; }
+  :global([data-agent-room]) .dayJump select { min-height: 40px; max-width: 180px; }
+}

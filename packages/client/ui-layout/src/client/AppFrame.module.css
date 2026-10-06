@@ -160,3 +160,11 @@
 .handle[data-side='rightbar']::after { content: ''; position: absolute; top: 42%; bottom: 42%; left: 6px; width: 3px; border-radius: 3px; background: var(--dsw-alias-border-l4); }
 .handle[data-side='rightbar']:hover::after { background: var(--dsw-alias-label-secondary); }
 :global(html[data-agent-room-opening]) .frame::after { content: 'Opening agent room…'; position: absolute; inset: 0; display: grid; place-items: center; z-index: 80; background: var(--dsw-alias-bg-base); color: var(--dsw-alias-label-secondary); }
+
+/* On mobile an employee Preview is a focused native screen, not a narrow desktop split. */
+@media (max-width: 900px) {
+  .frame:has(:global([data-agent-room])) { grid-template-columns: 0 minmax(0, 1fr) 0 !important; }
+  .frame:has(:global([data-agent-room])) .handle { display: none; }
+  .frame:has(:global([data-agent-room])) :global([data-sidebar-right-panel]) { position: fixed; inset: 56px 0 0; width: 100% !important; max-width: none; z-index: 45; }
+  .frame:has(:global([data-agent-room])) :global([data-sidebar-right-panel]) button { min-height: 40px; }
+}
