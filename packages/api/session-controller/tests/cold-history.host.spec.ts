@@ -122,7 +122,7 @@ describe('bounded native history', () => {
     const dispose = vi.fn()
     const complete: SessionObservation = {
       source: 'prepared', header: fixture.header, inheritedEventCount: SessionLogOffset(0),
-      cursor: 4999, events: completeEvents,
+      cursor: SessionSeq(4999), events: completeEvents,
       retain: () => complete, [Symbol.dispose]: dispose,
     }
     const observe = vi.fn(async () => complete)

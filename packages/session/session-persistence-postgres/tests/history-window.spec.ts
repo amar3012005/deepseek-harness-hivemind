@@ -77,7 +77,7 @@ it.skipIf(fixture === undefined)('loads only a recent native window under forced
     const role = await pool.query('SELECT rolsuper,rolbypassrls FROM pg_roles WHERE rolname=current_user')
     expect(role.rows[0]).toEqual({ rolsuper: false, rolbypassrls: false })
     const rls = await admin.query<{ forced: boolean }>('SELECT bool_and(relforcerowsecurity) AS forced FROM pg_class WHERE relname=ANY($1)', [['harness_sessions', 'harness_session_events', 'harness_session_leases']])
-    expect(rls.rows[0].forced).toBe(true)
+    expect(rls.rows[0]?.forced).toBe(true)
     const fullHandle = await scope.run(a, () => store.open(id, 'read'))
     const fullBegan = performance.now()
     const full = await fullHandle.read(0)
