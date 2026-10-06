@@ -66,3 +66,8 @@ button.pill[aria-expanded='true'] {
   color: var(--dsw-alias-separator-primary);
   margin: 0 6px;
 }
+
+/* Phone Brain keeps the compact legacy composer free of technical counters. */
+@media (max-width: 600px) {
+  :global([data-brain-chat]) .root { display: none; }
+}
