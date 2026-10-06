@@ -39,3 +39,9 @@
   font-weight: 400 !important;
   opacity: .58;
 }
+
+@media (max-width: 900px) {
+  :global([data-native-chat]) .root { flex-wrap: wrap; white-space: normal; }
+  :global([data-native-chat]) .select, :global([data-native-chat]) .project { min-height: 44px; font-size: 16px; }
+  :global([data-native-chat]) .select { max-width: 150px; }
+}
