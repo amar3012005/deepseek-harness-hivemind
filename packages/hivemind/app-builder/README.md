@@ -51,3 +51,7 @@ Source-mode module URLs preserve a single module identity. It verifies live scop
 HTTP, skill discovery, disabled-flag absence, and Brain absence. This focused boot
 covers the capability subtree; the complete shipped runner still needs its own
 read-only boot check before release.
+
+The fixture also supports `CRM_NATIVE_PREVIEW_FACE=lib` for immutable-image checks.
+Run it with compiled workspace package resolution (no source tsconfig path aliases)
+so both the Loader and its capability modules come from the artifact's built files.

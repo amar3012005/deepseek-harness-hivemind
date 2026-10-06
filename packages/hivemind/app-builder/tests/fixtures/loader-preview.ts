@@ -17,6 +17,8 @@ const userId = process.env.CRM_NATIVE_PREVIEW_USER_ID
 const origin = process.env.CRM_NATIVE_PREVIEW_ORIGIN
 const secret = process.env.CRM_NATIVE_PREVIEW_SERVICE_SECRET
 const appId = process.env.CRM_NATIVE_PREVIEW_APP_ID
+const face = process.env.CRM_NATIVE_PREVIEW_FACE ?? 'src'
+if (face !== 'src' && face !== 'lib') throw Error('Preview face must be src or lib')
 if (!orgId || !userId || !origin || !secret || !appId)
   throw Error('Explicit disposable preview identity, origin, secret and app required')
 if (!['localhost', '127.0.0.1'].includes(new URL(origin).hostname)) throw Error('Use a loopback disposable preview')
@@ -39,7 +41,7 @@ for (const [preset, enabled] of [
   const row = find(yaml.load(readFileSync(presetFile, 'utf8'), { schema: entryListSchema }))
   const dir = mkdtempSync(join(tmpdir(), 'crm-loader-proof-'))
   const file = join(dir, 'cordis.yml')
-  const source = (path: string) => pathToFileURL(`${root}/${path}/src/index.ts`).href
+  const source = (path: string) => pathToFileURL(`${root}/${path}/${face === 'lib' ? 'lib/index.js' : 'src/index.ts'}`).href
   const configs = [
     { id: 'system-prompt', name: source('packages/core/system-prompt'), config: {} },
     { id: 'tools', name: source('packages/core/tools') },
