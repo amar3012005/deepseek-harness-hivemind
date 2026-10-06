@@ -8,6 +8,10 @@ import ExecutionScope, { type HivemindPrincipal } from '@deepseek-ai/dsh-hivemin
 import { SessionId } from '@deepseek-ai/dsh-session'
 import { createAtScheduleRecord, ScheduleId, type ScheduleTask } from '@deepseek-ai/dsh-schedule'
 import PostgresScheduleBackend, { type Config } from '../src/index.ts'
+import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
+import Tools from '@deepseek-ai/dsh-tools'
+import Skills from '@deepseek-ai/dsh-skill'
+import * as AppBuilder from '../../app-builder/src/index.ts'
 
 const url = process.env.DSH_SCHEDULE_TEST_URL
 const suite = url === undefined ? describe.skip : describe
@@ -59,7 +63,7 @@ suite('tenant PostgreSQL Schedule provider', () => {
     const parsed = new URL(url!)
     if (!['localhost', '127.0.0.1'].includes(parsed.hostname) || parsed.pathname !== '/schedule_test')
       throw new Error('Use the disposable local schedule_test database')
-    admin = new Pool({ connectionString: url })
+    admin = new Pool({ connectionString: url, options: `-c search_path=${schema},public` })
     await admin.query(`CREATE SCHEMA ${schema}; SET search_path=${schema},public;
       DO $$ BEGIN IF NOT EXISTS(SELECT FROM pg_roles WHERE rolname='codex_schedule_test') THEN CREATE ROLE codex_schedule_test NOLOGIN NOSUPERUSER NOBYPASSRLS; END IF; END $$;
       CREATE TABLE users(id uuid PRIMARY KEY,deleted_at timestamptz);
@@ -242,6 +246,35 @@ suite('tenant PostgreSQL Schedule provider', () => {
       await otherCtx.fiber.dispose()
     }
     expect((await admin.query('SELECT * FROM harness_scheduled_due')).rowCount).toBe(0)
+  })
+  it('restores a project owner for cold delivery and rejects organization CRM before transport', async () => {
+    const projectId = randomUUID()
+    await admin.query("UPDATE harness_sessions SET project_id=$1 WHERE id='a-session'", [projectId])
+    await scope.run(a, () =>
+      backend.manage(table => table.put(ScheduleId('crm-project-task'), task('crm-project-task', 'a-session', Date.now() - 1000))),
+    )
+    await ctx.plugin(SystemPrompt, {})
+    await ctx.plugin(Tools)
+    await ctx.plugin(Skills)
+    const consumer = await ctx.plugin(AppBuilder, {
+      serviceApiBase: 'http://127.0.0.1:1',
+      serviceSecretEnv: 'CRM_PROJECT_REJECTION_NO_SECRET',
+    })
+    let deliveries = 0
+    try {
+      await backend.dispatch(async (table) => {
+        deliveries++
+        expect(scope.require()).toEqual({ ...a, projectId })
+        const get = ctx.tools.get('hivemind_app_get')!
+        await expect(get.execute(
+          { app_id: randomUUID() }, { signal: new AbortController().signal } as never,
+        )).rejects.toThrow('project-scoped sessions cannot access CRM')
+        const current = table.get(ScheduleId('crm-project-task'))!
+        await table.put(current.record.id, { ...current, status: 'inactive' })
+      })
+      expect(deliveries).toBe(1)
+      expect((await admin.query('SELECT * FROM harness_scheduled_due')).rowCount).toBe(0)
+    } finally { await consumer.dispose() }
   })
   it('leaves a live session due for its owning replica without moving the deadline', async () => {
     const value = task('a-task', 'a-session', Date.now() - 1000)
