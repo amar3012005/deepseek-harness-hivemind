@@ -1,4 +1,5 @@
 /** Gated public Responses adapter. Core owns grants; no OAuth token enters the runner. */
+import type { Context } from '@deepseek-ai/cordis'
 import { createHmac, randomUUID } from 'node:crypto'
 import { LlmAdapter, LlmError, ToolCallId, attributionHeaders } from '@deepseek-ai/dsh-llm'
 import type { GenerateOptions, StreamChunk } from '@deepseek-ai/dsh-llm'
@@ -167,5 +168,14 @@ export async function requestBrainPlan(base: string, secret: string, principal: 
     method: 'POST', redirect: 'error', ...(options.signal ? { signal: options.signal } : {}),
     headers: { ...attributionHeaders(), authorization: `Bearer ${brainBrokerToken(principal, secret)}`, 'content-type': 'application/json' },
     body: JSON.stringify({ session_id: options.sessionId, request: planRequest(options) }),
+  })
+}
+
+/** Native Cordis service registration, disposed with its plugin scope. */
+export function registerBrainPlan(ctx: Context, enabled: boolean,
+  broker: (options: GenerateOptions) => Promise<Response>): void {
+  if (!enabled) return
+  ctx.inject(['llm'], (planCtx) => {
+    planCtx.effect(() => planCtx.llm.registerAdapter(['hivemind-chatgpt-plan-brain'], new BrainPlanAdapter(broker)))
   })
 }
