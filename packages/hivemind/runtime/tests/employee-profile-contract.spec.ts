@@ -1,5 +1,5 @@
 import { expect, it, vi } from 'vitest'
-import { validateEmployeeProfileFields, lifecycleBusinessError, employeeLifecycleTool } from '../src/employee-lifecycle.ts'
+import { validateEmployeeProfileFields, lifecycleBusinessError, employeeLifecycleTool, confirmedEmployeeDeadlineSchedule } from '../src/employee-lifecycle.ts'
 it('matches Core profile bounds without truncating user responsibilities', () => {
   for (const [field, limit] of [['name', 100], ['role', 40], ['persona', 12000]] as const) {
     expect(() => validateEmployeeProfileFields({ [field]: 'a'.repeat(limit) })).not.toThrow()
@@ -23,4 +23,12 @@ it('rejects oversized profile input locally before any lifecycle request', async
   const tool = employeeLifecycleTool(send)
   await expect(tool.execute({ operation: 'configure', role: 'a'.repeat(41) }, { signal: new AbortController().signal } as never)).rejects.toThrow('invalid_role')
   expect(send).not.toHaveBeenCalled()
+})
+
+it('uses only the exact Core-confirmed temporary deadline receipt without a second producer', () => {
+  const ready = { status: 'ready', employeeId: 'employee', scheduleId: 'schedule-native' }
+  expect(confirmedEmployeeDeadlineSchedule('employee', ready)).toBe('schedule-native')
+  for (const receipt of [undefined, null, { ...ready, status: 'pending' }, { ...ready, employeeId: 'other' }, { ...ready, scheduleId: '' }]) {
+    expect(confirmedEmployeeDeadlineSchedule('employee', receipt)).toBeUndefined()
+  }
 })

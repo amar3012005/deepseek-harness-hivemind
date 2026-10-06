@@ -1,5 +1,5 @@
 import type {} from '@deepseek-ai/dsh-schedule'
-import { employeeLifecycleTool, employeeProfileTool, lifecycleBusinessError } from './employee-lifecycle.ts'
+import { employeeLifecycleTool, employeeProfileTool, lifecycleBusinessError, confirmedEmployeeDeadlineSchedule } from './employee-lifecycle.ts'
 import { administratorMessageTool } from './administrator-messaging.ts'
 /**
  * Governed HIVE-MIND identity, context, recall, and HyperAgent discovery.
@@ -1150,21 +1150,10 @@ export function apply(ctx: Context, config: Config): void {
       const policy = apiRecord(employee['policyRules'], 'employee lifecycle policy')
       const lifecycle = apiRecord(policy['native_lifecycle'], 'employee lifecycle state')
       if (input['operation'] === 'create' && lifecycle['kind'] === 'temporary' && lifecycle['phase'] === 'active') {
-        const deadline = nonEmptyString(lifecycle['expires_at'], 'temporary employee deadline')
-        const id = nonEmptyString(employee['id'], 'temporary employee identity')
-        const wake = await lifecycleCtx.schedule.ensure(agent.id, `employee-closeout-${id}`, {
-          title: 'Review temporary employee closeout',
-          at: new Date(Math.max(Date.parse(deadline), Date.now() + 1000)).toISOString(),
-          prompt: `A temporary employee reached its saved deadline: ${id}. Inspect the current registry with hivemind_employee_lifecycle, begin closeout, and review actual saved work. Preserve private learning and handoff before archival. Do not dispatch new business work or claim completion from a notification alone.`,
-        })
-        try {
-          const current = apiRecord(await hiveRequest(authority, '/employee-lifecycle-proof', { method: 'POST', body: JSON.stringify({ employee_id: id }) }, signal, config), 'employee lifecycle proof')
-          if (current['phase'] !== 'active' || current['revision'] !== lifecycle['revision'] || current['expiresAt'] !== deadline) throw new HiveMindRuntimeError('Employee lifecycle changed during deadline setup')
-        } catch (error) {
-          await lifecycleCtx.schedule.delete({ sessionId: agent.id, id: wake.id })
-          throw error
-        }
-        result['closeout_schedule_id'] = wake.id
+        // Core's authenticated callback owns deadline scheduling. Re-ensuring
+        // here with different instructions conflicts with its committed wake.
+        const scheduleId = confirmedEmployeeDeadlineSchedule(employee['id'], result['native_activation'])
+        if (scheduleId !== undefined) result['closeout_schedule_id'] = scheduleId
       }
       return Object.fromEntries(Object.entries(result).filter((entry): entry is [string, JsonValue] => entry[1] !== undefined))
     })))

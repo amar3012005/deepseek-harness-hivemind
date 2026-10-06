@@ -67,3 +67,11 @@ export function employeeProfileTool(send: SendProfile) {
     },
   })
 }
+
+/** Core's callback is the single deadline producer; preserve pending receipts. */
+export function confirmedEmployeeDeadlineSchedule(employeeId: unknown, activation: unknown): string | undefined {
+  if (typeof activation !== 'object' || activation === null || Array.isArray(activation)) return undefined
+  const value = activation as Record<string, unknown>
+  return value['status'] === 'ready' && value['employeeId'] === employeeId
+    && typeof value['scheduleId'] === 'string' && value['scheduleId'].length > 0 ? value['scheduleId'] : undefined
+}
