@@ -171,6 +171,18 @@ export abstract class SessionPersistence extends Service {
   abstract open(id: SessionId, access: SessionAccess, options?: SessionPersistenceOpenOptions): Promise<SessionHandle>
 
   /**
+   * Open a read-only presentation handle without requiring a whole-log body
+   * preflight. Backends may override when metadata plus independently
+   * validated slices are sufficient. This never claims write ownership or
+   * constructs a Session; complete Agent replay still uses ordinary open.
+   * The default preserves existing backend behavior.
+   */
+  openHistoryRead(id: SessionId, options?: SessionPersistenceOpenOptions): Promise<SessionHandle> {
+    return this.open(id, 'read', options)
+  }
+
+
+  /**
    * Flush every active write handle owned by this service instance in one
    * durability barrier: each handle's routed live events drain durably and
    * its session materializes, exactly as that handle's own

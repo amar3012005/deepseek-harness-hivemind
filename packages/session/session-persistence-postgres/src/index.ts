@@ -227,6 +227,18 @@ export class PostgresSessionPersistence extends SessionPersistence {
     }
     return this.track(new PostgresHandle(this,scope,meta.id,meta,cut,'write',claim))
   }
+  /** Scoped read-only window; body vocabulary/envelopes validate on each slice. */
+  override async openHistoryRead(id: SessionId, options?: SessionPersistenceOpenOptions): Promise<SessionHandle> {
+    checkAbort(options?.signal)
+    const scope = this.capture()
+    const row = await this.row(scope, id)
+    if (row === undefined) throw new SessionPersistenceNotFoundError(id)
+    assertVersion(row.header)
+    const meta = materializeCreateHeader(row.header)
+    return this.track(new PostgresHandle(this, scope, id, meta,
+      inheritedCut(meta, Number(row.inherited_event_count)), 'read'))
+  }
+
   async open(id: SessionId, access: SessionAccess, options?: SessionPersistenceOpenOptions): Promise<SessionHandle> {
     checkAbort(options?.signal)
     const scope = this.capture()
@@ -369,6 +381,7 @@ export class PostgresSessionPersistence extends SessionPersistence {
       return item.payload
     })
     validateStoredEvents(row.header, events)
+    assertContiguous(id, events, offset)
     return { eventState: 'shared-frozen', events }
   }
   async append(scope: HivemindPrincipal, id: SessionId, claim: Owner, events: readonly SessionEvent[]): Promise<void> {

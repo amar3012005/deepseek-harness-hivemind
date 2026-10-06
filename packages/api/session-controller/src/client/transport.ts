@@ -188,6 +188,7 @@ export class SessionEventStream extends RemoteJournalStream<
       address: this.address,
       assistantStream: true,
       ...(request.maxMessages === undefined ? {} : { maxMessages: request.maxMessages }),
+      ...(request.maxTurns === undefined ? {} : { maxTurns: request.maxTurns }),
     }, signal)) {
       if (frame.type === 'snapshot') {
         const records = frame.records.map(record => ({ ...record, event: acceptedWireEvent(record.event) }))
@@ -244,6 +245,9 @@ export class SessionEventStream extends RemoteJournalStream<
   protected override repairRequest(
     request: ClientSessionPageRequest,
   ): ClientSessionPageRequest {
-    return request.maxMessages === undefined ? {} : { maxMessages: request.maxMessages }
+    return {
+      ...(request.maxMessages === undefined ? {} : { maxMessages: request.maxMessages }),
+      ...(request.maxTurns === undefined ? {} : { maxTurns: request.maxTurns }),
+    }
   }
 }

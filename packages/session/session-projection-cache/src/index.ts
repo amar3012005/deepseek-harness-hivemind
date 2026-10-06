@@ -296,6 +296,35 @@ export class SessionProjectionCache extends Service {
   }
 
 
+  /**
+   * Native cold-history suffix floor, bound to the stored lifecycle identity.
+   * Missing or incompatible units require a complete replay (floor zero).
+   */
+  coldReadFloor(meta: SessionHeader, inheritedEventCount: SessionLogOffset): SessionLogOffset | undefined {
+    return this.ctx.sessionProjections.restoreFloor(
+      this.recordFor(meta.id, identityOf(meta, inheritedEventCount))?.rows ?? {},
+    )
+  }
+
+  /**
+   * Restore the exact wire baseline from an identity-checked checkpoint and
+   * its contiguous durable suffix. This never seeds or publishes a Session.
+   * A stale/shrunk checkpoint throws; the caller must use ordinary full replay.
+   * Synthetic interrupted-tail events may be included; this read does not
+   * write them, or their projection watermark, into the durable cache.
+   */
+  coldSnapshotSuffix(
+    meta: SessionHeader,
+    inheritedEventCount: SessionLogOffset,
+    events: readonly SessionEvent[],
+    baseSeq: SessionLogOffset,
+  ): ProjectionSnapshot {
+    return this.ctx.sessionProjections.restore(
+      this.recordFor(meta.id, identityOf(meta, inheritedEventCount))?.rows ?? {},
+      events, baseSeq, meta, inheritedEventCount,
+    ).snapshot
+  }
+
   // --- write-behind (throttle + mandatory points) ---
 
   private installWritePath(): void {

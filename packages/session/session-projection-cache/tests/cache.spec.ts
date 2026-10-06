@@ -730,3 +730,20 @@ describe('SessionProjectionCache cold-read seeding', () => {
     }, { timeout: 5_000 })
   })
 })
+
+it('restores a cold presentation baseline from the native checkpoint suffix without writing synthetic state', async () => {
+  const { ctx, cache } = await harness()
+  const session = ctx.sessions.create(undefined, { meta: { cwd: '/workspace' } })
+  for (let index = 0; index < 20; index++) mark(session, [`m${index}`])
+  await cache.write(session)
+  const floor = cache.coldReadFloor(session.header, session.inheritedEventCount)!
+  expect(floor).toBe(session.seq - 1)
+  const later = mark(session, ['new'])
+  const before = cache.cachedSnapshot(session.header, session.inheritedEventCount)
+  const suffix = session.snapshotEvents(floor)
+  const restored = cache.coldSnapshotSuffix(session.header, session.inheritedEventCount, suffix, floor)
+  expect(restored).toMatchObject({ asOfSeq: later.seq, values: { 'cache-test/marks': { marks: ['new'] } } })
+  expect(cache.cachedSnapshot(session.header, session.inheritedEventCount)).toEqual(before)
+  expect(() => cache.coldSnapshotSuffix(session.header, session.inheritedEventCount, [], floor)).toThrow()
+  expect(cache.coldReadFloor({ ...session.header, createdAt: session.header.createdAt + 1 }, session.inheritedEventCount)).toBe(0)
+})

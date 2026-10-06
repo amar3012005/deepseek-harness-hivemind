@@ -84,3 +84,21 @@ None.
 </details>
 
 **Runtime invariant:** No companion is published. Every page and frame is checked against the addressed durable Session.
+
+
+### Bounded initial presentation
+
+Ordinary Session clients request the most recent 20 complete turns on initial
+opening. Older pages and date navigation retain the existing native cursor
+protocol and source-event grouping. Long cold ordinary sessions can publish
+that opening window through a read-only persistence handle and a compatible
+projection checkpoint before complete Agent context restoration finishes.
+The partial presentation source is never an Agent seed or a prepared Session.
+
+The PostgreSQL history handle retains authenticated organization scope and
+validates each contiguous slice without reading the entire body at open.
+Ordinary persistence opening and Agent recovery keep their complete validation.
+Missing or incompatible checkpoints, direct child lineage and interrupted tails
+use ordinary complete observation. Fixed page cursors exclude concurrent appends
+beyond the captured cut. Full context preparation remains independent of the
+browser window and is disposed with its follower.

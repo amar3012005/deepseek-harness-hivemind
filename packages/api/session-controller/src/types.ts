@@ -450,12 +450,16 @@ export interface SessionPageRequest {
   readonly throughSeq?: number
   readonly beforeSeq?: number
   readonly maxMessages?: number
+  /** Optional complete-turn history window, used by the chat presentation. */
+  readonly maxTurns?: number
 }
 
 /** One live event request for a durable Session address. */
 export interface SessionFollowRequest {
   readonly address: SessionAddress
   readonly maxMessages?: number
+  /** Optional complete-turn history window, used by the chat presentation. */
+  readonly maxTurns?: number
   /** Include process-local assistant presentation frames for the Web client. */
   readonly assistantStream?: true
 }

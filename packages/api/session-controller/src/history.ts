@@ -4,7 +4,6 @@ import type { Context } from '@deepseek-ai/cordis'
 import { Deque } from '@deepseek-ai/dsh-deque'
 import type { AssistantStreamFrame } from '@deepseek-ai/dsh-agent'
 import {
-  isAppendSurfaceEvent,
   SessionLogOffset,
   SessionSeq,
 } from '@deepseek-ai/dsh-session'
@@ -16,6 +15,7 @@ import type {
   SessionSeqCursor,
 } from '@deepseek-ai/dsh-session'
 import { SessionQueryError, type SessionObservation } from '@deepseek-ai/dsh-session-query'
+import { SessionPersistenceNotFoundError } from '@deepseek-ai/dsh-session-persistence'
 import type {} from '@deepseek-ai/dsh-subagent'
 import { RemoteError } from '@deepseek-ai/dsh-typert-protocol'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
@@ -34,13 +34,14 @@ import type {
   SessionWireEvent,
 } from './types.ts'
 import { SessionAssistantStreamAccumulator } from './assistant-stream.ts'
+import { historyWindowCut, readColdHistorySource, type ColdHistorySource } from './cold-history.ts'
 
 const DEFAULT_MAX_MESSAGES = 50
-const MESSAGE_TYPES = new Set(['user/message', 'assistant/message'])
 
 /** Implements cold-safe history operations delegated by the Session Controller. */
 export class SessionHistoryController {
   private readonly closeFollowers = new Set<() => void>()
+  private readonly pendingPreparations = new Set<Promise<void>>()
   private readonly assistantStreams = new Map<SessionId, SessionAssistantStreamAccumulator>()
 
   /**
@@ -62,9 +63,10 @@ export class SessionHistoryController {
     ctx.on('agent/disposed', ({ agent }) => {
       this.assistantStreams.delete(agent.session.id)
     }, { global: true })
-    ctx.effect(() => () => {
+    ctx.effect(() => async () => {
       for (const close of this.closeFollowers) close()
       this.closeFollowers.clear()
+      await Promise.allSettled([...this.pendingPreparations])
     }, 'session-controller.history')
   }
 
@@ -79,10 +81,10 @@ export class SessionHistoryController {
     const beforeSeq = request.beforeSeq === undefined
       ? undefined
       : SessionLogOffset(request.beforeSeq)
-    using source = await this.sourceFor(request.address, signal, false)
+    using source = await this.sourceFor(request.address, signal, false, request)
     signal.throwIfAborted()
     const sourceLog = source.events
-    const sourceCursor: SessionSeqCursor = sourceLog.at(-1)?.seq ?? -1
+    const sourceCursor: SessionSeqCursor = source.cursor
     const throughSeq: SessionSeqCursor = request.throughSeq === undefined ? sourceCursor
       : request.throughSeq === -1 ? -1 : SessionSeq(request.throughSeq)
     if (throughSeq > sourceCursor) {
@@ -93,7 +95,7 @@ export class SessionHistoryController {
       )
     }
     /* v8 ignore next -- Session and persistence validation guarantee a dense zero-based event prefix. */
-    if (throughSeq >= 0 && sourceLog[throughSeq]?.seq !== throughSeq) {
+    if (throughSeq >= 0 && source.source !== 'window' && sourceLog[throughSeq]?.seq !== throughSeq) {
       throw new RemoteError('gateway/internal', `session log does not contain through seq ${String(throughSeq)}`, {})
     }
     const page = paginate(
@@ -101,6 +103,7 @@ export class SessionHistoryController {
       beforeSeq,
       request.maxMessages ?? DEFAULT_MAX_MESSAGES,
       throughSeq,
+      request.maxTurns,
     )
     const records = pageRecords(page.events)
     return {
@@ -174,12 +177,12 @@ export class SessionHistoryController {
     const onAbort = (): void => { notify() }
     signal.addEventListener('abort', onAbort, { once: true })
     try {
-      using source = await this.sourceFor(address, signal, true)
+      using source = await this.sourceFor(address, signal, true, request)
       const events = source.events
       signal.throwIfAborted()
       const cursor = source.cursor
       snapshotCursor = cursor
-      const page = paginate(events, undefined, request.maxMessages ?? DEFAULT_MAX_MESSAGES)
+      const page = paginate(events, undefined, request.maxMessages ?? DEFAULT_MAX_MESSAGES, undefined, request.maxTurns)
       const assistantStream = request.assistantStream === true
         ? this.assistantStreams.get(target)?.snapshot() ?? { revision: 0 }
         : undefined
@@ -198,6 +201,19 @@ export class SessionHistoryController {
           ? { asOfSeq: cursor, values: {} }
           : projectionBlock(source.projections),
         ...assistantStream === undefined ? {} : { assistantStream },
+      }
+      if (address.kind === 'session' && source.source === 'window') {
+        // Presentation has already reached the browser. Context restoration
+        // remains an independent complete native observation, never this tail.
+        const preparation = this.sourceFor(address, signal, true).then((observation) => {
+          try {
+            if (!signal.aborted && observation.source === 'prepared') this.promote(observation.retain())
+          } finally { observation[Symbol.dispose]() }
+        }).catch((error: unknown) => {
+          if (!signal.aborted) this.ctx.logger.error(`session-controller: background cold activation failed: ${String(error)}`)
+        })
+        this.pendingPreparations.add(preparation)
+        void preparation.finally(() => { this.pendingPreparations.delete(preparation) })
       }
       if (address.kind === 'session' && source.source === 'prepared') {
         const promotion = source.retain()
@@ -242,9 +258,21 @@ export class SessionHistoryController {
     address: SessionAddress,
     signal: AbortSignal,
     withProjections: boolean,
-  ): Promise<SessionObservation> {
+    windowRequest?: SessionPageRequest | SessionFollowRequest,
+  ): Promise<SessionObservation | ColdHistorySource> {
     const sessionId = addressId(address)
     try {
+      if (windowRequest !== undefined && address.kind === 'session'
+        && this.ctx.sessions.get(sessionId) === undefined) {
+        const window = await readColdHistorySource(this.ctx, sessionId, signal, {
+          maxMessages: windowRequest.maxMessages ?? DEFAULT_MAX_MESSAGES,
+          ...(windowRequest.maxTurns === undefined ? {} : { maxTurns: windowRequest.maxTurns }),
+          ...('beforeSeq' in windowRequest ? { beforeSeq: windowRequest.beforeSeq } : {}),
+          ...('throughSeq' in windowRequest ? { throughSeq: windowRequest.throughSeq } : {}),
+          withProjections,
+        })
+        if (window !== undefined) return window
+      }
       const observation = await this.ctx.sessionQuery.observeSession(sessionId, {
         signal,
         projectionMode: withProjections || address.kind === 'subagent' ? 'all' : 'none',
@@ -268,8 +296,8 @@ export class SessionHistoryController {
       }
       return observation
     } catch (error: unknown) {
-      if (error instanceof SessionQueryError
-        && error.code === 'SESSION_QUERY_SESSION_NOT_FOUND') rejectNotFound(address)
+      if (error instanceof SessionPersistenceNotFoundError || (error instanceof SessionQueryError
+        && error.code === 'SESSION_QUERY_SESSION_NOT_FOUND')) rejectNotFound(address)
       throw error
     }
   }
@@ -303,6 +331,9 @@ function projectionBlock(
 }
 
 function validatePageRequest(request: SessionPageRequest): void {
+  if (request.maxTurns !== undefined && (!Number.isSafeInteger(request.maxTurns) || request.maxTurns <= 0)) {
+    throw new RemoteError('gateway/bad-request', 'maxTurns must be a positive safe integer', {})
+  }
   if (request.throughSeq !== undefined && (!Number.isSafeInteger(request.throughSeq)
     || request.throughSeq < -1
     || Object.is(request.throughSeq, -0))) {
@@ -321,6 +352,9 @@ function validatePageRequest(request: SessionPageRequest): void {
 }
 
 function validateFollowRequest(request: SessionFollowRequest): void {
+  if (request.maxTurns !== undefined && (!Number.isSafeInteger(request.maxTurns) || request.maxTurns <= 0)) {
+    throw new RemoteError('gateway/bad-request', 'maxTurns must be a positive safe integer', {})
+  }
   if (request.maxMessages !== undefined
     && (!Number.isSafeInteger(request.maxMessages) || request.maxMessages <= 0)) {
     throw new RemoteError('gateway/bad-request', 'maxMessages must be a positive safe integer', {})
@@ -387,27 +421,14 @@ function paginate(
   beforeSeq: SessionLogOffsetType | undefined,
   maxMessages: number,
   throughSeq: SessionSeqCursor = events.at(-1)?.seq ?? -1,
+  maxTurns?: number,
 ): { readonly events: SessionEvent[]; readonly hasMore: boolean } {
-  const end = SessionLogOffset(Math.min(throughSeq + 1, beforeSeq ?? throughSeq + 1))
-  let count = 0
-  let cut = SessionLogOffset(0)
-  for (let index = end - 1; index >= 0; index--) {
-    const event = events[index] as SessionEvent
-    if (!MESSAGE_TYPES.has(event.type) || !isAppendSurfaceEvent(event)) continue
-    count++
-    const sources = event.sourceEventSeqs
-    let groupStart = event.seq
-    if (sources !== undefined) {
-      for (const source of sources) {
-        if (source < groupStart) groupStart = source
-      }
-    }
-    if (count >= maxMessages) {
-      cut = SessionLogOffset(groupStart)
-      break
-    }
-  }
-  return { events: events.slice(cut, end), hasMore: cut > 0 }
+  const base = events[0]?.seq ?? 0
+  const end = Math.max(0, Math.min(events.length, Math.min(throughSeq + 1, beforeSeq ?? throughSeq + 1) - base))
+  const prefix = events.slice(0, end)
+  const requestedCut = historyWindowCut(prefix, maxMessages, maxTurns)
+  const cut = Math.max(base, requestedCut ?? base)
+  return { events: prefix.slice(cut - base), hasMore: cut > 0 }
 }
 
 /** Translate current logical Session metadata to the browser wire. */
