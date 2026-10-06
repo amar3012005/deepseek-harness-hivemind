@@ -14,6 +14,7 @@ suite('real Loader App Builder preview', () => {
     expect(result.status, result.stderr).toBe(0)
     expect(JSON.parse(result.stdout)).toMatchObject({ passed: true, cases: [
       { preset: 'hivemind-hq', enabled: true, mounted: true, skill: 'create-crm', progressive: true },
+      { preset: 'hivemind-hq', enabled: false, mounted: false, skill: null, progressive: true },
       { preset: 'hivemind-hyperagents', enabled: true, mounted: true, skill: 'create-crm', progressive: true },
       { preset: 'hivemind-hyperagents', enabled: false, mounted: false, skill: null, progressive: true },
       { preset: 'hivemind-chat', enabled: true, mounted: false, skill: null, progressive: false },

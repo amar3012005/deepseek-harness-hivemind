@@ -34,7 +34,7 @@ function find(value: unknown, id: string): EntryOptions | undefined {
 }
 const results = []
 for (const [preset, enabled] of [
-  ['hivemind-hq', true], ['hivemind-hyperagents', true],
+  ['hivemind-hq', true], ['hivemind-hq', false], ['hivemind-hyperagents', true],
   ['hivemind-hyperagents', false], ['hivemind-chat', true],
 ] as const) {
   process.env.HIVE_APP_RUNTIME_ENABLED = String(enabled)
