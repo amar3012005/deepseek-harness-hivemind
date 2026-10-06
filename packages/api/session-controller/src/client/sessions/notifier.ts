@@ -11,6 +11,8 @@ export class Notifier {
   private notifyPending = false
   private scheduled: 'none' | 'microtask' | 'frame' = 'none'
   private scheduleGeneration = 0
+  private frameHandle: number | undefined
+  private frameFallback: ReturnType<typeof setTimeout> | undefined
 
   /** @param rebuild - snapshot rebuild function injected by the owner (writes the owner's snapshotCache). */
   constructor(private readonly rebuild: () => void) {}
@@ -65,15 +67,19 @@ export class Notifier {
   }
 
   private schedule(kind: 'microtask' | 'frame'): void {
-    const generation = ++this.scheduleGeneration
+    this.invalidateSchedule()
+    const generation = this.scheduleGeneration
     this.scheduled = kind
     const publish = () => {
       if (generation !== this.scheduleGeneration) return
-      this.scheduled = 'none'
+      this.invalidateSchedule()
       this.flush()
     }
     if (kind === 'frame') {
-      globalThis.requestAnimationFrame(publish)
+      this.frameHandle = globalThis.requestAnimationFrame(publish)
+      // Background tabs and busy renderers may defer animation frames indefinitely.
+      // Publish received cumulative state without manufacturing any text.
+      this.frameFallback = setTimeout(publish, 100)
     } else {
       queueMicrotask(publish)
     }
@@ -81,6 +87,14 @@ export class Notifier {
 
   private invalidateSchedule(): void {
     this.scheduleGeneration++
+    if (this.frameHandle !== undefined) {
+      globalThis.cancelAnimationFrame?.(this.frameHandle)
+      this.frameHandle = undefined
+    }
+    if (this.frameFallback !== undefined) {
+      clearTimeout(this.frameFallback)
+      this.frameFallback = undefined
+    }
     this.scheduled = 'none'
   }
 

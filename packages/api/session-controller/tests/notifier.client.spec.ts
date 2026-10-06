@@ -9,6 +9,7 @@ import { Notifier } from '../src/client/sessions/notifier.ts'
 const microtask = (): Promise<void> => new Promise((resolve) => { queueMicrotask(resolve) })
 
 afterEach(() => {
+  vi.useRealTimers()
   vi.unstubAllGlobals()
 })
 
@@ -113,6 +114,58 @@ describe('Session notifier', () => {
     expect(notifications).toBe(0)
     await microtask()
     expect(notifications).toBe(1)
+  })
+
+  it('publishes received cumulative text within 100ms when a frame never arrives', () => {
+    vi.useFakeTimers()
+    const frames: FrameRequestCallback[] = []
+    const cancel = vi.fn()
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+      frames.push(callback)
+      return frames.length
+    })
+    vi.stubGlobal('cancelAnimationFrame', cancel)
+    let text = ''
+    const published: string[] = []
+    const notifier = new Notifier(() => published.push(text))
+    const listener = vi.fn()
+    notifier.subscribe(listener)
+    text = 'received '
+    notifier.markFrameDirty()
+    text += 'deltas'
+    notifier.markFrameDirty()
+    vi.advanceTimersByTime(99)
+    expect(published).toEqual([])
+    vi.advanceTimersByTime(1)
+    expect(published).toEqual(['received deltas'])
+    expect(cancel).toHaveBeenCalledWith(1)
+    frames[0]!(0) // late browser callback must not duplicate publication
+    expect(listener).toHaveBeenCalledTimes(1)
+    text += ' continue'
+    notifier.markFrameDirty()
+    vi.advanceTimersByTime(100)
+    expect(published).toEqual(['received deltas', 'received deltas continue'])
+  })
+
+  it('cancels the fallback when a frame or synchronous flush wins', () => {
+    vi.useFakeTimers()
+    const frames: FrameRequestCallback[] = []
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+      frames.push(callback)
+      return frames.length
+    })
+    const listener = vi.fn()
+    const notifier = new Notifier(() => undefined)
+    notifier.subscribe(listener)
+    notifier.markFrameDirty()
+    frames[0]!(0)
+    expect(vi.getTimerCount()).toBe(0)
+    notifier.markFrameDirty()
+    notifier.notifyNow()
+    expect(vi.getTimerCount()).toBe(0)
+    frames[1]!(0)
+    vi.advanceTimersByTime(100)
+    expect(listener).toHaveBeenCalledTimes(2)
   })
 
   it('unsubscribed listeners stop receiving notifications', async () => {
