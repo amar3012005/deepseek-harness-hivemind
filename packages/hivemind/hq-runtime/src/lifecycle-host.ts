@@ -101,7 +101,7 @@ export function apply(ctx:Context,config:Config):void {
             key: `employee-setup-${input.employeeId}-${proof.onboarding.creationHash}`,
             target: input.employeeId, kind: 'question',
             targetProfile: { id: input.employeeId, name: proof.onboarding.name, role: proof.onboarding.role },
-            text: 'Our administrator has created your employee profile and chosen your name and character. Introduce yourself briefly in your own room. Recall available company context, then use the native question tool to ask which responsibilities you should own, with a few grounded suggestions and a free-text option. Do not invent responsibilities or start business work. After the administrator answers, confirm the agreed responsibilities and save only your own bounded profile with hivemind_employee_profile; keep existing permissions unchanged. Save useful private learning and return a short natural response.',
+            text: 'Welcome to our team. Please introduce yourself and ask our administrator which responsibilities they want you to own. Once they answer, confirm and save what you agreed. Your existing permissions stay the same.',
           }, signal)
         }
         if(proof.kind==='temporary' && proof.phase==='active') {

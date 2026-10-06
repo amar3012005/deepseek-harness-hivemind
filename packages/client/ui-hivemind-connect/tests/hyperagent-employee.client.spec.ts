@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { SessionSeq } from '@deepseek-ai/dsh-session'
 import type { SessionEventWindow } from '@deepseek-ai/dsh-api-session-controller/client'
 import { employeeAppearance, employeeMenuHeight, employeeOwnershipLocked, isHyperagentPreset, projectedEmployee, selectedEmployee } from '../src/client/HyperagentEmployee.tsx'
 import { workbenchSnapshot } from '../src/client/HyperagentWorkbench.tsx'
@@ -41,13 +42,13 @@ describe('HyperAgents employee selection', () => {
     const window = { entries: [
       { type: 'event', event: { type: 'hivemind/artifact-created', data: { artifactId: 'a1', title: 'Report', path: 'report.pdf', mediaType: 'application/pdf', pdf: { attachmentId: 'f1', name: 'report.pdf', bytes: 4 }, preview: { attachmentId: 'p1', mediaType: 'image/png' } } } },
       { type: 'event', event: { type: 'hivemind/browser-capture', data: { captureId: 'b1', title: 'Home', url: 'https://example.com', status: 200 } } },
-      { type: 'event', event: { type: 'hivemind/research-receipt', data: { sources: [{ url: 'https://example.com', title: 'Source' }, { url: 'https://example.com', title: 'Duplicate' }] } } },
+      { type: 'event', event: { type: 'hivemind/research-receipt', seq: SessionSeq(2), data: { sources: [{ url: 'https://example.com/', title: 'Source' }, { url: 'https://example.com/', title: 'Duplicate' }] } } },
     ] } as unknown as SessionEventWindow
     const result = workbenchSnapshot(window)
     expect(result.artifacts.map(item => item.title)).toEqual(['Report'])
     expect(result.artifacts[0]?.file).toMatchObject({ attachmentId: 'f1', name: 'report.pdf' })
     expect(result.captures.map(item => item.title)).toEqual(['Home'])
-    expect(result.sources).toEqual([{ url: 'https://example.com', title: 'Source' }])
+    expect(result.sources).toEqual([{ url: 'https://example.com/', title: 'Duplicate', seq: SessionSeq(2), visited: false }])
   })
 })
 

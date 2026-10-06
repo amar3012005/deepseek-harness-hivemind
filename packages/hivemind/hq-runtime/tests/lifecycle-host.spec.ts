@@ -1,5 +1,5 @@
 import { createHmac, createHash } from 'node:crypto'
-import { createServer } from 'node:http'
+import { createServer, type RequestListener } from 'node:http'
 import { afterEach, expect, it } from 'vitest'
 import ExecutionScope from '@deepseek-ai/dsh-hivemind-execution-scope'
 import { SessionId } from '@deepseek-ai/dsh-session'
@@ -37,7 +37,7 @@ it('creates one native deadline wake on retry and removes only Core-attested emp
     return { employeeId:input.employeeId,revision:1,kind:'temporary',phase,expiresAt,chief:{ sessionId:chief.id,userId:input.userId },chiefs:[{ sessionId:chief.id,userId:input.userId }],rooms:[{ sessionId:roomA.id,userId:input.userId },{ sessionId:roomB.id,userId:originalOwner }] }
   })
   const server=createServer();servers.push(server)
-  fixture.ctx.provide('webServer',{ register:({ handler }:{ handler:Parameters<typeof createServer>[0] })=>{server.on('request',handler!);return()=>{}} } as never)
+  fixture.ctx.provide('webServer',{ register:({ handler }:{ handler:RequestListener })=>{server.on('request',handler!);return()=>{}} } as never)
   process.env['EMPLOYEE_FIXTURE_SECRET']=secret
   apply(fixture.ctx,{ enabled:true,serviceSecretEnv:'EMPLOYEE_FIXTURE_SECRET' })
   await new Promise<void>(resolve=>server.listen(0,'127.0.0.1',resolve))
@@ -78,7 +78,7 @@ it('admits setup through the attested Chief and rechecks closeout before deliver
     onboarding:{ name:'Alex',role:'Specialist',creationHash:'a'.repeat(64) },
   }))
   const server=createServer();servers.push(server)
-  fixture.ctx.provide('webServer',{ register:({ handler }:{ handler:Parameters<typeof createServer>[0] })=>{server.on('request',handler!);return()=>{}} } as never)
+  fixture.ctx.provide('webServer',{ register:({ handler }:{ handler:RequestListener })=>{server.on('request',handler!);return()=>{}} } as never)
   process.env['EMPLOYEE_FIXTURE_SECRET']=secret
   apply(fixture.ctx,{ enabled:true,serviceSecretEnv:'EMPLOYEE_FIXTURE_SECRET' })
   await new Promise<void>(resolve=>server.listen(0,'127.0.0.1',resolve))
@@ -88,7 +88,7 @@ it('admits setup through the attested Chief and rechecks closeout before deliver
   })
   expect((await call()).status).toBe(200)
   expect(deliveries[0]).toMatchObject({ target:input.employeeId,kind:'question' })
-  expect(deliveries[0]?.text).toContain('native question tool')
+  expect(deliveries[0]?.text).toContain('which responsibilities they want you to own')
   expect((await call()).status).toBe(200)
   expect(deliveries[1]?.key).toBe(deliveries[0]?.key)
   race=true;reads=0
