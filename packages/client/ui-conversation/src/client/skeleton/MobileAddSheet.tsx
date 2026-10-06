@@ -23,6 +23,7 @@ export function MobileAddSheet({ close, pick, canAttach, chooseMode, commands, c
   controls?: ReactNode
 }) {
   const panel = useRef<HTMLElement>(null)
+  const handingOff = useRef(false)
   useEffect(() => {
     const previous = document.activeElement as HTMLElement | null
     const items = () => [...(panel.current?.querySelectorAll<HTMLElement>('button, a[href], input, [tabindex="0"]') ?? [])]
@@ -39,7 +40,7 @@ export function MobileAddSheet({ close, pick, canAttach, chooseMode, commands, c
     document.addEventListener('keydown', key)
     return () => {
       document.removeEventListener('keydown', key)
-      if (!document.querySelector('[data-native-mobile-apps]')) previous?.focus()
+      if (!handingOff.current) previous?.focus()
     }
   }, [close])
   return <div className={css.overlay}>
@@ -65,6 +66,7 @@ export function MobileAddSheet({ close, pick, canAttach, chooseMode, commands, c
         <span><SheetIcon kind="notes" /></span><span><strong>Start taking meeting notes</strong><small>Open AI Meeting Notes</small></span>
       </a>
       <button className={css.action} type="button" onClick={() => {
+        handingOff.current = true
         close(); queueMicrotask(() => window.dispatchEvent(new Event('hivemind:mobile-connectors')))
       }}>
         <span><SheetIcon kind="apps" /></span>

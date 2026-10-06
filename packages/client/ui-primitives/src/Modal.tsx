@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import type { ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import clsx from 'clsx'
@@ -7,6 +7,7 @@ import css from './Modal.module.css'
 
 interface ModalBaseProps {
   open: boolean
+  trapFocus?: boolean
   onClose: () => void
   title: string
   description?: string
@@ -36,8 +37,24 @@ type ModalProps = ModalBaseProps & (
  * @returns null when closed; otherwise the overlay tree.
  */
 export function Modal({
-  open, onClose, title, closeLabel, description, children, footer, className, contentClassName, headless = false,
+  open, onClose, title, closeLabel, description, children, footer, className, contentClassName, headless = false, trapFocus = false,
 }: ModalProps) {
+  const card = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!open || !trapFocus) return
+    const previous = document.activeElement as HTMLElement | null
+    const items = () => [...(card.current?.querySelectorAll<HTMLElement>('button, a[href], input, select, [tabindex="0"]') ?? [])]
+      .filter(element => !element.hasAttribute('disabled'))
+    items()[0]?.focus()
+    const key = (event: KeyboardEvent) => {
+      if (event.key !== 'Tab') return
+      const elements = items(); const first = elements[0]; const last = elements.at(-1)
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus() }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus() }
+    }
+    document.addEventListener('keydown', key)
+    return () => { document.removeEventListener('keydown', key); previous?.focus() }
+  }, [open, trapFocus])
   useEffect(() => {
     if (!open) return
     const onKeyDown = (e: KeyboardEvent) => {
@@ -53,6 +70,7 @@ export function Modal({
     <div className={css.root} role="presentation">
       <div className={css.mask} aria-hidden="true" onClick={onClose} />
       <div
+        ref={card}
         className={clsx(css.dialog, className)}
         role="dialog"
         aria-modal="true"

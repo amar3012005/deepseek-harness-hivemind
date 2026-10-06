@@ -264,8 +264,8 @@ export function AppFrame({
       data-dragging={dragging || undefined}
       data-external-chrome={hostOwnsChrome || undefined}
     >
-      <Modal open={mobileHistoryOpen} onClose={() => { setMobileHistoryOpen(false) }} title="Recents" closeLabel="Close history" className={css.mobileHistory}>
-        <div onClick={(event) => { if ((event.target as HTMLElement).closest('a, [data-session-id]')) setMobileHistoryOpen(false) }}>
+      <Modal trapFocus open={mobileHistoryOpen} onClose={() => { setMobileHistoryOpen(false) }} title="Recents" closeLabel="Close history" className={css.mobileHistory}>
+        <div onClick={(event) => { if ((event.target as HTMLElement).closest('a, [role="treeitem"]')) setMobileHistoryOpen(false) }}>
           {mobileHistoryOpen && renderSlot('shell.sessionRail', {})}
         </div>
       </Modal>

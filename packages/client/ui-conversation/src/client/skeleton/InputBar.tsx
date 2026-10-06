@@ -525,6 +525,7 @@ export const InputBar = memo(function InputBar({
                 type="button"
                 className={css.add}
                 aria-label={t('input.commands')}
+                data-native-mobile-add
                 aria-haspopup="listbox"
                 aria-expanded={mobileAddOpen || commandMenuOpen}
                 disabled={locked || (toggleCommandMenu === undefined && inputActions === undefined)}

@@ -419,6 +419,20 @@ describe('Menu', () => {
 })
 
 describe('Modal', () => {
+  it('optionally traps focus and returns it to the launcher', () => {
+    const launcher = document.createElement('button'); document.body.append(launcher); launcher.focus()
+    const view = render(<Modal open trapFocus onClose={() => {}} title="History" closeLabel="Close history">
+      <a href="/history">History item</a>
+    </Modal>)
+    const close = screen.getByRole('button', { name: 'Close history' })
+    expect(document.activeElement).toBe(close)
+    fireEvent.keyDown(document, { key: 'Tab', shiftKey: true })
+    expect(document.activeElement).toBe(screen.getByRole('link', { name: 'History item' }))
+    fireEvent.keyDown(document, { key: 'Tab' })
+    expect(document.activeElement).toBe(close)
+    view.unmount(); expect(document.activeElement).toBe(launcher); launcher.remove()
+  })
+
   it('is absent while closed; Escape and mask click call onClose', () => {
     const onClose = vi.fn()
     const { rerender } = render(

@@ -169,7 +169,7 @@ function TurnNavigatorRail({ items: allItems, activeTurn: originalActiveTurn, bu
   if (scrollState.canScrollDown) fadeClasses.push(css.fadeBottom)
   return (
     <div className={css.slot}>
-      <Modal open={mobileDaysOpen} onClose={() => { setMobileDaysOpen(false) }} title="Chat history" closeLabel="Close history">
+      <Modal trapFocus open={mobileDaysOpen} onClose={() => { setMobileDaysOpen(false) }} title="Chat history" closeLabel="Close history">
         {historyDays.map(day => <button key={day.key} type="button" className={css.mobileDay} onClick={() => { onNavigate(day.item); setMobileDaysOpen(false) }}>{day.label}</button>)}
       </Modal>
       {agentRoom && historyDays.length > 0 && <label className={css.dayJump}>
