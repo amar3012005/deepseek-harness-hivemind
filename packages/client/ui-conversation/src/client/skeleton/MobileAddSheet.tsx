@@ -62,7 +62,7 @@ export function MobileAddSheet({ close, pick, canAttach, chooseMode, commands, c
         <span><strong>Deep Research</strong><small>Ask for a multi-source report</small></span>
       </button>
       <small>ADD</small>
-      <a className={css.action} href="/hivemind/m/meeting-notes">
+      <a className={css.action} href={`/hivemind/m/meeting-notes?native_chat_return=${encodeURIComponent(window.location.pathname)}`}>
         <span><SheetIcon kind="notes" /></span><span><strong>Start taking meeting notes</strong><small>Open AI Meeting Notes</small></span>
       </a>
       <button className={css.action} type="button" onClick={() => {
