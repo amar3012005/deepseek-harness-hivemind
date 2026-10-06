@@ -29,7 +29,7 @@ suite('real authenticated disposable App Runtime preview', () => {
       await ctx.plugin(Tools)
       await ctx.plugin(Skills)
       await ctx.plugin(ExecutionScope)
-      await ctx.plugin(plugin, { serviceApiBase: origin!, serviceSecretEnv: 'CRM_NATIVE_PREVIEW_SERVICE_SECRET' })
+      await ctx.plugin(plugin, { serviceApiBase: origin!, serviceSecretEnv: 'CRM_NATIVE_PREVIEW_SERVICE_SECRET', requestTimeoutMs: 30_000, maxRequestBytes: 262_144, maxResponseBytes: 1_048_576 })
       expect((await ctx.skills.get('create-crm'))?.content).toContain('operation_id')
       expect(ctx.tools.schemas().filter(tool => tool.name.startsWith('hivemind_app_'))).toHaveLength(9)
       const spec = {
