@@ -124,11 +124,16 @@ it('asks Chief to confirm responsibilities before one welcome and persisted join
   expect(deliveries[0]?.text).toContain('Agreed responsibilities')
   expect(employee.session.ownEvents().filter(event=>String(event.type)==='hivemind/employee-selection')).toHaveLength(0)
   review=false
+  const flush = fixture.ctx.sessions.flush.bind(fixture.ctx.sessions)
+  let flushAttempts=0
+  fixture.ctx.sessions.flush=async (session)=>{flushAttempts++;return flushAttempts===1 ? false : flush(session)}
+  expect((await call()).status).toBe(503)
   expect((await call()).status).toBe(200)
   expect(deliveries[1]).toMatchObject({ caller:chief,target:input.employeeId })
   expect(deliveries[1]?.text).toContain('inspect our actual company context')
   expect((await call()).status).toBe(200)
   expect(deliveries).toHaveLength(2)
+  expect(flushAttempts).toBe(3)
   const joined=employee.session.ownEvents().filter(event=>String(event.type)==='hivemind/employee-selection')
   expect(joined).toHaveLength(1)
   expect(joined[0]?.data).toMatchObject({ name:'Alex',role:'Research',joining:{ at:'2026-10-06T12:00:00.000Z',profileRevision:2 } })

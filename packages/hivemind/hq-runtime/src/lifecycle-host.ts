@@ -146,8 +146,8 @@ export function apply(ctx:Context,config:Config):void {
                 id:input.employeeId,name:profile.name,role:profile.role,
                 joining:{ at:proof.joined.at,creationHash:profile.creationHash,profileRevision:profile.profileRevision },
               }])
-              if (!await ctx.sessions.flush(employee.session)) throw Error('employee_joining_persistence_required')
             }
+            if (!await ctx.sessions.flush(employee.session)) throw Error('employee_joining_persistence_required')
           }
         }
         if(proof.kind==='temporary' && proof.phase==='active') {
