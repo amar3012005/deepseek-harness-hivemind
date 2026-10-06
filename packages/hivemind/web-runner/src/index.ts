@@ -1,3 +1,4 @@
+import { BrainPlanAdapter, requestBrainPlan } from './chatgpt-plan.ts'
 /** HIVE-MIND embedded Web authentication and production health routes. */
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
@@ -60,6 +61,8 @@ export interface Config {
   serviceSecretEnv: string
   /** Native voice capability; authorization is resolved on the server. */
   liveVoice: LiveVoiceConfig
+  /** Disabled until hosted plan approval, credentials and canary are ready. */
+  chatgptPlanBrainEnabled?: boolean
 }
 
 export const Config: z<Config> = z.object({
@@ -72,6 +75,7 @@ export const Config: z<Config> = z.object({
   serviceApiBase: z.string().required(),
   serviceHttpOrigins: z.array(String).default([]),
   serviceSecretEnv: z.string().required(),
+  chatgptPlanBrainEnabled: z.boolean().default(false),
   liveVoice: z.object({
     enabled: z.boolean().default(true),
     model: z.string().default('gpt-live-1-codex'),
@@ -299,6 +303,10 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
   if (Buffer.byteLength(projectCatalogSecret, 'utf8') < 32) {
     throw new Error('hivemind-web-runner: project catalog service secret must be at least 32 bytes')
   }
+  if (config.chatgptPlanBrainEnabled) ctx.inject(['llm'], (planCtx) => {
+    planCtx.effect(() => planCtx.llm.registerAdapter(['hivemind-chatgpt-plan-brain'], new BrainPlanAdapter(options =>
+      requestBrainPlan(projectCatalogBase.origin, projectCatalogSecret, ctx.hivemindExecutionScope.require(), options))))
+  })
   registerRunnerDrainStatus(ctx, projectCatalogSecret)
   const redis = createClient({ url: env(config.redisUrlEnv) }) as RedisClientType
   redis.on('error', (error) => { ctx.logger.warn('hivemind-web-runner: Redis error', error) })
