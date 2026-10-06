@@ -149,6 +149,7 @@
     { "path": "./packages/hivemind/progressive-skills" },
     { "path": "./packages/hivemind/progressive-browser" },
     { "path": "./packages/hivemind/research" },
+    { "path": "./packages/hivemind/app-builder" },
     { "path": "./packages/hivemind/runtime" },
     { "path": "./packages/hivemind/execution-scope" },
     { "path": "./packages/hivemind/web-runner" },

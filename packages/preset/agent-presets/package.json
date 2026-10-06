@@ -83,7 +83,8 @@
     "js-yaml": "^4.1.0",
     "@deepseek-ai/schemastery": "workspace:^",
     "zod": "^4.4.3",
-    "@deepseek-ai/dsh-hivemind-hq-runtime": "workspace:^"
+    "@deepseek-ai/dsh-hivemind-hq-runtime": "workspace:^",
+    "@deepseek-ai/dsh-hivemind-app-builder": "workspace:^"
   },
   "devDependencies": {
     "@deepseek-ai/cordis-plugin-group": "workspace:^",
