@@ -607,6 +607,10 @@ export function ChatView({
   })
 
   const onScrollRef = useRef(() => {})
+  const requestOlderRef = useRef<(() => void) | null>(null)
+  // One request per history head and reader gesture. Empty or failed pages
+  // remain manually retryable without an automatic retry loop.
+  const autoPageHeadRef = useRef<number | null>(null)
   onScrollRef.current = () => {
     const local = listRef.current
     /* v8 ignore next -- ref-null guard: the handler only fires while mounted. */
@@ -621,6 +625,13 @@ export function ChatView({
     // the current ownership state.
     const floor = Math.max(0, el.scrollHeight - el.clientHeight)
     const movedByReader = readerMovedScroll(el.scrollTop, floor, observedTopRef.current)
+    const movingUp = movedByReader && el.scrollTop < observedTopRef.current
+    if (movingUp && el.scrollTop <= 160 && hasMore && !loadingOlder
+      && pendingJumpRef.current === null && firstSeq !== null
+      && autoPageHeadRef.current !== firstSeq) {
+      autoPageHeadRef.current = firstSeq
+      requestOlderRef.current?.()
+    }
     if (movedByReader) settledJumpRef.current = null
     const isAtBottom = movedByReader
       ? floor - el.scrollTop <= FOLLOW_THRESHOLD + 1
@@ -794,6 +805,7 @@ export function ChatView({
     }
     loadOlder()
   }
+  requestOlderRef.current = loadOlderAnchored
 
   // Identity feeds the memoized rail; a fresh closure per render would defeat it.
   const navigateToTurn = useCallback((item: TurnRailItem): void => {

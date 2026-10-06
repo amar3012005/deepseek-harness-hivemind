@@ -2885,6 +2885,45 @@ describe('ChatView', () => {
     expect(view.getByText('加载中…')).toBeTruthy()
   })
 
+  it('loads one earlier page when the reader scrolls upward near the history head', () => {
+    vi.useFakeTimers()
+    const host = document.createElement('div')
+    host.setAttribute('data-conversation-scroll', '')
+    Object.defineProperty(host, 'scrollHeight', { value: 2000, configurable: true })
+    Object.defineProperty(host, 'clientHeight', { value: 500, configurable: true })
+    Object.defineProperty(host, 'scrollTop', { value: 0, writable: true, configurable: true })
+    document.body.appendChild(host)
+    try {
+      const h = makeHarness({ nodes: [user(5, 'later')] }, { hasMore: true })
+      const view = render(<h.ChatView {...h.props} />, { container: host })
+      expect(h.loadOlder).not.toHaveBeenCalled()
+      host.scrollTop = 120
+      fireEvent.scroll(host)
+      act(() => { vi.runOnlyPendingTimers() })
+      expect(h.loadOlder).toHaveBeenCalledTimes(1)
+      host.scrollTop = 100
+      fireEvent.scroll(host)
+      act(() => { vi.runOnlyPendingTimers() })
+      expect(h.loadOlder).toHaveBeenCalledTimes(1)
+      // Failed or empty pages still have an explicit retry, without looping.
+      fireEvent.click(view.getByText('加载更早'))
+      expect(h.loadOlder).toHaveBeenCalledTimes(2)
+      act(() => { h.setSession({ loadingOlder: true }) })
+      host.scrollTop = 80
+      fireEvent.scroll(host)
+      act(() => { vi.runOnlyPendingTimers() })
+      expect(h.loadOlder).toHaveBeenCalledTimes(2)
+      act(() => { h.setSession({ loadingOlder: false, hasMore: false }) })
+      host.scrollTop = 60
+      fireEvent.scroll(host)
+      act(() => { vi.runOnlyPendingTimers() })
+      expect(h.loadOlder).toHaveBeenCalledTimes(2)
+    } finally {
+      host.remove()
+      vi.useRealTimers()
+    }
+  })
+
   it('shows open error and loading states', () => {
     const h = makeHarness({}, {
       openState: 'error',
