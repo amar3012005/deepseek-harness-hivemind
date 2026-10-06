@@ -760,6 +760,9 @@ describe('binding and stage lifecycle', () => {
     const binding = b.svc.binding(sid('s1'))!
     await vi.waitFor(() => expect(binding.session.getSnapshot().openState).toBe('error'))
     expect(b.api.followStarts).toHaveLength(1)
+    await feedList(b, [{ id: 's1' }, { id: 's2' }])
+    expect(binding.session.getSnapshot().openState).toBe('error')
+    expect(b.api.followStarts).toHaveLength(1)
     b.svc.open(sid('s1'))
     await vi.waitFor(() => expect(binding.session.getSnapshot().openState).toBe('open'))
     expect(b.api.followStarts).toHaveLength(2)
