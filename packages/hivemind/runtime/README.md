@@ -108,3 +108,25 @@ The native `hivemind-artifact-production` skill supplies on-demand brand context
 The shared native `hivemind-company-strategy` skill supplies on-demand methods for ordinary strategic agendas and employee contributions, not only awakening. Both presets provide compact routing cues for strategy and finished-artifact production. Permanent identity and approval rules remain in the presets; full methods load through the existing skill registry. Runtime passes relevant strategic, brand and method references in the saved task description, and employees resolve material gaps within authority. Dynamic employee response guidance keeps detailed assigned work in the artifact and returns a concise result to Runtime without unsolicited export offers; direct user requests retain their requested form. Recall budgets and history projection are unchanged.
 
 Automatic terminal employee reporting is limited to a durable Chief assignment or an authenticated received Chief question. Direct employee conversations remain in their room, including failed direct turns; employees choose whether a substantive company update or access question needs Runtime through the existing messaging tool. Assigned failures still receive a generic terminal blocker notice when the model cannot report, and confirmed explicit replies suppress duplicate automatic notices. This policy uses message provenance, not a content classifier.
+
+
+## Runtime decision memory and calls
+
+Only the authenticated root HQ room receives the scoped `runtime_user_agenda`
+and `runtime_uncertainties` tools. Both wrap the existing private operating-memory
+store. Core verifies the signed actor and persisted room owner, isolates records
+by organization and user, and excludes these kinds from ordinary memory recall.
+Agendas require a persisted direct user message or call with actual user speech;
+that provenance supports attribution, not automatic verification of every claim.
+Uncertainties retain evidence, impact, priority and open/resolved state. Updates
+use immutable successors and exact receipt IDs; created timestamps retain dated
+versions. Query-free recall returns current records; open doubts rank by priority
+and recency. The model must still assess relevance against current work.
+
+Start Call awaits fresh uncertainty and confirmed-agenda reads before either
+voice provider is admitted. A failed read fails admission rather than masquerading
+as no pending decisions. Existing employee calls are unchanged. Saved Runtime
+calls queue one native follow-up to reconcile confirmed answers, keeping unanswered
+or interrupted topics open. Confirmation never expands external action authority
+or publishes company memory. Deploy the Core kind-constraint migration and Core
+API before this runner; no existing production records are migrated automatically.

@@ -8,6 +8,8 @@ import { administratorMessageTool } from './administrator-messaging.ts'
  */
 
 export type {} from './voice-outcome.ts'
+export type {} from './runtime-decision-memory.ts'
+import { installRuntimeDecisionMemory } from './runtime-decision-memory.ts'
 import { installVoiceOutcome } from './voice-outcome.ts'
 import { installAgentMessaging } from './agent-messaging.ts'
 import { installRequestFallback } from './request-recovery.ts'
@@ -1855,6 +1857,15 @@ export function apply(ctx: Context, config: Config): void {
       await ctx.sessions.flush(agent.session)
       return owner
     }
+    const installDecisionTools = installRuntimeDecisionMemory(ctx, async (agent, input, signal) => {
+      // Core validates the persisted Chief room in addition to this signed actor claim.
+      if (!await ctx.sessions.flush(agent.session)) throw new HiveMindRuntimeError('Runtime memory owner persistence required')
+      const authority = await resolveAuthority(ctx, config, agent)
+      const result = apiRecord(await hiveRequest(authority, '/v1/hyperagents/operating-memory', {
+        method: 'POST', body: JSON.stringify(input),
+      }, signal, config), 'Runtime decision memory receipt')
+      return Object.fromEntries(Object.entries(result).filter((entry): entry is [string, JsonValue] => entry[1] !== undefined))
+    }, ensureOwner)
     const principals = new Map<Agent, ReturnType<typeof ctx.hivemindExecutionScope.require>>()
     const draining = new Map<Agent, Promise<void>>()
     const lifetime = new AbortController()
@@ -1901,6 +1912,7 @@ export function apply(ctx: Context, config: Config): void {
     ctx.effect(() => ctx.on('agent/pre-step', async ({ agent, signal, turn }, next) => {
       if (publicInvestigation(agent)) return next()
       const owner = await ensureOwner(agent, signal)
+      installDecisionTools(agent)
       principals.set(agent, ctx.hivemindExecutionScope.require())
       enqueueTasks(agent, owner)
       if (pendingTaskMemories(agent.session.snapshotEvents()).length > 0) await retryTasks(agent)

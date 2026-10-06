@@ -25,3 +25,11 @@ The subscription transport is experimental. Its wire version is pinned to the Co
 ## Known Limitations and Deferred Work
 
 - Subscription voice requires an authorized server credential and compatible experimental transport; missing authorization fails closed.
+
+
+Runtime call admission also awaits fresh, typed private uncertainty and user-agenda
+records from the existing runtime plugin. The opening prioritizes decision-relevant
+questions against confirmed direction, not a transcript-only generic check-in.
+A missing memory read fails admission explicitly. Both supported voice paths save
+the transcript and queue a native Runtime reconciliation; interrupted topics remain
+open unless actual user speech resolved them. Employee conversation policy is unchanged.
