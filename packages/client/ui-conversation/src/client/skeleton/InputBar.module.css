@@ -388,6 +388,7 @@
 }
 
 .brainConnectors { display: none; }
+.attachments { display: contents; }
 /* Brain's phone composer shares the native editor and send/stop state. */
 @media (max-width: 600px) {
   :global([data-brain-chat]) .root { padding: 6px 8px max(8px, env(safe-area-inset-bottom)); }
@@ -406,6 +407,12 @@
   :global([data-brain-chat]) .primary { width: 40px; height: 40px; transform: none; background: #117dff; }
   :global([data-brain-chat]) :global([data-hivemind-dictation]) { display: none; }
   :global([data-brain-chat]) :global([data-hivemind-live-voice]) button { width: 40px; height: 40px; }
+  :global([data-brain-chat]) .attachments { display: block; grid-column: 1 / -1; grid-row: 1; min-width: 0; }
+  :global([data-brain-chat]) .attachments:empty { display: none; }
+  :global([data-brain-chat]) .card:has(.attachments:not(:empty)) .scroll,
+  :global([data-brain-chat]) .card:has(.attachments:not(:empty)) .add,
+  :global([data-brain-chat]) .card:has(.attachments:not(:empty)) .brainConnectors,
+  :global([data-brain-chat]) .card:has(.attachments:not(:empty)) .trailing { grid-row: 2; }
   :global([data-brain-chat]) .accessory { grid-column: 1 / -1; }
   :global([data-brain-chat]) :global([data-hivemind-live-voice]) details { display: none; }
 }

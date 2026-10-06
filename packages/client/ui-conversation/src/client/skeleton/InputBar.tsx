@@ -497,7 +497,7 @@ export const InputBar = memo(function InputBar({
           commands={toggleCommandMenu === undefined ? undefined : () => { closeMobileAdd(); onToggleCommandMenu() }} />}
         <input ref={photoInputRef} type="file" accept="image/*" multiple style={{ display: 'none' }} onChange={onPickFiles} />
         <input ref={cameraInputRef} type="file" accept="image/*" capture="environment" style={{ display: 'none' }} onChange={onPickFiles} />
-        {renderSlot('conversation.input.attachments', {
+        <div className={css.attachments}>{renderSlot('conversation.input.attachments', {
           attachments,
           canAcceptDrop,
           onAddFiles: intakeFiles,
@@ -508,7 +508,7 @@ export const InputBar = memo(function InputBar({
             count: imageLimits.maxImagesPerMessage,
             size: imageSizeText(imageLimits.maxImageBytes),
           },
-        })}
+        })}</div>
         {/* One scrollport, one text surface: the contenteditable grows with
             its content and .scroll — capped at 14 lines in CSS — is the only
             thing that scrolls. Chips are decorator portals inside the same
