@@ -266,6 +266,7 @@
       "@deepseek-ai/dsh-hivemind-progressive-skills": ["./packages/hivemind/progressive-skills/src"],
       "@deepseek-ai/dsh-hivemind-progressive-browser": ["./packages/hivemind/progressive-browser/src"],
       "@deepseek-ai/dsh-hivemind-research": ["./packages/hivemind/research/src"],
+      "@deepseek-ai/dsh-hivemind-app-builder": ["./packages/hivemind/app-builder/src"],
       "@deepseek-ai/dsh-hivemind-identity": ["./packages/hivemind/identity/src"],
       "@deepseek-ai/dsh-hivemind-memory": ["./packages/hivemind/memory/src"],
       "@deepseek-ai/dsh-hivemind-runtime": ["./packages/hivemind/runtime/src"],
