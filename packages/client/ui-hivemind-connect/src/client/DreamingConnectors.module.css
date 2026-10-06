@@ -68,3 +68,14 @@
 .identity small { overflow-wrap: anywhere; }
 
 .compactIdentity { display: inline-flex; align-items: center; gap: 7px; margin-right: 8px; font-size: 12px; }
+
+/* Employee rooms use an intentional sheet on touch screens, never an auto-open card. */
+@media (max-width: 900px) {
+  .chatControl[data-mobile-agent-environment] .chatButton { min-height: 44px; padding: 8px 10px; }
+  .chatControl[data-mobile-agent-environment] .compactIdentity { min-width: 0; max-width: 180px; }
+  .chatControl[data-mobile-agent-environment] .compactIdentity strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .mobileBackdrop { position: fixed; inset: 56px 0 0; border: 0; padding: 0; background: #0004; z-index: 49; }
+  .chatControl[data-mobile-agent-environment] .chatPanel { position: fixed; inset: auto 8px max(8px, env(safe-area-inset-bottom)); width: auto; max-width: none; max-height: calc(100dvh - 80px); padding: 16px; box-sizing: border-box; z-index: 50; overscroll-behavior: contain; }
+  .chatControl[data-mobile-agent-environment] .chatPanel button, .chatControl[data-mobile-agent-environment] .chatPanel a { min-height: 44px; }
+  .chatControl[data-mobile-agent-environment] .environmentHeading button { padding: 8px; }
+}

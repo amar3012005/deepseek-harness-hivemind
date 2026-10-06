@@ -732,3 +732,12 @@
 .root[data-agent-room] .composerViews {
   display: none;
 }
+
+/* A reserved toolbar keeps mobile employee identity/history out of the transcript. */
+@media (max-width: 900px) {
+  .root[data-agent-room] { --dsh-composer-side-clearance: 8px; --dsh-composer-dock-inset: max(8px, env(safe-area-inset-bottom)); }
+  .root[data-agent-room] .header:not(.headerHidden) { position: relative !important; inset: auto !important; width: auto !important; min-height: 92px; flex: none; padding: 0 8px !important; pointer-events: auto; }
+  .root[data-agent-room] .header .headerCorner { position: relative !important; inset: auto !important; min-height: 44px; margin-left: auto; justify-content: flex-end; }
+  .root[data-agent-room] .header .titleRow { display: flex; }
+  .root[data-agent-room] .header .tabs { display: none; }
+}
