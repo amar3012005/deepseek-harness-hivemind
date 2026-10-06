@@ -13,6 +13,7 @@ const MARKER = '[HIVEMIND SERVICE RECOVERY]\n'
 type Recovery = { sessionId: string; turn: number } & (
   | { rootId: string; modeRevision: number; employeeId?: never; requestSeq?: never }
   | { employeeId: string; requestSeq: number; rootId?: never; modeRevision?: never }
+  | { employeeId: string; requestSeq: number; rootId: string; modeRevision: number }
 )
 /** A direct employee chat is authorized by its exact saved human request, not HQ autonomy. */
 function directHumanRequest(events: readonly SessionEvent[], turn: number): number | undefined {
@@ -20,6 +21,20 @@ function directHumanRequest(events: readonly SessionEvent[], turn: number): numb
   if (start?.type !== 'turn/start' || start.data.turn !== turn) return
   const request = events.findLast(event => event.type === 'user/message' && event.seq > start.seq)
   return request?.type === 'user/message' && request.data.source.kind === 'user' ? request.seq : undefined
+}
+/** A saved authenticated Chief request, never a quiet scheduling notice. */
+function chiefRequest(events: readonly SessionEvent[], turn: number): { requestSeq: number; rootId: string } | undefined {
+  const start = events.findLast(event => event.type === 'turn/start')
+  if (start?.type !== 'turn/start' || start.data.turn !== turn) return
+  const request = events.findLast(event => event.type === 'user/message' && event.seq > start.seq
+    && event.data.source.kind !== 'plugin')
+  if (request?.type !== 'user/message' || request.data.source.kind !== 'hivemind-agent-message') return
+  const source = request.data.source
+  const receipt = events.findLast(event => event.type === 'hivemind/room-message-received'
+    && event.data.id === source.messageId)
+  if (receipt?.type !== 'hivemind/room-message-received' || receipt.data.senderEmployee !== 'runtime'
+    || !['question', 'reply'].includes(receipt.data.kind) || receipt.data.senderId !== source.senderSessionId) return
+  return { requestSeq: request.seq, rootId: source.senderSessionId }
 }
 function pinnedEmployee(events: readonly SessionEvent[]): string | undefined {
   const owner = events.find(event => String(event.type) === 'hivemind/session-owner')?.data as { id?: unknown } | undefined
@@ -72,7 +87,11 @@ function recoveryFrom(prompt: string): Recovery | undefined {
     const direct = typeof ref.employeeId === 'string' && ref.employeeId.trim() !== ''
       && typeof ref.requestSeq === 'number' && Number.isSafeInteger(ref.requestSeq) && ref.requestSeq >= 0
       && ref.rootId === undefined && ref.modeRevision === undefined
-    if (!team && !direct) return
+    const chief = typeof ref.employeeId === 'string' && ref.employeeId.trim() !== ''
+      && typeof ref.requestSeq === 'number' && Number.isSafeInteger(ref.requestSeq) && ref.requestSeq >= 0
+      && typeof ref.rootId === 'string' && typeof ref.modeRevision === 'number'
+      && Number.isSafeInteger(ref.modeRevision) && ref.modeRevision >= 1
+    if (!team && !direct && !chief) return
     return ref as Recovery
   } catch { return }
 }
@@ -91,7 +110,7 @@ export function installServiceRecovery(ctx: Context): void {
       && event.data.inserted.some(message => message.source.kind === 'schedule' && message.source.deliveryKey === deliveryKey))) return true
     if (agent.status === 'running' || agent.inbox.nextStep.length || agent.inbox.nextTurn.length
       || !serviceInterrupted(events, ref.turn)) return false
-    if (typeof ref.employeeId === 'string') {
+    if (typeof ref.employeeId === 'string' && ref.rootId === undefined) {
       const mode = events.findLast(event => event.type === 'hivemind/hq-mode')
       return effectivePreset(agent) === 'hivemind-hyperagents'
         && mode?.data.enabled !== false && !ctx.agentTeams.tryMembership(agent) && !currentEmployeeWork(agent)
@@ -105,6 +124,13 @@ export function installServiceRecovery(ctx: Context): void {
     const root = resolved.agent
     const mode = hqMode(root.session.snapshotEvents())
     if (effectivePreset(root) !== 'hivemind-hq' || !mode.enabled || mode.revision !== ref.modeRevision) return false
+    if (typeof ref.employeeId === 'string') {
+      const request = chiefRequest(events, ref.turn)
+      return effectivePreset(agent) === 'hivemind-hyperagents'
+        && events.findLast(event => event.type === 'hivemind/hq-mode')?.data.enabled !== false
+        && request?.rootId === ref.rootId && request.requestSeq === ref.requestSeq
+        && await canonicalEmployee(ctx, agent, ref.employeeId)
+    }
     const work = currentEmployeeWork(agent)
     if (work && (work.rootId !== root.id || ['completed', 'deleted'].includes(ctx.agentTeams.getTask(root, TeamTaskId(work.taskId)).status))) return false
     return effectivePreset(agent) === 'hivemind-hq' || effectivePreset(agent) === 'hivemind-hyperagents'
@@ -122,11 +148,20 @@ export function installServiceRecovery(ctx: Context): void {
     } else {
       const events = agent.session.ownEvents()
       const employeeId = pinnedEmployee(events)
-      const requestSeq = directHumanRequest(events, turn)
-      if (preset !== 'hivemind-hyperagents' || employeeId === undefined || requestSeq === undefined
+      const chief = chiefRequest(events, turn)
+      if (chief && employeeId !== undefined && await canonicalEmployee(ctx, agent, employeeId)) {
+        const resolved = await ctx.sessionController.resolveAgent(SessionId(chief.rootId))
+        if ('error' in resolved) throw resolved.error
+        const mode = hqMode(resolved.agent.session.snapshotEvents())
+        if (effectivePreset(resolved.agent) !== 'hivemind-hq' || !mode.enabled) return
+        ref = { sessionId: agent.id, employeeId, ...chief, turn, modeRevision: mode.revision }
+      } else {
+        const requestSeq = directHumanRequest(events, turn)
+        if (preset !== 'hivemind-hyperagents' || employeeId === undefined || requestSeq === undefined
         || currentEmployeeWork(agent) || events.findLast(event => event.type === 'hivemind/hq-mode')?.data.enabled === false
         || !await canonicalEmployee(ctx, agent, employeeId)) return
-      ref = { sessionId: agent.id, employeeId, requestSeq, turn }
+        ref = { sessionId: agent.id, employeeId, requestSeq, turn }
+      }
     }
     if (!await ctx.sessions.flush(agent.session)) throw new Error('service_recovery_source_persistence_required')
     await ctx.schedule.ensure(agent.id, keyOf(turn), { title: 'Service interruption recovery', after_seconds: 1,

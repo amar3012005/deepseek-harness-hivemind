@@ -161,3 +161,40 @@ it('does not recover direct employee work after explicit Stop or paused room mod
   h.setEvents(h.directEvents.map(event => event.type === 'turn/end' ? { ...event, data: { turn: 4, reason: { kind: 'aborted', reason: { kind: 'user' } } } } : event))
   expect(await h.guard()).toBe(false)
 })
+
+it('recovers only an exact actionable Chief request with the same enabled authority revision', async () => {
+  const h = directHarness()
+  const chiefEvents = [{ type: 'hivemind/hq-mode', seq: SessionSeq(0), time: 0,
+    data: { enabled: true, revision: 1, changedAt: 0 } }] as SessionEvent[]
+  const chief = { id: 'chief', session: { header: { agentPreset: 'hivemind-hq' },
+    ownEvents: () => chiefEvents, snapshotEvents: () => chiefEvents } }
+  vi.spyOn(h.ctx.sessionController, 'resolveAgent').mockResolvedValue({ agent: chief } as never)
+  const receipt = { type: 'hivemind/room-message-received', seq: SessionSeq(0), time: 0,
+    data: { id: 'chief-correction', senderId: 'chief', senderEmployee: 'runtime', kind: 'question' } } as SessionEvent
+  const request = { type: 'user/message', seq: SessionSeq(2), time: 0,
+    data: createUserMessage({ source: { kind: 'hivemind-agent-message', messageId: 'chief-correction',
+      senderId: 'chief', senderSessionId: 'chief' } as never,
+    content: [{ type: 'text', text: 'Please correct the current saved brief.' }] }) } as SessionEvent
+  h.setEvents([h.directEvents[0]!, receipt, h.directEvents[1]!, request, h.directEvents[3]!])
+  await h.arm()
+  expect(h.ensure).toHaveBeenCalledOnce()
+  expect(h.record().record.prompt).toContain('"rootId":"chief"')
+  expect(h.record().record.prompt).toContain('"modeRevision":1')
+  expect(await h.guard()).toBe(true)
+  chiefEvents.push({ type: 'hivemind/hq-mode', seq: SessionSeq(1), time: 0,
+    data: { enabled: false, revision: 2, changedAt: 1 } })
+  expect(await h.guard()).toBe(false)
+})
+
+it('never arms quiet Chief scheduling updates as direct requests', async () => {
+  const h = directHarness()
+  h.setEvents([h.directEvents[0]!, { type: 'hivemind/room-message-received', seq: SessionSeq(0), time: 0,
+    data: { id: 'notice', senderId: 'chief', senderEmployee: 'runtime', kind: 'update' } } as SessionEvent,
+  h.directEvents[1]!, { type: 'user/message', seq: SessionSeq(2), time: 0,
+    data: createUserMessage({ source: { kind: 'hivemind-agent-message', messageId: 'notice',
+      senderId: 'chief', senderSessionId: 'chief' } as never,
+    content: [{ type: 'text', text: 'Future assignment saved.' }] }) } as SessionEvent,
+  h.directEvents[3]!])
+  await h.arm()
+  expect(h.ensure).not.toHaveBeenCalled()
+})
