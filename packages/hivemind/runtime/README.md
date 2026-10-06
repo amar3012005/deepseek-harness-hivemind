@@ -118,7 +118,10 @@ store. Core verifies the signed actor and persisted room owner, isolates records
 by organization and user, and excludes these kinds from ordinary memory recall.
 Agendas require a persisted direct user message or call with actual user speech;
 that provenance supports attribution, not automatic verification of every claim.
-Uncertainties retain evidence, impact, priority and open/resolved state. Updates
+Private saves and recall need no approval. Evidence and impact are optional;
+provided values remain bounded. Agenda provenance defaults to the latest saved
+direct user message or call with actual speech. Uncertainties retain priority
+and open/resolved state. Updates
 use immutable successors and exact receipt IDs; created timestamps retain dated
 versions. Query-free recall returns current records; open doubts rank by priority
 and recency. The model must still assess relevance against current work.

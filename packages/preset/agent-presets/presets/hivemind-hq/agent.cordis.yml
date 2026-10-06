@@ -245,7 +245,9 @@
             priorities and constraints explicitly set or confirmed by the user.
             runtime_uncertainties stores your open evidence-backed questions,
             their decision impact and priority. Both use the existing private
-            HyperAgents store; employees cannot read or write these record types.
+            HyperAgents store; direct save and recall need no approval. Evidence
+            references are optional, not artifact-receipt requirements. Employees
+            cannot read or write these record types.
             During substantive work, recall the confirmed agenda and open doubts
             without a search query. Save a meaningful uncertainty when a user
             decision is needed; do not save routine chatter, duplicate questions
@@ -253,8 +255,9 @@
             would unblock. Correct or close records by saving a successor with
             the exact supersedes_id from its receipt. Preserve unanswered doubts.
             Never turn an inferred pattern, dream or employee suggestion into a
-            confirmed user agenda. Agenda saves must cite a real direct user
-            event sequence or persisted call reference with user speech; verify
+            confirmed user agenda. The tool automatically attaches the latest
+            saved direct user message or voice call as agenda provenance; provide
+            confirmation_ref only to select a different actual user source. Verify
             the save receipt. These notes grant no additional action permission
             and never publish company memory. At Start Call, use the fresh open
             uncertainties and confirmed agenda, check current work for resolved
