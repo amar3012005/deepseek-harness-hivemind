@@ -174,7 +174,7 @@ it('recovers only an exact actionable Chief request with the same enabled author
   const request = { type: 'user/message', seq: SessionSeq(2), time: 0,
     data: createUserMessage({ source: { kind: 'hivemind-agent-message', messageId: 'chief-correction',
       senderId: 'chief', senderSessionId: 'chief' } as never,
-    content: [{ type: 'text', text: 'Please correct the current saved brief.' }] }) } as SessionEvent
+    content: [{ type: 'text', text: 'Please correct the current saved brief.' }] }) } as unknown as SessionEvent
   h.setEvents([h.directEvents[0]!, receipt, h.directEvents[1]!, request, h.directEvents[3]!])
   await h.arm()
   expect(h.ensure).toHaveBeenCalledOnce()
@@ -193,7 +193,7 @@ it('never arms quiet Chief scheduling updates as direct requests', async () => {
   h.directEvents[1]!, { type: 'user/message', seq: SessionSeq(2), time: 0,
     data: createUserMessage({ source: { kind: 'hivemind-agent-message', messageId: 'notice',
       senderId: 'chief', senderSessionId: 'chief' } as never,
-    content: [{ type: 'text', text: 'Future assignment saved.' }] }) } as SessionEvent,
+    content: [{ type: 'text', text: 'Future assignment saved.' }] }) } as unknown as SessionEvent,
   h.directEvents[3]!])
   await h.arm()
   expect(h.ensure).not.toHaveBeenCalled()
