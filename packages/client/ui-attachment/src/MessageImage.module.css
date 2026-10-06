@@ -67,3 +67,9 @@
   overflow: hidden;
   border-radius: 16px;
 }
+
+@media (max-width: 600px) {
+  :global([data-native-chat]) .gallery { min-width: 0; gap: 6px; }
+  :global([data-native-chat]) .frame { max-width: 100%; max-height: 220px; border-radius: 12px; }
+  :global([data-native-chat]) .frame img { object-fit: contain; }
+}

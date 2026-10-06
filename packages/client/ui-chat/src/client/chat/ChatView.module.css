@@ -256,3 +256,9 @@
 :global([data-agent-room]) .flowItem:has(:global([data-chat-agent-color="3"])) { --dsh-agent-bubble-color: color-mix(in srgb, #db2777 13%, var(--dsw-alias-bg-base, #fff)); }
 :global([data-agent-room]) .flowItem:has(:global([data-chat-agent-color="4"])) { --dsh-agent-bubble-color: color-mix(in srgb, #0891b2 13%, var(--dsw-alias-bg-base, #fff)); }
 :global([data-agent-room]) .flowItem:has(:global([data-chat-agent-color="5"])) { --dsh-agent-bubble-color: color-mix(in srgb, #ca8a04 13%, var(--dsw-alias-bg-base, #fff)); }
+
+@media (max-width: 600px) {
+  :global([data-native-chat]) .scroll { padding: 10px 12px; }
+  :global([data-native-chat]) .column { --dsh-chat-flow-gap: 10px; }
+  :global([data-native-chat]) .roomDate { padding: 10px 0 6px; font-size: 11px; }
+}

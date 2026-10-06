@@ -349,3 +349,9 @@
 
 /* Agent-room user replies use one consistent blue treatment. */
 :global([data-agent-room]) .bubble { background: color-mix(in srgb, #3b82f6 16%, var(--dsw-alias-bg-base, #fff)); }
+
+@media (max-width: 600px) {
+  :global([data-native-chat]) .userStack { max-width: 88%; gap: 4px; }
+  :global([data-native-chat]) .bubble { padding: 8px 12px; border-radius: 18px; background: #eaf1ff; }
+  :global([data-native-chat]) .fileCard { flex: 0 1 240px; max-width: 100%; min-height: 56px; }
+}

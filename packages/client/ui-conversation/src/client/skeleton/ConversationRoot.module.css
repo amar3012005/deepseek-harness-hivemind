@@ -747,3 +747,9 @@
   :global(html[data-dsh-mode='hivemind-chat']) .root[data-native-chat] .header:not(.headerHidden) { min-height: 48px; }
   :global(html[data-dsh-mode='hivemind-chat']) .root[data-native-chat] .header .titleRow { min-height: 44px; }
 }
+
+/* Phone canvas follows the existing HIVE cream theme in every native room. */
+@media (max-width: 600px) {
+  .root[data-native-chat] { background: #faf9f4; color: #242424; }
+  .root[data-native-chat] .header:not(.headerHidden) { min-height: 48px; }
+}
