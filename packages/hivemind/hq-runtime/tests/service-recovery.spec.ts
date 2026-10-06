@@ -59,7 +59,7 @@ function harness() {
   const remove = vi.fn(async () => ({ deleted: true })), read = vi.fn(async () => ({}))
   const ctx = { effect: (fn: () => unknown) => fn(), on: (name: string, fn: (...args: unknown[]) => unknown) => hooks.set(name, fn),
     schedule: { guardDelivery: (fn: typeof guard) => { guard = fn }, ensure, delete: remove },
-    sessions: { flush: async () => true }, agentTeams: { tryMembership: () => ({ root: agent }) },
+    agents: { get: () => agent }, sessions: { flush: async () => true }, agentTeams: { tryMembership: () => ({ root: agent }) },
     sessionPersistence: { open: async () => ({ read, close: async () => {} }) },
     sessionController: { resolveAgent: async () => ({ agent }) }, logger: { warn: vi.fn() } } as unknown as Context
   installServiceRecovery(ctx)
@@ -176,8 +176,14 @@ it('recovers only an exact actionable Chief request with the same enabled author
     data: createUserMessage({ source: { kind: 'hivemind-agent-message', messageId: 'chief-correction',
       senderId: 'chief', senderSessionId: 'chief' } as never,
     content: [{ type: 'text', text: 'Please correct the current saved brief.' }] }) } as unknown as SessionEvent
-  h.setEvents([h.directEvents[0]!, receipt, h.directEvents[1]!, request, h.directEvents[3]!])
+  h.setEvents([h.directEvents[0]!, h.directEvents[1]!, request, h.directEvents[3]!])
   await h.arm()
+  expect(h.ensure).not.toHaveBeenCalled()
+  h.setEvents([h.directEvents[0]!, receipt, h.directEvents[1]!, request, h.directEvents[3]!])
+  h.agent.status = 'running'
+  h.hooks.get('session/event')!(h.agent.session, receipt)
+  await expect.poll(() => h.ensure.mock.calls.length).toBe(1)
+  h.agent.status = 'idle'
   expect(h.ensure).toHaveBeenCalledOnce()
   expect(h.record().record.prompt).toContain('"rootId":"chief"')
   expect(h.record().record.prompt).toContain('"modeRevision":1')

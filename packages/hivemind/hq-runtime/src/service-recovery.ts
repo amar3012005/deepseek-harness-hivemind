@@ -143,6 +143,14 @@ export function installServiceRecovery(ctx: Context): void {
     const events = agent.session.ownEvents()
     const employeeId = pinnedEmployee(events)
     const chief = preset === 'hivemind-hyperagents' ? chiefRequest(events, turn) : undefined
+    const start = events.findLast(event => event.type === 'turn/start')
+    const request = events.findLast(event => event.type === 'user/message' && event.seq > (start?.seq ?? Infinity)
+      && event.data.source.kind !== 'plugin')
+    if (preset === 'hivemind-hyperagents' && request?.type === 'user/message'
+      && request.data.source.kind === 'hivemind-agent-message') {
+      const source = request.data.source
+      if (!events.some(event => event.type === 'hivemind/room-message-received' && event.data.id === source.messageId)) return
+    }
     let ref: Recovery
     // A fresh explicit request supersedes historical membership or completed work.
     if (chief && employeeId !== undefined && await canonicalEmployee(ctx, agent, employeeId)) {
@@ -180,6 +188,18 @@ export function installServiceRecovery(ctx: Context): void {
       if (agent?.status === 'running' && start?.type === 'turn/start') await arm(agent, start.data.turn)
     }
     yield* next()
+  }, { global: true }))
+  // Native room delivery persists its receipt after steer; the first step may already be streaming.
+  ctx.effect(() => ctx.on('session/event', (session, event) => {
+    if (event.type !== 'hivemind/room-message-received') return
+    const agent = ctx.agents.get(session.id)
+    const start = agent?.session.ownEvents().findLast(value => value.type === 'turn/start')
+    if (agent?.status !== 'running' || start?.type !== 'turn/start') return
+    const job = arm(agent, start.data.turn).catch((error: unknown) => {
+      ctx.logger.warn(`Chief request recovery remains unconfirmed: ${error instanceof Error ? error.name : 'unknown error'}`)
+    })
+    jobs.add(job)
+    void job.finally(() => jobs.delete(job))
   }, { global: true }))
   ctx.effect(() => ctx.on('agent/turn-ended', ({ agent, turn, reason }) => {
     if (armed.get(agent) !== turn || reason.kind === 'interrupted'
