@@ -155,6 +155,12 @@ export function installAgentMessaging(ctx: Context): void {
         let preset = agent.session.header.agentPreset
         for (const event of agent.session.ownEvents()) if (String(event.type) === 'agent-preset/selected') preset = (event.data as { agentPreset: string }).agentPreset
         if (preset !== 'hivemind-hq' && (!owner?.id || !directory.profiles.some(p => p['id'] === owner.id))) throw new Error('agent_message_sender_not_authorized')
+        const senderProfile = directory.profiles.find(profile => profile['id'] === owner?.id)
+        const lifecycle = (senderProfile?.['policy_rules'] as { native_lifecycle?: { phase?: string; kind?: string; expires_at?: string } } | undefined)?.native_lifecycle
+        if (lifecycle && (lifecycle.phase !== 'active' || (lifecycle.kind === 'temporary' &&
+          (!lifecycle.expires_at || Date.parse(lifecycle.expires_at) <= Date.now()))) && input.recipient !== 'runtime') {
+          throw new Error('employee_closeout_may_only_report_to_runtime')
+        }
         const target = input.recipient === 'runtime' ? undefined : authorizedRecipient(directory.profiles, input.recipient)
         if (input.recipient !== 'runtime' && !target) throw new Error('agent_message_recipient_not_authorized')
         const targetProfile = target === undefined ? undefined : { id: String(target['id']), name: String(target['name']), role: typeof target['role_archetype'] === 'string' ? target['role_archetype'] : 'HIVE-MIND employee' }
