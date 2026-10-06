@@ -259,6 +259,9 @@ suite('tenant PostgreSQL Schedule provider', () => {
     const consumer = await ctx.plugin(AppBuilder, {
       serviceApiBase: 'http://127.0.0.1:1',
       serviceSecretEnv: 'CRM_PROJECT_REJECTION_NO_SECRET',
+      requestTimeoutMs: 30_000,
+      maxRequestBytes: 262_144,
+      maxResponseBytes: 1_048_576,
     })
     let deliveries = 0
     try {
