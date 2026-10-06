@@ -749,6 +749,21 @@ describe('current selection (migrated from ui-layout, arbitrated into the list s
 })
 
 describe('binding and stage lifecycle', () => {
+  it('pulls one fresh list after a reconnect supersedes an aborting initial request', async () => {
+    const b = bench()
+    const old = deferred<Awaited<ReturnType<typeof b.api.onList>>>()
+    let pulls = 0
+    b.api.onList = () => ++pulls === 1 ? old.promise : Promise.resolve(ok({ items: [] }))
+    const initial = b.svc.refresh()
+    b.svc.handleConnected()
+    b.svc.handleConnected()
+    expect(pulls).toBe(1)
+    old.reject(new DOMException('Old carrier closed', 'AbortError'))
+    await initial
+    await vi.waitFor(() => expect(b.svc.list.getSnapshot().phase).toBe('ready'))
+    expect(pulls).toBe(2)
+  })
+
   it('retries an errored same-current open on explicit selection without repulling a healthy window', async () => {
     const b = bench()
     await feedList(b, [{ id: 's1' }])
