@@ -1137,6 +1137,13 @@ export function apply(ctx: Context, config: Config): void {
           at: new Date(Math.max(Date.parse(deadline), Date.now() + 1000)).toISOString(),
           prompt: `A temporary employee reached its saved deadline: ${id}. Inspect the current registry with hivemind_employee_lifecycle, begin closeout, and review actual saved work. Preserve private learning and handoff before archival. Do not dispatch new business work or claim completion from a notification alone.`,
         })
+        try {
+          const current = apiRecord(await hiveRequest(authority, '/employee-lifecycle-proof', { method: 'POST', body: JSON.stringify({ employee_id: id }) }, signal, config), 'employee lifecycle proof')
+          if (current['phase'] !== 'active' || current['revision'] !== lifecycle['revision'] || current['expiresAt'] !== deadline) throw new HiveMindRuntimeError('Employee lifecycle changed during deadline setup')
+        } catch (error) {
+          await lifecycleCtx.schedule.delete({ sessionId: agent.id, id: wake.id })
+          throw error
+        }
         result['closeout_schedule_id'] = wake.id
       }
       return Object.fromEntries(Object.entries(result).filter((entry): entry is [string, JsonValue] => entry[1] !== undefined))
@@ -1194,8 +1201,20 @@ export function apply(ctx: Context, config: Config): void {
   ctx.effect(() => ctx.on('tools/pre-execute', async (execution, next): Promise<PreToolDecision> => {
     // Enforce current registry authority before every dispatch, including cached,
     // nested, newly registered tools and danger-full-access sessions.
-    const employeeOwner = execution.agent && sessionOwner(execution.agent.session.snapshotEvents())
-    if (employeeOwner?.id && config.authorityMode === 'scoped-service') {
+    const employeeOwners: SessionOwner[] = []
+    let employeeSession = execution.agent?.session
+    const visited = new Set<string>()
+    while (employeeSession) {
+      if (visited.has(employeeSession.header.id) || visited.size >= 32) return { kind: 'deny', reason: 'Employee ancestry could not be verified.' }
+      visited.add(employeeSession.header.id)
+      const owner = sessionOwner(employeeSession.snapshotEvents())
+      if (owner?.id) employeeOwners.push(owner)
+      const parent = employeeSession.header.parentSession
+      if (!parent) break
+      employeeSession = ctx.sessions.get(parent)
+      if (!employeeSession) return { kind: 'deny', reason: 'Parent employee authority is unavailable.' }
+    }
+    for (const employeeOwner of employeeOwners) if (config.authorityMode === 'scoped-service') {
       const authority = await resolveAuthority(ctx, config)
       const directory = hyperagentDirectory(await hiveRequest(authority, '/v1/hyperagents/profiles', { method: 'GET' }, execution.signal, config))
       const profile = directory.profiles.find(item => item['id'] === employeeOwner.id)

@@ -27,11 +27,13 @@ it('creates one native deadline wake on retry and removes only Core-attested emp
  const scope=new ExecutionScope(fixture.ctx)
  const chief=agentFor(fixture.ctx,'fixture-chief'),roomA=agentFor(fixture.ctx,'fixture-employee-a'),roomB=agentFor(fixture.ctx,'fixture-employee-b'),unrelated=agentFor(fixture.ctx,'fixture-unrelated')
  fixture.resolve.mockImplementation(async id=>({agent:[chief,roomA,roomB,unrelated].find(agent=>agent.id===id)!}))
- let phase='active'
+ let phase='active', proofReads=0, archiveDuringWrite=false
+ const expiresAt=new Date(Date.now()+3600000).toISOString()
  const originalOwner='14f5568b-4d6a-4ae1-9a33-48cb2909d59b'
  fixture.ctx.on('hivemind/employee-lifecycle-proof',async request=>{
+  proofReads+=1;if(archiveDuringWrite && proofReads===2) phase='archived'
   expect(request.employeeId).toBe(input.employeeId);expect(scope.require().orgId).toBe(input.orgId);expect(scope.require().userId).toBe(input.userId)
-  return {employeeId:input.employeeId,revision:1,kind:'temporary',phase,expiresAt:new Date(Date.now()+3600000).toISOString(),chief:{sessionId:chief.id,userId:input.userId},chiefs:[{sessionId:chief.id,userId:input.userId}],rooms:[{sessionId:roomA.id,userId:input.userId},{sessionId:roomB.id,userId:originalOwner}]}
+  return {employeeId:input.employeeId,revision:1,kind:'temporary',phase,expiresAt,chief:{sessionId:chief.id,userId:input.userId},chiefs:[{sessionId:chief.id,userId:input.userId}],rooms:[{sessionId:roomA.id,userId:input.userId},{sessionId:roomB.id,userId:originalOwner}]}
  })
  const server=createServer();servers.push(server)
  fixture.ctx.provide('webServer',{register:({handler}:{handler:Parameters<typeof createServer>[0]})=>{server.on('request',handler!);return()=>{}}} as never)
@@ -44,7 +46,8 @@ it('creates one native deadline wake on retry and removes only Core-attested emp
  const two=await call();expect(two.status).toBe(200);expect((await two.json() as {scheduleId:string}).scheduleId).toBe(first.scheduleId)
  expect(await fixture.service.list({sessionId:chief.id})).toHaveLength(1)
  for(const agent of [roomA,roomB,unrelated]) await fixture.service.ensure(agent.id,`work-${agent.id}`,{title:'Fixture work',after_seconds:3600,prompt:'Fixture only'})
- phase='archived'
+ archiveDuringWrite=true;proofReads=0
+ const raced=await call();expect(raced.status).toBe(503);expect(await fixture.service.list({sessionId:chief.id})).toHaveLength(0)
  const archive=await call();expect(archive.status).toBe(200)
  expect(await fixture.service.list({sessionId:roomA.id})).toHaveLength(0);expect(await fixture.service.list({sessionId:roomB.id})).toHaveLength(0)
  expect(await fixture.service.list({sessionId:unrelated.id})).toHaveLength(1);expect(await fixture.service.list({sessionId:chief.id})).toHaveLength(0)
