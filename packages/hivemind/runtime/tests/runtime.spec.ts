@@ -1270,7 +1270,7 @@ describe('HQ automatic private wake recall', () => {
     vi.stubGlobal('fetch', fetchMock)
     const harness = mount({ ...config('unused'), authorityMode: 'scoped-service', privateMemoryEnabled: true, serviceApiBase: 'http://control.test', serviceHttpOrigins: ['http://control.test'], serviceSecretEnv: 'TEST_HIVE_RUNNER_SECRET' })
     const events = [{ type: 'hivemind/session-owner', data: { id: null, slug: 'runtime', name: 'Runtime', role: 'AI Chief of Staff' } }, { type: 'user/message', data: user('Review the saved crawler report') }] as unknown as SessionEvent[]
-    const subject = () => ({ id: 'session-d292efdd-4b56-4053-b61c-9cd63a7cd8ff', session: { header: { agentPreset: 'hivemind-hq' }, snapshotEvents: () => events } }) as unknown as Agent
+    const subject = () => ({ id: 'session-d292efdd-4b56-4053-b61c-9cd63a7cd8ff', ctx: { effect: (run: () => void) => run(), tools: { register: (definition: ToolDefinition) => { harness.tools.set(definition.name, definition); return () => {} } } }, session: { header: { agentPreset: 'hivemind-hq' }, snapshotEvents: () => events } }) as unknown as Agent
     events.push({ type: 'user/message', data: createUserMessage({ content: [{ type: 'text', text: 'Old projected history' }], source: { kind: 'plugin', plugin: 'history', form: 'recall' } }) } as SessionEvent)
     const agent = subject()
     const enter = async () => ({ kind: 'enter' as const, messages: [] })
