@@ -1,5 +1,6 @@
 /** Authenticated WebRTC voice bridge; media travels directly to OpenAI. */
 import type { Context, Plugin } from '@deepseek-ai/cordis'
+import { PROVIDER_PREFIX } from './provider-api.ts'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { randomUUID } from 'node:crypto'
 import WebSocket from 'ws'
@@ -157,7 +158,11 @@ export function voiceContextChunks(text: string): string[] {
  * @returns Reversible native Cordis plugin.
  */
 export function liveVoicePlugin(config: LiveVoiceConfig,
-  authenticate: (req: IncomingMessage) => HivemindPrincipal | undefined): Plugin.Object<void> {
+  authenticate: (req: IncomingMessage) => HivemindPrincipal | undefined,
+  provider?: {
+    authenticate(req: IncomingMessage): Promise<HivemindPrincipal | undefined>
+    active(principal: HivemindPrincipal, signal: AbortSignal): Promise<boolean>
+  }): Plugin.Object<void> {
   return { name: 'hivemind-live-voice', inject: ['webServer', 'connection', 'sessionController', 'sessions', 'systemPrompt', 'sessionPersistence', 'hivemindExecutionScope'],
     apply(ctx: Context) {
       const rooms = new Map<string, Room>()
@@ -165,25 +170,29 @@ export function liveVoicePlugin(config: LiveVoiceConfig,
       const models = createModels({ credentials: credentialStoreFrom(ctx), authContext: authContextFrom(ctx) })
       models.setProvider(openaiCodexProvider())
       ctx.effect(() => () => { for (const room of rooms.values()) room.close() })
-      ctx.effect(() => ctx.webServer.register({ kind: 'prefix', path: '/api/hivemind/voice', handler: async (req, res) => {
+      const handler = async (req: IncomingMessage, res: ServerResponse) => {
         let p: HivemindPrincipal | undefined
-        try { p = authenticate(req) } catch { reply(res, 401, { error: 'authentication_required' }); return }
+        const providerPath = req.url?.split('?')[0]?.startsWith(PROVIDER_PREFIX + '/realtime/') === true
+        let providerOwner: HivemindPrincipal | undefined
+        try { providerOwner = providerPath ? await provider?.authenticate(req) : undefined; p = providerPath ? providerOwner : authenticate(req) } catch { reply(res, 401, { error: 'authentication_required' }); return }
         if (!p) { reply(res, 401, { error: 'authentication_required' }); return }
+        if (providerPath && (!providerOwner || !await provider?.active(providerOwner, AbortSignal.timeout(config.timeoutMs)))) { reply(res, 403, { error: 'authentication_required' }); return }
+        const route = providerPath ? req.url?.split('?')[0]?.replace(PROVIDER_PREFIX + '/realtime', '/api/hivemind/voice') : req.url?.split('?')[0]
         const host = req.headers['x-forwarded-host'] ?? req.headers.host
         let sameOrigin = false
         try { sameOrigin = typeof req.headers.origin === 'string' && new URL(req.headers.origin).host === host } catch { /* Invalid Origin fails closed. */ }
-        if (req.method !== 'POST' || !sameOrigin || req.headers['content-type']?.split(';')[0] !== 'application/json') {
+        if (req.method !== 'POST' || (!providerOwner && !sameOrigin) || req.headers['content-type']?.split(';')[0] !== 'application/json') {
           reply(res, 403, { error: 'invalid_request' }); return
         }
         const owner = p.orgId
         try {
           const input = await body(req)
-          if (req.url?.split('?')[0] === '/api/hivemind/voice/stop') {
+          if (route === '/api/hivemind/voice/stop') {
             const room = typeof input.id === 'string' ? rooms.get(input.id) : undefined
             if (room && room.principal.orgId === p.orgId && room.principal.userId === p.userId) room.close('ended')
             reply(res, 200, { ok: true }); return
           }
-          if (req.url?.split('?')[0] === '/api/hivemind/voice/fallback/finish') {
+          if (route === '/api/hivemind/voice/fallback/finish') {
             if (typeof input.sessionId !== 'string' || typeof input.callId !== 'string') { reply(res, 400, { error: 'invalid_request' }); return }
             await ctx.hivemindExecutionScope.run(p, async () => {
               const id = SessionId(input.sessionId as string)
@@ -218,8 +227,8 @@ export function liveVoicePlugin(config: LiveVoiceConfig,
               reply(res, 200, { ok: true })
             }); return
           }
-          const fallback = req.url?.split('?')[0] === '/api/hivemind/voice/fallback/start'
-          if (!fallback && req.url?.split('?')[0] !== '/api/hivemind/voice/start') { reply(res, 404, { error: 'not_found' }); return }
+          const fallback = route === '/api/hivemind/voice/fallback/start'
+          if (!fallback && route !== '/api/hivemind/voice/start') { reply(res, 404, { error: 'not_found' }); return }
           if (!config.enabled) { reply(res, 503, { error: 'voice_unavailable' }); return }
           if (typeof input.sessionId !== 'string' || (!fallback && (typeof input.sdp !== 'string' || !input.sdp.startsWith('v=0')))) {
             reply(res, 400, { error: 'invalid_request' }); return
@@ -423,6 +432,8 @@ export function liveVoicePlugin(config: LiveVoiceConfig,
             })
           } finally { starting.delete(owner) }
         } catch (error) { reply(res, 503, { error: error instanceof Error && error.message === 'runtime_decision_memory_unavailable' ? 'runtime_decision_memory_unavailable' : 'voice_unavailable', fallbackAllowed: error instanceof Error && ['voice_connection_failed', 'voice_authorization_unavailable'].includes(error.message) }) }
-      } }))
+      }
+      ctx.effect(() => ctx.webServer.register({ kind: 'prefix', path: '/api/hivemind/voice', handler }))
+      if (provider) ctx.effect(() => ctx.webServer.register({ kind: 'prefix', path: PROVIDER_PREFIX + '/realtime', handler }))
     } }
 }

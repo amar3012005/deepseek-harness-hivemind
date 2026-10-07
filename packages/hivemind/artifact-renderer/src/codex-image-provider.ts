@@ -29,8 +29,8 @@ declare module '@deepseek-ai/cordis' {
     'hivemind/codex-image-auth'(input: { signal: AbortSignal }): Promise<CodexImageAuth | undefined>
   }
 }
-interface State { owner?: MediaOwner; status: 'pending' | 'completed' | 'failed'; threadId?: string; turnId?: string; filename?: string }
-const active = new Map<string, { owner: MediaOwner | undefined; run: Promise<GeneratedFile> }>()
+interface State { requestHash?: string; owner?: MediaOwner; status: 'pending' | 'completed' | 'failed'; threadId?: string; turnId?: string; filename?: string }
+const active = new Map<string, { requestHash: string; owner: MediaOwner | undefined; run: Promise<GeneratedFile> }>()
 function object(value: unknown): value is Record<string, unknown> { return value !== null && typeof value === 'object' && !Array.isArray(value) }
 
 /** Small stdio RPC transport; refuses shell, MCP, and approval requests from the image worker. */
@@ -157,22 +157,28 @@ export function codexImageProvider(config: CodexImageConfig): GenerationProvider
       if (!request.operationId) throw new Error('Codex image generation requires a durable operation identity')
       if (request.referenceImages?.length) throw new Error('Codex image references must be session-owned artifacts, not remote URLs')
       const root = join(config.stateDirectory, createHash('sha256').update(request.operationId).digest('hex'))
+      const requestHash = imageRequestHash(request)
       const prior = active.get(root)
       if (prior) {
+        if (prior.requestHash !== requestHash) throw new Error('Image operation request mismatch')
         if (JSON.stringify(prior.owner) !== JSON.stringify(request.owner)) throw new Error('Image operation ownership mismatch')
         return prior.run
       }
       const run = runImage(config, root, request)
-      active.set(root, { owner: request.owner, run })
+      active.set(root, { requestHash, owner: request.owner, run })
       try { return await run } finally { active.delete(root) }
     },
   }
+}
+function imageRequestHash(request: GenerationRequest): string {
+  return createHash('sha256').update(JSON.stringify({ content: request.content, transparentBackground: request.transparentBackground ?? false })).digest('hex')
 }
 async function runImage(config: CodexImageConfig, root: string, request: GenerationRequest): Promise<GeneratedFile> {
   await mkdir(root, { recursive: true, mode: 0o700 })
   let state: State | undefined
   try { state = JSON.parse(await readFile(join(root, 'operation.json'), 'utf8')) as State }
   catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw new Error('Image operation state cannot be read safely') }
+  if (state?.requestHash && state.requestHash !== imageRequestHash(request)) throw new Error('Image operation request mismatch')
   if (state?.owner && !request.owner) throw new Error('Image operation ownership is required')
   if (state && request.owner && (!state.owner || state.owner.orgId !== request.owner.orgId || state.owner.userId !== request.owner.userId || state.owner.sessionId !== request.owner.sessionId)) throw new Error('Image operation ownership mismatch')
   if (!state && request.reconcileOnly) throw new Error('Previous image submission has no confirmed provider receipt; it was not regenerated')
@@ -208,7 +214,7 @@ async function runImage(config: CodexImageConfig, root: string, request: Generat
       }
       throw new Error('Previous image outcome is unknown. This operation was not regenerated; inspect its existing run before starting a new operation.')
     }
-    await saveState(root, { ...(request.owner ? { owner: request.owner } : {}), status: 'pending' })
+    await saveState(root, { requestHash: imageRequestHash(request), ...(request.owner ? { owner: request.owner } : {}), status: 'pending' })
     const thread = await wire.request('thread/start', { cwd: root, model: config.model, approvalPolicy: 'never', sandbox: 'read-only', ephemeral: false,
       baseInstructions: 'You produce exactly one image using image_gen.imagegen. Do not use shell, research, MCP, or other tools. Do not answer with prose in place of generation. Supplied conversation images are authorized inputs. Use the native image tool once.' })
     if (!object(thread) || !object(thread.thread) || typeof thread.thread.id !== 'string') throw new Error('Codex image thread was not accepted')

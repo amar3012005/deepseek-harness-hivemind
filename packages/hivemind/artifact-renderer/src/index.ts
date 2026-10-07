@@ -1,3 +1,4 @@
+import type {} from '@deepseek-ai/dsh-hivemind-execution-scope'
 import { museImageProvider } from './muse-image-provider.ts'
 import { registerArtifactInspection } from './artifact-inspection.ts'
 /** Progressive, provider-neutral PDF artifact rendering for HIVE-MIND. */
@@ -363,6 +364,15 @@ export function apply(ctx: Context, config: Config): void {
         return { pageCount: rendered.pageCount, preview: { data: rendered.preview, mediaType: 'image/png' }, data: rendered.pdf, extension: 'pdf', mediaType: 'application/pdf', designQuality: evaluateMarkdownDesignQuality(request.content, request.designProfile) }
       },
     }))
+    rendererCtx.on('hivemind/provider-image', async (input) => {
+      const principal = rendererCtx.hivemindExecutionScope.require()
+      const provider = registry.get('image')
+      if (provider.id !== 'codex:gpt-image-2') throw new Error('Codex image provider is not configured')
+      return provider.generate({ title: 'Provider image', content: input.prompt, cwd: process.cwd(), signal: input.signal,
+        operationId: input.operationId, owner: { orgId: principal.orgId, userId: principal.userId, sessionId: input.sessionId },
+        ...(input.transparentBackground === undefined ? {} : { transparentBackground: input.transparentBackground }),
+      })
+    })
     registerGenerationTools(rendererCtx, registry, config.outputDirectory, config.maxMarkdownChars, config.attachmentOnly)
     registerMediaWorkflow(rendererCtx, registry, config.outputDirectory, {
       requireOwner: config.mediaRequireOwner === true,

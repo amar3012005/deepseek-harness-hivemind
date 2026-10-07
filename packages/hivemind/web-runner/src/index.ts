@@ -17,6 +17,7 @@ import { projectHyperagentProfiles } from '@deepseek-ai/dsh-hivemind-employee-di
 import { registerRunnerDrainStatus } from './runner-drain.ts'
 import { principalMembershipActive } from './principal-membership.ts'
 import { registerMediaAuth } from './media-auth.ts'
+import { registerProviderApi, providerPrincipal, type ProviderApiConfig } from './provider-api.ts'
 import { liveVoicePlugin, type LiveVoiceConfig } from './live-voice.ts'
 
 export const name = 'hivemind-web-runner'
@@ -48,6 +49,7 @@ function nativeStyles(): Promise<string[]> {
 }
 
 export interface Config {
+  providerApi?: ProviderApiConfig
   parentOrigins: string[]
   ticketSecretEnv: string
   redisUrlEnv: string
@@ -69,6 +71,7 @@ export interface Config {
 }
 
 export const Config: z<Config> = z.object({
+  providerApi: z.object({ enabled: z.boolean().default(false), keyEnv: z.string().default('HIVE_CODEX_PROVIDER_API_KEY'), orgId: z.string().default(''), userId: z.string().default(''), sessionId: z.string().default(''), variation: z.string().default('full'), model: z.string().default('gpt-6-luna') }),
   parentOrigins: z.array(String).required(),
   ticketSecretEnv: z.string().required(),
   redisUrlEnv: z.string().required(),
@@ -284,15 +287,6 @@ function compactProjects(value: unknown): Array<{ id: string; name: string; slug
 /** Mount the one-time ticket exchange and health routes. */
 export async function apply(ctx: Context, config: Config): Promise<void> {
   registerMediaAuth(ctx)
-  ctx.plugin(liveVoicePlugin(config.liveVoice, (req) => {
-    const principal = ctx.connection.principal({ headers: {
-      host: publicHost(req) || req.headers.host, cookie: req.headers.cookie,
-    } })
-    if (principal?.profile !== 'hivemind-chat' || !nonEmpty(principal.user_id)
-      || !nonEmpty(principal.org_id) || !nonEmpty(principal.variation)) return undefined
-    return { orgId: principal.org_id, userId: principal.user_id, profile: 'hivemind-chat',
-      variation: principal.variation, ...(principal.project_id ? { projectId: principal.project_id } : {}) }
-  }))
   const secret = env(config.ticketSecretEnv)
   if (Buffer.byteLength(secret, 'utf8') < 32) throw new Error('hivemind-web-runner: ticket secret must be at least 32 bytes')
   const parentOrigins = config.parentOrigins.map((value) => {
@@ -308,6 +302,24 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
   if (Buffer.byteLength(projectCatalogSecret, 'utf8') < 32) {
     throw new Error('hivemind-web-runner: project catalog service secret must be at least 32 bytes')
   }
+  const providerConfig = config.providerApi
+  const providerKey = async () => providerConfig?.enabled ? env(providerConfig.keyEnv) : ''
+  const providerActive = (principal: { orgId: string; userId: string }, signal: AbortSignal) => principalMembershipActive(
+    projectCatalogBase.origin,
+    serviceToken({ org_id: principal.orgId, user_id: principal.userId }, projectCatalogSecret), signal)
+  if (providerConfig?.enabled) registerProviderApi(ctx, providerConfig, providerKey, providerActive)
+  ctx.plugin(liveVoicePlugin(config.liveVoice, (req) => {
+    const principal = ctx.connection.principal({ headers: {
+      host: publicHost(req) || req.headers.host, cookie: req.headers.cookie,
+    } })
+    if (principal?.profile !== 'hivemind-chat' || !nonEmpty(principal.user_id)
+      || !nonEmpty(principal.org_id) || !nonEmpty(principal.variation)) return undefined
+    return { orgId: principal.org_id, userId: principal.user_id, profile: 'hivemind-chat',
+      variation: principal.variation, ...(principal.project_id ? { projectId: principal.project_id } : {}) }
+  }, providerConfig?.enabled ? {
+    authenticate: async req => providerPrincipal(req, providerConfig, await providerKey()),
+    active: providerActive,
+  } : undefined))
   registerBrainPlan(ctx, config.chatgptPlanBrainEnabled ?? false, options =>
     requestBrainPlan(projectCatalogBase.origin, projectCatalogSecret, ctx.hivemindExecutionScope.require(), options), {
     route: (options) => {

@@ -296,6 +296,14 @@
           process.env.HIVEMIND_ONBOARDING_SERVICE_URL ?? 'http://core:3000']
         serviceSecretEnv: HIVE_HARNESS_RUNNER_SERVICE_SECRET
         databaseUrlEnv: DATABASE_URL
+        providerApi:
+          enabled: !!js process.env.HIVE_CODEX_PROVIDER_ENABLED === 'true'
+          keyEnv: HIVE_CODEX_PROVIDER_API_KEY
+          orgId: !!js process.env.HIVE_CODEX_PROVIDER_ORG_ID ?? ''
+          userId: !!js process.env.HIVE_CODEX_PROVIDER_USER_ID ?? ''
+          sessionId: !!js process.env.HIVE_CODEX_PROVIDER_SESSION_ID ?? ''
+          variation: full
+          model: !!js process.env.HIVE_CODEX_PROVIDER_MODEL ?? 'gpt-5.6-luna'
 
 # Host scheduling is tenant-scoped for BRAIN and HyperAgents roots.
 - id: web-fetch-http
