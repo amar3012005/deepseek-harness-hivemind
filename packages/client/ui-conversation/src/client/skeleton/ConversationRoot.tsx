@@ -256,8 +256,10 @@ export function ConversationRoot({
     && session.subagent.parentAvailable === undefined
   // An agent URL is already a room selection. Until routing has resolved its
   // durable Session, absence of a selection is loading, never a Brain hero.
-  const agentRoutePending = sessionId === undefined && typeof window !== 'undefined'
-    && /^\/hivemind\/app\/employee\/harness(?:\/|$)/u.test(window.location.pathname)
+  const agentPath = typeof window === 'undefined' ? undefined
+    : window.location.pathname.match(/^\/hivemind\/app\/employee\/harness(?:\/session\/([^/]+))?\/?$/u)
+  const agentRoutePending = agentPath != null && (sessionId === undefined
+    || (agentPath[1] !== undefined && agentPath[1] !== sessionId))
   const settling = agentRoutePending || (sessionId !== undefined && (
     (shellPhase === 'blank' && openState !== 'open')
     || parentAvailabilityPending
@@ -381,11 +383,11 @@ export function ConversationRoot({
       data-phase={phase}
       data-dreaming-ready={dreamingReady || undefined}
     >
-      {sessionId === undefined ? null : renderSlot('conversation.session.header', {})}
-      {sessionId === undefined ? null : renderSlot('conversation.room.header', {})}
+      {sessionId === undefined || agentRoutePending ? null : renderSlot('conversation.session.header', {})}
+      {sessionId === undefined || agentRoutePending ? null : renderSlot('conversation.room.header', {})}
       <div className={css.body}>
         <div className={css.scrollBody} data-conversation-scroll="">
-          {sessionId === undefined ? null : renderSlot('conversation.session', {})}
+          {sessionId === undefined || agentRoutePending ? null : renderSlot('conversation.session', {})}
           {agentRoutePending
             ? <div className={css.sessionWaiting} role="status">Opening your agent’s conversation…</div>
             : composerSeat}

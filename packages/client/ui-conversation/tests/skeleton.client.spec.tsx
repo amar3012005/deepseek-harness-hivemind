@@ -534,11 +534,11 @@ describe('ConversationRoot resident composer', () => {
     expect(b.view.queryByTestId('hero-headline')).toBeNull()
   })
 
-  it('an unbound agent route shows loading instead of the default composer', () => {
+  it.each([true, false])('an unresolved agent route hides the previous composer (unbound=%s)', (unbound) => {
     const previous = window.location.pathname
     window.history.replaceState(null, '', '/hivemind/app/employee/harness/session/session-runtime')
     try {
-      const b = mount(sessionSnapshotOf(), undefined, undefined, { unbound: true })
+      const b = mount(sessionSnapshotOf(), undefined, undefined, { unbound })
       expect(b.view.container.querySelector('[data-phase]')?.getAttribute('data-phase')).toBe('settling')
       expect(b.view.getByRole('status').textContent).toContain('Opening your agent')
       expect(b.view.queryByRole('textbox')).toBeNull()
