@@ -58,3 +58,18 @@ export function currentTurnActor(
   return messages.map(message=>authenticatedActorFromSource(message.source)).filter(value=>value!==undefined).at(-1)
     ?? (messages.length===0?continuation:undefined)
 }
+
+/** Session-bound RPC identifiers, including persisted workspace files. */
+export function referencedSessionIds(value: unknown, depth = 0, ids = new Set<string>()): Set<string> {
+  if (depth > 8 || value === null || typeof value !== 'object') return ids
+  if (Array.isArray(value)) {
+    for (const item of value) referencedSessionIds(item, depth + 1, ids)
+    return ids
+  }
+  for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
+    if ((key === 'sessionId' || key === 'parentSessionId' || key === 'childSessionId' || key === 'workspaceFileScopeId')
+      && typeof item === 'string' && item.length > 0) ids.add(item)
+    else referencedSessionIds(item, depth + 1, ids)
+  }
+  return ids
+}

@@ -12,7 +12,7 @@ import type { IndexInjection } from '@deepseek-ai/dsh-host-webserver'
 import type {} from '@deepseek-ai/dsh-session-persistence'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import { authenticatedActorFromSource, principalForActor, type AuthenticatedActor } from '@deepseek-ai/dsh-hivemind-execution-scope'
-import { resolveOrganizationAgentAccess, currentTurnActor } from './organization-agent-access.ts'
+import { resolveOrganizationAgentAccess, currentTurnActor, referencedSessionIds } from './organization-agent-access.ts'
 import type {} from '@deepseek-ai/dsh-tools'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -223,19 +223,7 @@ function sameOrigin(req: IncomingMessage): boolean {
   }
 }
 
-function referencedSessionIds(value: unknown, depth = 0, ids = new Set<string>()): Set<string> {
-  if (depth > 8 || value === null || typeof value !== 'object') return ids
-  if (Array.isArray(value)) {
-    for (const item of value) referencedSessionIds(item, depth + 1, ids)
-    return ids
-  }
-  for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
-    if ((key === 'sessionId' || key === 'parentSessionId' || key === 'childSessionId' || key === 'workspaceFileScopeId')
-      && typeof item === 'string' && item.length > 0) ids.add(item)
-    else referencedSessionIds(item, depth + 1, ids)
-  }
-  return ids
-}
+
 
 function env(name: string): string {
   const value = process.env[name]

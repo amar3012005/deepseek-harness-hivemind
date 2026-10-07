@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest'
-import { resolveOrganizationAgentAccess, currentTurnActor } from '../src/organization-agent-access.ts'
+import { resolveOrganizationAgentAccess, currentTurnActor,referencedSessionIds } from '../src/organization-agent-access.ts'
 const orgId='67503d34-97e9-49a8-8c52-8ee30cc7603e', userId='64f5568b-4d6a-4ae1-9a33-48cb2909d59b'
 const proof = { contract:'hivemind.organization-agent-access.v1', access:'read-write',
   actor:{ org_id:orgId,user_id:userId,role:'admin',name:'Second admin',authority:'authenticated-profile' },
@@ -39,4 +39,8 @@ it('uses a scheduled author rather than the last unrelated chat admin',()=>{
   const b={ userId,orgId,name:'B',role:'admin' }
   expect(currentTurnActor([{ source:{ kind:'schedule',authenticatedActor:a } }],b)).toEqual(a)
   expect(currentTurnActor([{ source:{ kind:'schedule' } }],b)).toBeUndefined()
+})
+
+it('includes workspace-file scope in session authorization before live-header reads',()=>{
+  expect([...referencedSessionIds([{ workspaceFileScopeId:'session-private' }, { sessionId:'session-team' }])]).toEqual(['session-private','session-team'])
 })

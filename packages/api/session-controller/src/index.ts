@@ -453,3 +453,14 @@ export class SessionController extends TypertRemoteService {
 
 export { buildModelCatalog }
 export default SessionController
+
+// Host-only authorship seam must not import host Agent types into client contracts.
+declare module '@deepseek-ai/cordis' {
+  interface Events {
+    /** Server-only authorship contribution; never accepted from prompt input.
+     * @mode bail
+     * @param agent - Current agent whose authenticated initiator is being resolved.
+     */
+    'api-session/user-authorship'(agent: import('@deepseek-ai/dsh-agent').Agent): Promise<Extract<import('@deepseek-ai/dsh-llm').MessageSource, { kind: 'user' }>['authenticatedActor']> | Extract<import('@deepseek-ai/dsh-llm').MessageSource, { kind: 'user' }>['authenticatedActor']
+  }
+}
