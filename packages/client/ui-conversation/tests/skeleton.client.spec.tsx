@@ -113,6 +113,7 @@ function mount(
   retargetWorkspace = vi.fn(async (_workspaceId: WorkspaceId) => {}),
   options: {
     unbound?: boolean
+    summaryAgentPreset?: string
     /** When true, mimic overlay:true chain siblings (hidden fallback + takeover). */
     overlayTakeover?: boolean
     /** The session list summary's `blank` flag — independent of the snapshot's. */
@@ -137,6 +138,7 @@ function mount(
     running: false, blank: false, updatedAt: 2,
   }
   const childRow = {
+    agentPreset: options.summaryAgentPreset,
     id: SID, displayTitle: 'Child', parentId: options.nestedSubagent === true ? parent : root,
     cwd: '/projects/one', running: false, blank: options.summaryBlank ?? false, updatedAt: 3,
     ...(options.summaryOrigin === undefined ? {} : { origin: options.summaryOrigin }),
@@ -543,6 +545,19 @@ describe('ConversationRoot resident composer', () => {
       expect(b.view.getByRole('status').textContent).toContain('Opening your agent')
       expect(b.view.queryByRole('textbox')).toBeNull()
       expect(b.view.queryByTestId('hero-headline')).toBeNull()
+    } finally {
+      window.history.replaceState(null, '', previous)
+    }
+  })
+
+  it('the base agent route never presents a restored Brain session', () => {
+    const previous = window.location.pathname
+    window.history.replaceState(null, '', '/hivemind/app/employee/harness')
+    try {
+      const b = mount(sessionSnapshotOf(), undefined, undefined, { summaryAgentPreset: 'hivemind-chat' })
+      expect(b.view.getByRole('status').textContent).toContain('Opening your agent')
+      expect(b.view.queryByRole('textbox')).toBeNull()
+      expect(b.view.container.querySelector('header')).toBeNull()
     } finally {
       window.history.replaceState(null, '', previous)
     }

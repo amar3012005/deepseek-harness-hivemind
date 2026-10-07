@@ -143,6 +143,8 @@ export function ConversationRoot({
   const openState = session?.openState
   const inputState = useInput(s => s)
   const cwd = useSessions(s => sessionId === undefined ? undefined : s.byId[sessionId]?.cwd)
+  const selectedPreset = useSessions(s => sessionId === undefined ? undefined
+    : s.byId[sessionId]?.projectionValues?.agentPreset ?? s.byId[sessionId]?.agentPreset)
   const workspaces = useWorkspaces(s => s)
   // A plugin this package cannot import (ui-model-selection) says this session cannot
   // send; its reason is already localized by whoever raised it.
@@ -259,7 +261,8 @@ export function ConversationRoot({
   const agentPath = typeof window === 'undefined' ? undefined
     : window.location.pathname.match(/^\/hivemind\/app\/employee\/harness(?:\/session\/([^/]+))?\/?$/u)
   const agentRoutePending = agentPath != null && (sessionId === undefined
-    || (agentPath[1] !== undefined && agentPath[1] !== sessionId))
+    || (agentPath[1] !== undefined && agentPath[1] !== sessionId)
+    || selectedPreset === 'hivemind-chat' || selectedPreset === 'chat')
   const settling = agentRoutePending || (sessionId !== undefined && (
     (shellPhase === 'blank' && openState !== 'open')
     || parentAvailabilityPending
