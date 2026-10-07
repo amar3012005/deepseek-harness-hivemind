@@ -1,4 +1,6 @@
 import { ChatgptPlanConnection } from './ChatgptPlanConnection.tsx'
+import { createAuthenticationProbe } from './auth-recovery.ts'
+import type { ConnectionHandle } from '@deepseek-ai/dsh-api-remotes/client'
 import { employeeJoining, EmployeeJoiningMilestone, type EmployeeJoining } from './employee-joining.tsx'
 import { BrainModeIcon } from './BrainModeIcon.tsx'
 import { roomIdentity } from './room-identity.ts'
@@ -130,6 +132,41 @@ async function answerConnectionQuestion(
 
 /** Register the localized HIVE-MIND connection control above sidebar Settings. */
 export function apply(ctx: ClientContext): void {
+  ctx.inject(['connection'], (scope: ClientContext) => scope.effect(() => {
+    if (typeof window === 'undefined' || !isHivemindRoute(window.location.pathname)) return () => {}
+    const connection = scope.get('connection') as ConnectionHandle
+    const recovery = createAuthenticationProbe({
+      probe: async () => (await fetch('/api/hivemind/boot', {
+        method: 'HEAD', credentials: 'include', cache: 'no-store',
+      })).status,
+      reload: () => {
+        // Preserve the exact room URL and use the existing Worker admission
+        // fallback. Session-owned draft persistence survives the reload.
+        const key = 'hivemind.auth-recovery-at'
+        try {
+          const previous = Number(window.sessionStorage.getItem(key) ?? '0')
+          if (Date.now() - previous < 300000) return
+          window.sessionStorage.setItem(key, String(Date.now()))
+        } catch { return }
+        window.location.reload()
+      },
+    })
+    const check = (): void => {
+      if (document.visibilityState !== 'hidden' && connection.state.getSnapshot() !== 'connected') void recovery.check()
+    }
+    const stop = connection.state.subscribe(check)
+    window.addEventListener('online', check)
+    window.addEventListener('focus', check)
+    document.addEventListener('visibilitychange', check)
+    check()
+    return () => {
+      recovery.dispose()
+      stop()
+      window.removeEventListener('online', check)
+      window.removeEventListener('focus', check)
+      document.removeEventListener('visibilitychange', check)
+    }
+  }, 'ui-hivemind-connect: expired native admission recovery'))
   ctx.slots.inject('conversation.composer.footer', () => ctx.slots.register({ name: 'conversation.composer.footer', id: 'brain-chatgpt-connection' }, ChatgptPlanConnection))
   ctx.slots.inject('schedule.manager.external', () => ctx.slots.register({ name: 'schedule.manager.external', id: 'company-dreaming', order: 0 }, DreamingAutomation))
   ctx.slots.inject('settings.general.item', () => ctx.slots.register({ name: 'settings.general.item', id: 'company-dreaming', order: 35 }, DreamingSettings))

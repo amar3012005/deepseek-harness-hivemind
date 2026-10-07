@@ -731,7 +731,7 @@ it('shows the actual open error instead of an empty conversation or perpetual sp
   expect(b.view.queryByText('Loading conversation…')).toBeNull()
 })
 
-it.each(['/hivemind/app/employee/harness', '/hivemind/app/employee/harness/session/saved'])('keeps native Environment header and compact agent layout at %s', (path) => {
+it.each(['/hivemind/app/employee/harness', `/hivemind/app/employee/harness/session/${SID}`])('keeps native Environment header and compact agent layout at %s', (path) => {
   window.history.replaceState({}, '', path)
   const b = mount(sessionSnapshotOf({ blank: true }))
   const header = b.view.container.querySelector('header')
