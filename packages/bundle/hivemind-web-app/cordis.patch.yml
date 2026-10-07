@@ -257,7 +257,16 @@
 
     - id: hivemind-runtime-attention
       name: '@deepseek-ai/dsh-hivemind-hq-runtime/attention'
-      config: {enabled: false, serviceSecretEnv: HIVE_HARNESS_RUNNER_SERVICE_SECRET, connectionStringEnv: DATABASE_URL, schema: hivemind, triggerSchema: hivemind, maxConnections: 4, statementTimeoutMs: 15000}
+      config:
+        enabled: !!js process.env.HIVEMIND_RUNTIME_ATTENTION_ENABLED === '1'
+        admitEventsAfter: !!js process.env.HIVEMIND_RUNTIME_ATTENTION_NOT_BEFORE || ''
+        allowedOrgIds: !!js (process.env.HIVEMIND_RUNTIME_ATTENTION_ORGS || '').split(',').map(value => value.trim()).filter(Boolean)
+        serviceSecretEnv: HIVE_HARNESS_RUNNER_SERVICE_SECRET
+        connectionStringEnv: DATABASE_URL
+        schema: hivemind
+        triggerSchema: hivemind
+        maxConnections: 4
+        statementTimeoutMs: 15000
 
     - id: ui-hivemind-hq
       name: '@deepseek-ai/dsh-client-ui-hivemind-hq'

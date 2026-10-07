@@ -29,7 +29,7 @@ it('mounts packaged enabled attention through Loader, rejects unsigned traffic a
     await writeFile(configPath, [
       "- name: '@deepseek-ai/dsh-host-webserver'", '  config:', '    host: 127.0.0.1', '    port: 0',
       "- name: '@deepseek-ai/dsh-hivemind-execution-scope'", '- name: attention-loader-fixture',
-      "- name: '@deepseek-ai/dsh-hivemind-hq-runtime/attention'", '  config:', '    enabled: true',
+      "- name: '@deepseek-ai/dsh-hivemind-hq-runtime/attention'", '  config:', '    enabled: true', "    admitEventsAfter: '2026-10-01T00:00:00Z'",
       `    serviceSecretEnv: ${secret}`, `    connectionStringEnv: ${database}`, '    schema: hivemind',
       '    triggerSchema: hivemind', '    maxConnections: 1', '    statementTimeoutMs: 1000', '',
     ].join('\n'))
