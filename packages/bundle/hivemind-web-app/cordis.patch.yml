@@ -248,12 +248,20 @@
 
     - id: hivemind-hq-ownership-postgres
       name: '@deepseek-ai/dsh-hivemind-hq-runtime/ownership-postgres'
-      config: {connectionStringEnv: DATABASE_URL, schema: hivemind, maxConnections: 4, statementTimeoutMs: 15000}
+      config:
+        sharedOrganizationAgents: !!js process.env.HIVE_SHARED_ORGANIZATION_AGENTS_ENABLED === 'true'
+        connectionStringEnv: DATABASE_URL
+        schema: hivemind
+        maxConnections: 4
+        statementTimeoutMs: 15000
 
     # Optional server-to-server attention seam; no subscriptions or wakes until explicitly enabled.
     - id: hivemind-employee-lifecycle-host
       name: '@deepseek-ai/dsh-hivemind-hq-runtime/lifecycle-host'
-      config: {enabled: true, serviceSecretEnv: HIVE_HARNESS_RUNNER_SERVICE_SECRET}
+      config:
+        enabled: true
+        sharedOrganizationAgents: !!js process.env.HIVE_SHARED_ORGANIZATION_AGENTS_ENABLED === 'true'
+        serviceSecretEnv: HIVE_HARNESS_RUNNER_SERVICE_SECRET
 
     - id: hivemind-runtime-attention
       name: '@deepseek-ai/dsh-hivemind-hq-runtime/attention'
@@ -280,6 +288,7 @@
     - id: session-persistence-postgres
       name: '@deepseek-ai/dsh-session-persistence-postgres'
       config:
+        sharedOrganizationAgents: !!js process.env.HIVE_SHARED_ORGANIZATION_AGENTS_ENABLED === 'true'
         connectionStringEnv: DATABASE_URL
         schema: hivemind
         leaseTtlMs: 30000
@@ -288,6 +297,7 @@
     - id: hivemind-web-runner
       name: '@deepseek-ai/dsh-hivemind-web-runner'
       config:
+        sharedOrganizationAgents: !!js process.env.HIVE_SHARED_ORGANIZATION_AGENTS_ENABLED === 'true'
         parentOrigins: !!js (process.env.HIVEMIND_PARENT_ORIGINS ?? '').split(',').map(value => value.trim()).filter(Boolean)
         ticketSecretEnv: HIVE_HARNESS_TICKET_SECRET
         redisUrlEnv: REDIS_URL
@@ -320,6 +330,7 @@
     - id: hivemind-schedule-postgres
       name: '@deepseek-ai/dsh-hivemind-schedule-postgres'
       config:
+        sharedOrganizationAgents: !!js process.env.HIVE_SHARED_ORGANIZATION_AGENTS_ENABLED === 'true'
         connectionStringEnv: DATABASE_URL
         schema: hivemind
         pollIntervalMs: 5000

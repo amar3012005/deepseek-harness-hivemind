@@ -1,7 +1,7 @@
 import type { ContextFormed } from '@deepseek-ai/dsh-llm'
 declare module '@deepseek-ai/dsh-llm' {
   interface MessageSourceMap {
-    'schedule': { kind: 'schedule'; deliveryKey?: string; occurrenceAt?: string; nextScheduledAt?: string | null } & ContextFormed
+    'schedule': { kind: 'schedule'; authenticatedActor?: Extract<import('@deepseek-ai/dsh-llm').MessageSource,{ kind:'user' }>['authenticatedActor']; deliveryKey?: string; occurrenceAt?: string; nextScheduledAt?: string | null } & ContextFormed
   }
 }
 

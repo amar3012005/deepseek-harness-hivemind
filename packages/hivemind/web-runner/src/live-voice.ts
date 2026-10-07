@@ -76,8 +76,8 @@ export class VoiceQueryBuffer {
         if (text === undefined) reject(new Error('voice_query_unavailable'))
         else resolve(text)
       }
-      const aborted = () => finish()
-      this.pending = { resolve: text => finish(text) }
+      const aborted = () =>{  finish() }
+      this.pending = { resolve: (text) =>{  finish(text) } }
       signal.addEventListener('abort', aborted, { once: true })
       if (signal.aborted) aborted()
     })
@@ -104,9 +104,9 @@ function textOf(value: unknown): string {
   const content = (value as { content?: unknown }).content
   return Array.isArray(content) ? content.flatMap(item => item?.type === 'text' && typeof item.text === 'string' ? [item.text] : []).join('\n') : ''
 }
-function appendContext(agent: Agent, text: string): void {
+function appendContext(agent: Agent, text: string, authenticatedActor?: import('@deepseek-ai/dsh-hivemind-execution-scope').AuthenticatedActor): void {
   agent.session.append('user/message', createUserMessage({ content: [{ type: 'text', text }],
-    source: { kind: 'plugin', plugin: 'hivemind-live-voice', form: 'recall' } }), { surfaceOp: 'append' })
+    source: { kind: 'plugin', plugin: 'hivemind-live-voice', form: 'recall', ...(authenticatedActor === undefined ? {} : { authenticatedActor }) } }), { surfaceOp: 'append' })
 }
 /** Decode routing metadata; OpenAI validates the credential.
  * @param token - Server-held subscription access token.
@@ -157,7 +157,8 @@ export function voiceContextChunks(text: string): string[] {
  * @returns Reversible native Cordis plugin.
  */
 export function liveVoicePlugin(config: LiveVoiceConfig,
-  authenticate: (req: IncomingMessage) => HivemindPrincipal | undefined): Plugin.Object<void> {
+  authenticate: (req: IncomingMessage) => HivemindPrincipal | undefined,
+  resolveActor?: (principal:HivemindPrincipal,signal:AbortSignal,sessionId?:string)=>Promise<import('@deepseek-ai/dsh-hivemind-execution-scope').AuthenticatedActor | undefined>): Plugin.Object<void> {
   return { name: 'hivemind-live-voice', inject: ['webServer', 'connection', 'sessionController', 'sessions', 'systemPrompt', 'sessionPersistence', 'hivemindExecutionScope'],
     apply(ctx: Context) {
       const rooms = new Map<string, Room>()
@@ -166,9 +167,10 @@ export function liveVoicePlugin(config: LiveVoiceConfig,
       models.setProvider(openaiCodexProvider())
       ctx.effect(() => () => { for (const room of rooms.values()) room.close() })
       ctx.effect(() => ctx.webServer.register({ kind: 'prefix', path: '/api/hivemind/voice', handler: async (req, res) => {
-        let p: HivemindPrincipal | undefined
-        try { p = authenticate(req) } catch { reply(res, 401, { error: 'authentication_required' }); return }
-        if (!p) { reply(res, 401, { error: 'authentication_required' }); return }
+        let authenticated: HivemindPrincipal | undefined
+        try { authenticated = authenticate(req) } catch { reply(res, 401, { error: 'authentication_required' }); return }
+        if (!authenticated) { reply(res, 401, { error: 'authentication_required' }); return }
+        let p:HivemindPrincipal=authenticated
         const host = req.headers['x-forwarded-host'] ?? req.headers.host
         let sameOrigin = false
         try { sameOrigin = typeof req.headers.origin === 'string' && new URL(req.headers.origin).host === host } catch { /* Invalid Origin fails closed. */ }
@@ -178,6 +180,11 @@ export function liveVoicePlugin(config: LiveVoiceConfig,
         const owner = p.orgId
         try {
           const input = await body(req)
+          if (resolveActor && typeof input.sessionId==='string') {
+            try { const actor=await resolveActor(p,new AbortController().signal,input.sessionId)
+              if(actor) p={ ...p,authenticatedActor:actor } }
+            catch { reply(res,403,{ error:'organization_agent_admin_required' });return }
+          }
           if (req.url?.split('?')[0] === '/api/hivemind/voice/stop') {
             const room = typeof input.id === 'string' ? rooms.get(input.id) : undefined
             if (room && room.principal.orgId === p.orgId && room.principal.userId === p.userId) room.close('ended')
@@ -208,8 +215,8 @@ export function liveVoicePlugin(config: LiveVoiceConfig,
               if (!agent.session.snapshotEvents().some(event => event.type === 'user/message' && event.data.source.kind === 'plugin'
                 && event.data.source.plugin === 'hivemind-live-voice' && textOf(event.data).startsWith(marker))) {
                 const transcript = (result.turns ?? []).slice(0, 100).flatMap(turn => [turn.user_text ? `user: ${turn.user_text.slice(0,8000)}` : '', turn.agent_text ? `assistant: ${turn.agent_text.slice(0,8000)}` : '']).filter(Boolean).join('\n').slice(-20000)
-                agent.session.append('hivemind/voice-call-ended', { callId: input.callId as string, provider: 'grok', initialCheckIn: result.initial_check_in === true, interrupted: result.interrupted !== false, hadUserSpeech: result.had_user_speech === true, transcript })
-                appendContext(agent, `${marker}\nTerminal status: ${result.status}. This call alone does not confirm a complete baseline or authorize external actions.\n${transcript}`)
+                agent.session.append('hivemind/voice-call-ended', { ...(p.authenticatedActor === undefined ? {} : { authenticatedActor:p.authenticatedActor }), callId: input.callId as string, provider: 'grok', initialCheckIn: result.initial_check_in === true, interrupted: result.interrupted !== false, hadUserSpeech: result.had_user_speech === true, transcript })
+                appendContext(agent, `${marker}\nTerminal status: ${result.status}. This call alone does not confirm a complete baseline or authorize external actions.\n${transcript}`, p.authenticatedActor)
                 if (!(await ctx.sessions.flush(agent.session))) throw new Error('voice_handoff_persistence_required')
                 agent.followup(createUserMessage({ content: [{ type: 'text', text: runtimeDecisionReconciliation(input.callId as string, result.initial_check_in === true) }], source: { kind: 'plugin', plugin: 'hivemind-live-voice', form: 'recall' } }))
               }
@@ -276,7 +283,7 @@ export function liveVoicePlugin(config: LiveVoiceConfig,
                 const expiry = setTimeout(() => rooms.delete(fallbackId), (initialCheckIn ? 180000 : 600000) + 30000); expiry.unref()
                 rooms.set(fallbackId, { id: fallbackId, principal: p, sessionId: id,
                   close: () => { clearTimeout(expiry); rooms.delete(fallbackId) } })
-                appendContext(agent, `Live voice system instructions:\n${prompt}\n\nAuthenticated voice context:\n${context}\n\nGrok Runtime call reference: ${fallbackId}`)
+                appendContext(agent, `Live voice system instructions:\n${prompt}\n\nAuthenticated voice context:\n${context}\n\nGrok Runtime call reference: ${fallbackId}`,p.authenticatedActor)
                 if (!(await ctx.sessions.flush(agent.session))) throw new Error('voice_handoff_persistence_required')
                 reply(res, 200, result); return
               }
@@ -311,11 +318,11 @@ export function liveVoicePlugin(config: LiveVoiceConfig,
                 if (closed) return
                 closed = true; lifetime.abort(); clearTimeout(timer); clearTimeout(closingTimer); rooms.delete(roomId)
                 if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: 'session.close' }))
-                socket.close(); setTimeout(() => socket.terminate(), 1000).unref()
+                socket.close(); setTimeout(() =>{  socket.terminate() }, 1000).unref()
                 if (transcript.length) void ctx.hivemindExecutionScope.run(p, async () => {
                   const savedTranscript = transcript.join('\n').slice(-20000)
-                  agent.session.append('hivemind/voice-call-ended', { callId: roomId, provider: 'codex', initialCheckIn, interrupted: reason === 'interrupted', hadUserSpeech, transcript: savedTranscript })
-                  appendContext(agent, `Completed live voice conversation:\n${savedTranscript}`)
+                  agent.session.append('hivemind/voice-call-ended', { ...(p.authenticatedActor === undefined ? {} : { authenticatedActor:p.authenticatedActor }), callId: roomId, provider: 'codex', initialCheckIn, interrupted: reason === 'interrupted', hadUserSpeech, transcript: savedTranscript })
+                  appendContext(agent, `Completed live voice conversation:\n${savedTranscript}`, p.authenticatedActor)
                   if (!(await ctx.sessions.flush(agent.session))) throw new Error('voice_handoff_persistence_required')
                   if (runtime) agent.followup(createUserMessage({ content: [{ type: 'text', text: runtimeDecisionReconciliation(roomId, initialCheckIn) }], source: { kind: 'plugin', plugin: 'hivemind-live-voice', form: 'recall' } }))
                 }).catch(() => { /* Session persistence retains the unflushed prefix for recovery. */ })
@@ -325,9 +332,9 @@ export function liveVoicePlugin(config: LiveVoiceConfig,
               const closingTimer = setTimeout(() => {
                 if (initialCheckIn && !closed) { closing = true; send('The baseline check-in ends in fifteen seconds. Stop asking questions now. Briefly summarize only what the administrator actually confirmed and name any remaining uncertainty. Give the warm closing from the supplied agenda, then stop speaking. A time limit does not mean the baseline was completed.') }
               }, Math.max(0, duration - 15000)); closingTimer.unref()
-              const timer = setTimeout(() => close('ended'), duration); timer.unref()
+              const timer = setTimeout(() =>{  close('ended') }, duration); timer.unref()
               res.once('close', () => { if (!res.writableFinished) close() })
-              socket.on('error', () => close()); socket.on('close', () => close())
+              socket.on('error', () =>{  close() }); socket.on('close', () =>{  close() })
               socket.on('message', (raw) => {
                 let event: {
                   type?: string
@@ -338,7 +345,7 @@ export function liveVoicePlugin(config: LiveVoiceConfig,
                 try {
                   const value: unknown = JSON.parse(raw.toString())
                   if (!value || typeof value !== 'object') return
-                  event = value as typeof event
+                  event = value
                 } catch { return }
                 if (event.type === 'error') {
                   const code = event.error?.code
@@ -370,7 +377,7 @@ export function liveVoicePlugin(config: LiveVoiceConfig,
                   try {
                     const request = await queries.take(AbortSignal.any([lifetime.signal, AbortSignal.timeout(config.timeoutMs)]))
                     const updated = await agentEvents(ctx, agent).serial('hivemind/voice-context', { signal: AbortSignal.timeout(config.timeoutMs) })
-                    appendContext(agent, `${VOICE_TASK_INSTRUCTIONS}\n\nLive voice task context:\n${updated}\n${transcript.slice(-8).join('\n')}`)
+                    appendContext(agent, `${VOICE_TASK_INSTRUCTIONS}\n\nLive voice task context:\n${updated}\n${transcript.slice(-8).join('\n')}`,p.authenticatedActor)
                     const startSeq = agent.session.snapshotEvents().length
                     await new Promise<void>((resolve, reject) => {
                       let turn: number | undefined
@@ -382,8 +389,8 @@ export function liveVoicePlugin(config: LiveVoiceConfig,
                         if (error) reject(error)
                         else resolve()
                       }
-                      const aborted = () => finish(new Error('voice_closed'))
-                      const timeout = setTimeout(() => finish(new Error('task_pending')), config.maxDurationMs)
+                      const aborted = () =>{  finish(new Error('voice_closed')) }
+                      const timeout = setTimeout(() =>{  finish(new Error('task_pending')) }, config.maxDurationMs)
                       const dispose = ctx.on('session/event', (session, record) => {
                         if (session !== agent.session || record.seq < startSeq) return
                         if (record.type === 'turn/start' && turn === undefined) turn = record.data.turn
@@ -394,7 +401,7 @@ export function liveVoicePlugin(config: LiveVoiceConfig,
                             if (finished || closed) return
                             send(result?.type === 'assistant/message' ? textOf(result.data.message).slice(0,4000) : 'The task did not produce a confirmed answer. Please check the conversation.', delegationId)
                             finish()
-                          }, () => finish(new Error('session_unavailable')))
+                          }, () =>{  finish(new Error('session_unavailable')) })
                         }
                       })
                       lifetime.signal.addEventListener('abort', aborted, { once: true })
@@ -411,11 +418,11 @@ export function liveVoicePlugin(config: LiveVoiceConfig,
               })
               await new Promise<void>((resolve, reject) => {
                 socket.once('open', resolve)
-                socket.once('close', () => reject(new Error('voice_connection_failed')))
-                socket.once('error', () => reject(new Error('voice_connection_failed')))
+                socket.once('close', () =>{  reject(new Error('voice_connection_failed')) })
+                socket.once('error', () =>{  reject(new Error('voice_connection_failed')) })
               })
               if (closed) throw new Error('voice_connection_failed')
-              appendContext(agent, `Live voice system instructions:\n${prompt}\n\nAuthenticated voice context:\n${context}`)
+              appendContext(agent, `Live voice system instructions:\n${prompt}\n\nAuthenticated voice context:\n${context}`,p.authenticatedActor)
               try { await ctx.sessions.flush(agent.session) } catch { close(); throw new Error('session_unavailable') }
               if (closed) throw new Error('voice_connection_failed')
               rooms.set(roomId, { id: roomId, principal: p, sessionId: String(id), socket, close })

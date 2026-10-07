@@ -385,8 +385,10 @@ export class SessionCommandController {
         { provider: selection.provider, model: selection.model },
       )
     }
+    const authenticatedActor = await this.ctx.serial('api-session/user-authorship', agent)
     const source: MessageSource = {
       kind: 'user',
+      ...(authenticatedActor === undefined ? {} : { authenticatedActor }),
       rpcId: request.requestId,
       ...(clientTimeZone === undefined ? {} : { clientTimeZone }),
     }

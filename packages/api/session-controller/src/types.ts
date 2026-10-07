@@ -384,7 +384,7 @@ export type SessionRequestId = Branded<'session-request-id'>
 declare module '@deepseek-ai/dsh-llm' {
   interface MessageSourceMap {
     /** Browser prompt correlation and optional Host-validated time zone. */
-    'user-rpc': { kind: 'user'; rpcId: SessionRequestId; clientTimeZone?: string }
+    'user-rpc': { kind: 'user'; rpcId: SessionRequestId; clientTimeZone?: string; authenticatedActor?:import('@deepseek-ai/dsh-llm').MessageSourceMap['user']['authenticatedActor'] }
   }
 }
 
@@ -587,6 +587,11 @@ export type SessionControlFrame =
 
 declare module '@deepseek-ai/cordis' {
   interface Events {
+    /** Server-only authorship contribution; never accepted from prompt input.
+     * @mode bail
+     * @param agent - Current agent whose authenticated initiator is being resolved.
+     */
+    'api-session/user-authorship'(agent: import('@deepseek-ai/dsh-agent').Agent): Promise<Extract<import('@deepseek-ai/dsh-llm').MessageSource, { kind: 'user' }>['authenticatedActor']> | Extract<import('@deepseek-ai/dsh-llm').MessageSource, { kind: 'user' }>['authenticatedActor']
     /**
      * A Session became visible to Session list consumers.
      * @mode emit

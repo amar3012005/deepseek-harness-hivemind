@@ -7353,6 +7353,9 @@ importers:
       '@deepseek-ai/dsh-agent':
         specifier: workspace:^
         version: link:../../core/agent
+      '@deepseek-ai/dsh-agent-presets':
+        specifier: workspace:^
+        version: link:../../preset/agent-presets
       '@deepseek-ai/dsh-attachment':
         specifier: workspace:^
         version: link:../../attachment/attachment
@@ -7478,6 +7481,9 @@ importers:
       '@deepseek-ai/dsh-agent':
         specifier: workspace:^
         version: link:../../core/agent
+      '@deepseek-ai/dsh-agent-presets':
+        specifier: workspace:^
+        version: link:../../preset/agent-presets
       '@deepseek-ai/dsh-api-session-controller':
         specifier: workspace:^
         version: link:../../api/session-controller
@@ -7505,6 +7511,9 @@ importers:
       '@deepseek-ai/dsh-system-prompt':
         specifier: workspace:^
         version: link:../../core/system-prompt
+      '@deepseek-ai/dsh-tools':
+        specifier: workspace:^
+        version: link:../../core/tools
       '@deepseek-ai/dsh-typert-registry':
         specifier: workspace:^
         version: link:../../typert/registry

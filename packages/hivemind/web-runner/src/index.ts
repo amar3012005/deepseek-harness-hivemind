@@ -1,3 +1,4 @@
+import type {} from '@deepseek-ai/dsh-agent-presets'
 import { registerPlanConnection } from './chatgpt-plan-connection.ts'
 import { registerBrainPlan, requestBrainPlan, requestBrainAccount, requestBrainRoute } from './chatgpt-plan.ts'
 /** HIVE-MIND embedded Web authentication and production health routes. */
@@ -10,7 +11,9 @@ import type {} from '@deepseek-ai/dsh-client-connection'
 import type { IndexInjection } from '@deepseek-ai/dsh-host-webserver'
 import type {} from '@deepseek-ai/dsh-session-persistence'
 import { SessionId } from '@deepseek-ai/dsh-session'
-import type {} from '@deepseek-ai/dsh-hivemind-execution-scope'
+import { authenticatedActorFromSource, principalForActor, type AuthenticatedActor } from '@deepseek-ai/dsh-hivemind-execution-scope'
+import { resolveOrganizationAgentAccess, currentTurnActor } from './organization-agent-access.ts'
+import type {} from '@deepseek-ai/dsh-tools'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { projectHyperagentProfiles } from '@deepseek-ai/dsh-hivemind-employee-directory'
@@ -48,6 +51,7 @@ function nativeStyles(): Promise<string[]> {
 }
 
 export interface Config {
+  sharedOrganizationAgents?: boolean
   parentOrigins: string[]
   ticketSecretEnv: string
   redisUrlEnv: string
@@ -69,6 +73,7 @@ export interface Config {
 }
 
 export const Config: z<Config> = z.object({
+  sharedOrganizationAgents: z.boolean().default(false),
   parentOrigins: z.array(String).required(),
   ticketSecretEnv: z.string().required(),
   redisUrlEnv: z.string().required(),
@@ -225,7 +230,7 @@ function referencedSessionIds(value: unknown, depth = 0, ids = new Set<string>()
     return ids
   }
   for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
-    if ((key === 'sessionId' || key === 'parentSessionId' || key === 'childSessionId')
+    if ((key === 'sessionId' || key === 'parentSessionId' || key === 'childSessionId' || key === 'workspaceFileScopeId')
       && typeof item === 'string' && item.length > 0) ids.add(item)
     else referencedSessionIds(item, depth + 1, ids)
   }
@@ -284,15 +289,6 @@ function compactProjects(value: unknown): Array<{ id: string; name: string; slug
 /** Mount the one-time ticket exchange and health routes. */
 export async function apply(ctx: Context, config: Config): Promise<void> {
   registerMediaAuth(ctx)
-  ctx.plugin(liveVoicePlugin(config.liveVoice, (req) => {
-    const principal = ctx.connection.principal({ headers: {
-      host: publicHost(req) || req.headers.host, cookie: req.headers.cookie,
-    } })
-    if (principal?.profile !== 'hivemind-chat' || !nonEmpty(principal.user_id)
-      || !nonEmpty(principal.org_id) || !nonEmpty(principal.variation)) return undefined
-    return { orgId: principal.org_id, userId: principal.user_id, profile: 'hivemind-chat',
-      variation: principal.variation, ...(principal.project_id ? { projectId: principal.project_id } : {}) }
-  }))
   const secret = env(config.ticketSecretEnv)
   if (Buffer.byteLength(secret, 'utf8') < 32) throw new Error('hivemind-web-runner: ticket secret must be at least 32 bytes')
   const parentOrigins = config.parentOrigins.map((value) => {
@@ -307,6 +303,71 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
   const projectCatalogSecret = env(config.serviceSecretEnv)
   if (Buffer.byteLength(projectCatalogSecret, 'utf8') < 32) {
     throw new Error('hivemind-web-runner: project catalog service secret must be at least 32 bytes')
+  }
+  const resolveActor = async (principal: import('@deepseek-ai/dsh-hivemind-execution-scope').HivemindPrincipal, signal: AbortSignal) => {
+    const token = serviceToken({ user_id:principal.userId,org_id:principal.orgId,profile:principal.profile,variation:principal.variation,
+      ...(principal.projectId === undefined ? {} : { project_id:principal.projectId }) },projectCatalogSecret)
+    return (await resolveOrganizationAgentAccess(projectCatalogBase.origin,token,principal,signal)).actor
+  }
+  ctx.plugin(liveVoicePlugin(config.liveVoice, (req) => {
+    const principal = ctx.connection.principal({ headers: {
+      host: publicHost(req) || req.headers.host, cookie: req.headers.cookie,
+    } })
+    if (principal?.profile !== 'hivemind-chat' || !nonEmpty(principal.user_id)
+      || !nonEmpty(principal.org_id) || !nonEmpty(principal.variation)) return undefined
+    return { orgId: principal.org_id, userId: principal.user_id, profile: 'hivemind-chat',
+      variation: principal.variation, ...(principal.project_id ? { projectId: principal.project_id } : {}) }
+  }, config.sharedOrganizationAgents ? async(principal,signal,id)=> {
+    if(!id) return undefined
+    const snapshot=await ctx.hivemindExecutionScope.run(principal,()=>ctx.sessionPersistence.stat(SessionId(id)))
+    if(!snapshot) throw Error('session_not_found')
+    if(!['hivemind-hq','hivemind-hyperagents'].includes(snapshot.header.agentPreset ?? '') && snapshot.header.parentSession===undefined) return undefined
+    return resolveActor(principal,signal)
+  } : undefined))
+  if (config.sharedOrganizationAgents) {
+    const actors = new WeakMap<import('@deepseek-ai/dsh-agent').Agent,AuthenticatedActor>()
+    const confirmationRefs=new WeakMap<import('@deepseek-ai/dsh-agent').Agent,string>()
+    const organizationAgent = (agent:import('@deepseek-ai/dsh-agent').Agent):boolean => {
+      const chosen = agent.session.snapshotEvents().findLast(event=>event.type==='agent-preset/selected')
+      const preset = chosen?.type==='agent-preset/selected' ? chosen.data.agentPreset : agent.session.header.agentPreset
+      if(['hivemind-hq','hivemind-hyperagents'].includes(preset ?? '')) return true
+      let parent=agent.session.header.parentSession
+      const seen=new Set<string>()
+      while(parent!==undefined) {
+        if(seen.has(parent)) throw Error('organization_agent_parent_cycle')
+        seen.add(parent)
+        const root=ctx.agents.get(parent)
+        if(!root) return true // Orphaned descendants cannot bypass the admin boundary.
+        if(['hivemind-hq','hivemind-hyperagents'].includes(root.session.header.agentPreset ?? '')) return true
+        parent=root.session.header.parentSession
+      }
+      return false
+    }
+    ctx.effect(()=>ctx.on('api-session/user-authorship',async (agent)=> {
+      if (!organizationAgent(agent)) return undefined
+      return resolveActor(ctx.hivemindExecutionScope.require(),new AbortController().signal)
+    }))
+    ctx.effect(()=>ctx.on('agent/pre-step',async ({ agent,messages,signal },next)=> {
+      if (!organizationAgent(agent)) return next()
+      const authored = currentTurnActor(messages,actors.get(agent))
+      const principal = principalForActor(ctx.hivemindExecutionScope.require(),authored)
+      const actor = await resolveActor(principal,signal)
+      actors.set(agent,actor)
+      const admitted=messages.filter(message=>message.source.kind==='user' && authenticatedActorFromSource(message.source)?.userId===actor.userId).at(-1)
+      const witness=admitted ? agent.session.snapshotEvents().find(event=>event.type==='user/message' && event.data.id===admitted.id) : undefined
+      const call=messages.some(message=>message.source.kind==='plugin' && message.source.plugin==='hivemind-live-voice')
+        ? agent.session.snapshotEvents().findLast(event=>event.type==='hivemind/voice-call-ended' && event.data.authenticatedActor?.userId===actor.userId && event.data.hadUserSpeech) : undefined
+      const userConfirmationRef=witness ? `event:${witness.seq}` : call?.type==='hivemind/voice-call-ended' ? `call:${call.data.callId}` : messages.length===0 ? confirmationRefs.get(agent) : undefined
+      if(userConfirmationRef) confirmationRefs.set(agent,userConfirmationRef); else confirmationRefs.delete(agent)
+      return ctx.hivemindExecutionScope.run({ ...principal,authenticatedActor:actor,userConfirmationRef },next)
+    }))
+    ctx.inject(['tools'], toolCtx=>toolCtx.effect(()=>toolCtx.on('tools/execute',async (execution,next)=> {
+      if (!execution.agent || !organizationAgent(execution.agent)) return next()
+      const principal = principalForActor(ctx.hivemindExecutionScope.require(),actors.get(execution.agent))
+      const actor = await resolveActor(principal,execution.signal)
+      const authorized={ ...principal,authenticatedActor:actor,userConfirmationRef:confirmationRefs.get(execution.agent) }
+      return ctx.hivemindExecutionScope.run(authorized,next)
+    })))
   }
   registerBrainPlan(ctx, config.chatgptPlanBrainEnabled ?? false, options =>
     requestBrainPlan(projectCatalogBase.origin, projectCatalogSecret, ctx.hivemindExecutionScope.require(), options), {

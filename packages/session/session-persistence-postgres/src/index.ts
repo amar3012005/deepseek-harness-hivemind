@@ -7,6 +7,7 @@ import { SessionLogOffset } from '@deepseek-ai/dsh-session'
 import type { Session, SessionEvent, SessionHeader, SessionId, SessionLogOffset as SessionLogOffsetType } from '@deepseek-ai/dsh-session'
 import type HivemindExecutionScope from '@deepseek-ai/dsh-hivemind-execution-scope'
 import type { HivemindPrincipal } from '@deepseek-ai/dsh-hivemind-execution-scope'
+import { organizationAgentScope, type AgentStorageScope } from '@deepseek-ai/dsh-hivemind-execution-scope'
 import {
   SessionAlreadyExistsError, SessionAlreadyOwnedError, SessionHandleClosedError,
   SessionOwnershipLostError, SessionPersistence, SessionPersistenceNotFoundError,
@@ -20,8 +21,15 @@ import type {
   SessionPersistenceStatOptions,
 } from '@deepseek-ai/dsh-session-persistence'
 
-export interface Config { connectionStringEnv: string; schema: string; leaseTtlMs: number; maxConnections: number }
+export interface Config {
+  sharedOrganizationAgents?: boolean
+  connectionStringEnv: string
+  schema: string
+  leaseTtlMs: number
+  maxConnections: number
+}
 export const Config: z<Config> = z.object({
+  sharedOrganizationAgents: z.boolean().default(false),
   connectionStringEnv: z.string().required(), schema: z.string().required().pattern(/^[a-z_][a-z0-9_]*$/u),
   leaseTtlMs: z.natural().min(1000).required(),
   maxConnections: z.natural().min(1).required(),
@@ -49,7 +57,7 @@ function newOwner(): Owner {
   const holder = randomUUID()
   return { holder, hash: createHash('sha256').update(holder).digest('hex'), fence: 1 }
 }
-function scopeParams(scope: HivemindPrincipal, id?: SessionId): unknown[] {
+function scopeParams(scope: AgentStorageScope, id?: SessionId): unknown[] {
   return id === undefined ? [scope.orgId, scope.userId] : [scope.orgId, scope.userId, id]
 }
 
@@ -61,7 +69,7 @@ class PostgresHandle implements SessionHandle {
   private batchTimer: ReturnType<typeof setTimeout> | undefined
   private draining: Promise<void> | undefined
   private drainPaused = false
-  constructor(private readonly store: PostgresSessionPersistence, private readonly scope: HivemindPrincipal,
+  constructor(private readonly store: PostgresSessionPersistence, private readonly scope: AgentStorageScope,
     readonly id: SessionId, readonly header: SessionHeader, readonly inheritedEventCount: SessionLogOffsetType,
     readonly access: SessionAccess, private readonly ownerState?: Owner) {}
   private run<T>(operation: string, action: () => Promise<T>): Promise<T> {
@@ -188,7 +196,35 @@ export class PostgresSessionPersistence extends SessionPersistence {
   async health(): Promise<void> { await this.pool.query('SELECT 1') }
   private expiry(): Date { return new Date(Date.now() + this.config.leaseTtlMs) }
   private capture(): HivemindPrincipal { return Object.freeze({ ...this.executionScope.require() }) }
-  private async transaction<T>(scope: HivemindPrincipal, action: (client: PoolClient) => Promise<T>): Promise<T> {
+  private async sharedScope(scope = this.capture()): Promise<AgentStorageScope> {
+    if (!this.config.sharedOrganizationAgents) return scope
+    return this.transaction(scope, client => organizationAgentScope(client,scope))
+  }
+  private async sessionScope(id: SessionId): Promise<AgentStorageScope> {
+    const human = this.capture()
+    if (!this.config.sharedOrganizationAgents) return human
+    const owned = await this.row(human,id)
+    if (owned && owned.header.parentSession === undefined) {
+      const preset = (await this.query<{ preset:string }>(human,'SELECT COALESCE((SELECT payload->\'data\'->>\'agentPreset\' FROM harness_session_events WHERE session_id=$3 AND event_type=\'agent-preset/selected\' ORDER BY sequence DESC LIMIT 1),header->>\'agentPreset\') AS preset FROM harness_sessions WHERE org_id=$1 AND user_id=$2 AND id=$3',scopeParams(human,id))).rows[0]?.preset
+      if (!['hivemind-hq','hivemind-hyperagents'].includes(preset ?? '')) return human
+    }
+    let shared: AgentStorageScope
+    try { shared = await this.sharedScope(human) } catch (error) { if (owned) throw error; return human }
+    const candidate = await this.row(shared,id)
+    if (!candidate) { if (owned) throw new SessionPersistenceNotFoundError(id); return human }
+    const roots = new Set<string>()
+    let header = candidate.header
+    while (header.parentSession !== undefined) {
+      if (roots.has(header.id)) return human
+      roots.add(header.id)
+      const parent = await this.row(shared, header.parentSession)
+      if (!parent) return human
+      header = parent.header
+    }
+    const current = (await this.query<{ preset:string }>(shared, 'SELECT COALESCE((SELECT payload->\'data\'->>\'agentPreset\' FROM harness_session_events WHERE session_id=$3 AND event_type=\'agent-preset/selected\' ORDER BY sequence DESC LIMIT 1),header->>\'agentPreset\') AS preset FROM harness_sessions WHERE org_id=$1 AND user_id=$2 AND id=$3',scopeParams(shared,header.id))).rows[0]?.preset
+    return ['hivemind-hq','hivemind-hyperagents'].includes(current ?? '') ? shared : human
+  }
+  private async transaction<T>(scope: AgentStorageScope, action: (client: PoolClient) => Promise<T>): Promise<T> {
     const client = await this.pool.connect()
     try {
       await client.query('BEGIN')
@@ -201,13 +237,15 @@ export class PostgresSessionPersistence extends SessionPersistence {
       throw error
     } finally { client.release() }
   }
-  private query<T extends QueryResultRow>(scope: HivemindPrincipal, sql: string, values: unknown[]): Promise<QueryResult<T>> {
+  private query<T extends QueryResultRow>(scope: AgentStorageScope, sql: string, values: unknown[]): Promise<QueryResult<T>> {
     return this.transaction(scope, client => client.query<T>(sql, values))
   }
   async create(header: SessionHeader, options?: SessionPersistenceCreateOptions): Promise<SessionHandle> {
     checkAbort(options?.signal)
-    const scope = this.capture()
+    const human = this.capture()
     const meta = materializeCreateHeader(header)
+    const scope = this.config.sharedOrganizationAgents && ['hivemind-hq','hivemind-hyperagents'].includes(meta.agentPreset ?? '')
+      ? await this.sharedScope(human) : meta.parentSession === undefined ? human : await this.sessionScope(meta.parentSession)
     const cut = inheritedCut(meta, options?.inheritedEventCount)
     const claim = newOwner()
     try {
@@ -230,7 +268,7 @@ export class PostgresSessionPersistence extends SessionPersistence {
   /** Scoped read-only window; body vocabulary/envelopes validate on each slice. */
   override async openHistoryRead(id: SessionId, options?: SessionPersistenceOpenOptions): Promise<SessionHandle> {
     checkAbort(options?.signal)
-    const scope = this.capture()
+    const scope = await this.sessionScope(id)
     const row = await this.row(scope, id)
     if (row === undefined) throw new SessionPersistenceNotFoundError(id)
     assertVersion(row.header)
@@ -241,7 +279,7 @@ export class PostgresSessionPersistence extends SessionPersistence {
 
   async open(id: SessionId, access: SessionAccess, options?: SessionPersistenceOpenOptions): Promise<SessionHandle> {
     checkAbort(options?.signal)
-    const scope = this.capture()
+    const scope = await this.sessionScope(id)
     const row = await this.row(scope, id)
     if (row === undefined) throw new SessionPersistenceNotFoundError(id)
     await this.read(scope,id,0,Number.MAX_SAFE_INTEGER)
@@ -271,7 +309,7 @@ export class PostgresSessionPersistence extends SessionPersistence {
   }
   async stat(id: SessionId, options?: SessionPersistenceStatOptions): Promise<SessionPersistenceSnapshot | undefined> {
     checkAbort(options?.signal)
-    const row = await this.row(this.capture(), id)
+    const row = await this.row(await this.sessionScope(id), id)
     return row === undefined ? undefined : this.snapshot(row)
   }
   async list(options?: SessionPersistenceListOptions): Promise<readonly SessionPersistenceSnapshot[]> {
@@ -280,14 +318,26 @@ export class PostgresSessionPersistence extends SessionPersistence {
     const result = await this.query<SessionRow>(scope,
       'SELECT header,inherited_event_count,event_count,revision FROM harness_sessions WHERE org_id=$1 AND user_id=$2',
       scopeParams(scope))
-    return result.rows.map(row => this.snapshot(row))
+    if (!this.config.sharedOrganizationAgents) return result.rows.map(row => this.snapshot(row))
+    let shared: AgentStorageScope | undefined
+    try { shared = await this.sharedScope(scope) } catch { /* Non-admins keep their own Brain rooms. */ }
+    const extra = shared && shared.userId !== scope.userId ? await this.query<SessionRow>(shared,
+      'SELECT header,inherited_event_count,event_count,revision FROM harness_sessions WHERE org_id=$1 AND user_id=$2',scopeParams(shared)) : undefined
+    const rows = new Map([...result.rows,...extra?.rows ?? []].map(row=>[row.header.id,row]))
+    const visible: SessionPersistenceSnapshot[] = []
+    for (const row of rows.values()) {
+      try {
+        if (await this.row(await this.sessionScope(row.header.id),row.header.id)) visible.push(this.snapshot(row))
+      } catch { /* Denied organization-agent rooms are omitted. */ }
+    }
+    return visible
   }
   /** Canonical room lookup uses authenticated scope, never browser-supplied tenant ids.
    * Adopt the earliest owned legacy room; otherwise use a stable native identity.
    * Existing session creation/adoption and fencing arbitrate concurrent opens.
    */
   async employeeRoomId(key: string): Promise<SessionId> {
-    const scope = this.capture()
+    const scope = await this.sharedScope()
     if (key === 'runtime') {
       const owner = await this.query<{ session_id: SessionId; user_id: string }>(scope,
         'SELECT session_id,user_id FROM harness_company_hq WHERE org_id=$1', [scope.orgId])
@@ -323,9 +373,10 @@ export class PostgresSessionPersistence extends SessionPersistence {
   async effectivePresets(ids: readonly SessionId[], signal?: AbortSignal): Promise<ReadonlyMap<SessionId, string>> {
     checkAbort(signal)
     if (ids.length === 0) return new Map()
-    const scope = this.capture()
-    const result = await this.query<{ id: SessionId; preset: string | null }>(scope,
-      `SELECT s.id, COALESCE(chosen.preset,s.header->>'agentPreset') AS preset
+    if (!this.config.sharedOrganizationAgents) {
+      const scope = this.capture()
+      const result = await this.query<{ id: SessionId; preset: string | null }>(scope,
+        `SELECT s.id, COALESCE(chosen.preset,s.header->>'agentPreset') AS preset
          FROM harness_sessions s
          LEFT JOIN LATERAL (
            SELECT e.payload->'data'->>'agentPreset' AS preset
@@ -335,22 +386,40 @@ export class PostgresSessionPersistence extends SessionPersistence {
             ORDER BY e.sequence DESC LIMIT 1
          ) chosen ON true
         WHERE s.org_id=$1 AND s.user_id=$2 AND s.id=ANY($3::varchar[])`,
-      [...scopeParams(scope), ids])
-    checkAbort(signal)
-    return new Map(result.rows.flatMap(row => row.preset === null ? [] : [[row.id, row.preset] as const]))
+        [...scopeParams(scope), ids])
+      checkAbort(signal)
+      return new Map(result.rows.flatMap(row => row.preset === null ? [] : [[row.id, row.preset] as const]))
+    }
+    const result = new Map<SessionId,string>()
+    for (const id of ids) {
+      const scope = await this.sessionScope(id)
+      const row = await this.query<{ preset:string | null }>(scope,'SELECT COALESCE((SELECT payload->\'data\'->>\'agentPreset\' FROM harness_session_events WHERE session_id=$3 AND event_type=\'agent-preset/selected\' ORDER BY sequence DESC LIMIT 1),header->>\'agentPreset\') AS preset FROM harness_sessions WHERE org_id=$1 AND user_id=$2 AND id=$3',scopeParams(scope,id))
+      if (row.rows[0]?.preset != null) result.set(id,row.rows[0].preset)
+      checkAbort(signal)
+    }
+    return result
   }
-  /** Durable conversation starts; configuration/open events do not count. */
+  /** Durable conversation starts, across authorized personal/shared scopes. */
   async startedSessions(ids: readonly SessionId[], signal?: AbortSignal): Promise<ReadonlySet<SessionId>> {
     checkAbort(signal)
-    if (ids.length === 0) return new Set()
-    const scope = this.capture()
-    const result = await this.query<{ id: SessionId }>(scope,
-      `SELECT s.id FROM harness_sessions s WHERE s.org_id=$1 AND s.user_id=$2 AND s.id=ANY($3::varchar[])
+    if (!this.config.sharedOrganizationAgents) {
+      const scope = this.capture()
+      const result = await this.query<{ id: SessionId }>(scope,
+        `SELECT s.id FROM harness_sessions s WHERE s.org_id=$1 AND s.user_id=$2 AND s.id=ANY($3::varchar[])
        AND EXISTS (SELECT 1 FROM harness_session_events e WHERE e.session_id=s.id AND e.org_id=s.org_id AND e.user_id=s.user_id
          AND (e.event_type='turn/start' OR (e.event_type='user/message' AND e.payload->'data'->'source'->>'kind'='user')))`,
-      [...scopeParams(scope), ids])
-    checkAbort(signal)
-    return new Set(result.rows.map(row => row.id))
+        [...scopeParams(scope), ids])
+      checkAbort(signal)
+      return new Set(result.rows.map(row => row.id))
+    }
+    const result = new Set<SessionId>()
+    for (const id of ids) {
+      const scope = await this.sessionScope(id)
+      const rows = await this.query<{ id:SessionId }>(scope,'SELECT s.id FROM harness_sessions s WHERE s.org_id=$1 AND s.user_id=$2 AND s.id=$3 AND EXISTS(SELECT 1 FROM harness_session_events e WHERE e.session_id=s.id AND e.org_id=s.org_id AND e.user_id=s.user_id AND (e.event_type=\'turn/start\' OR (e.event_type=\'user/message\' AND e.payload->\'data\'->\'source\'->>\'kind\'=\'user\')))',scopeParams(scope,id))
+      if (rows.rows[0]) result.add(id)
+      checkAbort(signal)
+    }
+    return result
   }
   private snapshot(row: SessionRow): SessionPersistenceSnapshot {
     return {
@@ -358,7 +427,7 @@ export class PostgresSessionPersistence extends SessionPersistence {
       revision: SessionPersistenceRevision(String(row.revision)),
     }
   }
-  private async row(scope: HivemindPrincipal, id: SessionId): Promise<SessionRow | undefined> {
+  private async row(scope: AgentStorageScope, id: SessionId): Promise<SessionRow | undefined> {
     const result = await this.query<SessionRow>(scope,
       'SELECT header,inherited_event_count,event_count,revision FROM harness_sessions WHERE org_id=$1 AND user_id=$2 AND id=$3',
       scopeParams(scope, id))
@@ -366,7 +435,7 @@ export class PostgresSessionPersistence extends SessionPersistence {
     if (row !== undefined) assertStoredId(id, row.header)
     return row
   }
-  async read(scope: HivemindPrincipal, id: SessionId, offset: number, length: number): Promise<SessionHandleReadResult> {
+  async read(scope: AgentStorageScope, id: SessionId, offset: number, length: number): Promise<SessionHandleReadResult> {
     const row = await this.row(scope, id)
     if (row === undefined) throw new SessionPersistenceNotFoundError(id)
     assertVersion(row.header)
@@ -384,7 +453,7 @@ export class PostgresSessionPersistence extends SessionPersistence {
     assertContiguous(id, events, offset)
     return { eventState: 'shared-frozen', events }
   }
-  async append(scope: HivemindPrincipal, id: SessionId, claim: Owner, events: readonly SessionEvent[]): Promise<void> {
+  async append(scope: AgentStorageScope, id: SessionId, claim: Owner, events: readonly SessionEvent[]): Promise<void> {
     await this.transaction(scope, async (client) => {
       const owned = await client.query(
         `UPDATE harness_session_leases SET heartbeat_at=now(),expires_at=$6
@@ -412,7 +481,7 @@ export class PostgresSessionPersistence extends SessionPersistence {
       }
     })
   }
-  async renew(scope: HivemindPrincipal, id: SessionId, claim: Owner): Promise<void> {
+  async renew(scope: AgentStorageScope, id: SessionId, claim: Owner): Promise<void> {
     const result = await this.query(scope,
       `UPDATE harness_session_leases SET heartbeat_at=now(),expires_at=$6
         WHERE org_id=$1 AND user_id=$2 AND session_id=$3 AND token_hash=$4 AND fencing_token=$5
@@ -420,7 +489,7 @@ export class PostgresSessionPersistence extends SessionPersistence {
       [...scopeParams(scope, id), claim.hash, claim.fence, this.expiry()])
     if (result.rows[0] === undefined) throw new SessionOwnershipLostError(id)
   }
-  async release(scope: HivemindPrincipal, id: SessionId, claim: Owner): Promise<void> {
+  async release(scope: AgentStorageScope, id: SessionId, claim: Owner): Promise<void> {
     await this.query(scope,
       `UPDATE harness_session_leases SET released_at=now()
         WHERE org_id=$1 AND user_id=$2 AND session_id=$3 AND token_hash=$4 AND fencing_token=$5`,

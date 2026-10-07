@@ -130,8 +130,10 @@ export class ScheduleRuntime {
           .flatMap(event => event.type === 'agent/inbox/spliced' ? event.data.inserted : [])
           .find(message => message.source.kind === 'schedule' && message.source.deliveryKey === deliveryKey)
         const occurrence = occurrences[0]?.occurrence
+        const authenticatedActor = existing === undefined ? await this.ctx.serial('api-session/user-authorship',resolved.agent) : undefined
         const message = existing ?? createUserMessage({
           content: [{ type: 'text', text }], source: { kind: 'schedule',
+            ...(authenticatedActor === undefined ? {} : { authenticatedActor }),
             ...(deliveryKey === undefined ? {} : { deliveryKey }),
             ...(occurrence === undefined || deliveryKey === undefined ? {} : {
               occurrenceAt: occurrence.occurrenceAt, nextScheduledAt: occurrence.nextScheduledAt ?? null,

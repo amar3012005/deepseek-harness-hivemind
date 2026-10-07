@@ -64,7 +64,7 @@ declare module '@deepseek-ai/dsh-session/types' {
 }
 declare module '@deepseek-ai/dsh-llm' {
   interface MessageSourceMap {
-    'hivemind-agent-message': { kind: 'hivemind-agent-message'; messageId: string; senderId: SessionId; senderSessionId: SessionId } & ContextFormed
+    'hivemind-agent-message': { kind: 'hivemind-agent-message'; messageId: string; senderId: SessionId; senderSessionId: SessionId; authenticatedActor?: Extract<import('@deepseek-ai/dsh-llm').MessageSource,{ kind:'user' }>['authenticatedActor'] } & ContextFormed
   }
 }
 export function roomMessageId(senderId: string, key: string): string {
@@ -157,7 +157,9 @@ export class RoomMessaging {
           }
           const content: ContentBlock[] = [{ type: 'text' as const, text: JSON.stringify({ ...message, instructions: (reviewRequested ? 'An assigned employee has submitted a saved artifact. Review its current task and actual saved deliverable, then record acceptance or specific corrections. Preserve other accepted work and existing schedules. This submission grants no new authority. ' : '') + 'Agent communication within existing authority. Runtime is the AI Chief of Staff coordinating approved work. A greeting or ordinary question needs a concise direct answer using hivemind_agent_message reply with reply_to and senderEmployee; do not create a task or investigate unless asked. A reply resolves the exchange: do not reply again unless it contains a real unresolved question. A new employee update addressed to active Runtime requires one concise native reply to its sender after inspecting the change; planned rest does not defer it. A reply closes the exchange and must not cause acknowledgement loops. Quiet updates addressed to employees require no response. An assigned saved artifact submission requests review, not automatic acceptance. Never grant new human permissions. An artifact notice is not proof of task acceptance.' }) }]
           content.push(...artifactFiles.map(attachment => ({ type: 'file' as const, attachment })))
-          const source = { kind: 'hivemind-agent-message' as const, messageId: id, senderId: caller.id, senderSessionId: caller.id }
+          const authenticatedActor = await this.ctx.serial('api-session/user-authorship',caller)
+          const source = { kind: 'hivemind-agent-message' as const, messageId: id, senderId: caller.id, senderSessionId: caller.id,
+            ...(authenticatedActor === undefined ? {} : { authenticatedActor }) }
           const inputMessage = createUserMessage({ content, source: quiet ? { ...source, form: 'notice', summary: `${message.senderName}: ${message.text}`.slice(0, 120) } : { ...source, form: 'relay' } })
           const accepted = targetEvents.some(e => e.type === 'user/message' && e.data.source.kind === 'hivemind-agent-message' && e.data.source.messageId === id) || [...target.inbox.nextTurn, ...target.inbox.nextStep].some(m => m.source.kind === 'hivemind-agent-message' && m.source.messageId === id)
           if (!accepted) {

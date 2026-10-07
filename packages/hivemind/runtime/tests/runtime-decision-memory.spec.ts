@@ -7,10 +7,11 @@ import { installRuntimeDecisionMemory } from '../src/runtime-decision-memory.ts'
 function fixture(runtime = true) {
   const tools = new Map<string, ToolDefinition>()
   const events = [{ type:'hivemind/session-owner',data:{ id:runtime ? null : 'employee-id',slug:runtime ? 'runtime':'sofia',name:'Name',role:'Role' } }] as unknown as SessionEvent[]
-  const agent = { id:'session-canary',session:{ header:{ agentPreset:runtime ? 'hivemind-hq':'hivemind-hyperagents' },snapshotEvents:()=>events },ctx:{ effect:(run:()=>void)=>run(),tools:{ register:(tool:ToolDefinition)=>{tools.set(tool.name,tool);return ()=>{}} } } } as unknown as Agent
+  const agent = { id:'session-canary',session:{ header:{ agentPreset:runtime ? 'hivemind-hq':'hivemind-hyperagents' },snapshotEvents:()=>events },ctx:{ effect:(run:()=>void)=>{ run() },tools:{ register:(tool:ToolDefinition)=>{tools.set(tool.name,tool);return ()=>{}} } } } as unknown as Agent
   let handler:((input:{ agent:Agent;signal:AbortSignal })=>Promise<string>) | undefined
   const request=vi.fn(async (_agent: Agent, _input: unknown, _signal: AbortSignal)=>({ ok:true,memories:[] }))
-  const ctx={ effect:(run:()=>void)=>run(),on:(_name:string,value:typeof handler)=>{handler=value;return ()=>{}} } as unknown as Context
+  const ctx={ get:()=>undefined,effect:(run:()=>void)=>{ run() },on:(_name:string,value:typeof handler)=>{handler=value
+    return ()=>{}} } as unknown as Context
   const install=installRuntimeDecisionMemory(ctx,request,async()=>{})
   install(agent)
   return { agent,events,tools,request,call:()=>handler!({ agent,signal:new AbortController().signal }) }

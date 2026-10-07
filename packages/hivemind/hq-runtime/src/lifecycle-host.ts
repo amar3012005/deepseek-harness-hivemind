@@ -11,8 +11,8 @@ import type {} from '@deepseek-ai/dsh-schedule'
 import { roomMessageId } from '@deepseek-ai/dsh-api-session-controller'
 export const name = 'hivemind-employee-lifecycle-host'
 export const inject = ['webServer', 'hivemindExecutionScope', 'schedule', 'sessionController', 'sessions']
-export interface Config { enabled: boolean; serviceSecretEnv: string }
-export const Config: Schema<Config> = Schema.object({ enabled: Schema.boolean().default(false), serviceSecretEnv: Schema.string().default('HIVE_HARNESS_RUNNER_SERVICE_SECRET') })
+export interface Config { sharedOrganizationAgents?:boolean; enabled: boolean; serviceSecretEnv: string }
+export const Config: Schema<Config> = Schema.object({ sharedOrganizationAgents:Schema.boolean().default(false), enabled: Schema.boolean().default(false), serviceSecretEnv: Schema.string().default('HIVE_HARNESS_RUNNER_SERVICE_SECRET') })
 const requestSchema = z.object({ orgId:z.uuid(), userId:z.uuid(), employeeId:z.uuid() }).strict()
 const roomSchema = z.object({ sessionId:z.string().min(1).max(180), userId:z.uuid() }).strict()
 const proofSchema = z.object({ employeeId:z.uuid(),revision:z.number().int().positive(),kind:z.enum(['durable','temporary']),phase:z.enum(['active','closing','archived']),expiresAt:z.string().nullable(),rooms:z.array(roomSchema).max(1000),chiefs:z.array(roomSchema).max(1000),chief:roomSchema.nullable(),onboarding:z.object({ name:z.string().min(1).max(100),role:z.string().min(1).max(40),creationHash:z.string().regex(/^[a-f0-9]{64}$/u) }).strict().optional(),profileReview:z.object({ name:z.string().min(1).max(100),role:z.string().min(1).max(40),persona:z.string().min(1).max(12000),profileRevision:z.number().int().positive(),creationHash:z.string().regex(/^[a-f0-9]{64}$/u) }).strict().optional(),joined:z.object({ name:z.string().min(1).max(100),role:z.string().min(1).max(40),profileRevision:z.number().int().positive(),creationHash:z.string().regex(/^[a-f0-9]{64}$/u),at:z.iso.datetime() }).strict().optional() }).strict()
@@ -69,12 +69,16 @@ export function apply(ctx:Context,config:Config):void {
         if(proof.employeeId!==input.employeeId) throw Error('employee_lifecycle_scope_mismatch')
         if(proof.phase==='archived') {
           let removed=0
-          for(const room of proof.rooms) await ctx.hivemindExecutionScope.run({ ...principal,userId:room.userId },async()=>{
+          for(const room of proof.rooms) await ctx.hivemindExecutionScope.run({
+            ...principal,userId:config.sharedOrganizationAgents?input.userId:room.userId,
+          },async()=>{
             for(const wake of await ctx.schedule.list({ sessionId:SessionId(room.sessionId) })) {
               await ctx.schedule.delete({ sessionId:SessionId(room.sessionId),id:wake.id });removed+=1
             }
           })
-          for(const chief of proof.chiefs) await ctx.hivemindExecutionScope.run({ ...principal,userId:chief.userId },async()=>{
+          for(const chief of proof.chiefs) await ctx.hivemindExecutionScope.run({
+            ...principal,userId:config.sharedOrganizationAgents?input.userId:chief.userId,
+          },async()=>{
             const id=`schedule-${createHash('sha256').update(`${chief.sessionId}\0employee-closeout-${input.employeeId}`).digest('hex')}`
             for(const wake of await ctx.schedule.list({ sessionId:SessionId(chief.sessionId) })) if(wake.id===id) {
               await ctx.schedule.delete({ sessionId:SessionId(chief.sessionId),id:wake.id });removed+=1
@@ -83,7 +87,7 @@ export function apply(ctx:Context,config:Config):void {
           reply(res,200,{ status:'ready',employeeId:input.employeeId,revision:proof.revision,removedSchedules:removed });return
         }
         if (proof.phase === 'active' && proof.onboarding !== undefined) {
-          if (!proof.chief || proof.chief.userId !== input.userId) throw Error('employee_onboarding_chief_required')
+          if (!proof.chief || (!config.sharedOrganizationAgents && proof.chief.userId !== input.userId)) throw Error('employee_onboarding_chief_required')
           const signal = AbortSignal.timeout(15000)
           const chief = await ctx.sessionController.resolveAgent(SessionId(proof.chief.sessionId))
           if ('error' in chief) throw chief.error
@@ -106,7 +110,7 @@ export function apply(ctx:Context,config:Config):void {
         }
         const profile = proof.profileReview ?? proof.joined
         if (proof.phase === 'active' && profile !== undefined) {
-          if (!proof.chief || proof.chief.userId !== input.userId
+          if (!proof.chief || (!config.sharedOrganizationAgents && proof.chief.userId !== input.userId)
             || (proof.expiresAt !== null && Date.parse(proof.expiresAt) <= Date.now())) throw Error('employee_profile_chief_required')
           const signal = AbortSignal.timeout(15000)
           const chief = await ctx.sessionController.resolveAgent(SessionId(proof.chief.sessionId))
@@ -151,7 +155,7 @@ export function apply(ctx:Context,config:Config):void {
           }
         }
         if(proof.kind==='temporary' && proof.phase==='active') {
-          if(!proof.chief || proof.chief.userId!==input.userId || !proof.expiresAt || !Number.isFinite(Date.parse(proof.expiresAt))) throw Error('employee_closeout_chief_required')
+          if(!proof.chief || (!config.sharedOrganizationAgents && proof.chief.userId!==input.userId) || !proof.expiresAt || !Number.isFinite(Date.parse(proof.expiresAt))) throw Error('employee_closeout_chief_required')
           const wake=await ctx.schedule.ensure(SessionId(proof.chief.sessionId),`employee-closeout-${input.employeeId}`,{
             title:'Review temporary employee closeout',at:new Date(Math.max(Date.parse(proof.expiresAt),Date.now()+1000)).toISOString(),
             prompt:`A temporary employee reached its saved deadline: ${input.employeeId}. Inspect its registry state and saved work. Begin closeout, review submitted artifacts, and retain private learning and handoff before archival. Do not assign new business work.`,

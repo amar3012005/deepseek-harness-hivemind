@@ -3,6 +3,8 @@ import { AsyncLocalStorage } from 'node:async_hooks'
 import { Service, type Context } from '@deepseek-ai/cordis'
 
 export interface HivemindPrincipal {
+  readonly userConfirmationRef?:string | undefined
+  readonly authenticatedActor?: import('./authenticated-actor.ts').AuthenticatedActor
   readonly orgId: string
   readonly userId: string
   readonly profile: 'hivemind-chat'
@@ -31,3 +33,6 @@ export default class HivemindExecutionScope extends Service {
     return principal
   }
 }
+
+export { organizationAgentScope, type AgentStorageScope } from './organization-agent-scope.ts'
+export { authenticatedActorFromSource, principalForActor, type AuthenticatedActor } from './authenticated-actor.ts'

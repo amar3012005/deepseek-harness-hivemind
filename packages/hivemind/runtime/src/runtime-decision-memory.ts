@@ -1,3 +1,4 @@
+import type {} from '@deepseek-ai/dsh-agent-presets'
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { Scoped } from '@deepseek-ai/dsh-scope'
@@ -18,8 +19,8 @@ const toolNames = { user_agenda: 'runtime_user_agenda', uncertainty: 'runtime_un
 
 export function isRuntimeRoom(agent: Agent): boolean {
   let preset = agent.session.header.agentPreset
-  for (const event of agent.session.snapshotEvents()) if (String(event.type) === 'agent-preset/selected')
-    preset = (event.data as { agentPreset: string }).agentPreset
+  for (const event of agent.session.snapshotEvents()) if (event.type === 'agent-preset/selected')
+    preset = (event.data).agentPreset
   const owner = sessionOwner(agent.session.snapshotEvents())
   return preset === 'hivemind-hq' && agent.session.header.parentSession === undefined && owner?.id === null && owner.slug === 'runtime'
 }
@@ -53,8 +54,8 @@ export function installRuntimeDecisionMemory(
     for (const kind of ['user_agenda', 'uncertainty'] as const) agent.ctx.effect(() => agent.ctx.tools.register(defineTool({
       name: toolNames[kind],
       description: kind === 'user_agenda'
-        ? 'Runtime only: retrieve dated confirmed user goals without a search query, or directly save a user-confirmed agenda version in private HyperAgent memory without approval. Source references are automatic and optional evidence is not a save gate. Never treat inferred goals as confirmed. Before changing a prior direction, recall current agendas and supersede its exact receipt with supersedes_id; do not leave contradictory confirmed versions. Independent goals may remain separate.'
-        : 'Runtime only: list open uncertainties ordered by decision priority without a search query, or directly save/resolve one question that needs user input in private HyperAgent memory without approval. Evidence references are optional. Resolve by saving a successor with its exact supersedes_id.',
+        ? 'Runtime only: retrieve dated confirmed user goals without a search query, or directly save a user-confirmed agenda version in private HyperAgent memory without approval. Source references are automatic and optional evidence is not a save gate. Omit confirmation_ref unless you observed an exact event sequence or call ID; never use event:latest. Claim saved only after a successful tool receipt. Save each independent confirmed answer even when other questions remain open. Never treat inferred goals as confirmed. Before changing a prior direction, recall current agendas and supersede its exact receipt with supersedes_id; do not leave contradictory confirmed versions. Independent goals may remain separate.'
+        : 'Runtime only: list open uncertainties ordered by decision priority without a search query, or directly save/resolve one question that needs user input in private HyperAgent memory without approval. Evidence references are optional. Resolve by saving a successor with its exact supersedes_id. Claim resolved only after a successful save receipt; save independently answered questions even if other questions remain open.',
       parameters: {
         action: { type: 'string', enum: ['recall', 'save'], required: true },
         ...(kind === 'user_agenda' ? { agenda_key: { type: 'string' as const, description: 'Stable lowercase topic key (letters, digits, underscore or hyphen, at most 80 characters) for one independent confirmed direction. Reuse the same key when changing it; recall the current receipt and provide its exact supersedes_id. Independent goals use different keys.' } } : {}),
@@ -80,9 +81,11 @@ export function installRuntimeDecisionMemory(
           const userSource = agent.session.snapshotEvents().findLast(event =>
             (event.type === 'user/message' && event.data.source.kind === 'user')
             || (event.type === 'hivemind/voice-call-ended' && event.data.hadUserSpeech && event.data.transcript.trim()))
-          const automaticRef = userSource?.type === 'hivemind/voice-call-ended'
+          const current=ctx.get('hivemindExecutionScope')?.require()
+          const legacyRef = userSource?.type === 'hivemind/voice-call-ended'
             ? `call:${userSource.data.callId}` : userSource ? `event:${userSource.seq}` : ''
-          metadata['confirmationRef'] = args.confirmation_ref ?? automaticRef
+          const automaticRef=current?.authenticatedActor ? current.userConfirmationRef : legacyRef
+          metadata['confirmationRef'] = args.confirmation_ref ?? automaticRef ?? ''
           if (!metadata['confirmationRef']) throw new Error('No saved user direction is available. Record an uncertainty instead of inventing a user agenda.')
         }
         const body: Record<string, JsonValue> = { action: 'save', kind, agent_slug: 'runtime', title: args.title ?? '', summary: args.summary ?? '', context: metadata }

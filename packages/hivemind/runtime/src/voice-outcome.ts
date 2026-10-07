@@ -6,9 +6,9 @@ import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 
 declare module '@deepseek-ai/dsh-session/types' {
   interface SessionEventMap {
-    /** Same-room ended call transcript and interruption status; not proof of completed onboarding. */
-    'hivemind/voice-call-ended': { callId: string; provider: 'codex' | 'grok'; initialCheckIn: boolean; interrupted: boolean; hadUserSpeech: boolean; transcript: string }
-    /** Evidence-based baseline assessment for the exact saved initial call, retaining unresolved gaps. */
+    /** Same-room ended call transcript retains its authenticated initiating admin. */
+    'hivemind/voice-call-ended': { authenticatedActor?:import('@deepseek-ai/dsh-hivemind-execution-scope').AuthenticatedActor; callId: string; provider: 'codex' | 'grok'; initialCheckIn: boolean; interrupted: boolean; hadUserSpeech: boolean; transcript: string }
+    /** Evidence-based baseline assessment for the exact saved initial call. */
     'hivemind/voice-baseline-outcome': { callId: string; status: 'complete' | 'incomplete'; summary: string; remaining: string[] }
   }
 }
@@ -46,10 +46,10 @@ export function installVoiceOutcome(ctx: Context) {
       validateVoiceOutcome(agent, callId, String(status))
       const existing = agent.session.snapshotEvents().findLast(event => event.type === 'hivemind/voice-baseline-outcome' && event.data.callId === callId)
       if (existing?.type === 'hivemind/voice-baseline-outcome') {
-        if (JSON.stringify(existing.data) !== JSON.stringify({ callId, status, summary, remaining: remaining as string[] })) throw new Error('baseline_outcome_already_recorded')
+        if (JSON.stringify(existing.data) !== JSON.stringify({ callId, status, summary, remaining: remaining })) throw new Error('baseline_outcome_already_recorded')
         return { ...existing.data, saved: true }
       }
-      agent.session.append('hivemind/voice-baseline-outcome', { callId, status: status as 'complete' | 'incomplete', summary, remaining: remaining as string[] })
+      agent.session.append('hivemind/voice-baseline-outcome', { callId, status: status, summary, remaining: remaining })
       if (!(await ctx.sessions.flush(agent.session))) throw new Error('voice_outcome_persistence_required')
       return { callId, status, saved: true }
     },

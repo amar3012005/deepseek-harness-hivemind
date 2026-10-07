@@ -6,7 +6,7 @@ import type { ScheduleId } from '@deepseek-ai/dsh-schedule/client'
 import type {} from '@deepseek-ai/dsh-agent-presets'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { SessionId } from '@deepseek-ai/dsh-session'
-import type { HivemindPrincipal } from '@deepseek-ai/dsh-hivemind-execution-scope'
+import { organizationAgentScope, type AgentStorageScope, type HivemindPrincipal } from '@deepseek-ai/dsh-hivemind-execution-scope'
 import {
   scheduleTaskSchema,
   type ScheduleBackend,
@@ -16,6 +16,7 @@ import {
 
 /** Deployment controls for the shared PostgreSQL scheduler. */
 export interface Config {
+  sharedOrganizationAgents?: boolean
   connectionStringEnv: string
   schema: string
   pollIntervalMs: number
@@ -30,6 +31,7 @@ interface DueRow {
   task_id: string
   org_id: string
   user_id: string
+  actor_user_id?: string
 }
 const currentPreset =
   "COALESCE((SELECT e.payload->'data'->>'agentPreset' FROM harness_session_events e WHERE e.session_id=s.id AND e.org_id=s.org_id AND e.user_id=s.user_id AND e.event_type='agent-preset/selected' ORDER BY e.sequence DESC LIMIT 1),s.header->>'agentPreset')"
@@ -54,6 +56,7 @@ interface TaskRow {
 export default class PostgresScheduleBackend extends Service implements ScheduleBackend {
   static inject = ['hivemindExecutionScope', 'agents']
   static Config: z<Config> = z.object({
+    sharedOrganizationAgents: z.boolean().default(false),
     connectionStringEnv: z.string().required(),
     schema: z
       .string()
@@ -111,7 +114,30 @@ export default class PostgresScheduleBackend extends Service implements Schedule
     const principal = Object.freeze({ ...this.scope.require() })
     return this.transaction(principal, false, async (client) => {
       await this.authorize(client, principal)
-      return work(await this.table(client, principal))
+      if (!this.config.sharedOrganizationAgents) return work(await this.table(client, principal))
+      const personal = await this.table(client, principal, undefined, 'personal')
+      let shared: AgentStorageScope
+      try { shared = await organizationAgentScope(client,principal) }
+      catch { return work(personal) } // A member may schedule their own Brain, never organization agents.
+      const select = async (owner:HivemindPrincipal) => {
+        await client.query("SELECT set_config('app.hivemind_user_id',$1,true)",[owner.userId])
+      }
+      await select(shared)
+      const team = await this.table(client,shared,undefined,'team')
+      const tasks = new Map([...personal.entries(),...team.entries()])
+      return work({
+        entries:()=>tasks.entries(), get:id=>tasks.get(id),
+        put:async(id,task)=> {
+          await select(shared)
+          const candidate=await client.query<{ preset:string }>(`SELECT ${currentPreset} AS preset FROM harness_sessions s
+            WHERE s.id=$1 AND s.org_id=$2 AND s.user_id=$3`,[task.sessionId,shared.orgId,shared.userId])
+          const teamTask=['hivemind-hq','hivemind-hyperagents'].includes(candidate.rows[0]?.preset ?? '')
+          const owner=teamTask?shared:principal, table=teamTask?team:personal
+          await select(owner); await table.put(id,task); tasks.set(id,task)
+        },
+        delete:async (id)=> { const teamTask=team.get(id)!==undefined; await select(teamTask?shared:principal)
+          await (teamTask?team:personal).delete(id); tasks.delete(id) },
+      })
     }) as Promise<T>
   }
   async dispatch(work: (tasks: ScheduleTaskTable) => Promise<void>): Promise<boolean> {
@@ -123,7 +149,8 @@ export default class PostgresScheduleBackend extends Service implements Schedule
       await scanner.query("SELECT set_config('app.hivemind_scheduler','on',true)")
       due = (
         await scanner.query<DueRow>(
-          `SELECT task_id,org_id,user_id FROM harness_scheduled_due
+          this.config.sharedOrganizationAgents ? `SELECT d.task_id,d.org_id,d.user_id,d.actor_user_id FROM harness_scheduled_due d
+        WHERE d.due_at <= now() ORDER BY d.due_at,d.task_id LIMIT $1` : `SELECT task_id,org_id,user_id FROM harness_scheduled_due
         WHERE due_at <= now() ORDER BY due_at,task_id LIMIT $1`,
           [this.config.batchSize],
         )
@@ -150,7 +177,7 @@ export default class PostgresScheduleBackend extends Service implements Schedule
           )
           if (pending.rowCount === 0) return
           try {
-            await this.authorize(client, owner)
+            await this.authorize(client, { ...owner,userId:row.actor_user_id ?? owner.userId })
           } catch (error) {
             if (!(error instanceof ScheduleAuthorizationError)) throw error
             await client.query(
@@ -219,9 +246,16 @@ export default class PostgresScheduleBackend extends Service implements Schedule
             variation: session.variation,
             ...(session.project_id === null ? {} : { projectId: session.project_id }),
           }
-          const table = await this.table(client, principal, session.id)
+          const actorPrincipal={ ...principal,userId:row.actor_user_id ?? principal.userId }
+          if(this.config.sharedOrganizationAgents && ['hivemind-hq','hivemind-hyperagents'].includes(session.preset)) {
+            const mapped=await organizationAgentScope(client,actorPrincipal)
+            if(mapped.userId!==owner.userId) throw new ScheduleAuthorizationError('Schedule organization storage changed')
+            await client.query("SELECT set_config('app.hivemind_user_id',$1,true)",[owner.userId])
+          }
+          const taskStorage={ ...principal,...(this.config.sharedOrganizationAgents?{ actorUserId:actorPrincipal.userId }: {}) }
+          const table = await this.table(client,taskStorage, session.id)
           const changes = { wrote: false }
-          await this.scope.run(principal, () =>
+          await this.scope.run(actorPrincipal, () =>
             work({
               ...table,
               put: async (id, task) => {
@@ -291,12 +325,12 @@ export default class PostgresScheduleBackend extends Service implements Schedule
       client.release()
     }
   }
-  private async table(client: PoolClient, owner: HivemindPrincipal, sessionId?: string): Promise<ScheduleTaskTable> {
+  private async table(client: PoolClient, owner: AgentStorageScope, sessionId?: string, audience?:'personal'|'team'): Promise<ScheduleTaskTable> {
     const rows = await client.query<TaskRow>(
       `SELECT t.* FROM harness_scheduled_tasks t JOIN harness_sessions s
       ON s.id=t.session_id AND s.org_id=t.org_id AND s.user_id=t.user_id
       WHERE t.org_id=$1 AND t.user_id=$2 AND ($3::text IS NULL OR t.session_id=$3)
-      AND ${currentPreset} IN ('hivemind-hyperagents','hivemind-chat','hivemind-hq') ORDER BY t.created_at,t.id`,
+      AND ${currentPreset} IN (${audience==='personal'?"'hivemind-chat'":audience==='team'?"'hivemind-hyperagents','hivemind-hq'":"'hivemind-hyperagents','hivemind-chat','hivemind-hq'"}) ORDER BY t.created_at,t.id`,
       [owner.orgId, owner.userId, sessionId ?? null],
     )
     const tasks = new Map<ScheduleId, ScheduleTask>(
@@ -324,7 +358,7 @@ export default class PostgresScheduleBackend extends Service implements Schedule
           throw new Error('Schedule session cannot change')
         const authorized = await client.query(
           `SELECT 1 FROM harness_sessions s WHERE s.id=$1 AND s.org_id=$2 AND s.user_id=$3
-          AND s.status='active' AND ${currentPreset} IN ('hivemind-hyperagents','hivemind-chat','hivemind-hq')`,
+          AND s.status='active' AND ${currentPreset} IN (${audience==='personal'?"'hivemind-chat'":audience==='team'?"'hivemind-hyperagents','hivemind-hq'":"'hivemind-hyperagents','hivemind-chat','hivemind-hq'"})`,
           [task.sessionId, owner.orgId, owner.userId],
         )
         if (authorized.rowCount !== 1) throw new Error('Schedule requires an owned HIVE session')
@@ -332,10 +366,11 @@ export default class PostgresScheduleBackend extends Service implements Schedule
           throw new Error('Schedule task limit reached')
         const result = await client.query(
           `INSERT INTO harness_scheduled_tasks
-          (id,session_id,org_id,user_id,record,status,scheduled_at,last_delivery,delivery_history)
-          VALUES($1,$2,$3,$4,$5::jsonb,$6,$7,$8::jsonb,$9::jsonb)
+          (id,session_id,org_id,user_id,record,status,scheduled_at,last_delivery,delivery_history${this.config.sharedOrganizationAgents?',actor_user_id':''})
+          VALUES($1,$2,$3,$4,$5::jsonb,$6,$7,$8::jsonb,$9::jsonb${this.config.sharedOrganizationAgents?',$10::uuid':''})
           ON CONFLICT(id) DO UPDATE SET record=EXCLUDED.record,status=EXCLUDED.status,scheduled_at=EXCLUDED.scheduled_at,
           last_delivery=EXCLUDED.last_delivery,delivery_history=EXCLUDED.delivery_history,updated_at=now()
+          ${this.config.sharedOrganizationAgents?',actor_user_id=EXCLUDED.actor_user_id':''}
           WHERE harness_scheduled_tasks.org_id=$3 AND harness_scheduled_tasks.user_id=$4 AND harness_scheduled_tasks.session_id=$2`,
           [
             id,
@@ -347,15 +382,18 @@ export default class PostgresScheduleBackend extends Service implements Schedule
             task.record.scheduledAt,
             task.lastDelivery === undefined ? null : JSON.stringify(task.lastDelivery),
             task.deliveryHistory === undefined ? null : JSON.stringify(task.deliveryHistory),
+            ...(this.config.sharedOrganizationAgents?[owner.actorUserId ?? owner.userId]:[]),
           ],
         )
         if (result.rowCount !== 1) throw new Error('Schedule write refused')
         if (task.status === 'active')
           await client.query(
-            `INSERT INTO harness_scheduled_due(task_id,org_id,user_id,due_at)
-          VALUES($1,$2,$3,$4) ON CONFLICT(task_id) DO UPDATE SET due_at=EXCLUDED.due_at
+            `INSERT INTO harness_scheduled_due(task_id,org_id,user_id,due_at${this.config.sharedOrganizationAgents?',actor_user_id':''})
+          VALUES($1,$2,$3,$4${this.config.sharedOrganizationAgents?',$5::uuid':''}) ON CONFLICT(task_id) DO UPDATE SET due_at=EXCLUDED.due_at
+          ${this.config.sharedOrganizationAgents?',actor_user_id=EXCLUDED.actor_user_id':''}
           WHERE harness_scheduled_due.org_id=$2 AND harness_scheduled_due.user_id=$3`,
-            [id, owner.orgId, owner.userId, task.record.scheduledAt],
+            [id, owner.orgId, owner.userId, task.record.scheduledAt,
+              ...(this.config.sharedOrganizationAgents?[owner.actorUserId ?? owner.userId]:[])],
           )
         else
           await client.query('DELETE FROM harness_scheduled_due WHERE task_id=$1 AND org_id=$2 AND user_id=$3', [
