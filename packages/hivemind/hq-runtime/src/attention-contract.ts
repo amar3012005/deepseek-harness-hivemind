@@ -2,6 +2,7 @@
 import { createHash, createHmac, timingSafeEqual } from 'node:crypto'
 import type { LedgerEvent } from './ledger.ts'
 import { hqMode } from './mode.ts'
+import type { AttentionDecisionMemory } from './attention-memory.ts'
 
 const object = (value: unknown): value is Record<string, unknown> => !!value && typeof value === 'object' && !Array.isArray(value)
 const text = (value: unknown, max: number): string => typeof value === 'string' ? value.slice(0, max) : ''
@@ -37,7 +38,9 @@ export function attentionAuthorization(authorization: string | undefined, secret
     return { orgId: claims.org_id, userId: claims.sub, eventId: claims.event_id, operation: claims.operation }
   } catch { return undefined }
 }
-export function attentionSnapshot(events: readonly LedgerEvent[], sessionId: string, consentRevision: number) {
+export function attentionSnapshot(
+  events: readonly LedgerEvent[], sessionId: string, consentRevision: number, decisionMemory?: AttentionDecisionMemory,
+) {
   const tasks = new Map<string, unknown>()
   let goal: unknown, handoff: unknown
   for (const event of events) {
@@ -46,7 +49,7 @@ export function attentionSnapshot(events: readonly LedgerEvent[], sessionId: str
       const task = event.data.task
       if (typeof task.id !== 'string') continue
       tasks.set(task.id, { id: task.id, revision: task.revision, status: task.status,
-        subject: text(task.subject, 200), description: text(task.description, 400), owner: text(task.owner, 160) })
+        subject: text(task.subject, 200), description: text(task.description, 250), owner: text(task.owner, 100) })
     }
     if (event.type === 'goal/change') {
       const source = event.data.goal
@@ -54,14 +57,14 @@ export function attentionSnapshot(events: readonly LedgerEvent[], sessionId: str
         : { id: source.id, revision: source.revision, phase: source.phase, objective: text(source.objective, 1000) }
     }
     if (event.type === 'hivemind/hq-rest-intent') handoff = { id: event.data.id,
-      nextSteps: Array.isArray(event.data.nextSteps) ? event.data.nextSteps.slice(0, 8).map(v => text(v, 300)) : [],
-      blockers: Array.isArray(event.data.blockers) ? event.data.blockers.slice(0, 8).map(v => text(v, 300)) : [],
-      summary: text(event.data.summary, 1000) }
+      nextSteps: Array.isArray(event.data.nextSteps) ? event.data.nextSteps.slice(0, 5).map(v => text(v, 180)) : [],
+      blockers: Array.isArray(event.data.blockers) ? event.data.blockers.slice(0, 5).map(v => text(v, 180)) : [],
+      summary: text(event.data.summary, 600) }
   }
   const mode = hqMode(events)
   const value = { sessionId, consentRevision, enabled: mode.enabled, modeRevision: mode.revision, modeChangedAt: mode.changedAt,
-    goals: goal === undefined ? [] : [goal], tasks: [...tasks.values()].slice(-20),
-    pendingDecisions: handoff === undefined ? [] : [handoff] }
+    goals: goal === undefined ? [] : [goal], tasks: [...tasks.values()].slice(-12),
+    pendingDecisions: handoff === undefined ? [] : [handoff], ...(decisionMemory ? { decisionMemory } : {}) }
   return { ...value, revision: createHash('sha256').update(JSON.stringify(value)).digest('hex') }
 }
 /** Source identity survives admission/claim/replay; a delivery receipt is not required for retry safety. */

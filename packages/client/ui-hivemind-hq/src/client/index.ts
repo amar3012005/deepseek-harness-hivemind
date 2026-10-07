@@ -1,5 +1,9 @@
 import type {} from '@deepseek-ai/dsh-client-ui-chat/client'
+import { RuntimeNotificationBanner, type RuntimeNotificationBannerProps } from './RuntimeNotificationBanner.tsx'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import type { TurnLocation } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { RuntimeTaskCard } from './RuntimeTaskCard.tsx'
+import { RuntimeTour, type RuntimeTourProps } from './RuntimeTour.tsx'
 import { employeeTaskCard } from './employee-task-card.ts'
 import { FinalRuntimePlanSummary } from './RuntimePlanSummary.tsx'
 /** Native header contribution over generated, tenant-authorized HQ Remote contracts. */
@@ -67,6 +71,53 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
           ?? child.sessions.list.getSnapshot().byId[props.sessionId]?.agentPreset)
       return preset === 'hivemind-hq' ? createElement(HqControlAction, props) : null
     }
+    const ScopedTour = (props: RuntimeTourProps) => {
+      const preset = useSyncExternalStore(listener => child.sessions.list.subscribe(listener),
+        () => child.sessions.list.getSnapshot().byId[props.sessionId]?.projectionValues?.agentPreset
+          ?? child.sessions.list.getSnapshot().byId[props.sessionId]?.agentPreset)
+      return preset === 'hivemind-hq' ? createElement(RuntimeTour, props) : null
+    }
+    child.slots.inject('conversation.input.dock', () => child.slots.register({
+      name: 'conversation.input.dock', id: 'runtime-first-entry-tour', order: -20, locale: 'hivemind.hq',
+      inject: sessionId => ({
+        sessionId,
+        load: (id: typeof sessionId) => child.remote.hivemindHq.tourState(id),
+        checkpoint: (id: typeof sessionId, request: Parameters<RuntimeTourProps['checkpoint']>[1]) => child.remote.hivemindHq.checkpointTour(id, request),
+        wake: (id: typeof sessionId) => child.remote.hivemindHq.wakeFromTour(id),
+        resume: (id: typeof sessionId) => child.remote.hivemindHq.resumeFromTour(id),
+        subscribe: (id: typeof sessionId, callback: () => void) => {
+          const source = child.sessions.binding(id)?.eventSource
+          if (!source) return () => {}
+          const signature = () => source.getSnapshot().entries.filter(entry => entry.type === 'event'
+            && ['hivemind/hq-tour', 'hivemind/hq-awakening-start', 'hivemind/hq-awakening-checkpoint', 'turn/start', 'turn/end', 'agent/inbox/spliced'].includes(String(entry.event.type)))
+            .map(entry => entry.type === 'event' ? entry.event.seq : '').join(':')
+          let previous = signature()
+          let timer: ReturnType<typeof setTimeout> | undefined
+          const dispose = source.subscribe(() => {
+            const current = signature()
+            if (current === previous) return
+            previous = current
+            timer ??= setTimeout(() => { timer = undefined; callback() }, 150)
+          })
+          return () => { dispose(); if (timer) clearTimeout(timer) }
+        },
+      }),
+    }, props => createElement(ScopedTour, props)))
+    const ScopedNotifications = ({ sessionId, turn, events }: {
+      sessionId: SessionId
+      turn: TurnLocation
+      events: RuntimeNotificationBannerProps['events'] | undefined
+    }) => {
+      const preset = useSyncExternalStore(listener => child.sessions.list.subscribe(listener),
+        () => child.sessions.list.getSnapshot().byId[sessionId]?.projectionValues?.agentPreset
+          ?? child.sessions.list.getSnapshot().byId[sessionId]?.agentPreset)
+      return preset === 'hivemind-hq' && events
+        ? createElement(RuntimeNotificationBanner, { turn: turn.turn, events }) : null
+    }
+    child.slots.inject('conversation.chat.turnFooter', () => child.slots.register({
+      name: 'conversation.chat.turnFooter', id: 'runtime-email-notification',
+      inject: sessionId => ({ events: child.sessions.binding(sessionId)?.eventSource }),
+    }, ScopedNotifications))
     child.slots.inject('conversation.chat.turnFooter', () => child.slots.register({
       name: 'conversation.chat.turnFooter', id: 'runtime-final-invitation', locale: 'hivemind.hq',
       children: { 'hivemind.runtime.planAvatar': { kind: 'single', scope: 'session' } },

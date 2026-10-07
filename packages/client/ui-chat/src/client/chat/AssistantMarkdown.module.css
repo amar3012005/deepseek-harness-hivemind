@@ -90,3 +90,9 @@
   :global([data-brain-chat]) .body[data-assistant-text] { box-sizing: border-box; min-width: 0; padding: 9px 12px; border-radius: 3px 14px 14px 14px; background: #f0efeb; overflow-wrap: anywhere; gap: 10px; }
   :global([data-brain-chat]) .body :global(.md-table-wide) { width: 100%; max-width: 100%; margin: 0; padding: 0; }
 }
+
+@media (max-width: 600px) {
+  :global([data-agent-room]) .root { min-width: 0; max-width: 94%; font-size: 15px; line-height: 23px; }
+  :global([data-agent-room]) .body[data-assistant-text] { box-sizing: border-box; min-width: 0; padding: 9px 12px; border-radius: 3px 14px 14px 14px; overflow-wrap: anywhere; gap: 10px; }
+  :global([data-agent-room]) .body :global(.md-table-wide) { width: 100%; max-width: 100%; margin: 0; padding: 0; }
+}

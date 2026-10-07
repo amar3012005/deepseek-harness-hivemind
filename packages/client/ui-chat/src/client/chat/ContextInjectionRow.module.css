@@ -70,3 +70,9 @@
 .messageDetails { margin-top: 10px; font-size: 12px; color: var(--dsw-alias-label-secondary); }
 .messageDetails summary { cursor: pointer; }
 .messageRow { display: flex; align-items: flex-start; gap: 10px; }
+
+@media (max-width: 600px) {
+  :global([data-agent-room]) .messageRow { gap: 0; min-width: 0; }
+  :global([data-agent-room]) .messageBubble { max-width: 94%; padding: 9px 12px; border-radius: 3px 14px 14px 14px; font-size: 15px; line-height: 23px; }
+  :global([data-agent-room]) .sender { font-size: 12px; margin-bottom: 4px; }
+}

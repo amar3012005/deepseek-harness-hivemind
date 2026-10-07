@@ -113,3 +113,37 @@ export interface EmployeeTaskSnapshot {
   readonly task: HqWorkspaceTask
   readonly calendar: HqCalendarItem | null
 }
+/** Versioned first-entry presentation saved per authenticated user and company room. */
+export interface HqTourCheckpoint {
+  readonly version: 1
+  readonly userKey: string
+  readonly step: number
+  readonly presentation: 'active' | 'dismissed' | 'completed'
+  readonly revision: number
+  readonly updatedAt: string
+}
+/** Public tour projection excludes principal identifiers and internal implementation details. */
+export interface HqTourState {
+  readonly version: 1
+  readonly step: number
+  readonly presentation: 'active' | 'dismissed' | 'completed'
+  readonly revision: number
+  readonly awakening: 'sleeping' | 'accepted' | 'exploring' | 'blocked' | 'awakened'
+  readonly running: boolean
+  readonly canResume: boolean
+  readonly wakeRequestId: string | null
+}
+/** Checkpointing never starts work or grants any permission. */
+export interface HqTourUpdate {
+  readonly expectedRevision: number
+  readonly step: number
+  readonly presentation: 'active' | 'dismissed' | 'completed'
+}
+/** Concurrent tabs reconcile to the authoritative checkpoint. */
+export type HqTourUpdateResult = { readonly ok: true; readonly value: HqTourState } | { readonly ok: false; readonly current: HqTourState }
+/** Native admission receipt, explicitly separate from official awakening. */
+export interface HqTourWakeResult {
+  readonly state: HqTourState
+  readonly requestId: string | null
+  readonly dispatched: boolean
+}

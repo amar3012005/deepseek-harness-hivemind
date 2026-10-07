@@ -9,12 +9,15 @@ import { SessionId } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-host-webserver'
 import type {} from '@deepseek-ai/dsh-api-session-controller'
 import type {} from '@deepseek-ai/dsh-hivemind-execution-scope'
+import { attentionMemorySnapshot, type AttentionMemoryRow } from './attention-memory.ts'
 import { attentionAdmitted, attentionAuthorization, attentionEvidence, attentionSnapshot } from './attention-contract.ts'
 
 export const name = 'hivemind-runtime-attention'
 export const inject = ['webServer', 'sessionController', 'hivemindExecutionScope', 'sessions', 'agents']
 export interface Config {
   enabled: boolean
+  allowedOrgIds: string[]
+  admitEventsAfter: string
   serviceSecretEnv: string
   connectionStringEnv: string
   schema: string
@@ -23,6 +26,8 @@ export interface Config {
   statementTimeoutMs: number
 }
 export const Config: Schema<Config> = Schema.object({ enabled: Schema.boolean().default(false),
+  admitEventsAfter: Schema.string().default(''),
+  allowedOrgIds: Schema.array(Schema.string().pattern(/^[0-9a-f-]{36}$/iu)).default([]),
   serviceSecretEnv: Schema.string().default('HIVE_HARNESS_RUNNER_SERVICE_SECRET'), connectionStringEnv: Schema.string().default('DATABASE_URL'),
   schema: Schema.string().pattern(/^[a-z_][a-z0-9_]*$/u).default('hivemind'),
   triggerSchema: Schema.string().pattern(/^[a-z_][a-z0-9_]*$/u).default('hivemind'),
@@ -51,6 +56,7 @@ interface Row {
   user_id: string
   toolkit: string
   occurred_at: string | null
+  received_at: string
   data: unknown
   relevance_status: string
   relevance_decision: { runtimeAttention?: {
@@ -64,6 +70,7 @@ interface Row {
 }
 export function apply(ctx: Context, config: Config): void {
   if (!config.enabled) return
+  if (!Number.isFinite(Date.parse(config.admitEventsAfter))) throw new Error('runtime_attention_activation_window_required')
   if (Buffer.byteLength(process.env[config.serviceSecretEnv] ?? '', 'utf8') < 32 || !process.env[config.connectionStringEnv])
     throw new Error('runtime_attention_configuration_required')
   const pool = new Pool({ connectionString: process.env[config.connectionStringEnv], max: config.maxConnections,
@@ -71,12 +78,13 @@ export function apply(ctx: Context, config: Config): void {
   ctx.effect(() => () => pool.end())
   const tails = new Map<string, Promise<unknown>>()
   async function owned(input: z.infer<typeof request>): Promise<Row | undefined> {
+    if (!config.allowedOrgIds.includes(input.orgId)) return undefined
     const client = await pool.connect()
     try {
       await client.query('BEGIN')
       await client.query("SELECT set_config('app.hivemind_org_id',$1,true),set_config('app.hivemind_user_id',$2,true)", [input.orgId, input.userId])
       const result = await client.query<Row>(`SELECT h.session_id,e.subscription_id,e.org_id,e.user_id,
-        e.data,e.occurred_at,e.relevance_status,e.relevance_decision,s.toolkit,s.runtime_attention_revision
+        e.data,e.occurred_at,e.received_at,e.relevance_status,e.relevance_decision,s.toolkit,s.runtime_attention_revision
         FROM ${config.triggerSchema}.hivemind_trigger_events e
         JOIN ${config.triggerSchema}.hivemind_trigger_subscriptions s ON s.id=e.subscription_id
         JOIN harness_company_hq h ON h.org_id=e.org_id::uuid AND h.user_id=e.user_id::uuid
@@ -89,6 +97,26 @@ export function apply(ctx: Context, config: Config): void {
       await client.query('COMMIT'); return result.rows[0]
     } catch (error) { await client.query('ROLLBACK').catch(() => undefined); throw error } finally { client.release() }
   }
+  async function decisionMemory(row: Row) {
+    const client = await pool.connect()
+    try {
+      await client.query('BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY')
+      await client.query("SELECT set_config('app.hivemind_org_id',$1,true),set_config('app.hivemind_user_id',$2,true)", [row.org_id, row.user_id])
+      const result = await client.query<AttentionMemoryRow>(`WITH heads AS (
+        SELECT m.id,m.kind,m.title,m.summary,m.context,m.created_at,
+          count(*) OVER (PARTITION BY m.kind) AS total,
+          row_number() OVER (PARTITION BY m.kind ORDER BY (m.context->>'priority')::integer DESC,m.created_at DESC,m.id DESC) AS rank
+        FROM ${config.schema}.hyper_agent_operating_memories m
+        WHERE m.org_id=$1::uuid AND m.author_user_id=$2::uuid AND m.project_slug='hyper-agents' AND m.agent_slug='runtime'
+          AND ((m.kind='user_agenda' AND m.context->>'state'='confirmed') OR (m.kind='uncertainty' AND m.context->>'state'='open'))
+          AND NOT EXISTS (SELECT 1 FROM ${config.schema}.hyper_agent_operating_memories successor
+            WHERE successor.org_id=m.org_id AND successor.author_user_id=m.author_user_id AND successor.project_slug='hyper-agents'
+              AND successor.kind=m.kind AND successor.context->>'supersedesId'=m.id::text)
+      ) SELECT id,kind,title,summary,context,created_at,total FROM heads WHERE rank<=50 ORDER BY kind,rank`, [row.org_id, row.user_id])
+      await client.query('COMMIT')
+      return attentionMemorySnapshot(result.rows)
+    } catch (error) { await client.query('ROLLBACK').catch(() => undefined); throw error } finally { client.release() }
+  }
   async function run(input: z.infer<typeof request>, res: ServerResponse) {
     const row = await owned(input)
     if (!row) { reply(res, 403, { error: 'runtime_attention_scope_or_consent_denied' }); return }
@@ -98,10 +126,12 @@ export function apply(ctx: Context, config: Config): void {
       const inspection = await ctx.sessionController.inspect(id)
       const preset = inspection.events.filter(event => event.type === 'agent-preset/selected').at(-1)?.data.agentPreset ?? inspection.meta.agentPreset
       if (preset !== 'hivemind-hq' || inspection.meta.parentSession !== undefined) throw new Error('runtime_attention_root_required')
-      const snapshot = attentionSnapshot(inspection.events, row.session_id, row.runtime_attention_revision)
+      const memory = await decisionMemory(row)
+      const snapshot = attentionSnapshot(inspection.events, row.session_id, row.runtime_attention_revision, memory)
       if (input.operation === 'context') {
         reply(res, 200, { consent: { enabled: true, orgId: input.orgId, userId: input.userId, subscriptionId: row.subscription_id },
-          snapshot: { ...snapshot, orgId: input.orgId, userId: input.userId } }); return
+          snapshot: { ...snapshot, admissionWindow: { notBefore: config.admitEventsAfter },
+            orgId: input.orgId, userId: input.userId } }); return
       }
       // Exact native admission is stronger than the cached decision revision on retry.
       if (attentionAdmitted(inspection.events, input.eventId)) {
@@ -110,8 +140,11 @@ export function apply(ctx: Context, config: Config): void {
         if (!(await ctx.sessions.flush(resolved.agent.session))) throw new Error('runtime_attention_persistence_required')
         reply(res, 200, { status: 'accepted', reused: true, eventId: input.eventId, targetSessionId: row.session_id }); return
       }
+      if (Date.parse(row.received_at) < Date.parse(config.admitEventsAfter) || !Number.isFinite(Date.parse(row.received_at))) {
+        reply(res, 409, { error: 'runtime_attention_before_activation' }); return
+      }
       const decision = row.relevance_decision?.runtimeAttention
-      if (row.relevance_status !== 'approved' || decision?.policy !== 'runtime_attention_v1' || decision.action !== 'wake'
+      if (!memory.ready || row.relevance_status !== 'approved' || decision?.policy !== 'runtime_attention_v2' || decision.action !== 'wake'
         || decision.contextRevision !== snapshot.revision || decision.targetSessionId !== row.session_id
         || !Number.isFinite(decision.probability) || decision.probability < 0.75 || decision.probability > 1
         || !Number.isFinite(decision.margin) || decision.margin < 0.2 || decision.margin > 1 || !snapshot.enabled) {
@@ -124,8 +157,11 @@ export function apply(ctx: Context, config: Config): void {
       if (!latest || latest.session_id !== row.session_id || latest.runtime_attention_revision !== row.runtime_attention_revision)
         throw new Error('runtime_attention_consent_changed')
       // Opening a cold room can reveal newer durable state. Never reuse a stale decision.
-      const currentRevision = attentionSnapshot(target.session.snapshotEvents(), row.session_id, row.runtime_attention_revision).revision
-      if (currentRevision !== decision.contextRevision)
+      const freshMemory = await decisionMemory(latest)
+      const currentRevision = attentionSnapshot(
+        target.session.snapshotEvents(), row.session_id, row.runtime_attention_revision, freshMemory,
+      ).revision
+      if (!freshMemory.ready || currentRevision !== decision.contextRevision)
         throw new Error('runtime_attention_stale_context')
       if (!attentionAdmitted(target.session.snapshotEvents(), input.eventId)) {
         const content = JSON.stringify({ source: 'connected_app_event', app: row.toolkit, eventId: input.eventId,

@@ -71,3 +71,5 @@ button.pill[aria-expanded='true'] {
 @media (max-width: 600px) {
   :global([data-brain-chat]) .root { display: none; }
 }
+
+@media (max-width: 600px) { :global([data-agent-room]) .root { display: none; } }

@@ -53,10 +53,11 @@ export function installRuntimeDecisionMemory(
     for (const kind of ['user_agenda', 'uncertainty'] as const) agent.ctx.effect(() => agent.ctx.tools.register(defineTool({
       name: toolNames[kind],
       description: kind === 'user_agenda'
-        ? 'Runtime only: retrieve dated confirmed user goals without a search query, or directly save a user-confirmed agenda version in private HyperAgent memory without approval. Source references are automatic and optional evidence is not a save gate. Never treat inferred goals as confirmed. Correct a prior version using its exact supersedes_id.'
+        ? 'Runtime only: retrieve dated confirmed user goals without a search query, or directly save a user-confirmed agenda version in private HyperAgent memory without approval. Source references are automatic and optional evidence is not a save gate. Never treat inferred goals as confirmed. Before changing a prior direction, recall current agendas and supersede its exact receipt with supersedes_id; do not leave contradictory confirmed versions. Independent goals may remain separate.'
         : 'Runtime only: list open uncertainties ordered by decision priority without a search query, or directly save/resolve one question that needs user input in private HyperAgent memory without approval. Evidence references are optional. Resolve by saving a successor with its exact supersedes_id.',
       parameters: {
         action: { type: 'string', enum: ['recall', 'save'], required: true },
+        ...(kind === 'user_agenda' ? { agenda_key: { type: 'string' as const, description: 'Stable lowercase topic key (letters, digits, underscore or hyphen, at most 80 characters) for one independent confirmed direction. Reuse the same key when changing it; recall the current receipt and provide its exact supersedes_id. Independent goals use different keys.' } } : {}),
         state: { type: 'string', enum: kind === 'user_agenda' ? ['confirmed', 'superseded'] : ['open', 'resolved', 'superseded'] },
         limit: { type: 'integer', description: 'Bounded retrieval, 1 to 20. Defaults to five; no semantic query is required.' },
         title: { type: 'string', description: 'Save: short goal or unresolved question, up to 180 characters.' },
@@ -75,6 +76,7 @@ export function installRuntimeDecisionMemory(
         if (args.action === 'recall') return request(agent, { action: 'recall', kind, agent_slug: 'runtime', state, limit: args.limit ?? 5 }, execution.signal)
         const metadata: Record<string, JsonValue> = { sessionId: agent.id, state, priority: args.priority ?? 50, impact: args.impact ?? '', evidence: args.evidence ?? [] }
         if (kind === 'user_agenda') {
+          if (args.agenda_key) metadata['agendaKey'] = args.agenda_key
           const userSource = agent.session.snapshotEvents().findLast(event =>
             (event.type === 'user/message' && event.data.source.kind === 'user')
             || (event.type === 'hivemind/voice-call-ended' && event.data.hadUserSpeech && event.data.transcript.trim()))
