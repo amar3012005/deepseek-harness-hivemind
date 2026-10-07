@@ -1,10 +1,10 @@
 import { readFileSync } from 'node:fs'
 import { expect, it } from 'vitest'
 const source = (file: string): string => readFileSync(new URL(`../src/client/skeleton/${file}`, import.meta.url), 'utf8')
-it('limits the compact composer and external Add-sheet bridge to phone Brain routes', () => {
+it('shares the compact external Add-sheet bridge between phone Brain and employee routes', () => {
   const input = source('InputBar.tsx')
   expect(input).toContain("window.matchMedia('(max-width: 600px)').matches")
-  expect(input).toContain('if (!isMobileBrain() || locked || machineBusy) return')
+  expect(input).toContain('if (!isMobileLegacyChat() || locked || machineBusy) return')
   expect(input).toContain('hivemind:mobile-brain-add')
   expect(input).toContain('hivemind:mobile-brain-action')
   expect(input).toContain('if (!canAcceptDrop) return')
@@ -30,4 +30,16 @@ it('shares rounded black composer actions without removing native controls', () 
   expect(css).toContain(':global([data-native-chat]) .primary { background: #0a0a0a; color: #fff; border-radius: 50%; }')
   expect(css).toContain(':global([data-native-chat]) .desktopOptions')
   expect(source('InputBar.tsx')).toContain("renderSlot('conversation.input.model', { locked: modelSeatLocked })")
+})
+
+it('extends only phone employee presentation while preserving images and voice', () => {
+  const root = source('ConversationRoot.module.css')
+  const phone = root.slice(root.indexOf('/* Employee phone rooms'))
+  expect(phone).toContain('@media (max-width: 600px)')
+  expect(phone).toContain('.root[data-agent-room] :global([data-chat-agent-avatar]) { display: none; }')
+  expect(phone).not.toContain(' img { display: none')
+  const input = source('InputBar.tsx')
+  expect(input).toContain('employee\\/harness(?:\\/|$)')
+  expect(input).toContain('hivemind:mobile-brain-action')
+  expect(input).toContain('hivemind:mobile-connectors')
 })

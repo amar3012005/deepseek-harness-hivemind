@@ -788,3 +788,16 @@
   .root[data-brain-chat][data-phase='hero'] .heroWorkspaceRow { grid-row: 4; margin-top: 0; }
   .root[data-brain-chat][data-phase='hero'] .composerInput { display: block; grid-row: 5; }
 }
+
+/* Employee phone rooms use Brain's compact transcript without changing desktop. */
+@media (max-width: 600px) {
+  .root[data-agent-room] { --dsh-composer-side-clearance: 0px; --dsh-content-font-size: 15px; --dsh-content-font-delta: 0px; }
+  .root[data-agent-room] .composerSeat { background: #faf9f4; }
+  .root[data-agent-room] .scrollBody { margin: 0; scrollbar-gutter: auto; }
+  .root[data-agent-room] :global([data-chat-agent-avatar]) { display: none; }
+  .root[data-agent-room] :global([data-assistant-message]) { gap: 0 !important; }
+}
+@media (max-width: 600px) {
+  .root[data-agent-room] .header .titleRow { display: none; }
+  .root[data-agent-room] .header .headerCorner { width: 100%; min-height: 56px; justify-content: flex-end; }
+}

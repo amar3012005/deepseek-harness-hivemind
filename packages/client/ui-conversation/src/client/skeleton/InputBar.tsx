@@ -39,9 +39,10 @@ import { PermissionSelect } from './PermissionSelect.tsx'
 import css from './InputBar.module.css'
 import { MobileAddSheet } from './MobileAddSheet.tsx'
 
-function isMobileBrain(): boolean {
+function isMobileLegacyChat(): boolean {
   return window.matchMedia('(max-width: 600px)').matches
-    && /^\/hivemind\/app\/overview(?:\/(?:new|session\/[^/]+))?\/?$/u.test(window.location.pathname)
+    && (/^\/hivemind\/app\/overview(?:\/(?:new|session\/[^/]+))?\/?$/u.test(window.location.pathname)
+      || /^\/hivemind\/app\/employee\/harness(?:\/|$)/u.test(window.location.pathname))
 }
 
 
@@ -281,7 +282,7 @@ export const InputBar = memo(function InputBar({
       inputActions.setDraft(`Use ${value}. ${draft}`)
     }
     const brainAction = (event: Event): void => {
-      if (!isMobileBrain() || locked || machineBusy) return
+      if (!isMobileLegacyChat() || locked || machineBusy) return
       const kind = (event as CustomEvent<{ kind?: string }>).detail?.kind
       if (kind === 'photo' || kind === 'camera' || kind === 'file') {
         if (!canAcceptDrop) return
@@ -553,7 +554,7 @@ export const InputBar = memo(function InputBar({
                 disabled={locked || (toggleCommandMenu === undefined && inputActions === undefined)}
                 onMouseDown={keepFocus}
                 onClick={() => {
-                  if (isMobileBrain()) {
+                  if (isMobileLegacyChat()) {
                     window.dispatchEvent(new Event('hivemind:mobile-brain-add'))
                   } else if (window.matchMedia('(max-width: 900px)').matches && document.querySelector('[data-native-chat]')) {
                     setMobileAddOpen(true)

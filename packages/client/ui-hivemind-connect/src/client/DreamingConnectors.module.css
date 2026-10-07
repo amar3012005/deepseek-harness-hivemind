@@ -79,3 +79,12 @@
   .chatControl[data-mobile-agent-environment] .chatPanel button, .chatControl[data-mobile-agent-environment] .chatPanel a { min-height: 44px; }
   .chatControl[data-mobile-agent-environment] .environmentHeading button { padding: 8px; }
 }
+/* Selected employee identity is a centered phone pill; Environment remains its action. */
+@media (max-width: 600px) {
+  :global([data-agent-room]) .chatControl[data-mobile-agent-environment] { position: absolute; inset-inline: 48px; display: flex; justify-content: center; pointer-events: none; }
+  :global([data-agent-room]) .chatControl[data-mobile-agent-environment] .chatButton { pointer-events: auto; max-width: 100%; border-radius: 999px; background: #fff; border: 1px solid #ecebe6; padding: 7px 12px; }
+  :global([data-agent-room]) .chatControl[data-mobile-agent-environment] .compactIdentity { font-size: 15px; margin-right: 4px; }
+  :global([data-agent-room]) .chatControl[data-mobile-agent-environment] .chatPanel,
+  :global([data-agent-room]) .chatControl[data-mobile-agent-environment] .mobileBackdrop { pointer-events: auto; }
+  :global([data-agent-room]) .chatControl[data-mobile-agent-environment] .chatPanel { border-radius: 28px; }
+}
