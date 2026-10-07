@@ -138,7 +138,7 @@ function mount(
     running: false, blank: false, updatedAt: 2,
   }
   const childRow = {
-    agentPreset: options.summaryAgentPreset,
+    ...(options.summaryAgentPreset === undefined ? {} : { agentPreset: options.summaryAgentPreset }),
     id: SID, displayTitle: 'Child', parentId: options.nestedSubagent === true ? parent : root,
     cwd: '/projects/one', running: false, blank: options.summaryBlank ?? false, updatedAt: 3,
     ...(options.summaryOrigin === undefined ? {} : { origin: options.summaryOrigin }),
