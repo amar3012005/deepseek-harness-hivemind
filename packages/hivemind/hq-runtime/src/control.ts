@@ -67,6 +67,7 @@ export class HqControl extends TypertRemoteService {
     'sessions',
     'sessionPersistence',
     'hivemindHqOwnership',
+    'hivemindExecutionScope',
     'schedule',
     'sessionController',
   ]
