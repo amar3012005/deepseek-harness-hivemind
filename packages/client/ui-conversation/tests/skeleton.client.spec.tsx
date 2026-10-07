@@ -112,6 +112,7 @@ function mount(
   workspaceRows: WorkspaceView[] = [{ ...workspace('one'), sessionIds: [SID] }],
   retargetWorkspace = vi.fn(async (_workspaceId: WorkspaceId) => {}),
   options: {
+    unbound?: boolean
     /** When true, mimic overlay:true chain siblings (hidden fallback + takeover). */
     overlayTakeover?: boolean
     /** The session list summary's `blank` flag — independent of the snapshot's. */
@@ -299,7 +300,7 @@ function mount(
   )) as ConversationRootProps['renderSlotChain']
   const props: ConversationRootProps = {
     usePanelInfo: selector => selector({ activePanelId: null }),
-    sessionId: SID,
+    sessionId: options.unbound ? undefined : SID,
     SessionProvider: ({ children }) => children,
     useSession,
     useConversation,
@@ -531,6 +532,20 @@ describe('ConversationRoot resident composer', () => {
     const root = b.view.container.querySelector('[data-phase]')
     expect(root?.getAttribute('data-phase')).toBe('settling')
     expect(b.view.queryByTestId('hero-headline')).toBeNull()
+  })
+
+  it('an unbound agent route shows loading instead of the default composer', () => {
+    const previous = window.location.pathname
+    window.history.replaceState(null, '', '/hivemind/app/employee/harness/session/session-runtime')
+    try {
+      const b = mount(sessionSnapshotOf(), undefined, undefined, { unbound: true })
+      expect(b.view.container.querySelector('[data-phase]')?.getAttribute('data-phase')).toBe('settling')
+      expect(b.view.getByRole('status').textContent).toContain('Opening your agent')
+      expect(b.view.queryByRole('textbox')).toBeNull()
+      expect(b.view.queryByTestId('hero-headline')).toBeNull()
+    } finally {
+      window.history.replaceState(null, '', previous)
+    }
   })
 
   it('settling phase: a session the list has no row for settles conservatively', () => {

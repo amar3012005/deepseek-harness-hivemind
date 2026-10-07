@@ -254,12 +254,16 @@ export function ConversationRoot({
   // can establish that history is empty, including after a failed reload.
   const parentAvailabilityPending = session?.subagent?.address.mode === 'continuable'
     && session.subagent.parentAvailable === undefined
-  const settling = sessionId !== undefined && (
+  // An agent URL is already a room selection. Until routing has resolved its
+  // durable Session, absence of a selection is loading, never a Brain hero.
+  const agentRoutePending = sessionId === undefined && typeof window !== 'undefined'
+    && /^\/hivemind\/app\/employee\/harness(?:\/|$)/u.test(window.location.pathname)
+  const settling = agentRoutePending || (sessionId !== undefined && (
     (shellPhase === 'blank' && openState !== 'open')
     || parentAvailabilityPending
-  )
-  const hero = sessionId === undefined
-    || (shellPhase === 'blank' && openState === 'open')
+  ))
+  const hero = !agentRoutePending && (sessionId === undefined
+    || (shellPhase === 'blank' && openState === 'open'))
   const zone: InputZone | undefined =
     session === undefined || inputState === undefined ? undefined : { session, input: inputState }
 
@@ -382,7 +386,9 @@ export function ConversationRoot({
       <div className={css.body}>
         <div className={css.scrollBody} data-conversation-scroll="">
           {sessionId === undefined ? null : renderSlot('conversation.session', {})}
-          {composerSeat}
+          {agentRoutePending
+            ? <div className={css.sessionWaiting} role="status">Opening your agent’s conversation…</div>
+            : composerSeat}
         </div>
         {/* Width handles only while a transcript is on screen; the hero has no
             content column to size. */}
