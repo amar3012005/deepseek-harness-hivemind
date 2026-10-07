@@ -6,3 +6,4 @@ export type { HqWakeHistory, HqTaskProgress } from './types.ts'
 export type { HqRestState, HqRestNote, HqRestNoteRequest, HqRestNoteResult } from './types.ts'
 
 export type { EmployeeTaskSnapshot } from './types.ts'
+export type { HqTourState, HqTourUpdate, HqTourUpdateResult, HqTourWakeResult } from './types.ts'

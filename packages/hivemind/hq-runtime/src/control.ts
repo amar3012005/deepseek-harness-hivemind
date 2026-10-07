@@ -6,6 +6,8 @@ import type {} from '@deepseek-ai/dsh-agent-presets'
 import type {} from '@deepseek-ai/dsh-experimental-agent-team'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import { installServiceRecovery } from './service-recovery.ts'
+import { tourState as readTour, checkpointTour as saveTour, wakeFromTour as wakeTour, resumeFromTour as resumeTour } from './tour.ts'
+import type { HqTourState, HqTourUpdate, HqTourUpdateResult, HqTourWakeResult } from './types.ts'
 import { installEmployeeSnapshots, publishEmployeeSnapshot } from './employee-snapshot.ts'
 import { restState as loadRestState, leaveRestNote as saveRestNote } from './rest.ts'
 import type { HqRestState, HqRestNoteRequest, HqRestNoteResult } from './types.ts'
@@ -101,6 +103,37 @@ export class HqControl extends TypertRemoteService {
       }),
     )
   }
+
+  /** Inspect presentation and official awakening in the authorized Runtime room.
+   * @param agent - Exact native Remote Agent.
+   * @returns User-scoped presentation and awakening state.
+   */
+  @Remote('tourState')
+  tourState(agent: Agent): HqTourState { return readTour(this.ctx, this.root(agent)) }
+
+  /** Save presentation without starting work.
+   * @param agent - Exact native Remote Agent.
+   * @param request - Observed revision and intended presentation.
+   * @returns Saved checkpoint or concurrent edit.
+   */
+  @Remote('checkpointTour')
+  checkpointTour(agent: Agent, request: HqTourUpdate): Promise<HqTourUpdateResult> {
+    return saveTour(this.ctx, this.root(agent), request)
+  }
+
+  /** Admit the explicit first wake through native prompt admission.
+   * @param agent - Exact native Remote Agent.
+   * @returns Native admission or reconciliation receipt.
+   */
+  @Remote('wakeFromTour')
+  wakeFromTour(agent: Agent): Promise<HqTourWakeResult> { return wakeTour(this.ctx, this.root(agent)) }
+
+  /** Continue saved findings after an unfinished native turn.
+   * @param agent - Exact native Remote Agent.
+   * @returns Native continuation or reconciliation receipt.
+   */
+  @Remote('resumeFromTour')
+  resumeFromTour(agent: Agent): Promise<HqTourWakeResult> { return resumeTour(this.ctx, this.root(agent)) }
 
   /** Human-only fresh start, scoped by the authenticated storage principal. */
   @Remote('startFresh')

@@ -6,7 +6,9 @@ import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 
 declare module '@deepseek-ai/dsh-session/types' {
   interface SessionEventMap {
+    /** Same-room ended call transcript and interruption status; not proof of completed onboarding. */
     'hivemind/voice-call-ended': { callId: string; provider: 'codex' | 'grok'; initialCheckIn: boolean; interrupted: boolean; hadUserSpeech: boolean; transcript: string }
+    /** Evidence-based baseline assessment for the exact saved initial call, retaining unresolved gaps. */
     'hivemind/voice-baseline-outcome': { callId: string; status: 'complete' | 'incomplete'; summary: string; remaining: string[] }
   }
 }
