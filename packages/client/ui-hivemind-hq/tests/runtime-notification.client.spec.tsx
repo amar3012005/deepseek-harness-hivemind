@@ -14,7 +14,10 @@ const result = (value: unknown, id = 'call-1', isError = false) => ({ type: 'too
   data: { message: { source: { callId: id }, content: [{ isError, content: [{ type: 'text', text: typeof value === 'string' ? value : JSON.stringify(value) }] }] } } })
 const accepted = { message_id: 'private-message-id', status: 'accepted', sent: true,
   receipt: { ok: true, provider: 'cloudflare', messageId: 'private-provider-id', deliveryStatus: 'queued' } }
-const window = (...events: unknown[]) => ({ entries: events.map((event, seq) => ({ type: 'event', event: { ...event as object, seq } })) }) as SessionEventWindow
+const window = (...events: unknown[]): SessionEventWindow => {
+  const entries = events.map((event, seq) => ({ type: 'event', event: { ...event as object, seq } })) as unknown as SessionEventWindow['entries']
+  return { entries, hasMore: false, revision: 0, change: { kind: 'replace', entries } }
+}
 const source = (log: SessionEventWindow) => ({ subscribe: () => () => {}, getSnapshot: () => log })
 it('accepted or queued is sent, not delivered or read', () => {
   const view = render(<RuntimeNotificationBanner turn={1} events={source(window(call(), result(accepted)))} />)
