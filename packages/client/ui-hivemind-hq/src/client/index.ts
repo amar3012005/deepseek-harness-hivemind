@@ -1,4 +1,7 @@
 import type {} from '@deepseek-ai/dsh-client-ui-chat/client'
+import { RuntimeNotificationBanner, type RuntimeNotificationBannerProps } from './RuntimeNotificationBanner.tsx'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import type { TurnLocation } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { RuntimeTaskCard } from './RuntimeTaskCard.tsx'
 import { RuntimeTour, type RuntimeTourProps } from './RuntimeTour.tsx'
 import { employeeTaskCard } from './employee-task-card.ts'
@@ -100,6 +103,21 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
         },
       }),
     }, props => createElement(ScopedTour, props)))
+    const ScopedNotifications = ({ sessionId, turn, events }: {
+      sessionId: SessionId
+      turn: TurnLocation
+      events: RuntimeNotificationBannerProps['events'] | undefined
+    }) => {
+      const preset = useSyncExternalStore(listener => child.sessions.list.subscribe(listener),
+        () => child.sessions.list.getSnapshot().byId[sessionId]?.projectionValues?.agentPreset
+          ?? child.sessions.list.getSnapshot().byId[sessionId]?.agentPreset)
+      return preset === 'hivemind-hq' && events
+        ? createElement(RuntimeNotificationBanner, { turn: turn.turn, events }) : null
+    }
+    child.slots.inject('conversation.chat.turnFooter', () => child.slots.register({
+      name: 'conversation.chat.turnFooter', id: 'runtime-email-notification',
+      inject: sessionId => ({ events: child.sessions.binding(sessionId)?.eventSource }),
+    }, ScopedNotifications))
     child.slots.inject('conversation.chat.turnFooter', () => child.slots.register({
       name: 'conversation.chat.turnFooter', id: 'runtime-final-invitation', locale: 'hivemind.hq',
       children: { 'hivemind.runtime.planAvatar': { kind: 'single', scope: 'session' } },
