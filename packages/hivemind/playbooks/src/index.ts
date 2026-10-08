@@ -928,7 +928,7 @@ export function apply(ctx: Context, config: Partial<Config> = {}): void {
     // Ordinary employee presets retain their existing progressive boundary.
     if (nativeTeamCoordination) {
       for (const tool of [
-        'hivemind_voice_baseline', 'hivemind_hq_contract', 'hivemind_hq_rest', 'hivemind_hq_rest_state', 'hivemind_employee_panel',
+        'hivemind_voice_baseline', 'hivemind_hq_contract', 'hivemind_hq_blocker', 'hivemind_hq_rest', 'hivemind_hq_rest_state', 'hivemind_employee_panel',
         'hivemind_hq_awakening', 'hivemind_onboarding', 'hivemind_administrator_message', 'hivemind_employee_lifecycle',
         'team_task_list', 'team_task_get', 'team_task_create', 'team_task_update', 'list_agents',
         'spawn_teammate', 'send_message', 'wait_agent', 'interrupt_agent',
