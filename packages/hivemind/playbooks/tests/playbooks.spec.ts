@@ -264,10 +264,10 @@ describe('hivemind playbooks', () => {
     )) as typeof assembly
     expect(afterOrientation.tools.map(tool => tool.name)).toContain('hivemind_meta')
     expect(afterOrientation.tools.map(tool => tool.name)).not.toContain('hivemind_operating_context')
-    expect(afterOrientation.tools.map(tool => tool.name)).not.toContain('hivemind_capabilities')
+    expect(afterOrientation.tools.map(tool => tool.name)).toContain('hivemind_capabilities')
     expect(afterOrientation.tools.map(tool => tool.name)).not.toContain('ask_user_question')
     expect(agent.ctx.tools.schemas().map(tool => tool.name)).not.toContain('hivemind_operating_context')
-    expect(agent.ctx.tools.schemas().map(tool => tool.name)).not.toContain('hivemind_capabilities')
+    expect(agent.ctx.tools.schemas().map(tool => tool.name)).toContain('hivemind_capabilities')
     expect(agent.ctx.tools.schemas().map(tool => tool.name)).not.toContain('ask_user_question')
     const capabilityTool = tools.get('hivemind_capabilities')!
     const result = (await capabilityTool.execute({ operation: 'lease', capabilities: ['workspace', 'research'] }, {
@@ -449,6 +449,39 @@ describe('hivemind playbooks', () => {
     ])
   })
 
+  it('keeps discovery executable after orientation and exposes apps only after a native lease', async () => {
+    const tools = new Map<string, ToolDefinition>()
+    const events: Array<{ type: string; data: unknown }> = []
+    const listeners = new Map<string, (...args: unknown[]) => unknown>()
+    let allow: Set<string> | undefined
+    const agent = {
+      session: { append(type: string, data: unknown) { events.push({ type, data }) }, snapshotEvents() { return events } },
+      ctx: { tools: {
+        schemas() { return [...tools.values()].filter(tool => allow === undefined || allow.has(tool.name)) },
+        restrict(filter: { allow: string[] }) { allow = new Set(filter.allow); return () => { allow = undefined } },
+      } },
+    } as unknown as Agent
+    apply({
+      tools: { register(tool: ToolDefinition) { tools.set(tool.name, tool); return () => {} } },
+      hivemindMemory: {},
+      on(name: string, listener: (...args: unknown[]) => unknown) { listeners.set(name, listener); return () => {} },
+    } as never, { progressiveToolDisclosure: true })
+    for (const name of ['hivemind_app_list', 'hivemind_app_get', 'hivemind_generate']) tools.set(name, { name } as ToolDefinition)
+    const assembly = { sections: [], contexts: [], variables: {}, tools: [...tools.values()].map(tool => ({ name: tool.name, description: '', inputSchema: { type: 'object' } })) }
+    const assemble = async () => await listeners.get('system-prompt/assemble')!(assembly, { agent, scope: agent }, async () => assembly) as typeof assembly
+    await assemble()
+    events.push({ type: 'hivemind/operating-context', data: { runId: 'oriented-only' } })
+    const oriented = await assemble()
+    expect(oriented.tools.map(tool => tool.name)).toContain('hivemind_capabilities')
+    expect(agent.ctx.tools.schemas().map(tool => tool.name)).toContain('hivemind_capabilities')
+    expect(oriented.tools.map(tool => tool.name)).not.toContain('hivemind_app_list')
+    expect(agent.ctx.tools.schemas().map(tool => tool.name)).not.toContain('hivemind_generate')
+    await tools.get('hivemind_capabilities')!.execute({ operation: 'lease', capabilities: ['apps'] }, { agent, signal: new AbortController().signal } as never)
+    const leased = await assemble()
+    expect(leased.tools.map(tool => tool.name)).toEqual(expect.arrayContaining(['hivemind_capabilities', 'hivemind_app_list', 'hivemind_app_get']))
+    expect(agent.ctx.tools.schemas().map(tool => tool.name)).not.toContain('hivemind_generate')
+  })
+
   it('temporarily closes orchestration after every planned workstream is terminal', async () => {
     const tools = new Map<string, ToolDefinition>()
     const events: Array<{ type: string; data: unknown }> = []
@@ -509,13 +542,15 @@ describe('hivemind playbooks', () => {
       async () => assembly,
     )) as typeof assembly
     expect(projected.tools.map(tool => tool.name)).toContain('hivemind_workstream')
+    expect(projected.tools.map(tool => tool.name)).toContain('hivemind_capabilities')
+    expect(agent.ctx.tools.schemas().map(tool => tool.name)).toContain('hivemind_capabilities')
     expect(projected.tools.map(tool => tool.name)).not.toEqual(expect.arrayContaining([
-      'hivemind_capabilities', 'hivemind_operating_plan',
+      'hivemind_operating_plan',
       'hivemind_research_gather', 'web_search', 'workflow', 'todo_write',
     ]))
     expect(projected.sections).toEqual([])
     expect(agent.ctx.tools.schemas().map(tool => tool.name)).not.toEqual(expect.arrayContaining([
-      'hivemind_capabilities', 'hivemind_workstream', 'hivemind_research_gather', 'web_search',
+      'hivemind_workstream', 'hivemind_research_gather', 'web_search',
     ]))
   })
 

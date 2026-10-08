@@ -832,8 +832,10 @@ export function apply(ctx: Context, config: Partial<Config> = {}): void {
       // A saved artifact can be an intermediate or one of several requested
       // deliverables. Its receipt does not establish task completion or remove
       // the production capability; native leases and executor authority remain.
+      // Orientation is not a capability lease. Keep discovery available so
+      // later steps can select the native app/artifact lanes they actually need.
       return oriented
-        ? new Set(['ask_user_question', 'hivemind_operating_context', 'hivemind_playbooks', 'hivemind_capabilities', ...browserSuppressed])
+        ? new Set(['ask_user_question', 'hivemind_operating_context', 'hivemind_playbooks', ...browserSuppressed])
         : new Set([...browserSuppressed])
     }
     const suppressed = new Set(['hivemind_operating_context', 'hivemind_playbooks', ...browserSuppressed])
@@ -862,7 +864,6 @@ export function apply(ctx: Context, config: Partial<Config> = {}): void {
         ...CAPABILITY_TOOLS.web,
         ...CAPABILITY_TOOLS.orchestration.filter(tool => tool !== 'hivemind_workstream'),
         ...CAPABILITY_TOOLS.automation,
-        'hivemind_capabilities',
       ])
     }
     for (const event of [...events].reverse()) {
