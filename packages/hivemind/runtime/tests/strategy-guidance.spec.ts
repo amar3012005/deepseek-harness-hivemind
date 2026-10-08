@@ -43,4 +43,8 @@ it('routes stale CRM-reference blockers through native discovery before asking t
   expect(text).toContain('hivemind_app_get')
   expect(text).toContain('an unverified blocker')
   expect(text).toContain('not an internal UUID')
+  expect(text).toContain('do not need another')
+  expect(text).toContain('Assign a suitable employee, such as ROMEO')
+  expect(text).toContain('Missing facts may block a final conclusion without blocking source')
+  expect(text).toContain('not a new human instruction')
 })
