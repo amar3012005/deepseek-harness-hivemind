@@ -75,24 +75,8 @@ export function nativeSignalProvenanceSql(schema: string, admitAfter: string): s
   if (!/^[a-z_][a-z0-9_]*$/u.test(schema)) throw Error('invalid_signal_schema')
   const cutoff=new Date(admitAfter).toISOString()
   return `AND (s.account_id NOT LIKE 'native:%' OR
-    (s.config->>'source'='native_slack' AND s.account_id='native:slack:'||(s.config->>'integration_id')
-      AND e.data->'_source'->>'integration_id'=s.config->>'integration_id'
-      AND e.data->'_source'->>'team_id'=s.config->>'team_id'
-      AND EXISTS(SELECT 1 FROM ${schema}.hivemind_native_slack_attention_sources p WHERE p.id::text=s.config->>'integration_id'
-        AND p.user_id::text=e.user_id AND p.is_active
-        AND p.attention_org_id=e.org_id
-        AND p.team_id=s.config->>'team_id'
-        AND e.occurred_at>=p.attention_enabled_at::timestamptz)) OR
-    (s.config->>'source'='dreaming' AND s.account_id='native:dreaming:'||e.user_id
-      AND EXISTS(SELECT 1 FROM ${schema}.harness_dream_runs d
-        JOIN ${schema}.harness_dream_settings ds ON ds.org_id=d.org_id AND ds.user_id=d.user_id
-        JOIN ${schema}.harness_dream_outputs o ON o.run_id=d.id AND o.org_id=d.org_id
-        JOIN ${schema}.memories m ON m.id=o.memory_id AND m.org_id=d.org_id
-        WHERE d.id::text=e.data->'_source'->>'run_id' AND d.org_id::text=e.org_id AND d.user_id::text=e.user_id
-          AND d.status='completed' AND ds.enabled AND ds.revision=d.revision
-          AND d.trigger_id NOT LIKE '%introduction%' AND o.receipt IS NOT NULL AND o.receipt<>'null'::jsonb
-          AND o.idempotency_key=e.data->'_source'->>'output_key' AND m.id::text=e.data->'_source'->>'memory_id'
-          AND m.deleted_at IS NULL AND m.created_at>='${cutoff}'::timestamptz AND (m.scope='organization' OR (m.scope='project' AND EXISTS(SELECT 1 FROM ${schema}.projects p WHERE p.id=m.project_id AND p.org_id=m.org_id AND p.policy='org_visible' AND p.status='active'))) AND 'flashback'=ANY(m.tags))))`
+    (e.native_source_valid AND (s.config->>'source'<>'dreaming'
+      OR e.native_source_created_at>='${cutoff}'::timestamptz)))`
 }
 export function apply(ctx: Context, config: Config): void {
   if (!config.enabled) return
@@ -112,7 +96,7 @@ export function apply(ctx: Context, config: Config): void {
       if(config.sharedOrganizationAgents) {
         const event=await client.query<Omit<Row,'session_id'>>(`SELECT e.subscription_id,e.org_id,e.user_id,e.data,e.occurred_at,e.received_at,
           e.relevance_status,e.relevance_decision,s.toolkit,s.runtime_attention_revision
-          FROM ${config.triggerSchema}.hivemind_trigger_events e JOIN ${config.triggerSchema}.hivemind_trigger_subscriptions s ON s.id=e.subscription_id
+          FROM ${config.triggerSchema}.hivemind_attention_events e JOIN ${config.triggerSchema}.hivemind_attention_subscriptions s ON s.id=e.subscription_id
           WHERE e.id=$1 AND e.org_id=$2 AND e.user_id=$3 AND s.org_id=e.org_id AND s.user_id=e.user_id
             AND s.status='active' AND s.runtime_attention AND s.runtime_attention_enabled_at IS NOT NULL AND e.received_at>=s.runtime_attention_enabled_at ${nativeSignalProvenanceSql(config.schema,config.admitEventsAfter)}`,
         [input.eventId,input.orgId,input.userId])
@@ -125,8 +109,8 @@ export function apply(ctx: Context, config: Config): void {
       }
       const result = await client.query<Row>(`SELECT h.session_id,e.subscription_id,e.org_id,e.user_id,
         e.data,e.occurred_at,e.received_at,e.relevance_status,e.relevance_decision,s.toolkit,s.runtime_attention_revision
-        FROM ${config.triggerSchema}.hivemind_trigger_events e
-        JOIN ${config.triggerSchema}.hivemind_trigger_subscriptions s ON s.id=e.subscription_id
+        FROM ${config.triggerSchema}.hivemind_attention_events e
+        JOIN ${config.triggerSchema}.hivemind_attention_subscriptions s ON s.id=e.subscription_id
         JOIN harness_company_hq h ON h.org_id=e.org_id::uuid AND h.user_id=e.user_id::uuid
         JOIN harness_sessions r ON r.id=h.session_id AND r.org_id=h.org_id AND r.user_id=h.user_id AND r.status='active'
         JOIN user_organizations m ON m.org_id=h.org_id AND m.user_id=h.user_id AND m.is_active AND m.deactivated_at IS NULL
@@ -146,10 +130,10 @@ export function apply(ctx: Context, config: Config): void {
         SELECT m.id,m.kind,m.title,m.summary,m.context,m.created_at,
           count(*) OVER (PARTITION BY m.kind) AS total,
           row_number() OVER (PARTITION BY m.kind ORDER BY (m.context->>'priority')::integer DESC,m.created_at DESC,m.id DESC) AS rank
-        FROM ${config.schema}.hyper_agent_operating_memories m
+        FROM ${config.schema}.hivemind_attention_decision_memories m
         WHERE m.org_id=$1::uuid AND (${config.sharedOrganizationAgents?"m.context->>'sessionId'=$2":'m.author_user_id=$2::uuid'}) AND m.project_slug='hyper-agents' AND m.agent_slug='runtime'
           AND ((m.kind='user_agenda' AND m.context->>'state'='confirmed') OR (m.kind='uncertainty' AND m.context->>'state'='open'))
-          AND NOT EXISTS (SELECT 1 FROM ${config.schema}.hyper_agent_operating_memories successor
+          AND NOT EXISTS (SELECT 1 FROM ${config.schema}.hivemind_attention_decision_memories successor
             WHERE successor.org_id=m.org_id ${config.sharedOrganizationAgents?'':'AND successor.author_user_id=m.author_user_id'} AND successor.project_slug='hyper-agents'
               AND successor.kind=m.kind AND successor.context->>'supersedesId'=m.id::text)
       ) SELECT id,kind,title,summary,context,created_at,total FROM heads WHERE rank<=50 ORDER BY kind,rank`, [row.org_id, config.sharedOrganizationAgents?row.session_id:row.user_id])
