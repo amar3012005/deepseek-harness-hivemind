@@ -10,7 +10,7 @@ vi.mock('../src/employee-room.ts', async original => ({
   referenceFromMessage: (await original<typeof import('../src/employee-room.ts')>()).referenceFromMessage, allowsEmployeeWork: mocks.allowed, authenticatedRoot: mocks.authenticate,
   rooms: () => ({ deliverAgentMessage: mocks.deliver }), employeeWorkPrompt: () => 'same native assignment' }))
 vi.mock('../src/rest.ts', () => ({ isHqLead: (_ctx: unknown, agent: { id: string }) => agent.id === 'chief' }))
-import { reportDelegatedConnection, notifyDelegatedConnection, resumeDelegatedBlocker, installDelegatedBlockerReporting, delegatedBlockers, checkpointLegacyDelegatedConnection, reportDelegatedHumanInput, unresolvedDelegatedTask } from '../src/delegated-blocker.ts'
+import { reportDelegatedConnection, notifyDelegatedConnection, resumeDelegatedBlocker, installDelegatedBlockerReporting, delegatedBlockers, checkpointLegacyDelegatedConnection, reportDelegatedHumanInput, unresolvedDelegatedTask, delegatedAnswerCandidates, installDelegatedBlockerTool } from '../src/delegated-blocker.ts'
 function must<T>(value: T | undefined): T { if (value === undefined) throw new Error('fixture missing'); return value }
 function fixture() {
   mocks.allowed.mockReset().mockResolvedValue(true)
@@ -204,5 +204,63 @@ describe('explicit employee human-input checkpoints', () => {
     f.rootEvents.push({ seq:SessionSeq(10),time:0,type:'hivemind/hq-employee-assignment',data:{ taskId:'task-1',employeeId:'other',sessionId:'other-room',memberName:'other',personaSha256:'digest' } })
     f.task.ownerName='other'
     expect(unresolvedDelegatedTask(f.ctx,f.root,'task-1')).toBeUndefined()
+  })
+})
+
+describe('authenticated blocker answer discovery', () => {
+  it('filters source, organization, empty and pre-blocker evidence; bounds newest candidates without resuming', async () => {
+    const f = fixture()
+    const orgId = '22222222-2222-4222-8222-222222222222'
+    const actor = { userId: '11111111-1111-4111-8111-111111111111', orgId, role: 'admin', name: 'Amar' }
+    const message = (seq: number, text: string, source: unknown = { kind: 'user', authenticatedActor: actor }) => ({
+      seq: SessionSeq(seq), time: 0, type: 'user/message', surfaceOp: 'append',
+      data: createUserMessage({ source: source as never, content: [{ type: 'text', text }] }),
+    }) as SessionEvent
+    f.rootEvents.push(message(2, 'old'))
+    const receipt = await reportDelegatedHumanInput(f.ctx, f.employee, f.input.execution.signal,
+      { callId: 'call-1', blockerKey: 'code', question: 'Project code?' })
+    const blocker = must(delegatedBlockers(f.root)[0])
+    f.rootEvents.push(message(10, 'plugin', { kind: 'plugin', plugin: 'hivemind-live-voice', authenticatedActor: actor }),
+      message(11, 'schedule', { kind: 'schedule', authenticatedActor: actor }), message(12, 'unverified', { kind: 'user' }),
+      message(13, 'wrong org', { kind: 'user', authenticatedActor: { ...actor, orgId: '33333333-3333-4333-8333-333333333333' } }),
+      message(14, '  '))
+    for (let seq = 20; seq < 30; seq++) f.rootEvents.push(message(seq, seq === 29 ? 'x'.repeat(6001) : `answer ${seq}`))
+    const candidates = delegatedAnswerCandidates(f.root, blocker, orgId)
+    expect(candidates).toHaveLength(8)
+    expect(candidates.map(value => value.answer_event_ref)).toEqual([29,28,27,26,25,24,23,22].map(seq => `event:${seq}`))
+    expect(candidates[0]).toMatchObject({ candidate_only: true, text_truncated: true, verifiedAuthenticatedActor: actor })
+    expect(candidates[0]?.text).toHaveLength(6000)
+    expect(delegatedBlockers(f.root)[0]?.state).toBe('blocked')
+    expect(delegatedAnswerCandidates(f.root, { ...blocker, kind: 'permission' }, orgId)).toEqual([])
+    expect(delegatedAnswerCandidates(f.root, { ...blocker, state: 'resumed' }, orgId)).toEqual([])
+    await expect(resumeDelegatedBlocker(f.ctx, f.root, receipt.blocker_id, f.input.execution.signal,
+      undefined, { answer: 'answer', evidenceRefs: ['artifact-uuid'] })).rejects.toThrow('List this blocker')
+    expect(delegatedBlockers(f.root)[0]?.state).toBe('blocked')
+  })
+  it('registered Runtime list exposes exact saved references and a selected actual answer resumes same task', async () => {
+    const f = fixture()
+    const orgId = '22222222-2222-4222-8222-222222222222'
+    let tool: { execute: (args: unknown, execution: unknown) => Promise<unknown> } | undefined
+    Object.assign(f.ctx, { tools: { register: (value: typeof tool) => { tool = value; return () => {} } },
+      hivemindExecutionScope: { require: () => ({ orgId }) } })
+    const receipt = await reportDelegatedHumanInput(f.ctx, f.employee, f.input.execution.signal,
+      { callId: 'call-1', blockerKey: 'code', question: 'Project code?' })
+    f.rootEvents.push({ seq: SessionSeq(10), time: 0, type: 'user/message', surfaceOp: 'append',
+      data: createUserMessage({ source: { kind: 'user', authenticatedActor: {
+        userId: '11111111-1111-4111-8111-111111111111', orgId, role: 'admin', name: 'Amar',
+      } }, content: [{ type: 'text', text: 'CODE-42' }] }) })
+    installDelegatedBlockerTool(f.ctx)
+    const execute = must(tool).execute
+    const execution = { ...f.input.execution, agent: f.root }
+    const listed = await execute({ action: 'list' }, execution) as {
+      blockers: { state: string; answer_candidates: { answer_event_ref: string }[] }[]
+    }
+    expect(listed.blockers[0].answer_candidates[0].answer_event_ref).toBe('event:10')
+    expect(listed.blockers[0].state).toBe('blocked')
+    await expect(execute({ action: 'list' }, f.input.execution)).rejects.toThrow('owner_required')
+    const resumed = await execute({ action: 'resume', blocker_id: receipt.blocker_id,
+      answer_event_ref: listed.blockers[0].answer_candidates[0].answer_event_ref }, execution)
+    expect(resumed).toMatchObject({ status: 'resumed', task_id: 'task-1', employee_id: 'employee' })
+    expect(mocks.deliver.mock.calls.at(-1)?.[1]?.text).toContain('CODE-42')
   })
 })

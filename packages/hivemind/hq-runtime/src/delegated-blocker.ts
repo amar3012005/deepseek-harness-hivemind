@@ -58,6 +58,23 @@ export function delegatedBlockers(agent: Agent): DelegatedBlocker[] {
   for (const event of agent.session.ownEvents()) if (event.type === 'hivemind/hq-delegated-blocker') saved.set(event.data.id, event.data)
   return [...saved.values()]
 }
+/** Candidate evidence only: listing never answers a question or grants approval. */
+export function delegatedAnswerCandidates(agent: Agent, blocker: DelegatedBlocker, orgId: string) {
+  if (blocker.kind !== 'human_input' || blocker.state !== 'blocked' || blocker.rootId !== String(agent.id)) return []
+  const events = agent.session.ownEvents()
+  const saved = events.findLast(event => event.type === 'hivemind/hq-delegated-blocker' && event.data.id === blocker.id)
+  if (!saved) return []
+  return events.flatMap((event) => {
+    if (event.seq <= saved.seq || event.type !== 'user/message' || event.data.source.kind !== 'user') return []
+    const actor = authenticatedActorFromSource(event.data.source)
+    if (!actor || actor.orgId !== orgId) return []
+    const text = event.data.content.flatMap(block => block.type === 'text' ? [block.text] : []).join('\n').trim()
+    if (!text) return []
+    return [{ answer_event_ref: `event:${event.seq}`, verifiedAuthenticatedActor: actor,
+      text: text.slice(0, 6000), text_truncated: text.length > 6000, candidate_only: true }]
+  }).slice(-8).reverse()
+}
+const answerEvidenceHelp = 'List this blocker to inspect authenticated answer_candidates. Use the relevant exact answer_event_ref event:<sequence>; artifact UUIDs are not event references. Candidates are evidence, never permission grants.'
 async function flush(ctx: Context, agent: Agent): Promise<void> {
   if (!await ctx.sessions.flush(agent.session)) throw new Error('hq_blocker_persistence_required')
 }
@@ -253,21 +270,21 @@ export async function resumeDelegatedBlocker(ctx: Context, root: Agent, id: stri
         workflowSessionId: blocker.workflowSessionId, routerSessionId: blocker.routerSessionId, toolkits: blocker.toolkits, signal })
       if (verified !== true) return { status: 'waiting_for_connection', blocker_id: id, resumed: false }
     } else if (answerEventRef !== undefined) {
-      if (!/^event:[1-9][0-9]*$/u.test(answerEventRef)) throw new Error('hq_blocker_actual_human_answer_required')
+      if (!/^event:[1-9][0-9]*$/u.test(answerEventRef)) throw new Error(`hq_blocker_actual_human_answer_required: ${answerEvidenceHelp}`)
       const record = root.session.ownEvents().findLast(e => e.type === 'hivemind/hq-delegated-blocker' && e.data.id === id)
       const answer = root.session.ownEvents().find(e => Number(e.seq) === Number(answerEventRef.slice(6)))
       if (!record || answer?.type !== 'user/message' || answer.seq <= record.seq || answer.data.source.kind !== 'user'
-        || !authenticatedActorFromSource(answer.data.source)) throw new Error('hq_blocker_actual_human_answer_required')
+        || !authenticatedActorFromSource(answer.data.source)) throw new Error(`hq_blocker_actual_human_answer_required: ${answerEvidenceHelp}`)
       confirmedAnswer = answer.data.content.flatMap(block => block.type === 'text' ? [block.text] : []).join('\n').slice(0, 6000)
-      if (!confirmedAnswer.trim()) throw new Error('hq_blocker_actual_human_answer_required')
+      if (!confirmedAnswer.trim()) throw new Error(`hq_blocker_actual_human_answer_required: ${answerEvidenceHelp}`)
     } else if (context !== undefined) {
-      if (!context.answer.trim() || context.answer.length > 6000 || !context.evidenceRefs.length || context.evidenceRefs.length > 8) throw new Error('hq_blocker_context_evidence_required')
+      if (!context.answer.trim() || context.answer.length > 6000 || !context.evidenceRefs.length || context.evidenceRefs.length > 8) throw new Error(`hq_blocker_context_evidence_required: ${answerEvidenceHelp}`)
       for (const ref of context.evidenceRefs) {
-        if (!/^event:[1-9][0-9]*$/u.test(ref)) throw new Error('hq_blocker_context_evidence_required')
+        if (!/^event:[1-9][0-9]*$/u.test(ref)) throw new Error(`hq_blocker_context_evidence_required: ${answerEvidenceHelp}`)
         const event = root.session.ownEvents().find(e => Number(e.seq) === Number(ref.slice(6)))
         const human = event?.type === 'user/message' && event.data.source.kind === 'user'
         const receipt = event?.type === 'tool/result' && event.data.message.content.some(block => block.type === 'tool-result' && !block.isError)
-        if (!human && !receipt) throw new Error('hq_blocker_context_evidence_required')
+        if (!human && !receipt) throw new Error(`hq_blocker_context_evidence_required: ${answerEvidenceHelp}`)
       }
       confirmedAnswer = `Runtime supplied context within existing authority, from ${context.evidenceRefs.join(', ')}: ${context.answer}`
     } else {
@@ -281,7 +298,7 @@ export async function resumeDelegatedBlocker(ctx: Context, root: Agent, id: stri
       if (typeof args === 'string') { try { args = JSON.parse(args) } catch { args = undefined } }
       const questions = typeof args === 'object' && args !== null ? Reflect.get(args, 'questions') as unknown : undefined
       if (call?.type !== 'tool/call' || answered?.type !== 'user/message' || answered.seq <= call.seq || !settled
-        || !Array.isArray(questions) || !questions.some(question => typeof question === 'object' && question !== null && Reflect.get(question, 'id') === id)) throw new Error('hq_blocker_actual_human_answer_required')
+        || !Array.isArray(questions) || !questions.some(question => typeof question === 'object' && question !== null && Reflect.get(question, 'id') === id)) throw new Error(`hq_blocker_actual_human_answer_required: ${answerEvidenceHelp}`)
       confirmedAnswer = answered.data.content.flatMap(block => block.type === 'text' ? [block.text] : []).join('\n').slice(0, 6000)
     }
     await validate() // Authority may change while provider verification was pending.
@@ -391,7 +408,7 @@ export function installDelegatedBlockerReporting(ctx: Context): void {
 
 export function installDelegatedBlockerTool(ctx: Context): void {
   ctx.effect(() => ctx.tools.register(defineTool({ name: 'hivemind_hq_blocker',
-    description: 'Runtime only: inspect typed employee blockers or resume the SAME native task/employee after provider-authoritative connection verification or an actual correlated human answer. Inspect authorized alternatives before requesting a new connector. For necessary input use the saved blocker_id as the administrator email request_call_id and <blocker_id>-user-request as its stable message_key, once. Wait asynchronously; do not hold a turn merely waiting for the user. Resume human_input from an authenticated saved user answer event, or a correlated native question answer if the user is already present. Email is not approval. Preserve checkpoint and existing receipts; never resend completed actions. This tool cannot grant new permissions.',
+    description: 'Runtime only: inspect typed employee blockers or resume the SAME native task/employee after provider-authoritative connection verification or an actual correlated human answer. Inspect authorized alternatives before requesting a new connector. For necessary input use the saved blocker_id as the administrator email request_call_id and <blocker_id>-user-request as its stable message_key, once. Wait asynchronously; do not hold a turn merely waiting for the user. Resume human_input from an authenticated saved user answer event, or a correlated native question answer if the user is already present. List exposes up to eight newest same-room authenticated answer_candidates after each open human_input blocker. Read their text, choose only a relevant actual answer, and pass its exact answer_event_ref; do not use an artifact UUID or infer approval from a candidate. Email is not approval. Preserve checkpoint and existing receipts; never resend completed actions. This tool cannot grant new permissions.',
     parameters: { action: { type: 'string', required: true, enum: ['list', 'resume'] }, blocker_id: { type: 'string' },
       answer_event_ref: { type: 'string', description: 'For human_input only: exact event:<sequence> of an actual authenticated human answer saved in Runtime after this blocker. Never invent an event or treat this as a permission grant.' },
       answer_call_id: { type: 'string', description: 'For human_input only: exact Runtime ask_user_question call with an actual authenticated answer. Use blocker_id as that question item id.' },
@@ -401,9 +418,12 @@ export function installDelegatedBlockerTool(ctx: Context): void {
     isConcurrencySafe: () => false,
     async execute(args, execution) {
       if (!execution.agent || !isHqLead(ctx, execution.agent)) throw new Error('hq_runtime_blocker_owner_required')
-      if (args.action === 'list') return { blockers: delegatedBlockers(execution.agent).map(blocker => ({ ...blocker,
+      const agent = execution.agent
+      if (args.action === 'list') return { blockers: delegatedBlockers(agent).map(blocker => ({ ...blocker,
         request_call_id: blocker.id, message_key: `${blocker.id}-user-request`,
-        notification_kind: blocker.kind === 'human_input' ? 'decision' : 'approval' })) as unknown as JsonValue }
+        notification_kind: blocker.kind === 'human_input' ? 'decision' : 'approval',
+        answer_candidates: delegatedAnswerCandidates(agent, blocker,
+          ctx.hivemindExecutionScope.require().orgId) })) as unknown as JsonValue }
       if (typeof args.blocker_id !== 'string') throw new Error('hq_blocker_id_required')
       return resumeDelegatedBlocker(ctx, execution.agent, args.blocker_id, execution.signal,
         typeof args.answer_call_id === 'string' ? args.answer_call_id : undefined,
