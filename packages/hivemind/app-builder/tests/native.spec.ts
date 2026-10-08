@@ -23,7 +23,7 @@ describe('native optional App Builder', () => {
       const body = chunks.length ? JSON.parse(Buffer.concat(chunks).toString()) : {}
       seen.push({ path: req.url!, claims, body })
       res.setHeader('content-type', 'application/json')
-      const result = req.url!.endsWith('/validate') ? { valid: true, spec } : req.url!.includes('/records?') ? { records: [], nextCursor: null } : { app }
+      const result = req.url!.endsWith('/validate') ? { valid: true, spec } : req.url!.includes('/records?') ? { records: [], nextCursor: null } : req.url!.includes('/apps?') ? { apps: [{ id, name: 'CRM', version: 1, publishedVersion: null, createdAt: app.createdAt, updatedAt: app.updatedAt }], truncated: false, nextCursor: null } : { app }
       res.end(JSON.stringify(result))
     })
     server.listen(0, '127.0.0.1'); await once(server, 'listening')
@@ -43,7 +43,7 @@ describe('native optional App Builder', () => {
         maxResponseBytes: 1_048_576,
         maxRequestBytes: 262_144,
       })
-      expect(ctx.tools.schemas().filter(tool => tool.name.startsWith('hivemind_app_'))).toHaveLength(9)
+      expect(ctx.tools.schemas().filter(tool => tool.name.startsWith('hivemind_app_'))).toHaveLength(10)
       expect((await ctx.skills.get('create-crm'))?.content).toContain('operation_id')
       const execution = { signal: new AbortController().signal } as never
       const call = (name: string, input: unknown) => ctx.hivemindExecutionScope.run(
@@ -55,6 +55,17 @@ describe('native optional App Builder', () => {
       expect(seen[0]!.claims).toMatchObject({ org_id: id, sub: id, profile: 'hivemind-chat', aud: 'hivemind-control-plane-harness-proxy' })
       expect(seen[0]!.body).toEqual({ spec, operationId: 'fixture:create' })
       expect(seen[0]!.path).toBe('/internal/v1/harness-chat/core/api/app-runtime/apps')
+      expect(await call('hivemind_app_list', {})).toMatchObject({ apps: [{ id, name: 'CRM' }], nextCursor: null })
+      expect(await call('hivemind_app_list', { query: ' CRM ', published: true, limit: 2, after: id })).toMatchObject({ apps: [{ id }] })
+      expect(seen.at(-1)?.path).toBe(`/internal/v1/harness-chat/core/api/app-runtime/apps?limit=2&query=CRM&published=true&after=${id}`)
+      const beforeDiscoveryInvalid = seen.length
+      await expect(call('hivemind_app_list', { query: ' ' })).rejects.toThrow('query must be')
+      await expect(call('hivemind_app_list', { limit: 26 })).rejects.toThrow('limit must be')
+      await expect(call('hivemind_app_list', { after: 'CRM' })).rejects.toThrow('must be a UUID')
+      await expect(call('hivemind_app_get', { app_id: 'CRM' })).rejects.toThrow('recover the exact application ID with hivemind_app_list')
+      await expect(call('hivemind_app_list', { organization_id: id })).rejects.toThrow('not a declared property')
+      await expect(ctx.hivemindExecutionScope.run({ ...principal, projectId: id }, () => ctx.tools.get('hivemind_app_list')!.execute({}, execution))).rejects.toThrow('project-scoped')
+      expect(seen).toHaveLength(beforeDiscoveryInvalid)
       const before = seen.length
       const kanban = { ...spec, views: [{ id: 'board', name: 'Board', type: 'kanban', entityId: 'company', groupByFieldId: 'name' }] }
       await expect(call('hivemind_app_create_draft', { spec: kanban, operation_id: 'invalid:kanban' })).rejects.toThrow('kanban requires an enum field')

@@ -79,13 +79,13 @@ for (const [preset, enabled] of [
       if (initial.tools.some(tool => tool.name.startsWith('hivemind_app_'))) throw Error('Apps leaked before lease')
       const principal = { orgId, userId, profile: 'hivemind-chat' as const, variation: preset === 'hivemind-hq' ? 'hivemind-hq' : 'hyperagents' }
       const execute = (name: string, args: Record<string, unknown>) => ctx.hivemindExecutionScope.run(principal, () => ctx.tools.execute({
-        name, arguments: args as never, callId: `crm-preview-${name}` as never, agent, signal: new AbortController().signal,
+        name, arguments: args, callId: `crm-preview-${name}` as never, agent, signal: new AbortController().signal,
       }))
       const lease = await execute('hivemind_capabilities', { operation: 'lease', capabilities: ['apps'] })
       if (lease.isError) throw Error('Apps lease failed: ' + JSON.stringify(lease))
       const next = await ctx.systemPrompt.assemble({ agent, scope: agent })
       const revealed = next.tools.filter(tool => tool.name.startsWith('hivemind_app_'))
-      if (revealed.length !== (mounted ? 9 : 0)) throw Error('Apps lease did not project exactly installed tools')
+      if (revealed.length !== (mounted ? 10 : 0)) throw Error('Apps lease did not project exactly installed tools')
       for (const tool of original) if (JSON.stringify(tool) !== JSON.stringify(revealed.find(value => value.name === tool.name))) throw Error('Native schema changed: ' + tool.name)
       if (mounted) {
         const skill = await ctx.skills.get('create-crm')

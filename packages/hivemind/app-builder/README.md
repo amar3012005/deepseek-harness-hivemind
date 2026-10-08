@@ -6,6 +6,7 @@ Optional Cordis consumer for the Core App Runtime v1 API. It registers native to
 
 | Tool | Operation |
 | --- | --- |
+| `hivemind_app_list` | Rediscover organization apps by name with bounded cursor paging; returns exact UUIDs and versions |
 | `hivemind_app_create_draft` | Create a data-only AppSpec draft with a stable operation ID |
 | `hivemind_app_get` | Read current spec and version |
 | `hivemind_app_patch` | Replace the complete spec using expected-version comparison |
@@ -22,6 +23,8 @@ The tool dialect uses closed input objects and the native `validateJsonSchemaVal
 
 Deployment supplies `serviceApiBase`, `serviceSecretEnv`, `requestTimeoutMs`, `maxRequestBytes` and `maxResponseBytes`. Defaults are declared by the exported Cordis Config. Scoped-service authority requires the existing execution-scope plugin. Requests derive user and organization claims from that authenticated scope and sign the existing 30-second Harness-to-Control JWT. Models cannot choose a tenant, token, origin or route. Redirects are refused; HTTP is allowed only for loopback or the existing Control Plane Compose service names. Responses are streamed with a byte limit and native tool cancellation.
 
+Before editing an earlier CRM whose identifier is missing, use `hivemind_app_list` with an optional literal name query. Omit the query to browse, use `published: true` for previously published work, and follow `nextCursor` with `after` until the relevant app is located. Discovery requires active organization owner/admin membership; project-scoped calls remain forbidden. Ask only to distinguish actual named matches, never to retrieve an internal UUID. Read the selected app again with `hivemind_app_get` for its current draft version before mutation. Do not create a duplicate to recover missing context.
+
 Writes require a stable `operation_id`; no automatic retries generate new identities. Interrupted writes report unknown outcome. Reconcile current state or repeat the exact payload and operation ID against Core's durable idempotency receipts. Expected-version conflicts require reading the current version before preparing another edit. Validation diagnostics expose approved error codes and bounded field paths, without reflecting server stacks or auth errors.
 
 ## Future integration
@@ -32,7 +35,7 @@ An eventual `@create CRM` UI entry can hand the raw request to the existing Runt
 
 ## Model Experience
 
-No model requests or prompt contributions occur inside this plugin. Feature-enabled mounting adds nine tool schemas to the selected scope; repeated full specs increase token use, so get and preview should be task-scoped. Record reads are bounded, and idle tools should stay out of unrelated scopes through existing composition or capability leasing. The package neither modifies model selection nor compaction and introduces no prefix-cache invalidation beyond the tool schemas of an explicitly changed composition.
+No model requests or prompt contributions occur inside this plugin. Feature-enabled mounting adds ten tool schemas to the selected scope; repeated full specs increase token use, so get and preview should be task-scoped. Record reads are bounded, and idle tools should stay out of unrelated scopes through existing composition or capability leasing. The package neither modifies model selection nor compaction and introduces no prefix-cache invalidation beyond the tool schemas of an explicitly changed composition.
 
 ## Known Limitations and Deferred Work
 

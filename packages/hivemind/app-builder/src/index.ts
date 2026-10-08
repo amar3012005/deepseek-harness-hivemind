@@ -34,7 +34,7 @@ const record = object({ id: str, appId: str, entityId: str, version: integer, da
 const appResult = object({ app })
 const recordResult = object({ record })
 const operation = { type: 'string', description: 'Stable operation ID (1–180 ASCII letters, numbers, dots, underscores, colons or hyphens). Reuse it with an identical request when reconciling an interrupted write; never mint another ID for that retry.' } satisfies JsonSchemaNode
-const appId = { type: 'string', description: 'Application UUID returned by a previous tool.' } satisfies JsonSchemaNode
+const appId = { type: 'string', description: 'Exact application UUID returned by app_list, app_get or a successful create receipt. Do not guess an ID from its name.' } satisfies JsonSchemaNode
 const version = { type: 'integer', description: 'Positive current version returned by get. A conflict requires inspecting current state before preparing another edit.' } satisfies JsonSchemaNode
 
 interface Operation {
@@ -49,6 +49,14 @@ interface Operation {
 }
 const encodedApp = (input: Record<string, JsonValue>) => `/${encodeURIComponent(input.app_id as string)}`
 const operations: Operation[] = [
+  { name: 'hivemind_app_list', description: 'Rediscover existing organization applications before creating or editing a CRM whose UUID is not known. Read-only admin discovery returns names, exact UUIDs and current/published versions, never full record contents. Search by application name; omit query to browse. Follow nextCursor with after and the same query/published filter until the relevant app is found. Confirm ambiguity using recognizable names, not internal IDs.',
+    properties: { query: { type: 'string', description: 'Optional literal case-insensitive application-name search, 1–120 characters.' },
+      published: { type: 'boolean', description: 'Only published apps when true. Omit or false to include drafts.' },
+      limit: { type: 'integer', description: 'Page size 1–25. Defaults to 25.' }, after: str }, required: [],
+    output: object({ apps: { type: 'array', items: object({ id: str, name: str, version: integer, publishedVersion: nullableInteger, createdAt: str, updatedAt: str }) },
+      truncated: { type: 'boolean' }, nextCursor: { oneOf: [str, { type: 'null' }] } }), method: 'GET',
+    route: i => `?${new URLSearchParams({ limit: String((i.limit as number | undefined) ?? 25), ...(i.query === undefined ? {} : { query: (i.query as string).trim() }),
+      ...(i.published === true ? { published: 'true' } : {}), ...(i.after === undefined ? {} : { after: i.after as string }) })}` },
   { name: 'hivemind_app_create_draft', description: 'Create a data-only application draft. Use stable lowercase entity/field/view identifiers. Every kanban view must set groupByFieldId to an enum field in its entity, with defined options; text fields cannot group a kanban. Nothing is published. SQL, scripts, workflow definitions and executable UI are unsupported.',
     properties: { spec: appSpecSchema, operation_id: operation }, output: appResult, method: 'POST', route: () => '',
     body: i => ({ spec: i.spec, operationId: i.operation_id }) },
@@ -67,7 +75,7 @@ const operations: Operation[] = [
   { name: 'hivemind_app_query_records', description: 'Read a bounded page of records from one known entity. Use field definitions from app_get to interpret data. Omit after for the first page.',
     properties: { app_id: appId, entity_id: str, limit: { type: 'integer', description: 'Page size from 1 to 25. Omit for 25.' }, after: str }, required: ['app_id', 'entity_id'],
     output: object({ records: { type: 'array', items: record }, nextCursor: { oneOf: [str, { type: 'null' }] } }), method: 'GET',
-    route: i => `${encodedApp(i)}/records?${new URLSearchParams({ entityId: i.entity_id as string, limit: String(i.limit ?? 25), ...(i.after === undefined ? {} : { after: i.after as string }) })}` },
+    route: i => `${encodedApp(i)}/records?${new URLSearchParams({ entityId: i.entity_id as string, limit: String((i.limit as number | undefined) ?? 25), ...(i.after === undefined ? {} : { after: i.after as string }) })}` },
   { name: 'hivemind_app_create_record', description: 'Create one application record. Data keys are field IDs from app_get; dates use YYYY-MM-DD. Core validates types, required fields, references and source ownership.',
     properties: { app_id: appId, entity_id: str, data, operation_id: operation }, output: recordResult, method: 'POST', route: i => `${encodedApp(i)}/records`,
     body: i => ({ entityId: i.entity_id, data: i.data, operationId: i.operation_id }) },
@@ -95,11 +103,12 @@ export function apply(ctx: Context, config: Config): void {
         const violations = validateJsonSchemaValue(parameters, args, 'arguments')
         if (violations.length) throw new TypeError(`app-builder: ${violations.join('; ')}`)
         const input = args as Record<string, JsonValue>
-        for (const key of ['app_id', 'record_id', 'after']) if (input[key] !== undefined && !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(input[key] as string)) throw new TypeError(`app-builder: ${key} must be a UUID`)
+        for (const key of ['app_id', 'record_id', 'after']) if (input[key] !== undefined && !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(input[key] as string)) throw new TypeError(`app-builder: ${key} must be a UUID${key === 'app_id' ? '; recover the exact application ID with hivemind_app_list, then read current state with hivemind_app_get' : ''}`)
         if (input.entity_id !== undefined && !/^[a-z][a-z0-9_-]{0,63}$/.test(input.entity_id as string)) throw new TypeError('app-builder: entity_id must be a stable lowercase identifier')
         if (input.operation_id !== undefined && !/^[A-Za-z0-9._:-]{1,180}$/.test(input.operation_id as string)) throw new TypeError('app-builder: operation_id must contain 1–180 ASCII letters, numbers, dots, underscores, colons or hyphens')
         if (input.expected_version !== undefined && (!Number.isSafeInteger(input.expected_version) || (input.expected_version as number) < 1)) throw new TypeError('app-builder: expected_version must be a positive safe integer')
         if (input.limit !== undefined && ((input.limit as number) < 1 || (input.limit as number) > 25)) throw new TypeError('app-builder: limit must be 1–25')
+        if (input.query !== undefined && (!(input.query as string).trim() || (input.query as string).trim().length > 120)) throw new TypeError('app-builder: query must be 1–120 characters')
         if (input.spec !== undefined) validateKanbanGrouping(input.spec)
         const body = operation.body?.(input)
         if (body !== undefined && Buffer.byteLength(JSON.stringify(body)) > config.maxRequestBytes) throw new TypeError('app-builder: request exceeds configured byte limit')

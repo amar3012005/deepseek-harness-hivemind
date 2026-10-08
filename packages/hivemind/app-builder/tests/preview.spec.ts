@@ -31,7 +31,7 @@ suite('real authenticated disposable App Runtime preview', () => {
       await ctx.plugin(ExecutionScope)
       await ctx.plugin(plugin, { serviceApiBase: origin!, serviceSecretEnv: 'CRM_NATIVE_PREVIEW_SERVICE_SECRET', requestTimeoutMs: 30_000, maxRequestBytes: 262_144, maxResponseBytes: 1_048_576 })
       expect((await ctx.skills.get('create-crm'))?.content).toContain('operation_id')
-      expect(ctx.tools.schemas().filter(tool => tool.name.startsWith('hivemind_app_'))).toHaveLength(9)
+      expect(ctx.tools.schemas().filter(tool => tool.name.startsWith('hivemind_app_'))).toHaveLength(10)
       const spec = {
         schemaVersion: 1, name: `Native preview ${operation}`, entities: [{ id: 'company', name: 'Companies', fields: [
           { id: 'name', name: 'Name', type: 'text', required: true },
@@ -49,7 +49,7 @@ suite('real authenticated disposable App Runtime preview', () => {
       await call('hivemind_app_update_record', { app_id: appId, record_id: record.record.id, expected_version: record.record.version, data: { name: 'Updated native fixture' }, operation_id: `${operation}:update` })
       expect(await call('hivemind_app_query_records', { app_id: appId, entity_id: 'company' })).toMatchObject({ records: [{ data: { name: 'Updated native fixture' } }] })
       await expect(ctx.hivemindExecutionScope.run({ ...principal, projectId: randomUUID() }, () => ctx.tools.get('hivemind_app_get')!.execute({ app_id: appId }, { signal: new AbortController().signal } as never))).rejects.toThrow('project-scoped')
-      console.info(JSON.stringify({ receipt: 'native-app-builder-preview', appId, operation, toolCount: 9, skill: 'create-crm', projectScopeDenied: true }))
+      console.info(JSON.stringify({ receipt: 'native-app-builder-preview', appId, operation, toolCount: 10, skill: 'create-crm', projectScopeDenied: true }))
     } finally { await ctx.fiber.dispose() }
   }, 60_000)
 })

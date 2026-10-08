@@ -240,7 +240,7 @@ const AGENT_LOCAL_TOOLS = new Set([
 ])
 
 const CAPABILITY_TOOLS: Readonly<Record<CapabilityLane, readonly string[]>> = {
-  apps: ['hivemind_app_create_draft', 'hivemind_app_get', 'hivemind_app_patch', 'hivemind_app_validate', 'hivemind_app_preview', 'hivemind_app_publish', 'hivemind_app_query_records', 'hivemind_app_create_record', 'hivemind_app_update_record'],
+  apps: ['hivemind_app_list', 'hivemind_app_create_draft', 'hivemind_app_get', 'hivemind_app_patch', 'hivemind_app_validate', 'hivemind_app_preview', 'hivemind_app_publish', 'hivemind_app_query_records', 'hivemind_app_create_record', 'hivemind_app_update_record'],
   connected: ['hivemind_connected_task'],
   research: ['hivemind_research_answer', 'hivemind_research_gather', 'hivemind_research_request', 'hivemind_research_status'],
   web: ['web_search', 'web_fetch'],
