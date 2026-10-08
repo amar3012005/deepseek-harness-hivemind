@@ -200,6 +200,15 @@ export class PostgresSessionPersistence extends SessionPersistence {
     if (!this.config.sharedOrganizationAgents) return scope
     return this.transaction(scope, client => organizationAgentScope(client,scope))
   }
+  /** Fresh administrator authority for a signed host recovery of the canonical Runtime. */
+  async validateAdministratorRoom(id: SessionId): Promise<void> {
+    const human=this.capture()
+    const scope=await this.transaction(human,client=>organizationAgentScope(client,human))
+    const row=await this.row(scope,id)
+    if(!row || row.header.parentSession!==undefined || row.header.agentPreset!=='hivemind-hq')throw new Error('question_recovery_administrator_room_required')
+    const canonical=await this.query<{ session_id:SessionId }>(scope,'SELECT session_id FROM harness_company_hq WHERE org_id=$1',[scope.orgId])
+    if(canonical.rows.length!==1 || canonical.rows[0]?.session_id!==id)throw new Error('question_recovery_canonical_runtime_required')
+  }
   private async sessionScope(id: SessionId): Promise<AgentStorageScope> {
     const human = this.capture()
     if (!this.config.sharedOrganizationAgents) return human

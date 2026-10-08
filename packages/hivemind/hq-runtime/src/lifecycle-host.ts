@@ -1,5 +1,6 @@
 /** Core-attested lifecycle effects use native Schedule, never model-generated scopes. */
 import { installConnectionCompletionHost } from './delegated-connection-host.ts'
+import { installQuestionRecoveryHost } from './question-recovery-host.ts'
 import { createHash, createHmac, timingSafeEqual } from 'node:crypto'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { Context } from '@deepseek-ai/cordis'
@@ -57,6 +58,7 @@ export function apply(ctx:Context,config:Config):void {
   const secret=process.env[config.serviceSecretEnv]
   if(!secret || Buffer.byteLength(secret)<32) throw Error('employee_lifecycle_service_secret_required')
   installConnectionCompletionHost(ctx, secret)
+  installQuestionRecoveryHost(ctx, secret)
   ctx.effect(()=>ctx.webServer.register({ kind:'exact',path:'/internal/hivemind/employee-lifecycle',handler:async(req,res)=>{
     if(req.method!=='POST') {reply(res,405,{ error:'method_not_allowed' });return}
     try {
