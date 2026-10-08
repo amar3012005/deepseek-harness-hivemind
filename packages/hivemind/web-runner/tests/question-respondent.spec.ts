@@ -46,7 +46,10 @@ it('executes the Cordis-injected admission listener before resumption and reject
   const { input,agent,events }=fixture();let allowed=false;const seen:string[]=[]
   await registerQuestionRespondents(ctx,{
     authorize:async (pending)=>{expect(pending.agentId).toBe(agent.id);if(!allowed)throw Error('active_admin_required');return { agent,actor }},
-    admitted:(_agent,respondent,id)=>{expect(ctx.sessions.flushed).toBe(true);expect(respondent).toEqual(actor);seen.push(id)},
+    admitted:(_agent,respondent,id)=>{
+      expect((ctx.sessions as unknown as SubmissionSessions).flushed).toBe(true)
+      expect(respondent).toEqual(actor);seen.push(id)
+    },
   })
   await expect(ctx.parallel('typert/remote-event-result-admission',{ ...input,event:'user-questions/request' })).rejects.toThrow()
   expect(events).toHaveLength(0);expect(seen).toHaveLength(0)
