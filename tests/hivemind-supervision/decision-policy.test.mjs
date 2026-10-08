@@ -16,3 +16,13 @@ test('private memory retains richer operational context without widening schema 
   assert.ok(source.includes('Retain reusable verified lessons'));
   assert.ok(source.includes("private memory author must match the persistent session owner"));
 });
+
+import { nightlyRoutineSkill, installNightlyRoutineGuidance } from '../../packages/hivemind/runtime/src/nightly-routine-guidance.ts';
+test('nightly review installs through native scoped registry without a timer', () => {
+  let registered;
+  const scope = { effect: fn => fn(), skills: { register: skill => { registered = skill; } } };
+  installNightlyRoutineGuidance({ inject: (services, fn) => { assert.deepEqual(services, ['skills']); fn(scope); } });
+  assert.equal(registered, nightlyRoutineSkill);
+  for (const clause of ['Native scheduled followup', 'original due occurrence', 'missing coverage', 'this text is not an email capability', 'authoritative current-revision fix receipt']) assert.ok(nightlyRoutineSkill.content.includes(clause));
+  assert.ok(text.includes('load hivemind-nightly-routine-check'));
+});

@@ -19,6 +19,7 @@ import { installArtifactProductionGuidance } from './production-guidance.ts'
 import { installCompanyAwakeningGuidance } from './awakening-guidance.ts'
 import { installCompletionLearningGuidance } from './learning-guidance.ts'
 import { installCompanyStrategyGuidance } from './strategy-guidance.ts'
+import { installNightlyRoutineGuidance } from './nightly-routine-guidance.ts'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { defineTool } from '@deepseek-ai/dsh-tools'
@@ -1169,6 +1170,7 @@ export function apply(ctx: Context, config: Config): void {
   })
   installArtifactProductionGuidance(ctx)
   installCompanyStrategyGuidance(ctx)
+  installNightlyRoutineGuidance(ctx)
   installCompletionLearningGuidance(ctx)
   if (config.companyAwakeningEnabled) installCompanyAwakeningGuidance(ctx)
   if (config.submissionReviewEnabled) installSubmissionReviewGuidance(ctx)
