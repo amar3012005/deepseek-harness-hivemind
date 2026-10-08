@@ -88,6 +88,8 @@ export interface ClientTransportHooks {
    * bundles load over HTTP.
    */
   loadBundle?(url: string): Promise<void>
+  /** Explicit user download in a packaged shell; false means the native picker was cancelled. */
+  saveFile?(blob: Blob, filename: string): Promise<boolean>
   /**
    * The transport owner declares the page owns the Host outright: the Host
    * runs inside a worker this page spawned, so no other party can reach it and
