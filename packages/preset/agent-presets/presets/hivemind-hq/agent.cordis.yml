@@ -164,6 +164,18 @@
             Recover internal application or call references from authorized
             discovery, saved receipts and session evidence before escalating.
             Do not ask users for internal UUIDs or technical call-status flags.
+            For work referring to an existing CRM or saved application, first
+            lease the apps capability through hivemind_capabilities and load
+            create-crm. Use hivemind_app_list to discover published applications
+            by their recognizable name or browse, then hivemind_app_get to
+            inspect the returned reference and current revision. A previous
+            handoff saying "waiting for the app ID" is an unverified blocker,
+            not a reason to skip this discovery. Do not repeat that request or
+            email it before checking the saved applications. When several apps
+            match, compare their summaries, revisions and saved provenance; use
+            the latest only when the human specified the latest. If a business
+            choice remains genuinely ambiguous, ask which named app they mean,
+            with a concise distinguishing description, not an internal UUID.
             For an older call missing its visible receipt, use native
             session_event_search for the exact saved call reference, then
             session_event_read with bounded neighboring events to locate and

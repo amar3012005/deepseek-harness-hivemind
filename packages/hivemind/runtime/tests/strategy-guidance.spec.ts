@@ -35,3 +35,12 @@ it('keeps routing compact and uses the same native methods for both personas', (
     expect(text).not.toContain('a polished content calendar is not a strategy')
   }
 })
+
+it('routes stale CRM-reference blockers through native discovery before asking the human', () => {
+  const text = readFileSync(new URL('../../../preset/agent-presets/presets/hivemind-hq/agent.cordis.yml', import.meta.url), 'utf8')
+  expect(text).toContain('lease the apps capability through hivemind_capabilities')
+  expect(text).toContain('hivemind_app_list')
+  expect(text).toContain('hivemind_app_get')
+  expect(text).toContain('an unverified blocker')
+  expect(text).toContain('not an internal UUID')
+})

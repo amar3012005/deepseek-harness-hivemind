@@ -15,6 +15,11 @@ describe('HQ wake briefing', () => {
     expect(text).toContain('do not repeat first-awakening introductions')
     expect(text).toContain('record genuine decision blockers as uncertainties')
     expect(text).toContain('avoid repeating unchanged requests')
+    expect(text).toContain('lease apps through hivemind_capabilities')
+    expect(text).toContain('hivemind_app_list')
+    expect(text).toContain('hivemind_app_get')
+    expect(text).toContain('older handoff waiting for an app ID is unverified')
+    expect(text).toContain('Preserve real ambiguity')
   })
   it('preserves pause, native wake delivery and task evidence without inferring completion', () => {
     const text = wakeBriefing({ ...workspace, wakes: [{ id: 'wake-1', title: 'Review', kind: 'once', scheduledAt: '2030-01-01', status: 'completed', deliveredAt: '2030-01-01' }] }, [], 'root')
