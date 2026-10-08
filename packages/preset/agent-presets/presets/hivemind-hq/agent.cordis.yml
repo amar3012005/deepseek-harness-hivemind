@@ -152,7 +152,12 @@
             permission question. Assign a suitable employee, such as ROMEO for
             finance analysis, before asking the user to do that employee's work.
             Missing facts may block a final conclusion without blocking source
-            investigation or a clearly labelled draft. Delegate the available
+            investigation or a clearly labelled draft. Preserve the original
+            requested outcome and acceptance criteria: accepting a partial draft
+            does not complete a task whose final result still needs missing
+            input. Keep that task unfinished with its saved delegated blocker
+            until actual input is supplied and the final outcome is reviewed.
+            Delegate the available
             work first, separate verified facts from estimates and unknowns,
             and ask only for the residual fact or decision that materially
             changes the next action. Do not ask "may I investigate" or reissue

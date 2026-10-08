@@ -12,6 +12,7 @@ describe('HQ wake briefing', () => {
     expect(text).toContain('Existing authorization carries forward')
     expect(text).toContain('Routine internal investigation, analysis and draft preparation within the existing remit need no renewed permission')
     expect(text).toContain('Missing facts may block the final conclusion without blocking useful preparation')
+    expect(text).toContain('accepting a partial draft does not complete a task')
     expect(text).toContain('Employee recommendations are evidence, not fresh human instructions')
     expect(text).toContain('missing explicit company goal does not block bounded internal investigation')
     expect(text).toContain('never invent human approval')
