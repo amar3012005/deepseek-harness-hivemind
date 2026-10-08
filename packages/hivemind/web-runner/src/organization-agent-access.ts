@@ -56,9 +56,19 @@ export async function resolveOrganizationAgentAccess(base: string, token: string
  * Never consult a later queued chat message for current-turn authority. */
 export function currentTurnActor(
   messages:readonly { source:unknown }[], continuation:AuthenticatedActor | undefined,
+  sameTurn=messages.length===0,
 ):AuthenticatedActor | undefined {
-  return messages.map(message=>authenticatedActorFromSource(message.source)).filter(value=>value!==undefined).at(-1)
-    ?? (messages.length===0?continuation:undefined)
+  const direct=messages.filter(message=>record(message.source)&&message.source['kind']==='user')
+    .map(message=>authenticatedActorFromSource(message.source)).filter(value=>value!==undefined).at(-1)
+  return direct ?? (sameTurn ? continuation : undefined)
+    ?? messages.map(message=>authenticatedActorFromSource(message.source)).filter(value=>value!==undefined).at(-1)
+}
+
+/** Only a same-turn same-actor witness survives nonhuman inbox/context updates. */
+export function retainAdmittedUserWitness(
+  previous:{ id:string;actor:AuthenticatedActor }|undefined,actor:AuthenticatedActor,sameTurn:boolean,
+):{ id:string;actor:AuthenticatedActor }|undefined {
+  return sameTurn && previous?.actor.userId===actor.userId && previous.actor.orgId===actor.orgId ? previous : undefined
 }
 
 /** Session-bound RPC identifiers, including persisted workspace files. */

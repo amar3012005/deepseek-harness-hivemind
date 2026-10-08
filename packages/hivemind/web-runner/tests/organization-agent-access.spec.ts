@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest'
-import { resolveOrganizationAgentAccess, currentTurnActor,referencedSessionIds,admittedVoiceCallRef,admittedUserConfirmationRef,authenticatedInitiatorMessage,withAuthenticatedInitiator } from '../src/organization-agent-access.ts'
+import { resolveOrganizationAgentAccess, currentTurnActor,referencedSessionIds,admittedVoiceCallRef,admittedUserConfirmationRef,authenticatedInitiatorMessage,withAuthenticatedInitiator,retainAdmittedUserWitness } from '../src/organization-agent-access.ts'
 const orgId='67503d34-97e9-49a8-8c52-8ee30cc7603e', userId='64f5568b-4d6a-4ae1-9a33-48cb2909d59b'
 const proof = { contract:'hivemind.organization-agent-access.v1', access:'read-write',
   actor:{ org_id:orgId,user_id:userId,role:'admin',name:'Second admin',authority:'authenticated-profile' },
@@ -94,4 +94,20 @@ it('binds admitted decision context to B and refreshes a later A without duplica
   const admittedA=withAuthenticatedInitiator(admittedB,a,true)
   expect(JSON.stringify(admittedA)).toContain('Amar')
   expect(JSON.stringify(admittedA)).not.toContain('Beatrice')
+})
+
+it('retains the exact human confirmation through same-turn context/employee inbox steps only',()=>{
+  const a={ userId,orgId,role:'owner' as const,name:'A' }
+  const b={ ...a,userId:'54f5568b-4d6a-4ae1-9a33-48cb2909d59b',name:'B' }
+  const witness={ id:'human-522',actor:a }
+  const handoff=[{ source:{ kind:'plugin',plugin:'hivemind-playbooks',form:'recall' } }]
+  expect(currentTurnActor(handoff,a,true)).toEqual(a)
+  expect(retainAdmittedUserWitness(witness,a,true)).toBe(witness)
+  expect(currentTurnActor(handoff,a,false)).toBeUndefined()
+  expect(retainAdmittedUserWitness(witness,a,false)).toBeUndefined()
+  expect(retainAdmittedUserWitness(witness,b,true)).toBeUndefined()
+  const employee=[{ source:{ kind:'plugin',plugin:'employee-result',authenticatedActor:b } }]
+  expect(currentTurnActor(employee,a,true)).toEqual(a)
+  expect(currentTurnActor([{ source:{ kind:'user',authenticatedActor:b } },...handoff],a,true)).toEqual(b)
+  expect(currentTurnActor([{ source:{ kind:'schedule',authenticatedActor:b } }],a,false)).toEqual(b)
 })

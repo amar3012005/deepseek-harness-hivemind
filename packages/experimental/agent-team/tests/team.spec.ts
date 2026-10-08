@@ -25,6 +25,7 @@ import type { TeamMemberSnapshot, TeamMessageSnapshot, TeamTaskSnapshot } from '
 import { TestSessionQuery } from './test-session-query.ts'
 import HqControl from '../../../hivemind/hq-runtime/src/control.ts'
 import HqOwnership from '../../../hivemind/hq-runtime/src/ownership.ts'
+import HivemindExecutionScope from '../../../hivemind/execution-scope/src/index.ts'
 import { RoomMessaging } from '../../../api/session-controller/src/room-messaging.ts'
 
 const SIGNAL = new AbortController().signal
@@ -68,6 +69,7 @@ async function setup(
 ) {
   const ctx = new Context()
   await mountAgentLoopTestDependencies(ctx)
+  await ctx.plugin(HivemindExecutionScope)
   const storageRoot = mkdtempSync(join(tmpdir(), 'dsh-team-'))
   roots.push(storageRoot)
   await ctx.plugin(JsonlSessionPersistence, { root: storageRoot })
@@ -187,6 +189,36 @@ describe('Team identity and provisioning', () => {
     await teamFiber.dispose()
     expect(ctx.agents.get(employee.id)).toBe(employee)
   })
+  it('wakes only an authorized bound Lead when an independent employee completes a real turn', async () => {
+    const { ctx, lead } = await setup([textResponse('The employee work is complete.')])
+    const employee = await ctx.agentLoop.create(SessionId('persistent-status-employee'), { provider:'mock',model:'mock' })
+    const unrelated = await ctx.agentLoop.create(SessionId('unrelated-status-lead'), { provider:'mock',model:'mock' })
+    await ctx.sessions.flush(lead.session)
+    await ctx.sessions.flush(employee.session)
+    await ctx.agentTeams.bindPersistentAssignee(lead, employee, 'employee', 'Persistent employee')
+    const entered=Promise.withResolvers<undefined>(), release=Promise.withResolvers<undefined>()
+    const dispose=ctx.on('agent/pre-step',async ({ agent },next)=>{
+      if(agent.id===employee.id) {entered.resolve(undefined);await release.promise}
+      return next()
+    },{ global:true })
+    employee.followup(createUserMessage({ content:content('Finish the assigned work'),source:{ kind:'user' } }))
+    await entered.promise
+    expect(employee.status).toBe('running')
+    const boundWait=ctx.agentTeams.waitForChange(lead,10_000,SIGNAL)
+    const otherAbort=new AbortController()
+    let otherSettled=false
+    const otherWait=ctx.agentTeams.waitForChange(unrelated,10_000,otherAbort.signal)
+    const otherResult=otherWait.catch(()=>undefined).finally(()=>{otherSettled=true})
+    release.resolve(undefined)
+    await expect(boundWait).resolves.toEqual({ timedOut:false })
+    await vi.waitFor(()=>expect(employee.status).toBe('idle'))
+    expect(employee.session.snapshotEvents().some(event=>event.type==='turn/end')).toBe(true)
+    expect(otherSettled).toBe(false)
+    expect(ctx.agentTeams.membership(employee).root).toBe(employee)
+    otherAbort.abort()
+    await otherResult
+    dispose()
+  })
   it('refuses persistent binding when the persistence owner denies the target tenant', async () => {
     const { ctx, lead } = await setup([])
     const employee = await ctx.agentLoop.create(SessionId('foreign-root'), { provider: 'mock', model: 'mock' })
@@ -216,7 +248,7 @@ describe('Team identity and provisioning', () => {
     vi.stubEnv('CLOUDFLARE_ACCOUNT_ID', 'a'.repeat(32)); vi.stubEnv('CLOUDFLARE_API_TOKEN', 'fixture-token')
     const provider = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({ success: true, result: { result: { model: 'jev-fixture', answers: { criterion_0: { type: 'noul', noul: 0.99 } } } } })))
     try {
-      expect(await execute({ action: 'attach', task_id: task.id, due_at: '2026-10-02T10:00:00Z', acceptance_criteria: ['A saved Markdown report with an explicit decision.'] })).not.toMatchObject({ isError: true })
+      expect(await execute({ action: 'attach', task_id: task.id, due_at: '2030-10-02T10:00:00Z', acceptance_criteria: ['A saved Markdown report with an explicit decision.'] })).not.toMatchObject({ isError: true })
       expect((await execute({ action: 'assign', task_id: task.id, employee_id: 'employee-ravi' })).isError).not.toBe(true)
       const member = ctx.agentTeams.listMembers(lead).find(value => value.name === 'ravi')!
       await vi.waitFor(async () => expect((await storedEvents(ctx, member.id)).some(event => event.type === 'hivemind/generation-created')).toBe(true))
@@ -275,7 +307,7 @@ describe('Team identity and provisioning', () => {
     const execute = (args: unknown) => ctx.tools.execute({ name: 'hivemind_hq_contract', callId: ToolCallId('hq-assignment-test'), agent: lead, signal: SIGNAL, arguments: args })
     const start = vi.spyOn(ctx.subagents, 'startContinuable')
     try {
-      expect(await execute({ action: 'attach', task_id: task.id, due_at: '2026-10-01T10:00:00Z', acceptance_criteria: ['One saved report'] })).not.toMatchObject({ isError: true })
+      expect(await execute({ action: 'attach', task_id: task.id, due_at: '2030-10-01T10:00:00Z', acceptance_criteria: ['One saved report'] })).not.toMatchObject({ isError: true })
       expect((await execute({ action: 'assign', task_id: task.id, employee_id: 'foreign-employee' })).isError).toBe(true)
       expect((await execute({ action: 'assign', task_id: task.id, employee_id: 'employee-ravi' })).isError).not.toBe(true)
       expect((await execute({ action: 'assign', task_id: task.id, employee_id: 'employee-ravi' })).isError).not.toBe(true)
@@ -370,6 +402,7 @@ describe('Team identity and provisioning', () => {
   it('supports direct-constructor defaults and recovers roots that already exist', async () => {
     const ctx = new Context()
     await mountAgentLoopTestDependencies(ctx)
+    await ctx.plugin(HivemindExecutionScope)
     const storageRoot = mkdtempSync(join(tmpdir(), 'dsh-team-direct-'))
     roots.push(storageRoot)
     await ctx.plugin(JsonlSessionPersistence, { root: storageRoot })
@@ -1621,6 +1654,7 @@ describe('Team mailbox and waiting', () => {
   it('waits for one change, supports cancellation, times out, and releases waiters on HMR disposal', async () => {
     const ctx = new Context()
     await mountAgentLoopTestDependencies(ctx)
+    await ctx.plugin(HivemindExecutionScope)
     const storageRoot = mkdtempSync(join(tmpdir(), 'dsh-team-wait-'))
     roots.push(storageRoot)
     await ctx.plugin(JsonlSessionPersistence, { root: storageRoot })

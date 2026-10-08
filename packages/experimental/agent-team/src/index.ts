@@ -114,8 +114,7 @@ export class TeamService extends TypertRemoteService {
     ctx.on('session/event', (session, event) => { this.mailbox.observeSessionEvent(session, event) }, { global: true })
     ctx.on('agent/session-start', ({ agent }) => { this.scheduleRecovery(agent) }, { global: true })
     ctx.on('agent/status', ({ agent }) => {
-      const membership = this.roster.tryMembership(agent)
-      if (membership !== undefined) this.activity.notify(membership.id)
+      for (const id of this.roster.activityTeams(agent)) this.activity.notify(id)
     }, { global: true })
     ctx.effect(() => {
       const disposeProjection = ctx.root.sessionProjections.register(teamProjectionDefinition)

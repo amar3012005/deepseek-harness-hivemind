@@ -131,6 +131,28 @@ export class TeamRoster {
     }
   }
 
+  /** Observe status without changing an independent persistent assignee's membership.
+   * Only exact live identities and already authorized durable bindings may wake Leads.
+   */
+  activityTeams(agent: Agent): readonly TeamId[] {
+    if (this.ctx.agents.get(agent.id) !== agent) return []
+    const ids = new Set<TeamId>()
+    const own = this.tryMembership(agent)
+    if (own) ids.add(own.id)
+    for (const root of this.ctx.agents.list()) {
+      const membership = this.tryMembership(root)
+      if (membership?.role !== 'lead') continue
+      try {
+        const bound = this.journal.state(root).members.some(member =>
+          member.id === agent.id && member.ownership === 'persistent' && member.phase === 'active')
+        if (bound) ids.add(membership.id)
+      } catch {
+        // Lifecycle observation must not make malformed unrelated Team state fatal.
+      }
+    }
+    return [...ids]
+  }
+
   /**
    * List the runtime-enriched roster visible to one Team member.
    * @param membership - exact caller membership resolved by this roster.
