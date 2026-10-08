@@ -77,7 +77,7 @@ describe('Runtime delegated blocker checkpoint',()=>{
     await hook({ ...f.input.execution,name:'ask_user_question',arguments:{} },async()=>({ kind:'allow' }));const b=delegatedBlockers(f.root)[0]!
     f.rootEvents.push({ seq:10,type:'user/message',data:{ source:{ kind:'user' },content:[{ type:'text',text:'This year' }] } })
     await expect(resumeDelegatedBlocker(f.ctx,f.root,b.id,f.input.execution.signal,undefined,undefined,'event:10')).rejects.toThrow('actual_human')
-    f.rootEvents[2].data.source.authenticatedActor={ userId:'admin' }
+    f.rootEvents[2].data.source.authenticatedActor={ userId:'11111111-1111-4111-8111-111111111111', orgId:'22222222-2222-4222-8222-222222222222', role:'admin', name:'Amar' }
     expect((await resumeDelegatedBlocker(f.ctx,f.root,b.id,f.input.execution.signal,undefined,undefined,'event:10')).status).toBe('resumed')
     const p=fixture();installDelegatedBlockerReporting(p.ctx);await p.hooks.get('tools/pre-execute')({ ...p.input.execution,name:'write',arguments:{} },async()=>({ kind:'ask',reason:'External write' }))
     expect((await resumeDelegatedBlocker(p.ctx,p.root,delegatedBlockers(p.root)[0]!.id,p.input.execution.signal,undefined,{ answer:'Approved',evidenceRefs:['event:1'] })).status).toBe('requires_native_approval')

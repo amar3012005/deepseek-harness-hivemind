@@ -4,6 +4,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import { TeamTaskId } from '@deepseek-ai/dsh-experimental-agent-team'
+import { authenticatedActorFromSource } from '@deepseek-ai/dsh-hivemind-execution-scope'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { DelegatedConnectionRequest, DelegatedConnectionReceipt } from '@deepseek-ai/dsh-hivemind-connected-apps/src/delegated-blocker.ts'
 import type {} from '@deepseek-ai/dsh-hivemind-connected-apps'
@@ -180,7 +181,7 @@ export async function resumeDelegatedBlocker(ctx: Context, root: Agent, id: stri
       const record = root.session.ownEvents().findLast(e => e.type === 'hivemind/hq-delegated-blocker' && e.data.id === id)
       const answer = root.session.ownEvents().find(e => Number(e.seq) === Number(answerEventRef.slice(6)))
       if (!record || answer?.type !== 'user/message' || answer.seq <= record.seq || answer.data.source.kind !== 'user'
-        || typeof Reflect.get(answer.data.source, 'authenticatedActor') !== 'object') throw new Error('hq_blocker_actual_human_answer_required')
+        || !authenticatedActorFromSource(answer.data.source)) throw new Error('hq_blocker_actual_human_answer_required')
       confirmedAnswer = answer.data.content.flatMap(block => block.type === 'text' ? [block.text] : []).join('\n').slice(0, 6000)
       if (!confirmedAnswer.trim()) throw new Error('hq_blocker_actual_human_answer_required')
     } else if (context !== undefined) {
@@ -197,7 +198,7 @@ export async function resumeDelegatedBlocker(ctx: Context, root: Agent, id: stri
       const call = root.session.ownEvents().findLast(e => e.type === 'tool/call' && e.data.callId === answerCallId && e.data.name === 'ask_user_question')
       const answered = root.session.ownEvents().findLast(e => e.type === 'user/message' && e.data.source.kind === 'user'
         && Reflect.get(e.data.source, 'questionCallId') === answerCallId && Reflect.get(e.data.source, 'questionAnswer') === true
-        && typeof Reflect.get(e.data.source, 'authenticatedActor') === 'object')
+        && authenticatedActorFromSource(e.data.source) !== undefined)
       const settled = root.session.ownEvents().some(e => e.type === 'tool/result' && e.data.message.content.some(block =>
         block.type === 'tool-result' && block.toolCallId === answerCallId && !block.isError))
       let args: unknown = call?.type === 'tool/call' ? call.data.arguments : undefined
