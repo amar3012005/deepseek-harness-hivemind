@@ -121,7 +121,7 @@ export function apply(ctx: Context): void {
         const internal = new Set(['hivemind_meta', 'hivemind_recall', 'hyperagents_memory',
           'hivemind_profile_context', 'hivemind_operating_context', 'hivemind_onboarding',
           'hivemind_hyperagent_profiles', 'hivemind_playbooks', 'hivemind_capabilities',
-          'hivemind_hq_contract', 'hivemind_hq_awakening', 'hivemind_agent_message'])
+          'hivemind_hq_contract', 'hivemind_hq_awakening', 'hivemind_hq_blocker', 'hivemind_agent_message'])
         const deny = agent.ctx.tools.schemas(agent).map(tool => tool.name).filter(name => internal.has(name))
         if (deny.length) investigationMasks.set(agent, agent.ctx.tools.restrict({ deny }))
       }
