@@ -16,6 +16,7 @@ import { defineTool } from '@deepseek-ai/dsh-tools'
 import type {} from '@deepseek-ai/dsh-user-questions'
 import { DreamConnectorService } from './dream-connectors.ts'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
+import type {} from './delegated-blocker.ts'
 
 interface ComposioRouterSessionEventData {
   readonly version: 1
@@ -224,6 +225,7 @@ async function scopedServiceToken(
   config: Config,
   execution: Pick<ToolExecution, 'signal'>,
   identity?: { userId: string; orgId: string },
+  runtimeSessionId?: string,
 ): Promise<{ token: string; base: URL } | undefined> {
   const base = allowedServiceBase(config.serviceApiBase, config.serviceHttpOrigins)
   if (base === undefined) return undefined
@@ -238,6 +240,7 @@ async function scopedServiceToken(
     iss: 'hivemind-harness-runner', aud: 'hivemind-control-plane-harness-proxy',
     sub: principal.userId, org_id: principal.orgId, profile: 'hivemind-chat',
     iat: now, exp: now + 30, jti: randomUUID(),
+    ...(runtimeSessionId === undefined ? {} : { operating_role: 'runtime', operating_session: runtimeSessionId }),
   }
   const input = `${base64url({ alg: 'HS256', typ: 'JWT' })}.${base64url(claims)}`
   return { token: `${input}.${createHmac('sha256', secret).update(input).digest('base64url')}`, base }
@@ -1720,6 +1723,40 @@ export function apply(ctx: Context, config: Config = {}): void {
     }
   }
 
+  ctx.effect(() => ctx.on('hivemind/delegated-connection-verify', async (input) => {
+    if (composio === undefined) throw new Error('Connected tools are not configured')
+    const identity = await ctx.hivemindIdentity.resolve(input.signal)
+    const restored = restoredRouterSession({ agent: input.employee }, sessionKey(identity))
+    if (restored?.routerSessionId !== input.routerSessionId) throw new Error('delegated_connection_router_mismatch')
+    const provider = await (await composio).sessions.use(input.routerSessionId, { mcp: true })
+    const waited = await provider.execute('COMPOSIO_WAIT_FOR_CONNECTIONS', {
+      session_id: input.workflowSessionId, toolkits: [...input.toolkits],
+    })
+    const statuses = connectionStatuses(waited)
+    if (!input.toolkits.every(toolkit => statuses.some(row => row.toolkit.toLowerCase() === toolkit.toLowerCase() && row.connected)
+      && !statuses.some(row => row.toolkit.toLowerCase() === toolkit.toLowerCase() && !row.connected))) return false
+    const service = await scopedServiceToken(ctx, config, { signal: input.signal }, identity, String(input.runtime.id))
+    if (!service) throw new Error('delegated_connection_verification_service_required')
+    const response = await fetch(new URL('/internal/v1/harness-chat/core/delegated-connection/verify', service.base), {
+      method: 'POST', headers: { authorization: `Bearer ${service.token}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ session_id: String(input.employee.id), router_session_id: input.routerSessionId,
+        toolkits: [...input.toolkits] }),
+      signal: input.signal,
+    })
+    const result = await response.json() as Record<string, unknown>
+    if (!response.ok) throw new Error(`delegated_connection_verification_failed:${typeof result['error'] === 'string' ? result['error'] : response.status}`)
+    return result['verified'] === true
+  }, { global: true }))
+
+  async function delegatedConnection(execution: ToolExecution, routerSessionId: string, workflow: string | undefined,
+    toolkits: string[], redirectUrl: string | undefined) {
+    if (execution.agent === undefined || workflow === undefined || typeof ctx.serial !== 'function') return undefined
+    return ctx.serial('hivemind/delegated-connection-blocker', {
+      execution, routerSessionId, workflowSessionId: workflow, toolkits,
+      ...(redirectUrl === undefined ? {} : { redirectUrl }),
+    })
+  }
+
   ctx.effect(() => ctx.tools.register(defineTool({
     name: BRIDGE_TOOL,
     description: 'Tenant-scoped connected-app gateway. Start external-app work with atomic search queries, explicit outcomes, exact result limits, all concrete search filters in known_fields, and a top-level session: { generate_id: true }. Follow recommended_plan_steps: for an explicitly planned read tool, call schemas with its exact slug in the same session, then execute using that contract. Never execute a plan hint directly or guess tools. External writes follow native permission policy. For dependent tasks save a checkpoint with the canonical report, sources, confirmed steps and next step; read_checkpoint restores it. Reuse operation_id on write retries. outcome_unknown requires destination reconciliation, never blind resend. Each successful execution completes only that step, not the whole task. When result_fields were requested, report projection_status and every missing_result_fields entry; never claim requested evidence was returned when projection_status is incomplete. For writes, request the stable resource identifier needed for later verification or follow-up when its exact field is known from the selected contract.',
@@ -1976,6 +2013,12 @@ export function apply(ctx: Context, config: Config = {}): void {
           const projected = compactComposioSearchReceipt(
             { status: 'connection_required', operations, result: scopedResult }, sourceReceipt,
           )
+          const delegated = await delegatedConnection(execution, session.sessionId, workflowSessionId, missing, redirectUrl)
+          if (delegated !== undefined) {
+            execution.concludeTurn()
+            return { ...delegated, session_id: workflowSessionId ?? '', pending_toolkits: missing,
+              next_action: 'Runtime owns this blocker. Continue other authorized work; do not ask the human in this employee room or repeat the blocked provider action.' }
+          }
           if (redirectUrl !== undefined && workflowSessionId !== undefined && execution.agent !== undefined) {
             const connected = await awaitConnection(execution, {
               toolkit,
@@ -2131,6 +2174,13 @@ export function apply(ctx: Context, config: Config = {}): void {
           return matching.length === 0 || matching.some(item => !item.connected)
         })
         const redirectUrl = safeHttpsUrl(firstString(managed, ['redirect_url', 'redirectUrl', 'connection_url', 'url']))
+        const delegated = pending.length
+          ? await delegatedConnection(execution, session.sessionId, continuationId, pending, redirectUrl) : undefined
+        if (delegated !== undefined) {
+          execution.concludeTurn()
+          return { ...delegated, session_id: continuationId ?? '', pending_toolkits: pending,
+            next_action: 'Runtime owns this blocker. Do not ask the human in this employee room.' }
+        }
         if (pending.length > 0) execution.concludeTurn()
         return {
           ...compactComposioExecutionReceipt(managed, sourceReceipt) as Record<string, JsonValue>,

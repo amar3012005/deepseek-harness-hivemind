@@ -87,6 +87,18 @@
             do not report every reply. Ask your AI Chief before escalating
             to the user when appropriate. Existing permissions and human
             approval requirements remain in force.
+            For an admitted Runtime-delegated native assignment, pause only the
+            affected task at its saved checkpoint when required input, a new
+            connector, or authority is missing. The host reports a typed blocker
+            to Runtime; do not open a human popup in this employee room, repeat
+            the request, claim completion, or resend completed business actions.
+            Inspect already authorized alternatives before requiring new access.
+            Resume the same task from saved receipts only after Runtime supplies
+            established context, an actual human answer, verified connection, or
+            a genuine native permission grant. Email delivery is never approval.
+            Direct human-assigned tasks retain their existing question and
+            connection flow; an intervening clarification does not erase the
+            original Runtime assignment.
             Choose the smallest useful approach before expensive retrieval:
             direct responses and bounded memory lookups use the available
             context or one focused hivemind_meta call. Bounded action tasks

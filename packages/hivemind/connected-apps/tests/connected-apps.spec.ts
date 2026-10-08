@@ -29,6 +29,7 @@ function harness(
     serviceApiBase?: string
     serviceSecretEnv?: string
   } = {},
+  delegatedReport?: (event: string, payload: unknown) => Promise<unknown>,
 ) {
   const concludeTurn = vi.fn()
   const ask = vi.fn()
@@ -41,6 +42,7 @@ function harness(
   } | undefined
   const listeners = new Map<string, (...args: never[]) => unknown>()
   const ctx = {
+    ...(delegatedReport ? { serial: delegatedReport } : {}),
     tools: { register(value: typeof tool) { tool = value } },
     effect<T>(callback: () => T) { return callback() },
     hivemindIdentity: { resolve: vi.fn(async () => identity) },
@@ -896,6 +898,27 @@ describe('progressive Composio bridge', () => {
     })
     expect(execute).toHaveBeenCalledTimes(2)
     expect(app.concludeTurn).toHaveBeenCalledOnce()
+  })
+
+  it('hands a Runtime-delegated missing connector to its durable blocker without a human popup', async () => {
+    execute.mockResolvedValueOnce({ data: {
+      results: [{ primary_tool_slugs: ['ASANA_LIST_TASKS'], toolkits: ['asana'] }],
+      toolkit_connection_statuses: [{ toolkit: 'asana', has_active_connection: false }],
+      session: { id: 'workflow-asana' },
+    } }).mockResolvedValueOnce({ data: { redirect_url: 'https://connect.example/asana' } })
+    const report = vi.fn(async () => ({ status: 'blocked_reported', blocker_id: 'blocker', task_id: 'task-1',
+      checkpoint_id: 'checkpoint', message_id: 'message' }))
+    const app = harness(true, { orgId: 'org-a', userId: 'user-a' }, false, {}, report)
+    const agent = { id: 'employee', session: { header: { id: 'room' }, snapshotEvents: () => [], append: vi.fn() } }
+    await expect(app.tool().execute({ action: 'search', queries: [{ app: 'Asana', use_case: 'List Asana tasks' }],
+      session: { generate_id: true } }, { signal: new AbortController().signal, agent, callId: 'call' } as never))
+      .resolves.toMatchObject({ status: 'blocked_reported', session_id: 'workflow-asana' })
+    expect(report).toHaveBeenCalledWith('hivemind/delegated-connection-blocker', expect.objectContaining({
+      workflowSessionId: 'workflow-asana', toolkits: ['asana'],
+    }))
+    expect(app.ask).not.toHaveBeenCalled()
+    expect(app.concludeTurn).toHaveBeenCalledOnce()
+    expect(execute).toHaveBeenCalledTimes(2)
   })
 
   it('pauses natively and resumes the original search contract after verified connection', async () => {

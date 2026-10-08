@@ -19,6 +19,7 @@ import { TeamTaskId } from '@deepseek-ai/dsh-experimental-agent-team'
 import { ScheduleId } from '@deepseek-ai/dsh-schedule'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import { prepareEmployee, employeeWorkPrompt, reconcileEmployeeArtifacts, installEmployeeDelivery, currentEmployeeWork, resumeEmployeeWork } from './employee-room.ts'
+import { installDelegatedBlockerReporting } from './delegated-blocker.ts'
 import type {
   HqCalendarItem,
   HqCalendarUpdate,
@@ -81,6 +82,7 @@ export class HqControl extends TypertRemoteService {
   constructor(ctx: Context) {
     super(ctx, 'hivemindHq')
     installEmployeeDelivery(ctx)
+    installDelegatedBlockerReporting(ctx)
     installEmployeeSnapshots(ctx)
     installServiceRecovery(ctx)
     ctx.effect(() => ctx.on('agent/session-start', ({ agent }) => {

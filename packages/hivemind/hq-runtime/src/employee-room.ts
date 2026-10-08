@@ -21,7 +21,7 @@ interface Rooms {
   resolveAgent(id: SessionId): Promise<{ agent: Agent } | { error: Error }>
   deliverAgentMessage(caller: Agent, input: { key: string; target: string; kind: 'question' | 'update'; text: string; taskId: string }, signal: AbortSignal): Promise<{ messageId: string; targetSessionId: SessionId }>
 }
-function rooms(ctx: Context): Rooms { return Reflect.get(ctx, 'sessionController') as Rooms }
+export function rooms(ctx: Context): Rooms { return Reflect.get(ctx, 'sessionController') as Rooms }
 interface WorkReference { rootId: string; taskId: string; itemId?: string; revision?: number }
 const marker = 'HQ_EMPLOYEE_ASSIGNMENT='
 
@@ -44,7 +44,7 @@ export function workReference(text: string): WorkReference | undefined {
   if (typeof ref.rootId !== 'string' || typeof ref.taskId !== 'string' || (ref.itemId !== undefined && typeof ref.itemId !== 'string') || (ref.revision !== undefined && !Number.isSafeInteger(ref.revision))) throw new Error('hq_assignment_reference_invalid')
   return ref as WorkReference
 }
-async function authenticatedRoot(ctx: Context, id: string, signal: AbortSignal): Promise<Agent> {
+export async function authenticatedRoot(ctx: Context, id: string, signal: AbortSignal): Promise<Agent> {
   const handle = await ctx.sessionPersistence.open(SessionId(id), 'read', { signal })
   try { await handle.read() } finally { await handle.close() }
   const resolved = await rooms(ctx).resolveAgent(SessionId(id))
@@ -279,7 +279,7 @@ export function currentEmployeeWork(agent: Agent): WorkReference | undefined {
   if (event?.type !== 'user/message' || !['schedule', 'hivemind-agent-message'].includes(event.data.source.kind)) return undefined
   return referenceFromMessage(event.data)
 }
-function referenceFromMessage(message: UserMessage): WorkReference | undefined {
+export function referenceFromMessage(message: UserMessage): WorkReference | undefined {
   for (const block of message.content) {
     if (block.type !== 'text') continue
     if (message.source.kind === 'schedule') return workReference(block.text)

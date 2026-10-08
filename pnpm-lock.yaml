@@ -7098,6 +7098,9 @@ importers:
       '@deepseek-ai/dsh-hivemind-artifact-renderer':
         specifier: workspace:^
         version: link:../artifact-renderer
+      '@deepseek-ai/dsh-hivemind-connected-apps':
+        specifier: workspace:^
+        version: link:../connected-apps
       '@deepseek-ai/dsh-hivemind-employee-delegation':
         specifier: workspace:^
         version: link:../employee-delegation

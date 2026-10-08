@@ -13,6 +13,7 @@ import {
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { installRest, recoverRest, acknowledgeRestNotes, restBriefing, restState, isHqLead } from './rest.ts'
 import { installAwakening, awakeningContext } from './awakening.ts'
+import { installDelegatedBlockerTool } from './delegated-blocker.ts'
 import { investigationExpired } from './investigation.ts'
 import { wakeBriefing } from './wake-briefing.ts'
 import { dispatchEmployee, reconcileEmployeeArtifacts } from './employee-room.ts'
@@ -76,6 +77,7 @@ declare module '@deepseek-ai/dsh-session/types' {
   }
 }
 export function apply(ctx: Context): void {
+  installDelegatedBlockerTool(ctx)
   installRest(ctx)
   installAwakening(ctx)
   const briefed = new WeakMap<object, number>()
