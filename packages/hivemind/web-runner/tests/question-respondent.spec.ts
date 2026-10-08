@@ -1,10 +1,10 @@
 import { describe,it,expect } from 'vitest'
-import { questionAnswerText,persistQuestionRespondent } from '../src/question-respondent.ts'
+import { questionAnswerText,persistQuestionRespondent,validateQuestionRoom } from '../src/question-respondent.ts'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 const actor={ userId:'e30e6761-d7ee-4843-92c9-a3b6ea4451ab',orgId:'f6b3e87a-6861-4584-93eb-83b6d5224559',name:'Admin B',role:'admin' as const }
 function fixture(){
   const events:unknown[]=[]
-  const agent={ id:'session-test',session:{ append:(type:string,data:unknown)=>events.push({ type,data }) } } as unknown as Agent
+  const agent={ id:'session-test',session:{ snapshotEvents:()=>events,append:(type:string,data:unknown)=>events.push({ type,data }) } } as unknown as Agent
   const input={ eventId:'pending-native-event',agentId:agent.id,signal:new AbortController().signal,request:{ agent,callId:'actual-native-call',questions:[{ id:'finance',question:'Approve the internal reconciliation?' }] },value:{ answers:[{ id:'finance',selected:['Approve'] }],authenticatedActor:{ name:'Fake founder' } } }
   return { agent,input,events }
 }
@@ -56,4 +56,38 @@ it('executes the Cordis-injected admission listener before resumption and reject
   await ctx.parallel('typert/remote-event-result-admission',{ ...input,event:'some/other-event' })
   expect(events).toHaveLength(1)
   await ctx.fiber.dispose()
+})
+
+it('reuses the exact submission after failed flush and refuses conflicting or cancelled retries',async()=>{
+  const { agent,input,events }=fixture()
+  await expect(persistQuestionRespondent(input,actor,agent,async()=>false)).rejects.toThrow('not_persisted')
+  expect(events).toHaveLength(1)
+  const first=(events[0] as { data:{ id:string } }).data.id
+  expect(await persistQuestionRespondent(input,actor,agent,async()=>true)).toBe(first)
+  expect(events).toHaveLength(1)
+  await expect(persistQuestionRespondent(input,{ ...actor,userId:'other' },agent,async()=>true)).rejects.toThrow('submission_conflict')
+  await expect(persistQuestionRespondent(
+    { ...input,value:{ answers:[{ id:'finance',selected:['Decline'] }] } },actor,agent,async()=>true,
+  )).rejects.toThrow('submission_conflict')
+  expect(events).toHaveLength(1)
+  const cancelled=new AbortController();cancelled.abort()
+  await expect(persistQuestionRespondent(
+    { ...input,request:{ ...input.request,signal:cancelled.signal } },actor,agent,async()=>true,
+  )).rejects.toThrow()
+  expect(events).toHaveLength(1)
+})
+it('binds the pending native room to fresh canonical organization and active employee authority',()=>{
+  const { agent,input,events }=fixture()
+  const snapshot={ header:{ id:agent.id,agentPreset:'hivemind-hq' },revision:'1' } as never
+  const access={ actor,agent:{ orgId:actor.orgId,runtimeSessionId:agent.id,storageUserId:actor.userId } }
+  expect(()=>validateQuestionRoom(input,access,snapshot,agent,actor)).not.toThrow()
+  expect(()=>validateQuestionRoom(input,access,undefined,agent,actor)).toThrow('not_authorized')
+  expect(()=>validateQuestionRoom(input,{ ...access,actor:{ ...actor,role:'member' } as never },snapshot,agent,actor)).toThrow('not_authorized')
+  expect(()=>validateQuestionRoom(input,access,snapshot,agent,{ ...actor,orgId:'other' })).toThrow('not_authorized')
+  expect(()=>validateQuestionRoom(input,{ ...access,agent:{ ...access.agent,runtimeSessionId:'other' } },snapshot,agent,actor)).toThrow('not_authorized')
+  const employeeSnapshot={ header:{ id:agent.id,agentPreset:'hivemind-hyperagents' },revision:'1' } as never
+  events.push({ type:'hivemind/session-owner',data:{ id:'employee-id' } })
+  expect(()=>validateQuestionRoom(input,access,employeeSnapshot,agent,actor,[{ id:'employee-id',status:'ready' }])).not.toThrow()
+  expect(()=>validateQuestionRoom(input,access,employeeSnapshot,agent,actor,[{ id:'employee-id',status:'archived' }])).toThrow('not_active')
+  expect(()=>validateQuestionRoom(input,access,employeeSnapshot,agent,actor,[{ id:'another',status:'ready' }])).toThrow('not_active')
 })

@@ -15,7 +15,7 @@ import { authenticatedActorFromSource, principalForActor, type AuthenticatedActo
 import { resolveOrganizationAgentAccess, currentTurnActor, referencedSessionIds, admittedVoiceCallRef, admittedUserConfirmationRef, runtimeWitnessServices, withAuthenticatedInitiator, retainAdmittedUserWitness, retainTurnConfirmationRef } from './organization-agent-access.ts'
 import type {} from '@deepseek-ai/dsh-tools'
 import type {} from '@deepseek-ai/dsh-api-gateway'
-import { registerQuestionRespondents } from './question-respondent.ts'
+import { registerQuestionRespondents, validateQuestionRoom } from './question-respondent.ts'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { projectHyperagentProfiles } from '@deepseek-ai/dsh-hivemind-employee-directory'
@@ -294,11 +294,12 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
   if (Buffer.byteLength(projectCatalogSecret, 'utf8') < 32) {
     throw new Error('hivemind-web-runner: project catalog service secret must be at least 32 bytes')
   }
-  const resolveActor = async (principal: import('@deepseek-ai/dsh-hivemind-execution-scope').HivemindPrincipal, signal: AbortSignal) => {
+  const resolveAccess = async (principal: import('@deepseek-ai/dsh-hivemind-execution-scope').HivemindPrincipal, signal: AbortSignal) => {
     const token = serviceToken({ user_id:principal.userId,org_id:principal.orgId,profile:principal.profile,variation:principal.variation,
       ...(principal.projectId === undefined ? {} : { project_id:principal.projectId }) },projectCatalogSecret)
-    return (await resolveOrganizationAgentAccess(projectCatalogBase.origin,token,principal,signal)).actor
+    return resolveOrganizationAgentAccess(projectCatalogBase.origin,token,principal,signal)
   }
+  const resolveActor = async (principal:import('@deepseek-ai/dsh-hivemind-execution-scope').HivemindPrincipal,signal:AbortSignal)=> (await resolveAccess(principal,signal)).actor
   ctx.plugin(liveVoicePlugin(config.liveVoice, (req) => {
     const principal = ctx.connection.principal({ headers: {
       host: publicHost(req) || req.headers.host, cookie: req.headers.cookie,
@@ -346,13 +347,26 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
     await registerQuestionRespondents(ctx,{
       authorize:async (input)=>{
         const principal=ctx.hivemindExecutionScope.require()
-        const snapshot=await ctx.sessionPersistence.stat(SessionId(input.agentId))
-        if(!snapshot)throw Error('session_not_found')
         const agent=ctx.agents.get(SessionId(input.agentId))
-        if(!agent || !organizationAgent(agent))return undefined
-        const request=input.request as { agent?:unknown }
-        if(request.agent!==agent)throw Error('question_answer_pending_identity_invalid')
-        return { agent,actor:await resolveActor(principal,input.signal) }
+        if(!agent)throw Error('session_not_found')
+        if(!organizationAgent(agent))return undefined
+        const access=await resolveAccess(principal,input.signal)
+        const snapshot=await ctx.sessionPersistence.stat(SessionId(input.agentId),{ signal:input.signal })
+        if(!snapshot)throw Error('session_not_found')
+        let profiles:Record<string,unknown>[]|undefined
+        const selected=agent.session.snapshotEvents().findLast(event=>event.type==='agent-preset/selected')
+        const preset=selected?.type==='agent-preset/selected'?selected.data.agentPreset:snapshot.header.agentPreset
+        if(preset==='hivemind-hyperagents') {
+          const response=await fetch(new URL('/internal/v1/harness-chat/core/v1/hyperagents/profiles',projectCatalogBase),{
+            headers:{ authorization:`Bearer ${serviceToken({ user_id:principal.userId,org_id:principal.orgId,
+              profile:principal.profile,variation:principal.variation },projectCatalogSecret)}` },
+            redirect:'error',signal:AbortSignal.any([input.signal,AbortSignal.timeout(3000)]),
+          })
+          if(!response.ok)throw Error('question_answer_employee_not_active')
+          profiles=projectHyperagentProfiles(await response.json()).profiles as Record<string,unknown>[]
+        }
+        validateQuestionRoom(input,access,snapshot,agent,principal,profiles)
+        return { agent,actor:access.actor }
       },
       admitted:(agent,actor,id)=>{
         // This is the blocked turn's human response, not a new work assignment.
