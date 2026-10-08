@@ -11,7 +11,7 @@ describe('Dreamer attention delivery', () => {
     const fetchMock = vi.fn().mockResolvedValue({ ok: true })
     vi.stubGlobal('fetch', fetchMock)
     await forwardDreamAttention(run, options)
-    const [url, request] = fetchMock.mock.calls[0]
+    const [url, request] = fetchMock.mock.calls[0]!
     expect(url.href).toBe('https://control.example/v1/internal/runtime-attention/signals')
     expect(JSON.parse(request.body)).toEqual({ source: 'dreaming', runId: 'run', orgId: 'org', userId: 'user' })
     const [header, payload, signature] = request.headers.authorization.slice(7).split('.')

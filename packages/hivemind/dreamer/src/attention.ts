@@ -4,7 +4,7 @@ import type { DreamRun } from './store.ts'
 /** Forward identity only; the receiving service reloads authorized, published evidence. */
 export async function forwardDreamAttention(
   run: DreamRun,
-  options: { enabled: boolean; base?: string; secret?: string; timeoutMs: number },
+  options: { enabled: boolean; base?: string | undefined; secret?: string | undefined; timeoutMs: number },
 ): Promise<void> {
   if (!options.enabled || run.status !== 'completed' || run.trigger_id === 'introduction' || !run.output_ids.length) return
   if (!options.base || !options.secret || options.secret.length < 32) throw new Error('dream_attention_not_configured')
