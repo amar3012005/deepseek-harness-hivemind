@@ -6,6 +6,7 @@ import type {} from '@deepseek-ai/dsh-agent-presets'
 import type {} from '@deepseek-ai/dsh-experimental-agent-team'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import { installServiceRecovery } from './service-recovery.ts'
+import { installCrmDiscoveryGuard } from './crm-discovery-guard.ts'
 import { tourState as readTour, checkpointTour as saveTour, wakeFromTour as wakeTour, resumeFromTour as resumeTour } from './tour.ts'
 import type { HqTourState, HqTourUpdate, HqTourUpdateResult, HqTourWakeResult } from './types.ts'
 import { installEmployeeSnapshots, publishEmployeeSnapshot } from './employee-snapshot.ts'
@@ -62,6 +63,7 @@ function isHq(agent: Agent): boolean {
 /** Native Remote service keeps human authority outside model-callable tools. */
 export class HqControl extends TypertRemoteService {
   static inject = [
+    'tools',
     'agents',
     'agentTeams',
     'agentPresets',
@@ -81,6 +83,7 @@ export class HqControl extends TypertRemoteService {
    */
   constructor(ctx: Context) {
     super(ctx, 'hivemindHq')
+    installCrmDiscoveryGuard(ctx)
     installEmployeeDelivery(ctx)
     installDelegatedBlockerReporting(ctx)
     installEmployeeSnapshots(ctx)
