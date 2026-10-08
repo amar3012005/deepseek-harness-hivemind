@@ -180,6 +180,12 @@ describe('the shipped preset root', () => {
     const ordinary = applyEntryPatches(chat, employee!.config.patches, () => {})
     expect(warnings).toEqual([])
     expect(findEntry(composed, 'persona')?.config).toMatchObject({ prefix: expect.stringContaining('chief of staff') })
+    expect(findEntry(composed, 'persona')?.config).toMatchObject({
+      prefix: expect.stringContaining('Your default operating role on every wake is to assess, plan, delegate and review'),
+    })
+    expect(findEntry(composed, 'persona')?.config).toMatchObject({
+      prefix: expect.stringContaining('Do not ask users for internal UUIDs or technical call-status flags'),
+    })
     expect(findEntry(composed, 'hivemind-hq-runtime')).toBeDefined()
     expect(findEntry(composed, 'hivemind-operating-workstreams')).toBeUndefined()
     expect(findEntry(ordinary, 'hivemind-operating-workstreams')).toBeDefined()
