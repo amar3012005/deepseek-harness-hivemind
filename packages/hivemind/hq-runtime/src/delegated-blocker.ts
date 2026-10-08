@@ -8,6 +8,7 @@ import { authenticatedActorFromSource } from '@deepseek-ai/dsh-hivemind-executio
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { DelegatedConnectionRequest, DelegatedConnectionReceipt } from '@deepseek-ai/dsh-hivemind-connected-apps/src/delegated-blocker.ts'
 import type {} from '@deepseek-ai/dsh-hivemind-connected-apps'
+import { installEmployeeReportRepair } from './employee-report-repair.ts'
 import { admittedEmployeeWork } from './employee-work-origin.ts'
 import { allowsEmployeeWork, authenticatedRoot, rooms, employeeWorkPrompt, referenceFromMessage } from './employee-room.ts'
 import { isHqLead } from './rest.ts'
@@ -374,6 +375,7 @@ export function installEmployeeInputBlocker(ctx: Context): void {
 
 export function installDelegatedBlockerReporting(ctx: Context): void {
   installEmployeeInputBlocker(ctx)
+  installEmployeeReportRepair(ctx)
   ctx.effect(() => ctx.on('hivemind/delegated-connection-blocker', input => reportDelegatedConnection(ctx, input), { global: true }))
   ctx.effect(() => ctx.on('tools/pre-execute', async (execution, next) => {
     const decision = await next()
