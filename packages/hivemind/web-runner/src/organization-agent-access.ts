@@ -100,3 +100,6 @@ export function admittedUserConfirmationRef(
   })
   return event?`event:${event.seq}`:undefined
 }
+
+/** The tool boundary flushes through native SessionStore before Core validation. */
+export const runtimeWitnessServices=['tools','sessions'] as const

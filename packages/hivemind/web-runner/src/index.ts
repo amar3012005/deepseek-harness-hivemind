@@ -12,7 +12,7 @@ import type { IndexInjection } from '@deepseek-ai/dsh-host-webserver'
 import type {} from '@deepseek-ai/dsh-session-persistence'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import { authenticatedActorFromSource, principalForActor, type AuthenticatedActor } from '@deepseek-ai/dsh-hivemind-execution-scope'
-import { resolveOrganizationAgentAccess, currentTurnActor, referencedSessionIds, admittedVoiceCallRef, admittedUserConfirmationRef } from './organization-agent-access.ts'
+import { resolveOrganizationAgentAccess, currentTurnActor, referencedSessionIds, admittedVoiceCallRef, admittedUserConfirmationRef, runtimeWitnessServices } from './organization-agent-access.ts'
 import type {} from '@deepseek-ai/dsh-tools'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -355,7 +355,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
       if(userConfirmationRef) confirmationRefs.set(agent.id,userConfirmationRef); else confirmationRefs.delete(agent.id)
       return ctx.hivemindExecutionScope.run({ ...principal,authenticatedActor:actor,userConfirmationRef },next)
     }))
-    ctx.inject(['tools'], toolCtx=>toolCtx.effect(()=>toolCtx.on('tools/execute',async (execution,next)=> {
+    ctx.inject(runtimeWitnessServices, toolCtx=>toolCtx.effect(()=>toolCtx.on('tools/execute',async (execution,next)=> {
       if (!execution.agent || !organizationAgent(execution.agent)) return next()
       const principal = principalForActor(ctx.hivemindExecutionScope.require(),actors.get(execution.agent.id))
       const actor = await resolveActor(principal,execution.signal)
@@ -365,7 +365,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
       const witness=admitted?.actor.userId===actor.userId && admitted.actor.orgId===actor.orgId
         ? admittedUserConfirmationRef(execution.agent.session.snapshotEvents(),admitted.id,actor) : undefined
       const userConfirmationRef=witness ?? confirmationRefs.get(execution.agent.id)
-      if(witness && !await ctx.sessions.flush(execution.agent.session)) throw Error('runtime_confirmation_not_persisted')
+      if(witness && !await toolCtx.sessions.flush(execution.agent.session)) throw Error('runtime_confirmation_not_persisted')
       const authorized={ ...principal,authenticatedActor:actor,userConfirmationRef }
       return ctx.hivemindExecutionScope.run(authorized,next)
     })))
