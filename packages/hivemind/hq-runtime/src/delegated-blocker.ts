@@ -34,7 +34,13 @@ export interface DelegatedBlocker {
 }
 declare module '@deepseek-ai/dsh-session/types' {
   interface SessionEventMap {
+    /** Records a delegated task's durable blocker and its blocked or resumed state.
+     * Preserves the employee, task revision, checkpoint, and provider workflow correlation.
+     */
     'hivemind/hq-delegated-blocker': DelegatedBlocker
+    /** Records the exact cancelled employee turn and task checkpoint.
+     * Its legacy connection wait must not be replayed automatically after restart.
+     */
     'hivemind/hq-blocker-recovery-hold': { turn: number; callId: string; rootId: string; taskId: string; checkpointId: string }
   }
 }

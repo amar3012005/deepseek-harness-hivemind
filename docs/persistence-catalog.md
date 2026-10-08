@@ -544,7 +544,7 @@ Source: [`packages/hivemind/playbooks/src/index.ts:206`](../packages/hivemind/pl
 'hivemind/composio-session': ComposioRouterSessionEventData
 ```
 
-Source: [`packages/hivemind/connected-apps/src/index.ts:41`](../packages/hivemind/connected-apps/src/index.ts)
+Source: [`packages/hivemind/connected-apps/src/index.ts:42`](../packages/hivemind/connected-apps/src/index.ts)
 
 <a id="hivemindconnected-receipt--log-only"></a>
 
@@ -555,7 +555,7 @@ Source: [`packages/hivemind/connected-apps/src/index.ts:41`](../packages/hivemin
 'hivemind/connected-receipt': ConnectedReceiptEventData
 ```
 
-Source: [`packages/hivemind/connected-apps/src/index.ts:43`](../packages/hivemind/connected-apps/src/index.ts)
+Source: [`packages/hivemind/connected-apps/src/index.ts:44`](../packages/hivemind/connected-apps/src/index.ts)
 
 <a id="hiveminddecision--log-only"></a>
 
@@ -595,7 +595,7 @@ Source: [`packages/hivemind/artifact-renderer/src/design-reference.ts:25`](../pa
 'hivemind/dream-agenda': { text: string; userId: string }
 ```
 
-Source: [`packages/hivemind/dreamer/src/index.ts:105`](../packages/hivemind/dreamer/src/index.ts)
+Source: [`packages/hivemind/dreamer/src/index.ts:112`](../packages/hivemind/dreamer/src/index.ts)
 
 <a id="hiveminddream-source--log-only"></a>
 
@@ -606,7 +606,7 @@ Source: [`packages/hivemind/dreamer/src/index.ts:105`](../packages/hivemind/drea
 'hivemind/dream-source': { ids: string[] }
 ```
 
-Source: [`packages/hivemind/dreamer/src/index.ts:103`](../packages/hivemind/dreamer/src/index.ts)
+Source: [`packages/hivemind/dreamer/src/index.ts:110`](../packages/hivemind/dreamer/src/index.ts)
 
 <a id="hivemindemployee-delegation-end--log-only"></a>
 
@@ -661,6 +661,17 @@ Source: [`packages/hivemind/runtime/src/index.ts:72`](../packages/hivemind/runti
 
 Source: [`packages/hivemind/hq-runtime/src/employee-snapshot.ts:15`](../packages/hivemind/hq-runtime/src/employee-snapshot.ts)
 
+<a id="hivemindemployee-work-origin--log-only"></a>
+
+#### `hivemind/employee-work-origin` — log-only
+
+```ts persistence-catalog
+/** Only written after authenticated assignment and task admission checks. */
+'hivemind/employee-work-origin': EmployeeWorkOrigin
+```
+
+Source: [`packages/hivemind/hq-runtime/src/employee-work-origin.ts:15`](../packages/hivemind/hq-runtime/src/employee-work-origin.ts)
+
 <a id="hivemindevidence-gap-recorded--log-only"></a>
 
 #### `hivemind/evidence-gap-recorded` — log-only
@@ -705,6 +716,19 @@ Source: [`packages/hivemind/hq-runtime/src/awakening.ts:33`](../packages/hivemin
 
 Source: [`packages/hivemind/hq-runtime/src/awakening.ts:31`](../packages/hivemind/hq-runtime/src/awakening.ts)
 
+<a id="hivemindhq-blocker-recovery-hold--log-only"></a>
+
+#### `hivemind/hq-blocker-recovery-hold` — log-only
+
+```ts persistence-catalog
+/** Records the exact cancelled employee turn and task checkpoint.
+ * Its legacy connection wait must not be replayed automatically after restart.
+ */
+'hivemind/hq-blocker-recovery-hold': { turn: number; callId: string; rootId: string; taskId: string; checkpointId: string }
+```
+
+Source: [`packages/hivemind/hq-runtime/src/delegated-blocker.ts:44`](../packages/hivemind/hq-runtime/src/delegated-blocker.ts)
+
 <a id="hivemindhq-calendar-item--log-only"></a>
 
 #### `hivemind/hq-calendar-item` — log-only
@@ -714,7 +738,7 @@ Source: [`packages/hivemind/hq-runtime/src/awakening.ts:31`](../packages/hivemin
 'hivemind/hq-calendar-item': HqCalendarItem
 ```
 
-Source: [`packages/hivemind/hq-runtime/src/control.ts:47`](../packages/hivemind/hq-runtime/src/control.ts)
+Source: [`packages/hivemind/hq-runtime/src/control.ts:48`](../packages/hivemind/hq-runtime/src/control.ts)
 
 <a id="hivemindhq-calendar-wake--log-only"></a>
 
@@ -725,7 +749,20 @@ Source: [`packages/hivemind/hq-runtime/src/control.ts:47`](../packages/hivemind/
 'hivemind/hq-calendar-wake': { itemId: string; revision: number; scheduleId: string; sessionId?: string }
 ```
 
-Source: [`packages/hivemind/hq-runtime/src/control.ts:49`](../packages/hivemind/hq-runtime/src/control.ts)
+Source: [`packages/hivemind/hq-runtime/src/control.ts:50`](../packages/hivemind/hq-runtime/src/control.ts)
+
+<a id="hivemindhq-delegated-blocker--log-only"></a>
+
+#### `hivemind/hq-delegated-blocker` — log-only
+
+```ts persistence-catalog
+/** Records a delegated task's durable blocker and its blocked or resumed state.
+ * Preserves the employee, task revision, checkpoint, and provider workflow correlation.
+ */
+'hivemind/hq-delegated-blocker': DelegatedBlocker
+```
+
+Source: [`packages/hivemind/hq-runtime/src/delegated-blocker.ts:40`](../packages/hivemind/hq-runtime/src/delegated-blocker.ts)
 
 <a id="hivemindhq-employee-assignment--log-only"></a>
 
@@ -745,7 +782,7 @@ Source: [`packages/hivemind/hq-runtime/src/control.ts:49`](../packages/hivemind/
 }
 ```
 
-Source: [`packages/hivemind/hq-runtime/src/index.ts:66`](../packages/hivemind/hq-runtime/src/index.ts)
+Source: [`packages/hivemind/hq-runtime/src/index.ts:67`](../packages/hivemind/hq-runtime/src/index.ts)
 
 <a id="hivemindhq-mode--log-only"></a>
 
@@ -756,7 +793,7 @@ Source: [`packages/hivemind/hq-runtime/src/index.ts:66`](../packages/hivemind/hq
 'hivemind/hq-mode': HqModeState
 ```
 
-Source: [`packages/hivemind/hq-runtime/src/control.ts:43`](../packages/hivemind/hq-runtime/src/control.ts)
+Source: [`packages/hivemind/hq-runtime/src/control.ts:44`](../packages/hivemind/hq-runtime/src/control.ts)
 
 <a id="hivemindhq-public-investigation--log-only"></a>
 
@@ -767,7 +804,7 @@ Source: [`packages/hivemind/hq-runtime/src/control.ts:43`](../packages/hivemind/
 'hivemind/hq-public-investigation': { enabled: boolean }
 ```
 
-Source: [`packages/hivemind/hq-runtime/src/control.ts:45`](../packages/hivemind/hq-runtime/src/control.ts)
+Source: [`packages/hivemind/hq-runtime/src/control.ts:46`](../packages/hivemind/hq-runtime/src/control.ts)
 
 <a id="hivemindhq-rest-confirmed--log-only"></a>
 
@@ -833,7 +870,7 @@ Source: [`packages/hivemind/hq-runtime/src/rest.ts:37`](../packages/hivemind/hq-
 'hivemind/hq-task-artifacts': TaskArtifactLinks
 ```
 
-Source: [`packages/hivemind/hq-runtime/src/index.ts:64`](../packages/hivemind/hq-runtime/src/index.ts)
+Source: [`packages/hivemind/hq-runtime/src/index.ts:65`](../packages/hivemind/hq-runtime/src/index.ts)
 
 <a id="hivemindhq-task-contract--log-only"></a>
 
@@ -844,7 +881,7 @@ Source: [`packages/hivemind/hq-runtime/src/index.ts:64`](../packages/hivemind/hq
 'hivemind/hq-task-contract': CompanyTaskContract
 ```
 
-Source: [`packages/hivemind/hq-runtime/src/index.ts:60`](../packages/hivemind/hq-runtime/src/index.ts)
+Source: [`packages/hivemind/hq-runtime/src/index.ts:61`](../packages/hivemind/hq-runtime/src/index.ts)
 
 <a id="hivemindhq-task-review--log-only"></a>
 
@@ -855,7 +892,7 @@ Source: [`packages/hivemind/hq-runtime/src/index.ts:60`](../packages/hivemind/hq
 'hivemind/hq-task-review': HqTaskReview
 ```
 
-Source: [`packages/hivemind/hq-runtime/src/index.ts:62`](../packages/hivemind/hq-runtime/src/index.ts)
+Source: [`packages/hivemind/hq-runtime/src/index.ts:63`](../packages/hivemind/hq-runtime/src/index.ts)
 
 <a id="hivemindhq-tour--log-only"></a>
 
@@ -1142,7 +1179,7 @@ Source: [`packages/hivemind/runtime/src/continuity.ts:49`](../packages/hivemind/
 #### `hivemind/voice-baseline-outcome` — log-only
 
 ```ts persistence-catalog
-/** Evidence-based baseline assessment for the exact saved initial call, retaining unresolved gaps. */
+/** Evidence-based baseline assessment for the exact saved initial call. */
 'hivemind/voice-baseline-outcome': { callId: string; status: 'complete' | 'incomplete'; summary: string; remaining: string[] }
 ```
 
@@ -1153,8 +1190,8 @@ Source: [`packages/hivemind/runtime/src/voice-outcome.ts:12`](../packages/hivemi
 #### `hivemind/voice-call-ended` — log-only
 
 ```ts persistence-catalog
-/** Same-room ended call transcript and interruption status; not proof of completed onboarding. */
-'hivemind/voice-call-ended': { callId: string; provider: 'codex' | 'grok'; initialCheckIn: boolean; interrupted: boolean; hadUserSpeech: boolean; transcript: string }
+/** Same-room ended call transcript retains its authenticated initiating admin. */
+'hivemind/voice-call-ended': { authenticatedActor?:import('@deepseek-ai/dsh-hivemind-execution-scope').AuthenticatedActor; callId: string; provider: 'codex' | 'grok'; initialCheckIn: boolean; interrupted: boolean; hadUserSpeech: boolean; transcript: string }
 ```
 
 Source: [`packages/hivemind/runtime/src/voice-outcome.ts:10`](../packages/hivemind/runtime/src/voice-outcome.ts)
