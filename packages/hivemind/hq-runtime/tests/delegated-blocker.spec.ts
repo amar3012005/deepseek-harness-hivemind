@@ -28,7 +28,7 @@ function fixture() {
   const task={ ownerName:'employee',revision:2 }
   type Hook = (input: unknown, next: () => Promise<{ kind: string }>) => Promise<{ kind: string }>
   const hooks = new Map<string, Hook>()
-  const ctx = { agentTeams: { getTask: () => task }, sessions: { flush: vi.fn(async () => true) },
+  const ctx = { hivemindExecutionScope: { require: () => ({ orgId: '22222222-2222-4222-8222-222222222222' }) }, agentTeams: { getTask: () => task }, sessions: { flush: vi.fn(async () => true) },
     schedule: { ensure: vi.fn(async () => ({ id: 'schedule' })) },
     serial: vi.fn(async () => true), effect: (fn: () => unknown) => fn(),
     on: (name: string, fn: Hook) => { hooks.set(name, fn); return () => {} },
@@ -231,6 +231,8 @@ describe('authenticated blocker answer discovery', () => {
     expect(candidates[0]).toMatchObject({ candidate_only: true, text_truncated: true, verifiedAuthenticatedActor: actor })
     expect(candidates[0]?.text).toHaveLength(6000)
     expect(delegatedBlockers(f.root)[0]?.state).toBe('blocked')
+    await expect(resumeDelegatedBlocker(f.ctx, f.root, receipt.blocker_id, f.input.execution.signal,
+      undefined, undefined, 'event:13')).rejects.toThrow('actual_human_answer_required')
     expect(delegatedAnswerCandidates(f.root, { ...blocker, kind: 'permission' }, orgId)).toEqual([])
     expect(delegatedAnswerCandidates(f.root, { ...blocker, state: 'resumed' }, orgId)).toEqual([])
     await expect(resumeDelegatedBlocker(f.ctx, f.root, receipt.blocker_id, f.input.execution.signal,

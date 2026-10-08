@@ -274,7 +274,7 @@ export async function resumeDelegatedBlocker(ctx: Context, root: Agent, id: stri
       const record = root.session.ownEvents().findLast(e => e.type === 'hivemind/hq-delegated-blocker' && e.data.id === id)
       const answer = root.session.ownEvents().find(e => Number(e.seq) === Number(answerEventRef.slice(6)))
       if (!record || answer?.type !== 'user/message' || answer.seq <= record.seq || answer.data.source.kind !== 'user'
-        || !authenticatedActorFromSource(answer.data.source)) throw new Error(`hq_blocker_actual_human_answer_required: ${answerEvidenceHelp}`)
+        || authenticatedActorFromSource(answer.data.source)?.orgId !== ctx.hivemindExecutionScope.require().orgId) throw new Error(`hq_blocker_actual_human_answer_required: ${answerEvidenceHelp}`)
       confirmedAnswer = answer.data.content.flatMap(block => block.type === 'text' ? [block.text] : []).join('\n').slice(0, 6000)
       if (!confirmedAnswer.trim()) throw new Error(`hq_blocker_actual_human_answer_required: ${answerEvidenceHelp}`)
     } else if (context !== undefined) {
