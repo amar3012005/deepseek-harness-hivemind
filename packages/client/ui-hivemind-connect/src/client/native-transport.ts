@@ -22,3 +22,7 @@ export async function saveNativeArtifact(blob: Blob, filename: string): Promise<
   await owner.saveFile(blob, filename)
   return true
 }
+
+export function hasNativeArtifactSaver(): boolean {
+  return transport()?.saveFile !== undefined
+}
