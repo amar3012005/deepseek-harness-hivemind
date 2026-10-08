@@ -257,11 +257,13 @@ describe('authenticated blocker answer discovery', () => {
     const listed = await execute({ action: 'list' }, execution) as {
       blockers: { state: string; answer_candidates: { answer_event_ref: string }[] }[]
     }
-    expect(listed.blockers[0].answer_candidates[0].answer_event_ref).toBe('event:10')
-    expect(listed.blockers[0].state).toBe('blocked')
+    const blocker = must(listed.blockers[0])
+    const answer = must(blocker.answer_candidates[0])
+    expect(answer.answer_event_ref).toBe('event:10')
+    expect(blocker.state).toBe('blocked')
     await expect(execute({ action: 'list' }, f.input.execution)).rejects.toThrow('owner_required')
     const resumed = await execute({ action: 'resume', blocker_id: receipt.blocker_id,
-      answer_event_ref: listed.blockers[0].answer_candidates[0].answer_event_ref }, execution)
+      answer_event_ref: answer.answer_event_ref }, execution)
     expect(resumed).toMatchObject({ status: 'resumed', task_id: 'task-1', employee_id: 'employee' })
     expect(mocks.deliver.mock.calls.at(-1)?.[1]?.text).toContain('CODE-42')
   })
