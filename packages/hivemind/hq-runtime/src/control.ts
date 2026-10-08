@@ -18,8 +18,8 @@ import { calendarItems, validateCalendarItem } from './calendar.ts'
 import { TeamTaskId } from '@deepseek-ai/dsh-experimental-agent-team'
 import { ScheduleId } from '@deepseek-ai/dsh-schedule'
 import { SessionId } from '@deepseek-ai/dsh-session'
-import { prepareEmployee, employeeWorkPrompt, reconcileEmployeeArtifacts, installEmployeeDelivery, currentEmployeeWork, resumeEmployeeWork } from './employee-room.ts'
-import { installDelegatedBlockerReporting } from './delegated-blocker.ts'
+import { prepareEmployee, employeeWorkPrompt, reconcileEmployeeArtifacts, installEmployeeDelivery, currentEmployeeWork, resumeEmployeeWork, authenticatedRoot } from './employee-room.ts'
+import { installDelegatedBlockerReporting, checkpointLegacyDelegatedConnection } from './delegated-blocker.ts'
 import type {
   HqCalendarItem,
   HqCalendarUpdate,
@@ -137,6 +137,32 @@ export class HqControl extends TypertRemoteService {
    */
   @Remote('resumeFromTour')
   resumeFromTour(agent: Agent): Promise<HqTourWakeResult> { return resumeTour(this.ctx, this.root(agent)) }
+
+  /** Operator recovery after an exact native user cancellation; never grants or cancels. */
+  @Remote('checkpointDelegatedConnection')
+  async checkpointDelegatedConnection(agent: Agent, request: {
+    confirmed: boolean
+    employeeSessionId: string
+    taskId: string
+    callId: string
+    callSeq: number
+    turn: number
+    taskRevision: number
+    workflowSessionId: string
+    routerSessionId: string
+    toolkits: string[]
+  }): Promise<{ status: string; blocker_id: string; checkpoint_id: string; task_id: string; message_id: string }> {
+    const root = this.root(agent)
+    if (request.confirmed !== true || !Number.isSafeInteger(request.turn) || !Number.isSafeInteger(request.callSeq)
+      || request.turn < 0 || request.callSeq < 1 || !Number.isSafeInteger(request.taskRevision) || request.taskRevision < 1) throw new Error('hq_legacy_recovery_confirmation_required')
+    const signal = new AbortController().signal
+    const employee = await authenticatedRoot(this.ctx, request.employeeSessionId, signal)
+    return checkpointLegacyDelegatedConnection(this.ctx, employee, signal, {
+      callId: request.callId, workflowSessionId: request.workflowSessionId, routerSessionId: request.routerSessionId,
+      toolkits: request.toolkits, expectedRootId: String(root.id), expectedTaskId: request.taskId,
+      cancelledTurn: request.turn, expectedCallSeq: request.callSeq, expectedTaskRevision: request.taskRevision,
+    })
+  }
 
   /** Human-only fresh start, scoped by the authenticated storage principal. */
   @Remote('startFresh')

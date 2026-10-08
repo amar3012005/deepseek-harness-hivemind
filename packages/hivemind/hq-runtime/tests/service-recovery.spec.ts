@@ -3,7 +3,7 @@ import { createToolResultMessage, createUserMessage } from '@deepseek-ai/dsh-llm
 import { ToolCallId } from '@deepseek-ai/dsh-llm/brand'
 import type { Context } from '@deepseek-ai/cordis'
 import { SessionSeq, type SessionEvent } from '@deepseek-ai/dsh-session'
-import { installServiceRecovery, serviceInterrupted } from '../src/service-recovery.ts'
+import { installServiceRecovery, serviceInterrupted, delegatedConnectionReplayHeld } from '../src/service-recovery.ts'
 function saved(reason: unknown = { kind: 'interrupted' }): SessionEvent[] {
   return [{ type: 'turn/start', seq: SessionSeq(1), time: 0, data: { turn: 4 } },
     { type: 'turn/end', seq: SessionSeq(2), time: 0, data: { turn: 4, reason } }] as SessionEvent[]
@@ -204,4 +204,39 @@ it('never arms quiet Chief scheduling updates as direct requests', async () => {
   h.directEvents[3]!])
   await h.arm()
   expect(h.ensure).not.toHaveBeenCalled()
+})
+
+function delegatedPending(): SessionEvent[] {
+  return [
+    { seq:SessionSeq(1),type:'turn/start',time:0,data:{ turn:4 } },
+    { seq:SessionSeq(2),type:'user/message',time:0,data:createUserMessage({ source:{ kind:'hivemind-agent-message',senderId:'chief' },content:[{ type:'text',text:JSON.stringify({ text:'HQ_EMPLOYEE_ASSIGNMENT={"rootId":"chief","taskId":"task-16"}' }) }] }) },
+    { seq:SessionSeq(2),type:'hivemind/composio-session',time:0,data:{ routerSessionId:'router',subject:'hivemind:user',userKey:'user' } },
+    { seq:SessionSeq(3),type:'tool/call',time:0,data:{ turn:4,step:1,callId:ToolCallId('pending-connection'),name:'hivemind_connected_task',arguments:'{"session":{"id":"upon"}}' } },
+    { seq:SessionSeq(4),type:'turn/end',time:0,data:{ turn:4,reason:{ kind:'aborted',reason:{ kind:'user' } } } },
+  ] as SessionEvent[]
+}
+it('holds only exact-turn unsettled delegated provider work before legacy migration',()=>{
+  const pending=delegatedPending()
+  expect(delegatedConnectionReplayHeld(pending,4)).toBe(true)
+  expect(serviceInterrupted(pending,4)).toBe(false)
+  expect(delegatedConnectionReplayHeld(pending,5)).toBe(false)
+  const failed=pending.map(event=>event.type==='turn/end'?{ ...event,data:{ turn:4,reason:{ kind:'interrupted' } } }:event) as SessionEvent[]
+  expect(delegatedConnectionReplayHeld(failed,4)).toBe(false)
+  expect(serviceInterrupted(failed,4)).toBe(true)
+  const direct=pending.map(event=>event.type==='user/message'?{ ...event,data:createUserMessage({ source:{ kind:'user' },content:[] }) }:event) as SessionEvent[]
+  expect(delegatedConnectionReplayHeld(direct,4)).toBe(false)
+  expect(serviceInterrupted(direct,4)).toBe(false)
+  const result={ seq:SessionSeq(5),type:'tool/result',time:0,data:{ turn:4,step:1,message:createToolResultMessage({ callId:ToolCallId('pending-connection'),isError:false,content:[] }) } } as SessionEvent
+  expect(delegatedConnectionReplayHeld([...pending,result],4)).toBe(false)
+  const held={ seq:SessionSeq(6),type:'hivemind/hq-blocker-recovery-hold',time:0,data:{ turn:4,callId:'pending-connection',rootId:'chief',taskId:'task-16',checkpointId:'checkpoint' } } as SessionEvent
+  expect(delegatedConnectionReplayHeld([...pending,result,held],4)).toBe(true)
+})
+it('rejects previously queued original recovery at model admission while retaining direct human input',async()=>{
+  const h=harness();h.setEvents([...delegatedPending(),{ seq:SessionSeq(5),type:'turn/start',time:0,data:{ turn:5 } }] as SessionEvent[])
+  const recovery=createUserMessage({ source:{ kind:'schedule' },content:[{ type:'text',text:'reminder_prompt_json: '+JSON.stringify('[HIVEMIND SERVICE RECOVERY]\n'+JSON.stringify({ sessionId:'root',turn:4,rootId:'chief',modeRevision:1 })) }] })
+  const hook=h.hooks.get('agent/pre-step')!
+  expect(await hook({ agent:h.agent,turn:5 },async()=>({ kind:'accept',messages:[recovery] }))).toEqual({ kind:'reject' })
+  const human=createUserMessage({ source:{ kind:'user' },content:[{ type:'text',text:'New direct question' }] })
+  const decision=await hook({ agent:h.agent,turn:5 },async()=>({ kind:'accept',messages:[recovery,human] }))
+  expect(decision).toEqual({ kind:'accept',messages:[human] })
 })

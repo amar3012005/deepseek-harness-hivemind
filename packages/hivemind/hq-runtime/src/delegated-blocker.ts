@@ -33,7 +33,10 @@ export interface DelegatedBlocker {
   readonly resumeMessageId?: string
 }
 declare module '@deepseek-ai/dsh-session/types' {
-  interface SessionEventMap { 'hivemind/hq-delegated-blocker': DelegatedBlocker }
+  interface SessionEventMap {
+    'hivemind/hq-delegated-blocker': DelegatedBlocker
+    'hivemind/hq-blocker-recovery-hold': { turn: number; callId: string; rootId: string; taskId: string; checkpointId: string }
+  }
 }
 
 const tails = new WeakMap<Agent, Promise<unknown>>()
@@ -60,8 +63,8 @@ async function record(ctx: Context, employee: Agent, signal: AbortSignal, fields
   toolkits?: readonly string[]
   redirectUrl?: string
   question?: string
-}): Promise<DelegatedConnectionReceipt | undefined> {
-  const origin = admittedEmployeeWork(employee)
+}, migrationOrigin?: { rootId: string; taskId: string }): Promise<DelegatedConnectionReceipt | undefined> {
+  const origin = migrationOrigin ?? admittedEmployeeWork(employee)
   if (!origin) return undefined
   if (!await allowsEmployeeWork(ctx, employee, origin, signal)) throw new Error('hq_blocker_assignment_not_authorized')
   const root = await authenticatedRoot(ctx, origin.rootId, signal)
@@ -103,15 +106,30 @@ async function record(ctx: Context, employee: Agent, signal: AbortSignal, fields
  * The caller must first capture the exact Remote pending question privately.
  */
 export async function checkpointLegacyDelegatedConnection(ctx: Context, employee: Agent, signal: AbortSignal,
-  input: { callId: string; workflowSessionId: string; routerSessionId: string; toolkits: readonly string[] },
+  input: { callId: string
+    workflowSessionId: string
+    routerSessionId: string
+    toolkits: readonly string[]
+    expectedRootId?: string
+    expectedTaskId?: string
+    cancelledTurn?: number
+    expectedCallSeq?: number
+    expectedTaskRevision?: number },
 ): Promise<DelegatedConnectionReceipt> {
   const events = employee.session.ownEvents()
   const call = events.findLast(event => event.type === 'tool/call' && event.data.callId === input.callId)
   const start = events.findLast(event => event.type === 'turn/start' && call !== undefined && event.seq < call.seq)
-  if (call?.type !== 'tool/call' || call.data.name !== 'hivemind_connected_task' || start?.type !== 'turn/start'
-    || events.some(event => event.seq > start.seq && (event.type === 'turn/end' || event.type === 'turn/start'))
-    || events.some(event => event.type === 'tool/result' && event.data.message.content.some(block =>
-      block.type === 'tool-result' && block.toolCallId === input.callId))) throw new Error('hq_legacy_pending_call_required')
+  const cancelled = events.findLast(event => event.type === 'turn/end' && start?.type === 'turn/start'
+    && event.data.turn === start.data.turn)
+  const successful = events.some(event => event.type === 'tool/result' && event.data.message.content.some(block =>
+    block.type === 'tool-result' && block.toolCallId === input.callId && !block.isError))
+  const cancelledWitness = input.cancelledTurn !== undefined && start?.type === 'turn/start'
+    && start.data.turn === input.cancelledTurn && call?.seq === input.expectedCallSeq && cancelled?.type === 'turn/end'
+    && cancelled.data.reason.kind === 'aborted' && cancelled.data.reason.reason.kind === 'user'
+  if (call?.type !== 'tool/call' || call.data.name !== 'hivemind_connected_task' || start?.type !== 'turn/start' || successful
+    || events.some(event => event.type === 'turn/start' && event.seq > start.seq)
+    || (cancelled !== undefined && !cancelledWitness) || (input.cancelledTurn !== undefined && !cancelledWitness))
+    throw new Error('hq_legacy_pending_call_required')
   let args: unknown = call.data.arguments
   if (typeof args === 'string') args = JSON.parse(args)
   const session = typeof args === 'object' && args !== null ? Reflect.get(args, 'session') : undefined
@@ -127,16 +145,29 @@ export async function checkpointLegacyDelegatedConnection(ctx: Context, employee
   if (refs.length === 0 || new Set(refs.map(ref => `${ref.rootId}\0${ref.taskId}`)).size !== 1) throw new Error('hq_legacy_assignment_witness_required')
   const ref = refs[0]
   if (!ref) throw new Error('hq_legacy_assignment_witness_required')
+  if ((input.expectedRootId !== undefined && ref.rootId !== input.expectedRootId)
+    || (input.expectedTaskId !== undefined && ref.taskId !== input.expectedTaskId)) throw new Error('hq_legacy_assignment_mismatch')
   if (!await allowsEmployeeWork(ctx, employee, ref, signal)) throw new Error('hq_blocker_assignment_not_authorized')
+  const owner = await authenticatedRoot(ctx, ref.rootId, signal)
+  if (input.expectedTaskRevision !== undefined
+    && ctx.agentTeams.getTask(owner, TeamTaskId(ref.taskId)).revision !== input.expectedTaskRevision)
+    throw new Error('hq_legacy_task_revision_changed')
   const pinned = admittedEmployeeWork(employee)
   if (pinned && (pinned.rootId !== ref.rootId || pinned.taskId !== ref.taskId)) throw new Error('hq_legacy_assignment_mismatch')
   if (!pinned) {
     employee.session.append('hivemind/employee-work-origin', { ...ref, turn: start.data.turn })
     await flush(ctx, employee)
   }
-  const receipt = await reportDelegatedConnection(ctx, { execution: { agent: employee, signal, callId: input.callId } as DelegatedConnectionRequest['execution'],
-    workflowSessionId: input.workflowSessionId, routerSessionId: input.routerSessionId, toolkits: input.toolkits })
+  if (!input.toolkits.length || input.toolkits.length > 8 || input.toolkits.some(t => !/^[a-z0-9_-]{1,80}$/u.test(t)))
+    throw new Error('hq_blocker_toolkits_invalid')
+  const receipt = await record(ctx, employee, signal, { kind: 'connection', callId: input.callId,
+    workflowSessionId: input.workflowSessionId, routerSessionId: input.routerSessionId, toolkits: input.toolkits }, ref)
   if (!receipt) throw new Error('hq_legacy_assignment_witness_required')
+  if (!events.some(event => event.type === 'hivemind/hq-blocker-recovery-hold' && event.data.callId === input.callId)) {
+    employee.session.append('hivemind/hq-blocker-recovery-hold', { turn: start.data.turn, callId: input.callId,
+      rootId: ref.rootId, taskId: ref.taskId, checkpointId: receipt.checkpoint_id })
+    await flush(ctx, employee)
+  }
   return receipt
 }
 

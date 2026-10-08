@@ -8,7 +8,7 @@ import { isAgentLoopRequest } from '@deepseek-ai/dsh-llm'
 import { ScheduleId } from '@deepseek-ai/dsh-schedule'
 import { hqMode } from './mode.ts'
 import { TeamTaskId } from '@deepseek-ai/dsh-experimental-agent-team'
-import { currentEmployeeWork } from './employee-room.ts'
+import { currentEmployeeWork, referenceFromMessage } from './employee-room.ts'
 const MARKER = '[HIVEMIND SERVICE RECOVERY]\n'
 type Recovery = { sessionId: string; turn: number } & (
   | { rootId: string; modeRevision: number; employeeId?: never; requestSeq?: never }
@@ -51,8 +51,44 @@ function effectivePreset(agent: Agent): string | undefined {
   return agent.session.ownEvents().findLast(event => event.type === 'agent-preset/selected')?.data.agentPreset
     ?? agent.session.header.agentPreset
 }
+/** A user-cancelled delegated provider workflow is held before its operator migration.
+ * Only exact-turn admitted native assignment witnesses count; direct-human work is unchanged.
+ */
+export function delegatedConnectionReplayHeld(events: readonly SessionEvent[], turn: number): boolean {
+  if (events.some(event => event.type === 'hivemind/hq-blocker-recovery-hold' && event.data.turn === turn)) return true
+  const start = events.findLast(event => event.type === 'turn/start' && event.data.turn === turn)
+  if (start?.type !== 'turn/start') return false
+  const ended = events.findLast(event => event.type === 'turn/end' && event.data.turn === turn)
+  if (ended?.type !== 'turn/end' || ended.data.reason.kind !== 'aborted' || ended.data.reason.reason.kind !== 'user') return false
+  const next = events.find(event => event.type === 'turn/start' && event.seq > start.seq)
+  const call = events.findLast(event => event.type === 'tool/call' && event.seq > start.seq
+    && (next === undefined || event.seq < next.seq) && event.data.name === 'hivemind_connected_task')
+  if (call?.type !== 'tool/call') return false
+  let args: unknown = call.data.arguments
+  try { if (typeof args === 'string') args = JSON.parse(args) } catch { return false }
+  const workflow = args && typeof args === 'object' ? Reflect.get(args, 'session') : undefined
+  if (!workflow || typeof workflow !== 'object' || typeof Reflect.get(workflow, 'id') !== 'string') return false
+  if (!events.some(event => event.type === 'hivemind/composio-session' && event.seq < call.seq
+    && typeof event.data.routerSessionId === 'string')) return false
+  if (events.some(event => event.type === 'tool/result' && event.data.message.content.some(block =>
+    block.type === 'tool-result' && block.toolCallId === call.data.callId && !block.isError))) return false
+  const refs = events.flatMap((event) => {
+    if (event.type !== 'user/message' || event.seq <= start.seq || event.seq >= call.seq
+      || !['schedule', 'hivemind-agent-message'].includes(event.data.source.kind)) return []
+    try { const ref = referenceFromMessage(event.data); return ref ? [ref] : [] } catch { return [] }
+  })
+  return refs.length > 0 && new Set(refs.map(ref => `${ref.rootId}\0${ref.taskId}`)).size === 1
+}
+function recoveryMessage(text: string): Recovery | undefined {
+  const wrapped = text.split('\n').find(line => line.startsWith('reminder_prompt_json: '))
+  if (!wrapped) return recoveryFrom(text)
+  try { const value: unknown = JSON.parse(wrapped.slice('reminder_prompt_json: '.length))
+    return typeof value === 'string' ? recoveryFrom(value) : undefined
+  } catch { return undefined }
+}
 /** The saved exact turn must prove service disposal or native crash repair. */
 export function serviceInterrupted(events: readonly SessionEvent[], turn: number): boolean {
+  if (delegatedConnectionReplayHeld(events, turn)) return false
   const start = events.findLast(event => event.type === 'turn/start')
   if (start?.type !== 'turn/start' || start.data.turn !== turn) return false
   const end = events.findLast(event => event.type === 'turn/end' && event.data.turn === turn)
@@ -104,6 +140,7 @@ export function installServiceRecovery(ctx: Context): void {
     if (!ref) return true
     if (ref.sessionId !== agent.id || task.record.id !== idOf(agent.id, ref.turn)) return false
     const events = agent.session.ownEvents()
+    if (delegatedConnectionReplayHeld(events, ref.turn)) return false
     const deliveryKey = createHash('sha256').update(`${task.record.id}:${task.record.scheduledAt}`).digest('hex')
     // A durable native inbox receipt only acknowledges delivery; never enqueue twice.
     if (events.some(event => event.type === 'agent/inbox/spliced'
@@ -177,8 +214,15 @@ export function installServiceRecovery(ctx: Context): void {
   }
   ctx.effect(() => ctx.on('agent/pre-step', async ({ agent, turn }, next) => {
     const decision = await next()
-    if (decision.kind !== 'reject') await arm(agent, turn)
-    return decision
+    if (decision.kind === 'reject') return decision
+    const messages = decision.messages.filter(message => !message.content.some((block) => {
+      if (block.type !== 'text' || message.source.kind !== 'schedule') return false
+      const ref = recoveryMessage(block.text)
+      return ref !== undefined && ref.sessionId === agent.id && delegatedConnectionReplayHeld(agent.session.ownEvents(), ref.turn)
+    }))
+    if (decision.messages.length > 0 && messages.length === 0) return { kind: 'reject' }
+    await arm(agent, turn)
+    return { ...decision, messages }
   }, { global: true }))
   // Native streaming begins after accepted incoming messages are committed.
   ctx.effect(() => ctx.on('llm/stream', async function* (options, next) {

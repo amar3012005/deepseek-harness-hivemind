@@ -99,6 +99,25 @@ describe('exact legacy waiting-call migration',()=>{
     expect(f.employeeEvents).toHaveLength(count)
     await expect(checkpointLegacyDelegatedConnection(f.ctx,f.employee,f.input.execution.signal,{ callId:'legacy',workflowSessionId:'other',routerSessionId:'router',toolkits:['googlesheets'] })).rejects.toThrow('workflow_mismatch')
   })
+  it('postrestart migration accepts only exact native user cancellation and unchanged captured assignment', async () => {
+    const f=fixture();f.employeeEvents.pop();f.employeeEvents.push(
+      { seq:2,type:'user/message',data:{ source:{ kind:'hivemind-agent-message',senderId:'chief' },content:[{ type:'text',text:JSON.stringify({ text:'HQ_EMPLOYEE_ASSIGNMENT={"rootId":"chief","taskId":"task-1"}' }) }] } },
+      { seq:3,type:'hivemind/composio-session',data:{ routerSessionId:'router' } },
+      { seq:4,type:'tool/call',data:{ name:'hivemind_connected_task',callId:'legacy',arguments:{ session:{ id:'upon' } } } },
+      { seq:5,type:'turn/end',data:{ turn:1,reason:{ kind:'aborted',reason:{ kind:'user' } } } })
+    const input={ callId:'legacy',workflowSessionId:'upon',routerSessionId:'router',toolkits:['googlesheets'],
+      cancelledTurn:1,expectedCallSeq:4,expectedRootId:'chief',expectedTaskId:'task-1',expectedTaskRevision:2 }
+    await expect(checkpointLegacyDelegatedConnection(f.ctx,f.employee,f.input.execution.signal,{ ...input,expectedCallSeq:3 })).rejects.toThrow('pending_call_required')
+    await expect(checkpointLegacyDelegatedConnection(f.ctx,f.employee,f.input.execution.signal,{ ...input,expectedRootId:'other' })).rejects.toThrow('assignment_mismatch')
+    await expect(checkpointLegacyDelegatedConnection(f.ctx,f.employee,f.input.execution.signal,{ ...input,expectedTaskRevision:3 })).rejects.toThrow('revision_changed')
+    expect(mocks.deliver).not.toHaveBeenCalled()
+    const receipt=await checkpointLegacyDelegatedConnection(f.ctx,f.employee,f.input.execution.signal,input)
+    expect(receipt.status).toBe('blocked_reported')
+    expect(f.employeeEvents.find(e=>e.type==='hivemind/hq-blocker-recovery-hold')?.data).toMatchObject({ turn:1,callId:'legacy' })
+    f.employeeEvents.push({ seq:99,type:'turn/start',data:{ turn:2 } })
+    await expect(checkpointLegacyDelegatedConnection(f.ctx,f.employee,f.input.execution.signal,input)).rejects.toThrow('pending_call_required')
+  })
+
   it('refuses finished or new human turns and missing assignment witnesses',async()=>{
     const f=fixture();f.employeeEvents.pop();f.employeeEvents.push({ seq:3,type:'tool/call',data:{ name:'hivemind_connected_task',callId:'legacy',arguments:{ session:{ id:'upon' } } } })
     await expect(checkpointLegacyDelegatedConnection(f.ctx,f.employee,f.input.execution.signal,{ callId:'legacy',workflowSessionId:'upon',routerSessionId:'router',toolkits:['googlesheets'] })).rejects.toThrow('router_mismatch')
