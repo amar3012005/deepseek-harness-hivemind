@@ -78,11 +78,11 @@ export function nativeSignalProvenanceSql(schema: string, admitAfter: string): s
     (s.config->>'source'='native_slack' AND s.account_id='native:slack:'||(s.config->>'integration_id')
       AND e.data->'_source'->>'integration_id'=s.config->>'integration_id'
       AND e.data->'_source'->>'team_id'=s.config->>'team_id'
-      AND EXISTS(SELECT 1 FROM ${schema}.platform_integrations p WHERE p.id::text=s.config->>'integration_id'
-        AND p.user_id::text=e.user_id AND p.platform_type='slack' AND p.is_active
-        AND p.connector_metadata->>'attention_org_id'=e.org_id
-        AND p.connector_metadata->'provider_metadata'->>'team_id'=s.config->>'team_id'
-        AND e.occurred_at>=(p.connector_metadata->>'attention_enabled_at')::timestamptz)) OR
+      AND EXISTS(SELECT 1 FROM ${schema}.hivemind_native_slack_attention_sources p WHERE p.id::text=s.config->>'integration_id'
+        AND p.user_id::text=e.user_id AND p.is_active
+        AND p.attention_org_id=e.org_id
+        AND p.team_id=s.config->>'team_id'
+        AND e.occurred_at>=p.attention_enabled_at::timestamptz)) OR
     (s.config->>'source'='dreaming' AND s.account_id='native:dreaming:'||e.user_id
       AND EXISTS(SELECT 1 FROM ${schema}.harness_dream_runs d
         JOIN ${schema}.harness_dream_settings ds ON ds.org_id=d.org_id AND ds.user_id=d.user_id
