@@ -348,7 +348,9 @@ describe('matrix row: takeover (orthogonal axis)', () => {
 describe('phone primary action preserves Stop', () => {
   it('routes the empty running composer primary directly to stop', () => {
     const stop = vi.fn()
-    const shell = new SessionInputShell({ actx: SCTX, defaultSink: vi.fn() })
+    const shell = new SessionInputShell({ actx: SCTX, defaultSink: vi.fn(), commandAttachments: {
+      serialize: async () => [], release: () => {}, unsupportedNotice: token => `${token.trim()} attachments-unsupported`,
+    } })
     const view = mountBar(shell, { running: true, stop })
     const controls = view.container.querySelectorAll<HTMLButtonElement>('[data-native-composer-primary]')
     expect(controls).toHaveLength(1)
