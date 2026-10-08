@@ -58,11 +58,11 @@ export function installRuntimeDecisionMemory(
       name: toolNames[kind],
       description: kind === 'user_agenda'
         ? 'Runtime only: retrieve dated confirmed user goals without a search query, or directly save a user-confirmed agenda version in private HyperAgent memory without approval. Source references are automatic and optional evidence is not a save gate. Omit confirmation_ref unless you observed an exact event sequence or call ID; never use event:latest. Claim saved only after a successful tool receipt. Save each independent confirmed answer even when other questions remain open. Never treat inferred goals as confirmed. Before changing a prior direction, recall current agendas and supersede its exact receipt with supersedes_id; do not leave contradictory confirmed versions. Independent goals may remain separate.'
-        : 'Runtime only: list open uncertainties ordered by decision priority without a search query, or directly save/resolve one question that needs user input in private HyperAgent memory without approval. Evidence references are optional. Resolve by saving a successor with its exact supersedes_id. Claim resolved only after a successful save receipt; save independently answered questions even if other questions remain open.',
+        : 'Runtime only: list open uncertainties ordered by decision priority without a search query, or directly save/resolve one question that needs user input in private HyperAgent memory without approval. Evidence references are optional. For every superseding save, explicitly supply state. Resolve by saving state resolved with its exact supersedes_id. Only a successful receipt with memory.context.state resolved confirms resolution; a saved open successor is still unresolved; save independently answered questions even if other questions remain open.',
       parameters: {
         action: { type: 'string', enum: ['recall', 'save'], required: true },
         ...(kind === 'user_agenda' ? { agenda_key: { type: 'string' as const, description: 'Stable lowercase topic key (letters, digits, underscore or hyphen, at most 80 characters) for one independent confirmed direction. Reuse the same key when changing it; recall the current receipt and provide its exact supersedes_id. Independent goals use different keys.' } } : {}),
-        state: { type: 'string', enum: kind === 'user_agenda' ? ['confirmed', 'superseded'] : ['open', 'resolved', 'superseded'] },
+        state: { type: 'string', enum: kind === 'user_agenda' ? ['confirmed', 'superseded'] : ['open', 'resolved', 'superseded'], description: kind === 'uncertainty' ? 'Required for every save with supersedes_id. To close an answered question, explicitly use resolved; open keeps it unresolved. Check the saved receipt state before reporting resolution.' : 'Confirmed user direction or a superseded prior direction.' },
         limit: { type: 'integer', description: 'Bounded retrieval, 1 to 20. Defaults to five; no semantic query is required.' },
         title: { type: 'string', description: 'Save: short goal or unresolved question, up to 180 characters.' },
         summary: { type: 'string', description: 'Save: verified context, up to 2400 characters.' },
@@ -76,6 +76,9 @@ export function installRuntimeDecisionMemory(
       isConcurrencySafe: args => args.action === 'recall',
       async execute(args, execution) {
         if (!execution.agent || execution.agent.id !== agent.id || !isRuntimeRoom(execution.agent)) throw new Error('runtime_memory_required')
+        if (kind === 'uncertainty' && args.action === 'save' && args.supersedes_id && args.state === undefined) {
+          throw new Error('uncertainty_state_required: A superseding uncertainty save must explicitly supply state: open, resolved, or superseded. To resolve an answered question, retry the same exact supersedes_id with state resolved. A successful open receipt does not resolve it.')
+        }
         const state = args.state ?? (kind === 'user_agenda' ? 'confirmed' : 'open')
         if (args.action === 'recall') return request(agent, { action: 'recall', kind, agent_slug: 'runtime', state, limit: args.limit ?? 5 }, execution.signal)
         const metadata: Record<string, JsonValue> = { sessionId: agent.id, state, priority: args.priority ?? 50, impact: args.impact ?? '', evidence: args.evidence ?? [] }

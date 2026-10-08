@@ -42,6 +42,20 @@ describe('Runtime decision memory',()=>{
     await f.tools.get('runtime_user_agenda')!.execute(args,execution)
     expect(f.request.mock.calls.at(-1)?.[1]).toMatchObject({ context:{ confirmationRef:'event:9' } })
   })
+  it('rejects omitted superseding uncertainty state before any backend save',async()=>{
+    const f=fixture(),execution={ agent:f.agent,signal:new AbortController().signal } as Parameters<ToolDefinition['execute']>[1]
+    await expect(f.tools.get('runtime_uncertainties')!.execute({ action:'save',title:'Audience',summary:'Resolved: admins only.',supersedes_id:'existing-question' },execution)).rejects.toThrow('uncertainty_state_required')
+    expect(f.request).not.toHaveBeenCalled()
+    await f.tools.get('runtime_uncertainties')!.execute({ action:'save',title:'Audience',summary:'Admins only.',supersedes_id:'existing-question',state:'resolved' },execution)
+    expect(f.request.mock.calls.at(-1)?.[1]).toMatchObject({ action:'save',kind:'uncertainty',supersedes_id:'existing-question',context:{ state:'resolved' } })
+  })
+  it('preserves explicit open successors and their exact backend receipt',async()=>{
+    const f=fixture(),execution={ agent:f.agent,signal:new AbortController().signal } as Parameters<ToolDefinition['execute']>[1]
+    const receipt={ ok:true,memory:{ context:{ state:'open' } } }
+    f.request.mockResolvedValueOnce(receipt as never)
+    expect(await f.tools.get('runtime_uncertainties')!.execute({ action:'save',title:'Audience',summary:'Still unresolved.',supersedes_id:'existing-question',state:'open' },execution)).toBe(receipt)
+    expect(f.request.mock.calls.at(-1)?.[1]).toMatchObject({ context:{ state:'open' } })
+  })
   it('does not invent confirmation from employee or empty-call chatter',async()=>{
     const f=fixture()
     const execution={ agent:f.agent,signal:new AbortController().signal } as Parameters<ToolDefinition['execute']>[1]
