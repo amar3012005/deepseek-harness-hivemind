@@ -218,7 +218,7 @@ export function liveVoicePlugin(config: LiveVoiceConfig,
                 agent.session.append('hivemind/voice-call-ended', { ...(p.authenticatedActor === undefined ? {} : { authenticatedActor:p.authenticatedActor }), callId: input.callId as string, provider: 'grok', initialCheckIn: result.initial_check_in === true, interrupted: result.interrupted !== false, hadUserSpeech: result.had_user_speech === true, transcript })
                 appendContext(agent, `${marker}\nTerminal status: ${result.status}. This call alone does not confirm a complete baseline or authorize external actions.\n${transcript}`, p.authenticatedActor)
                 if (!(await ctx.sessions.flush(agent.session))) throw new Error('voice_handoff_persistence_required')
-                agent.followup(createUserMessage({ content: [{ type: 'text', text: runtimeDecisionReconciliation(input.callId as string, result.initial_check_in === true) }], source: { kind: 'plugin', plugin: 'hivemind-live-voice', form: 'recall' } }))
+                agent.followup(createUserMessage({ content: [{ type: 'text', text: runtimeDecisionReconciliation(input.callId as string, result.initial_check_in === true) }], source: { kind: 'plugin', plugin: 'hivemind-live-voice', form: 'recall',voiceCallId:input.callId as string,...(p.authenticatedActor ? { authenticatedActor:p.authenticatedActor }: {}) } }))
               }
               if (!(await ctx.sessions.flush(agent.session))) throw new Error('voice_handoff_persistence_required')
               rooms.delete(input.callId as string)
@@ -324,7 +324,7 @@ export function liveVoicePlugin(config: LiveVoiceConfig,
                   agent.session.append('hivemind/voice-call-ended', { ...(p.authenticatedActor === undefined ? {} : { authenticatedActor:p.authenticatedActor }), callId: roomId, provider: 'codex', initialCheckIn, interrupted: reason === 'interrupted', hadUserSpeech, transcript: savedTranscript })
                   appendContext(agent, `Completed live voice conversation:\n${savedTranscript}`, p.authenticatedActor)
                   if (!(await ctx.sessions.flush(agent.session))) throw new Error('voice_handoff_persistence_required')
-                  if (runtime) agent.followup(createUserMessage({ content: [{ type: 'text', text: runtimeDecisionReconciliation(roomId, initialCheckIn) }], source: { kind: 'plugin', plugin: 'hivemind-live-voice', form: 'recall' } }))
+                  if (runtime) agent.followup(createUserMessage({ content: [{ type: 'text', text: runtimeDecisionReconciliation(roomId, initialCheckIn) }], source: { kind: 'plugin', plugin: 'hivemind-live-voice', form: 'recall',voiceCallId:roomId,...(p.authenticatedActor ? { authenticatedActor:p.authenticatedActor }: {}) } }))
                 }).catch(() => { /* Session persistence retains the unflushed prefix for recovery. */ })
               }
               const duration = initialCheckIn ? Math.min(config.maxDurationMs, 180000) : config.maxDurationMs

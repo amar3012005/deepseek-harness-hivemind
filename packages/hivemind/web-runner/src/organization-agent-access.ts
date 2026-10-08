@@ -73,3 +73,17 @@ export function referencedSessionIds(value: unknown, depth = 0, ids = new Set<st
   }
   return ids
 }
+
+/** Bind a call reconciliation to its exact persisted receipt, never a later call. */
+export function admittedVoiceCallRef(
+  messages:readonly { source:unknown }[],events:readonly { type:string;data:unknown }[],actor:AuthenticatedActor,
+):string|undefined {
+  const source=messages.map(message=>message.source).findLast(value=>record(value)&&value['kind']==='plugin'
+    &&value['plugin']==='hivemind-live-voice'&&authenticatedActorFromSource(value)?.userId===actor.userId)
+  if(!record(source)||typeof source['voiceCallId']!=='string') return undefined
+  const callId=source['voiceCallId']
+  const found=events.some(event=>event.type==='hivemind/voice-call-ended'&&record(event.data)&&event.data['callId']===callId
+    &&event.data['hadUserSpeech']===true&&record(event.data['authenticatedActor'])
+    &&event.data['authenticatedActor']['userId']===actor.userId&&event.data['authenticatedActor']['orgId']===actor.orgId)
+  return found?`call:${callId}`:undefined
+}

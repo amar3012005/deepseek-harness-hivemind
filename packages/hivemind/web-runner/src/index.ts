@@ -12,7 +12,7 @@ import type { IndexInjection } from '@deepseek-ai/dsh-host-webserver'
 import type {} from '@deepseek-ai/dsh-session-persistence'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import { authenticatedActorFromSource, principalForActor, type AuthenticatedActor } from '@deepseek-ai/dsh-hivemind-execution-scope'
-import { resolveOrganizationAgentAccess, currentTurnActor, referencedSessionIds } from './organization-agent-access.ts'
+import { resolveOrganizationAgentAccess, currentTurnActor, referencedSessionIds, admittedVoiceCallRef } from './organization-agent-access.ts'
 import type {} from '@deepseek-ai/dsh-tools'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -343,9 +343,8 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
       actors.set(agent,actor)
       const admitted=messages.filter(message=>message.source.kind==='user' && authenticatedActorFromSource(message.source)?.userId===actor.userId).at(-1)
       const witness=admitted ? agent.session.snapshotEvents().find(event=>event.type==='user/message' && event.data.id===admitted.id) : undefined
-      const call=messages.some(message=>message.source.kind==='plugin' && message.source.plugin==='hivemind-live-voice')
-        ? agent.session.snapshotEvents().findLast(event=>event.type==='hivemind/voice-call-ended' && event.data.authenticatedActor?.userId===actor.userId && event.data.hadUserSpeech) : undefined
-      const userConfirmationRef=witness ? `event:${witness.seq}` : call?.type==='hivemind/voice-call-ended' ? `call:${call.data.callId}` : messages.length===0 ? confirmationRefs.get(agent) : undefined
+      const callRef=admittedVoiceCallRef(messages,agent.session.snapshotEvents(),actor)
+      const userConfirmationRef=witness ? `event:${witness.seq}` : callRef ?? (messages.length===0 ? confirmationRefs.get(agent) : undefined)
       if(userConfirmationRef) confirmationRefs.set(agent,userConfirmationRef); else confirmationRefs.delete(agent)
       return ctx.hivemindExecutionScope.run({ ...principal,authenticatedActor:actor,userConfirmationRef },next)
     }))

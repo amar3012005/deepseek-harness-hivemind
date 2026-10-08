@@ -101,7 +101,7 @@ export type ContextFormed =
  */
 export interface MessageSourceMap {
   user: { kind: 'user'; authenticatedActor?: { readonly userId: string; readonly orgId: string; readonly name: string; readonly role: string } }
-  plugin: { kind: 'plugin'; plugin: string; authenticatedActor?: { readonly userId: string; readonly orgId: string; readonly name: string; readonly role: string } } & ContextFormed
+  plugin: { kind: 'plugin'; plugin: string; voiceCallId?: string; authenticatedActor?: { readonly userId: string; readonly orgId: string; readonly name: string; readonly role: string } } & ContextFormed
   model: ModelMessageSource
   tool: ToolMessageSource
 }

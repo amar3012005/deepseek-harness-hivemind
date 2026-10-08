@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest'
-import { resolveOrganizationAgentAccess, currentTurnActor,referencedSessionIds } from '../src/organization-agent-access.ts'
+import { resolveOrganizationAgentAccess, currentTurnActor,referencedSessionIds,admittedVoiceCallRef } from '../src/organization-agent-access.ts'
 const orgId='67503d34-97e9-49a8-8c52-8ee30cc7603e', userId='64f5568b-4d6a-4ae1-9a33-48cb2909d59b'
 const proof = { contract:'hivemind.organization-agent-access.v1', access:'read-write',
   actor:{ org_id:orgId,user_id:userId,role:'admin',name:'Second admin',authority:'authenticated-profile' },
@@ -43,4 +43,16 @@ it('uses a scheduled author rather than the last unrelated chat admin',()=>{
 
 it('includes workspace-file scope in session authorization before live-header reads',()=>{
   expect([...referencedSessionIds([{ workspaceFileScopeId:'session-private' }, { sessionId:'session-team' }])]).toEqual(['session-private','session-team'])
+})
+
+it('binds queued B call reconciliation to B and exact call despite A chat and later B call',()=>{
+  const b={ userId,orgId,name:'B',role:'admin' as const }
+  const a={ ...b,userId:proof.agent.storage_user_id,name:'A',role:'owner' as const }
+  const messages=[{ source:{ kind:'plugin',plugin:'hivemind-live-voice',authenticatedActor:b,voiceCallId:'b-first' } }]
+  const events=[{ type:'hivemind/voice-call-ended',data:{ callId:'b-first',authenticatedActor:b,hadUserSpeech:true } },
+    { type:'user/message',data:{ source:{ kind:'user',authenticatedActor:a } } },
+    { type:'hivemind/voice-call-ended',data:{ callId:'b-later',authenticatedActor:b,hadUserSpeech:true } }]
+  expect(currentTurnActor(messages,a)).toEqual(b)
+  expect(admittedVoiceCallRef(messages,events,b)).toBe('call:b-first')
+  expect(admittedVoiceCallRef(messages,events,a)).toBeUndefined()
 })
