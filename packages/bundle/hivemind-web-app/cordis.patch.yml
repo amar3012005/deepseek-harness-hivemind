@@ -266,6 +266,7 @@
     - id: hivemind-runtime-attention
       name: '@deepseek-ai/dsh-hivemind-hq-runtime/attention'
       config:
+        sharedOrganizationAgents: !!js process.env.HIVE_SHARED_ORGANIZATION_AGENTS_ENABLED === 'true'
         enabled: !!js process.env.HIVEMIND_RUNTIME_ATTENTION_ENABLED === '1'
         admitEventsAfter: !!js process.env.HIVEMIND_RUNTIME_ATTENTION_NOT_BEFORE || ''
         allowedOrgIds: !!js (process.env.HIVEMIND_RUNTIME_ATTENTION_ORGS || '').split(',').map(value => value.trim()).filter(Boolean)
