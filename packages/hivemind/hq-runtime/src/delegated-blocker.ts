@@ -189,6 +189,42 @@ export function reportDelegatedConnection(
     ...(input.redirectUrl === undefined ? {} : { redirectUrl: input.redirectUrl }) })
 }
 
+/** A fresh provider completion wakes only the assigning Runtime. It is not a grant or task resume. */
+export async function notifyDelegatedConnection(
+  ctx: Context, root: Agent, id: string, workflow: string, signal: AbortSignal, recheckCanonical?: () => Promise<void>,
+) {
+  if (!isHqLead(ctx, root)) throw new Error('hq_runtime_blocker_owner_required')
+  return serialized(root, async () => {
+    const blocker = delegatedBlockers(root).find(value => value.id === id)
+    if (!blocker || blocker.rootId !== root.id || blocker.kind !== 'connection' || blocker.workflowSessionId !== workflow)
+      throw new Error('hq_blocker_connection_witness_required')
+    if (blocker.state !== 'blocked') return { status: 'resolved', blockerId: id, rootId: String(root.id) }
+    const employee = await authenticatedRoot(ctx, blocker.employeeSessionId, signal)
+    const validate = async () => {
+      if (!await allowsEmployeeWork(ctx, employee, { rootId: String(root.id), taskId: blocker.taskId }, signal))
+        throw new Error('hq_blocker_assignment_not_authorized')
+      const assignment = root.session.ownEvents().findLast(e =>
+        e.type === 'hivemind/hq-employee-assignment' && e.data.taskId === blocker.taskId)
+      const task = ctx.agentTeams.getTask(root, TeamTaskId(blocker.taskId))
+      if (assignment?.type !== 'hivemind/hq-employee-assignment' || assignment.data.sessionId !== blocker.employeeSessionId
+        || assignment.data.employeeId !== blocker.employeeId || task.ownerName !== blocker.memberName
+        || task.revision !== blocker.taskRevision)
+        throw new Error('hq_blocker_assignment_changed')
+      await recheckCanonical?.()
+    }
+    await validate()
+    if (!blocker.routerSessionId || !blocker.toolkits?.length) throw new Error('hq_blocker_connection_witness_required')
+    const verified = await ctx.serial('hivemind/delegated-connection-verify', { runtime: root, employee,
+      workflowSessionId: workflow, routerSessionId: blocker.routerSessionId, toolkits: blocker.toolkits, signal })
+    if (verified !== true) return { status: 'waiting', blockerId: id, rootId: String(root.id) }
+    await validate()
+    const delivery = await rooms(ctx).deliverAgentMessage(employee, { key: `${id}-connection-ready`, target: 'runtime', kind: 'question', taskId: blocker.taskId,
+      text: `The account connection for saved blocker ${id} was verified against its original provider workflow. Please recheck this blocker through hivemind_hq_blocker and resume its same unfinished task if still authorized. This notice is not approval for any external action or permission expansion.` }, signal)
+    if (!await ctx.sessions.flush(root.session)) throw new Error('hq_blocker_completion_persistence_required')
+    return { status: 'accepted', blockerId: id, rootId: String(root.id), messageId: delivery.messageId }
+  })
+}
+
 export async function resumeDelegatedBlocker(ctx: Context, root: Agent, id: string, signal: AbortSignal, answerCallId?: string,
   context?: { answer: string; evidenceRefs: readonly string[] }, answerEventRef?: string): Promise<Record<string, JsonValue>> {
   if (!isHqLead(ctx, root)) throw new Error('hq_runtime_blocker_owner_required')
@@ -199,10 +235,12 @@ export async function resumeDelegatedBlocker(ctx: Context, root: Agent, id: stri
     const employee = await authenticatedRoot(ctx, blocker.employeeSessionId, signal)
     const validate = async () => {
       if (!await allowsEmployeeWork(ctx, employee, { rootId: String(root.id), taskId: blocker.taskId }, signal)) throw new Error('hq_blocker_assignment_not_authorized')
-      const assignment = root.session.ownEvents().findLast(e => e.type === 'hivemind/hq-employee-assignment' && e.data.taskId === blocker.taskId)
+      const assignment = root.session.ownEvents().findLast(e =>
+        e.type === 'hivemind/hq-employee-assignment' && e.data.taskId === blocker.taskId)
       const task = ctx.agentTeams.getTask(root, TeamTaskId(blocker.taskId))
       if (assignment?.type !== 'hivemind/hq-employee-assignment' || assignment.data.sessionId !== blocker.employeeSessionId
-        || assignment.data.employeeId !== blocker.employeeId || task.ownerName !== blocker.memberName || task.revision !== blocker.taskRevision) throw new Error('hq_blocker_assignment_changed')
+        || assignment.data.employeeId !== blocker.employeeId || task.ownerName !== blocker.memberName
+        || task.revision !== blocker.taskRevision) throw new Error('hq_blocker_assignment_changed')
     }
     await validate()
     let confirmedAnswer: string | undefined

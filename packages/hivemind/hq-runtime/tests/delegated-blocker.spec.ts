@@ -10,7 +10,7 @@ vi.mock('../src/employee-room.ts', async original => ({
   referenceFromMessage: (await original<typeof import('../src/employee-room.ts')>()).referenceFromMessage, allowsEmployeeWork: mocks.allowed, authenticatedRoot: mocks.authenticate,
   rooms: () => ({ deliverAgentMessage: mocks.deliver }), employeeWorkPrompt: () => 'same native assignment' }))
 vi.mock('../src/rest.ts', () => ({ isHqLead: (_ctx: unknown, agent: { id: string }) => agent.id === 'chief' }))
-import { reportDelegatedConnection, resumeDelegatedBlocker, installDelegatedBlockerReporting, delegatedBlockers, checkpointLegacyDelegatedConnection } from '../src/delegated-blocker.ts'
+import { reportDelegatedConnection, notifyDelegatedConnection, resumeDelegatedBlocker, installDelegatedBlockerReporting, delegatedBlockers, checkpointLegacyDelegatedConnection } from '../src/delegated-blocker.ts'
 function must<T>(value: T | undefined): T { if (value === undefined) throw new Error('fixture missing'); return value }
 function fixture() {
   mocks.allowed.mockReset().mockResolvedValue(true)
@@ -137,5 +137,28 @@ describe('exact legacy waiting-call migration',()=>{
     f.employeeEvents.push({ seq: SessionSeq(4), time: 0,type:'turn/end',data:{ turn:1,reason:{ kind:'completed' } } })
     await expect(checkpointLegacyDelegatedConnection(f.ctx,f.employee,f.input.execution.signal,{ callId: ToolCallId('legacy'),workflowSessionId:'upon',routerSessionId:'router',toolkits:['googlesheets'] })).rejects.toThrow('pending_call_required')
     expect(mocks.deliver).not.toHaveBeenCalled()
+  })
+})
+
+
+describe('delayed verified connection admission', () => {
+  it('wakes Runtime after the one-time check, preserves task and stable mailbox key', async () => {
+    const f=fixture();const saved=(await reportDelegatedConnection(f.ctx,f.input))!
+    vi.mocked(f.ctx.serial).mockResolvedValueOnce(false)
+    expect((await notifyDelegatedConnection(f.ctx,f.root,saved.blocker_id,'upon',f.input.execution.signal)).status).toBe('waiting')
+    expect(mocks.deliver).toHaveBeenCalledTimes(1)
+    expect((await notifyDelegatedConnection(f.ctx,f.root,saved.blocker_id,'upon',f.input.execution.signal)).status).toBe('accepted')
+    const first=must(mocks.deliver.mock.calls[1]?.[1]);expect(first.target).toBe('runtime');expect(first.taskId).toBe('task-1')
+    await notifyDelegatedConnection(f.ctx,f.root,saved.blocker_id,'upon',f.input.execution.signal)
+    expect(mocks.deliver.mock.calls[2]?.[1]?.key).toBe(first.key)
+    expect(delegatedBlockers(f.root)[0]?.state).toBe('blocked')
+    expect(f.employeeEvents.filter(e=>e.type==='hivemind/connected-receipt')).toHaveLength(1)
+  })
+  it('rejects wrong workflow and changed assignments before provider checks',async()=>{
+    const f=fixture();const saved=(await reportDelegatedConnection(f.ctx,f.input))!
+    await expect(notifyDelegatedConnection(f.ctx,f.root,saved.blocker_id,'other',f.input.execution.signal)).rejects.toThrow('witness_required')
+    f.task.revision++
+    await expect(notifyDelegatedConnection(f.ctx,f.root,saved.blocker_id,'upon',f.input.execution.signal)).rejects.toThrow('assignment_changed')
+    expect(f.ctx.serial).not.toHaveBeenCalled()
   })
 })

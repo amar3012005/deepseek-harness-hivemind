@@ -1,4 +1,5 @@
 /** Core-attested lifecycle effects use native Schedule, never model-generated scopes. */
+import { installConnectionCompletionHost } from './delegated-connection-host.ts'
 import { createHash, createHmac, timingSafeEqual } from 'node:crypto'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { Context } from '@deepseek-ai/cordis'
@@ -10,7 +11,7 @@ import type {} from '@deepseek-ai/dsh-hivemind-execution-scope'
 import type {} from '@deepseek-ai/dsh-schedule'
 import { roomMessageId } from '@deepseek-ai/dsh-api-session-controller'
 export const name = 'hivemind-employee-lifecycle-host'
-export const inject = ['webServer', 'hivemindExecutionScope', 'schedule', 'sessionController', 'sessions']
+export const inject = ['webServer', 'hivemindExecutionScope', 'schedule', 'sessionController', 'sessions', 'sessionPersistence', 'agentTeams', 'agentPresets', 'hivemindHq']
 export interface Config { sharedOrganizationAgents?:boolean; enabled: boolean; serviceSecretEnv: string }
 export const Config: Schema<Config> = Schema.object({ sharedOrganizationAgents:Schema.boolean().default(false), enabled: Schema.boolean().default(false), serviceSecretEnv: Schema.string().default('HIVE_HARNESS_RUNNER_SERVICE_SECRET') })
 const requestSchema = z.object({ orgId:z.uuid(), userId:z.uuid(), employeeId:z.uuid() }).strict()
@@ -55,6 +56,7 @@ export function apply(ctx:Context,config:Config):void {
   if(!config.enabled) return
   const secret=process.env[config.serviceSecretEnv]
   if(!secret || Buffer.byteLength(secret)<32) throw Error('employee_lifecycle_service_secret_required')
+  installConnectionCompletionHost(ctx, secret)
   ctx.effect(()=>ctx.webServer.register({ kind:'exact',path:'/internal/hivemind/employee-lifecycle',handler:async(req,res)=>{
     if(req.method!=='POST') {reply(res,405,{ error:'method_not_allowed' });return}
     try {
