@@ -5,7 +5,7 @@ import { ArtifactDashboard, artifactCategory, type LibraryArtifact } from '../sr
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 afterEach(cleanup)
 const artifact = { id: 'saved', title: 'Launch deck', mediaType: 'text/html', path: 'deck.html', sessionId: 'room' as SessionId, roomTitle: 'Elena', file: undefined, preview: undefined } satisfies LibraryArtifact
-const props = () => ({ selection: { category: 'All' as const }, load: vi.fn(async (_signal: AbortSignal) => ({ artifacts: [artifact], incomplete: false })), loadImage: vi.fn(), renderArtifact: vi.fn(item => <p>Saved {item.title} content</p>), expand: vi.fn(), collapse: vi.fn() })
+const props = () => ({ selection: { category: 'All' as const }, load: vi.fn(async (_signal: AbortSignal) => ({ artifacts: [artifact], incomplete: false })), loadImage: vi.fn(), renderArtifact: vi.fn((item: LibraryArtifact) => <p>Saved {item.title} content</p>), expand: vi.fn(), collapse: vi.fn() })
 it('opens a popup, filters, and fits selected content inside it with independent fullscreen', async () => {
   const input = props(); render(<ArtifactDashboard {...input} />)
   fireEvent.click(screen.getByRole('button', { name: /Artifacts/ }))
@@ -44,10 +44,10 @@ it('shows load errors and retry without stale tiles', async () => {
   await screen.findByRole('button', { name: /Open Launch deck/ })
 })
 it('cancels pending catalog read when dismissed and restores focus', async () => {
-  const input = props(); input.load.mockImplementation(async (signal) => { await new Promise(resolve => signal.addEventListener('abort', resolve)); return { artifacts: [], incomplete: false } })
+  const input = props(); input.load.mockImplementation(async (signal) => { await new Promise((resolve) =>{  signal.addEventListener('abort', resolve) }); return { artifacts: [], incomplete: false } })
   render(<ArtifactDashboard {...input} />)
   const trigger = screen.getByRole('button', { name: /Artifacts/ }); fireEvent.click(trigger)
-  await waitFor(() => expect(input.load).toHaveBeenCalledOnce())
+  await waitFor(() => { expect(input.load).toHaveBeenCalledOnce() })
   const signal = input.load.mock.calls[0]?.[0]
   fireEvent.click(screen.getByRole('button', { name: 'Close artifacts' }))
   expect(signal?.aborted).toBe(true)
@@ -73,6 +73,24 @@ it('waits for the authenticated host sidebar to mount', async () => {
   const view = render(<ArtifactDashboard {...props()} hostSeat />)
   const seat = document.createElement('div'); seat.setAttribute('data-hivemind-artifacts-seat', '')
   document.body.append(seat)
-  await waitFor(() => expect(seat.querySelector('button')?.textContent).toContain('Artifacts'))
+  await waitFor(() => { expect(seat.querySelector('button')?.textContent).toContain('Artifacts') })
   view.unmount(); seat.remove()
+})
+
+it('shows progressive tiles while remaining history is loading', async () => {
+  let finish!: () => void
+  const input = props()
+  const load = vi.fn(async (_signal: AbortSignal, progress: (result: { artifacts: LibraryArtifact[]; incomplete: boolean }) => void) => {
+    progress({ artifacts: [artifact], incomplete: false })
+    await new Promise<void>((resolve) => { finish = resolve })
+    return { artifacts: [artifact], incomplete: false }
+  })
+  render(<ArtifactDashboard {...input} load={load} />)
+  fireEvent.click(screen.getByRole('button', { name: /Artifacts/ }))
+  await screen.findByRole('button', { name: /Open Launch deck/ })
+  expect(screen.getByText('Loading more saved artifacts…')).toBeTruthy()
+  fireEvent.click(screen.getByRole('button', { name: /Open Launch deck/ }))
+  expect(screen.getByText('Saved Launch deck content')).toBeTruthy()
+  finish()
+  await waitFor(() => { expect(screen.queryByText('Loading more saved artifacts…')).toBeNull() })
 })

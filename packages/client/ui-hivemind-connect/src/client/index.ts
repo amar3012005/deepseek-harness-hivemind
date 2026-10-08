@@ -52,6 +52,7 @@ import {
   type EmployeeOption, selectedEmployee, projectedEmployee, EmployeeAvatar, employeeAppearance,
 } from './HyperagentEmployee.tsx'
 import { ArtifactDashboard, ArtifactMedia, type LibraryArtifact, type DashboardSelection } from './ArtifactDashboard.tsx'
+import { loadArtifactCatalog } from './artifact-catalog.ts'
 import { workbenchSnapshot, HyperagentWorkbench, PdfReceipt, TextReceipt, ReceiptImage } from './HyperagentWorkbench.tsx'
 
 declare module '@deepseek-ai/dsh-client-ui-chat/client' {
@@ -567,36 +568,21 @@ export function apply(ctx: ClientContext): void {
       page, selection: dashboardSelection,
       expand: () => { scope.layout.selectPanel(artifactsPanel) },
       collapse: () => { scope.layout.selectPanel(null) },
-      load: async (signal: AbortSignal) => {
-        const rooms = Object.values(scope.sessions.list.getSnapshot().byId).filter(room =>
-          ['hivemind-hyperagents', 'hivemind-hq', 'hyperagents', 'hyperagents-compressed'].includes(String(room.agentPreset ?? room.projectionValues?.agentPreset)))
-        const artifacts: LibraryArtifact[] = []
-        let incomplete = rooms.length > 100
-        let readBudget = 200
-        // Read cold-safe persisted pages sequentially; no room activation or work dispatch.
-        for (const room of rooms.slice(0, 100)) {
-          signal.throwIfAborted()
-          if (readBudget === 0) { incomplete = true; break }
-          const id = room.id
-          let beforeSeq: number | undefined
-          let throughSeq: number | undefined
-          for (let pageNumber = 0; pageNumber < 10; pageNumber++) {
-            if (readBudget-- === 0) { incomplete = true; readBudget = 0; break }
-            const response = await scope.remote.session.page({ address: { kind: 'session', sessionId: id }, maxMessages: 100,
-              ...(throughSeq === undefined ? {} : { throughSeq }), ...(beforeSeq === undefined ? {} : { beforeSeq }) }, signal)
-            if (!response.ok) { incomplete = true; break }
-            const page = response.value
-            throughSeq = page.cursor
-            const entries = page.records as unknown as import('@deepseek-ai/dsh-api-session-controller/client').SessionEventWindow['entries']
-            const found = workbenchSnapshot({ entries, hasMore: page.hasMore, revision: 0, change: { kind: 'replace', entries } }).artifacts
-            artifacts.push(...found.map(artifact => ({ ...artifact, sessionId: id, roomTitle: room.title || 'Agent room' })))
-            if (!page.hasMore) break
-            beforeSeq = page.records[0]?.event.seq
-            if (beforeSeq === undefined || throughSeq === undefined || pageNumber === 9) { incomplete = true; break }
-          }
-        }
-        return { artifacts: artifacts.filter((item, index, all) => all.findIndex(other => other.id === item.id) === index), incomplete }
-      },
+      load: (signal: AbortSignal,
+        progress: (result: { artifacts: LibraryArtifact[]; incomplete: boolean }) => void) => loadArtifactCatalog({
+        rooms: Object.values(scope.sessions.list.getSnapshot().byId).filter(room =>
+          ['hivemind-hyperagents', 'hivemind-hq', 'hyperagents', 'hyperagents-compressed'].includes(String(room.agentPreset ?? room.projectionValues?.agentPreset))),
+        signal, progress,
+        page: async (room, beforeSeq, throughSeq) => {
+          const response = await scope.remote.session.page({ address: { kind: 'session', sessionId: room.id }, maxMessages: 100,
+            ...(throughSeq === undefined ? {} : { throughSeq }), ...(beforeSeq === undefined ? {} : { beforeSeq }) }, signal)
+          if (!response.ok) throw new Error('Artifact room could not be loaded.')
+          const page = response.value
+          const entries = page.records as unknown as import('@deepseek-ai/dsh-api-session-controller/client').SessionEventWindow['entries']
+          return { artifacts: workbenchSnapshot({ entries, hasMore: page.hasMore, revision: 0, change: { kind: 'replace', entries } }).artifacts,
+            hasMore: page.hasMore, cursor: page.cursor, beforeSeq: page.records[0]?.event.seq }
+        },
+      }),
       loadImage: (sessionId: SessionId, ref: ImageAttachmentRef) => scope.uiConversation.imageUrl(sessionId, ref),
       renderArtifact: (artifact: LibraryArtifact) => {
         const loadBlob = async (file: FileAttachmentRef) => {
