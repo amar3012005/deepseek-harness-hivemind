@@ -30,6 +30,7 @@ class TestBroadcastChannel {
 }
 
 beforeEach(() => {
+  document.body.replaceChildren()
   TestBroadcastChannel.channels.clear()
   vi.stubGlobal('BroadcastChannel', TestBroadcastChannel)
   window.history.replaceState({}, '', '/hivemind/app/overview/session/session-123')
@@ -38,16 +39,25 @@ beforeEach(() => {
 afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks() })
 
 describe('connected-app callback continuation', () => {
-  it('returns connection success to the original conversation and removes callback parameters', () => {
-    const received = vi.fn()
-    const stop = listenForConnectionReturn('session-123', received)
-    window.history.replaceState({}, '', '/hivemind/app/overview/session/session-123?hivemind_connection=complete&hivemind_session=session-123&status=success&connected_account_id=ca-1')
-    const close = vi.spyOn(window, 'close').mockImplementation(() => {})
+  it('verifies through the authenticated server before removing parameters', async () => {
+    const refresh=vi.fn(async()=>({ ok:true,json:async()=>({ ok:true }) }));vi.stubGlobal('fetch',refresh)
+    const received=vi.fn(),stop=listenForConnectionReturn('session-123',received)
+    window.history.replaceState({},'', '/hivemind/app/overview/session/session-123?hivemind_connection=complete&hivemind_session=session-123&status=success&connected_account_id=ca-1')
+    vi.spyOn(window,'close').mockImplementation(()=>{})
     setupConnectionCallbackReturn()
-
-    expect(received).toHaveBeenCalledWith({ status: 'success' })
-    expect(window.location.search).toBe('')
-    expect(close).not.toHaveBeenCalled()
+    expect(received).not.toHaveBeenCalled()
+    expect(window.location.search).toContain('hivemind_connection=complete')
+    await vi.waitFor(()=>expect(window.location.search).toBe(''))
+    expect(received).toHaveBeenCalledWith({ status:'success' })
+    expect(refresh).toHaveBeenCalledWith('/api/hivemind/connections/reconcile',expect.objectContaining({ method:'POST',credentials:'same-origin',body:'{}' }))
     stop()
+  })
+  it('keeps the return URL and tab retryable when server verification fails',async()=>{
+    vi.stubGlobal('fetch',vi.fn(async()=>({ ok:false,json:async()=>({ ok:false }) })))
+    const close=vi.spyOn(window,'close').mockImplementation(()=>{})
+    window.history.replaceState({},'', '/hivemind/app/overview/session/session-123?hivemind_connection=complete&hivemind_session=session-123&status=success')
+    setupConnectionCallbackReturn();await new Promise(r=>setTimeout(r,0))
+    expect(window.location.search).toContain('hivemind_connection=complete');expect(close).not.toHaveBeenCalled()
+    expect(document.querySelector('[role=status]')?.textContent).toContain('Reload this page to retry')
   })
 })

@@ -345,6 +345,12 @@ function connectorCatalogResponse(res: ServerResponse, status: number, value: un
   res.end(JSON.stringify(value))
 }
 
+/** Only the authenticated site's same-origin POST may request server reconciliation. */
+export function connectionRefreshOrigin(origin: string | undefined, host: string | undefined): boolean {
+  if (!origin || !host) return false
+  try { const url = new URL(origin); return url.protocol === 'https:' && url.host === host && url.origin === origin } catch { return false }
+}
+
 function connectionCallbackUrl(baseUrl: string | undefined, execution: Pick<ToolExecution, 'agent'>): string | undefined {
   const sessionId = execution.agent?.session?.header.id
   if (baseUrl === undefined || sessionId === undefined) return undefined
@@ -1624,6 +1630,37 @@ export function apply(ctx: Context, config: Config = {}): void {
         webServer: { register(input: { kind: 'exact'; path: string; handler(req: IncomingMessage, res: ServerResponse): Promise<void> }): () => void }
         connection: { principal(input: { headers: { host?: string; cookie?: string } }): Record<string, string> | undefined }
       }
+      ctx.effect(() => runtime.webServer.register({
+        kind: 'exact', path: '/api/hivemind/connections/reconcile', handler: async (req, res) => {
+          if (req.method !== 'POST') { connectorCatalogResponse(res, 405, { ok: false }); return }
+          const host = typeof req.headers['x-forwarded-host'] === 'string'
+            ? req.headers['x-forwarded-host'].split(',', 1)[0]?.trim() : req.headers.host
+          if (!connectionRefreshOrigin(req.headers.origin, host)) {
+            connectorCatalogResponse(res, 403, { ok: false, diagnostic: 'same_origin_required' }); return
+          }
+          const principal = runtime.connection.principal({ headers: {
+            ...(host === undefined ? {} : { host }),
+            ...(req.headers.cookie === undefined ? {} : { cookie: req.headers.cookie }),
+          } })
+          const userId = principal === undefined ? undefined : stringValue(principal.user_id)
+          const orgId = principal === undefined ? undefined : stringValue(principal.org_id)
+          if (principal?.profile !== 'hivemind-chat' || userId === undefined || orgId === undefined) {
+            connectorCatalogResponse(res, 401, { ok: false, diagnostic: 'authentication_required' }); return
+          }
+          try {
+            const signal = AbortSignal.timeout(15000)
+            const service = await scopedServiceToken(ctx, config, { signal }, { userId, orgId })
+            if (!service) throw new Error('service_required')
+            const response = await fetch(new URL('/internal/v1/harness-chat/core/delegated-connection/refresh', service.base), {
+              method: 'POST', headers: { authorization: `Bearer ${service.token}`, 'content-type': 'application/json' },
+              body: '{}', signal,
+            })
+            const result = await response.json() as Record<string, unknown>
+            if (!response.ok || result['status'] !== 'reconciled') throw new Error('reconciliation_unavailable')
+            connectorCatalogResponse(res, 200, { ok: true, status: 'reconciled' })
+          } catch { connectorCatalogResponse(res, 503, { ok: false, diagnostic: 'connection_refresh_unavailable' }) }
+        },
+      }), 'hivemind-connected-apps: authenticated connection return reconciliation')
       ctx.effect(() => runtime.webServer.register({
         kind: 'exact',
         path: '/api/hivemind/connectors',
