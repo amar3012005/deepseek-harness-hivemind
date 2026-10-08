@@ -68,6 +68,8 @@ export interface AskUserQuestionAnswer {
 
 /** Client-safe payload declared for the user-question answerer waterfall. */
 export interface AskUserQuestionRequestEvent {
+  /** Exact native tool call being answered, when initiated by a tool. */
+  callId?: string
   /** Questions to display. */
   questions: AskUserQuestionItem[]
   /** Agent identity projected to the corresponding Client Context in transit. */

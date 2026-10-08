@@ -106,6 +106,7 @@ interface PendingRemoteEvent {
   readonly source: TypertRemoteEventInvocation
   readonly frame: RemoteEventInvocationFrame
   readonly deliveries: Set<RemoteEventClient>
+  admitting?: boolean
   releaseContext: () => void
   releaseSignal: () => void
 }
@@ -363,7 +364,7 @@ export class TypertGatewayService extends Service implements TypertGateway {
         if (client === undefined) {
           throw new Error('typert gateway: Remote event result identifies no active event stream')
         }
-        this.receiveRemoteEventResult(client, result)
+        await this.receiveRemoteEventResult(client, result, signal)
         return { ok: true, value: undefined }
       } catch (error) {
         return rpcFailure(error)
@@ -521,14 +522,31 @@ export class TypertGatewayService extends Service implements TypertGateway {
     client.queue.push(pending.frame)
   }
 
-  private receiveRemoteEventResult(
+  private async receiveRemoteEventResult(
     client: RemoteEventClient,
     result: ReturnType<typeof parseRemoteEventResult>,
-  ): void {
+    signal: AbortSignal,
+  ): Promise<void> {
     const pending = this.pendingRemoteEvents.get(result.eventId)
     // Settlement and Client replacement may race the result request. Results
     // from a completed event or a superseded delivery are idempotent no-ops.
     if (pending === undefined || !pending.deliveries.has(client)) return
+    if (pending.admitting) throw new Error('typert gateway: Remote event result admission is already in progress')
+    if (result.outcome.kind === 'result') {
+      pending.admitting = true
+      try {
+        signal.throwIfAborted()
+        await this.ctx.parallel('typert/remote-event-result-admission', {
+          eventId: pending.id, event: pending.source.event,
+          agentId: pending.source.context.agentId, request: pending.source.request,
+          value: result.outcome.value, signal,
+        })
+        signal.throwIfAborted()
+        if (this.pendingRemoteEvents.get(pending.id) !== pending || !pending.deliveries.has(client)) {
+          throw new Error('typert gateway: Remote event delivery expired during admission')
+        }
+      } finally { pending.admitting = false }
+    }
     this.removeRemoteEventDelivery(pending, client)
     if (result.outcome.kind === 'result') {
       this.settleRemoteEvent(pending, {

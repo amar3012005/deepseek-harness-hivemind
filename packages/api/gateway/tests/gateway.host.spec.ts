@@ -1118,6 +1118,46 @@ describe('TypertGatewayService', () => {
     await ctx.fiber.dispose()
   })
 
+  it('awaits exact pending result admission and rejects concurrent or unauthorized settlement',async()=>{
+    const ctx=new Context()
+    await ctx.plugin(TypertRegistry);await ctx.plugin(FakeConnectionService);await ctx.plugin(TypertGatewayService)
+    const handler=rawConnection(ctx).handler!
+    const agent={ id:'agent-1' }
+    let publish!:(value:import('../src/types.ts').TypertRemoteEventInvocation)=>void
+    const offered=new Promise<import('../src/types.ts').TypertRemoteEventInvocation>((resolve)=>{publish=resolve})
+    const unregister=ctx.typertGateway.registerRemoteEvents(signal=>(async function*(){
+      yield await offered
+      await new Promise<void>(resolve=>signal.addEventListener('abort',()=>resolve(),{ once:true }))
+    })(),{ home:'/fixture' })
+    const carrier=new AbortController()
+    const events=rawGatewayEventHarness(ctx).openRemoteEvents({ args:{} },carrier.signal)
+    const opening=await events.next()
+    const clientId=Reflect.get(opening.value as object,'clientId')
+    let settled=false
+    publish({ event:'user-questions/request',request:{ agent,callId:'native-call',questions:[] },context:{ value:ctx,subject:agent,agentId:agent.id },resolve:()=>{settled=true},reject:()=>{} })
+    const frame=await events.next();const eventId=Reflect.get(frame.value as object,'eventId')
+    let authorized=false;let entered! :()=>void;let release!:()=>void
+    let waiting=new Promise<void>((resolve)=>{entered=resolve})
+    let gate=new Promise<void>((resolve)=>{release=resolve})
+    const admission=ctx.on('typert/remote-event-result-admission',async (request)=>{
+      expect(request.agentId).toBe(agent.id);expect(request.eventId).toBe(eventId)
+      expect(request.request).toMatchObject({ agent,callId:'native-call' })
+      entered();await gate
+      if(!authorized)throw Error('fixture_active_admin_required')
+    })
+    const payload={ args:{ clientId,eventId,outcome:{ kind:'result',value:{ answers:[] } } } }
+    const first=handler('$events/result',payload,carrier.signal)
+    await waiting
+    expect(settled).toBe(false)
+    const concurrent=await handler('$events/result',payload,carrier.signal)
+    expect(concurrent.ok).toBe(false)
+    release();expect((await first).ok).toBe(false);expect(settled).toBe(false)
+    authorized=true;waiting=new Promise<void>((resolve)=>{entered=resolve});gate=Promise.resolve()
+    expect((await handler('$events/result',payload,carrier.signal)).ok).toBe(true)
+    expect(settled).toBe(true)
+    admission();await events.return(undefined);await unregister();await ctx.fiber.dispose()
+  })
+
   it('preserves a lookup policy rejection through the Connection RPC result', async () => {
     const ctx = new Context()
     await ctx.plugin(TypertRegistry)

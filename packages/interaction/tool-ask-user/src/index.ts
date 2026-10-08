@@ -79,6 +79,7 @@ export function apply(ctx: Context): void {
     },
     async execute(args, exec) {
       const result = await ctx.userQuestions.ask({
+        callId: exec.callId,
         questions: args.questions.map(question => ({
           id: question.id,
           question: question.question,

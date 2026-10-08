@@ -14,6 +14,8 @@ import { SessionId } from '@deepseek-ai/dsh-session'
 import { authenticatedActorFromSource, principalForActor, type AuthenticatedActor } from '@deepseek-ai/dsh-hivemind-execution-scope'
 import { resolveOrganizationAgentAccess, currentTurnActor, referencedSessionIds, admittedVoiceCallRef, admittedUserConfirmationRef, runtimeWitnessServices, withAuthenticatedInitiator, retainAdmittedUserWitness, retainTurnConfirmationRef } from './organization-agent-access.ts'
 import type {} from '@deepseek-ai/dsh-tools'
+import type {} from '@deepseek-ai/dsh-api-gateway'
+import { registerQuestionRespondents } from './question-respondent.ts'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { projectHyperagentProfiles } from '@deepseek-ai/dsh-hivemind-employee-directory'
@@ -341,6 +343,24 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
       if (!organizationAgent(agent)) return undefined
       return resolveActor(ctx.hivemindExecutionScope.require(),new AbortController().signal)
     }))
+    await registerQuestionRespondents(ctx,{
+      authorize:async (input)=>{
+        const principal=ctx.hivemindExecutionScope.require()
+        const snapshot=await ctx.sessionPersistence.stat(SessionId(input.agentId))
+        if(!snapshot)throw Error('session_not_found')
+        const agent=ctx.agents.get(SessionId(input.agentId))
+        if(!agent || !organizationAgent(agent))return undefined
+        const request=input.request as { agent?:unknown }
+        if(request.agent!==agent)throw Error('question_answer_pending_identity_invalid')
+        return { agent,actor:await resolveActor(principal,input.signal) }
+      },
+      admitted:(agent,actor,id)=>{
+        // This is the blocked turn's human response, not a new work assignment.
+        actors.set(agent.id,actor)
+        admittedUsers.set(agent.id,{ id,actor })
+        confirmationRefs.delete(agent.id)
+      },
+    })
     ctx.effect(()=>ctx.on('agent/turn-ended',({ agent,turn })=>{if(turns.get(agent.id)===turn)clearTurn(agent.id)},{ global:true }))
     ctx.effect(()=>ctx.on('agent/pre-step',async ({ agent,messages,signal,turn },next)=> {
       if (!organizationAgent(agent)) return next()

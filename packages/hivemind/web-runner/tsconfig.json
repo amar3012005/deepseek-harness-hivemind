@@ -17,6 +17,7 @@
     {"path": "../../llm/llm-pi-ai"},
     {"path": "../runtime"},
     {"path": "../../typert/registry"},
-    {"path": "../../session-query/session-query"}
+    {"path": "../../session-query/session-query"},
+    {"path": "../../api/gateway/tsconfig.host.json"}
   ]
 }

@@ -152,6 +152,19 @@ export interface TypertGateway {
 }
 
 declare module '@deepseek-ai/cordis' {
+  interface Events {
+    /** Validate and durably attribute a delivered Client result before its Host continuation resumes.
+     * The request and agent identity are taken from the live pending invocation, never Client payload.
+     */
+    'typert/remote-event-result-admission'(request: {
+      readonly eventId: string
+      readonly event: string
+      readonly agentId: string
+      readonly request: object
+      readonly value: unknown
+      readonly signal: AbortSignal
+    }): Promise<void>
+  }
   interface Context {
     /** Host dispatcher for Typert Remote calls. */
     typertGateway: TypertGateway
