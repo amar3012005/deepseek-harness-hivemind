@@ -17,7 +17,8 @@ export function artifactCategory(artifact: Artifact): ArtifactCategory {
 export interface DashboardSelection { category: ArtifactCategory; selected?: LibraryArtifact | undefined }
 interface Props {
   selection: DashboardSelection
-  load: (signal: AbortSignal) => Promise<{ artifacts: LibraryArtifact[]; incomplete: boolean }>
+  load: (signal: AbortSignal, progress: (result: { artifacts: LibraryArtifact[]; incomplete: boolean }) => void) =>
+  Promise<{ artifacts: LibraryArtifact[]; incomplete: boolean }>
   loadImage: (sessionId: SessionId, ref: ImageAttachmentRef) => Promise<string>
   renderArtifact: (artifact: LibraryArtifact) => ReactNode
   page?: boolean
@@ -57,9 +58,14 @@ export function ArtifactDashboard({ load, loadImage, renderArtifact, page = fals
     const abort = new AbortController()
     setLoading(true)
     setError(undefined)
-    void loadRef.current(abort.signal).then((result) => {
+    setArtifacts([])
+    setIncomplete(false)
+    const update = (result: { artifacts: LibraryArtifact[]; incomplete: boolean }) => {
       if (!abort.signal.aborted) { setArtifacts(result.artifacts); setIncomplete(result.incomplete) }
-    }, (reason) => { if (!abort.signal.aborted) setError(reason instanceof Error ? reason.message : 'Artifacts could not be loaded.') })
+    }
+    void loadRef.current(abort.signal, update).then((result) => {
+      if (!abort.signal.aborted) { setArtifacts(result.artifacts); setIncomplete(result.incomplete) }
+    }, (reason: unknown) => { if (!abort.signal.aborted) setError(reason instanceof Error ? reason.message : 'Artifacts could not be loaded.') })
       .finally(() => { if (!abort.signal.aborted) setLoading(false) })
     return () => { abort.abort() }
   }, [open, refresh])
@@ -96,7 +102,8 @@ export function ArtifactDashboard({ load, loadImage, renderArtifact, page = fals
         {selected ? <div className={css.viewer} data-fullscreen={fullscreen || undefined}>
           <div className={css.viewerBar}><button type="button" onClick={() => { setSelected(undefined); setFullscreen(false) }}>← All artifacts</button><strong>{selected.title}</strong><button type="button" aria-label={fullscreen ? 'Fit artifact to dashboard' : 'Expand artifact fullscreen'} onClick={() => { setFullscreen(!fullscreen) }}>{fullscreen ? 'Fit to dashboard' : 'Fullscreen'}</button></div>
           <div className={css.viewerContent}>{renderArtifact(selected)}</div>
-        </div> : loading ? <div className={css.empty} role="status">Loading saved artifacts…</div> : error ? <div className={css.empty} role="alert"><p>{error}</p><button type="button" onClick={() => { setRefresh(refresh + 1) }}>Try again</button></div> : <>
+        </div> : loading && artifacts.length === 0 ? <div className={css.empty} role="status">Loading saved artifacts…</div> : error ? <div className={css.empty} role="alert"><p>{error}</p><button type="button" onClick={() => { setRefresh(refresh + 1) }}>Try again</button></div> : <>
+          {loading && <p className={css.notice} role="status">Loading more saved artifacts…</p>}
           {incomplete && <p className={css.notice} role="status">Some older files or rooms could not be loaded. Open the agent’s room to find older work.</p>}
           {visible.length === 0 ? <div className={css.empty}><strong>{artifacts.length === 0 ? 'Your work will appear here' : `No ${category.toLowerCase()} yet`}</strong><p>Saved deliverables appear here when an agent creates or shares them.</p></div> : <div className={css.grid}>{visible.map(item => <button key={`${item.sessionId}:${item.id}`} type="button" className={css.tile} onClick={() => { setSelected(item) }} aria-label={`Open ${item.title}, ${artifactCategory(item)}, from ${item.roomTitle}`}>
             <div className={css.cover}>{item.preview ? <ReceiptImage attachment={item.preview} loadImage={ref => loadImage(item.sessionId, ref)} /> : <span className={css.format}>{artifactCategory(item) === 'Documents' ? item.mediaType.split('/').at(-1)?.toUpperCase() : artifactCategory(item)}</span>}</div>
