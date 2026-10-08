@@ -40,11 +40,13 @@ async function harness(root:string,callId:string){
   return { ctx,adapter,pending:pending.promise }
 }
 describe('Exact legacy question recovery',()=>{
-  it('keeps the genuine canceled call and source through cold boot, then reissues only a host-origin exact question',async()=>{
+  it.each(['user','schedule'] as const)('keeps the genuine canceled %s call through cold boot and restores only its exact question',async (kind)=>{
+    const source=kind==='schedule'
+      ?{ kind:'schedule' as const,deliveryKey:'authentic-schedule',authenticatedActor:actor }:{ kind:'user' as const,authenticatedActor:actor }
     const dir=await mkdtemp(join(tmpdir(),'question-preservation-'));directories.push(dir)
     const first=await harness(dir,'old-question-call'),id=SessionId('question-preservation')
     const agent=await first.ctx.agentLoop.create(id,{ provider:'mock',model:'mock' })
-    agent.followup(createUserMessage({ source:{ kind:'user',authenticatedActor:actor },content:[{ type:'text',text:'Prepare the label, but ask me for the missing exact project code.' }] }))
+    agent.followup(createUserMessage({ source,content:[{ type:'text',text:'Prepare the label, but ask me for the missing exact project code.' }] }))
     const original=await first.pending
     const call=agent.session.ownEvents().find(event=>event.type==='tool/call'&&event.data.callId==='old-question-call')
     expect(call?.type).toBe('tool/call');if(call?.type!=='tool/call')throw Error('missing call')
@@ -56,7 +58,8 @@ describe('Exact legacy question recovery',()=>{
     expect(original.signal?.aborted).toBe(true)
     expect(savedQuestionRecovery(agent,input).args).toEqual(args)
     expect(()=>savedQuestionRecovery(agent,{ ...input,questionSha256:'a'.repeat(64) })).toThrow('saved_question_hash_mismatch')
-    expect(()=>savedQuestionRecovery(agent,{ ...input,userId:'f1bcf02d-4889-4fb8-ba9e-5818b048ab0b' })).toThrow('original_authenticated_actor_required')
+    expect(()=>savedQuestionRecovery(agent,{ ...input,userId:'f1bcf02d-4889-4fb8-ba9e-5818b048ab0b' }))
+      .toThrow('original_authenticated_actor_required')
     const flushing=Promise.withResolvers<undefined>(),releaseFlush=Promise.withResolvers<undefined>()
     const parked={ sessions:{ flush:async()=>{
       await first.ctx.sessions.flush(agent.session);flushing.resolve(undefined);await releaseFlush.promise;return false
@@ -94,7 +97,7 @@ describe('Exact legacy question recovery',()=>{
     expect(questionRecoveryToolDenied(loaded.agent,'send_user_email',{})).toBe(true)
     expect(questionRecoveryToolDenied(loaded.agent,'ask_user_question',{ questions:[{ id:'other',question:'Approve new work?' }] })).toBe(true)
     const messages=loaded.agent.session.ownEvents().filter(event=>event.type==='user/message')
-    expect(messages[0]?.data.source).toEqual({ kind:'user',authenticatedActor:actor })
+    expect(messages[0]?.data.source).toEqual(source)
     expect(messages.slice(1).every(event=>event.data.source.kind==='plugin'&&event.data.source.plugin==='hivemind-hq/question-recovery')).toBe(true)
     expect(loaded.agent.session.ownEvents().some(event=>event.type==='tool/result'&&event.data.message.content.some(part=>part.type==='tool-result'&&part.toolCallId==='old-question-call'&&!part.isError))).toBe(false)
     expect(await restoreSavedQuestion(shim,loaded.agent,input)).toEqual({ status:'already_recorded' })

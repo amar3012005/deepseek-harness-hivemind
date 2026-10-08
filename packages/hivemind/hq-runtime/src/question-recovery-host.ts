@@ -59,7 +59,7 @@ export function savedQuestionRecovery(agent:Agent,input:QuestionRecoveryRequest)
   const results=events.filter(event=>event.type==='tool/result'&&event.data.message.content.some(part=>part.type==='tool-result'&&part.toolCallId===input.callId))
   if(results.some(event=>event.type==='tool/result'&&event.data.message.content.some(part=>part.type==='tool-result'&&part.toolCallId===input.callId&&!part.isError)))throw Error('question_already_answered')
   const original=events.findLast(event=>event.type==='user/message'&&event.seq>start.seq&&event.seq<call.seq&&event.data.source.kind!=='plugin')
-  if(original?.type!=='user/message' || original.data.source.kind!=='user')throw Error('original_question_request_required')
+  if(original?.type!=='user/message' || !['user','schedule'].includes(original.data.source.kind))throw Error('original_question_request_required')
   const actor=authenticatedActorFromSource(original.data.source)
   if(!actor || actor.orgId!==input.orgId || actor.userId!==input.userId)throw Error('original_authenticated_actor_required')
   if(events.some(event=>event.type==='user/message'&&event.seq>call.seq&&event.data.source.kind!=='plugin'))throw Error('new_human_context_supersedes_recovery')
@@ -89,7 +89,7 @@ export async function restoreSavedQuestion(ctx:Context,agent:Agent,input:Questio
     await validateAdministratorRoom(SessionId(input.sessionId))
     signal.throwIfAborted()
     if(unrelated())throw Error('question_recovery_requires_empty_business_inbox')
-    const text=prefix+key(input)+'\nAdministrative recovery of an unanswered question after a service interruption. This is host operating context, not a new human instruction or answer. The original human request and identity remain in the saved log. Reissue ONLY this exact saved ask_user_question argument, then wait for the authentic person. Do not infer an answer, claim approval, change goals, delegate, send email, run business tools, or continue other work in this recovery turn.\nSaved provenance: '+JSON.stringify(saved.original)+'\nExact question arguments: '+JSON.stringify(saved.args)
+    const text=prefix+key(input)+'\nAdministrative recovery of an unanswered question after a service interruption. This is host operating context, not a new human instruction or answer. The original triggering context remains unchanged in the saved log. Signed current administrator authority restores presentation only and does not grant business authority. Reissue ONLY this exact saved ask_user_question argument, then wait for the authentic person. Do not infer an answer, claim approval, change goals, delegate, send email, run business tools, or continue other work in this recovery turn.\nSaved provenance: '+JSON.stringify(saved.original)+'\nExact question arguments: '+JSON.stringify(saved.args)
     // A graceful shutdown can clear an injected inbox. Reconstruct from the same immutable call,
     // even if an earlier durable marker exists; only an admitted marker makes restoration final.
     if(!pending().some(message=>marked(message,key(input))))agent.inject(createUserMessage({ source:{ kind:'plugin',plugin },content:[{ type:'text',text }] }))
