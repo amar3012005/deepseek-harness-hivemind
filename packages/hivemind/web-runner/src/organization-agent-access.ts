@@ -71,6 +71,14 @@ export function retainAdmittedUserWitness(
   return sameTurn && previous?.actor.userId===actor.userId && previous.actor.orgId===actor.orgId ? previous : undefined
 }
 
+/** Exact call/user evidence stays valid only for its admitted native turn and actor. */
+export function retainTurnConfirmationRef(
+  reference:string|undefined,previousActor:AuthenticatedActor|undefined,actor:AuthenticatedActor,sameTurn:boolean,
+):string|undefined {
+  return sameTurn && previousActor?.userId===actor.userId && previousActor.orgId===actor.orgId
+    && reference!==undefined && /^(?:event:[0-9]+|call:[a-zA-Z0-9_-]{1,120})$/.test(reference) ? reference : undefined
+}
+
 /** Session-bound RPC identifiers, including persisted workspace files. */
 export function referencedSessionIds(value: unknown, depth = 0, ids = new Set<string>()): Set<string> {
   if (depth > 8 || value === null || typeof value !== 'object') return ids

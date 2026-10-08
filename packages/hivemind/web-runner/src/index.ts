@@ -12,7 +12,7 @@ import type { IndexInjection } from '@deepseek-ai/dsh-host-webserver'
 import type {} from '@deepseek-ai/dsh-session-persistence'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import { authenticatedActorFromSource, principalForActor, type AuthenticatedActor } from '@deepseek-ai/dsh-hivemind-execution-scope'
-import { resolveOrganizationAgentAccess, currentTurnActor, referencedSessionIds, admittedVoiceCallRef, admittedUserConfirmationRef, runtimeWitnessServices, withAuthenticatedInitiator, retainAdmittedUserWitness } from './organization-agent-access.ts'
+import { resolveOrganizationAgentAccess, currentTurnActor, referencedSessionIds, admittedVoiceCallRef, admittedUserConfirmationRef, runtimeWitnessServices, withAuthenticatedInitiator, retainAdmittedUserWitness, retainTurnConfirmationRef } from './organization-agent-access.ts'
 import type {} from '@deepseek-ai/dsh-tools'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -346,7 +346,8 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
       if (!organizationAgent(agent)) return next()
       const sameTurn=turns.get(agent.id)===turn
       if(!sameTurn)clearTurn(agent.id)
-      const authored = currentTurnActor(messages,actors.get(agent.id),sameTurn)
+      const previousActor=actors.get(agent.id)
+      const authored = currentTurnActor(messages,previousActor,sameTurn)
       const principal = principalForActor(ctx.hivemindExecutionScope.require(),authored)
       const actor = await resolveActor(principal,signal)
       turns.set(agent.id,turn)
@@ -356,12 +357,13 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
       else {
         const retained=retainAdmittedUserWitness(admittedUsers.get(agent.id),actor,sameTurn)
         if(retained)admittedUsers.set(agent.id,retained)
-        else {admittedUsers.delete(agent.id);confirmationRefs.delete(agent.id)}
+        else admittedUsers.delete(agent.id)
       }
       const admittedWitness=admittedUsers.get(agent.id)
       const witness=admittedWitness ? admittedUserConfirmationRef(agent.session.snapshotEvents(),admittedWitness.id,actor) : undefined
       const callRef=admittedVoiceCallRef(messages,agent.session.snapshotEvents(),actor)
-      const userConfirmationRef=witness ?? callRef ?? (!admitted && sameTurn ? confirmationRefs.get(agent.id) : undefined)
+      const retainedRef=retainTurnConfirmationRef(confirmationRefs.get(agent.id),previousActor,actor,sameTurn)
+      const userConfirmationRef=witness ?? callRef ?? (!admitted ? retainedRef : undefined)
       if(userConfirmationRef) confirmationRefs.set(agent.id,userConfirmationRef); else confirmationRefs.delete(agent.id)
       const decision=await ctx.hivemindExecutionScope.run({ ...principal,authenticatedActor:actor,userConfirmationRef },next)
       return withAuthenticatedInitiator(decision,actor,messages.length>0)

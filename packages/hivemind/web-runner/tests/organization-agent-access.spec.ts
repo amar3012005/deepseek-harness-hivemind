@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest'
-import { resolveOrganizationAgentAccess, currentTurnActor,referencedSessionIds,admittedVoiceCallRef,admittedUserConfirmationRef,authenticatedInitiatorMessage,withAuthenticatedInitiator,retainAdmittedUserWitness } from '../src/organization-agent-access.ts'
+import { resolveOrganizationAgentAccess, currentTurnActor,referencedSessionIds,admittedVoiceCallRef,admittedUserConfirmationRef,authenticatedInitiatorMessage,withAuthenticatedInitiator,retainAdmittedUserWitness,retainTurnConfirmationRef } from '../src/organization-agent-access.ts'
 const orgId='67503d34-97e9-49a8-8c52-8ee30cc7603e', userId='64f5568b-4d6a-4ae1-9a33-48cb2909d59b'
 const proof = { contract:'hivemind.organization-agent-access.v1', access:'read-write',
   actor:{ org_id:orgId,user_id:userId,role:'admin',name:'Second admin',authority:'authenticated-profile' },
@@ -110,4 +110,15 @@ it('retains the exact human confirmation through same-turn context/employee inbo
   expect(currentTurnActor(employee,a,true)).toEqual(a)
   expect(currentTurnActor([{ source:{ kind:'user',authenticatedActor:b } },...handoff],a,true)).toEqual(b)
   expect(currentTurnActor([{ source:{ kind:'schedule',authenticatedActor:b } }],a,false)).toEqual(b)
+})
+
+it('retains an exact ended-call reference through same-turn handoffs without a text witness',()=>{
+  const a={ userId,orgId,role:'owner' as const,name:'A' }
+  const b={ ...a,userId:'54f5568b-4d6a-4ae1-9a33-48cb2909d59b',name:'B' }
+  expect(retainTurnConfirmationRef('call:exact-a',a,a,true)).toBe('call:exact-a')
+  expect(retainTurnConfirmationRef('call:exact-a',a,a,false)).toBeUndefined()
+  expect(retainTurnConfirmationRef('call:exact-a',a,b,true)).toBeUndefined()
+  expect(retainTurnConfirmationRef('call:exact-a',undefined,a,true)).toBeUndefined()
+  expect(retainTurnConfirmationRef('stale plaintext',a,a,true)).toBeUndefined()
+  expect(retainTurnConfirmationRef('event:522',a,a,true)).toBe('event:522')
 })
