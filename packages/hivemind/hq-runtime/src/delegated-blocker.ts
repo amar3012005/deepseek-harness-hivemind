@@ -208,6 +208,21 @@ export async function resumeDelegatedBlocker(ctx: Context, root: Agent, id: stri
       confirmedAnswer = answered.data.content.flatMap(block => block.type === 'text' ? [block.text] : []).join('\n').slice(0, 6000)
     }
     await validate() // Authority may change while provider verification was pending.
+    // read_checkpoint must reflect the verified handoff before employee admission.
+    // The message key owns execution deduplication; this receipt never grants a tool permission.
+    const readyCheckpoint = employee.session.ownEvents().some(event => event.type === 'hivemind/connected-receipt'
+      && event.data.tool === 'workflow_checkpoint' && typeof event.data.receipt === 'object' && event.data.receipt !== null
+      && !Array.isArray(event.data.receipt) && event.data.receipt['checkpoint_id'] === blocker.checkpointId
+      && event.data.receipt['checkpoint_state'] === 'ready')
+    if (!readyCheckpoint) {
+      employee.session.append('hivemind/connected-receipt', { version: 1, tool: 'workflow_checkpoint',
+        ...(blocker.workflowSessionId === undefined ? {} : { workflowSessionId: blocker.workflowSessionId }),
+        receipt: { status: 'checkpoint_saved', checkpoint_state: 'ready', checkpoint_id: blocker.checkpointId,
+          checkpoint: JSON.stringify({ blocker_id: id, task_id: blocker.taskId, blocked_call_id: blocker.callId,
+            workflow_session_id: blocker.workflowSessionId ?? null,
+            next_step: 'Runtime verified this blocker. Continue only the unfinished step from existing receipts. Native permission checks remain enforced; never repeat completed business actions.' }) } })
+      await flush(ctx, employee)
+    }
     const delivered = await rooms(ctx).deliverAgentMessage(root, { key: `${id}-resume`, target: blocker.employeeId, kind: 'question', taskId: blocker.taskId,
       text: `${employeeWorkPrompt(ctx, root, blocker.taskId)}\nRuntime resolved blocker ${id}. Read checkpoint ${blocker.checkpointId} and existing provider receipts first; resume only its unfinished step. Original workflow: ${blocker.workflowSessionId ?? 'not-applicable'}. Do not repeat completed business actions or broaden authority.${confirmedAnswer === undefined ? '' : `\nAuthenticated human answer for this blocker (does not grant unrelated authority): ${JSON.stringify(confirmedAnswer)}`}` }, signal)
     root.session.append('hivemind/hq-delegated-blocker', { ...blocker, state: 'resumed', resumeMessageId: delivered.messageId })
