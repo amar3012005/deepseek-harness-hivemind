@@ -286,3 +286,10 @@
   :global([data-agent-room]) .activityOrb { display: none; }
   :global([data-agent-room]) .turnStatus { min-height: 24px; padding-left: 4px; }
 }
+
+@media (max-width: 600px) {
+  :global([data-native-chat]) .root,
+  :global([data-native-chat]) .column { min-width: 0; max-width: 100%; }
+  :global([data-native-chat]) .turnStatus { max-width: 100%; flex-wrap: wrap; }
+  :global([data-native-chat]) .turnStatusLabel { white-space: normal; overflow-wrap: anywhere; }
+}

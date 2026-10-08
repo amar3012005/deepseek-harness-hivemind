@@ -430,3 +430,27 @@
 @media (max-width: 900px) {
   :global([data-native-chat]) :global([data-hivemind-dictation]) { display: none; }
 }
+
+/* Phone editor gets its own line: actions never squeeze the draft to a few
+   characters when stop, send and voice are simultaneously available. */
+@media (max-width: 600px) {
+  :global([data-native-chat]) .card {
+    grid-template-columns: 44px minmax(0, 1fr) auto;
+    border-radius: 22px;
+    min-width: 0;
+    padding: 6px;
+  }
+  :global([data-native-chat]) .scroll { grid-column: 1 / -1; grid-row: 1; min-width: 0; max-height: min(120px, 25dvh); }
+  :global([data-native-chat]) .input { padding: 4px 8px; }
+  :global([data-native-chat]) .placeholder { inset: 4px 8px auto; }
+  :global([data-native-chat]) .add { grid-column: 1; grid-row: 2; width: 44px; height: 44px; }
+  :global([data-native-chat]) .brainConnectors { grid-column: 2; grid-row: 2; width: 44px; height: 44px; justify-self: start; }
+  :global([data-native-chat]) .trailing { grid-column: 3; grid-row: 2; gap: 4px; }
+  :global([data-native-chat]) .primary,
+  :global([data-native-chat]) :global([data-hivemind-live-voice]) button { width: 44px; height: 44px; }
+  :global([data-native-chat]) .attachments { grid-row: 1; }
+  :global([data-native-chat]) .card:has(.attachments:not(:empty)) .scroll { grid-row: 2; }
+  :global([data-native-chat]) .card:has(.attachments:not(:empty)) .add,
+  :global([data-native-chat]) .card:has(.attachments:not(:empty)) .brainConnectors,
+  :global([data-native-chat]) .card:has(.attachments:not(:empty)) .trailing { grid-row: 3; }
+}

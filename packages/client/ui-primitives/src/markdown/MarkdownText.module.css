@@ -332,3 +332,10 @@
   text-decoration: underline dotted var(--dsw-alias-link);
   text-underline-offset: 3px;
 }
+
+/* Touch users cannot hover to enable wide-table scrolling. Preserve the local
+   pan surface instead of forcing the entire conversation sideways. */
+@media (max-width: 600px) {
+  :global([data-native-chat]) .tableScroll:global(.md-table-wide) { overflow-x: auto; }
+  :global([data-native-chat]) .tableScroll { min-width: 0; max-width: 100%; overscroll-behavior-x: contain; }
+}
