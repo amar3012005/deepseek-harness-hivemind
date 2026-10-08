@@ -21,7 +21,10 @@ export function isRuntimeRoom(agent: Agent): boolean {
   let preset = agent.session.header.agentPreset
   for (const event of agent.session.snapshotEvents()) if (event.type === 'agent-preset/selected')
     preset = (event.data).agentPreset
-  const owner = sessionOwner(agent.session.snapshotEvents())
+  const events = agent.session.snapshotEvents()
+  const original = sessionOwner(events)
+  const latest = events.findLast(event => event.type === 'hivemind/session-owner')?.data
+  const owner = original?.id === null && original.slug === 'lead' && latest?.id === null && latest.slug === 'runtime' ? latest : original
   return preset === 'hivemind-hq' && agent.session.header.parentSession === undefined && owner?.id === null && owner.slug === 'runtime'
 }
 
@@ -96,6 +99,25 @@ export function installRuntimeDecisionMemory(
     })))
     installed.add(agent)
   }
+  // Native creation/start notifications run synchronously before the first
+  // prompt assembly. A private owner marker is composition, not work admission;
+  // Core still validates canonical storage and current admin authority on use.
+  const prepare = (agent: Agent): void => {
+    const events = agent.session.snapshotEvents()
+    let preset = agent.session.header.agentPreset
+    for (const event of events) if (event.type === 'agent-preset/selected') preset = event.data.agentPreset
+    const selection = events.findLast(event => String(event.type) === 'hivemind/employee-selection')
+    const owner = sessionOwner(events)
+    if (preset === 'hivemind-hq' && agent.session.header.parentSession === undefined
+      && (owner === undefined || (owner.id === null && owner.slug === 'lead'
+        && !events.some(event => event.type === 'hivemind/session-owner' && event.data.slug === 'runtime')))
+      && (!selection || (selection.data as { id?: unknown }).id === null)) {
+      agent.session.append('hivemind/session-owner', { id: null, slug: 'runtime', name: 'Runtime', role: 'AI Chief of Staff' })
+    }
+    install(agent)
+  }
+  ctx.effect(() => ctx.on('agent/created', ({ agent }) => prepare(agent)))
+  ctx.effect(() => ctx.on('agent/session-start', ({ agent }) => prepare(agent)))
   ctx.effect(() => ctx.on('hivemind/runtime-call-context', async ({ agent, signal }) => {
     await ensureOwner(agent, signal)
     if (!isRuntimeRoom(agent)) throw new Error('runtime_voice_room_required')

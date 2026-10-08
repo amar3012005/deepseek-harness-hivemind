@@ -9,7 +9,7 @@ import { administratorMessageTool } from './administrator-messaging.ts'
 
 export type {} from './voice-outcome.ts'
 export type {} from './runtime-decision-memory.ts'
-import { installRuntimeDecisionMemory } from './runtime-decision-memory.ts'
+import { installRuntimeDecisionMemory, isRuntimeRoom } from './runtime-decision-memory.ts'
 import { privateMemoryFailure } from './private-memory-errors.ts'
 import { installVoiceOutcome } from './voice-outcome.ts'
 import { installAgentMessaging } from './agent-messaging.ts'
@@ -467,7 +467,7 @@ function scopedServiceAuthority(ctx: Context, config: Config, actor?: Agent): Ic
     iss: 'hivemind-harness-runner', aud: 'hivemind-control-plane-harness-proxy',
     sub: principal.userId, org_id: principal.orgId, profile: principal.profile,
     ...(principal.projectId === undefined ? {} : { project_id: principal.projectId }),
-    ...(actor && preset === 'hivemind-hq' && owner?.slug === 'runtime' && owner.id === null
+    ...(actor && isRuntimeRoom(actor)
       ? { operating_role: 'runtime', operating_session: actor.session.header.id }
       : actor && preset === 'hivemind-hyperagents' && owner?.id && actor.session.header.parentSession === undefined
         ? { operating_role:'employee-profile',operating_session:actor.id,operating_employee_id:owner.id } : {}),

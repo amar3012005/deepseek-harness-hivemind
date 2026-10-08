@@ -1319,3 +1319,23 @@ describe('employee profile tool composition', () => {
     expect(harness.tools.has('hivemind_employee_lifecycle')).toBe(false)
   })
 })
+
+
+it('signs Runtime memory authority for the explicit legacy lead conversion',async()=>{
+  process.env.TEST_HIVE_RUNNER_SECRET='runner-service-secret-that-is-at-least-32-bytes'
+  const packets:Array<Record<string,unknown>>=[]
+  vi.stubGlobal('fetch',vi.fn(async(_url:unknown,init:RequestInit)=>{
+    const token=String((init.headers as Record<string,string>)['authorization']).replace(/^Bearer /,'')
+    packets.push(JSON.parse(Buffer.from(token.split('.')[1]!,'base64url').toString()))
+    return jsonResponse({ ok:true,memories:[] })
+  }))
+  const harness=mount({ ...config('unused'),authorityMode:'scoped-service',privateMemoryEnabled:true,serviceApiBase:'http://control.test',serviceHttpOrigins:['http://control.test'],serviceSecretEnv:'TEST_HIVE_RUNNER_SECRET' })
+  const events=[{ type:'hivemind/session-owner',data:{ id:null,slug:'lead',name:'Lead',role:'Team Lead' } },{ type:'hivemind/session-owner',data:{ id:null,slug:'runtime',name:'Runtime',role:'AI Chief of Staff' } }] as unknown as SessionEvent[]
+  const agent={ id:'session-legacy-role',ctx:{ effect:(run:()=>void)=>run(),tools:{ register:(definition:ToolDefinition)=>{harness.tools.set(definition.name,definition);return()=>{}} } },session:{ header:{ id:'session-legacy-role',agentPreset:'hivemind-hq' },ownEvents:()=>events,snapshotEvents:()=>events,append:()=>{} } } as unknown as Agent
+  await harness.preStep?.({ agent,turn:1,signal },async()=>({ kind:'enter' as const,messages:[] }))
+  packets.length=0
+  await tool(harness,'runtime_uncertainties').execute({ action:'recall' },execContext(agent))
+  expect(packets).toHaveLength(1)
+  expect(packets[0]).toMatchObject({ operating_role:'runtime',operating_session:'session-legacy-role' })
+  expect(events[0]).toMatchObject({ data:{ slug:'lead' } })
+})
