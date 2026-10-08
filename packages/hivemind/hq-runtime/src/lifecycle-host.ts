@@ -12,7 +12,7 @@ import type {} from '@deepseek-ai/dsh-hivemind-execution-scope'
 import type {} from '@deepseek-ai/dsh-schedule'
 import { roomMessageId } from '@deepseek-ai/dsh-api-session-controller'
 export const name = 'hivemind-employee-lifecycle-host'
-export const inject = ['webServer', 'hivemindExecutionScope', 'schedule', 'sessionController', 'sessions', 'sessionPersistence', 'agentTeams', 'agentPresets', 'hivemindHq']
+export const inject = ['tools', 'webServer', 'hivemindExecutionScope', 'schedule', 'sessionController', 'sessions', 'sessionPersistence', 'agentTeams', 'agentPresets', 'hivemindHq']
 export interface Config { sharedOrganizationAgents?:boolean; enabled: boolean; serviceSecretEnv: string }
 export const Config: Schema<Config> = Schema.object({ sharedOrganizationAgents:Schema.boolean().default(false), enabled: Schema.boolean().default(false), serviceSecretEnv: Schema.string().default('HIVE_HARNESS_RUNNER_SERVICE_SECRET') })
 const requestSchema = z.object({ orgId:z.uuid(), userId:z.uuid(), employeeId:z.uuid() }).strict()
