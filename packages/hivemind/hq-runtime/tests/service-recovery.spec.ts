@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { createToolResultMessage, createUserMessage } from '@deepseek-ai/dsh-llm'
 import { ToolCallId } from '@deepseek-ai/dsh-llm/brand'
 import type { Context } from '@deepseek-ai/cordis'
-import { SessionSeq, type SessionEvent } from '@deepseek-ai/dsh-session'
+import { SessionSeq, SessionId, type SessionEvent } from '@deepseek-ai/dsh-session'
 import { installServiceRecovery, serviceInterrupted, delegatedConnectionReplayHeld } from '../src/service-recovery.ts'
 function saved(reason: unknown = { kind: 'interrupted' }): SessionEvent[] {
   return [{ type: 'turn/start', seq: SessionSeq(1), time: 0, data: { turn: 4 } },
@@ -209,7 +209,7 @@ it('never arms quiet Chief scheduling updates as direct requests', async () => {
 function delegatedPending(): SessionEvent[] {
   return [
     { seq:SessionSeq(1),type:'turn/start',time:0,data:{ turn:4 } },
-    { seq:SessionSeq(2),type:'user/message',time:0,data:createUserMessage({ source:{ kind:'hivemind-agent-message',senderId:'chief' },content:[{ type:'text',text:JSON.stringify({ text:'HQ_EMPLOYEE_ASSIGNMENT={"rootId":"chief","taskId":"task-16"}' }) }] }) },
+    { seq:SessionSeq(2),type:'user/message',time:0,data:createUserMessage({ source:{ kind:'hivemind-agent-message',messageId:'assignment',senderId:SessionId('chief'),senderSessionId:SessionId('chief') },content:[{ type:'text',text:JSON.stringify({ text:'HQ_EMPLOYEE_ASSIGNMENT={"rootId":"chief","taskId":"task-16"}' }) }] }) },
     { seq:SessionSeq(2),type:'hivemind/composio-session',time:0,data:{ routerSessionId:'router',subject:'hivemind:user',userKey:'user' } },
     { seq:SessionSeq(3),type:'tool/call',time:0,data:{ turn:4,step:1,callId:ToolCallId('pending-connection'),name:'hivemind_connected_task',arguments:'{"session":{"id":"upon"}}' } },
     { seq:SessionSeq(4),type:'turn/end',time:0,data:{ turn:4,reason:{ kind:'aborted',reason:{ kind:'user' } } } },
