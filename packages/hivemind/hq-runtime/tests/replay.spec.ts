@@ -31,7 +31,7 @@ function mount(inspectSavedPdf?: ReturnType<typeof vi.fn>) {
     effect: (callback: () => unknown) => callback(), on: () => () => {},
     tools: { register: (definition: ToolDefinition) => { tool = definition }, restrict: () => () => {} },
     agentTeams: { guardTaskUpdates: (value: typeof guard) => { guard = value; return () => {} }, membership: () => ({ role, root: agent }),
-      getTask: () => ({ id: 'task-1', status: 'in_progress', subject: 'Report', revision: 2, description: 'Saved report', writeScopes: [] }),
+      getTask: () => ({ id: 'task-1', status: 'in_progress', subject: 'Report', revision: 2, ownerName: 'ravi', description: 'Saved report', writeScopes: [] }),
       listMembers: () => [{ name: 'ravi', id: 'ravi-session' }, { name: 'other', id: 'other-session' }] },
     get: () => inspectSavedPdf ? { inspectSavedPdf } : undefined,
     agents: { get: () => undefined }, sessions: { flush }, schedule: { ensure },
@@ -57,6 +57,17 @@ describe('native HQ durable receipt replay', () => {
     expect(f.complete()).toBeTypeOf('string')
     f.setRole('teammate')
     await expect(f.execute(input)).rejects.toThrow('hq_lead_required')
+  })
+  it('denies completing an accepted partial draft until its exact saved blocker is resolved',async()=>{
+    const f=mount()
+    const inspected=await f.execute({ action:'inspect',task_id:'task-1' }) as { evidence_hash:string;task_revision:number }
+    await f.execute({ action:'decide',task_id:'task-1',decision:'accepted',rationale:'The partial draft is valid.',task_revision:inspected.task_revision,evidence_hash:inspected.evidence_hash })
+    f.events.push({ type:'hivemind/hq-employee-assignment',data:{ taskId:'task-1',employeeId:'employee',sessionId:'ravi-session',memberName:'ravi',personaSha256:'digest' } } as SessionEvent)
+    const blocker={ id:'blocked-code',kind:'human_input',rootId:'root',taskId:'task-1',taskRevision:2,employeeId:'employee',employeeSessionId:'ravi-session',memberName:'ravi',checkpointId:'blocked-code',callId:'ask-code',state:'blocked',createdAt:'2030-01-01T00:00:00Z' } as const
+    f.events.push({ type:'hivemind/hq-delegated-blocker',data:blocker } as SessionEvent)
+    expect(f.complete()).toContain('Resolve the saved blocker')
+    f.events.push({ type:'hivemind/hq-delegated-blocker',data:{ ...blocker,state:'resumed',resumeMessageId:'authorized-same-task' } } as SessionEvent)
+    expect(f.complete()).toBeUndefined()
   })
   it('inspects a task with no linked receipt without producing evidence or permitting review', async () => {
     const f = mount()

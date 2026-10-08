@@ -69,7 +69,7 @@ async function record(ctx: Context, employee: Agent, signal: AbortSignal, fields
   toolkits?: readonly string[]
   redirectUrl?: string
   question?: string
-}, migrationOrigin?: { rootId: string; taskId: string }): Promise<DelegatedConnectionReceipt | undefined> {
+}, migrationOrigin?: { rootId: string; taskId: string }, reportKey?: string): Promise<DelegatedConnectionReceipt | undefined> {
   const origin = migrationOrigin ?? admittedEmployeeWork(employee)
   if (!origin) return undefined
   if (!await allowsEmployeeWork(ctx, employee, origin, signal)) throw new Error('hq_blocker_assignment_not_authorized')
@@ -80,7 +80,7 @@ async function record(ctx: Context, employee: Agent, signal: AbortSignal, fields
     const task = ctx.agentTeams.getTask(root, TeamTaskId(origin.taskId))
     if (task.ownerName !== assignment.data.memberName) throw new Error('hq_blocker_task_owner_mismatch')
     const id = `hq-blocker-${createHash('sha256').update(JSON.stringify([root.id, origin.taskId, employee.id,
-      fields.kind, fields.workflowSessionId ?? fields.callId, [...fields.toolkits ?? []].sort()])).digest('hex')}`
+      fields.kind, fields.workflowSessionId ?? reportKey ?? fields.callId, [...fields.toolkits ?? []].sort()])).digest('hex')}`
     const prior = delegatedBlockers(root).find(value => value.id === id)
     if (prior?.state === 'resumed') throw new Error('hq_blocker_already_resumed_recheck_workflow')
     const blocker: DelegatedBlocker = prior ?? { id, ...fields, rootId: String(root.id), taskId: origin.taskId,
@@ -307,7 +307,73 @@ export async function resumeDelegatedBlocker(ctx: Context, root: Agent, id: stri
   })
 }
 
+/** Report a required human input from the exact host-admitted employee task.
+ * Plain prose is not a resumable checkpoint; this operation grants no permissions.
+ */
+export async function reportDelegatedHumanInput(ctx: Context, employee: Agent, signal: AbortSignal,
+  input: { callId: string; blockerKey: string; question: string },
+): Promise<DelegatedConnectionReceipt> {
+  if (!admittedEmployeeWork(employee)) throw new Error('hq_employee_delegated_work_required')
+  if (!/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,99}$/u.test(input.blockerKey)) throw new Error('hq_blocker_key_invalid')
+  if (!input.question.trim() || input.question.length > 6000) throw new Error('hq_blocker_question_required')
+  const receipt = await record(ctx, employee, signal, { kind: 'human_input', callId: input.callId,
+    question: input.question.trim() }, undefined, input.blockerKey)
+  if (!receipt) throw new Error('hq_employee_delegated_work_required')
+  return receipt
+}
+
+/** Saved blockers are authoritative even if a partial draft was accepted. */
+export function unresolvedDelegatedTask(ctx: Context, root: Agent, taskId: string): DelegatedBlocker | undefined {
+  const assignment = root.session.ownEvents().findLast(event => event.type === 'hivemind/hq-employee-assignment' && event.data.taskId === taskId)
+  if (assignment?.type !== 'hivemind/hq-employee-assignment') return undefined
+  const task = ctx.agentTeams.getTask(root, TeamTaskId(taskId))
+  return delegatedBlockers(root).find(blocker => blocker.state === 'blocked' && blocker.rootId === String(root.id)
+    && blocker.taskId === taskId && blocker.employeeId === assignment.data.employeeId
+    && blocker.employeeSessionId === assignment.data.sessionId && blocker.memberName === task.ownerName)
+}
+
+/** Scoped tool lives only while a host-admitted employee turn is active. */
+export function installEmployeeInputBlocker(ctx: Context): void {
+  const active = new Map<string, { turn: number; dispose: () => void }>()
+  const clear = (agent: Agent) => { active.get(String(agent.id))?.dispose(); active.delete(String(agent.id)) }
+  const prepare = (agent: Agent, turn: number): void => {
+    if (active.get(String(agent.id))?.turn !== turn) clear(agent)
+    if (!active.has(String(agent.id))) {
+      const dispose = agent.ctx.effect(() => agent.ctx.tools.register(defineTool({ name: 'hivemind_employee_blocker',
+        description: 'Runtime-delegated employee work only. Report genuinely required missing human input BEFORE a plain room update. Saves the SAME task checkpoint and notifies Runtime asynchronously; do not ask the human here, invent an answer, substitute a draft as final completion, or grant connector/action permissions. Use a stable blocker_key for retries and a precise missing-input question. This tool records human_input only; connection and native permission blockers use their existing authoritative provider/approval paths.',
+        parameters: { blocker_key: { type: 'string', required: true }, question: { type: 'string', required: true } },
+        output: { schema: { type: 'object', additionalProperties: true, properties: {} }, render: (_args, value) => [{ type: 'text', text: JSON.stringify(value) }] },
+        isConcurrencySafe: () => false,
+        async execute(args, execution) {
+          if (!execution.agent || execution.agent.id !== agent.id) throw new Error('hq_employee_delegated_work_required')
+          return { ...await reportDelegatedHumanInput(ctx, execution.agent, execution.signal, { callId: String(execution.callId),
+            blockerKey: args.blocker_key, question: args.question }) }
+        },
+      })))
+      active.set(String(agent.id), { turn, dispose })
+    }
+  }
+  // Native inbox claim emits synchronously before systemPrompt.assemble().
+  // Candidate visibility is not authority: pre-step admission and execution
+  // independently validate the host assignment before any model/tool work.
+  ctx.effect(() => ctx.on('agent/inbox/claimed', ({ agent, message, turn }) => {
+    if (active.get(String(agent.id))?.turn !== turn) clear(agent)
+    if (!['schedule', 'hivemind-agent-message'].includes(message.source.kind)) return
+    try { if (referenceFromMessage(message)) prepare(agent, turn) } catch { /* admission owns rejection */ }
+  }))
+  ctx.effect(() => ctx.on('agent/pre-step', async ({ agent, turn }, next) => {
+    const decision = await next()
+    if (decision.kind === 'reject' || !admittedEmployeeWork(agent)) clear(agent)
+    else prepare(agent, turn)
+    return decision
+  }))
+  ctx.effect(() => ctx.on('agent/turn-ended', ({ agent }) => clear(agent)))
+  ctx.effect(() => ctx.on('agent/disposed', ({ agent }) => clear(agent)))
+  ctx.effect(() => () => { for (const entry of active.values()) entry.dispose(); active.clear() })
+}
+
 export function installDelegatedBlockerReporting(ctx: Context): void {
+  installEmployeeInputBlocker(ctx)
   ctx.effect(() => ctx.on('hivemind/delegated-connection-blocker', input => reportDelegatedConnection(ctx, input), { global: true }))
   ctx.effect(() => ctx.on('tools/pre-execute', async (execution, next) => {
     const decision = await next()

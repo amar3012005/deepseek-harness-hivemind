@@ -13,7 +13,7 @@ import {
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { installRest, recoverRest, acknowledgeRestNotes, restBriefing, restState, isHqLead } from './rest.ts'
 import { installAwakening, awakeningContext } from './awakening.ts'
-import { installDelegatedBlockerTool } from './delegated-blocker.ts'
+import { installDelegatedBlockerTool, unresolvedDelegatedTask } from './delegated-blocker.ts'
 import { investigationExpired } from './investigation.ts'
 import { wakeBriefing } from './wake-briefing.ts'
 import { dispatchEmployee, reconcileEmployeeArtifacts } from './employee-room.ts'
@@ -159,6 +159,8 @@ export function apply(ctx: Context): void {
       // Other companies and non-HQ Teams retain their native policy.
       const events = root.session.snapshotEvents()
       if (!taskContracts(events).some(contract => contract.taskId === request.taskId)) return
+      const blocker = unresolvedDelegatedTask(ctx, root, request.taskId)
+      if (blocker) return `HQ task remains blocked at ${blocker.checkpointId}. Resolve the saved blocker through authenticated input or verified connection before completing this task; an accepted partial draft is not final completion.`
       try {
         requireArtifactReceipts(events, request.taskId)
       } catch {

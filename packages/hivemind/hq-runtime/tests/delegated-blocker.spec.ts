@@ -10,7 +10,7 @@ vi.mock('../src/employee-room.ts', async original => ({
   referenceFromMessage: (await original<typeof import('../src/employee-room.ts')>()).referenceFromMessage, allowsEmployeeWork: mocks.allowed, authenticatedRoot: mocks.authenticate,
   rooms: () => ({ deliverAgentMessage: mocks.deliver }), employeeWorkPrompt: () => 'same native assignment' }))
 vi.mock('../src/rest.ts', () => ({ isHqLead: (_ctx: unknown, agent: { id: string }) => agent.id === 'chief' }))
-import { reportDelegatedConnection, notifyDelegatedConnection, resumeDelegatedBlocker, installDelegatedBlockerReporting, delegatedBlockers, checkpointLegacyDelegatedConnection } from '../src/delegated-blocker.ts'
+import { reportDelegatedConnection, notifyDelegatedConnection, resumeDelegatedBlocker, installDelegatedBlockerReporting, delegatedBlockers, checkpointLegacyDelegatedConnection, reportDelegatedHumanInput, unresolvedDelegatedTask } from '../src/delegated-blocker.ts'
 function must<T>(value: T | undefined): T { if (value === undefined) throw new Error('fixture missing'); return value }
 function fixture() {
   mocks.allowed.mockReset().mockResolvedValue(true)
@@ -160,5 +160,49 @@ describe('delayed verified connection admission', () => {
     f.task.revision++
     await expect(notifyDelegatedConnection(f.ctx,f.root,saved.blocker_id,'upon',f.input.execution.signal)).rejects.toThrow('assignment_changed')
     expect(f.ctx.serial).not.toHaveBeenCalled()
+  })
+})
+
+describe('explicit employee human-input checkpoints', () => {
+  it('saves exact task and human-input only, with stable-key retry deduplication', async () => {
+    const f=fixture(), signal=f.input.execution.signal
+    const first=await reportDelegatedHumanInput(f.ctx,f.employee,signal,{ callId:'report-1',blockerKey:'reference-code',question:'What exact reference code did you choose?' })
+    const second=await reportDelegatedHumanInput(f.ctx,f.employee,signal,{ callId:'report-2',blockerKey:'reference-code',question:'What exact reference code did you choose?' })
+    expect(second.blocker_id).toBe(first.blocker_id)
+    expect(delegatedBlockers(f.root)).toHaveLength(1)
+    expect(delegatedBlockers(f.root)[0]).toMatchObject({ kind:'human_input',taskId:'task-1',employeeSessionId:'room',callId:'report-1',state:'blocked' })
+    expect(f.employeeEvents.filter(e=>e.type==='hivemind/connected-receipt')).toHaveLength(1)
+    expect(f.ctx.schedule.ensure).not.toHaveBeenCalled()
+    expect(unresolvedDelegatedTask(f.ctx,f.root,'task-1')?.id).toBe(first.blocker_id)
+    expect(unresolvedDelegatedTask(f.ctx,f.root,'other-task')).toBeUndefined()
+  })
+  it('rejects direct human work, wrong assignee, revoked authority and invalid input without a checkpoint', async () => {
+    for(const kind of ['direct','ended','revoked','assignee','blank','key']){
+      const f=fixture()
+      if(kind==='direct')f.employeeEvents.pop()
+      if(kind==='ended')f.employeeEvents.push({ seq:SessionSeq(3),time:0,type:'turn/end',data:{ turn:1,reason:{ kind:'completed' } } })
+      if(kind==='revoked')mocks.allowed.mockResolvedValue(false)
+      if(kind==='assignee')f.task.ownerName='other'
+      await expect(reportDelegatedHumanInput(f.ctx,f.employee,f.input.execution.signal,{ callId:'report',blockerKey:kind==='key'?'../invalid':'missing-code',question:kind==='blank'?' ':'What exact code?' })).rejects.toThrow()
+      expect(delegatedBlockers(f.root)).toHaveLength(0)
+      expect(mocks.deliver).not.toHaveBeenCalled()
+    }
+  })
+  it('does not release completion for a partial artifact or unrelated answer; actual same-task human answer releases it', async () => {
+    const f=fixture(), signal=f.input.execution.signal
+    const r=await reportDelegatedHumanInput(f.ctx,f.employee,signal,{ callId:'report',blockerKey:'code',question:'Exact code required' })
+    f.task.revision=3 // Accepting a draft or another status update cannot resolve missing input.
+    expect(unresolvedDelegatedTask(f.ctx,f.root,'task-1')?.id).toBe(r.blocker_id)
+    f.task.revision=2
+    await expect(resumeDelegatedBlocker(f.ctx,f.root,r.blocker_id,signal,undefined,undefined,'event:10')).rejects.toThrow('actual_human')
+    f.rootEvents.push({ seq:SessionSeq(10),time:0,type:'user/message',surfaceOp:'append',data:createUserMessage({ source:{ kind:'user',authenticatedActor:{ userId:'11111111-1111-4111-8111-111111111111',orgId:'22222222-2222-4222-8222-222222222222',role:'admin',name:'Verified Admin' } },content:[{ type:'text',text:'The code is SAMPLE-42.' }] }) })
+    await resumeDelegatedBlocker(f.ctx,f.root,r.blocker_id,signal,undefined,undefined,'event:10')
+    expect(unresolvedDelegatedTask(f.ctx,f.root,'task-1')).toBeUndefined()
+  })
+  it('does not borrow a stale blocker after another employee was assigned the task', async () => {
+    const f=fixture();await reportDelegatedHumanInput(f.ctx,f.employee,f.input.execution.signal,{ callId:'report',blockerKey:'code',question:'Exact code required' })
+    f.rootEvents.push({ seq:SessionSeq(10),time:0,type:'hivemind/hq-employee-assignment',data:{ taskId:'task-1',employeeId:'other',sessionId:'other-room',memberName:'other',personaSha256:'digest' } })
+    f.task.ownerName='other'
+    expect(unresolvedDelegatedTask(f.ctx,f.root,'task-1')).toBeUndefined()
   })
 })
