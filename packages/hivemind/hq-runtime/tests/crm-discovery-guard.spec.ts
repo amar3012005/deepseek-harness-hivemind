@@ -37,7 +37,7 @@ describe('Runtime application discovery boundary', () => {
     expect(requestsInternalAppReference({ question: 'Which business scope?', detail: 'Saved app ID is unavailable' })).toBe(false)
   })
   it('installs the reversible native monotonic guard', () => {
-    const dispose = vi.fn(), guard = vi.fn(() => dispose)
+    const dispose = vi.fn(), guard = vi.fn((_executionGuard: (execution: Readonly<ToolExecution>) => string | undefined) => dispose)
     const fixture = { effect: (callback: () => unknown) => callback(), tools: { guard } } as unknown as Context
     installCrmDiscoveryGuard(fixture)
     expect(guard).toHaveBeenCalledOnce()
