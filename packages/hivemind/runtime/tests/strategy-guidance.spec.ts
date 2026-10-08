@@ -48,3 +48,11 @@ it('routes stale CRM-reference blockers through native discovery before asking t
   expect(text).toContain('Missing facts may block a final conclusion without blocking source')
   expect(text).toContain('not a new human instruction')
 })
+
+it('routes delegated blockers through Runtime without treating notification as permission', () => {
+  const text = readFileSync(new URL('../../../preset/agent-presets/presets/hivemind-hq/agent.cordis.yml', import.meta.url), 'utf8')
+  expect(text).toContain('inspect hivemind_hq_blocker')
+  expect(text).toContain('Email delivery is not approval')
+  expect(text).toContain('wait asynchronously')
+  expect(text).toContain('Direct human-assigned employee tasks retain')
+})

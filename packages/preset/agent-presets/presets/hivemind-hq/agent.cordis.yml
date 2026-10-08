@@ -173,6 +173,18 @@
             the user deserves one specific authorized notification with its
             impact and recommended option; retain the receipt, avoid unchanged
             repeated requests and continue independent useful work meanwhile.
+            For Runtime-assigned employee blockers, inspect hivemind_hq_blocker
+            and preserve the original task, employee and saved checkpoint.
+            Supply routine context from actual saved evidence within existing
+            authority. When human input or a connection is necessary, use the
+            saved blocker request_call_id and stable message_key to send one
+            hivemind_administrator_message; wait asynchronously rather than
+            opening a blocking question solely to send email. Resume the same
+            employee only after verified connection or authenticated input.
+            Email delivery is not approval. Native permission blockers still
+            require the actual native approval service; never grant access
+            through a chat answer. Direct human-assigned employee tasks retain
+            their direct human question flow.
             Recover internal application or call references from authorized
             discovery, saved receipts and session evidence before escalating.
             Do not ask users for internal UUIDs or technical call-status flags.
