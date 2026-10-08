@@ -29,6 +29,7 @@ it.skipIf(!url)('shares canonical native rooms and schedules with active admins 
     await admin.query(await readFile(new URL('../../../hivemind/hq-runtime/migrations/company-hq.sql',import.meta.url),'utf8'))
     await admin.query(await readFile(new URL('../../../hivemind/schedule-postgres/migrations/schedule.sql',import.meta.url),'utf8'))
     await admin.query(await readFile('/shared-admin-fixtures/shared.sql','utf8'))
+    await admin.query(await readFile('/shared-admin-fixtures/reservation.sql','utf8'))
     await admin.query(`CREATE ROLE shared_admin_fixture NOLOGIN NOSUPERUSER NOBYPASSRLS;
       GRANT USAGE ON SCHEMA hivemind TO shared_admin_fixture;
       GRANT SELECT,INSERT,UPDATE,DELETE ON ALL TABLES IN SCHEMA hivemind TO shared_admin_fixture;
@@ -40,8 +41,13 @@ it.skipIf(!url)('shares canonical native rooms and schedules with active admins 
     await ctx.plugin(SessionStore); const scope=new ExecutionScope(ctx)
     const store=new PostgresSessionPersistence(ctx,{ connectionStringEnv:'FIXTURE',schema:'hivemind',leaseTtlMs:30000,maxConnections:3,sharedOrganizationAgents:true },restricted)
     const create=async(p:typeof a,id:string,preset:string)=>scope.run(p,()=>store.create({ version:SESSION_FORMAT_VERSION,id:SessionId(id),createdAt:1,isSeeded:false,cwd:'/fixture',agentPreset:preset }))
-    const root=await create(a,'session-canonical','hivemind-hq'); await root.close()
-    await admin.query('INSERT INTO harness_company_hq(org_id,user_id,session_id) VALUES($1,$2,$3)',[a.orgId,a.userId,'session-canonical'])
+    expect(await scope.run(b,()=>store.employeeRoomId('runtime'))).toBe(await scope.run(a,()=>store.employeeRoomId('runtime')))
+    const created=await Promise.allSettled([create(a,'session-canonical','hivemind-hq'),create(b,'session-canonical','hivemind-hq')])
+    expect(created.filter(result=>result.status==='fulfilled')).toHaveLength(1)
+    for(const result of created) if(result.status==='fulfilled') await result.value.close()
+    expect((await admin.query("SELECT count(*)::int n FROM hivemind.harness_session_events WHERE event_type='turn/start'")).rows[0].n).toBe(0)
+    expect((await admin.query('SELECT session_id FROM hivemind.harness_company_hq WHERE org_id=$1',[a.orgId])).rows[0]?.session_id).toBe('session-canonical')
+    expect(await scope.run(b,()=>store.employeeRoomId('runtime'))).toBe('session-canonical')
     const employee=await create(a,'session-employee','hivemind-hyperagents');await employee.close()
     const brain=await create(a,'session-private-brain','hivemind-chat');await brain.close()
     expect((await scope.run(b,()=>store.stat(SessionId('session-canonical'))))?.header.id).toBe('session-canonical')

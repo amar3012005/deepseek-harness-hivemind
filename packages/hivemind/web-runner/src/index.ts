@@ -12,7 +12,7 @@ import type { IndexInjection } from '@deepseek-ai/dsh-host-webserver'
 import type {} from '@deepseek-ai/dsh-session-persistence'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import { authenticatedActorFromSource, principalForActor, type AuthenticatedActor } from '@deepseek-ai/dsh-hivemind-execution-scope'
-import { resolveOrganizationAgentAccess, currentTurnActor, referencedSessionIds, admittedVoiceCallRef } from './organization-agent-access.ts'
+import { resolveOrganizationAgentAccess, currentTurnActor, referencedSessionIds, admittedVoiceCallRef, admittedUserConfirmationRef } from './organization-agent-access.ts'
 import type {} from '@deepseek-ai/dsh-tools'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -313,8 +313,13 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
     return resolveActor(principal,signal)
   } : undefined))
   if (config.sharedOrganizationAgents) {
-    const actors = new WeakMap<import('@deepseek-ai/dsh-agent').Agent,AuthenticatedActor>()
-    const confirmationRefs=new WeakMap<import('@deepseek-ai/dsh-agent').Agent,string>()
+    const actors = new Map<string,AuthenticatedActor>()
+    const confirmationRefs=new Map<string,string>()
+    const admittedUsers=new Map<string,{ id:string;actor:AuthenticatedActor }>()
+    const clearTurn=(id:string)=>{actors.delete(id);confirmationRefs.delete(id);admittedUsers.delete(id)}
+    ctx.effect(()=>ctx.on('agent/disposed',({ agent })=>clearTurn(agent.id),{ global:true }))
+    ctx.effect(()=>ctx.on('session/disposed',session=>clearTurn(session.id),{ global:true }))
+    ctx.effect(()=>()=>{actors.clear();confirmationRefs.clear();admittedUsers.clear()})
     const organizationAgent = (agent:import('@deepseek-ai/dsh-agent').Agent):boolean => {
       const chosen = agent.session.snapshotEvents().findLast(event=>event.type==='agent-preset/selected')
       const preset = chosen?.type==='agent-preset/selected' ? chosen.data.agentPreset : agent.session.header.agentPreset
@@ -337,22 +342,31 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
     }))
     ctx.effect(()=>ctx.on('agent/pre-step',async ({ agent,messages,signal },next)=> {
       if (!organizationAgent(agent)) return next()
-      const authored = currentTurnActor(messages,actors.get(agent))
+      const authored = currentTurnActor(messages,actors.get(agent.id))
       const principal = principalForActor(ctx.hivemindExecutionScope.require(),authored)
       const actor = await resolveActor(principal,signal)
-      actors.set(agent,actor)
+      actors.set(agent.id,actor)
       const admitted=messages.filter(message=>message.source.kind==='user' && authenticatedActorFromSource(message.source)?.userId===actor.userId).at(-1)
+      if(admitted) admittedUsers.set(agent.id,{ id:admitted.id,actor })
+      else if(messages.length>0) admittedUsers.delete(agent.id)
       const witness=admitted ? agent.session.snapshotEvents().find(event=>event.type==='user/message' && event.data.id===admitted.id) : undefined
       const callRef=admittedVoiceCallRef(messages,agent.session.snapshotEvents(),actor)
-      const userConfirmationRef=witness ? `event:${witness.seq}` : callRef ?? (messages.length===0 ? confirmationRefs.get(agent) : undefined)
-      if(userConfirmationRef) confirmationRefs.set(agent,userConfirmationRef); else confirmationRefs.delete(agent)
+      const userConfirmationRef=witness ? `event:${witness.seq}` : callRef ?? (messages.length===0 ? confirmationRefs.get(agent.id) : undefined)
+      if(userConfirmationRef) confirmationRefs.set(agent.id,userConfirmationRef); else confirmationRefs.delete(agent.id)
       return ctx.hivemindExecutionScope.run({ ...principal,authenticatedActor:actor,userConfirmationRef },next)
     }))
     ctx.inject(['tools'], toolCtx=>toolCtx.effect(()=>toolCtx.on('tools/execute',async (execution,next)=> {
       if (!execution.agent || !organizationAgent(execution.agent)) return next()
-      const principal = principalForActor(ctx.hivemindExecutionScope.require(),actors.get(execution.agent))
+      const principal = principalForActor(ctx.hivemindExecutionScope.require(),actors.get(execution.agent.id))
       const actor = await resolveActor(principal,execution.signal)
-      const authorized={ ...principal,authenticatedActor:actor,userConfirmationRef:confirmationRefs.get(execution.agent) }
+      // Native pre-step admission precedes session append. Resolve only this
+      // admitted message after append, never the newest unrelated history event.
+      const admitted=admittedUsers.get(execution.agent.id)
+      const witness=admitted?.actor.userId===actor.userId && admitted.actor.orgId===actor.orgId
+        ? admittedUserConfirmationRef(execution.agent.session.snapshotEvents(),admitted.id,actor) : undefined
+      const userConfirmationRef=witness ?? confirmationRefs.get(execution.agent.id)
+      if(witness && !await ctx.sessions.flush(execution.agent.session)) throw Error('runtime_confirmation_not_persisted')
+      const authorized={ ...principal,authenticatedActor:actor,userConfirmationRef }
       return ctx.hivemindExecutionScope.run(authorized,next)
     })))
   }

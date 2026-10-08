@@ -67,7 +67,7 @@ export function referencedSessionIds(value: unknown, depth = 0, ids = new Set<st
     return ids
   }
   for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
-    if ((key === 'sessionId' || key === 'parentSessionId' || key === 'childSessionId' || key === 'workspaceFileScopeId')
+    if ((key === 'agentId' || key === 'sessionId' || key === 'parentSessionId' || key === 'childSessionId' || key === 'workspaceFileScopeId')
       && typeof item === 'string' && item.length > 0) ids.add(item)
     else referencedSessionIds(item, depth + 1, ids)
   }
@@ -86,4 +86,17 @@ export function admittedVoiceCallRef(
     &&event.data['hadUserSpeech']===true&&record(event.data['authenticatedActor'])
     &&event.data['authenticatedActor']['userId']===actor.userId&&event.data['authenticatedActor']['orgId']===actor.orgId)
   return found?`call:${callId}`:undefined
+}
+
+/** A native admitted user message is appended only after pre-step returns. */
+export function admittedUserConfirmationRef(
+  events:readonly { type:string;seq:number;data:unknown }[],id:string|undefined,actor:AuthenticatedActor,
+):string|undefined {
+  if(!id) return undefined
+  const event=events.find((event)=>{
+    if(event.type!=='user/message'||!record(event.data)||event.data['id']!==id) return false
+    const source=event.data['source'];const author=authenticatedActorFromSource(source)
+    return record(source)&&source['kind']==='user'&&author?.userId===actor.userId&&author.orgId===actor.orgId
+  })
+  return event?`event:${event.seq}`:undefined
 }

@@ -256,6 +256,12 @@ export class PostgresSessionPersistence extends SessionPersistence {
           scope.projectId == null ? 'organization' : 'project',
           scope.profile, scope.variation, JSON.stringify(meta), cut,
         ])
+        // Reserving a company room is persistence only: it never admits a turn.
+        if (this.config.sharedOrganizationAgents && meta.agentPreset === 'hivemind-hq' && meta.parentSession === undefined) {
+          await client.query('INSERT INTO harness_company_hq(org_id,user_id,session_id) VALUES($1,$2,$3) ON CONFLICT(org_id) DO NOTHING',[scope.orgId,scope.userId,meta.id])
+          const root=await client.query<{ session_id:string }>('SELECT session_id FROM harness_company_hq WHERE org_id=$1',[scope.orgId])
+          if(root.rows[0]?.session_id!==meta.id) throw Error('hq_company_already_has_canonical_runtime')
+        }
         await client.query(`INSERT INTO harness_session_leases (id,session_id,org_id,user_id,holder_id,token_hash,fencing_token,acquired_at,heartbeat_at,expires_at,released_at)
           VALUES ($1,$2,$3,$4,$5,$6,1,now(),now(),$7,NULL)`, [randomUUID(),meta.id,scope.orgId,scope.userId,claim.holder,claim.hash,this.expiry()])
       })
@@ -351,6 +357,11 @@ export class PostgresSessionPersistence extends SessionPersistence {
         AND COALESCE((SELECT e.payload->'data'->>'agentPreset' FROM harness_session_events e
           WHERE e.session_id=s.id AND e.event_type='agent-preset/selected' ORDER BY e.sequence DESC LIMIT 1),s.header->>'agentPreset')='hivemind-hq'
         ORDER BY (s.header->>'createdAt')::bigint,s.id LIMIT 1`, scopeParams(scope))
+      if(this.config.sharedOrganizationAgents && hq.rows[0]) {
+        await this.query(scope,'INSERT INTO harness_company_hq(org_id,user_id,session_id) VALUES($1,$2,$3) ON CONFLICT(org_id) DO NOTHING',[scope.orgId,scope.userId,hq.rows[0].id])
+        const root=await this.query<{ session_id:SessionId }>(scope,'SELECT session_id FROM harness_company_hq WHERE org_id=$1',[scope.orgId])
+        if(root.rows[0]) return root.rows[0].session_id
+      }
       return hq.rows[0]?.id ?? `session-${createHash('sha256').update(JSON.stringify([scope.orgId, scope.userId, 'hq-runtime'])).digest('hex').slice(0, 32)}` as SessionId
     }
     const stable = `session-${createHash('sha256').update(JSON.stringify([scope.orgId, scope.userId, key])).digest('hex').slice(0, 32)}` as SessionId

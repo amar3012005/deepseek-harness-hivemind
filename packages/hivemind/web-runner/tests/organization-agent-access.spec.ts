@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest'
-import { resolveOrganizationAgentAccess, currentTurnActor,referencedSessionIds,admittedVoiceCallRef } from '../src/organization-agent-access.ts'
+import { resolveOrganizationAgentAccess, currentTurnActor,referencedSessionIds,admittedVoiceCallRef,admittedUserConfirmationRef } from '../src/organization-agent-access.ts'
 const orgId='67503d34-97e9-49a8-8c52-8ee30cc7603e', userId='64f5568b-4d6a-4ae1-9a33-48cb2909d59b'
 const proof = { contract:'hivemind.organization-agent-access.v1', access:'read-write',
   actor:{ org_id:orgId,user_id:userId,role:'admin',name:'Second admin',authority:'authenticated-profile' },
@@ -55,4 +55,20 @@ it('binds queued B call reconciliation to B and exact call despite A chat and la
   expect(currentTurnActor(messages,a)).toEqual(b)
   expect(admittedVoiceCallRef(messages,events,b)).toBe('call:b-first')
   expect(admittedVoiceCallRef(messages,events,a)).toBeUndefined()
+})
+
+it('authorizes native Remote Agent envelopes even when the Agent is already warm',()=>{
+  expect([...referencedSessionIds({ agentId:'session-canonical' })]).toEqual(['session-canonical'])
+})
+
+it('resolves exact admitted witness after native append, ignoring later same or different admin messages',()=>{
+  const a={ userId,orgId,name:'A',role:'admin' as const }
+  const b={ ...a,userId:proof.agent.storage_user_id,name:'B' }
+  expect(admittedUserConfirmationRef([],'a-first',a)).toBeUndefined()
+  const events=[{ type:'user/message',seq:14,data:{ id:'a-first',source:{ kind:'user',authenticatedActor:a } } },
+    { type:'user/message',seq:20,data:{ id:'b-later',source:{ kind:'user',authenticatedActor:b } } },
+    { type:'user/message',seq:30,data:{ id:'a-later',source:{ kind:'user',authenticatedActor:a } } }]
+  expect(admittedUserConfirmationRef(events,'a-first',a)).toBe('event:14')
+  expect(admittedUserConfirmationRef(events,'a-first',b)).toBeUndefined()
+  expect(admittedUserConfirmationRef(events,'missing',a)).toBeUndefined()
 })
