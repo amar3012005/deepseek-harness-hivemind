@@ -14,6 +14,7 @@ import type {} from './index.ts'
 import { calendarItems } from './calendar.ts'
 import { hqMode } from './mode.ts'
 import { taskContracts, verifiedArtifactLinks, sameArtifactLinks } from './ledger.ts'
+import { admittedEmployeeWork } from './employee-work-origin.ts'
 
 interface Rooms {
   resolvePersistentEmployeeRoom(key: string, profile: { id: string; name: string; role: string }, signal: AbortSignal): Promise<Agent>
@@ -238,7 +239,7 @@ export function installEmployeeDelivery(ctx: Context): void {
   ctx.effect(() => ctx.on('session/event', (_session, event) => {
     if (event.type === 'team/task' || event.type === 'hivemind/hq-mode') ctx.schedule.reconsiderDelivery()
   }, { global: true }))
-  ctx.effect(() => ctx.on('agent/pre-step', async ({ agent, signal }, next) => {
+  ctx.effect(() => ctx.on('agent/pre-step', async ({ agent, signal, turn }, next) => {
     const decision = await next()
     if (decision.kind === 'reject') return decision
     const refs = decision.messages.flatMap((message) => {
@@ -246,6 +247,11 @@ export function installEmployeeDelivery(ctx: Context): void {
       const ref = referenceFromMessage(message)
       return ref === undefined ? [] : [ref]
     })
+    // Human clarification admitted into the same native turn does not replace
+    // the task which owns that turn. A later direct-human work turn has no pin.
+    const pinned = admittedEmployeeWork(agent)
+    if (pinned !== undefined && !refs.some(ref => ref.rootId === pinned.rootId && ref.taskId === pinned.taskId)) refs.push(pinned)
+    if (new Set(refs.map(ref => `${ref.rootId}\0${ref.taskId}`)).size > 1) throw new Error('hq_ambiguous_assignment_origin')
     if (refs.length === 0 && !decision.messages.some(message => message.source.kind !== 'plugin')) {
       const current = currentEmployeeWork(agent)
       if (current !== undefined) refs.push(current)
@@ -256,6 +262,10 @@ export function installEmployeeDelivery(ctx: Context): void {
       const task = ctx.agentTeams.getTask(root, TeamTaskId(ref.taskId))
       const assignment = root.session.ownEvents().findLast(event => event.type === 'hivemind/hq-employee-assignment' && event.data.taskId === ref.taskId)
       if (task.status === 'pending' && assignment?.type === 'hivemind/hq-employee-assignment') await ctx.agentTeams.updateTask(root, { taskId: task.id, expectedRevision: task.revision, action: 'reassign', owner: assignment.data.memberName })
+    }
+    if (refs[0] !== undefined && pinned === undefined) {
+      agent.session.append('hivemind/employee-work-origin', { turn, ...refs[0] })
+      if (!(await ctx.sessions.flush(agent.session))) throw new Error('hq_assignment_origin_persistence_required')
     }
     return decision
   }, { prepend: true }))

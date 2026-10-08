@@ -2,14 +2,14 @@ import { describe, expect, it, vi } from 'vitest'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { Context } from '@deepseek-ai/cordis'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
-import { allowsEmployeeWork, employeeWorkPrompt, prepareEmployee, workReference } from '../src/employee-room.ts'
+import { allowsEmployeeWork, employeeWorkPrompt, prepareEmployee, workReference, installEmployeeDelivery } from '../src/employee-room.ts'
 
 function fixture() {
   const events = [
     { type: 'hivemind/hq-mode', data: { enabled: true, revision: 1, changedAt: Date.now() } },
     { type: 'hivemind/hq-employee-assignment', data: { taskId: 'task-1', employeeId: 'employee', memberName: 'employee', sessionId: 'employee-room', personaSha256: 'digest' } },
   ] as SessionEvent[]
-  const root = { id: 'runtime-room', session: { snapshotEvents: () => events } } as unknown as Agent
+  const root = { id: 'runtime-room', session: { snapshotEvents: () => events, ownEvents: () => events } } as unknown as Agent
   const target = { id: 'employee-room' } as Agent
   const task = { id: 'task-1', status: 'pending', ready: true }
   const close = vi.fn(async () => {})
@@ -20,7 +20,48 @@ function fixture() {
   return { events, task, ctx, target, ref, open, close, profile }
 }
 const signal = new AbortController().signal
+async function admissionFixture() {
+  const f = fixture()
+  const events = [{ seq: 1, type: 'turn/start', data: { turn: 1 } }] as SessionEvent[]
+  const append = vi.fn((type: string, data: unknown) => events.push({ seq: events.length + 1, type, data } as SessionEvent))
+  Object.assign(f.target, { session: { ownEvents: () => events, append } })
+  const flush = vi.fn(async () => true)
+  let hook: (input: unknown, next: () => Promise<unknown>) => Promise<unknown>
+  Object.assign(f.ctx, {
+    sessions: { flush },
+    schedule: { guardDelivery: () => () => {}, reconsiderDelivery: () => {} },
+    effect: (effect: () => unknown) => effect(),
+    on: (name: string, listener: typeof hook) => { if (name === 'agent/pre-step') hook = listener; return () => {} },
+  })
+  Object.assign(f.ctx.agentTeams, { updateTask: vi.fn(async () => {}) })
+  installEmployeeDelivery(f.ctx)
+  const input = { agent: f.target, signal, turn: 1 }
+  const assignment = { source: { kind: 'hivemind-agent-message', senderId: 'runtime-room' }, content: [{ type: 'text', text: JSON.stringify({ text: 'HQ_EMPLOYEE_ASSIGNMENT={"rootId":"runtime-room","taskId":"task-1"}' }) }] }
+  return { ...f, events, append, flush, invoke: async (messages: unknown[]) => hook(input, async () => ({ kind: 'accept', messages })), assignment }
+}
 describe('HQ persistent employee delivery', () => {
+  it('pins only a successfully authenticated assignment before model admission', async () => {
+    const f = await admissionFixture()
+    await f.invoke([f.assignment])
+    expect(f.append).toHaveBeenCalledWith('hivemind/employee-work-origin', { turn: 1, rootId: 'runtime-room', taskId: 'task-1' })
+    expect(f.flush).toHaveBeenCalledWith(f.target.session)
+    await f.invoke([{ source: { kind: 'user' }, content: [] }])
+    expect(f.append).toHaveBeenCalledTimes(1)
+    expect(f.open).toHaveBeenCalledTimes(4)
+  })
+  it('does not pin a denied assignment or classify a direct human task as delegated', async () => {
+    const f = await admissionFixture()
+    await f.invoke([{ source: { kind: 'user' }, content: [] }])
+    expect(f.append).not.toHaveBeenCalled()
+    f.task.ready = false
+    expect(await f.invoke([f.assignment])).toEqual({ kind: 'reject' })
+    expect(f.append).not.toHaveBeenCalled()
+  })
+  it('requires durable origin persistence before admitting delegated work', async () => {
+    const f = await admissionFixture()
+    f.flush.mockResolvedValue(false)
+    await expect(f.invoke([f.assignment])).rejects.toThrow('hq_assignment_origin_persistence_required')
+  })
   it('keeps detailed learning in typed private memory and returns concise artifact receipts', () => {
     const root = { id: 'chief', session: { snapshotEvents: () => [{ type: 'hivemind/hq-task-contract', data: { taskId: 'task-1', dueAt: '2026-10-03T20:00:00Z', acceptanceCriteria: ['Save brief'] } }] } } as unknown as Agent
     const ctx = { agentTeams: { getTask: () => ({ description: 'Create brief', subject: 'Brief', writeScopes: [] }) } } as unknown as Context
