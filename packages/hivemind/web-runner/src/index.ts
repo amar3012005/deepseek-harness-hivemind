@@ -19,6 +19,7 @@ import { join } from 'node:path'
 import { projectHyperagentProfiles } from '@deepseek-ai/dsh-hivemind-employee-directory'
 import { registerRunnerDrainStatus } from './runner-drain.ts'
 import { principalMembershipActive } from './principal-membership.ts'
+import { nativeSessionBinding, nativePrincipalAllowed } from './native-consent.ts'
 import { registerMediaAuth } from './media-auth.ts'
 import { liveVoicePlugin, type LiveVoiceConfig } from './live-voice.ts'
 
@@ -103,6 +104,7 @@ export interface TicketClaims {
   org_id: string
   profile: 'hivemind-chat'
   project_id?: string
+  native_session_hash?: string
   variation: string
   jti: string
   iat: number
@@ -169,6 +171,7 @@ export function verifyTicket(token: string, secret: string, nowSeconds = Math.fl
     || (value.project_id !== undefined && !nonEmpty(value.project_id))) {
     throw new AdmissionError('invalid_ticket_claims')
   }
+  try { nativeSessionBinding(value.native_session_hash) } catch { throw new AdmissionError('invalid_ticket_claims') }
   const issuedAt = value.iat as number
   const expiresAt = value.exp as number
   if (issuedAt > nowSeconds + CLOCK_SKEW_SECONDS || expiresAt <= nowSeconds
@@ -255,6 +258,7 @@ function serviceToken(principal: Record<string, string>, secret: string): string
     iss: 'hivemind-harness-runner', aud: 'hivemind-control-plane-harness-proxy',
     sub: principal.user_id, org_id: principal.org_id, profile: 'hivemind-chat',
     ...(principal.project_id === undefined ? {} : { project_id: principal.project_id }),
+    ...(principal.native_session_hash === undefined ? {} : { native_session_hash: nativeSessionBinding(principal.native_session_hash) }),
     iat: now, exp: now + 30, jti: randomUUID(),
   }
   const input = `${encode({ alg: 'HS256', typ: 'JWT' })}.${encode(claims)}`
@@ -471,8 +475,12 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
         profile: claims.profile,
         variation: claims.variation,
         ...claims.project_id === undefined ? {} : { project_id: claims.project_id },
+        ...claims.native_session_hash === undefined ? {} : { native_session_hash: claims.native_session_hash },
       }
       const authorityHost = publicHost(req)
+      if (!await nativePrincipalAllowed(principal, () => principalMembershipActive(
+        projectCatalogBase.origin, serviceToken(principal, projectCatalogSecret), new AbortController().signal,
+      ))) throw new AdmissionError('native_session_denied')
       const cookie = ctx.connection.authorizePrincipal({
         headers: { host: authorityHost || req.headers.host, cookie: req.headers.cookie },
       }, principal, expiresAt)
@@ -495,6 +503,12 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
       })
       if (principal?.['profile'] !== 'hivemind-chat') {
         json(res, 401, { ok: false, diagnostic: 'authentication_required' })
+        return
+      }
+      if (!await nativePrincipalAllowed(principal, () => principalMembershipActive(
+        projectCatalogBase.origin, serviceToken(principal, projectCatalogSecret), new AbortController().signal,
+      ))) {
+        json(res, 403, { ok: false, diagnostic: 'native_session_denied' })
         return
       }
       const injections: IndexInjection[] = []
