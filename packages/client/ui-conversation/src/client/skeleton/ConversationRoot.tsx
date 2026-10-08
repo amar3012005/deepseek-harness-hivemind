@@ -150,6 +150,16 @@ export function ConversationRoot({
   // send; its reason is already localized by whoever raised it.
   const composerBlock = useComposerBlock(block => block)
 
+  const [phoneCanvas, setPhoneCanvas] = useState(() => window.matchMedia?.('(max-width: 600px)').matches ?? false)
+  useEffect(() => {
+    const query = window.matchMedia?.('(max-width: 600px)')
+    if (!query) return
+    const resize = () => setPhoneCanvas(query.matches)
+    query.addEventListener('change', resize)
+    return () => query.removeEventListener('change', resize)
+  }, [])
+  const mobileFooter = phoneCanvas
+    && /^\/hivemind\/app\/(?:overview|employee\/harness)(?:\/(?:new|session\/[^/]+))?\/?$/u.test(window.location.pathname)
   const [pickerOpen, setPickerOpen] = useState(false)
   const [pendingWorkspaceId, setPendingWorkspaceId] = useState<WorkspaceId | undefined>()
   const pickerAnchor = useRef<HTMLButtonElement>(null)
@@ -371,6 +381,7 @@ export function ConversationRoot({
   // end off-screen when the user is not pinned to the floor.
   const composerSeat = (
     <div ref={seatResizeRef} className={css.composerSeat} data-composer-seat="">
+      {mobileFooter && <div className={css.pageFooter} data-conversation-page-footer="">{renderSlot('conversation.composer.footer', {})}</div>}
       {composer}
     </div>
   )
@@ -408,9 +419,9 @@ export function ConversationRoot({
           />
         ))}
       </div>
-      <div className={css.pageFooter} data-conversation-page-footer="">
+      {!mobileFooter && <div className={css.pageFooter} data-conversation-page-footer="">
         {renderSlot('conversation.composer.footer', {})}
-      </div>
+      </div>}
     </div>
   )
 }

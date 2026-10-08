@@ -88,3 +88,18 @@
   :global([data-agent-room]) .chatControl[data-mobile-agent-environment] .mobileBackdrop { pointer-events: auto; }
   :global([data-agent-room]) .chatControl[data-mobile-agent-environment] .chatPanel { border-radius: 28px; }
 }
+
+.biography { padding-block: 12px; border-bottom: 1px solid #8882; }
+.biography h3 { margin: 0 0 8px; font-size: 14px; }
+.biography p { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.5; }
+@media (max-width: 600px) {
+  :global([data-agent-room]) .chatControl[data-mobile-agent-environment] { top: 6px; inset-inline: 52px; }
+  :global([data-agent-room]) .chatControl[data-mobile-agent-environment] .environmentIcon { display: none; }
+  :global([data-agent-room]) .chatControl[data-mobile-agent-environment] .compactIdentity { margin-right: 0; }
+  :global([data-agent-room]) .chatControl[data-mobile-agent-environment] .mobileBackdrop { inset: 0; }
+  :global([data-agent-room]) .chatControl[data-mobile-agent-environment] .chatPanel { animation: agentSheetEnter .18s ease-out; }
+}
+@keyframes agentSheetEnter { from { transform: translateY(24px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+@media (prefers-reduced-motion: reduce) {
+  :global([data-agent-room]) .chatControl[data-mobile-agent-environment] .chatPanel { animation: none; }
+}

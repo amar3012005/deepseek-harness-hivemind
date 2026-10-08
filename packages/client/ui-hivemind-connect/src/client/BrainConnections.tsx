@@ -3,9 +3,9 @@ import { useEffect, useRef, useState } from 'react'
 import { roomIdentity } from './room-identity.ts'
 import { SessionCredits } from './SessionCredits.tsx'
 import css from './DreamingConnectors.module.css'
-import { EmployeeAvatar, RuntimeAvatar, projectedEmployee } from './HyperagentEmployee.tsx'
+import { EmployeeAvatar, RuntimeAvatar, projectedEmployee, type EmployeeOption } from './HyperagentEmployee.tsx'
 const names: Record<string, string> = { googlecalendar: 'Google Calendar', gmail: 'Gmail', slack: 'Slack', googledocs: 'Google Docs', googledrive: 'Google Drive', github: 'GitHub', notion: 'Notion', outlook: 'Outlook' }
-export function BrainConnections({ sessionId, useSessions, environmentActivity, showDetails, isPreviewOpen, hero = false }: PropsRuntime<'conversation.session.header.utilities'> & { hero?: boolean; showDetails: () => void; isPreviewOpen?: () => boolean }) {
+export function BrainConnections({ sessionId, useSessions, environmentActivity, showDetails, listEmployees, isPreviewOpen, hero = false }: PropsRuntime<'conversation.session.header.utilities'> & { hero?: boolean; showDetails: () => void; listEmployees?: () => Promise<EmployeeOption[]>; isPreviewOpen?: () => boolean }) {
   const preset = useSessions(state => state.byId[sessionId]?.projectionValues?.agentPreset ?? state.byId[sessionId]?.agentPreset)
   const employee = useSessions(state => projectedEmployee(
     (state.byId[sessionId]?.projectionValues?.hyperagentOwner ?? state.byId[sessionId]?.projectionValues?.hyperagentSelection)))
@@ -43,6 +43,25 @@ export function BrainConnections({ sessionId, useSessions, environmentActivity, 
     document.addEventListener('keydown', dismiss)
     return () => { document.removeEventListener('keydown', dismiss); (controlRef.current?.querySelector<HTMLButtonElement>('button') ?? previous)?.focus() }
   }, [nativeChatRoute, compact, open])
+  const [phone, setPhone] = useState(() => window.matchMedia?.('(max-width: 600px)').matches ?? false)
+  useEffect(() => {
+    const query = window.matchMedia?.('(max-width: 600px)')
+    if (!query) return
+    const resize = () => setPhone(query.matches)
+    query.addEventListener('change', resize)
+    return () => query.removeEventListener('change', resize)
+  }, [])
+  const [profile, setProfile] = useState<EmployeeOption>()
+  const [profileError, setProfileError] = useState(false)
+  useEffect(() => {
+    if (!phone || !open || !employee || !listEmployees) return
+    let active = true
+    setProfile(undefined); setProfileError(false)
+    void listEmployees().then((rows) => {
+      if (active) { const found = rows.find(row => row.id === employee.id); setProfile(found); setProfileError(!found) }
+    }, () => { if (active) setProfileError(true) })
+    return () => { active = false }
+  }, [phone, open, employee?.id, listEmployees])
   const [appsOpen, setAppsOpen] = useState(true)
   const [wideOpen, setWideOpen] = useState(false)
   const [preview, setPreview] = useState({ open: false, wide: false, inset: 0, available: 0 })
@@ -109,6 +128,7 @@ export function BrainConnections({ sessionId, useSessions, environmentActivity, 
       {employee ? <EmployeeAvatar employee={employee} size={40} />
         : hyperagents ? <RuntimeAvatar size={52} /> : <span className={css.avatar}>H</span>}
       <span><strong>{identity?.name ?? (hyperagents ? 'Runtime' : 'HIVEMIND-Chat')}</strong><small>{identity?.role ?? (hyperagents ? 'AI Chief of Staff' : 'Your company brain')}</small>{hyperagents && <small className={css.agentStatus}><i className={running || busy ? css.workingDot : css.readyDot} aria-hidden="true" />{running || busy ? 'Working' : 'Ready'}</small>}</span></div>
+    {hyperagents && phone && <section className={css.biography} aria-label="Biography"><h3>Biography</h3><p>{profile?.persona ?? (employee ? employee.role : 'Your AI Chief of Staff. Coordinates company work and your specialist team.')}</p>{profile?.createdAt && <p>Joined {new Date(profile.createdAt).toLocaleDateString()}</p>}{profileError && <p role="status">The saved biography could not be loaded. Close and reopen to retry.</p>}{profile?.allowedTools && <p>Configured tools: {profile.allowedTools.length ? profile.allowedTools.join(', ') : 'None'}</p>}</section>}
     <button type="button" className={css.connectorHeading} aria-expanded={showApps} onClick={() => { setAppsOpen(value => !value) }}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M9 3v5M15 3v5M7 8h10v4a5 5 0 0 1-5 5v4M7 8v4" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" /></svg><span>Connected apps</span><span aria-hidden="true">{showApps ? '⌄' : '›'}</span></button>
     {showApps && <>
       {error ? <p role="status">Apps could not be loaded. Reopen this page to try again.</p> : accounts === undefined ? <p>Loading connected apps…</p> :
@@ -117,13 +137,13 @@ export function BrainConnections({ sessionId, useSessions, environmentActivity, 
         </a>) : ['gmail', 'slack', 'googledocs'].map(toolkit => <a className={css.account} key={toolkit} href="/hivemind/app/connectors"><img className={css.logo} src={`https://logos.composio.dev/api/${toolkit}`} alt="" /><span className={css.appName}>{names[toolkit]}</span><span>Connect ›</span></a>)}</div>}
       <a className={css.more} href="/hivemind/app/connectors">Manage apps <span aria-hidden="true">›</span></a>
     </>}
-    {hyperagents && <button type="button" className={css.connectorHeading} onClick={() => { setOpen(false); showDetails() }}><span>Agent details</span><span aria-hidden="true">›</span></button>}
+    {hyperagents && !phone && <button type="button" className={css.connectorHeading} onClick={() => { setOpen(false); showDetails() }}><span>Agent details</span><span aria-hidden="true">›</span></button>}
     {environmentActivity}
     <SessionCredits sessionId={sessionId} />
   </>
   if (hero) return null
   return <div ref={controlRef} className={css.chatControl} data-mobile-agent-environment={nativeChatRoute && compact || undefined} style={preview.open && !(nativeChatRoute && compact) ? { position: 'fixed', right: preview.inset + 8, top: 64, zIndex: 20 } : undefined}>
-    <button className={css.chatButton} type="button" aria-expanded={showPanel} aria-label="HIVEMIND environment" onClick={() => { if (preview.wide && !(nativeChatRoute && compact)) { setOpen(true); setWideOpen(value => !value) } else setOpen(value => !value) }}>{hyperagents && !showPanel && <span className={css.compactIdentity}>{employee ? <EmployeeAvatar employee={employee} size={24} /> : <RuntimeAvatar size={24} />}<strong>{identity?.name ?? 'Runtime'}</strong></span>}{busy && <span className={css.activityDot} aria-label="Background work running" />}<svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M3 5h14M3 10h14M3 15h14" stroke="currentColor" strokeWidth="1.5" /><circle cx="7" cy="5" r="2" fill="white" stroke="currentColor"/><circle cx="13" cy="10" r="2" fill="white" stroke="currentColor"/><circle cx="8" cy="15" r="2" fill="white" stroke="currentColor"/></svg></button>
+    <button className={css.chatButton} type="button" aria-expanded={showPanel} aria-label="HIVEMIND environment" onClick={() => { if (preview.wide && !(nativeChatRoute && compact)) { setOpen(true); setWideOpen(value => !value) } else setOpen(value => !value) }}>{hyperagents && (!showPanel || phone) && <span className={css.compactIdentity}>{employee ? <EmployeeAvatar employee={employee} size={24} /> : <RuntimeAvatar size={24} />}<strong>{identity?.name ?? 'Runtime'}</strong></span>}{busy && <span className={css.activityDot} aria-label="Background work running" />}<svg className={css.environmentIcon} width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M3 5h14M3 10h14M3 15h14" stroke="currentColor" strokeWidth="1.5" /><circle cx="7" cy="5" r="2" fill="white" stroke="currentColor"/><circle cx="13" cy="10" r="2" fill="white" stroke="currentColor"/><circle cx="8" cy="15" r="2" fill="white" stroke="currentColor"/></svg></button>
     {showPanel && nativeChatRoute && compact && <button type="button" className={css.mobileBackdrop} aria-label="Close environment" onClick={() => { setOpen(false) }} /> }
     {showPanel && <section className={css.chatPanel} style={preview.open && !(nativeChatRoute && compact) ? { position: 'fixed', right: preview.inset + 8, top: 108, maxWidth: preview.available } : undefined} role={nativeChatRoute && compact ? 'dialog' : undefined} aria-modal={nativeChatRoute && compact || undefined} aria-label="HIVEMIND connected apps">{content}</section>}
   </div>
