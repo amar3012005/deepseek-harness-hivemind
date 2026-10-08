@@ -3,7 +3,7 @@ import type { Context, Plugin } from '@deepseek-ai/cordis'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { randomUUID } from 'node:crypto'
 import WebSocket from 'ws'
-import { RUNTIME_VOICE_INSTRUCTIONS, runtimeVoiceEvidence, RUNTIME_AWAKENING_CALL_AGENDA, needsAwakeningCallAgenda, runtimeVoiceOpening, RUNTIME_DECISION_CALL_INSTRUCTIONS, runtimeDecisionReconciliation } from './runtime-voice.ts'
+import { RUNTIME_VOICE_INSTRUCTIONS, runtimeVoiceEvidence, RUNTIME_AWAKENING_CALL_AGENDA, needsAwakeningCallAgenda, runtimeVoiceOpening, RUNTIME_DECISION_CALL_INSTRUCTIONS, runtimeDecisionReconciliation, runtimeSavedCallEvidence } from './runtime-voice.ts'
 import { createModels } from '@earendil-works/pi-ai'
 import { openaiCodexProvider } from '@earendil-works/pi-ai/providers/openai-codex'
 import { authContextFrom, credentialStoreFrom } from '@deepseek-ai/dsh-llm-pi-ai'
@@ -215,10 +215,11 @@ export function liveVoicePlugin(config: LiveVoiceConfig,
               if (!agent.session.snapshotEvents().some(event => event.type === 'user/message' && event.data.source.kind === 'plugin'
                 && event.data.source.plugin === 'hivemind-live-voice' && textOf(event.data).startsWith(marker))) {
                 const transcript = (result.turns ?? []).slice(0, 100).flatMap(turn => [turn.user_text ? `user: ${turn.user_text.slice(0,8000)}` : '', turn.agent_text ? `assistant: ${turn.agent_text.slice(0,8000)}` : '']).filter(Boolean).join('\n').slice(-20000)
-                agent.session.append('hivemind/voice-call-ended', { ...(p.authenticatedActor === undefined ? {} : { authenticatedActor:p.authenticatedActor }), callId: input.callId as string, provider: 'grok', initialCheckIn: result.initial_check_in === true, interrupted: result.interrupted !== false, hadUserSpeech: result.had_user_speech === true, transcript })
-                appendContext(agent, `${marker}\nTerminal status: ${result.status}. This call alone does not confirm a complete baseline or authorize external actions.\n${transcript}`, p.authenticatedActor)
+                const receipt = { ...(p.authenticatedActor === undefined ? {} : { authenticatedActor:p.authenticatedActor }), callId: input.callId as string, provider: 'grok' as const, initialCheckIn: result.initial_check_in === true, interrupted: result.interrupted !== false, hadUserSpeech: result.had_user_speech === true, transcript }
+                agent.session.append('hivemind/voice-call-ended', receipt)
+                appendContext(agent, `${marker}\nTerminal status: ${result.status}. This call alone does not confirm a complete baseline or authorize external actions.\n${runtimeSavedCallEvidence(receipt)}`, p.authenticatedActor)
                 if (!(await ctx.sessions.flush(agent.session))) throw new Error('voice_handoff_persistence_required')
-                agent.followup(createUserMessage({ content: [{ type: 'text', text: runtimeDecisionReconciliation(input.callId as string, result.initial_check_in === true) }], source: { kind: 'plugin', plugin: 'hivemind-live-voice', form: 'recall',voiceCallId:input.callId as string,...(p.authenticatedActor ? { authenticatedActor:p.authenticatedActor }: {}) } }))
+                agent.followup(createUserMessage({ content: [{ type: 'text', text: runtimeDecisionReconciliation(input.callId as string, result.initial_check_in === true, receipt) }], source: { kind: 'plugin', plugin: 'hivemind-live-voice', form: 'recall',voiceCallId:input.callId as string,...(p.authenticatedActor ? { authenticatedActor:p.authenticatedActor }: {}) } }))
               }
               if (!(await ctx.sessions.flush(agent.session))) throw new Error('voice_handoff_persistence_required')
               rooms.delete(input.callId as string)
@@ -321,10 +322,11 @@ export function liveVoicePlugin(config: LiveVoiceConfig,
                 socket.close(); setTimeout(() =>{  socket.terminate() }, 1000).unref()
                 if (transcript.length) void ctx.hivemindExecutionScope.run(p, async () => {
                   const savedTranscript = transcript.join('\n').slice(-20000)
-                  agent.session.append('hivemind/voice-call-ended', { ...(p.authenticatedActor === undefined ? {} : { authenticatedActor:p.authenticatedActor }), callId: roomId, provider: 'codex', initialCheckIn, interrupted: reason === 'interrupted', hadUserSpeech, transcript: savedTranscript })
-                  appendContext(agent, `Completed live voice conversation:\n${savedTranscript}`, p.authenticatedActor)
+                  const receipt = { ...(p.authenticatedActor === undefined ? {} : { authenticatedActor:p.authenticatedActor }), callId: roomId, provider: 'codex' as const, initialCheckIn, interrupted: reason === 'interrupted', hadUserSpeech, transcript: savedTranscript }
+                  agent.session.append('hivemind/voice-call-ended', receipt)
+                  appendContext(agent, `Completed live voice conversation:\n${runtimeSavedCallEvidence(receipt)}`, p.authenticatedActor)
                   if (!(await ctx.sessions.flush(agent.session))) throw new Error('voice_handoff_persistence_required')
-                  if (runtime) agent.followup(createUserMessage({ content: [{ type: 'text', text: runtimeDecisionReconciliation(roomId, initialCheckIn) }], source: { kind: 'plugin', plugin: 'hivemind-live-voice', form: 'recall',voiceCallId:roomId,...(p.authenticatedActor ? { authenticatedActor:p.authenticatedActor }: {}) } }))
+                  if (runtime) agent.followup(createUserMessage({ content: [{ type: 'text', text: runtimeDecisionReconciliation(roomId, initialCheckIn, receipt) }], source: { kind: 'plugin', plugin: 'hivemind-live-voice', form: 'recall',voiceCallId:roomId,...(p.authenticatedActor ? { authenticatedActor:p.authenticatedActor }: {}) } }))
                 }).catch(() => { /* Session persistence retains the unflushed prefix for recovery. */ })
               }
               const duration = initialCheckIn ? Math.min(config.maxDurationMs, 180000) : config.maxDurationMs
