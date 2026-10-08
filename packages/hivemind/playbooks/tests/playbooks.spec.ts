@@ -144,7 +144,8 @@ describe('hivemind playbooks', () => {
     const projected = await listeners.get('system-prompt/assemble')!(assembly, { agent, scope: agent }, async () => assembly) as typeof assembly
     expect(projected.tools.map(tool => tool.name)).toEqual(expect.arrayContaining(nativeTeamCoordination ? coordination : ['runtime_user_agenda','runtime_uncertainties']))
     const receipt = await tools.get('hivemind_capabilities')!.execute({ operation: 'lease', capabilities: ['employees'] }, { agent, signal: new AbortController().signal } as never) as { visibleTools: string[]; suppressed_capabilities?: string[] }
-    expect(receipt.suppressed_capabilities).toBeUndefined()
+    if(nativeTeamCoordination) expect(receipt.suppressed_capabilities).toBeUndefined()
+    else expect(receipt.suppressed_capabilities).toEqual(['employees'])
     expect(receipt.visibleTools).toEqual(expect.arrayContaining(nativeTeamCoordination ? coordination : ['runtime_user_agenda','runtime_uncertainties']))
   })
 
