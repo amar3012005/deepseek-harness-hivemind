@@ -70,6 +70,30 @@ interface Row {
     margin: number
   } } | null
 }
+/** Native sources retain account/run authority at every context and delivery read. */
+export function nativeSignalProvenanceSql(schema: string, admitAfter: string): string {
+  if (!/^[a-z_][a-z0-9_]*$/u.test(schema)) throw Error('invalid_signal_schema')
+  const cutoff=new Date(admitAfter).toISOString()
+  return `AND (s.account_id NOT LIKE 'native:%' OR
+    (s.config->>'source'='native_slack' AND s.account_id='native:slack:'||(s.config->>'integration_id')
+      AND e.data->'_source'->>'integration_id'=s.config->>'integration_id'
+      AND e.data->'_source'->>'team_id'=s.config->>'team_id'
+      AND EXISTS(SELECT 1 FROM ${schema}.platform_integrations p WHERE p.id::text=s.config->>'integration_id'
+        AND p.user_id::text=e.user_id AND p.platform_type='slack' AND p.is_active
+        AND p.connector_metadata->>'attention_org_id'=e.org_id
+        AND p.connector_metadata->'provider_metadata'->>'team_id'=s.config->>'team_id'
+        AND e.occurred_at>=(p.connector_metadata->>'attention_enabled_at')::timestamptz)) OR
+    (s.config->>'source'='dreaming' AND s.account_id='native:dreaming:'||e.user_id
+      AND EXISTS(SELECT 1 FROM ${schema}.harness_dream_runs d
+        JOIN ${schema}.harness_dream_settings ds ON ds.org_id=d.org_id AND ds.user_id=d.user_id
+        JOIN ${schema}.harness_dream_outputs o ON o.run_id=d.id AND o.org_id=d.org_id
+        JOIN ${schema}.memories m ON m.id=o.memory_id AND m.org_id=d.org_id
+        WHERE d.id::text=e.data->'_source'->>'run_id' AND d.org_id::text=e.org_id AND d.user_id::text=e.user_id
+          AND d.status='completed' AND ds.enabled AND ds.revision=d.revision
+          AND d.trigger_id NOT LIKE '%introduction%' AND o.receipt IS NOT NULL AND o.receipt<>'null'::jsonb
+          AND o.idempotency_key=e.data->'_source'->>'output_key' AND m.id::text=e.data->'_source'->>'memory_id'
+          AND m.deleted_at IS NULL AND m.created_at>='${cutoff}'::timestamptz AND (m.scope='organization' OR (m.scope='project' AND EXISTS(SELECT 1 FROM ${schema}.projects p WHERE p.id=m.project_id AND p.org_id=m.org_id AND p.policy='org_visible' AND p.status='active'))) AND 'flashback'=ANY(m.tags))))`
+}
 export function apply(ctx: Context, config: Config): void {
   if (!config.enabled) return
   if (!Number.isFinite(Date.parse(config.admitEventsAfter))) throw new Error('runtime_attention_activation_window_required')
@@ -90,7 +114,7 @@ export function apply(ctx: Context, config: Config): void {
           e.relevance_status,e.relevance_decision,s.toolkit,s.runtime_attention_revision
           FROM ${config.triggerSchema}.hivemind_trigger_events e JOIN ${config.triggerSchema}.hivemind_trigger_subscriptions s ON s.id=e.subscription_id
           WHERE e.id=$1 AND e.org_id=$2 AND e.user_id=$3 AND s.org_id=e.org_id AND s.user_id=e.user_id
-            AND s.status='active' AND s.runtime_attention AND s.runtime_attention_enabled_at IS NOT NULL AND e.received_at>=s.runtime_attention_enabled_at`,
+            AND s.status='active' AND s.runtime_attention AND s.runtime_attention_enabled_at IS NOT NULL AND e.received_at>=s.runtime_attention_enabled_at ${nativeSignalProvenanceSql(config.schema,config.admitEventsAfter)}`,
         [input.eventId,input.orgId,input.userId])
         const storage=await organizationAgentScope(client,{ orgId:input.orgId,userId:input.userId,profile:'hivemind-chat',variation:'harness' })
         await client.query("SELECT set_config('app.hivemind_user_id',$1,true)",[storage.userId])
@@ -109,7 +133,7 @@ export function apply(ctx: Context, config: Config): void {
         JOIN users u ON u.id=h.user_id AND u.deleted_at IS NULL
         WHERE e.id=$1 AND e.org_id=$2 AND e.user_id=$3 AND s.org_id=e.org_id AND s.user_id=e.user_id
         AND s.status='active' AND s.runtime_attention AND s.runtime_attention_enabled_at IS NOT NULL
-        AND e.received_at>=s.runtime_attention_enabled_at`, [input.eventId, input.orgId, input.userId])
+        AND e.received_at>=s.runtime_attention_enabled_at ${nativeSignalProvenanceSql(config.schema,config.admitEventsAfter)}`, [input.eventId, input.orgId, input.userId])
       await client.query('COMMIT'); return result.rows[0]
     } catch (error) { await client.query('ROLLBACK').catch(() => undefined); throw error } finally { client.release() }
   }
