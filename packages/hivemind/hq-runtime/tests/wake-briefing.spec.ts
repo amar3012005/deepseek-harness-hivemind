@@ -6,6 +6,16 @@ import type { HqWorkspace } from '../src/types.ts'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 const workspace: HqWorkspace = { mode: { enabled: false, revision: 0, changedAt: 0 }, tasks: [], calendar: [], wakes: [] }
 describe('HQ wake briefing', () => {
+  it('requires initiative and delegation without inventing approval or repeating onboarding', () => {
+    const text = wakeBriefing(workspace, [], 'root')
+    expect(text).toContain('Runtime plans, delegates and reviews by default')
+    expect(text).toContain('Existing authorization carries forward')
+    expect(text).toContain('missing explicit company goal does not block bounded internal investigation')
+    expect(text).toContain('never invent human approval')
+    expect(text).toContain('do not repeat first-awakening introductions')
+    expect(text).toContain('record genuine decision blockers as uncertainties')
+    expect(text).toContain('avoid repeating unchanged requests')
+  })
   it('preserves pause, native wake delivery and task evidence without inferring completion', () => {
     const text = wakeBriefing({ ...workspace, wakes: [{ id: 'wake-1', title: 'Review', kind: 'once', scheduledAt: '2030-01-01', status: 'completed', deliveredAt: '2030-01-01' }] }, [], 'root')
     expect(text).toContain('"enabled":false')

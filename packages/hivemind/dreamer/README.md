@@ -73,3 +73,12 @@ an owned chat session or this company's Dreaming session. It checks active
 membership and session authorization before summing the existing usage ledger.
 The UI displays a dash if usage cannot be confirmed. No billing mutation or
 new database migration is introduced.
+# Runtime attention handoff
+
+When `attentionSignalsEnabled` is enabled, completed non-introductory runs with saved
+outputs forward their identity to the existing Control attention intake before clearing
+the durable completion callback. The receiver reloads published evidence, settings and
+access from the database; the Dreamer sends no private Runtime memory or arbitrary context.
+Failed delivery uses the existing callback retry queue. The attention policy retains,
+notifies or wakes; a finding never becomes a confirmed user instruction automatically.
+The default remains off until the matching Control receiver is deployed.

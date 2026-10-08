@@ -24,6 +24,7 @@ import { createDreamConnectorService, validateDreamArguments, type DreamAccount 
 import { dreamingReadSchema, type DreamBinding } from './connector-schema.ts'
 import { stableId } from './contract.ts'
 import { DreamStore, type DreamRun, type DreamSetting } from './store.ts'
+import { forwardDreamAttention } from './attention.ts'
 export const name = 'hivemind-dreamer'
 export const inject = [
   'agents',
@@ -45,6 +46,9 @@ export interface Config {
   adminTokenEnv: string
   dispatchTokenEnv: string
   callbackTokenEnv: string
+  attentionSignalsEnabled: boolean
+  attentionBaseEnv: string
+  attentionSecretEnv: string
   cron: string
   timezone: string
   maxConcurrentRuns: number
@@ -69,6 +73,9 @@ export const Config: Schema<Config> = Schema.object({
   adminTokenEnv: Schema.string().default('HIVEMIND_DREAM_ADMIN_TOKEN'),
   dispatchTokenEnv: Schema.string().default('HIVEMIND_DREAM_DISPATCH_TOKEN'),
   callbackTokenEnv: Schema.string().default('HIVEMIND_DREAM_CALLBACK_TOKEN'),
+  attentionSignalsEnabled: Schema.boolean().default(false),
+  attentionBaseEnv: Schema.string().default('HIVEMIND_CONTROL_PLANE_URL'),
+  attentionSecretEnv: Schema.string().default('HIVE_HARNESS_RUNNER_SERVICE_SECRET'),
   cron: Schema.string().default('0 2 * * *'),
   timezone: Schema.string().default('Europe/Berlin'),
   maxConcurrentRuns: Schema.natural().min(1).max(100).default(2),
@@ -1008,6 +1015,12 @@ export function apply(ctx: Context, config: Config): void {
               status: run.status,
               runId: run.id,
               receiptId: run.receipt_id,
+            })
+            await forwardDreamAttention(run, {
+              enabled: config.attentionSignalsEnabled,
+              base: process.env[config.attentionBaseEnv],
+              secret: process.env[config.attentionSecretEnv],
+              timeoutMs: config.requestTimeoutMs,
             })
             await store.scoped(p, async (db) => {
               await db.query('UPDATE harness_dream_runs SET callback_pending=false WHERE id=$1', [run.id])
