@@ -114,7 +114,7 @@ describe('hivemind playbooks', () => {
     expect(projected.tools.map(tool => tool.name)).not.toContain('inspect_image')
   })
 
-  it('keeps cold-installed Runtime memory and HQ coordination visible through prompt projection and leases', async () => {
+  it.each([true,false])('keeps cold-installed Runtime memory visible with Team coordination %s', async (nativeTeamCoordination) => {
     const tools = new Map<string, ToolDefinition>()
     const listeners = new Map<string, (...args: unknown[]) => unknown>()
     const events: Array<{ type: string; data: unknown }> = [{
@@ -136,16 +136,16 @@ describe('hivemind playbooks', () => {
       hivemindMemory: {},
       on(name: string, listener: (...args: unknown[]) => unknown) { listeners.set(name, listener); return () => {} },
     } as never,
-    { progressiveToolDisclosure: true, nativeTeamCoordination: true, employeeSubagentPlanning: true })
+    { progressiveToolDisclosure: true, nativeTeamCoordination, employeeSubagentPlanning: true })
     const coordination = ['hivemind_hq_contract', 'hivemind_hq_rest', 'hivemind_administrator_message', 'team_task_list', 'team_task_get', 'team_task_create', 'team_task_update', 'spawn_teammate', 'list_agents', 'send_message', 'wait_agent', 'interrupt_agent',
       'schedule_create', 'schedule_list', 'schedule_update', 'schedule_delete', 'runtime_user_agenda', 'runtime_uncertainties']
     for (const name of coordination) tools.set(name, { name } as ToolDefinition)
     const assembly = { sections: [], contexts: [], variables: {}, tools: [...tools.values()].map(tool => ({ name: tool.name, description: '', inputSchema: { type: 'object' } })) }
     const projected = await listeners.get('system-prompt/assemble')!(assembly, { agent, scope: agent }, async () => assembly) as typeof assembly
-    expect(projected.tools.map(tool => tool.name)).toEqual(expect.arrayContaining(coordination))
+    expect(projected.tools.map(tool => tool.name)).toEqual(expect.arrayContaining(nativeTeamCoordination ? coordination : ['runtime_user_agenda','runtime_uncertainties']))
     const receipt = await tools.get('hivemind_capabilities')!.execute({ operation: 'lease', capabilities: ['employees'] }, { agent, signal: new AbortController().signal } as never) as { visibleTools: string[]; suppressed_capabilities?: string[] }
     expect(receipt.suppressed_capabilities).toBeUndefined()
-    expect(receipt.visibleTools).toEqual(expect.arrayContaining(coordination))
+    expect(receipt.visibleTools).toEqual(expect.arrayContaining(nativeTeamCoordination ? coordination : ['runtime_user_agenda','runtime_uncertainties']))
   })
 
   it('projects a compact initial tool surface and progressively restores native tools by lease', async () => {

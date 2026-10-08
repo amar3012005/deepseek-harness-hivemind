@@ -216,6 +216,7 @@ const CORE_TOOLS = [
   'hivemind_capabilities',
   'hivemind_meta',
   'hyperagents_memory',
+  'runtime_user_agenda', 'runtime_uncertainties',
   'hivemind_agent_message',
   'hivemind_employee_profile',
   'hivemind_operating_context',
@@ -928,7 +929,6 @@ export function apply(ctx: Context, config: Partial<Config> = {}): void {
       for (const tool of [
         'hivemind_voice_baseline', 'hivemind_hq_contract', 'hivemind_hq_rest', 'hivemind_hq_rest_state', 'hivemind_employee_panel',
         'hivemind_hq_awakening', 'hivemind_onboarding', 'hivemind_administrator_message', 'hivemind_employee_lifecycle',
-        'runtime_user_agenda', 'runtime_uncertainties',
         'team_task_list', 'team_task_get', 'team_task_create', 'team_task_update', 'list_agents',
         'spawn_teammate', 'send_message', 'wait_agent', 'interrupt_agent',
         'schedule_create', 'schedule_list', 'schedule_update', 'schedule_delete',
