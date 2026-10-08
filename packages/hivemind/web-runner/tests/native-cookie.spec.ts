@@ -29,7 +29,7 @@ describe('native admission cookie and service token', () => {
       native_session_hash: hash,
     })}`
     state.ticket = `${input}.${createHmac('sha256', secret).update(input).digest('base64url')}`
-    const auth = await BrowserAuth.create({}, { async modifyRecord(_key, update) {
+    const auth = await BrowserAuth.create({}, { async modifyRecord(_key: unknown, update: (value: undefined) => unknown) {
       return update(undefined)
     } } as never, 1)
     type Handler = (req: unknown, res: unknown) => Promise<void>
@@ -67,6 +67,7 @@ describe('native admission cookie and service token', () => {
     expect(await guard!(principal, 'session/list', {}, new AbortController().signal)).toMatchObject({ code: 'auth/unauthorized' })
     for (const token of state.tokens) {
       const [header, payload, signature] = token.split('.')
+      if (header === undefined || payload === undefined || signature === undefined) throw new Error('malformed service token')
       expect(signature).toBe(createHmac('sha256', secret).update(`${header}.${payload}`).digest('base64url'))
       expect(JSON.parse(Buffer.from(payload, 'base64url').toString())).toMatchObject({ native_session_hash: hash, sub: 'user-1', org_id: 'org-1' })
     }
