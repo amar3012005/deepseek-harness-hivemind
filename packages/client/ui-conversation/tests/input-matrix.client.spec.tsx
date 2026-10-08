@@ -41,7 +41,7 @@ const SCTX = {} as Context
 const SID = 's1' as SessionId
 
 /** Standard-props InputBar mount over a real shell (the composer-bar entry shape). */
-function mountBar(shell: SessionInputShell, over?: { running?: boolean; disabled?: boolean }) {
+function mountBar(shell: SessionInputShell, over?: { running?: boolean; disabled?: boolean; stop?: () => void }) {
   const session = createSnapshotStore<SessionSnapshot>({
     ...sessionSnapshot(SID),
     running: over?.running ?? false,
@@ -85,7 +85,7 @@ function mountBar(shell: SessionInputShell, over?: { running?: boolean; disabled
     useLexicon: bindSnapshotSelector(shell.lexicon),
     useMenuLauncher: bindSnapshotSelector(createSnapshotStore<string | null>(null)),
     renderSlot: (() => null) as InputBarProps['renderSlot'],
-    stop: vi.fn(),
+    stop: over?.stop ?? vi.fn(),
     command: () => Promise.resolve(true),
     t: makeTranslate(zh, commonZh),
     variant: 'composer',
@@ -341,5 +341,19 @@ describe('matrix row: takeover (orthogonal axis)', () => {
     expect(shell.snapshot.phase).toBe('claimed')
     expect(shell.snapshot.claim?.token).toBe('/goal ')
     expect(shell.snapshot.draft).toBe('/goal ')
+  })
+})
+
+
+describe('phone primary action preserves Stop', () => {
+  it('routes the empty running composer primary directly to stop', () => {
+    const stop = vi.fn()
+    const shell = new SessionInputShell({ actx: SCTX, defaultSink: vi.fn() })
+    const view = mountBar(shell, { running: true, stop })
+    const controls = view.container.querySelectorAll<HTMLButtonElement>('[data-native-composer-primary]')
+    expect(controls).toHaveLength(1)
+    expect(controls[0]!.disabled).toBe(false)
+    fireEvent.click(controls[0]!)
+    expect(stop).toHaveBeenCalledTimes(1)
   })
 })
