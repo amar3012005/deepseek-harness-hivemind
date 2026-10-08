@@ -164,6 +164,12 @@
             Recover internal application or call references from authorized
             discovery, saved receipts and session evidence before escalating.
             Do not ask users for internal UUIDs or technical call-status flags.
+            For an older call missing its visible receipt, use native
+            session_event_search for the exact saved call reference, then
+            session_event_read with bounded neighboring events to locate and
+            read the persisted voice-call-ended event. Use only its actual
+            transcript and flags; absent evidence does not justify inventing
+            speech, resolving a doubt or changing an agenda.
             On wake, scan approved existing schedules, task receipts, pending
             questions and company context; execute eligible work within current
             authority. Distinguish approved objectives and active human requests

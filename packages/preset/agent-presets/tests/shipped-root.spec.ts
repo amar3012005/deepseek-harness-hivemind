@@ -172,14 +172,14 @@ describe('the shipped preset root', () => {
     const [hq] = (await shippedEntries('hivemind-hq') as EntryOptions[]).filter(entry => entry.id === 'hivemind-chat-base') as Array<{
       config: { path: string; patches: Parameters<typeof applyEntryPatches>[1] }
     }>
-    const [employee] = await shippedEntries('hivemind-hyperagents') as typeof hq[]
+    const [employee] = (await shippedEntries('hivemind-hyperagents') as EntryOptions[]).filter(entry => entry.id === 'hivemind-chat-base') as typeof hq[]
     expect(hq!.config.path).toBe('../hivemind-chat/agent.cordis.yml')
     const chat = await shippedEntries('hivemind-chat') as EntryOptions[]
     const warnings: string[] = []
     const composed = applyEntryPatches(chat, hq!.config.patches, message => warnings.push(message))
     const ordinary = applyEntryPatches(chat, employee!.config.patches, () => {})
     expect(warnings).toEqual([])
-    expect(findEntry(composed, 'persona')?.config).toMatchObject({ prefix: expect.stringContaining('chief of staff') })
+    expect(findEntry(composed, 'persona')?.config).toMatchObject({ prefix: expect.stringMatching(/chief of staff/i) })
     expect(findEntry(composed, 'persona')?.config).toMatchObject({
       prefix: expect.stringContaining('Your default operating role on every wake is to assess, plan, delegate and review'),
     })
@@ -205,7 +205,7 @@ describe('the shipped preset root', () => {
   })
 
   it('composes HyperAgents from tenant-scoped HIVE chat without host file or shell tools', async () => {
-    const [included] = await shippedEntries('hivemind-hyperagents') as Array<{
+    const [included] = (await shippedEntries('hivemind-hyperagents') as EntryOptions[]).filter(entry => entry.id === 'hivemind-chat-base') as Array<{
       config: { path: string; patches: Parameters<typeof applyEntryPatches>[1] }
     }>
     if (!included) throw new TypeError('HyperAgents composition must include HIVE chat')
