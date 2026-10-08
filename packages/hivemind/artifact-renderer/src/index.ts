@@ -1,3 +1,4 @@
+import type {} from '@deepseek-ai/dsh-hivemind-execution-scope/src/provider-image.ts'
 import type {} from '@deepseek-ai/dsh-hivemind-execution-scope'
 import { museImageProvider } from './muse-image-provider.ts'
 import { registerArtifactInspection } from './artifact-inspection.ts'

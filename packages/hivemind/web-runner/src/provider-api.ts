@@ -1,3 +1,4 @@
+import type {} from '@deepseek-ai/dsh-hivemind-execution-scope/src/provider-image.ts'
 /** Narrow authenticated HTTP facade over existing native Codex capabilities. */
 import { createHash, randomUUID, timingSafeEqual } from 'node:crypto'
 import type { IncomingMessage, ServerResponse } from 'node:http'

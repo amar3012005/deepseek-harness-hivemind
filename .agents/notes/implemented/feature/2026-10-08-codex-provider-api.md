@@ -2,6 +2,8 @@
 
 English | [中文](2026-10-08-codex-provider-api.zh.md)
 
+The image event declaration is imported only by server consumers; the shared execution-scope entrypoint must not pull host Agent types into the browser graph.
+
 A disabled-by-default HTTP facade exposes text, web search, image generation and native live voice through one server-owned account. A Cloudflare Worker holds a separate public key and forwards a dedicated internal key. Neither key exposes the underlying Codex grant.
 
 Every invocation revalidates the configured company/user membership. Image requests resolve an owned native session and use the existing agent-scoped GenerationRegistry provider, durable operation identity and recovery state. Reusing an image identity with changed input is rejected. Text/search use the existing refreshable Codex authorization; arbitrary tool execution is not exposed. Live voice preserves the native session, SDP and call lifetime protocol; it is not a speech-synthesis endpoint.
