@@ -72,7 +72,7 @@ export function installRuntimeDecisionMemory(
       output: { schema: { type: 'object', properties: {}, additionalProperties: true }, render: (_args, result) => [{ type: 'text', text: JSON.stringify(result) }] },
       isConcurrencySafe: args => args.action === 'recall',
       async execute(args, execution) {
-        if (execution.agent !== agent || !isRuntimeRoom(agent)) throw new Error('runtime_memory_required')
+        if (!execution.agent || execution.agent.id !== agent.id || !isRuntimeRoom(execution.agent)) throw new Error('runtime_memory_required')
         const state = args.state ?? (kind === 'user_agenda' ? 'confirmed' : 'open')
         if (args.action === 'recall') return request(agent, { action: 'recall', kind, agent_slug: 'runtime', state, limit: args.limit ?? 5 }, execution.signal)
         const metadata: Record<string, JsonValue> = { sessionId: agent.id, state, priority: args.priority ?? 50, impact: args.impact ?? '', evidence: args.evidence ?? [] }

@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest'
-import { resolveOrganizationAgentAccess, currentTurnActor,referencedSessionIds,admittedVoiceCallRef,admittedUserConfirmationRef } from '../src/organization-agent-access.ts'
+import { resolveOrganizationAgentAccess, currentTurnActor,referencedSessionIds,admittedVoiceCallRef,admittedUserConfirmationRef,authenticatedInitiatorMessage,withAuthenticatedInitiator } from '../src/organization-agent-access.ts'
 const orgId='67503d34-97e9-49a8-8c52-8ee30cc7603e', userId='64f5568b-4d6a-4ae1-9a33-48cb2909d59b'
 const proof = { contract:'hivemind.organization-agent-access.v1', access:'read-write',
   actor:{ org_id:orgId,user_id:userId,role:'admin',name:'Second admin',authority:'authenticated-profile' },
@@ -71,4 +71,27 @@ it('resolves exact admitted witness after native append, ignoring later same or 
   expect(admittedUserConfirmationRef(events,'a-first',a)).toBe('event:14')
   expect(admittedUserConfirmationRef(events,'a-first',b)).toBeUndefined()
   expect(admittedUserConfirmationRef(events,'missing',a)).toBeUndefined()
+})
+
+it('renders the current authenticated actor independently of shared room storage and queued senders',()=>{
+  const a={ userId,orgId,role:'admin' as const,name:'Synthetic Beatrice' }
+  const later={ ...a,userId:'54f5568b-4d6a-4ae1-9a33-48cb2909d59b',name:'Later admin' }
+  const message=authenticatedInitiatorMessage(a)
+  expect(message.source).toMatchObject({ authenticatedActor:a,kind:'plugin' })
+  expect(message.content).toEqual([{ type:'text',text:expect.stringContaining('Synthetic Beatrice') }])
+  expect(JSON.stringify(message)).not.toContain(later.name)
+})
+
+it('binds admitted decision context to B and refreshes a later A without duplicating continuation context',()=>{
+  const b={ userId,orgId,role:'admin' as const,name:'Beatrice' }
+  const a={ ...b,userId:'54f5568b-4d6a-4ae1-9a33-48cb2909d59b',name:'Amar' }
+  const rejected={ kind:'reject' as const }
+  expect(withAuthenticatedInitiator(rejected,b,true)).toBe(rejected)
+  const initial={ kind:'enter' as const,messages:[] }
+  const admittedB=withAuthenticatedInitiator(initial,b,true)
+  expect(JSON.stringify(admittedB)).toContain('Beatrice')
+  expect(withAuthenticatedInitiator(admittedB,a,false)).toBe(admittedB)
+  const admittedA=withAuthenticatedInitiator(admittedB,a,true)
+  expect(JSON.stringify(admittedA)).toContain('Amar')
+  expect(JSON.stringify(admittedA)).not.toContain('Beatrice')
 })

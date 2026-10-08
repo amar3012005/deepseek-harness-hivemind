@@ -114,7 +114,7 @@ describe('hivemind playbooks', () => {
     expect(projected.tools.map(tool => tool.name)).not.toContain('inspect_image')
   })
 
-  it('keeps native HQ coordination visible despite a compressed inline plan', async () => {
+  it('keeps cold-installed Runtime memory and HQ coordination visible through prompt projection and leases', async () => {
     const tools = new Map<string, ToolDefinition>()
     const listeners = new Map<string, (...args: unknown[]) => unknown>()
     const events: Array<{ type: string; data: unknown }> = [{
@@ -123,7 +123,7 @@ describe('hivemind playbooks', () => {
     }]
     const scopeLocal = new Set(['team_task_list', 'team_task_get', 'team_task_create', 'team_task_update',
       'spawn_teammate', 'list_agents', 'send_message', 'wait_agent', 'interrupt_agent',
-      'schedule_create', 'schedule_list', 'schedule_update', 'schedule_delete'])
+      'schedule_create', 'schedule_list', 'schedule_update', 'schedule_delete', 'runtime_user_agenda', 'runtime_uncertainties'])
     let allow: Set<string> | undefined
     const agent = { session: { append(type: string, data: unknown) { events.push({ type, data }) }, snapshotEvents() { return events } },
       ctx: { tools: { schemas() { return [...tools.values()].filter(tool => !allow || allow.has(tool.name) || scopeLocal.has(tool.name)) },
@@ -138,7 +138,7 @@ describe('hivemind playbooks', () => {
     } as never,
     { progressiveToolDisclosure: true, nativeTeamCoordination: true, employeeSubagentPlanning: true })
     const coordination = ['hivemind_hq_contract', 'hivemind_hq_rest', 'hivemind_administrator_message', 'team_task_list', 'team_task_get', 'team_task_create', 'team_task_update', 'spawn_teammate', 'list_agents', 'send_message', 'wait_agent', 'interrupt_agent',
-      'schedule_create', 'schedule_list', 'schedule_update', 'schedule_delete']
+      'schedule_create', 'schedule_list', 'schedule_update', 'schedule_delete', 'runtime_user_agenda', 'runtime_uncertainties']
     for (const name of coordination) tools.set(name, { name } as ToolDefinition)
     const assembly = { sections: [], contexts: [], variables: {}, tools: [...tools.values()].map(tool => ({ name: tool.name, description: '', inputSchema: { type: 'object' } })) }
     const projected = await listeners.get('system-prompt/assemble')!(assembly, { agent, scope: agent }, async () => assembly) as typeof assembly

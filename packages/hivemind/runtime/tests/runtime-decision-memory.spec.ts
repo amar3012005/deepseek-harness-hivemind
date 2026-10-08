@@ -49,4 +49,15 @@ describe('Runtime decision memory',()=>{
     expect(f.request).not.toHaveBeenCalled()
   })
 
+  it('accepts a reconstructed scoped handle only for the same canonical Runtime room',async()=>{
+    const f=fixture()
+    const scoped={ ...f.agent } as Agent
+    expect(scoped).not.toBe(f.agent)
+    await f.tools.get('runtime_uncertainties')!.execute({ action:'recall' }, { agent:scoped,signal:new AbortController().signal } as never)
+    expect(f.request).toHaveBeenCalledOnce()
+    await expect(f.tools.get('runtime_uncertainties')!.execute({ action:'recall' }, { agent:{ ...scoped,id:'other-room' },signal:new AbortController().signal } as never)).rejects.toThrow('runtime_memory_required')
+    const employee=fixture(false)
+    await expect(f.tools.get('runtime_uncertainties')!.execute({ action:'recall' }, { agent:{ ...employee.agent,id:f.agent.id },signal:new AbortController().signal } as never)).rejects.toThrow('runtime_memory_required')
+  })
+
 })

@@ -232,6 +232,7 @@ const CORE_TOOLS = [
 // Schedule and Team register in each eligible Agent scope. Scoped registrations are
 // always exempt from tools.restrict(), whose allow-list accepts global names.
 const AGENT_LOCAL_TOOLS = new Set([
+  'runtime_user_agenda', 'runtime_uncertainties',
   'schedule_create', 'schedule_list', 'schedule_update', 'schedule_delete',
   'spawn_teammate', 'list_agents', 'send_message', 'wait_agent', 'interrupt_agent',
   'team_task_create', 'team_task_list', 'team_task_get', 'team_task_update',
@@ -927,6 +928,7 @@ export function apply(ctx: Context, config: Partial<Config> = {}): void {
       for (const tool of [
         'hivemind_voice_baseline', 'hivemind_hq_contract', 'hivemind_hq_rest', 'hivemind_hq_rest_state', 'hivemind_employee_panel',
         'hivemind_hq_awakening', 'hivemind_onboarding', 'hivemind_administrator_message', 'hivemind_employee_lifecycle',
+        'runtime_user_agenda', 'runtime_uncertainties',
         'team_task_list', 'team_task_get', 'team_task_create', 'team_task_update', 'list_agents',
         'spawn_teammate', 'send_message', 'wait_agent', 'interrupt_agent',
         'schedule_create', 'schedule_list', 'schedule_update', 'schedule_delete',

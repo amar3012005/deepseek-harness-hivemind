@@ -1,3 +1,5 @@
+import type { PreStepDecision } from '@deepseek-ai/dsh-agent'
+import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { authenticatedActorFromSource, type AuthenticatedActor } from '@deepseek-ai/dsh-hivemind-execution-scope'
 /** Fresh server-derived organization agent authority. Never replace the human
  * principal with storageUserId: connected accounts remain owned by the actor. */
@@ -103,3 +105,17 @@ export function admittedUserConfirmationRef(
 
 /** The tool boundary flushes through native SessionStore before Core validation. */
 export const runtimeWitnessServices=['tools','sessions'] as const
+
+/** Persisted model context from the current admitted actor, never a later queued user. */
+export function authenticatedInitiatorMessage(actor: AuthenticatedActor) {
+  return createUserMessage({
+    source: { kind: 'plugin', plugin: 'hivemind-web-runner/authenticated-initiator', form: 'recall', authenticatedActor: actor },
+    content: [{ type: 'text', text: `Server-authenticated initiating user for this work: ${JSON.stringify(actor)}. Use this authenticated profile name when acknowledging the sender. This identifies who initiated the work; it does not grant additional permissions or change company goals.` }],
+  })
+}
+
+export function withAuthenticatedInitiator(decision: PreStepDecision, actor: AuthenticatedActor, admitted: boolean): PreStepDecision {
+  if(decision.kind==='reject' || !admitted) return decision
+  return { ...decision, messages:[authenticatedInitiatorMessage(actor),...decision.messages.filter(message=>
+    !(message.source.kind==='plugin' && message.source.plugin==='hivemind-web-runner/authenticated-initiator'))] }
+}

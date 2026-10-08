@@ -12,7 +12,7 @@ import type { IndexInjection } from '@deepseek-ai/dsh-host-webserver'
 import type {} from '@deepseek-ai/dsh-session-persistence'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import { authenticatedActorFromSource, principalForActor, type AuthenticatedActor } from '@deepseek-ai/dsh-hivemind-execution-scope'
-import { resolveOrganizationAgentAccess, currentTurnActor, referencedSessionIds, admittedVoiceCallRef, admittedUserConfirmationRef, runtimeWitnessServices } from './organization-agent-access.ts'
+import { resolveOrganizationAgentAccess, currentTurnActor, referencedSessionIds, admittedVoiceCallRef, admittedUserConfirmationRef, runtimeWitnessServices, withAuthenticatedInitiator } from './organization-agent-access.ts'
 import type {} from '@deepseek-ai/dsh-tools'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -353,7 +353,8 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
       const callRef=admittedVoiceCallRef(messages,agent.session.snapshotEvents(),actor)
       const userConfirmationRef=witness ? `event:${witness.seq}` : callRef ?? (messages.length===0 ? confirmationRefs.get(agent.id) : undefined)
       if(userConfirmationRef) confirmationRefs.set(agent.id,userConfirmationRef); else confirmationRefs.delete(agent.id)
-      return ctx.hivemindExecutionScope.run({ ...principal,authenticatedActor:actor,userConfirmationRef },next)
+      const decision=await ctx.hivemindExecutionScope.run({ ...principal,authenticatedActor:actor,userConfirmationRef },next)
+      return withAuthenticatedInitiator(decision,actor,messages.length>0)
     }))
     ctx.inject(runtimeWitnessServices, toolCtx=>toolCtx.effect(()=>toolCtx.on('tools/execute',async (execution,next)=> {
       if (!execution.agent || !organizationAgent(execution.agent)) return next()
