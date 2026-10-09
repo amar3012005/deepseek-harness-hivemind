@@ -1,7 +1,7 @@
 /** Instructions over native Schedule, room messaging, scoped memory and artifacts; no second scheduler. */
 import type { Context } from '@deepseek-ai/cordis'
 import { renderSkillContent } from '@deepseek-ai/dsh-skill'
-import { createUserMessage } from '@deepseek-ai/dsh-llm'
+import { createUserMessage, type UserMessage } from '@deepseek-ai/dsh-llm'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { createHash } from 'node:crypto'
 import { isRuntimeRoom } from './runtime-decision-memory.ts'
@@ -26,14 +26,15 @@ The external Codex repair pipeline independently validates and reproduces, patch
 
 /** Only the currently admitted native occurrence can activate this task context.
  * Old reviews and text copied into an ordinary chat cannot activate it. */
-export function currentNightlyOccurrence(agent: Agent): string | undefined {
+export function currentNightlyOccurrence(agent: Agent, admitted: readonly UserMessage[] = []): string | undefined {
   const events = agent.session.snapshotEvents()
   const boundary = events.findLast(event => event.type === 'turn/end')?.seq ?? -1
   const scheduleId = 'schedule-' + createHash('sha256').update(`${agent.id}\0nightly-routine-check-v1`).digest('hex')
-  for (const event of events) {
-    if (event.seq <= boundary || event.type !== 'user/message' || event.data.source.kind !== 'schedule') continue
-    const sourceOccurrence = event.data.source.occurrenceAt
-    const text = event.data.content.flatMap(block => block.type === 'text' ? [block.text] : []).join('\n')
+  const candidates = [...events.flatMap(event => event.seq > boundary && event.type === 'user/message' ? [event.data] : []), ...admitted]
+  for (const message of candidates) {
+    if (message.source.kind !== 'schedule') continue
+    const sourceOccurrence = message.source.occurrenceAt
+    const text = message.content.flatMap(block => block.type === 'text' ? [block.text] : []).join('\n')
     const line = text.split('\n').find(value => value.startsWith('reminders_json: '))
     if (!line) continue
     try {
@@ -53,7 +54,7 @@ export function installNightlyRoutineGuidance(ctx: Context): void {
     scope.effect(() => scope.on('agent/pre-step', async ({ agent, turn }, next) => {
       const decision = await next()
       if (decision.kind === 'reject' || !isRuntimeRoom(agent) || injected.get(agent) === turn) return decision
-      const occurrence = currentNightlyOccurrence(agent)
+      const occurrence = currentNightlyOccurrence(agent, decision.messages)
       if (!occurrence) return decision
       injected.set(agent, turn)
       const content = `Current admitted task: Nightly routine check. Original native occurrence: ${occurrence}. Execute this technical review now using the existing tools. An unchanged business update or an old unanswered strategy question does not fulfill this scheduled task. Begin by discovering the authorized employee roster and reviewing Runtime's actual receipts; request employee findings through native messages, preserve missing coverage, and save the private report before submitting sanitized support counts.\n` + renderSkillContent({ ...nightlyRoutineSkill, provider: 'runtime' })

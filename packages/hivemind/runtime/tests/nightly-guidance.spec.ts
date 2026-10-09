@@ -44,3 +44,10 @@ it('loads canonical review body once per active turn without replacing the actua
   expect(await call(fixture('schedule','hivemind-hyperagents').agent)).toBe(decision)
   f.events.push({ type:'turn/end',seq:4,data:{} } as unknown as SessionEvent);expect(await call(f.agent,3)).toBe(decision)
 })
+
+it('activates from claimed schedule input before native persistence',()=>{
+  const f=fixture(),event=f.events.pop()!
+  if(event.type!=='user/message')throw Error('fixture missing request')
+  expect(currentNightlyOccurrence(f.agent)).toBeUndefined()
+  expect(currentNightlyOccurrence(f.agent,[event.data])).toBe(occurrence)
+})
