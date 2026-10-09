@@ -7,7 +7,7 @@ import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { ContextInjectionRow } from '../src/client/chat/ContextInjectionRow.tsx'
 import { TurnErrorNodeView, UserMessageNodeView } from '../src/client/chat/MessageItem.tsx'
-import { hivemindFailureText, questionAnswerPresentation } from '../src/client/chat/hivemind-presentation.ts'
+import { hivemindFailureText, isQuestionAnswerSubmission } from '../src/client/chat/hivemind-presentation.ts'
 import { en } from '../src/client/locale.ts'
 
 const t = makeTranslate(en)
@@ -19,24 +19,22 @@ const content = [{ type: 'text', text: 'Authenticated question respondent: {"use
 afterEach(() => { cleanup(); delete document.documentElement.dataset.dshMode; window.history.replaceState(null, '', '/') })
 
 describe('HIVEMIND private technical details', () => {
-  it('projects authenticated answers without changing stored content or provenance', () => {
+  it('recognizes authenticated question receipts without changing stored content or provenance', () => {
     const original = JSON.stringify({ content, source })
-    expect(questionAnswerPresentation(content, source)).toBe('Amar answered\n\nWhich responsibilities should Monny own?\nMarket research, Weekly reports')
+    expect(isQuestionAnswerSubmission(source)).toBe(true)
     expect(JSON.stringify({ content, source })).toBe(original)
-    expect(questionAnswerPresentation(content, { kind: 'user' })).toBeUndefined()
+    expect(isQuestionAnswerSubmission({ kind: 'user' })).toBe(false)
   })
-  it('never leaks an incomplete authenticated answer envelope', () => {
-    expect(questionAnswerPresentation([{ type: 'text', text: 'Internal malformed payload' }], source)).toBe('Amar answered')
-    expect(questionAnswerPresentation([{ type: 'text', text: '\n[{"question":"x","selected":[3]}]' }], source)).toBe('Amar answered')
+  it('does not classify ordinary human or plugin messages using their text', () => {
+    expect(isQuestionAnswerSubmission({ kind: 'plugin', questionAnswerSubmission: true })).toBe(false)
+    expect(isQuestionAnswerSubmission({ kind: 'user', questionAnswerSubmission: 'true' })).toBe(false)
   })
-  it('renders useful human answers but no identifiers or control instructions in employee chat', () => {
+  it('renders no chosen-option echo, name, bubble or timestamp in employee chat', () => {
     document.documentElement.dataset.dshMode = 'hivemind-chat'
     const view = render(<UserMessageNodeView {...{
       node: { data: { content, source, time: 0 } }, renderMessageImages: () => null, t,
     } as unknown as Parameters<typeof UserMessageNodeView>[0]} />)
-    expect(view.container.textContent).toContain('Market research, Weekly reports')
-    expect(view.container.textContent).toContain('Amar answered')
-    expect(view.container.textContent).not.toMatch(/private-user|private-org|Authenticated question|control instructions/)
+    expect(view.container.innerHTML).toBe('')
   })
   it('hides raw provider failures even inside expanded work details', () => {
     document.documentElement.dataset.dshMode = 'hivemind-chat'

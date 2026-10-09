@@ -219,6 +219,26 @@ function toolResult(callId: string, text: string, isError = false) {
 }
 
 describe('built-in conversation node Definitions', () => {
+  it('claims authenticated question submissions without a visible answer echo or unknown fallback', () => {
+    const answer = {
+      ...textMessage('answer-receipt', 'Private authenticated answer envelope'),
+      source: { kind: 'user', questionAnswerSubmission: true, questionCallId: 'ask-once',
+        authenticatedActor: { name: 'Amar', userId: 'private-user', orgId: 'private-org', role: 'owner' } },
+    }
+    const before = JSON.stringify(answer)
+    const value = assembler([
+      at(1, 'turn/start', { turn: 1 }),
+      at(2, 'user/message', textMessage('user-1', 'Create an employee'), { surfaceOp: 'append' }),
+      at(3, 'user/message', answer, { surfaceOp: 'append' }),
+    ])
+    const current = snapshot(value)
+    const visible = [...current.nodes.values()]
+    expect(visible.filter(item => item.kind === 'user')).toHaveLength(1)
+    expect(visible.some(item => item.anchorSeq === 3)).toBe(false)
+    expect(visible.some(item => item.kind === 'unknown')).toBe(false)
+    expect(JSON.stringify(answer)).toBe(before)
+  })
+
   it('rejects an unrelated event passed directly to the request-prompt start', () => {
     const input = at(1, 'turn/start', { turn: 1 })
     const invalidStart = {

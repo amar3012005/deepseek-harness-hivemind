@@ -9,7 +9,7 @@ import { CompactionItem } from './CompactionItem.tsx'
 import { ContextInjectionRow } from './ContextInjectionRow.tsx'
 import { MessageIconActions } from './MessageIconActions.tsx'
 import css from './MessageItem.module.css'
-import { hivemindFailureText, questionAnswerPresentation } from './hivemind-presentation.ts'
+import { hivemindFailureText, isQuestionAnswerSubmission } from './hivemind-presentation.ts'
 
 function isHivemindChat(): boolean {
   return typeof document !== 'undefined' && document.documentElement.dataset.dshMode === 'hivemind-chat'
@@ -325,11 +325,10 @@ export const UserMessageNodeView = memo(function UserMessageNodeView({
   node, renderMessageImages, t,
 }: ChatNodeViewProps<'user' | 'steering'>) {
   const data = node.data
-  const answerText = isHivemindChat() ? questionAnswerPresentation(data.content, data.source) : undefined
-  const visibleContent = answerText === undefined ? data.content : [{ type: 'text', text: answerText }]
+  if (isQuestionAnswerSubmission(data.source)) return null
   return (
     <UserStyleBubble
-      content={visibleContent}
+      content={data.content}
       renderMessageImages={renderMessageImages}
       {...data.referenceLabels === undefined ? {} : { referenceLabels: data.referenceLabels }}
       {...data.skillNames === undefined ? {} : { skillNames: data.skillNames }}

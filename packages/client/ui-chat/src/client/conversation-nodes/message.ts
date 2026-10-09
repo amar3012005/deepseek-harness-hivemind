@@ -6,6 +6,7 @@ import { isAppendSurfaceEvent, isReplacementSurfaceEvent } from '@deepseek-ai/ds
 import type { InboxState } from './inbox.ts'
 import { chatNode } from './common.ts'
 import { contextForm, contextProvenance } from './event-projection.ts'
+import { isQuestionAnswerSubmission } from '../chat/hivemind-presentation.ts'
 
 interface ReferencedUserMessageNode extends UserMessageNode {
   /** Labels cited by the immediately following session-reference context. */
@@ -85,6 +86,9 @@ export const messageDefinition: ConversationNodeDefinition<MessageNode> = {
   update: context => context.state,
   buildViewNode: (context) => {
     if (context.state === undefined) return null
+    // Claim the event normally so no unknown-node fallback or empty flow seat
+    // appears. Its durable content remains available to model and audit history.
+    if (isQuestionAnswerSubmission(context.state.source)) return null
     return chatNode(context, context.state.kind, context.state.seq, context.state)
   },
 }
