@@ -483,6 +483,33 @@ describe('sendSession submission echo', () => {
     return { ...b, beginSubmission, abandon, retire, revoked, restore }
   }
 
+  it('shows the echo before language persistence and reuses unchanged language', async () => {
+    const b = await echoBench()
+    const originalPath = window.location.pathname
+    window.history.replaceState({}, '', '/hivemind/app/employee/harness/session/s1')
+    document.documentElement.dataset.hivemindReplyLanguage = 'en'
+    const session = b.runtime.sessions.binding('s1')!.session
+    let finish!: (value: unknown) => void
+    const command = vi.spyOn(session, 'command').mockImplementation(() => new Promise((resolve) => { finish = resolve as typeof finish }))
+    try {
+      const sending = b.root.sendSession(session, 'hi', [], 'queue')
+      expect(b.beginSubmission).toHaveBeenCalledOnce()
+      await vi.waitFor(() => expect(command).toHaveBeenCalledOnce())
+      expect(b.prompt).not.toHaveBeenCalled()
+      finish({ ok: true, value: { kind: 'success' } })
+      await sending
+      await b.root.sendSession(session, 'hello again', [], 'queue')
+      expect(command).toHaveBeenCalledOnce()
+      expect(b.prompt).toHaveBeenCalledTimes(2)
+    } finally {
+      command.mockRestore()
+      delete document.documentElement.dataset.hivemindReplyLanguage
+      window.history.replaceState({}, '', originalPath)
+      b.restore()
+      await b.runtime.dispose()
+    }
+  })
+
   it('registers the echo before serialization and prompts with its identity', async () => {
     const b = await echoBench()
     try {

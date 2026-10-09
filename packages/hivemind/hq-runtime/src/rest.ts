@@ -51,6 +51,19 @@ export function isHqLead(ctx: Context, agent: Agent): boolean {
   try { const member = ctx.agentTeams.membership(agent); return member.role === 'lead' && member.root === agent } catch { return false }
 }
 const MAX_REST_MS = 4 * 60 * 60 * 1000
+/** A conversational greeting carries no operational wake or changed task. */
+export function greetingOnly(messages: readonly UserMessage[]): boolean {
+  const passive = new Set(['hivemind-hq/wake-briefing', 'dsh-hivemind-runtime/turn',
+    'hivemind-runtime/hq-private-recall', 'hivemind-web-runner/authenticated-initiator', 'time-context'])
+  const humans = messages.filter(message => message.source.kind === 'user')
+  const human = humans[0]
+  return humans.length === 1 && human !== undefined && messages.every(message => message.source.kind === 'user'
+    || (message.source.kind === 'plugin' && passive.has(message.source.plugin)))
+    && human.content.every(block => block.type === 'text')
+    && /^(?:hi+|hey+|hello+|good morning|good afternoon|good evening|thanks|thank you)[!.\s]*$/iu.test(
+      human.content.flatMap(block => block.type === 'text' ? [block.text] : []).join('').trim(),
+    )
+}
 const NOTE_SECTION = 'hq-rest-pending-note-ids'
 const tails = new WeakMap<Agent, Promise<unknown>>()
 function serial<T>(_ctx: Context, agent: Agent, work: () => Promise<T>): Promise<T> {
@@ -253,6 +266,19 @@ export function installRest(ctx: Context): void {
     const investigation = events.findLast(event => String(event.type) === 'hivemind/hq-public-investigation')
     if ((investigation?.data as { enabled?: boolean } | undefined)?.enabled) return
     const start = events.findLast(event => event.type === 'turn/start')?.seq ?? -1
+    const current = events.filter(event => event.seq > start)
+    const toolWork = current.some(event => event.type === 'tool/call')
+    const admitted = current.flatMap(event => event.type === 'user/message' ? [event.data] : [])
+    // A social reply is not a voluntary sleep transition. Never manufacture
+    // extra model turns just to rebuild the existing operational handoff.
+    if (!toolWork && greetingOnly(admitted)) return
+    const latest = restIntents(events).at(-1)
+    const priorBinding = latest && events.findLast(event => event.type === 'hivemind/hq-rest-wake' && event.data.handoffId === latest.id)
+    if (!toolWork && priorBinding?.type === 'hivemind/hq-rest-wake') {
+      const priorWake = (await ctx.schedule.catalog()).find(item => item.id === priorBinding.data.scheduleId && item.sessionId === agent.id)
+      if (priorWake?.status === 'active' && Date.parse(priorWake.scheduledAt) > Date.now()
+        && Date.parse(priorWake.scheduledAt) <= Date.now() + MAX_REST_MS) return
+    }
     const confirmed = events.findLast(event => event.type === 'hivemind/hq-rest-confirmed' && event.seq > start)
     const intent = confirmed?.type === 'hivemind/hq-rest-confirmed'
       ? restIntents(events).find(item => item.id === confirmed.data.handoffId)

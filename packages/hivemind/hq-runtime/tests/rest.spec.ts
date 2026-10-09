@@ -6,7 +6,7 @@ import type { ToolDefinition } from '@deepseek-ai/dsh-tools'
 import { createBrowserTimeZoneConfirmation } from '@deepseek-ai/dsh-time-context'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { HqControl } from '../src/control.ts'
-import { installRest, recoverRest, restState, restScheduleId, restBriefing, acknowledgeRestNotes, leaveRestNote, restWakeDisplay } from '../src/rest.ts'
+import { installRest, recoverRest, restState, restScheduleId, restBriefing, acknowledgeRestNotes, leaveRestNote, restWakeDisplay, greetingOnly } from '../src/rest.ts'
 
 const request = { handoff_id: 'rest-test', wake_at: '2030-01-01T01:00:00Z', summary: 'Review the existing task', next_steps: ['Inspect current receipts'], blockers: ['Waiting for evidence'] }
 function fixture() {
@@ -22,12 +22,13 @@ function fixture() {
     scheduledAt: string
   }>()
   const tools = new Map<string, ToolDefinition>()
+  const hooks = new Map<string, (input: unknown) => unknown>()
   let agent: Agent
   const prompt = vi.fn()
   const makeAgent = () => ({ id: 'root', session: { header: { agentPreset: 'hivemind-hq' }, snapshotEvents: () => events,
     ownEvents: () => events, append: (type: string, data: unknown) => {
       events.push({ seq: events.length, time: Date.now(), type, data } as SessionEvent)
-    } }, prompt }) as unknown as Agent
+    } }, prompt, steer: vi.fn() }) as unknown as Agent
   agent = makeAgent()
   const flush = vi.fn(async () => { durable = structuredClone(events); return true })
   type WakeInput = { at?: string; after_seconds?: number; prompt: string; title: string }
@@ -38,7 +39,8 @@ function fixture() {
     schedules.set(id, schedule); return schedule
   })
   const remove = vi.fn(async ({ id }: { id: string }) => ({ id, deleted: schedules.delete(id) }))
-  const ctx = { effect: (callback: () => unknown) => callback(), on: () => () => {},
+  const ctx = { effect: (callback: () => unknown) => callback(),
+    on: (name: string, handler: (input: unknown) => unknown) => { hooks.set(name, handler); return () => {} },
     tools: { register: (tool: ToolDefinition) => { tools.set(tool.name, tool); return () => {} } },
     agentTeams: { membership: (subject: Agent) => ({ role: 'lead', root: subject }) },
     sessions: { flush }, schedule: { catalog: async () => [...schedules.values()], ensure, delete: remove },
@@ -46,11 +48,37 @@ function fixture() {
   } as unknown as Context
   installRest(ctx)
   const execute = (args = request) => tools.get('hivemind_hq_rest')!.execute(args, { agent, signal: new AbortController().signal } as never)
-  return { ctx, tools, get agent() { return agent }, get events() { return events }, schedules, ensure, remove, flush, execute, prompt,
+  return { ctx, tools, hooks, get agent() { return agent }, get events() { return events },
+    schedules, ensure, remove, flush, execute, prompt,
     crash: () => { events = structuredClone(durable); agent = makeAgent(); return agent } }
 }
 afterEach(() => vi.useRealTimers())
 describe('native Runtime voluntary rest', () => {
+  it('ends a greeting without forcing sleep tools but retains the check for work', async () => {
+    const f = fixture()
+    f.ctx.hivemindHq.mode = () => ({ enabled: true }) as never
+    f.agent.session.append('turn/start', { turn: 1 } as never)
+    const human = createUserMessage({ source: { kind: 'user' }, content: [{ type: 'text', text: 'hi' }] })
+    f.agent.session.append('user/message', human, { surfaceOp: 'none' } as never)
+    await f.hooks.get('agent/turn-stopping')!({ agent: f.agent, turn: 1, signal: new AbortController().signal })
+    expect(f.agent.steer).not.toHaveBeenCalled()
+    f.agent.session.append('tool/call', { name: 'runtime_user_agenda', callId: 'save', arguments: {}, turn: 1, step: 1 } as never)
+    await f.hooks.get('agent/turn-stopping')!({ agent: f.agent, turn: 1, signal: new AbortController().signal })
+    expect(f.agent.steer).toHaveBeenCalledOnce()
+  })
+  it('classifies only social exchanges, never work or mixed event delivery', () => {
+    const human = (text: string) => createUserMessage({ source: { kind: 'user' }, content: [{ type: 'text', text }] })
+    const passive = createUserMessage({ source: { kind: 'plugin', plugin: 'time-context' }, content: [{ type: 'text', text: 'Current time' }] })
+    const signal = createUserMessage({ source: { kind: 'plugin', plugin: 'runtime-attention' }, content: [{ type: 'text', text: 'New company evidence' }] })
+    expect(greetingOnly([human('hi'), passive])).toBe(true)
+    expect(greetingOnly([human('hii'), passive])).toBe(true)
+    expect(greetingOnly([human('hello!')])).toBe(true)
+    expect(greetingOnly([human('hi, fix the CRM')])).toBe(false)
+    expect(greetingOnly([human('Wakeup ! chief')])).toBe(false)
+    expect(greetingOnly([human('hi'), signal])).toBe(false)
+    expect(greetingOnly([signal])).toBe(false)
+    expect(greetingOnly([])).toBe(false)
+  })
   it('accepts exactly four hours but rejects longer sleeps before saving any intent', async () => {
     const f = fixture()
     await expect(f.execute({ ...request, wake_at: '2030-01-01T04:00:00.001Z' })).rejects.toThrow('hq_rest_wake_exceeds_four_hours')

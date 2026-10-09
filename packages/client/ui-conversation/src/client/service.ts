@@ -32,13 +32,28 @@ import type {
 import type { InputSubmitMode } from './contract/composer-submission.ts'
 
 /** Persist the navbar language before admitting an embedded user message. */
+const replyLanguageSync = new WeakMap<SessionFace, { language: string; pending: Promise<void> }>()
+
 async function syncHivemindReplyLanguage(session: SessionFace): Promise<void> {
   if (typeof document === 'undefined' || !/^\/hivemind\/app\/(?:overview|employee\/harness)(?:\/|$)/u.test(window.location.pathname)) return
   if (session.getSnapshot().subagent !== null) return
   const language = document.documentElement.dataset.hivemindReplyLanguage?.toLowerCase().split('-')[0]
   if (language === undefined || !/^[a-z]{2}$/u.test(language)) return
-  const result = await session.command(`/hivemind-language ${language}`)
-  if (!result.ok) throw new Error('The selected reply language could not be saved. Please try again.')
+  const previous = replyLanguageSync.get(session)
+  if (previous?.language === language) return previous.pending
+  const entry = { language, pending: Promise.resolve() }
+  entry.pending = (async () => {
+    await previous?.pending.catch(() => {})
+    const result = await session.command(`/hivemind-language ${language}`)
+    if (!result.ok) throw new Error('The selected reply language could not be saved. Please try again.')
+  })()
+  replyLanguageSync.set(session, entry)
+  try {
+    await entry.pending
+  } catch (error) {
+    if (replyLanguageSync.get(session) === entry) replyLanguageSync.delete(session)
+    throw error
+  }
 }
 
 /**
@@ -271,7 +286,6 @@ export class ConversationController extends Service implements IConversation {
         ? { type: 'image' as const, ...await this.encodeImage(attachment.file) }
         : { type: 'file' as const, receiptId: uploadFor(attachment).receiptId }),
     )
-    await syncHivemindReplyLanguage(session)
     const snapshot = session.getSnapshot()
     if (snapshot.subagent !== null) {
       const uploaded = await serializeAttachments()
@@ -295,6 +309,7 @@ export class ConversationController extends Service implements IConversation {
     let content: Parameters<SessionFace['prompt']>[0]
     try {
       await nextPaint()
+      await syncHivemindReplyLanguage(session)
       const uploaded = await serializeAttachments()
       content = [...uploaded, ...(text === '' ? [] : [{ type: 'text' as const, text }])]
     } catch (error) {
