@@ -23,6 +23,6 @@ test('nightly review installs through native scoped registry without a timer', (
   const scope = { effect: fn => fn(), skills: { register: skill => { registered = skill; } } };
   installNightlyRoutineGuidance({ inject: (services, fn) => { assert.deepEqual(services, ['skills']); fn(scope); } });
   assert.equal(registered, nightlyRoutineSkill);
-  for (const clause of ['Native scheduled followup', 'original due occurrence', 'missing coverage', 'this text is not an email capability', 'authoritative current-revision fix receipt']) assert.ok(nightlyRoutineSkill.content.includes(clause));
+  for (const clause of ['Native scheduled followup', 'original due occurrence', 'missing coverage', 'the model cannot choose an email address', 'authoritative current-revision fix receipt']) assert.ok(nightlyRoutineSkill.content.includes(clause));
   assert.ok(text.includes('load hivemind-nightly-routine-check'));
 });

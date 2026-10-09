@@ -1,3 +1,4 @@
+import { installNightlyRoutineHost } from './nightly-routine-host.ts'
 /** Core-attested lifecycle effects use native Schedule, never model-generated scopes. */
 import { installConnectionCompletionHost } from './delegated-connection-host.ts'
 import { installQuestionRecoveryHost } from './question-recovery-host.ts'
@@ -13,8 +14,13 @@ import type {} from '@deepseek-ai/dsh-schedule'
 import { roomMessageId } from '@deepseek-ai/dsh-api-session-controller'
 export const name = 'hivemind-employee-lifecycle-host'
 export const inject = ['tools', 'webServer', 'hivemindExecutionScope', 'schedule', 'sessionController', 'sessions', 'sessionPersistence', 'agentTeams', 'agentPresets', 'hivemindHq']
-export interface Config { sharedOrganizationAgents?:boolean; enabled: boolean; serviceSecretEnv: string }
-export const Config: Schema<Config> = Schema.object({ sharedOrganizationAgents:Schema.boolean().default(false), enabled: Schema.boolean().default(false), serviceSecretEnv: Schema.string().default('HIVE_HARNESS_RUNNER_SERVICE_SECRET') })
+export interface Config {
+  nightlyRoutineAllowedOrgIds?:string[]
+  sharedOrganizationAgents?:boolean
+  enabled: boolean
+  serviceSecretEnv: string
+}
+export const Config: Schema<Config> = Schema.object({ nightlyRoutineAllowedOrgIds:Schema.array(Schema.string()).default([]), sharedOrganizationAgents:Schema.boolean().default(false), enabled: Schema.boolean().default(false), serviceSecretEnv: Schema.string().default('HIVE_HARNESS_RUNNER_SERVICE_SECRET') })
 const requestSchema = z.object({ orgId:z.uuid(), userId:z.uuid(), employeeId:z.uuid() }).strict()
 const roomSchema = z.object({ sessionId:z.string().min(1).max(180), userId:z.uuid() }).strict()
 const proofSchema = z.object({ employeeId:z.uuid(),revision:z.number().int().positive(),kind:z.enum(['durable','temporary']),phase:z.enum(['active','closing','archived']),expiresAt:z.string().nullable(),rooms:z.array(roomSchema).max(1000),chiefs:z.array(roomSchema).max(1000),chief:roomSchema.nullable(),onboarding:z.object({ name:z.string().min(1).max(100),role:z.string().min(1).max(40),creationHash:z.string().regex(/^[a-f0-9]{64}$/u) }).strict().optional(),profileReview:z.object({ name:z.string().min(1).max(100),role:z.string().min(1).max(40),persona:z.string().min(1).max(12000),profileRevision:z.number().int().positive(),creationHash:z.string().regex(/^[a-f0-9]{64}$/u) }).strict().optional(),joined:z.object({ name:z.string().min(1).max(100),role:z.string().min(1).max(40),profileRevision:z.number().int().positive(),creationHash:z.string().regex(/^[a-f0-9]{64}$/u),at:z.iso.datetime() }).strict().optional() }).strict()
@@ -57,6 +63,7 @@ export function apply(ctx:Context,config:Config):void {
   if(!config.enabled) return
   const secret=process.env[config.serviceSecretEnv]
   if(!secret || Buffer.byteLength(secret)<32) throw Error('employee_lifecycle_service_secret_required')
+  installNightlyRoutineHost(ctx, secret, config.nightlyRoutineAllowedOrgIds ?? [])
   installConnectionCompletionHost(ctx, secret)
   installQuestionRecoveryHost(ctx, secret)
   ctx.effect(()=>ctx.webServer.register({ kind:'exact',path:'/internal/hivemind/employee-lifecycle',handler:async(req,res)=>{

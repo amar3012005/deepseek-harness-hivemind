@@ -1,3 +1,4 @@
+import { runtimeSupportReportTool } from './nightly-support.ts'
 import type {} from '@deepseek-ai/dsh-schedule'
 import { employeeLifecycleTool, employeeProfileTool, lifecycleBusinessError, confirmedEmployeeDeadlineSchedule } from './employee-lifecycle.ts'
 import { administratorMessageTool } from './administrator-messaging.ts'
@@ -1138,6 +1139,17 @@ export function apply(ctx: Context, config: Config): void {
     const authority = await resolveAuthority(ctx, config)
     return hiveRequest(authority, '/employee-lifecycle-proof', { method: 'POST', body: JSON.stringify({ employee_id: input.employeeId }) }, input.signal, config)
   }))
+  if (config.companyAwakeningEnabled) {
+    ctx.effect(() => ctx.on('hivemind/nightly-routine-context', async ({ agent, signal }: { agent: Agent; signal: AbortSignal }) => {
+      const authority = await resolveAuthority(ctx, config, agent)
+      return hiveRequest(authority, '/nightly-routine-context', { method: 'GET' }, signal, config)
+    }))
+    ctx.effect(() => ctx.tools.register(runtimeSupportReportTool(async (agent, input, signal) => {
+      const authority = await resolveAuthority(ctx, config, agent)
+      const result = apiRecord(await hiveRequest(authority, '/runtime-support-report', { method: 'POST', body: JSON.stringify(input) }, signal, config), 'support report receipt')
+      return Object.fromEntries(Object.entries(result).filter((entry): entry is [string, JsonValue] => entry[1] !== undefined))
+    })))
+  }
   if (config.companyAwakeningEnabled) ctx.effect(() => ctx.tools.register(administratorMessageTool(async (agent, input, signal) => {
     if (config.authorityMode !== 'scoped-service') throw new HiveMindRuntimeError('Administrator messaging requires scoped service authority')
     const authority = await resolveAuthority(ctx, config, agent)
