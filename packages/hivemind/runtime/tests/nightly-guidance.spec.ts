@@ -16,7 +16,7 @@ function fixture(kind='schedule', preset='hivemind-hq') {
 }
 it('recognizes only fresh authentic canonical schedule input',()=>{
   const f=fixture();expect(currentNightlyOccurrence(f.agent)).toBe(occurrence)
-  f.events.push({ type:'turn/end',seq:4,data:{} });expect(currentNightlyOccurrence(f.agent)).toBeUndefined()
+  f.events.push({ type:'turn/end',seq:4,data:{} } as unknown as SessionEvent);expect(currentNightlyOccurrence(f.agent)).toBeUndefined()
   expect(currentNightlyOccurrence(fixture('user').agent)).toBeUndefined()
 })
 it('rejects malformed, different-schedule and unanchored batches',()=>{
@@ -42,5 +42,5 @@ it('loads canonical review body once per active turn without replacing the actua
   expect(await call()).toBe(decision)
   expect(await call(fixture('user').agent)).toBe(decision)
   expect(await call(fixture('schedule','hivemind-hyperagents').agent)).toBe(decision)
-  f.events.push({ type:'turn/end',seq:4,data:{} });expect(await call(f.agent,3)).toBe(decision)
+  f.events.push({ type:'turn/end',seq:4,data:{} } as unknown as SessionEvent);expect(await call(f.agent,3)).toBe(decision)
 })

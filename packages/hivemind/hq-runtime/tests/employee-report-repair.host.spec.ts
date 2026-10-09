@@ -78,6 +78,16 @@ it.each(['human_input', 'permission'] as const)('a delegated %s reports a durabl
     expect(f.employee.agent.session.ownEvents().filter(event => event.type === 'hivemind/hq-employee-blocked')).toHaveLength(1)
     expect(mocks.deliver).toHaveBeenCalledTimes(1)
     expect(f.task.status).toBe('in_progress')
+    await f.ctx.sessions.flush(f.employee.agent.session)
+    const cold = new Context()
+    try {
+      await cold.plugin(SessionStore)
+      await cold.plugin(JsonlSessionPersistence, { root: f.path })
+      const reader = await cold.sessionPersistence.open(f.employee.agent.id, 'read')
+      try {
+        expect((await reader.read()).events.filter(event => event.type === 'hivemind/hq-employee-blocked')).toHaveLength(1)
+      } finally { await reader.close() }
+    } finally { await cold.fiber.dispose() }
   } finally { await f.close() }
 })
 
