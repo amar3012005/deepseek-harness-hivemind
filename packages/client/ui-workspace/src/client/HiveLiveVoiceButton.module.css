@@ -22,12 +22,11 @@
   :global([data-native-chat]) .utility { display: none; }
 }
 
-/* Voice is a secondary action beside the primary send/stop on phones. The
-   touch target remains 44px; only the visual emphasis changes. */
+/* Empty phone composer uses voice as its primary action; text owns Send/Stop. */
 @media (max-width: 600px) {
   :global([data-native-chat]) .button {
     width: 44px; height: 44px; flex-basis: 44px;
-    background: transparent; color: var(--dsw-alias-label-primary);
+    background: #0a0a0a; color: #fff;
     border: 0;
   }
 }

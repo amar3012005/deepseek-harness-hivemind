@@ -481,6 +481,8 @@ export const InputBar = memo(function InputBar({
         )}
         {accessory !== undefined && <div className={css.accessory}>{accessory}</div>}
         {mobileAddOpen && <MobileAddSheet close={closeMobileAdd} canAttach={canAcceptDrop}
+          startCallLabel={t('input.startCall')}
+          startCall={sessionId === undefined || locked || disabled ? undefined : () => { closeMobileAdd(); window.dispatchEvent(new CustomEvent('hivemind:start-room-call', { detail: { sessionId } })) }}
           pick={(kind) => {
             closeMobileAdd()
             const target = kind === 'photo' ? photoInputRef : kind === 'camera' ? cameraInputRef : fileInputRef
