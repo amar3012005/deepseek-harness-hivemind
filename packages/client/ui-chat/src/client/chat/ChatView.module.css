@@ -293,3 +293,8 @@
   :global([data-native-chat]) .turnStatus { max-width: 100%; flex-wrap: wrap; }
   :global([data-native-chat]) .turnStatusLabel { white-space: normal; overflow-wrap: anywhere; }
 }
+
+/* Larger mobile hit region preserves the existing sticky zero-height slot. */
+@media (max-width: 600px) {
+  :global([data-native-chat]) .toBottom { width: 48px; height: 48px; margin-top: -48px; }
+}

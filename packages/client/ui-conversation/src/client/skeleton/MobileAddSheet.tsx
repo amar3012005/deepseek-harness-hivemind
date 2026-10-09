@@ -14,12 +14,14 @@ function SheetIcon({ kind }: { kind: string }) {
   return <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor"
     strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={paths[kind]} /></svg>
 }
-export function MobileAddSheet({ close, pick, canAttach, chooseMode, commands, controls }: {
+export function MobileAddSheet({ close, pick, canAttach, chooseMode, commands, controls, startCall, startCallLabel }: {
   close: () => void
   pick: (kind: 'photo' | 'camera' | 'file') => void
   canAttach: boolean
   chooseMode: (mode: 'search' | 'research') => void
   commands?: (() => void) | undefined
+  startCallLabel?: string
+  startCall?: (() => void) | undefined
   controls?: ReactNode
 }) {
   const panel = useRef<HTMLElement>(null)
@@ -72,6 +74,9 @@ export function MobileAddSheet({ close, pick, canAttach, chooseMode, commands, c
         <span><SheetIcon kind="apps" /></span>
         <span><strong>Connectors &amp; sources</strong><small>Choose a connected app or connect a new one</small></span>
       </button>
+      {startCall && <button className={css.action} type="button" onClick={startCall}>
+        <span><SheetIcon kind="notes" /></span><span><strong>{startCallLabel}</strong></span>
+      </button>}
       {controls && <details className={css.options}><summary>Chat options</summary><div>{controls}</div></details>}
       {commands && <button className={css.action} type="button" onClick={commands}>
         <span>/</span><span><strong>More actions</strong><small>Native chat commands</small></span>

@@ -10,7 +10,7 @@ import {
 } from './connection.ts'
 import { createFixtureConnectionRpc } from './fixture.ts'
 import { createWebConnectionRpc, type RpcFetch, type RpcStreamOpen } from './rpc.ts'
-import { isLoopbackHostname } from '../loopback-hostname.ts'
+import { transportIsLoopback } from './transport-authority.ts'
 import type { ClientConnectionRpc } from '../rpc.ts'
 import { resolveConnectionConfig } from '../recovery-config.ts'
 
@@ -88,6 +88,8 @@ export interface ClientTransportHooks {
    * bundles load over HTTP.
    */
   loadBundle?(url: string): Promise<void>
+  /** Explicit user download in a packaged shell; false means the native picker was cancelled. */
+  saveFile?(blob: Blob, filename: string): Promise<boolean>
   /**
    * The transport owner declares the page owns the Host outright: the Host
    * runs inside a worker this page spawned, so no other party can reach it and
@@ -97,6 +99,8 @@ export interface ClientTransportHooks {
    * transport can set this; served pages never carry the global at all.
    */
   ownsHost?: boolean
+  /** Packaged mobile shell connects to a remote Host; local page origin grants no Host privileges. */
+  remoteHost?: boolean
 }
 
 /** Page global carrying {@link ClientTransportHooks}; absent in the served web app. */
@@ -224,7 +228,7 @@ export function apply(ctx: Context): void {
     publishState(undefined)
   }
   const handle: ConnectionHandle = {
-    isLoopback: transport?.ownsHost === true || pageLocation === undefined || isLoopbackHostname(pageLocation.hostname),
+    isLoopback: transportIsLoopback(transport, pageLocation),
     generation: {
       getSnapshot: () => generation,
       subscribe: (listener) => {

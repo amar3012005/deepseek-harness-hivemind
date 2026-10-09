@@ -133,3 +133,15 @@
 .workbench [data-website-preview] .workbenchActions { align-items: center; min-width: 0; }
 .workbench [data-website-preview] .workbenchActions select { flex: 1; min-width: 0; }
 .workbench [data-website-preview] .workbenchActions > a { flex: none; white-space: nowrap; }
+
+/* Existing viewers retain their own scrolling and authorized download path. */
+@media (max-width: 900px) {
+  .workbench { min-width: 0; max-width: 100%; padding: 16px; }
+  .workbench[data-preview-fill] { padding: 0; }
+  .workbenchActions { flex-wrap: wrap; min-width: 0; }
+  .workbench [data-icon-download] { width: 48px; height: 48px; flex: 0 0 48px; }
+  .imagePreviewToolbar { gap: 8px; padding: 4px 8px; }
+  .imagePreviewCanvas { padding: 8px; }
+  .workbench [data-website-preview] .workbenchActions select { flex: 1 1 100%; width: 100%; min-height: 48px; font-size: 16px; }
+  .workbench [data-website-preview] .workbenchActions > a { min-height: 48px; display: inline-flex; align-items: center; white-space: normal; overflow-wrap: anywhere; }
+}

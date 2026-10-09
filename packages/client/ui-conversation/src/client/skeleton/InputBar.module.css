@@ -391,7 +391,7 @@
 .attachments { display: contents; }
 /* Brain's phone composer shares the native editor and send/stop state. */
 @media (max-width: 600px) {
-  :global([data-native-chat]) .root { padding: 6px 8px max(8px, env(safe-area-inset-bottom)); }
+  :global([data-native-chat]) .root { padding: 6px 8px 8px; }
   :global([data-native-chat]) .card { display: grid; grid-template-columns: 36px minmax(0, 1fr) 36px auto; align-items: center; gap: 0; padding: 2px 4px; border-radius: 28px; background: #fff; border: 1px solid #deddd8; box-shadow: none; }
   :global([data-native-chat]) .scroll { grid-column: 2; grid-row: 1; margin: 0; max-height: 120px; }
   :global([data-native-chat]) .input { min-height: 40px; padding: 8px 4px; font-size: 16px; line-height: 24px; }
@@ -431,26 +431,56 @@
   :global([data-native-chat]) :global([data-hivemind-dictation]) { display: none; }
 }
 
-/* Phone editor gets its own line: actions never squeeze the draft to a few
-   characters when stop, send and voice are simultaneously available. */
+/* Compact phone pill: the native autogrowing editor shares one action row. */
 @media (max-width: 600px) {
   :global([data-native-chat]) .card {
     grid-template-columns: 44px minmax(0, 1fr) auto;
-    border-radius: 22px;
-    min-width: 0;
-    padding: 6px;
+    border-radius: 28px; min-width: 0; padding: 4px;
   }
-  :global([data-native-chat]) .scroll { grid-column: 1 / -1; grid-row: 1; min-width: 0; max-height: min(120px, 25dvh); }
-  :global([data-native-chat]) .input { padding: 4px 8px; }
-  :global([data-native-chat]) .placeholder { inset: 4px 8px auto; }
-  :global([data-native-chat]) .add { grid-column: 1; grid-row: 2; width: 44px; height: 44px; }
-  :global([data-native-chat]) .brainConnectors { grid-column: 2; grid-row: 2; width: 44px; height: 44px; justify-self: start; }
-  :global([data-native-chat]) .trailing { grid-column: 3; grid-row: 2; gap: 4px; }
+  :global([data-native-chat]) .scroll { grid-column: 2; grid-row: 1; min-width: 0; max-height: min(120px, 25dvh); }
+  :global([data-native-chat]) .input { padding: 8px 2px; }
+  :global([data-native-chat]) .placeholder { inset: 8px 2px auto; }
+  :global([data-native-chat]) .add { grid-column: 1; grid-row: 1; width: 44px; height: 44px; }
+  :global([data-native-chat]) .brainConnectors { display: none; }
+  :global([data-native-chat]) .trailing { grid-column: 3; grid-row: 1; gap: 0; }
   :global([data-native-chat]) .primary,
-  :global([data-native-chat]) :global([data-hivemind-live-voice]) button { width: 44px; height: 44px; }
+  :global([data-native-chat]) :global([data-hivemind-live-voice]) button,
+  :global([data-native-chat]) :global([data-hivemind-dictation]) button { width: 44px; height: 44px; }
+  :global([data-native-chat]) :global([data-hivemind-dictation]) { display: inline-flex; }
   :global([data-native-chat]) .attachments { grid-row: 1; }
-  :global([data-native-chat]) .card:has(.attachments:not(:empty)) .scroll { grid-row: 2; }
+  :global([data-native-chat]) .card:has(.attachments:not(:empty)) .scroll,
   :global([data-native-chat]) .card:has(.attachments:not(:empty)) .add,
-  :global([data-native-chat]) .card:has(.attachments:not(:empty)) .brainConnectors,
-  :global([data-native-chat]) .card:has(.attachments:not(:empty)) .trailing { grid-row: 3; }
+  :global([data-native-chat]) .card:has(.attachments:not(:empty)) .trailing { grid-row: 2; }
+  :global([data-native-chat]) .trailing:has([data-native-composer-primary]:not([data-empty-send])) [data-hivemind-live-voice]:not([data-voice-active]) { display: none; }
+}
+
+/* The outer native bridge publishes the actual platform; desktop and iPhone
+   keep their existing targets. CSS geometry still needs device calibration. */
+@media (max-width: 600px) {
+  :global(html[data-native-platform='android']) :global([data-native-chat]) .card { grid-template-columns: 48px minmax(0, 1fr) auto; }
+  :global(html[data-native-platform='android']) :global([data-native-chat]) .add,
+  :global(html[data-native-platform='android']) :global([data-native-chat]) .brainConnectors,
+  :global(html[data-native-platform='android']) :global([data-native-chat]) .primary,
+  :global(html[data-native-platform='android']) :global([data-native-chat]) :global([data-hivemind-dictation]) button,
+  :global(html[data-native-platform='android']) :global([data-native-chat]) :global([data-hivemind-live-voice]) button { width: 48px; height: 48px; min-width: 48px; min-height: 48px; }
+}
+
+/* Web material is bounded to the composer; message surfaces stay opaque. */
+@media (max-width: 600px) {
+  :global([data-native-chat]) .card {
+    background: var(--dsw-alias-bg-base, #fff);
+    background: color-mix(in srgb, var(--dsw-alias-bg-base, #fff) 94%, transparent);
+    color: var(--dsw-alias-label-primary);
+    border-color: var(--dsw-alias-border-l2, #deddd8);
+    backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+    --dsw-alias-label-primary: inherit;
+    --dsw-alias-label-secondary: inherit;
+  }
+  :global(html[data-native-reduce-transparency='true']) :global([data-native-chat]) .card,
+  :global(html[data-native-increase-contrast='true']) :global([data-native-chat]) .card {
+    background: var(--dsw-alias-bg-base, #fff); backdrop-filter: none; -webkit-backdrop-filter: none;
+  }
+}
+@media (max-width: 600px) and (prefers-reduced-transparency: reduce), (max-width: 600px) and (prefers-contrast: more) {
+  :global([data-native-chat]) .card { background: var(--dsw-alias-bg-base, #fff); backdrop-filter: none; -webkit-backdrop-filter: none; }
 }

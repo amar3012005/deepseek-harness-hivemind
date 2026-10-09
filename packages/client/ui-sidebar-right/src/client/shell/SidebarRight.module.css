@@ -128,3 +128,9 @@
 .windowDots { display: flex; gap: 6px; margin-right: 10px; align-items: center; }
 .windowMark button { border: 0; border-radius: 999px; padding: 7px 10px; color: inherit; background: transparent; cursor: pointer; font: inherit; font-size: 12px; }
 .windowMark button:hover, .windowMark button:focus-visible { background: var(--dsw-alias-interactive-bg-hover); }
+
+@media (max-width: 900px) {
+  .windowMark { padding: 4px 8px; gap: 4px; }
+  .windowMark button { min-height: 48px; min-width: 48px; }
+  .panelBody { min-width: 0; overflow: hidden; }
+}

@@ -1,4 +1,5 @@
 import { websiteSources } from './website-sources.ts'
+import { hasNativeArtifactSaver, saveNativeArtifact } from './native-transport.ts'
 import { WebsitePreview } from './WebsitePreview.tsx'
 import { useEffect, useRef, useState } from 'react'
 import type { FileAttachmentRef, ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
@@ -137,16 +138,19 @@ export function ReceiptImage({ attachment, loadImage }: { attachment: ImageAttac
 export function PdfReceipt({ artifact, loadPdf, loadImage, t }: { artifact: Artifact; loadPdf: WorkbenchProps['loadPdf']; loadImage: WorkbenchProps['loadImage']; t: WorkbenchProps['t'] }) {
   const [url, setUrl] = useState<string>()
   const [failed, setFailed] = useState(false)
+  const pdfBlob = useRef<Blob>()
   const loadPdfRef = useRef(loadPdf)
   loadPdfRef.current = loadPdf
   useEffect(() => {
     let active = true
     let createdUrl: string | undefined
     setUrl(undefined)
+    pdfBlob.current = undefined
     setFailed(false)
     if (artifact.file !== undefined) {
       void loadPdfRef.current(artifact.file).then((blob) => {
         if (!active) return
+        pdfBlob.current = blob
         createdUrl = URL.createObjectURL(blob)
         setUrl(createdUrl)
       }, () => { if (active) setFailed(true) })
@@ -158,7 +162,12 @@ export function PdfReceipt({ artifact, loadPdf, loadImage, t }: { artifact: Arti
   }, [artifact.file?.attachmentId])
   return url === undefined
     ? <>{failed && <p className={css.workbenchPath} role="status">{t('workbench.pdfUnavailable')}</p>}<ReceiptImage attachment={artifact.preview} loadImage={loadImage} /></>
-    : <><a className={css.workbenchOpen} href={url} download={artifact.file?.name} aria-label={t('workbench.downloadPdf')} title={t('workbench.downloadPdf')} data-icon-download={agentPreview() || undefined}><DownloadLabel label={t('workbench.downloadPdf')} /></a><iframe className={css.workbenchPdf} src={url} title={artifact.title} /></>
+    : <><a className={css.workbenchOpen} href={url} download={artifact.file?.name} onClick={(event) => {
+      if (!hasNativeArtifactSaver()) return
+      event.preventDefault()
+      if (pdfBlob.current !== undefined) void saveNativeArtifact(pdfBlob.current, artifact.file?.name ?? 'document.pdf')
+        .catch(() => { setFailed(true) })
+    }} aria-label={t('workbench.downloadPdf')} title={t('workbench.downloadPdf')} data-icon-download={agentPreview() || undefined}><DownloadLabel label={t('workbench.downloadPdf')} /></a><iframe className={css.workbenchPdf} src={url} title={artifact.title} /></>
 }
 
 /** Render authenticated receipt contents with the shared native Markdown primitive. */

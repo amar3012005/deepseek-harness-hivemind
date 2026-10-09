@@ -1,5 +1,6 @@
 import { ChatgptPlanConnection } from './ChatgptPlanConnection.tsx'
 import { createAuthenticationProbe } from './auth-recovery.ts'
+import { probeBoot, saveNativeArtifact } from './native-transport.ts'
 import type { ConnectionHandle } from '@deepseek-ai/dsh-api-remotes/client'
 import { employeeJoining, EmployeeJoiningMilestone, type EmployeeJoining } from './employee-joining.tsx'
 import { BrainModeIcon } from './BrainModeIcon.tsx'
@@ -137,9 +138,7 @@ export function apply(ctx: ClientContext): void {
     if (typeof window === 'undefined' || !isHivemindRoute(window.location.pathname)) return () => {}
     const connection = scope.get('connection') as ConnectionHandle
     const recovery = createAuthenticationProbe({
-      probe: async () => (await fetch('/api/hivemind/boot', {
-        method: 'HEAD', credentials: 'include', cache: 'no-store',
-      })).status,
+      probe: async () => (await probeBoot()).status,
       reload: () => {
         // Preserve the exact room URL and use the existing Worker admission
         // fallback. Session-owned draft persistence survives the reload.
@@ -635,12 +634,14 @@ export function apply(ctx: ClientContext): void {
             const file = artifact.file
             if (file === undefined) return
             const opened = disposition === 'open' && artifact.mediaType === 'application/pdf' ? window.open('about:blank', '_blank') : null
-            void scope.remote.session.fileAttachment({ sessionId, attachmentId: file.attachmentId }).then((result) => {
+            void scope.remote.session.fileAttachment({ sessionId, attachmentId: file.attachmentId }).then(async (result) => {
               if (!result.ok || result.value.attachment.attachmentId !== file.attachmentId) throw new Error('Artifact download failed')
               const binary = atob(result.value.data)
               if (binary.length !== file.bytes || binary.length > 64 * 1024 * 1024) throw new Error('Artifact size mismatch')
               const bytes = Uint8Array.from(binary, char => char.charCodeAt(0))
-              const url = URL.createObjectURL(new Blob([bytes], { type: artifact.mediaType }))
+              const blob = new Blob([bytes], { type: artifact.mediaType })
+              if (disposition === 'download' && await saveNativeArtifact(blob, file.name)) return
+              const url = URL.createObjectURL(blob)
               if (opened !== null) opened.location.href = url
               else {
                 const link = document.createElement('a')
