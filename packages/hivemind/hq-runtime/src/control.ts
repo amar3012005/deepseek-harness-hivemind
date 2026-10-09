@@ -69,6 +69,7 @@ export class HqControl extends TypertRemoteService {
     'agents',
     'agentTeams',
     'agentPresets',
+    'permissionPresets',
     'sessions',
     'sessionPersistence',
     'hivemindHqOwnership',

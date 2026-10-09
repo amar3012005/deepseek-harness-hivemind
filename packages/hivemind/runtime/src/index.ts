@@ -92,7 +92,7 @@ export { completedExchanges, recentConversationText } from '@deepseek-ai/dsh-hiv
 export const name = 'hivemind-runtime'
 
 /** Services required to assemble context and expose progressive tools. */
-export const inject = ['tools', 'skills', 'sessions', 'sessionProjections', 'hivemindIdentity', 'hivemindExecutionScope']
+export const inject = ['tools', 'skills', 'sessions', 'sessionProjections', 'hivemindIdentity', 'hivemindExecutionScope', 'permissionPresets']
 
 type HivemindReadScope = 'full' | 'personal' | 'organization' | 'project'
 const PROJECT_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu
@@ -1255,7 +1255,7 @@ export function apply(ctx: Context, config: Config): void {
       }
     }
     const presets = ctx.get('permissionPresets') as { current(session: Agent['session']): string } | undefined
-    const fullAccess = execution.agent !== undefined && (presets?.current(execution.agent.session) === 'danger-full-access' || await (Reflect.get(ctx, 'hivemindHq') as {
+    const fullAccess = execution.agent !== undefined && (presets?.current(execution.agent.session) === 'danger-full-access' || await (ctx.get('hivemindHq') as {
       fullAccessAllowed?: (agent: Agent, signal: AbortSignal) => Promise<boolean>
     } | undefined)?.fullAccessAllowed?.(execution.agent, execution.signal))
     if (fullAccess && [HIVE_CREATE_PROJECT_TOOL, HIVE_WEB_SEARCH_TOOL, 'web_fetch',
