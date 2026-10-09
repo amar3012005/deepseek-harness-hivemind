@@ -206,7 +206,9 @@ export class HqControl extends TypertRemoteService {
 
   /** Human selection writes the existing durable native permission preset only. */
   @Remote('fullAccess')
-  async fullAccess(agent: Agent, request?: { enabled: boolean; expectedRevision: number }) {
+  async fullAccess(
+    agent: Agent, request?: { enabled: boolean; expectedRevision: number },
+  ): Promise<{ ok: boolean; current: { enabled: boolean; revision: number } }> {
     const root = this.root(agent)
     if (request) return setFullAccess(this.ctx, root, request)
     await validateFullAccessAdministrator(this.ctx, root, AbortSignal.timeout(8000))

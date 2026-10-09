@@ -38,16 +38,17 @@ for (const [feature, ids] of Object.entries(presentation)) {
 const defaultModel = row('agent-default-model')
 const llmProvider = row('llm-pi-ai')
 if (!defaultModel.includes('provider: cloudflare-openrouter-streaming')
-  || !defaultModel.includes('model: openai/gpt-6-luna')
+  || !defaultModel.includes('model: anthropic/claude-haiku-5.5')
   || !llmProvider.includes('cloudflare-openrouter-streaming:')
+  || !llmProvider.includes('id: anthropic/claude-haiku-5.5')
   || !/reasoning:\s*['"]?low['"]?/.test(llmProvider)) {
-  throw new Error('hivemind-web image profile must use the streaming GPT-6 route with required reasoning')
+  throw new Error('hivemind-web image profile must use the streaming Claude Haiku 5.5 route with required reasoning')
 }
 if (!llmProvider.includes('id: openrouter/deepseek/deepseek-v4-flash-0731')
   || !/reasoning:\s*['"]?off['"]?/.test(llmProvider)) {
   throw new Error('hivemind-web image profile must retain the legacy DeepSeek route for persisted sessions')
 }
-console.log('hivemind-web image profile uses streaming GPT-6 and retains the legacy DeepSeek route')
+console.log('hivemind-web image profile uses streaming Claude Haiku 5.5 and retains the legacy DeepSeek route')
 
 const ctx = new Context()
 ctx.baseUrl = pathToFileURL('/opt/deepseek-harness/apps/cli/').href
