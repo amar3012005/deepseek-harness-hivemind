@@ -454,3 +454,13 @@
   :global([data-native-chat]) .card:has(.attachments:not(:empty)) .brainConnectors,
   :global([data-native-chat]) .card:has(.attachments:not(:empty)) .trailing { grid-row: 3; }
 }
+
+/* The outer native bridge publishes the actual platform; desktop and iPhone
+   keep their existing targets. CSS geometry still needs device calibration. */
+@media (max-width: 600px) {
+  :global(html[data-native-platform='android']) :global([data-native-chat]) .card { grid-template-columns: 48px minmax(0, 1fr) auto; }
+  :global(html[data-native-platform='android']) :global([data-native-chat]) .add,
+  :global(html[data-native-platform='android']) :global([data-native-chat]) .brainConnectors,
+  :global(html[data-native-platform='android']) :global([data-native-chat]) .primary,
+  :global(html[data-native-platform='android']) :global([data-native-chat]) :global([data-hivemind-live-voice]) button { width: 48px; height: 48px; min-width: 48px; min-height: 48px; }
+}
