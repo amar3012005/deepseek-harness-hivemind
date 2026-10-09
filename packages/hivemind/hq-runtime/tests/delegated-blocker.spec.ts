@@ -37,6 +37,22 @@ function fixture() {
   return { ctx,root,employee,rootEvents,employeeEvents,task,input,hooks }
 }
 describe('Runtime delegated blocker checkpoint',()=>{
+  it.each(['human_input', 'permission'] as const)('ends an empty %s continuation after reporting, without another model request', async (kind) => {
+    const f = fixture()
+    installDelegatedBlockerReporting(f.ctx)
+    const call = { ...f.input.execution, name: kind === 'human_input' ? 'ask_user_question' : 'write', arguments: {} }
+    await must(f.hooks.get('tools/pre-execute'))(call, async () => ({ kind: kind === 'permission' ? 'ask' : 'allow' }))
+    await must(f.hooks.get('tools/pre-execute'))({ ...call, callId: ToolCallId('retry') }, async () => ({ kind: kind === 'permission' ? 'ask' : 'allow' }))
+    expect(delegatedBlockers(f.root)).toHaveLength(1)
+    expect(mocks.deliver.mock.calls[0]?.[1].key).toBe(mocks.deliver.mock.calls[1]?.[1].key)
+    expect(f.employeeEvents.filter(event => event.type === 'hivemind/hq-employee-blocked')).toHaveLength(1)
+    expect(await must(f.hooks.get('agent/pre-step'))({ agent: f.employee, turn: 1 }, async () => ({ kind: 'enter', messages: [] }))).toEqual({ kind: 'reject' })
+    expect(mocks.deliver).toHaveBeenCalledTimes(2)
+    // A later direct-human turn is not owned by the earlier Runtime blocker.
+    f.employeeEvents.push({ seq: SessionSeq(99), time: 0, type: 'turn/end', data: { turn: 1, reason: { kind: 'blocked' } } },
+      { seq: SessionSeq(100), time: 0, type: 'turn/start', data: { turn: 2 } })
+    expect(await must(f.hooks.get('agent/pre-step'))({ agent: f.employee, turn: 2 }, async () => ({ kind: 'enter', messages: [] }))).toEqual({ kind: 'enter', messages: [] })
+  })
   it('saves before delivery, deduplicates reporting and schedules one bounded native check',async()=>{
     const f=fixture();const first=await reportDelegatedConnection(f.ctx,f.input);await reportDelegatedConnection(f.ctx,f.input)
     expect(first?.status).toBe('blocked_reported');expect(delegatedBlockers(f.root)).toHaveLength(1)

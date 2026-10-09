@@ -6,7 +6,7 @@ import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
-import ToolRuntime from '@deepseek-ai/dsh-tools'
+import ToolRuntime, { defineTool } from '@deepseek-ai/dsh-tools'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -15,8 +15,8 @@ import { MockAdapter, textResponse, toolCallResponse } from '../../../core/agent
 const mocks = vi.hoisted(() => ({ allowed: vi.fn(), root: vi.fn(), deliver: vi.fn() }))
 vi.mock('../src/employee-room.ts', async original => ({ ...await original<typeof import('../src/employee-room.ts')>(),
   allowsEmployeeWork: mocks.allowed, authenticatedRoot: mocks.root, rooms: () => ({ deliverAgentMessage: mocks.deliver }) }))
-import { installEmployeeInputBlocker } from '../src/delegated-blocker.ts'
-import { employeeReportReceipt, installEmployeeReportRepair } from '../src/employee-report-repair.ts'
+import { installDelegatedBlockerReporting } from '../src/delegated-blocker.ts'
+import { employeeReportReceipt } from '../src/employee-report-repair.ts'
 
 async function fixture(adapter: MockAdapter, direct = false) {
   const path = await mkdtemp(join(tmpdir(), 'employee-repair-'))
@@ -37,7 +37,7 @@ async function fixture(adapter: MockAdapter, direct = false) {
     if (!direct && messages.some(m => m.source.kind === 'hivemind-agent-message')) agent.session.append('hivemind/employee-work-origin', { turn, rootId: 'chief', taskId: 'task-1' })
     return result
   })
-  installEmployeeInputBlocker(ctx); installEmployeeReportRepair(ctx)
+  installDelegatedBlockerReporting(ctx)
   const message = () => createUserMessage({ source: direct ? { kind: 'user' } : { kind: 'hivemind-agent-message', messageId: 'assignment', senderId: chief.agent.id, senderSessionId: chief.agent.id }, content: [{ type: 'text', text: direct ? 'Direct work.' : JSON.stringify({ text: 'HQ_EMPLOYEE_ASSIGNMENT={"rootId":"chief","taskId":"task-1"}\nPrepare the final label; required code is missing.' }) }] })
   return { ctx, chief, employee, task, path, message, async close() {
     await employee.dispose(); await chief.dispose(); await ctx.fiber.dispose()
@@ -50,13 +50,34 @@ it('actual native stopping boundary repairs omitted tool into a successful exist
   const f = await fixture(adapter)
   try {
     f.employee.agent.followup(f.message()); await vi.waitFor(() => expect(f.employee.agent.status).toBe('idle'))
-    expect(adapter.requests).toHaveLength(3)
+    expect(adapter.requests).toHaveLength(2)
     expect(f.employee.agent.session.ownEvents().filter(e => e.type === 'user/message' && e.data.source.kind === 'plugin' && e.data.source.plugin === 'hivemind-hq/employee-report-repair')).toHaveLength(1)
     expect(f.chief.agent.session.ownEvents().filter(e => e.type === 'hivemind/hq-delegated-blocker')).toHaveLength(1)
     expect(f.employee.agent.session.ownEvents().filter(e => e.type === 'hivemind/connected-receipt')).toHaveLength(1)
     expect(mocks.deliver).toHaveBeenCalledTimes(1)
     expect(f.task.status).toBe('in_progress')
     expect(employeeReportReceipt(f.employee.agent, 1, 'task-1')).toBe(true)
+  } finally { await f.close() }
+})
+
+it.each(['human_input', 'permission'] as const)('a delegated %s reports a durable blocker and becomes idle without opening human wait', async (kind) => {
+  const name = kind === 'human_input' ? 'ask_user_question' : 'external_write'
+  const adapter = new MockAdapter([toolCallResponse('question-call', name, { question: 'Which workbook?' })])
+  const f = await fixture(adapter)
+  const ask = vi.fn(async () => ({}))
+  f.ctx.tools.register(defineTool({ name, description: 'Ask the human',
+    parameters: { question: { type: 'string', required: true } },
+    output: { schema: { type: 'object', additionalProperties: false, properties: {} }, render: () => [] }, execute: ask }))
+  if (kind === 'permission') f.ctx.on('tools/pre-execute', async () => ({ kind: 'ask', reason: 'Native write approval required' }))
+  try {
+    f.employee.agent.followup(f.message())
+    await vi.waitFor(() => expect(f.employee.agent.status).toBe('idle'))
+    expect(ask).not.toHaveBeenCalled()
+    expect(adapter.requests).toHaveLength(1)
+    expect(f.employee.agent.session.ownEvents().findLast(event => event.type === 'turn/end')?.data).toMatchObject({ reason: { kind: 'blocked' } })
+    expect(f.employee.agent.session.ownEvents().filter(event => event.type === 'hivemind/hq-employee-blocked')).toHaveLength(1)
+    expect(mocks.deliver).toHaveBeenCalledTimes(1)
+    expect(f.task.status).toBe('in_progress')
   } finally { await f.close() }
 })
 

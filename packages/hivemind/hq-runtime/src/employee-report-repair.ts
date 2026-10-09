@@ -22,6 +22,8 @@ export function employeeReportReceipt(agent: Agent, turn: number, taskId: string
   const start = events.findLast(event => event.type === 'turn/start' && event.data.turn === turn)
   if (!start) return false
   const current = events.filter(event => event.seq > start.seq)
+  if (current.some(event => event.type === 'hivemind/hq-employee-blocked'
+    && event.data.turn === turn && event.data.taskId === taskId)) return true
   if (current.some(event => event.type === 'hivemind/artifact-created' || event.type === 'hivemind/generation-created')) return true
   if (current.some(event => event.type === 'hivemind/connected-receipt' && event.data.tool === 'workflow_checkpoint'
     && event.data.receipt !== null && typeof event.data.receipt === 'object'

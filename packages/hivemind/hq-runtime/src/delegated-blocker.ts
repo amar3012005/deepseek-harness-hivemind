@@ -43,6 +43,8 @@ declare module '@deepseek-ai/dsh-session/types' {
      * Its legacy connection wait must not be replayed automatically after restart.
      */
     'hivemind/hq-blocker-recovery-hold': { turn: number; callId: string; rootId: string; taskId: string; checkpointId: string }
+    /** Durable evidence that this employee turn reported its blocker before pausing. */
+    'hivemind/hq-employee-blocked': { turn: number; taskId: string; checkpointId: string }
   }
 }
 
@@ -117,6 +119,13 @@ async function record(ctx: Context, employee: Agent, signal: AbortSignal, fields
     // Native mailbox key reconciles an interrupted delivery, including after restart.
     const delivery = await rooms(ctx).deliverAgentMessage(employee, { key: id, target: 'runtime', kind: 'question', taskId: origin.taskId,
       text: `HQ_DELEGATED_BLOCKER=${JSON.stringify(blocker)}\nYour delegated task is blocked. Inspect authorized alternatives first. Resolve routine context within existing authority; otherwise save this typed blocker and send one authorized administrator email with message_key ${id}-user-request and request_call_id ${id}. Wait asynchronously; do not open a blocking question merely to send email. Keep other eligible work moving. Email delivery is not approval. Use hivemind_hq_blocker resume only after actual input or verified connection. Do not mark this task complete.` }, signal)
+    const admitted = admittedEmployeeWork(employee)
+    if (admitted && !employee.session.ownEvents().some(event => event.type === 'hivemind/hq-employee-blocked'
+      && event.data.turn === admitted.turn && event.data.checkpointId === id)) {
+      employee.session.append('hivemind/hq-employee-blocked', { turn: admitted.turn,
+        taskId: origin.taskId, checkpointId: id })
+      await flush(ctx, employee)
+    }
     if (blocker.kind === 'connection') await ctx.schedule.ensure(root.id, `${id}-connection-check`, {
       title: 'Recheck delegated connection blocker', after_seconds: 300,
       prompt: `Review saved blocker ${id} with hivemind_hq_blocker. Recheck actual provider connection using action resume; never treat email or elapsed time as approval. If still disconnected, retain the same checkpoint and remain quiet. This is one bounded check, not a repeating polling loop.`,
@@ -364,8 +373,10 @@ export function installEmployeeInputBlocker(ctx: Context): void {
         isConcurrencySafe: () => false,
         async execute(args, execution) {
           if (!execution.agent || execution.agent.id !== agent.id) throw new Error('hq_employee_delegated_work_required')
-          return { ...await reportDelegatedHumanInput(ctx, execution.agent, execution.signal, { callId: String(execution.callId),
-            blockerKey: args.blocker_key, question: args.question }) }
+          const receipt = await reportDelegatedHumanInput(ctx, execution.agent, execution.signal, { callId: String(execution.callId),
+            blockerKey: args.blocker_key, question: args.question })
+          execution.concludeTurn()
+          return { ...receipt }
         },
       })))
       active.set(String(agent.id), { turn, dispose })
@@ -382,7 +393,17 @@ export function installEmployeeInputBlocker(ctx: Context): void {
   ctx.effect(() => ctx.on('agent/pre-step', async ({ agent, turn }, next) => {
     const decision = await next()
     if (decision.kind === 'reject' || !admittedEmployeeWork(agent)) clear(agent)
-    else prepare(agent, turn)
+    else {
+      // A denied question is an error result, so native concludeTurn cannot
+      // ride it. End the empty continuation at the native admission boundary.
+      // Fresh incoming messages remain admitted instead of being discarded.
+      if (decision.messages.length === 0 && agent.session.ownEvents().some(event =>
+        event.type === 'hivemind/hq-employee-blocked' && event.data.turn === turn)) {
+        clear(agent)
+        return { kind: 'reject' }
+      }
+      prepare(agent, turn)
+    }
     return decision
   }))
   ctx.effect(() => ctx.on('agent/turn-ended', ({ agent }) => clear(agent)))
@@ -398,9 +419,13 @@ export function installDelegatedBlockerReporting(ctx: Context): void {
     const decision = await next()
     if (!execution.agent || !admittedEmployeeWork(execution.agent)
       || !(decision.kind === 'ask' || (decision.kind === 'allow' && execution.name === 'ask_user_question'))) return decision
-    const receipt = await record(ctx, execution.agent, execution.signal, { kind: decision.kind === 'ask' ? 'permission' : 'human_input', callId: String(execution.callId),
-      question: JSON.stringify({ tool: execution.name, arguments: execution.arguments,
-        ...(decision.kind === 'ask' ? { reason: decision.reason ?? 'Native permission approval required' } : {}) }).slice(0, 6000) })
+    const question = JSON.stringify({ tool: execution.name, arguments: execution.arguments,
+      ...(decision.kind === 'ask' ? { reason: decision.reason ?? 'Native permission approval required' } : {}) }).slice(0, 6000)
+    // Retrying the same denied question gets a new call id, not a new human
+    // decision. Keep the blocker/email identity stable across those retries.
+    const requestKey = createHash('sha256').update(question).digest('hex')
+    const receipt = await record(ctx, execution.agent, execution.signal, { kind: decision.kind === 'ask' ? 'permission' : 'human_input',
+      callId: String(execution.callId), question }, undefined, requestKey)
     if (!receipt) return decision
     return { kind: 'deny', reason: `The Runtime-delegated task is paused at checkpoint ${receipt.checkpoint_id}; blocker ${receipt.blocker_id} was reported to Runtime. Do not ask the human here or repeat this question. Continue other authorized work and report this task as blocked, never complete.` }
   }, { global: true }))
