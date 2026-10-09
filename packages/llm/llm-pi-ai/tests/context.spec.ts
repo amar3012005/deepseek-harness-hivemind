@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
+import { transformMessages } from '@earendil-works/pi-ai/api/transform-messages'
 import { AttachmentId, ImageVariantId } from '@deepseek-ai/dsh-attachment'
 import type {
   AttachmentStore,
@@ -100,7 +101,6 @@ describe('pi-ai request context conversion', () => {
       messages: [
         { role: 'user', content: 'history system' },
         { role: 'assistant' },
-        { role: 'user', content: 'after tool' },
         {
           role: 'toolResult',
           toolCallId: 'call-1',
@@ -108,6 +108,7 @@ describe('pi-ai request context conversion', () => {
           content: [{ type: 'text', text: '(no output)' }],
           isError: false,
         },
+        { role: 'user', content: 'after tool' },
       ],
     })
 
@@ -152,20 +153,20 @@ describe('pi-ai request context conversion', () => {
       { role: 'user', content: '', timestamp: 0 },
       expect.objectContaining({ role: 'assistant' }),
       {
+        role: 'toolResult',
+        toolCallId: 'known-call',
+        toolName: 'lookup',
+        content: [{ type: 'text', text: '(no output)' }],
+        isError: false,
+        timestamp: 0,
+      },
+      {
         role: 'user',
         content: [
           { type: 'text', text: expect.stringContaining(`Image ${ref.attachmentId}`) as string },
           { type: 'image', data: 'AQ==', mimeType: 'image/png' },
           { type: 'text', text: 'caption' },
         ],
-        timestamp: 0,
-      },
-      {
-        role: 'toolResult',
-        toolCallId: 'known-call',
-        toolName: 'lookup',
-        content: [{ type: 'text', text: '(no output)' }],
-        isError: false,
         timestamp: 0,
       },
       {
@@ -539,5 +540,39 @@ describe('pi-ai system prompt source', () => {
     }
     expect(toPiContext(options)).toEqual(expected)
     await expect(toPiContext(options, imageContext(attachments))).resolves.toEqual(expected)
+  })
+})
+
+
+describe('pending question provider replay', () => {
+  it.each([false, true])('keeps one real result ahead of authenticated answer context (images: %s)', async (withImages) => {
+    const first = ToolCallId('question-a'), second = ToolCallId('question-b')
+    const input = request([
+      history('assistant', [
+        { type: 'tool-call', id: first, name: 'ask_user_question', arguments: '{}' },
+        { type: 'tool-call', id: second, name: 'lookup', arguments: '{}' },
+      ]),
+      user([{ type: 'text', text: 'Authenticated answer from Admin B' }]),
+      user([{ type: 'tool-result', toolCallId: first, content: [{ type: 'text', text: 'Research' }] }]),
+      user([{ type: 'text', text: 'Other context' }]),
+      user([{ type: 'tool-result', toolCallId: second, content: [{ type: 'text', text: 'Found' }] }]),
+      history('assistant', [{ type: 'text', text: 'Confirmed' }]),
+    ])
+    const converted = await (withImages ? toPiContext(input, imageContext(attachments)) : toPiContext(input))
+    expect(converted.messages.map(m => m.role)).toEqual(['assistant', 'toolResult', 'toolResult', 'user', 'user', 'assistant'])
+    expect(converted.messages.filter(m => m.role === 'toolResult')).toHaveLength(2)
+    const wire = transformMessages(converted.messages, { api: 'openai-completions', provider: 'openrouter', id: 'anthropic/claude-haiku-5.5', input: ['text', 'image'] } as never)
+    expect(wire.filter(m => m.role === 'toolResult')).toHaveLength(2)
+    expect(JSON.stringify(wire)).not.toContain('No result provided')
+    expect(converted.messages[3]).toMatchObject({ content: 'Authenticated answer from Admin B' })
+    expect(converted.messages[4]).toMatchObject({ content: 'Other context' })
+    expect(input.messages[1]?.content[0]).toMatchObject({ text: 'Authenticated answer from Admin B' })
+  })
+  it('retains unanswered calls and intervening context for existing recovery handling', () => {
+    const converted = toPiContext(request([
+      history('assistant', [{ type: 'tool-call', id: ToolCallId('pending'), name: 'ask_user_question', arguments: '{}' }]),
+      user([{ type: 'text', text: 'Human context' }]),
+    ]))
+    expect(converted.messages.map(m => m.role)).toEqual(['assistant', 'user'])
   })
 })

@@ -156,9 +156,40 @@ function piContext(systemPrompt: string | undefined, options: GenerateOptions, m
   const tools = toolsOf(options)
   return {
     ...systemPrompt !== undefined ? { systemPrompt } : {},
-    messages,
+    messages: adjacentToolResults(messages),
     ...tools !== undefined && tools.length > 0 ? { tools } : {},
   }
+}
+
+/** Keep completed tool results adjacent to their calls on the provider wire.
+ * Native admission can persist a human answer/attribution while its question
+ * tool is still running. pi-ai treats an intervening user message as an orphan
+ * boundary and synthesizes a second result. Defer that context until the
+ * pending results are delivered, preserving every message and durable order.
+ */
+function adjacentToolResults(messages: PiMessage[]): PiMessage[] {
+  const output: PiMessage[] = []
+  const deferred: PiMessage[] = []
+  const pending = new Set<string>()
+  const flush = () => { output.push(...deferred.splice(0)) }
+  for (const message of messages) {
+    if (message.role === 'assistant') {
+      flush()
+      pending.clear()
+      for (const block of message.content) if (block.type === 'toolCall') pending.add(block.id)
+      output.push(message)
+    } else if (message.role === 'user' && pending.size > 0) {
+      deferred.push(message)
+    } else {
+      output.push(message)
+      if (message.role === 'toolResult') {
+        pending.delete(message.toolCallId)
+        if (pending.size === 0) flush()
+      }
+    }
+  }
+  flush()
+  return output
 }
 
 function appendAssistant(
