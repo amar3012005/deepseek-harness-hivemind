@@ -359,3 +359,19 @@ describe('phone primary action preserves Stop', () => {
     expect(stop).toHaveBeenCalledTimes(1)
   })
 })
+
+describe('touch chat opening', () => {
+  it('keeps the keyboard closed until the user taps the editor', () => {
+    vi.stubGlobal('matchMedia', vi.fn(value => ({
+      matches: value.includes('pointer: coarse'), media: value, onchange: null,
+      addListener: () => {}, removeListener: () => {},
+      addEventListener: () => {}, removeEventListener: () => {}, dispatchEvent: () => false,
+    })))
+    try {
+      const { textarea } = bench()
+      expect(document.activeElement).not.toBe(textarea)
+      act(() => { textarea.focus() })
+      expect(document.activeElement).toBe(textarea)
+    } finally { vi.unstubAllGlobals() }
+  })
+})

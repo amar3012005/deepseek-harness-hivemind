@@ -358,12 +358,12 @@
 
 @media (max-width: 600px) {
   :global([data-brain-chat]) .userStack { max-width: 90%; gap: 3px; }
-  :global([data-brain-chat]) .bubble { padding: 8px 11px; border-radius: 14px 14px 3px 14px; background: #eaf1ff; font-size: 15px; line-height: 22px; }
+  :global([data-brain-chat]) .bubble { padding: 8px 11px; border-radius: 14px 14px 3px 14px; background: #eaf1ff; font-size: max(16px, var(--dsh-content-font-size, 16px)); line-height: 1.5; }
   :global([data-brain-chat]) .attachmentRow { justify-content: center; }
 }
 
 @media (max-width: 600px) {
   :global([data-agent-room]) .userStack { max-width: 90%; gap: 3px; }
-  :global([data-agent-room]) .bubble { padding: 8px 11px; border-radius: 14px 14px 3px 14px; background: #eaf1ff; font-size: 15px; line-height: 22px; }
+  :global([data-agent-room]) .bubble { padding: 8px 11px; border-radius: 14px 14px 3px 14px; background: #eaf1ff; font-size: max(16px, var(--dsh-content-font-size, 16px)); line-height: 1.5; }
   :global([data-agent-room]) .attachmentRow { justify-content: center; }
 }

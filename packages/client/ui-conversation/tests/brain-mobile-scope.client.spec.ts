@@ -27,7 +27,7 @@ it('removes only the message avatar marker and retains media', () => {
 
 it('shares rounded black composer actions without removing native controls', () => {
   const css = source('InputBar.module.css')
-  expect(css).toContain(':global([data-native-chat]) .primary { background: #0a0a0a; color: #fff; border-radius: 50%; }')
+  expect(css).toContain(':global([data-native-chat]) .primary { background: #0a0a0a; color: #fff; border-radius: 50%; corner-shape: round; }')
   expect(css).toContain(':global([data-native-chat]) .desktopOptions')
   expect(source('InputBar.tsx')).toContain("renderSlot('conversation.input.model', { locked: modelSeatLocked })")
 })

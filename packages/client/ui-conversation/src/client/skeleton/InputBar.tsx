@@ -202,6 +202,9 @@ export const InputBar = memo(function InputBar({
     if (locked || editor === null) return
     // Lexical's focus() restores the editor selection but never calls the DOM
     // focus itself; preventScroll keeps the conversation scrollport still.
+    // Opening/switching a touch chat must not summon the software keyboard.
+    // Keep the native editor and draft mounted; tapping it still focuses normally.
+    if (window.matchMedia?.('(max-width: 900px) and (pointer: coarse)').matches) return
     editor.getRootElement()?.focus({ preventScroll: true })
     editor.focus(() => { revealSelection() })
   }, [locked, sessionId, editor])
@@ -567,7 +570,7 @@ export const InputBar = memo(function InputBar({
                 <IconPlusOutline16 size={14} />
               </button>
             </Tooltip>
-            <button type="button" className={css.brainConnectors} aria-label="Apps and connectors"
+            <button type="button" className={css.brainConnectors} data-native-mobile-plugin aria-label="Apps and connectors"
               disabled={locked} onMouseDown={keepFocus}
               onClick={() => window.dispatchEvent(new Event('hivemind:mobile-connectors'))}>
               <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden>
