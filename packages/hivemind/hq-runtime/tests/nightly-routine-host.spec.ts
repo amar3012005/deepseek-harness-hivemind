@@ -7,6 +7,11 @@ const secret='s'.repeat(48),org='8cf195d6-f2c8-453a-bd95-b8a3d70bf0b0',user='856
 const payload={ orgId:org,userId:user,sessionId:session,operation:'ensure' }
 function token(value:unknown,override:Record<string,unknown>={}) {const enc=(v:unknown)=>Buffer.from(JSON.stringify(v)).toString('base64url'),now=Math.floor(Date.now()/1000);const text=enc({ alg:'HS256',typ:'JWT' })+'.'+enc({ iss:'hivemind-control-plane',aud:'hivemind-nightly-routine',sub:user,org_id:org,iat:now,exp:now+30,body_sha256:createHash('sha256').update(JSON.stringify(value)).digest('hex'),...override });return 'Bearer '+text+'.'+createHmac('sha256',secret).update(text).digest('base64url')}
 type RecordValue={ sessionId:string;status:string;id:string;kind:string;title:string;prompt:string;time:string;timeZone:string }
+function savedRecord(records: RecordValue[]): RecordValue {
+  const value = records[0]
+  if (!value) throw new Error('expected saved native schedule')
+  return value
+}
 function setup(proof={ org_id:org,session_id:session,time_zone:'Europe/Berlin',time_zone_source:'organization',support_configured:false }) {
   let handler: (req:unknown,res:unknown)=>Promise<void>,ensureCalls=0;const records:RecordValue[]=[]
   const ctx={ effect:(fn:()=>void)=>fn(),webServer:{ register:(route:{ handler:(req:unknown,res:unknown)=>Promise<void> })=>{handler=route.handler;return()=>{}} },hivemindExecutionScope:{ run:async(_p:unknown,fn:()=>unknown)=>fn() },sessionController:{ resolveAgent:async()=>({ agent:{ id:session } }) },serial:async()=>proof,schedule:{ catalog:async()=>records,ensure:async(id:string,key:string,request:ReturnType<typeof nightlyRoutineRequest>)=>{ensureCalls++;expect(id).toBe(session);expect(key).toBe('nightly-routine-check-v1');const existing=records[0];if(existing)return existing;const record={ sessionId:id,status:'active',id:'schedule-'+createHash('sha256').update(`${id}\0${key}`).digest('hex'),kind:'daily',title:request.title,prompt:request.prompt,time:'00:00:00.000',timeZone:request.daily.time_zone };records.push(record);return record} } } as unknown as Context
@@ -34,15 +39,15 @@ it('blocks an unenabled organization and fresh attestation mismatch before sched
   const wrong=setup({ org_id:org,session_id:'session-other',time_zone:'UTC',time_zone_source:'default_utc',support_configured:false });expect((await wrong.call()).status).toBe(503);expect(wrong.count()).toBe(0)
 })
 it('does not silently duplicate or rewrite a committed schedule after timezone changes',async()=>{
-  const fixture=setup();await fixture.call();fixture.records[0].timeZone='Asia/Kolkata';expect((await fixture.call()).status).toBe(503);expect(fixture.count()).toBe(1)
+  const fixture=setup();await fixture.call();savedRecord(fixture.records).timeZone='Asia/Kolkata';expect((await fixture.call()).status).toBe(503);expect(fixture.count()).toBe(1)
 })
 
 it('preserves explicitly inactive native schedules rather than silently reporting activation',async()=>{
   const fixture=setup()
   await fixture.call()
-  fixture.records[0].status='inactive'
+  savedRecord(fixture.records).status='inactive'
   expect((await fixture.call()).status).toBe(503)
   expect(fixture.count()).toBe(1)
 })
 
-it('rejects changed daily wall-clock time without rewriting a saved schedule',async()=>{const fixture=setup();await fixture.call();fixture.records[0].time='08:00:00.000';expect((await fixture.call()).status).toBe(503);expect(fixture.count()).toBe(1)})
+it('rejects changed daily wall-clock time without rewriting a saved schedule',async()=>{const fixture=setup();await fixture.call();savedRecord(fixture.records).time='08:00:00.000';expect((await fixture.call()).status).toBe(503);expect(fixture.count()).toBe(1)})
