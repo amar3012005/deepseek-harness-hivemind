@@ -9,7 +9,7 @@ function setup(actor:unknown=undefined){
   const agent={ id:'session-runtime',session:{ ownEvents:()=>events },runMaintenance:async(fn:(signal:AbortSignal)=>unknown)=>fn(new AbortController().signal) } as unknown as Agent
   mocks.root=agent
   const validate=vi.fn(async()=>{}),flush=vi.fn(async()=>true)
-  const ctx={ permissionPresets:{ current:()=>preset,set:(_s:unknown,name:string)=>{preset=name;events.push({ type:'permission/preset',seq:++seq,data:{ preset:name } })} },hivemindExecutionScope:{ require:()=>({ orgId:'organization',authenticatedActor:actor }) },sessionPersistence:{ validateAdministratorRoom:validate },sessions:{ flush } } as unknown as Context
+  const ctx={ permissionPresets:{ current:()=>preset,set:(_s:unknown,name:string)=>{preset=name;events.push({ type:'permission/preset',seq:++seq,data:{ preset:name } })} },hivemindExecutionScope:{ require:()=>({ orgId:'organization',userId:'admin-user',authenticatedActor:actor }) },sessionPersistence:{ validateAdministratorRoom:validate },sessions:{ flush } } as unknown as Context
   return { ctx,agent,events,validate,flush }
 }
 it('persists native preset, restores from its existing projection, and supports disabling',async()=>{
@@ -44,4 +44,15 @@ it('active attested assignment inherits only while root mode and task remain aut
   mocks.allow.mockResolvedValueOnce(false);expect(await delegatedFullAccess(f.ctx,employee,new AbortController().signal)).toBe(false)
   await setFullAccess(f.ctx,f.agent,{ enabled:false,expectedRevision:1 })
   expect(await delegatedFullAccess(f.ctx,employee,new AbortController().signal)).toBe(false)
+})
+
+it('does not leave unpersisted full access enabled after a failed write',async()=>{
+  const f=setup();f.flush.mockResolvedValueOnce(false)
+  await expect(setFullAccess(f.ctx,f.agent,{ enabled:true,expectedRevision:0 })).rejects.toThrow('runtime_permission_not_persisted')
+  expect(fullAccessState(f.ctx,f.agent).enabled).toBe(false)
+})
+it('rejects a message actor belonging to another authenticated user',async()=>{
+  const f=setup({ orgId:'organization',role:'admin',userId:'another-user' })
+  await expect(setFullAccess(f.ctx,f.agent,{ enabled:true,expectedRevision:0 })).rejects.toThrow('runtime_administrator_required')
+  expect(f.events).toHaveLength(0)
 })

@@ -27,7 +27,7 @@ export async function validateFullAccessAdministrator(ctx: Context, agent: Agent
   // Native Remote also admits request principals without a message Actor; the
   // fresh Core persistence check below remains mandatory for that path.
   if (scope.authenticatedActor && (!['admin', 'owner'].includes(scope.authenticatedActor.role)
-    || scope.authenticatedActor.orgId !== scope.orgId)) throw Error('runtime_administrator_required')
+    || scope.authenticatedActor.orgId !== scope.orgId || scope.authenticatedActor.userId !== scope.userId)) throw Error('runtime_administrator_required')
   const persistence = ctx.sessionPersistence as typeof ctx.sessionPersistence & {
     validateAdministratorRoom?: (id: SessionId) => Promise<void>
   }
@@ -43,8 +43,16 @@ export async function setFullAccess(ctx: Context, agent: Agent, request: { enabl
     await validateFullAccessAdministrator(ctx, agent, signal)
     const current = fullAccessState(ctx, agent)
     if (current.revision !== request.expectedRevision) return { ok: false as const, current }
+    const previous = presets(ctx).current(agent.session)
     presets(ctx).set(agent.session, request.enabled ? 'danger-full-access' : 'workspace-write')
-    if (!await ctx.sessions.flush(agent.session)) throw Error('runtime_permission_not_persisted')
+    try {
+      if (!await ctx.sessions.flush(agent.session)) throw Error('runtime_permission_not_persisted')
+    } catch {
+      // Do not leave dispatch using an unacknowledged permission escalation.
+      presets(ctx).set(agent.session, previous)
+      try { await ctx.sessions.flush(agent.session) } catch { /* Keep the safer in-memory preset; the caller sees failure. */ }
+      throw Error('runtime_permission_not_persisted')
+    }
     return { ok: true as const, current: fullAccessState(ctx, agent) }
   })
 }
