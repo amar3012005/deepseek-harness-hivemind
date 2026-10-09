@@ -1,6 +1,7 @@
 import { it, expect } from 'vitest'
 import type { Agent } from '@deepseek-ai/dsh-agent'
-import { runtimeSupportReportTool } from '../src/nightly-support.ts'
+import { createHash } from 'node:crypto'
+import { requireNightlyOccurrence, runtimeSupportReportTool } from '../src/nightly-support.ts'
 function actor(preset='hivemind-hq',slug='runtime'):Agent {return { session:{ header:{ agentPreset:preset },snapshotEvents:()=>[{ type:'hivemind/session-owner',data:{ id:slug==='runtime'?null:'employee',slug } }] } } as unknown as Agent}
 it('exposes only bounded enumerated diagnostics without arbitrary recipient or private text',()=>{
   const tool=runtimeSupportReportTool(async()=>({})),schema=JSON.stringify(tool.parameters)
@@ -22,4 +23,14 @@ it('rejects arbitrary text and inconsistent/out-of-bounds diagnostics before dis
   const valid={ operation:'submit',occurrence:'2026-10-09T00:00:00.000Z',coverage:{ expected:2,inspected:1,missing:1 },issues:[] }
   for(const args of [{ ...valid,message:'private transcript' },{ ...valid,coverage:{ expected:2,inspected:2,missing:1 } },{ ...valid,coverage:{ expected:1001,inspected:1001,missing:0 } },{ operation:'status',occurrence:valid.occurrence,issues:[] }])await expect(tool.execute(args,exec)).rejects.toThrow()
   expect(sends).toBe(0)
+})
+
+it('uses the original nightly batch member even when another reminder is first, and rejects invented occurrences',()=>{
+  const occurrence='2026-10-09T00:00:00.000Z',first='2026-10-08T23:59:00.000Z',id='session-nightly-test'
+  const schedule='schedule-'+createHash('sha256').update(`${id}\0nightly-routine-check-v1`).digest('hex')
+  const event={ type:'user/message',data:{ source:{ kind:'schedule',occurrenceAt:first },content:[{ type:'text',text:'reminders_json: '+JSON.stringify([{ schedule_id:'other',occurrence_at:first },{ schedule_id:schedule,occurrence_at:occurrence }]) }] } }
+  const agent={ id,session:{ snapshotEvents:()=>[event] } } as unknown as Agent
+  expect(()=>requireNightlyOccurrence(agent,occurrence)).not.toThrow()
+  expect(()=>requireNightlyOccurrence(agent,'2026-10-09T01:00:00.000Z')).toThrow('saved_nightly_occurrence_required')
+  event.data.source.kind='user';expect(()=>requireNightlyOccurrence(agent,occurrence)).toThrow()
 })

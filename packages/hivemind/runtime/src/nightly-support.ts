@@ -1,9 +1,11 @@
+import type { Context } from '@deepseek-ai/cordis'
+import { createHash } from 'node:crypto'
+import { isRuntimeRoom } from './runtime-decision-memory.ts'
 import { z } from 'zod'
 /** Typed technical counts only: private reports and arbitrary message text cannot enter support email. */
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import { defineTool } from '@deepseek-ai/dsh-tools'
-import { requireAdministratorMessageOwner } from './administrator-messaging.ts'
 declare module '@deepseek-ai/cordis' {
   interface Events {
     /** Fresh Core canonical Runtime and organization timezone attestation. @mode serial */
@@ -44,8 +46,43 @@ export function runtimeSupportReportTool(
     output: { schema: { type: 'object', additionalProperties: true, properties: {} }, render: (_args: unknown, value: JsonValue) => [{ type: 'text', text: JSON.stringify(value) }] },
     isConcurrencySafe: args => args.operation === 'status',
     async execute(args, execution) {
-      const agent=requireAdministratorMessageOwner(execution.agent)
-      return send(agent, supportSchema.parse(args), execution.signal)
+      const agent=execution.agent
+      if(!agent||!isRuntimeRoom(agent))throw Error('runtime_support_room_required')
+      const input=supportSchema.parse(args)
+      if(input.operation==='submit')requireNightlyOccurrence(agent,input.occurrence)
+      return send(agent, input, execution.signal)
     },
   })
+}
+
+/** Read only the native Schedule's persisted original occurrence; never current wall clock. */
+export function requireNightlyOccurrence(agent:Agent,occurrence:string):void {
+  const id='schedule-'+createHash('sha256').update(`${agent.id}\0nightly-routine-check-v1`).digest('hex')
+  const found=agent.session.snapshotEvents().some((event)=>{
+    if(event.type!=='user/message'||event.data.source.kind!=='schedule')return false
+    const sourceOccurrence=event.data.source.occurrenceAt
+    const text=event.data.content.flatMap(block=>block.type==='text'?[block.text]:[]).join('\n')
+    const line=text.split('\n').find(value=>value.startsWith('reminders_json: '))
+    if(!line)return false
+    try {
+      const entries:unknown=JSON.parse(line.slice('reminders_json: '.length))
+      return Array.isArray(entries)&&entries.some((entry:unknown)=>entry&&typeof entry==='object'&&(entry as Record<string,unknown>)['occurrence_at']===sourceOccurrence)&&entries.some((entry:unknown)=>{
+        if(!entry||typeof entry!=='object')return false
+        const data=entry as Record<string,unknown>
+        return data['schedule_id']===id&&data['occurrence_at']===occurrence
+      })
+    }catch{return false}
+  })
+  if(!found)throw Error('saved_nightly_occurrence_required')
+}
+/** Agent-local tools are registered only after the native Runtime owner preparation. */
+export function installRuntimeSupportReport(ctx:Context,send:Parameters<typeof runtimeSupportReportTool>[0]):void {
+  const installed=new WeakSet<Agent>()
+  const prepare=(agent:Agent):void=>{
+    if(!isRuntimeRoom(agent)||installed.has(agent))return
+    agent.ctx.effect(()=>agent.ctx.tools.register(runtimeSupportReportTool(send)))
+    installed.add(agent)
+  }
+  ctx.effect(()=>ctx.on('agent/created',({ agent })=>prepare(agent)))
+  ctx.effect(()=>ctx.on('agent/session-start',({ agent })=>prepare(agent)))
 }

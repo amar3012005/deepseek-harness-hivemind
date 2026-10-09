@@ -56,7 +56,7 @@ export function installNightlyRoutineHost(ctx:Context,secret:string,allowedOrgId
         const id=`schedule-${createHash('sha256').update(`${input.sessionId}\0${key}`).digest('hex')}`
         const existing=(await ctx.schedule.catalog()).find(record=>record.id===id&&record.sessionId===input.sessionId)
         if(existing?.status==='inactive')throw Error('nightly_inactive_schedule_requires_explicit_resume')
-        if(existing&&(existing.kind!=='daily'||existing.timeZone!==proof.time_zone||existing.title!==request.title||existing.prompt!==request.prompt))throw Error('nightly_existing_schedule_requires_explicit_edit')
+        if(existing&&(existing.kind!=='daily'||existing.time!=='00:00:00.000'||existing.timeZone!==proof.time_zone||existing.title!==request.title||existing.prompt!==request.prompt))throw Error('nightly_existing_schedule_requires_explicit_edit')
         const record=input.operation==='ensure'?await ctx.schedule.ensure(SessionId(input.sessionId),key,request):existing
         return { status:record?'configured':'not_configured',schedule:record??null,time_zone:proof.time_zone,time_zone_source:proof.time_zone_source,support_configured:proof.support_configured,queued_native_delivery:true }
       })
