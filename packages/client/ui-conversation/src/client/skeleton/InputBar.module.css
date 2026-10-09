@@ -391,7 +391,7 @@
 .attachments { display: contents; }
 /* Brain's phone composer shares the native editor and send/stop state. */
 @media (max-width: 600px) {
-  :global([data-native-chat]) .root { padding: 6px 8px max(8px, env(safe-area-inset-bottom)); }
+  :global([data-native-chat]) .root { padding: 6px 8px 8px; }
   :global([data-native-chat]) .card { display: grid; grid-template-columns: 36px minmax(0, 1fr) 36px auto; align-items: center; gap: 0; padding: 2px 4px; border-radius: 28px; background: #fff; border: 1px solid #deddd8; box-shadow: none; }
   :global([data-native-chat]) .scroll { grid-column: 2; grid-row: 1; margin: 0; max-height: 120px; }
   :global([data-native-chat]) .input { min-height: 40px; padding: 8px 4px; font-size: 16px; line-height: 24px; }
