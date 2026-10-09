@@ -571,7 +571,7 @@ export const InputBar = memo(function InputBar({
               disabled={locked} onMouseDown={keepFocus}
               onClick={() => window.dispatchEvent(new Event('hivemind:mobile-connectors'))}>
               <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden>
-                <path d="M8 3v5m8-5v5M6 8h12v3a6 6 0 0 1-6 6v4M6 11h12" strokeLinecap="round" strokeLinejoin="round" />
+                <path d="M9 3H5a2 2 0 0 0-2 2v4h2a2 2 0 1 1 0 4H3v6a2 2 0 0 0 2 2h4v-2a2 2 0 1 1 4 0v2h6a2 2 0 0 0 2-2v-6h-2a2 2 0 1 1 0-4h2V5a2 2 0 0 0-2-2h-6v2a2 2 0 1 1-4 0V3" strokeLinecap="round" strokeLinejoin="round" />
               </svg>
             </button>
             <Tooltip label={t('file.attach')} side="top" delayMs={500}>
