@@ -1,4 +1,5 @@
 import type {} from '@deepseek-ai/dsh-client-ui-chat/client'
+import { RuntimeFullAccess } from './RuntimeFullAccess.tsx'
 import { RuntimeNotificationBanner, type RuntimeNotificationBannerProps } from './RuntimeNotificationBanner.tsx'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { TurnLocation } from '@deepseek-ai/dsh-client-ui-conversation/client'
@@ -24,7 +25,7 @@ import { CompanyWorkspace, type CompanyWorkspaceProps } from './CompanyWorkspace
 import { HqControlAction, type HqControlActionProps, type HqControlInjected } from './HqControlAction.tsx'
 import { en, zh, type HqKey } from './locales.ts'
 declare module '@deepseek-ai/dsh-client-ui-slots' { interface LocaleNamespaceMap { 'hivemind.hq': HqKey }
-  interface SlotMap { 'hivemind.runtime.plan': { kind: 'list'; scope: 'session'; owner: { turn: number } } } }
+  interface SlotMap { 'hivemind.runtime.fullAccess': { kind:'single';scope:'session' }; 'hivemind.runtime.plan': { kind: 'list'; scope: 'session'; owner: { turn: number } } } }
 export const inject = ['sessions', 'remote', 'slots', 'locale', 'layout', 'uiWorkspace']
 
 /**
@@ -35,6 +36,14 @@ export const inject = ['sessions', 'remote', 'slots', 'locale', 'layout', 'uiWor
 export async function apply(ctx: Context): Promise<() => Promise<void>> {
   const disposeRemote = await ctx.remote.$mount(hqRemote)
   const ui = ctx.inject(['uiConversation', 'sessions', 'remote.hivemindHq', 'remote.agentPresets', 'slots', 'locale', 'layout', 'uiWorkspace'], (child) => {
+    const accessLoad = (id: SessionId, request?: { enabled: boolean; expectedRevision: number }) =>
+      child.remote.hivemindHq.fullAccess(id, request)
+    const accessSubscribe = (id: SessionId, listener: () => void) =>
+      child.sessions.binding(id)?.session.projections.faceOf('permissions').subscribe(listener) ?? (() => {})
+    child.slots.inject('hivemind.runtime.fullAccess', () => child.slots.register({
+      name: 'hivemind.runtime.fullAccess',
+      inject: sessionId => ({ sessionId, load: accessLoad, subscribe: accessSubscribe }),
+    }, RuntimeFullAccess))
     child.effect(() => child.locale.register('hivemind.hq', { en, zh }))
     child.effect(() => child.uiConversation.events.register(employeeTaskCard))
     child.slots.inject('conversation.chat.node', () => child.slots.register({

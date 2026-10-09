@@ -73,7 +73,7 @@ const awakeningStage: ConversationNodeDefinition<{ turn: number; seq: number }> 
 }
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
-  interface SlotMap { 'shell.sessionRail.artifacts': { kind: 'single'; scope: 'root' } }
+  interface SlotMap { 'hivemind.runtime.fullAccess': { kind:'single';scope:'session' }; 'shell.sessionRail.artifacts': { kind: 'single'; scope: 'root' } }
   interface LocaleNamespaceMap { 'hivemind-connect': HivemindConnectKey }
 }
 
@@ -527,6 +527,7 @@ export function apply(ctx: ClientContext): void {
   })
   ctx.slots.inject('conversation.session.header.utilities', () => ctx.slots.register({
     name: 'conversation.session.header.utilities', id: 'brain-connections', locale: NS, order: 99,
+    children:{ 'hivemind.runtime.fullAccess':{ kind:'single',scope:'session' } },
     inject: sessionId => ({ sessionId, listEmployees, isPreviewOpen: () => isEnvironmentPreviewOpen(rightSidebar), showDetails: () => { rightSidebar?.openTabIn(sessionId, 'hivemind-employee') } }),
   }, BrainConnections))
   // Put the panel/preview affordance in the conversation header's far-right

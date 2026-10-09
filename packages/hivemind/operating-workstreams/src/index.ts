@@ -53,7 +53,7 @@ interface WorkstreamCompleted {
   readonly artifactIds: readonly string[]
 }
 interface WorkstreamFailed { readonly runId: string; readonly planId: string; readonly workstreamId: string; readonly diagnostic: string }
-interface WorkstreamApproval { readonly runId: string; readonly planId: string; readonly workstreamId: string; readonly outcome: 'allowed-once' | 'rejected' | 'cancelled' | 'unavailable'; readonly reason: string }
+interface WorkstreamApproval { readonly runId: string; readonly planId: string; readonly workstreamId: string; readonly outcome: 'allowed-once' | 'rejected' | 'cancelled' | 'unavailable'; readonly reason: string; readonly authority?: 'human_approval' | 'permission_preset' }
 interface EvidenceGapRecorded { readonly runId: string; readonly planId: string; readonly workstreamId: string; readonly summary: string }
 
 /** A native capability receipt projected into the current operating run. */
@@ -88,7 +88,7 @@ declare module '@deepseek-ai/dsh-session/types' {
     'hivemind/workstream-completed': WorkstreamCompleted
     /** Records a terminal workstream failure. */
     'hivemind/workstream-failed': WorkstreamFailed
-    /** A real approval-service decision bound to one operating workstream. */
+    /** A real approval-service decision or explicit native preset authority bound to one workstream. */
     'hivemind/workstream-approval': WorkstreamApproval
     /** A specific unresolved evidence need that intentionally reopens research for the current plan. */
     'hivemind/evidence-gap-recorded': EvidenceGapRecorded
@@ -683,9 +683,12 @@ export function apply(ctx: Context, config: Partial<Config> = {}): void {
         }
         const reason = text(input['approval_reason'], 'approval_reason', maxSummaryChars)
         const presets = ctx.get('permissionPresets') as { current(session: Agent['session']): string } | undefined
-        const outcome = presets?.current(execution.agent.session) === 'danger-full-access' ? 'allowed-once' as const
+        const permissionGranted = (presets?.current(execution.agent.session) === 'danger-full-access' || await (Reflect.get(ctx, 'hivemindHq') as {
+          fullAccessAllowed?: (agent: Agent, signal: AbortSignal) => Promise<boolean>
+        } | undefined)?.fullAccessAllowed?.(execution.agent, execution.signal))
+        const outcome = permissionGranted ? 'allowed-once' as const
           : await ctx.approval.request({ agent: execution.agent, toolName: 'hivemind_workstream', reason, signal: execution.signal })
-        execution.agent.session.append('hivemind/workstream-approval', { ...coordinates, workstreamId, outcome, reason })
+        execution.agent.session.append('hivemind/workstream-approval', { ...coordinates, workstreamId, outcome, reason, authority: permissionGranted ? 'permission_preset' : 'human_approval' })
         return { status: outcome === 'allowed-once' ? 'approved' : 'not_approved', outcome, plan_id: coordinates.planId, workstream_id: workstreamId }
       }
       const summary = text(input['summary'], 'summary', maxSummaryChars)

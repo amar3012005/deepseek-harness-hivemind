@@ -112,7 +112,9 @@ async function approveSaveDestination(
   }
   appendSaveEvent(execution.agent, { operation_id: operationId, status: 'prepared' })
   const presets = ctx.get('permissionPresets') as { current(session: Agent['session']): string } | undefined
-  if (presets?.current(execution.agent.session) === 'danger-full-access') {
+  if (presets?.current(execution.agent.session) === 'danger-full-access' || await (Reflect.get(ctx, 'hivemindHq') as {
+    fullAccessAllowed?: (agent: Agent, signal: AbortSignal) => Promise<boolean>
+  } | undefined)?.fullAccessAllowed?.(execution.agent, execution.signal)) {
     // Full access is explicit session permission; it does not change tenant ACLs.
     // A concrete requested/prepared scope wins. Company-brain saves otherwise
     // use the company, or the explicitly selected project.

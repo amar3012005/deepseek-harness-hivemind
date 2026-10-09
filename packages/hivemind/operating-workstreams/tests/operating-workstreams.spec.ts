@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { createToolResultMessage } from '@deepseek-ai/dsh-llm'
@@ -299,4 +299,15 @@ describe('HIVE-MIND operating workstreams', () => {
       data: { runId: 'run-live', planId: 'plan-live', receiptId: 'browser:browser-live', kind: 'browser', status: 'completed' },
     })
   })
+})
+
+it('uses attested Runtime native preset authority without requesting or fabricating human approval',async()=>{
+  const { ctx,tool,agent,events }=await setup({ kind:'main' },true,'rejected')
+  const approve=vi.spyOn(ctx.approval,'request')
+  ctx.provide('hivemindHq',{ fullAccessAllowed:async()=>true } as never)
+  const result=await tool.execute({ action:'request_approval',workstream_id:'work-1',approval_reason:'Existing Runtime mode authorizes bounded work.' },{ agent,signal:new AbortController().signal } as never)
+  expect(result).toMatchObject({ status:'approved',outcome:'allowed-once' })
+  expect(approve).not.toHaveBeenCalled()
+  expect(events).toContainEqual({ type:'hivemind/workstream-approval',data:expect.objectContaining({ authority:'permission_preset' }) })
+  expect(events.some(event=>event.type==='approval/decided')).toBe(false)
 })

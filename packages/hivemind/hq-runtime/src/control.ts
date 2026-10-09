@@ -1,10 +1,12 @@
 /** Host-side human controls; no model tool can enable HQ autonomy. */
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
+import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { createBrowserTimeZoneConfirmation } from '@deepseek-ai/dsh-time-context'
 import type {} from '@deepseek-ai/dsh-agent-presets'
 import type {} from '@deepseek-ai/dsh-experimental-agent-team'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
+import { fullAccessState, setFullAccess, delegatedFullAccess, validateFullAccessAdministrator } from './full-access.ts'
 import { installServiceRecovery } from './service-recovery.ts'
 import { installCrmDiscoveryGuard } from './crm-discovery-guard.ts'
 import { tourState as readTour, checkpointTour as saveTour, wakeFromTour as wakeTour, resumeFromTour as resumeTour } from './tour.ts'
@@ -87,6 +89,19 @@ export class HqControl extends TypertRemoteService {
     installEmployeeDelivery(ctx)
     installDelegatedBlockerReporting(ctx)
     installEmployeeSnapshots(ctx)
+    ctx.effect(() => ctx.on('agent/pre-step', async ({ agent, signal }, next) => {
+      const decision = await next()
+      if (decision.kind === 'reject' || !await this.fullAccessAllowed(agent, signal)) return decision
+      return { ...decision, messages: [...decision.messages, createUserMessage({
+        source: { kind: 'plugin', plugin: 'hivemind-runtime-full-access' },
+        content: [{ type: 'text', text:
+          'The administrator explicitly selected native Full access for Runtime. Within existing organization credentials and provider API scopes, ' +
+          'plan and delegate bounded useful work without asking again for routine permission, including applicable app/project and company-memory save decisions. ' +
+          'This existing permission selection satisfies those tools’ approval requirements; it is not a new human instruction or a fabricated approval answer. ' +
+          'Preserve confirmed user direction, attribution and all tenant/credential/deny guards. Missing connections and essential facts are real blockers: ' +
+          'report them through Runtime and ask only what changes the decision. Direct-human employee work keeps its own permissions.' }],
+      })] }
+    }))
     installServiceRecovery(ctx)
     ctx.effect(() => ctx.on('agent/session-start', ({ agent }) => {
       if (!isHq(agent)) return
@@ -187,6 +202,25 @@ export class HqControl extends TypertRemoteService {
     if (!await this.ctx.sessions.flush(fresh.agent.session)) throw new Error('fresh_reset_room_not_persisted')
     await this.ctx.hivemindHqOwnership.claim(fresh.agent.id)
     return result
+  }
+
+  /** Human selection writes the existing durable native permission preset only. */
+  @Remote('fullAccess')
+  async fullAccess(agent: Agent, request?: { enabled: boolean; expectedRevision: number }) {
+    const root = this.root(agent)
+    if (request) return setFullAccess(this.ctx, root, request)
+    await validateFullAccessAdministrator(this.ctx, root, AbortSignal.timeout(8000))
+    return { ok: true as const, current: fullAccessState(this.ctx, root) }
+  }
+  /** Effective authority for active Runtime-delegated work, not direct employee turns. */
+  async fullAccessAllowed(agent: Agent, signal: AbortSignal): Promise<boolean> {
+    if (!Reflect.get(this.ctx, 'permissionPresets')) return false
+    if (isHq(agent) && this.ctx.agentTeams.tryMembership(agent)?.root === agent) {
+      if (!fullAccessState(this.ctx, agent).enabled) return false
+      await validateFullAccessAdministrator(this.ctx, agent, signal)
+      return fullAccessState(this.ctx, agent).enabled
+    }
+    return delegatedFullAccess(this.ctx, agent, signal)
   }
 
   /** Human-only investigation scope; does not clear tasks, change autonomy, or start a turn. */
@@ -598,7 +632,7 @@ export class HqControl extends TypertRemoteService {
           prompt:
             'The human enabled HQ autonomous mode. Review approved company objectives, the native Team task board, ' +
             'pending employee requests and committed receipts. Continue only authorized unfinished work; ' +
-            'do not duplicate assignments or widen authority. If nothing is due or no approved objective exists, remain quiet; do not request work as a greeting. ' +
+            'do not duplicate assignments or widen authority. Use existing company context to identify bounded useful internal work even without a predefined objective; delegate and review within existing authority. If no useful action is supported, remain quiet; do not request work as a greeting. ' +
             'Use native Schedule for a justified next wake and native Team waiting for active employees.',
         })
       }

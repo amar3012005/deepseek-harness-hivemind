@@ -1255,10 +1255,12 @@ export function apply(ctx: Context, config: Config): void {
       }
     }
     const presets = ctx.get('permissionPresets') as { current(session: Agent['session']): string } | undefined
-    const fullAccess = execution.agent !== undefined && presets?.current(execution.agent.session) === 'danger-full-access'
+    const fullAccess = execution.agent !== undefined && (presets?.current(execution.agent.session) === 'danger-full-access' || await (Reflect.get(ctx, 'hivemindHq') as {
+      fullAccessAllowed?: (agent: Agent, signal: AbortSignal) => Promise<boolean>
+    } | undefined)?.fullAccessAllowed?.(execution.agent, execution.signal))
     if (fullAccess && [HIVE_CREATE_PROJECT_TOOL, HIVE_WEB_SEARCH_TOOL, 'web_fetch',
       'hivemind_research_answer', 'hivemind_research_request', 'hivemind_research_gather'].includes(execution.name)) {
-      return { kind: 'allow' }
+      return next()
     }
     if (execution.name === HIVE_CREATE_PROJECT_TOOL) {
       return { kind: 'ask', reason: 'Creating a HIVE-MIND project requires your approval.' }

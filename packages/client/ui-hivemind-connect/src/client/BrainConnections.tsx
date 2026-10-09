@@ -1,11 +1,11 @@
-import type { PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
+import type { PropsRuntime, PropsRenderSlots } from '@deepseek-ai/dsh-client-ui-slots'
 import { useEffect, useRef, useState } from 'react'
 import { roomIdentity } from './room-identity.ts'
 import { SessionCredits } from './SessionCredits.tsx'
 import css from './DreamingConnectors.module.css'
 import { EmployeeAvatar, RuntimeAvatar, projectedEmployee, type EmployeeOption } from './HyperagentEmployee.tsx'
 const names: Record<string, string> = { googlecalendar: 'Google Calendar', gmail: 'Gmail', slack: 'Slack', googledocs: 'Google Docs', googledrive: 'Google Drive', github: 'GitHub', notion: 'Notion', outlook: 'Outlook' }
-export function BrainConnections({ sessionId, useSessions, environmentActivity, showDetails, listEmployees, isPreviewOpen, hero = false }: PropsRuntime<'conversation.session.header.utilities'> & { hero?: boolean; showDetails: () => void; listEmployees?: () => Promise<EmployeeOption[]>; isPreviewOpen?: () => boolean }) {
+export function BrainConnections({ sessionId, useSessions, environmentActivity, renderSlot, showDetails, listEmployees, isPreviewOpen, hero = false }: PropsRuntime<'conversation.session.header.utilities'> & PropsRenderSlots<'hivemind.runtime.fullAccess'> & { hero?: boolean; showDetails: () => void; listEmployees?: () => Promise<EmployeeOption[]>; isPreviewOpen?: () => boolean }) {
   const preset = useSessions(state => state.byId[sessionId]?.projectionValues?.agentPreset ?? state.byId[sessionId]?.agentPreset)
   const employee = useSessions(state => projectedEmployee(
     (state.byId[sessionId]?.projectionValues?.hyperagentOwner ?? state.byId[sessionId]?.projectionValues?.hyperagentSelection)))
@@ -138,6 +138,7 @@ export function BrainConnections({ sessionId, useSessions, environmentActivity, 
       <a className={css.more} href="/hivemind/app/connectors">Manage apps <span aria-hidden="true">›</span></a>
     </>}
     {hyperagents && !phone && <button type="button" className={css.connectorHeading} onClick={() => { setOpen(false); showDetails() }}><span>Agent details</span><span aria-hidden="true">›</span></button>}
+    {preset==='hivemind-hq'&&!employee&&!identity?.pending&&renderSlot('hivemind.runtime.fullAccess', {})}
     {environmentActivity}
     <SessionCredits sessionId={sessionId} />
   </>

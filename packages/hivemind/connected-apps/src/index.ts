@@ -2362,7 +2362,9 @@ export function apply(ctx: Context, config: Config = {}): void {
     const slug = stringValue(execution.arguments['tool_slug'])
     if (slug === undefined || !MUTATING_TOOL.test(slug)) return downstream
     const presets = ctx.get('permissionPresets') as { current(session: Agent['session']): string } | undefined
-    if (execution.agent !== undefined && presets?.current(execution.agent.session) === 'danger-full-access') return downstream
+    if (execution.agent !== undefined && (presets?.current(execution.agent.session) === 'danger-full-access' || await (Reflect.get(ctx, 'hivemindHq') as {
+      fullAccessAllowed?: (agent: Agent, signal: AbortSignal) => Promise<boolean>
+    } | undefined)?.fullAccessAllowed?.(execution.agent, execution.signal))) return downstream
     return { kind: 'ask', reason: `Approve this ${slug} action once. The provider will run only after approval.` }
   }))
   ctx.effect(() => ctx.on('tools/post-execute', async (execution, result, next): Promise<PostToolDecision> => {
