@@ -33,7 +33,7 @@ describe('HIVEMIND private technical details', () => {
     document.documentElement.dataset.dshMode = 'hivemind-chat'
     const view = render(<UserMessageNodeView {...{
       node: { data: { content, source, time: 0 } }, renderMessageImages: () => null, t,
-    } as never} />)
+    } as unknown as Parameters<typeof UserMessageNodeView>[0]} />)
     expect(view.container.textContent).toContain('Market research, Weekly reports')
     expect(view.container.textContent).toContain('Amar answered')
     expect(view.container.textContent).not.toMatch(/private-user|private-org|Authenticated question|control instructions/)
@@ -43,13 +43,13 @@ describe('HIVEMIND private technical details', () => {
     window.history.replaceState(null, '', '/hivemind/app/employee/harness/session/test')
     const view = render(<TurnErrorNodeView {...{ node: { data: {
       message: '400: {"metadata":{"request_id":"private-request","raw":"duplicate tool_result"}}', code: 'UNKNOWN', seq: 1,
-    } }, t } as never} />)
+    } }, t } as unknown as Parameters<typeof TurnErrorNodeView>[0]} />)
     expect(view.container.textContent).toContain('Your conversation is saved. Please try again.')
     expect(view.container.textContent).not.toMatch(/private-request|metadata|tool_result|UNKNOWN/)
     expect(hivemindFailureText('AUTH')).not.toMatch(/key|token|AUTH/)
   })
   it('retains native diagnostic rendering outside the HIVEMIND product', () => {
-    const view = render(<TurnErrorNodeView {...{ node: { data: { message: 'native diagnostics', code: 'UNKNOWN', seq: 1 } }, t } as never} />)
+    const view = render(<TurnErrorNodeView {...{ node: { data: { message: 'native diagnostics', code: 'UNKNOWN', seq: 1 } }, t } as unknown as Parameters<typeof TurnErrorNodeView>[0]} />)
     expect(view.container.textContent).toContain('native diagnostics')
     expect(view.container.textContent).toContain('UNKNOWN')
   })
