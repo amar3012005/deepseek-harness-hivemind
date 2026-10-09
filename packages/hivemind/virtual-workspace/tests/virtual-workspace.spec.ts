@@ -7,5 +7,6 @@ describe('HIVE virtual workspace registry', () => {
     const registry = new HivemindVirtualWorkspaceRegistry(new Context())
     expect(registry.list()).toEqual([])
     expect(registry.get('browser-controlled-id')).toBeUndefined()
+    expect([...registry.archivedSessionIds]).toEqual([])
   })
 })

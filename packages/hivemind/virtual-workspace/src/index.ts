@@ -14,4 +14,7 @@ export default class HivemindVirtualWorkspaceRegistry extends Service {
 
   /** HIVE public chat has no filesystem workspaces to enumerate or inherit. */
   list(): readonly never[] { return [] }
+
+  /** Native workspace feeds require an archive set, even without filesystem workspaces. */
+  get archivedSessionIds(): readonly never[] { return [] }
 }
