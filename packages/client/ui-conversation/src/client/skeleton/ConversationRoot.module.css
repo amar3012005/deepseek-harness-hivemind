@@ -820,9 +820,13 @@
   .root[data-native-chat] .composerStack { --dsh-composer-stack-gap: 0px; }
 }
 
-/* Reserve toolbar space; no floating chrome may cover the first message. */
+/* Individual phone controls overlay the transcript; the scroll content clears
+   them at rest but can move underneath while reading older history. */
 @media (max-width:600px) {
-  .root[data-agent-room] .header:not(.headerHidden) { position:relative !important; inset:auto !important; min-height:56px; flex:none; background:#faf9f4; border-bottom:1px solid #e9e6df; z-index:8; pointer-events:auto; }
-  .root[data-agent-room] .scrollBody { padding-top:8px; }
-  .root[data-agent-room] .composerSeat { flex-shrink:0; background:#faf9f4; }
+  .root[data-agent-room] .header:not(.headerHidden) { position:absolute !important; inset:0 0 auto !important; min-height:56px; width:100%; background:transparent; border-bottom:0; z-index:8; pointer-events:none; }
+  .root[data-agent-room] .header .headerCorner { pointer-events:none; }
+  .root[data-agent-room] .header .headerCorner button { pointer-events:auto; }
+  .root[data-native-chat] .scrollBody { padding-top:64px; scroll-padding-top:64px; }
+  .root[data-native-chat] .composerSeat { flex-shrink:0; background:transparent; pointer-events:none; }
+  .root[data-native-chat] .composerSeat > * { pointer-events:auto; }
 }

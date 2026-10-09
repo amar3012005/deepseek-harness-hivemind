@@ -110,7 +110,7 @@
   :global([data-native-chat]) .body { min-width: 0; }
   :global([data-native-chat]) .body :global(pre) { max-width: 100%; overflow-x: auto; overscroll-behavior-x: contain; }
   :global([data-native-chat]) .body :global(img),
-  :global([data-native-chat]) .body :global(video) { max-width: 100%; height: auto; border-radius: 12px; }
+  :global([data-native-chat]) .body :global(video) { display: block; max-width: 100%; height: auto; margin-inline: auto; border-radius: 12px; }
   :global([data-native-chat]) .body :global(a) { text-underline-offset: 3px; }
   :global([data-native-chat]) .actions { margin-top: 8px; }
 }
