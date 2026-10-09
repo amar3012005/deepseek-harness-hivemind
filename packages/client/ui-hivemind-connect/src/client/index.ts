@@ -457,6 +457,7 @@ export function apply(ctx: ClientContext): void {
       let scheduleRead = 0
       let disposed = false
       const publish = () => {
+        if (disposed || ctx.fiber.uid === null) return
         const state = ctx.sessions.list.getSnapshot()
         const current = state.current
         const row = current === undefined ? undefined : state.byId[current]

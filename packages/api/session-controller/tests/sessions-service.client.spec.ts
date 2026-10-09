@@ -69,6 +69,13 @@ async function feedList(b: Bench, rows: FeedRow[]): Promise<void> {
 }
 
 describe('list store projection', () => {
+  it('does not recreate a listed session scope after root disposal', async () => {
+    const b = bench()
+    await feedList(b, [{ id: 'retained-room' }])
+    await b.ctx.fiber.dispose()
+    expect(() => b.svc.binding(sid('retained-room'))).not.toThrow()
+    expect(b.svc.binding(sid('retained-room'))).toBeUndefined()
+  })
   it('projects durable titles separately from cwd/id display fallbacks and parent links', async () => {
     const b = bench()
     b.svc.handleControlFrame({

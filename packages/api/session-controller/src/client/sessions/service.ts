@@ -203,6 +203,7 @@ export class ClientSessions implements ISessions {
   private readonly selection: SnapshotStore<SessionSelection>
 
   private readonly scopes = new Map<SessionId, ScopeRecord>()
+  private disposed = false
   /** In-flight scope drops remain here after records leave `scopes`, so root disposal can await quiescence. */
   private readonly scopeDrops = new Set<Promise<void>>()
   /**
@@ -251,6 +252,7 @@ export class ClientSessions implements ISessions {
       this.followCurrent()
     })
     rootCtx.effect(() => async () => {
+      this.disposed = true
       disposeStageFollower()
       disposeManagerProjection()
       const scopes = [...this.scopes]
@@ -552,6 +554,9 @@ export class ClientSessions implements ISessions {
    * summary data and do not keep scopes alive.
    */
   private resolve(id: SessionId): ScopeRecord | undefined {
+    // Pending-interaction teardown can publish after the root fiber is gone.
+    // A retained list row must not mint a new scope on that inactive context.
+    if (this.disposed || this.rootCtx.fiber.uid === null) return undefined
     const existing = this.scopes.get(id)
     if (existing !== undefined) return existing
     if (!this.eligible(id)) return undefined
