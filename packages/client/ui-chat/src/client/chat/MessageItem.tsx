@@ -9,6 +9,11 @@ import { CompactionItem } from './CompactionItem.tsx'
 import { ContextInjectionRow } from './ContextInjectionRow.tsx'
 import { MessageIconActions } from './MessageIconActions.tsx'
 import css from './MessageItem.module.css'
+import { hivemindFailureText, questionAnswerPresentation } from './hivemind-presentation.ts'
+
+function isHivemindChat(): boolean {
+  return typeof document !== 'undefined' && document.documentElement.dataset.dshMode === 'hivemind-chat'
+}
 
 type UserImage = Extract<UserMessageNode['content'][number], { type: 'image' }>
 type UserFile = Extract<UserMessageNode['content'][number], { type: 'file' }>
@@ -52,6 +57,7 @@ function failureMessage(
   code: unknown,
   t: ChatViewSlotProps['t'],
 ): string {
+  if (isHivemindChat()) return hivemindFailureText(code)
   return code === 'AUTH' ? t('message.failure.auth') : message
 }
 
@@ -134,7 +140,7 @@ function TurnErrorItem({ node, t, grouped = false }: {
         <span className={css.turnErrorTitle}>{t('message.turnError')}</span>
         <span className={css.turnErrorMessage}>{failureMessage(node.message, node.code, t)}</span>
       </div>
-      {node.code !== undefined && <code className={css.turnErrorCode}>{node.code}</code>}
+      {!isHivemindChat() && node.code !== undefined && <code className={css.turnErrorCode}>{node.code}</code>}
     </div>
   )
   return !grouped && /^\/hivemind\/app\/(?:overview|employee\/harness)(?:\/|$)/u.test(window.location.pathname)
@@ -319,9 +325,11 @@ export const UserMessageNodeView = memo(function UserMessageNodeView({
   node, renderMessageImages, t,
 }: ChatNodeViewProps<'user' | 'steering'>) {
   const data = node.data
+  const answerText = isHivemindChat() ? questionAnswerPresentation(data.content, data.source) : undefined
+  const visibleContent = answerText === undefined ? data.content : [{ type: 'text', text: answerText }]
   return (
     <UserStyleBubble
-      content={data.content}
+      content={visibleContent}
       renderMessageImages={renderMessageImages}
       {...data.referenceLabels === undefined ? {} : { referenceLabels: data.referenceLabels }}
       {...data.skillNames === undefined ? {} : { skillNames: data.skillNames }}

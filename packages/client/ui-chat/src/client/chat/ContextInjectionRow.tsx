@@ -81,10 +81,10 @@ export function ContextInjectionRow({ content, source, provenance, form, openArt
             </button>
           })}
         </div>
-        <details className={css.messageDetails}>
+        {document.documentElement.dataset.dshMode !== 'hivemind-chat' && <details className={css.messageDetails}>
           <summary>Agent message</summary>
           <div className={css.body} data-context-injection-body data-context-form={rendered ?? undefined}>{body}</div>
-        </details>
+        </details>}
       </article></div>
     }
   }
