@@ -573,7 +573,7 @@ Source: [`packages/hivemind/connected-apps/src/index.ts:44`](../packages/hivemin
 }
 ```
 
-Source: [`packages/hivemind/runtime/src/index.ts:76`](../packages/hivemind/runtime/src/index.ts)
+Source: [`packages/hivemind/runtime/src/index.ts:78`](../packages/hivemind/runtime/src/index.ts)
 
 <a id="hiveminddesign-reference-selected--log-only"></a>
 
@@ -648,7 +648,7 @@ Source: [`packages/hivemind/employee-delegation/src/index.ts:121`](../packages/h
 'hivemind/employee-selection': { id: string | null; name?: string; role?: string; avatarUrl?: string; appearance?: JsonValue; joining?: { at: string; creationHash: string; profileRevision: number } }
 ```
 
-Source: [`packages/hivemind/runtime/src/index.ts:72`](../packages/hivemind/runtime/src/index.ts)
+Source: [`packages/hivemind/runtime/src/index.ts:74`](../packages/hivemind/runtime/src/index.ts)
 
 <a id="hivemindemployee-task-snapshot--log-only"></a>
 
@@ -727,7 +727,7 @@ Source: [`packages/hivemind/hq-runtime/src/awakening.ts:31`](../packages/hivemin
 'hivemind/hq-blocker-recovery-hold': { turn: number; callId: string; rootId: string; taskId: string; checkpointId: string }
 ```
 
-Source: [`packages/hivemind/hq-runtime/src/delegated-blocker.ts:44`](../packages/hivemind/hq-runtime/src/delegated-blocker.ts)
+Source: [`packages/hivemind/hq-runtime/src/delegated-blocker.ts:45`](../packages/hivemind/hq-runtime/src/delegated-blocker.ts)
 
 <a id="hivemindhq-calendar-item--log-only"></a>
 
@@ -738,7 +738,7 @@ Source: [`packages/hivemind/hq-runtime/src/delegated-blocker.ts:44`](../packages
 'hivemind/hq-calendar-item': HqCalendarItem
 ```
 
-Source: [`packages/hivemind/hq-runtime/src/control.ts:48`](../packages/hivemind/hq-runtime/src/control.ts)
+Source: [`packages/hivemind/hq-runtime/src/control.ts:51`](../packages/hivemind/hq-runtime/src/control.ts)
 
 <a id="hivemindhq-calendar-wake--log-only"></a>
 
@@ -749,7 +749,7 @@ Source: [`packages/hivemind/hq-runtime/src/control.ts:48`](../packages/hivemind/
 'hivemind/hq-calendar-wake': { itemId: string; revision: number; scheduleId: string; sessionId?: string }
 ```
 
-Source: [`packages/hivemind/hq-runtime/src/control.ts:50`](../packages/hivemind/hq-runtime/src/control.ts)
+Source: [`packages/hivemind/hq-runtime/src/control.ts:53`](../packages/hivemind/hq-runtime/src/control.ts)
 
 <a id="hivemindhq-delegated-blocker--log-only"></a>
 
@@ -762,7 +762,7 @@ Source: [`packages/hivemind/hq-runtime/src/control.ts:50`](../packages/hivemind/
 'hivemind/hq-delegated-blocker': DelegatedBlocker
 ```
 
-Source: [`packages/hivemind/hq-runtime/src/delegated-blocker.ts:40`](../packages/hivemind/hq-runtime/src/delegated-blocker.ts)
+Source: [`packages/hivemind/hq-runtime/src/delegated-blocker.ts:41`](../packages/hivemind/hq-runtime/src/delegated-blocker.ts)
 
 <a id="hivemindhq-employee-assignment--log-only"></a>
 
@@ -784,6 +784,17 @@ Source: [`packages/hivemind/hq-runtime/src/delegated-blocker.ts:40`](../packages
 
 Source: [`packages/hivemind/hq-runtime/src/index.ts:67`](../packages/hivemind/hq-runtime/src/index.ts)
 
+<a id="hivemindhq-employee-blocked--log-only"></a>
+
+#### `hivemind/hq-employee-blocked` — log-only
+
+```ts persistence-catalog
+/** Durable evidence that this employee turn reported its blocker before pausing. */
+'hivemind/hq-employee-blocked': { turn: number; taskId: string; checkpointId: string }
+```
+
+Source: [`packages/hivemind/hq-runtime/src/delegated-blocker.ts:47`](../packages/hivemind/hq-runtime/src/delegated-blocker.ts)
+
 <a id="hivemindhq-mode--log-only"></a>
 
 #### `hivemind/hq-mode` — log-only
@@ -793,7 +804,7 @@ Source: [`packages/hivemind/hq-runtime/src/index.ts:67`](../packages/hivemind/hq
 'hivemind/hq-mode': HqModeState
 ```
 
-Source: [`packages/hivemind/hq-runtime/src/control.ts:44`](../packages/hivemind/hq-runtime/src/control.ts)
+Source: [`packages/hivemind/hq-runtime/src/control.ts:47`](../packages/hivemind/hq-runtime/src/control.ts)
 
 <a id="hivemindhq-public-investigation--log-only"></a>
 
@@ -804,7 +815,7 @@ Source: [`packages/hivemind/hq-runtime/src/control.ts:44`](../packages/hivemind/
 'hivemind/hq-public-investigation': { enabled: boolean }
 ```
 
-Source: [`packages/hivemind/hq-runtime/src/control.ts:46`](../packages/hivemind/hq-runtime/src/control.ts)
+Source: [`packages/hivemind/hq-runtime/src/control.ts:49`](../packages/hivemind/hq-runtime/src/control.ts)
 
 <a id="hivemindhq-rest-confirmed--log-only"></a>
 
@@ -985,7 +996,7 @@ Source: [`packages/hivemind/playbooks/src/index.ts:198`](../packages/hivemind/pl
 'hivemind/read-scope': { scope: 'full' | 'personal' | 'organization' | 'project'; project?: string }
 ```
 
-Source: [`packages/hivemind/runtime/src/index.ts:68`](../packages/hivemind/runtime/src/index.ts)
+Source: [`packages/hivemind/runtime/src/index.ts:70`](../packages/hivemind/runtime/src/index.ts)
 
 <a id="hivemindreply-language--log-only"></a>
 
@@ -996,7 +1007,7 @@ Source: [`packages/hivemind/runtime/src/index.ts:68`](../packages/hivemind/runti
 'hivemind/reply-language': { language: string }
 ```
 
-Source: [`packages/hivemind/runtime/src/index.ts:74`](../packages/hivemind/runtime/src/index.ts)
+Source: [`packages/hivemind/runtime/src/index.ts:76`](../packages/hivemind/runtime/src/index.ts)
 
 <a id="hivemindrequest-assembly-budget--log-only"></a>
 
@@ -1205,14 +1216,14 @@ Source: [`packages/hivemind/runtime/src/voice-outcome.ts:10`](../packages/hivemi
 'hivemind/web-search-route': { provider: 'native' | 'existing'; fallback: boolean }
 ```
 
-Source: [`packages/hivemind/runtime/src/index.ts:70`](../packages/hivemind/runtime/src/index.ts)
+Source: [`packages/hivemind/runtime/src/index.ts:72`](../packages/hivemind/runtime/src/index.ts)
 
 <a id="hivemindworkstream-approval--log-only"></a>
 
 #### `hivemind/workstream-approval` — log-only
 
 ```ts persistence-catalog
-/** A real approval-service decision bound to one operating workstream. */
+/** A real approval-service decision or explicit native preset authority bound to one workstream. */
 'hivemind/workstream-approval': WorkstreamApproval
 ```
 
