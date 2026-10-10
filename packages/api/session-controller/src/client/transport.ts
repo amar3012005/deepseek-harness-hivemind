@@ -64,10 +64,13 @@ export type SessionJournalChange =
   }
   | { readonly type: 'append'; readonly entry: SessionLiveEventEntry }
   | { readonly type: 'assistant-stream'; readonly frame: SessionAssistantStreamFrame }
+  | { readonly type: 'projections'; readonly baseline: SessionProjectionBaseline }
+
+type SessionJournalNotification = SessionAssistantStreamFrame | { readonly type: 'projections'; readonly baseline: SessionProjectionBaseline }
 
 function toSessionJournalChange(
   change: RemoteJournalChange<
-    SessionJournalPage, SessionHistoryRecord, SessionAssistantStreamFrame
+    SessionJournalPage, SessionHistoryRecord, SessionJournalNotification
   >,
 ): SessionJournalChange {
   switch (change.type) {
@@ -81,6 +84,7 @@ function toSessionJournalChange(
       }
     }
     case 'notification':
+      if (change.notification.type === 'projections') return change.notification
       return { type: 'assistant-stream', frame: change.notification }
   }
 }
@@ -147,7 +151,7 @@ export class SessionEventStream extends RemoteJournalStream<
   SessionHistoryRecord,
   number,
   ClientSessionPageRequest,
-  SessionAssistantStreamFrame
+  SessionJournalNotification
 > {
   /**
    * @param remote - generated Session namespace and Gateway stream factory.
@@ -181,7 +185,7 @@ export class SessionEventStream extends RemoteJournalStream<
     request: ClientSessionPageRequest,
     signal: AbortSignal,
   ): AsyncIterable<RemoteJournalFrame<
-    SessionHistoryRecord, number, SessionJournalPage, SessionAssistantStreamFrame
+    SessionHistoryRecord, number, SessionJournalPage, SessionJournalNotification
   >> {
     let assistantRevision: number | undefined
     for await (const frame of this.remote.session.follow({
@@ -206,7 +210,7 @@ export class SessionEventStream extends RemoteJournalStream<
           page: {
             records,
             hasMore: frame.hasMore,
-            projections: frame.projections,
+            ...(frame.projectionsPending === true ? {} : { projections: frame.projections }),
             assistantStream: frame.assistantStream,
           },
         }
@@ -221,6 +225,10 @@ export class SessionEventStream extends RemoteJournalStream<
         }
         assistantRevision = frame.frame.revision
         yield { type: 'notification', notification: frame.frame }
+        continue
+      }
+      if (frame.type === 'projections') {
+        yield { type: 'notification', notification: frame }
         continue
       }
       yield { type: 'entry', entry: { ...frame, event: acceptedWireEvent(frame.event) } }

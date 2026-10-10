@@ -63,6 +63,19 @@ it.skipIf(fixture === undefined)('loads only a recent native window under forced
     }
     const presentation = { sessions: ctx.sessions, get: (key: string) => key === 'sessionPersistence' ? store : cache } as unknown as Context
     const bodyReads = vi.spyOn(store, 'read')
+    const noCheckpoint = { sessions: ctx.sessions, get: (key: string) => key === 'sessionPersistence' ? store : undefined } as unknown as Context
+    const phoneBegan = performance.now()
+    const phone = await scope.run(a, () => readColdHistorySource(noCheckpoint, id, new AbortController().signal,
+      { maxMessages: 50, maxTurns: 5, withProjections: true }))
+    const phoneWindowMs = performance.now() - phoneBegan
+    expect(phone?.source).toBe('window')
+    expect(phone?.projections).toBeUndefined()
+    expect(phone?.cursor).toBe(9999)
+    expect(bodyReads.mock.calls.every(([, , offset]) => offset > 0)).toBe(true)
+    expect(bodyReads.mock.calls.reduce((sum, [, , , length]) => sum + length, 0)).toBeLessThanOrEqual(256)
+    await expect(scope.run(b, () => readColdHistorySource(noCheckpoint, id, new AbortController().signal,
+      { maxMessages: 50, maxTurns: 5, withProjections: true }))).rejects.toMatchObject({ code: 'SESSION_QUERY_SESSION_NOT_FOUND' })
+    bodyReads.mockClear()
     const began = performance.now()
     const source = await scope.run(a, () => readColdHistorySource(presentation, id, new AbortController().signal,
       { maxMessages: 50, maxTurns: 20, withProjections: true }))
@@ -84,7 +97,7 @@ it.skipIf(fixture === undefined)('loads only a recent native window under forced
     const fullMs = performance.now() - fullBegan
     expect(full.events).toHaveLength(10000)
     await fullHandle.close()
-    console.log(JSON.stringify({ fixture: 'network-isolated-postgresql', events: 10000, rowsRequested, windowMs, fullMs, crossOrgDenied: true, forcedRls: true }))
+    console.log(JSON.stringify({ fixture: 'network-isolated-postgresql', events: 10000, phoneWindowMs, checkpointRequiredForPhone: false, rowsRequested, windowMs, fullMs, crossOrgDenied: true, forcedRls: true }))
   } finally {
     await ctx?.fiber.dispose()
     await pool?.end()

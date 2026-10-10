@@ -125,6 +125,8 @@ export class SessionHistoryController {
     const target = addressId(address)
     const buffered = new Deque<
       | { readonly type: 'event'; readonly event: SessionEvent }
+      | { readonly type: 'projections'; readonly baseline: SessionProjectionBaseline }
+      | { readonly type: 'failure'; readonly error: unknown }
       | {
         readonly type: 'assistant-stream'
         readonly frame: SessionAssistantStreamFrame
@@ -177,6 +179,7 @@ export class SessionHistoryController {
     const onAbort = (): void => { notify() }
     signal.addEventListener('abort', onAbort, { once: true })
     try {
+      const openingStarted = performance.now()
       using source = await this.sourceFor(address, signal, true, request)
       const events = source.events
       signal.throwIfAborted()
@@ -191,15 +194,15 @@ export class SessionHistoryController {
       // including larger revisions from a retired Agent; later revision
       // resets reach Client continuity validation.
       const assistantStreamOrdinalCut = assistantStreamOrdinal
+      this.ctx.logger.info(`session-controller: first history window source=${source.source} turns=${String(request.maxTurns ?? 'messages')} records=${String(page.events.length)} ms=${String(Math.round(performance.now() - openingStarted))}`)
       yield {
         type: 'snapshot',
         header: wireHeader(source.header),
         cursor,
         records: pageRecords(page.events),
         hasMore: page.hasMore,
-        projections: source.projections === undefined
-          ? { asOfSeq: cursor, values: {} }
-          : projectionBlock(source.projections),
+        projections: source.projections === undefined ? { asOfSeq: cursor, values: {} } : projectionBlock(source.projections),
+        ...(source.source === 'window' && source.projections === undefined ? { projectionsPending: true as const } : {}),
         ...assistantStream === undefined ? {} : { assistantStream },
       }
       if (address.kind === 'session' && source.source === 'window') {
@@ -207,10 +210,19 @@ export class SessionHistoryController {
         // remains an independent complete native observation, never this tail.
         const preparation = this.sourceFor(address, signal, true).then((observation) => {
           try {
-            if (!signal.aborted && observation.source === 'prepared') this.promote(observation.retain())
+            if (!signal.aborted && observation.source === 'prepared') {
+              if (observation.projections !== undefined) {
+                buffered.pushBack({ type: 'projections', baseline: projectionBlock(observation.projections) })
+                notify()
+              }
+              this.promote(observation.retain())
+            }
           } finally { observation[Symbol.dispose]() }
         }).catch((error: unknown) => {
-          if (!signal.aborted) this.ctx.logger.error(`session-controller: background cold activation failed: ${String(error)}`)
+          if (!signal.aborted) {
+            buffered.pushBack({ type: 'failure', error })
+            notify()
+          }
         })
         this.pendingPreparations.add(preparation)
         void preparation.finally(() => { this.pendingPreparations.delete(preparation) })
@@ -229,6 +241,11 @@ export class SessionHistoryController {
         const item = buffered.popFront()
         if (item === undefined) {
           await new Promise<void>((resolve) => { wake = resolve })
+          continue
+        }
+        if (item.type === 'failure') throw item.error
+        if (item.type === 'projections') {
+          yield item
           continue
         }
         if (item.type === 'assistant-stream') {

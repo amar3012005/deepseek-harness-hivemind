@@ -533,10 +533,13 @@ export type SessionFollowFrame =
     readonly records: readonly SessionHistoryRecord[]
     readonly hasMore: boolean
     readonly projections: SessionProjectionBaseline
+    /** The block is not a baseline while full native restoration is pending. */
+    readonly projectionsPending?: true
     readonly assistantStream?: SessionAssistantStreamBaseline
   }
   | SessionEventEntry
   | { readonly type: 'assistant-stream'; readonly frame: SessionAssistantStreamFrame }
+  | { readonly type: 'projections'; readonly baseline: SessionProjectionBaseline }
 
 /** One pending inbox occurrence in the authoritative queue snapshot. */
 export interface SessionQueuedItem {

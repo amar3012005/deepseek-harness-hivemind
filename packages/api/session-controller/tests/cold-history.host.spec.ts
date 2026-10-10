@@ -46,6 +46,86 @@ function setup(events = fixtures()) {
 }
 
 describe('bounded native history', () => {
+  it.each([10, 1000])('opens five turns without checkpoints at %i turns', async (turns) => {
+    const { ctx, header, cache, read } = setup(fixtures(turns))
+    cache.coldReadFloor.mockReturnValue(SessionLogOffset(0))
+    const source = await readColdHistorySource(ctx, header.id, new AbortController().signal,
+      { maxMessages: 50, maxTurns: 5, withProjections: true })
+    expect(source?.source).toBe('window')
+    expect(source?.projections).toBeUndefined()
+    expect(cache.coldSnapshotSuffix).not.toHaveBeenCalled()
+    expect(read.mock.calls.reduce((sum, [, length]) => sum + length, 0)).toBeLessThanOrEqual(256)
+  })
+  it('presents an interrupted durable tail without inventing recovery events', async () => {
+    const events = fixtures()
+    events.splice(events.length - 2)
+    const { ctx, header } = setup(events)
+    const source = await readColdHistorySource(ctx, header.id, new AbortController().signal,
+      { maxMessages: 50, maxTurns: 5, withProjections: true })
+    expect(source?.cursor).toBe(events.length - 1)
+    expect(source?.events.at(-1)).toEqual(events.at(-1))
+    expect(source?.projections).toBeUndefined()
+  })
+  it('renders five turns while full restoration is blocked, then hydrates without a second snapshot', async () => {
+    const fixture = setup()
+    fixture.cache.coldReadFloor.mockReturnValue(SessionLogOffset(0))
+    const ctx = new Context()
+    await ctx.plugin(SessionStore)
+    ctx.provide('sessionPersistence', fixture.persistence as never)
+    ctx.provide('sessionProjectionCache', fixture.cache as never)
+    let release!: (value: SessionObservation) => void
+    const observe = vi.fn(() => new Promise<SessionObservation>((resolve) => { release = resolve }))
+    ctx.provide('sessionQuery', { observeSession: observe } as never)
+    const complete: SessionObservation = {
+      source: 'prepared', header: fixture.header, inheritedEventCount: SessionLogOffset(0),
+      cursor: SessionSeq(4999), events: fixtures(), projections: { asOfSeq: SessionSeq(4999), values: {} },
+      retain: () => complete, [Symbol.dispose]() {},
+    }
+    const promote = vi.fn()
+    const history = new SessionHistoryController(ctx, promote)
+    const abort = new AbortController()
+    const iterator = history.follow({ address: { kind: 'session', sessionId: fixture.header.id }, maxTurns: 5 }, abort.signal)[Symbol.asyncIterator]()
+    try {
+      const first = await iterator.next()
+      expect(first.value).toMatchObject({ type: 'snapshot', cursor: 4999, hasMore: true })
+      if (!first.done && first.value.type === 'snapshot') {
+        expect(first.value.records).toHaveLength(25)
+        expect(first.value.projectionsPending).toBe(true)
+      }
+      expect(observe).not.toHaveBeenCalled()
+      const next = iterator.next()
+      await vi.waitFor(() => { expect(observe).toHaveBeenCalledOnce() })
+      expect(promote).not.toHaveBeenCalled()
+      release(complete)
+      expect((await next).value).toEqual({ type: 'projections', baseline: { asOfSeq: 4999, values: {} } })
+      expect(promote).toHaveBeenCalledOnce()
+    } finally {
+      abort.abort()
+      await iterator.return?.()
+      await ctx.fiber.dispose()
+    }
+  })
+  it('surfaces full-restoration failure after first-page delivery and does not promote', async () => {
+    const fixture = setup()
+    const ctx = new Context()
+    await ctx.plugin(SessionStore)
+    ctx.provide('sessionPersistence', fixture.persistence as never)
+    ctx.provide('sessionProjectionCache', fixture.cache as never)
+    ctx.provide('sessionQuery', { observeSession: vi.fn(async () => { throw new Error('fixture restoration failure') }) } as never)
+    const promote = vi.fn()
+    const history = new SessionHistoryController(ctx, promote)
+    const abort = new AbortController()
+    const iterator = history.follow({ address: { kind: 'session', sessionId: fixture.header.id }, maxTurns: 5 }, abort.signal)[Symbol.asyncIterator]()
+    try {
+      expect((await iterator.next()).value).toMatchObject({ type: 'snapshot', projectionsPending: true })
+      await expect(iterator.next()).rejects.toThrow('fixture restoration failure')
+      expect(promote).not.toHaveBeenCalled()
+    } finally {
+      abort.abort()
+      await iterator.return?.()
+      await ctx.fiber.dispose()
+    }
+  })
   it('counts whole turns and includes the human prompt before turn start', () => {
     const events = fixtures(25)
     expect(historyWindowCut(events, 50, 20)).toBe(25)

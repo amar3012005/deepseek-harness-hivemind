@@ -658,6 +658,10 @@ export class Session implements SessionFace {
         return
       case 'assistant-stream':
         this.publishAssistantEntry(this.assistantStream.acceptFrame(change.frame))
+        return
+      case 'projections':
+        this.projections.seed(projectionsBaseline(change.baseline))
+        this.notifier.markDirty()
     }
   }
 

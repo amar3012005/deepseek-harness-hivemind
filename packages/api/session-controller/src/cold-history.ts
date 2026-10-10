@@ -60,8 +60,9 @@ export function historyWindowCut(
 
 /**
  * Read a fixed backwards presentation window using the native read handle.
- * Cold follow requires a complete compatible checkpoint; older pages need
- * only header authorization. Unknown formats/backends retain ordinary replay.
+ * Small turn windows deliver presentation before projection restoration;
+ * other follow windows require a complete compatible checkpoint. Unknown
+ * formats/backends retain ordinary replay.
  * Every body read uses the backend's existing principal scope and validation.
  */
 export async function readColdHistorySource(
@@ -74,15 +75,17 @@ export async function readColdHistorySource(
   const snapshot = await persistence.stat(id, { signal })
   if (snapshot === undefined) throw new SessionQueryError(`stored session ${id} not found`, 'SESSION_QUERY_SESSION_NOT_FOUND')
   const count = snapshot.eventCount
-  if (count === undefined || count < COLD_WINDOW_THRESHOLD) return undefined
+  const deferred = options.maxTurns !== undefined && options.maxTurns <= 5
+  if (count === undefined || (!deferred && count < COLD_WINDOW_THRESHOLD)) return undefined
   await using handle = await persistence.openHistoryRead(id, { signal })
   const header = handle.header
   // Direct-child lineage authorization stays in ordinary native observation.
   if (header.origin === 'subagent' || header.cwd === undefined) return undefined
   const cache = ctx.get('sessionProjectionCache')
-  const floor = options.withProjections
+  const requireProjections = options.withProjections && !deferred
+  const floor = requireProjections
     ? cache?.coldReadFloor(header, handle.inheritedEventCount) : undefined
-  if (options.withProjections && (cache === undefined || floor === undefined || floor === 0)) return undefined
+  if (requireProjections && (cache === undefined || floor === undefined || floor === 0)) return undefined
   if (options.throughSeq !== undefined && options.throughSeq >= count) return undefined
   const durableEnd = Math.min(count, options.throughSeq === undefined ? count : options.throughSeq + 1)
   const pageEnd = Math.min(durableEnd, options.beforeSeq ?? durableEnd)
@@ -111,7 +114,7 @@ export async function readColdHistorySource(
   if (ctx.sessions.get(id) !== undefined) return undefined
   let projections: ProjectionSnapshot | undefined
   let cursor: SessionSeqCursor = (durableEnd - 1) as SessionSeqCursor
-  if (options.withProjections) {
+  if (requireProjections) {
     if (cache === undefined) return undefined
     const projectionStart = floor as Offset
     if (projectionStart >= count) return undefined

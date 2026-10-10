@@ -45,6 +45,20 @@ function histResponse(events: SessionEvent[], hasMore = false) {
 }
 
 describe('Session open', () => {
+  it('applies deferred projection values without resetting history or regressing newer control values', async () => {
+    const { api, session } = makeSession()
+    const page = plainTurn(SessionSeq(10), 3, 'Question', 'Answer')
+    api.onHistory = () => histResponse(page, true)
+    await session.open()
+    const original = windowEntries(session)
+    session.projections.apply('title', 'Newer control title', SessionSeq(20))
+    await api.pushFollow(SID, { type: 'projections', baseline: { asOfSeq: 15, values: { title: 'Older restoration title', goal: null } } })
+    expect(windowEntries(session)).toBe(original)
+    expect(session.projections.get('title')).toBe('Newer control title')
+    expect(session.projections.get('goal')).toBeNull()
+    expect(session.getSnapshot()).toMatchObject({ openState: 'open', hasMore: true })
+    await session.dispose()
+  })
   it('keeps a bare Session blank until an authoritative lifecycle signal arrives', () => {
     const { session } = makeSession()
     expect(session.getSnapshot()).toMatchObject({ blank: true, promptAttempted: false, running: false })

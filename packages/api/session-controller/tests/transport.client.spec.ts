@@ -234,6 +234,27 @@ describe.each(['snapshot', 'live', 'page'] as const)('Session %s wire acceptance
 })
 
 describe('Session Client stream adapters', () => {
+  it('hydrates deferred projections without replacing history or advancing its cursor', async () => {
+    const initial = snapshot(10, [entry(10)], true)
+    if (initial.type === 'snapshot') Object.assign(initial, { projectionsPending: true })
+    const baseline = { asOfSeq: 10, values: { title: 'Restored title' } }
+    const remote = new ScriptedSessionRemote([{
+      frames: [initial, { type: 'projections', baseline }, entry(11)], hold: true,
+    }], [])
+    const changes: SessionJournalChange[] = []
+    const failed = vi.fn()
+    const stream = new SessionEventStream(sessionClient(remote), ADDRESS, {
+      publish: (change) => { changes.push(change) }, failed,
+    })
+    try {
+      await stream.open({ maxTurns: 5 })
+      await vi.waitFor(() => { expect(changes).toHaveLength(3) })
+      expect(changes.map(change => change.type)).toEqual(['replace', 'projections', 'append'])
+      expect(changes[1]).toEqual({ type: 'projections', baseline })
+      expect(changes[2]).toMatchObject({ entry: { event: { seq: 11 } } })
+      expect(failed).not.toHaveBeenCalled()
+    } finally { await stream.dispose() }
+  })
   it('preserves current envelopes and payloads without normalization across every journal path', async () => {
     const events: SessionWireEvent[] = [
       surfaceEvent(),
