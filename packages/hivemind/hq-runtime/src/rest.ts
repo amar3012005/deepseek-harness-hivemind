@@ -106,7 +106,7 @@ export function socialTurnOnly(current: readonly SessionEvent[], fresh: readonly
     return event.data.name === 'hivemind_agent_message' && !args.task_id
       && (!Array.isArray(args.artifact_ids) || args.artifact_ids.length === 0)
       && ((args.kind === 'update' && !args.reply_to)
-        || (args.kind === 'reply' && args.request_reply === false))
+        || args.kind === 'reply')
   })
 }
 const NOTE_SECTION = 'hq-rest-pending-note-ids'

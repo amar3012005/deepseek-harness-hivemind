@@ -81,7 +81,7 @@ describe('native Runtime voluntary rest', () => {
     f.events.push({ seq: f.events.length, time: Date.now(), type: 'hivemind/room-message-queued',
       data: { id: 'outgoing', targetId: 'monny-room', artifactIds: [] } } as unknown as SessionEvent)
     f.agent.session.append('user/message', createUserMessage({ source: { kind: 'hivemind-agent-message' } as never, content: [{ type: 'text', text: JSON.stringify({ id: 'incoming', senderId: 'monny-room', kind: 'reply', replyTo: 'outgoing', artifactIds: [], text: 'Hi Runtime!' }) }] }), { surfaceOp: 'none' } as never)
-    f.agent.session.append('tool/call', { name: 'hivemind_agent_message', callId: 'close', arguments: '{"kind":"reply","reply_to":"incoming","request_reply":false}', turn: 1, step: 3 } as never)
+    f.agent.session.append('tool/call', { name: 'hivemind_agent_message', callId: 'close', arguments: '{"kind":"reply","reply_to":"incoming"}', turn: 1, step: 3 } as never)
     await f.hooks.get('agent/turn-stopping')!({ agent: f.agent, turn: 1, signal: new AbortController().signal })
     expect(f.agent.steer).not.toHaveBeenCalled()
     expect(socialTurnOnly(f.events)).toBe(true)
