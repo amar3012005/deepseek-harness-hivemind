@@ -20,6 +20,8 @@ import { TurnNavigator } from './TurnNavigator.tsx'
 import { mergeTurnRailItems, type TurnRailItem } from './turn-rail-items.ts'
 import { formatRunDuration } from './message-chrome.ts'
 import css from './ChatView.module.css'
+import { pendingRuntimeSignals, runtimeSignal } from './runtime-signal.ts'
+import { RuntimeSignalRow } from './RuntimeSignalRow.tsx'
 
 const FOLLOW_THRESHOLD = 24
 const SCROLL_SAMPLE_INTERVAL_MS = 500
@@ -295,6 +297,16 @@ export function ChatView({
   )
   const timeline = useChat(s => s.timeline)
   const inbox = useSession(s => s.queue)
+  const runtimeSignals = useMemo(() => {
+    const consumed = new Set<string>()
+    for (const key of order) {
+      const node = nodeStore.get(key)
+      if (node?.kind !== 'context') continue
+      const signal = runtimeSignal((node as ChatNode<'context'>).data.source)
+      if (signal !== null) consumed.add(signal.eventId)
+    }
+    return pendingRuntimeSignals(inbox, consumed)
+  }, [inbox, order, nodeStore])
   // Workspace root off the session list row: path summaries display relative to it.
   const cwd = useSessions(s => s.byId[sessionId]?.cwd)
   const running = useSession(s => s.running)
@@ -912,6 +924,7 @@ export function ChatView({
               t={t}
             />
           ))}
+          {runtimeSignals.map(signal => <RuntimeSignalRow key={signal.eventId} signal={signal} pending />)}
           {visibleSubmissions.map(submission => (
             <PendingSubmissionBubble
               key={submission.requestId}
