@@ -54,6 +54,8 @@ export interface SessionPersistenceSnapshot {
   readonly revision: SessionPersistenceRevision
   /** Logical event count, when the backend can provide it cheaply from metadata; otherwise absent. */
   readonly eventCount?: number
+  /** Optional scoped navigation facts captured with this listing, never an authority cache. */
+  readonly navigation?: { readonly agentPreset?: string; readonly started: boolean }
   /** Physical artifact byte size, when the backend can provide it cheaply (JSONL); otherwise absent. */
   readonly sizeBytes?: number
 }

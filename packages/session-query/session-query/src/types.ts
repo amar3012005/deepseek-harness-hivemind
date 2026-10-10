@@ -27,6 +27,8 @@ export type SessionEventSurface = 'current' | 'shadowed' | 'log-only'
 export interface SessionRecord {
   /** Cloned session header selected from the live-preferred corpus. */
   header: SessionHeader
+  /** Scoped durable navigation facts from the same corpus listing, when provided. */
+  navigation?: { readonly agentPreset?: string; readonly started: boolean }
   /** Whether the id currently exists in `ctx.sessions`. */
   live: boolean
   /** Whether the active persistence backend currently lists the id, including a created-but-unmaterialized session it already observes. */
