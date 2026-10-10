@@ -23,39 +23,7 @@ it('uses the same task card for exact employee assignment and authoritative comp
   expect(view.getByText('✓')).toBeTruthy()
   expect(view.queryByText(/^Starts /)).toBeNull()
 })
-it('projects only the authorized snapshot event at its actual receipt position', () => {
-  const event = { type: 'hivemind/employee-task-snapshot', seq: 42, data: {
-    employeeId: 'ravi-id', employeeName: 'Ravi Patel', task, calendar: null,
-  } }
-  expect(employeeTaskCard.match(event as never)).toEqual({ id: '42', role: 'start' })
-  expect(employeeTaskCard.match({ type: 'user/message', seq: 43, data: {} } as never)).toBeNull()
-  const node = employeeTaskCard.buildViewNode?.({ key: 'employee-task:42', id: '42',
-    start: { event: { seq: 42 }, location: { kind: 'session' } }, state: { snapshot: event.data, visible: true, seen: {} },
-  } as never)
-  expect(node).toMatchObject({ anchorSeq: 42, visibility: 'visible', processDisclosure: 'independent', data: event.data })
-})
-
-it('deduplicates internal revisions per task while retaining actual status transitions', () => {
-  let previous: unknown
-  const reader = { previous: () => previous === undefined ? undefined : { state: previous } }
-  const project = (status: string, revision: number, artifactIds: string[]) => {
-    const snapshot = { rootSessionId: 'runtime', employeeId: 'ravi-id', employeeName: 'Ravi Patel',
-      task: { ...task, status, revision, artifactIds }, calendar: null, sourceSequence: revision }
-    const state = employeeTaskCard.start({} as never, { event: { data: snapshot } } as never, reader as never)
-    previous = state
-    return employeeTaskCard.buildViewNode?.({ key: `card:${revision}`, id: String(revision),
-      start: { event: { seq: revision }, location: { kind: 'session' } }, state,
-    } as never)
-  }
-  expect(project('pending', 1, [])).not.toBeNull()
-  expect(project('in_progress', 2, [])).not.toBeNull()
-  expect(project('in_progress', 3, ['pdf'])).toMatchObject({ visibility: 'hidden' })
-  expect(project('in_progress', 4, ['pdf', 'html'])).toMatchObject({ visibility: 'hidden' })
-  expect(project('completed', 5, ['pdf', 'html'])).toMatchObject({ anchorSeq: 5, data: { task: { status: 'completed' } } })
-  expect(project('completed', 6, ['pdf', 'html'])).toMatchObject({ visibility: 'hidden' })
-})
-
-it('keeps a materialized card hidden when an older identical receipt is prepended', () => {
+it('updates one calendar card per task across statuses and prepended history', () => {
   const assembler = new ConversationNodeAssembler({
     entries: () => [employeeTaskCard], fallbackEntry: () => undefined,
   }, { entries: () => [{ target: 'chat', create: () => ({
@@ -64,19 +32,25 @@ it('keeps a materialized card hidden when an older identical receipt is prepende
     apply: ({ upserts }: { upserts: readonly ConversationViewNode[] }) => upserts,
   }) }] })
   assembler.activateTarget('chat')
-  const receipt = (seq: number) => ({ type: 'event', event: {
+  const receipt = (seq: number, status: string, id = task.id) => ({ type: 'event', event: {
     seq, time: 1_700_000_000_000 + seq, type: 'hivemind/employee-task-snapshot',
     data: { rootSessionId: 'runtime', employeeId: 'ravi-id', employeeName: 'Ravi Patel',
-      task, calendar: null, sourceSequence: seq },
+      task: { ...task, id, status, revision: seq }, calendar: null, sourceSequence: seq },
   } })
-  assembler.replaceWindow([receipt(42)] as never, true)
+  assembler.replaceWindow([receipt(42, 'pending'), receipt(43, 'in_progress')] as never, true)
   assembler.flush()
   const initial = assembler.snapshot('chat') as readonly ConversationViewNode[]
   expect(initial).toHaveLength(1)
-  expect(initial[0]).toMatchObject({ visibility: 'visible' })
-  assembler.prepend([receipt(41)] as never, false)
+  expect(initial[0]).toMatchObject({ anchorSeq: 42, data: { task: { status: 'in_progress' } } })
+  assembler.prepend([receipt(41, 'pending')] as never, false)
   expect(() => assembler.flush()).not.toThrow()
-  const changes = assembler.snapshot('chat') as readonly ConversationViewNode[]
-  expect(changes).toContainEqual(expect.objectContaining({ key: initial[0]?.key, visibility: 'hidden' }))
-  expect(changes).toContainEqual(expect.objectContaining({ anchorSeq: 41, visibility: 'visible' }))
+  expect(assembler.snapshot('chat')).toEqual([expect.objectContaining({ key: initial[0]?.key,
+    anchorSeq: 41, data: expect.objectContaining({ task: expect.objectContaining({ status: 'in_progress' }) }) })])
+  assembler.append(receipt(44, 'completed') as never)
+  assembler.append(receipt(45, 'pending', 'another-task') as never)
+  assembler.flush()
+  const updated = assembler.snapshot('chat') as readonly ConversationViewNode[]
+  expect(updated).toHaveLength(2)
+  expect(updated).toContainEqual(expect.objectContaining({ key: initial[0]?.key,
+    data: expect.objectContaining({ task: expect.objectContaining({ status: 'completed' }) }) }))
 })

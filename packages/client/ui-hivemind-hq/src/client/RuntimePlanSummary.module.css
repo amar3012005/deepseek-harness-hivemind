@@ -1,4 +1,4 @@
-.task { display: flex; align-items: flex-start; gap: 12px; padding: 14px 0; border-bottom: 1px solid color-mix(in srgb, currentColor 8%, transparent); }
+.task { display: flex; align-items: flex-start; gap: 12px; padding: 14px; margin: 8px 0; border: 1px solid color-mix(in srgb, currentColor 12%, transparent); border-radius: 12px; background: color-mix(in srgb, #e8bd83 7%, transparent); }
 .date { flex: 0 0 42px; display: grid; place-items: center; border-radius: 4px; padding: 5px 0; background: color-mix(in srgb, #b9441b 8%, transparent); }
 .date small { font-size: 10px; text-transform: uppercase; opacity: .7; }
 .date strong { font-size: 20px; line-height: 1.2; }

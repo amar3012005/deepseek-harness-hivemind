@@ -14,7 +14,8 @@ export interface RuntimeTaskCardProps {
 }
 export function RuntimeTaskCard({ task, employeeName, avatar, startsAt, endsAt, cancel, cancelling, busy }: RuntimeTaskCardProps) {
   const start = startsAt ?? task.nextWakeAt
-  const date = start === undefined ? undefined : new Date(start)
+  const calendarDate = start ?? task.dueAt
+  const date = calendarDate === undefined ? undefined : new Date(calendarDate)
   const format = (value: string) => new Date(value).toLocaleString(undefined, { timeZoneName: 'short' })
   const completed = task.status === 'completed'
   const status = completed ? 'Completed' : task.status === 'deleted' ? 'Cancelled'
