@@ -330,7 +330,7 @@ it('formats persisted UTC instants in the actual confirmed zone with explicit UT
 it('does not manufacture a rest wake for an authenticated nightly scheduled review',async()=>{
   const f=fixture();const occurrence='2030-01-01T00:00:00.000Z'
   const id='schedule-'+createHash('sha256').update(`${f.agent.id}\0nightly-routine-check-v1`).digest('hex')
-  f.agent.session.append('user/message',{ source:{ kind:'schedule',occurrenceAt:occurrence },content:[{ type:'text',text:'reminders_json: '+JSON.stringify([{ schedule_id:id,occurrence_at:occurrence }]) }] } as never)
+  f.agent.session.append('user/message',{ source:{ kind:'schedule',occurrenceAt:occurrence },content:[{ type:'text',text:'reminders_json: '+JSON.stringify([{ schedule_id:id,occurrence_at:occurrence }]) }] } as never,{ surfaceOp:'none' } as never)
   expect(isNightlyScheduledTurn(f.agent)).toBe(true)
   f.agent.session.append('tool/call',{ name:'runtime_support_report' } as never)
   await f.hooks.get('agent/turn-stopping')!({ agent:f.agent,turn:1,signal:new AbortController().signal })

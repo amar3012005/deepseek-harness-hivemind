@@ -16,9 +16,10 @@ export function isNightlyScheduledTurn(agent:Agent):boolean {
   const schedule='schedule-'+createHash('sha256').update(`${agent.id}\0nightly-routine-check-v1`).digest('hex')
   return events.some((event)=>{
     if(event.seq<=boundary||event.type!=='user/message'||event.data.source.kind!=='schedule')return false
+    const occurrence=event.data.source.occurrenceAt
     const text=event.data.content.flatMap(block=>block.type==='text'?[block.text]:[]).join('\n')
     const line=text.split('\n').find(value=>value.startsWith('reminders_json: '))
-    try {const entries:unknown=JSON.parse(line?.slice('reminders_json: '.length)??'');return Array.isArray(entries)&&entries.some(entry=>entry&&typeof entry==='object'&&entry.occurrence_at===event.data.source.occurrenceAt)&&entries.some(entry=>entry&&typeof entry==='object'&&entry.schedule_id===schedule)}catch{return false}
+    try {const entries:unknown=JSON.parse(line?.slice('reminders_json: '.length)??'');return Array.isArray(entries)&&entries.some(entry=>entry&&typeof entry==='object'&&entry.occurrence_at===occurrence)&&entries.some(entry=>entry&&typeof entry==='object'&&entry.schedule_id===schedule)}catch{return false}
   })
 }
 

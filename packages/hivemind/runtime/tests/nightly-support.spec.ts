@@ -70,7 +70,7 @@ it('projects only bounded correlated findings with exact references and never di
   const events=[{ type:'hivemind/session-owner',seq:1,data:{ id:null,slug:'runtime' } },{ type:'user/message',seq:2,data:{ source:{ kind:'schedule',occurrenceAt:occurrence },content:[{ type:'text',text:'reminders_json: '+JSON.stringify([{ schedule_id:schedule,occurrence_at:occurrence }]) }] } },{ type:'hivemind/room-message-queued',seq:3,data:{ id:'request',senderId:id,targetId:'employee',kind:'question',text:'NIGHTLY_REVIEW_REQUEST='+JSON.stringify({ occurrence,agent_index:1 }) } },{ type:'hivemind/room-message-received',seq:4,data:{ targetId:id,senderId:'employee',kind:'reply',replyTo:'request',text:'private raw content never exported\nNIGHTLY_REVIEW_REPLY='+JSON.stringify({ occurrence,findings:[finding] }) } }]
   const agent={ id,session:{ header:{ agentPreset:'hivemind-hq' },snapshotEvents:()=>events } } as unknown as Agent
   let sends=0;const tool=runtimeSupportReportTool(async()=>{sends++;return{}})
-  const result=await tool.execute({ operation:'evidence',occurrence },{ agent,signal:new AbortController().signal } as never)
+  const result=await tool.execute({ operation:'evidence',occurrence },{ agent,signal:new AbortController().signal } as never) as Record<string,unknown>
   expect(result).toEqual(nightlyReportEvidence(agent,occurrence));expect(sends).toBe(0)
   const json=JSON.stringify(result);expect(json).toContain('"sequence":4');expect(json).toContain(finding.observed);expect(json).not.toContain('private raw content')
   const details=(result.replies as { findings:{ owner:string }[] }[])[0]!.findings[0]!
