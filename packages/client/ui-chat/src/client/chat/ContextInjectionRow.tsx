@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { assignmentMessageText } from './assignment-message.ts'
 import { runtimeSignal } from './runtime-signal.ts'
 import { RuntimeSignalDetails, RuntimeSignalRow } from './RuntimeSignalRow.tsx'
+import signalCss from './RuntimeSignalRow.module.css'
 import type { ChatViewSlotProps } from '../contract/slots.ts'
 import { DisclosureRow, FileTypeIcon, fileSizeText, IconContextInjectionOutline16, ReferenceIcon } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ContextMessageNode } from '../contract/snapshot.ts'
@@ -38,11 +39,10 @@ export interface ContextInjectionRowProps {
  */
 export function ContextInjectionRow({ content, source, provenance, form, openArtifact, avatar, t }: ContextInjectionRowProps) {
   const [open, setOpen] = useState(false)
-  const signal = runtimeSignal(source)
-  if (signal !== null) return <div className={css.messageRow}>
-    <div><RuntimeSignalRow signal={signal} pending={false} />
-      <RuntimeSignalDetails content={content} />
-    </div>
+  const signal = runtimeSignal(source, content)
+  if (signal !== null) return <div className={signalCss.history}>
+    <RuntimeSignalRow signal={signal} pending={false} />
+    <RuntimeSignalDetails content={content} />
   </div>
   // Presentation only: durable prompt/context events remain available for future inspection.
   const agentMessage = typeof source === 'object' && source !== null && 'kind' in source && source.kind === 'hivemind-agent-message'
