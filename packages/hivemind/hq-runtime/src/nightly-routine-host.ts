@@ -34,7 +34,7 @@ export function authorizeNightlyRoutine(authorization:string|undefined,secret:st
 export function nightlyRoutineRequest(timeZone:string) {
   new Intl.DateTimeFormat('en',{ timeZone }).format()
   return { title:'Nightly report',daily:{ time:'00:00:00',time_zone:timeZone },prompt:
-    'Load hivemind-nightly-routine-check. Use this ORIGINAL native scheduled occurrence and evidence window even if queued behind other work. Ask EVERY active authorized HyperAgent through ordinary queued native messages about tool-call failures, schema errors and task/work blockers, expected/observed behavior, recovery, prevention and structured evidence; include Runtime own findings using scoped evidence; missing evidence or replies are missing coverage. Keep the detailed report private, and submit bounded sanitized technical details and enumerated categories/counts through runtime_support_report, then check its actual delivery status. No repairs, private content export, arbitrary recipient, company-memory writes, external access changes or cancellation are authorized. Native Schedule queues this followup without interrupting current work.' }
+    'Load hivemind-nightly-routine-check. Use this ORIGINAL native scheduled occurrence and evidence window even if queued behind other work. Ask EVERY active authorized HyperAgent through ordinary queued native messages about daily work, tool-call failures, schema errors, task/work blockers and evidenced performance problems, expected/observed behavior, recovery, prevention and structured evidence; include Runtime own findings using scoped evidence; missing evidence or replies are missing coverage. Keep the detailed report private, and submit bounded sanitized technical details and enumerated categories/counts through runtime_support_report, then check its actual delivery status. No repairs, private content export, arbitrary recipient, company-memory writes, external access changes or cancellation are authorized. Native Schedule queues this followup without interrupting current work.' }
 }
 export function installNightlyRoutineHost(ctx:Context,secret:string,allowedOrgIds:readonly string[]):void {
   ctx.effect(()=>ctx.webServer.register({ kind:'exact',path:'/internal/hivemind/nightly-routine',handler:async(req,res)=>{
@@ -56,7 +56,9 @@ export function installNightlyRoutineHost(ctx:Context,secret:string,allowedOrgId
         const id=`schedule-${createHash('sha256').update(`${input.sessionId}\0${key}`).digest('hex')}`
         const existing=(await ctx.schedule.catalog()).find(record=>record.id===id&&record.sessionId===input.sessionId)
         if(existing?.status==='inactive')throw Error('nightly_inactive_schedule_requires_explicit_resume')
-        if(existing&&(existing.kind!=='daily'||existing.time!=='00:00:00.000'||existing.timeZone!==proof.time_zone))throw Error('nightly_existing_schedule_requires_explicit_edit')
+        if(existing&&existing.kind!=='daily')throw Error('nightly_existing_schedule_requires_explicit_edit')
+        // An instruction upgrade never edits the user's saved recurrence or zone.
+        if(existing&&input.operation==='ensure'&&(existing.time!=='00:00:00.000'||existing.timeZone!==proof.time_zone))throw Error('nightly_existing_schedule_requires_explicit_edit')
         let record:ScheduleCatalogEntry|undefined=existing
         if(input.operation==='upgrade'){
           if(!existing)throw Error('nightly_existing_schedule_required')

@@ -24,7 +24,7 @@ it('rejects malformed, different-schedule and unanchored batches',()=>{
     const f=fixture();const event=f.events[2]!;if(event.type==='user/message'&&event.data.content[0]?.type==='text')event.data.content[0].text=text;expect(currentNightlyOccurrence(f.agent)).toBeUndefined()
   }
 })
-it('loads canonical review body once per active turn without replacing the actual request',async()=>{
+it('requests native progressive skill loading once per active turn without replacing the actual request',async()=>{
   type Handler = (input: { agent: Agent; turn: number }, next: () => Promise<PreStepDecision>) => Promise<PreStepDecision>
   let handler: Handler
   const ctx={
@@ -38,7 +38,11 @@ it('loads canonical review body once per active turn without replacing the actua
   if(result.kind==='reject')throw Error('unexpected reject')
   expect(result.messages[0]).toBe(decision.messages[0])
   expect(JSON.stringify(result.messages.at(-1)?.content)).toContain(occurrence)
-  expect(JSON.stringify(result.messages.at(-1)?.content)).toContain('runtime_support_report')
+  const reminder = JSON.stringify(result.messages.at(-1)?.content)
+  expect(reminder).toContain('native skill tool with name hivemind-nightly-routine-check')
+  expect(reminder).toContain('If the skill is unavailable')
+  expect(reminder).not.toContain(nightlyRoutineSkill.content)
+  expect(reminder.length).toBeLessThan(1200)
   expect(await call()).toBe(decision)
   expect(await call(fixture('user').agent)).toBe(decision)
   expect(await call(fixture('schedule','hivemind-hyperagents').agent)).toBe(decision)

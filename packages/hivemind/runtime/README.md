@@ -135,3 +135,43 @@ or publishes company memory. Deploy the Core kind-constraint migration and Core
 API before this runner; no existing production records are migrated automatically.
 
 Runtime initial voice baseline outcomes can omit the technical call ID. The tool selects the latest saved initial same-room check-in; later calls never substitute for the initial witness, and completion still requires user speech, a nonempty transcript and an uninterrupted call. Explicit incorrect IDs are rejected with repair guidance.
+
+## Native nightly review
+
+The existing `Nightly report` Schedule delivers to the tenant's saved Runtime room
+without requiring an open browser. The admitted original occurrence adds a compact
+reminder; the native `skill` tool loads `hivemind-nightly-routine-check` on demand.
+The skill catalog carries metadata only. Detailed instructions are neither eagerly
+copied into every step nor replaced with a separate scheduler or task loop.
+
+Runtime sends detailed saved `hivemind_agent_message` questions to the active
+authorized roster, while chat narration stays a short routine-check summary.
+Employees inspect their own authorized daily work and receipts, and send detailed
+saved replies correlated to the original request and occurrence. Runtime includes
+its own evidence, checks current artifact revisions when reviewing delegated work,
+and records missing replies or unavailable evidence as missing coverage. It loads
+supporting context progressively and saves/inspects the full organization-authorized
+HTML artifact. This review does not authorize repairs or company-memory writes.
+
+`runtime_support_report` preserves the existing validated technical email path:
+Core renders escaped organization-aware HTML, selects the configured platform
+administrator support inbox, and deduplicates by tenant/room/original occurrence.
+Accepted is not delivered; inspect the actual delivery ledger. Unknown outcome or
+changed payload requires reconciliation rather than another email identity.
+
+Deployment requires the existing Core detailed-report backend and its scoped
+configuration before the matching native runner. After integration, the operator's
+`--apply --upgrade` updates the existing record's title/instructions through native
+compare-and-update. It preserves the record's saved time, zone and identity; an
+inactive record cannot be resumed by an instruction upgrade. Initial creation
+still defaults to midnight in the authoritative organization zone (UTC when the
+organization zone is unset). Inspect the saved record before applying.
+
+Live acceptance must retain a single schedule identity and its saved timing, prove
+cold scheduled admission and a real native skill-load receipt, match roster requests
+to detailed saved replies, and inspect the saved report and any current-revision
+reviews. Verify simple visible summaries against actual calls, report unavailable
+coverage honestly, confirm the authenticated organization greeting and configured
+recipient, then check provider acceptance and delivery separately. Repeating the
+same report must not send another email. Restricted-role and cross-tenant fixtures
+remain necessary; live email verification is a coordinator action, not a build test.

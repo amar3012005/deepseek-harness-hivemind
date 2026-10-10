@@ -56,3 +56,15 @@ it('explicit upgrade renames the SAME native record through compare-and-update w
 it('upgrade cannot create missing records or resume inactive records',async()=>{const f=setup();expect((await f.call({ ...payload,operation:'upgrade' })).status).toBe(503);expect(f.count()).toBe(0);await f.call();savedRecord(f.records).status='inactive';expect((await f.call({ ...payload,operation:'upgrade' })).status).toBe(503)})
 
 it('CAS conflict preserves the legacy record and inspect is mutation-free',async()=>{const f=setup(undefined,true);await f.call();const record=savedRecord(f.records);record.title='Nightly routine check';record.prompt='Legacy prompt';expect((await f.call({ ...payload,operation:'inspect' })).status).toBe(200);expect(record.title).toBe('Nightly routine check');expect((await f.call({ ...payload,operation:'upgrade' })).status).toBe(503);expect(record.prompt).toBe('Legacy prompt');expect(f.count()).toBe(1)})
+
+it('instruction upgrade preserves the saved night time and zone even when organization settings have changed',async()=>{
+  const f=setup();await f.call();const record=savedRecord(f.records),id=record.id
+  record.time='22:30:00.000';record.timeZone='Asia/Kolkata';record.title='Nightly routine check';record.prompt='Legacy prompt'
+  const inspected=await f.call({ ...payload,operation:'inspect' })
+  expect(inspected.status).toBe(200);expect(inspected.body.schedule.timeZone).toBe('Asia/Kolkata')
+  expect(record.prompt).toBe('Legacy prompt')
+  const upgraded=await f.call({ ...payload,operation:'upgrade' })
+  expect(upgraded.status).toBe(200);expect(upgraded.body.schedule.timeZone).toBe('Asia/Kolkata')
+  expect(record.id).toBe(id);expect(record.time).toBe('22:30:00.000');expect(record.timeZone).toBe('Asia/Kolkata')
+  expect(record.title).toBe('Nightly report');expect(f.count()).toBe(1);expect(f.records).toHaveLength(1)
+})
