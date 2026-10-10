@@ -11,7 +11,7 @@ import {
   type HqTaskReview,
 } from './review.ts'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
-import { installRest, recoverRest, acknowledgeRestNotes, restBriefing, restState, isHqLead, greetingOnly } from './rest.ts'
+import { installRest, recoverRest, acknowledgeRestNotes, restBriefing, restState, isHqLead, greetingOnly, socialTurnOnly } from './rest.ts'
 import { installAwakening, awakeningContext } from './awakening.ts'
 import { installDelegatedBlockerTool, unresolvedDelegatedTask } from './delegated-blocker.ts'
 import { investigationExpired } from './investigation.ts'
@@ -140,7 +140,10 @@ export function apply(ctx: Context): void {
     investigationMasks.delete(agent)
     // Direct social exchanges need the normal conversation context, not a
     // full task-board reload. Mixed app/employee/wake signals stay operational.
-    if (greetingOnly(decision.messages)) return decision
+    const currentEvents = agent.session.snapshotEvents()
+    const currentStart = currentEvents.findLast(event => event.type === 'turn/start')?.seq ?? -1
+    if (greetingOnly(decision.messages)
+      || socialTurnOnly(currentEvents.filter(event => event.seq > currentStart), decision.messages)) return decision
     await recoverRest(ctx, agent, signal)
     await acknowledgeRestNotes(ctx, agent)
     const awakening = await awakeningContext(ctx, agent, turn, decision.messages)

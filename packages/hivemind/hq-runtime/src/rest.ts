@@ -67,6 +67,48 @@ export function greetingOnly(messages: readonly UserMessage[]): boolean {
       human.content.flatMap(block => block.type === 'text' ? [block.text] : []).join('').trim(),
     )
 }
+
+/** Preserve the current social intent across native model/tool steps. */
+export function socialTurnOnly(current: readonly SessionEvent[], fresh: readonly UserMessage[] = []): boolean {
+  const admitted = [...new Map([...current.flatMap(event => event.type === 'user/message' ? [event.data] : []),
+    ...fresh].map(message => [message.id, message])).values()]
+  // A reply to this turn's own social message closes that exchange. It is
+  // not fresh company work, even when it arrives before the turn commits.
+  const direct = admitted.filter((message) => {
+    if (String(message.source.kind) !== 'hivemind-agent-message') return true
+    try {
+      const packet = JSON.parse(message.content.flatMap(block => block.type === 'text' ? [block.text] : []).join('')) as {
+        id?: string
+        kind?: string
+        replyTo?: string
+        senderId?: string
+        taskId?: string
+        artifactIds?: string[]
+      }
+      const outgoing = current.find(event => String(event.type) === 'hivemind/room-message-queued'
+        && (event.data as { id?: string }).id === packet.replyTo)?.data as {
+          targetId?: string
+          taskId?: string
+          artifactIds?: string[]
+        } | undefined
+      if (packet.kind !== 'reply' || !packet.id || !outgoing || outgoing.targetId !== packet.senderId
+        || packet.taskId || outgoing.taskId || packet.artifactIds?.length || outgoing.artifactIds?.length) return true
+      return false
+    } catch { return true }
+  })
+  return greetingOnly(direct) && current.filter(event => event.type === 'tool/call').every((event) => {
+    if (event.type !== 'tool/call') return false
+    let args: Record<string, unknown>
+    try { args = JSON.parse(event.data.arguments) } catch { return false }
+    if (event.data.name === 'list_agents') return true
+    if (!args || typeof args !== 'object' || Array.isArray(args)) return false
+    if (event.data.name === 'hivemind_hq_contract') return args.action === 'list'
+    return event.data.name === 'hivemind_agent_message' && !args.task_id
+      && (!Array.isArray(args.artifact_ids) || args.artifact_ids.length === 0)
+      && ((args.kind === 'update' && !args.reply_to)
+        || (args.kind === 'reply' && args.request_reply === false))
+  })
+}
 const NOTE_SECTION = 'hq-rest-pending-note-ids'
 const tails = new WeakMap<Agent, Promise<unknown>>()
 function serial<T>(_ctx: Context, agent: Agent, work: () => Promise<T>): Promise<T> {
@@ -271,45 +313,9 @@ export function installRest(ctx: Context): void {
     const start = events.findLast(event => event.type === 'turn/start')?.seq ?? -1
     const current = events.filter(event => event.seq > start)
     const toolWork = current.some(event => event.type === 'tool/call')
-    const admitted = current.flatMap(event => event.type === 'user/message' ? [event.data] : [])
     // A social reply is not a voluntary sleep transition. Never manufacture
     // extra model turns just to rebuild the existing operational handoff.
-    // A reply to this turn's own social message closes that exchange. It is
-    // not fresh company work, even when it arrives before the turn commits.
-    const direct = admitted.filter((message) => {
-      if (String(message.source.kind) !== 'hivemind-agent-message') return true
-      try {
-        const packet = JSON.parse(message.content.flatMap(block => block.type === 'text' ? [block.text] : []).join('')) as {
-          id?: string
-          kind?: string
-          replyTo?: string
-          senderId?: string
-          taskId?: string
-          artifactIds?: string[]
-        }
-        const outgoing = current.find(event => String(event.type) === 'hivemind/room-message-queued'
-          && (event.data as { id?: string }).id === packet.replyTo)?.data as {
-            targetId?: string
-            taskId?: string
-            artifactIds?: string[]
-          } | undefined
-        if (packet.kind !== 'reply' || !packet.id || !outgoing || outgoing.targetId !== packet.senderId
-          || packet.taskId || outgoing.taskId || packet.artifactIds?.length || outgoing.artifactIds?.length) return true
-        return false
-      } catch { return true }
-    })
-    if (greetingOnly(direct) && current.filter(event => event.type === 'tool/call').every((event) => {
-      if (event.type !== 'tool/call') return false
-      let args: Record<string, unknown>
-      try { args = JSON.parse(event.data.arguments) } catch { return false }
-      if (event.data.name === 'list_agents') return true
-      if (!args || typeof args !== 'object' || Array.isArray(args)) return false
-      if (event.data.name === 'hivemind_hq_contract') return args.action === 'list'
-      return event.data.name === 'hivemind_agent_message' && !args.task_id
-        && (!Array.isArray(args.artifact_ids) || args.artifact_ids.length === 0)
-        && ((args.kind === 'update' && !args.reply_to)
-          || (args.kind === 'reply' && args.request_reply === false))
-    })) return
+    if (socialTurnOnly(current)) return
     const latest = restIntents(events).at(-1)
     const priorBinding = latest && events.findLast(event => event.type === 'hivemind/hq-rest-wake' && event.data.handoffId === latest.id)
     if (!toolWork && priorBinding?.type === 'hivemind/hq-rest-wake') {

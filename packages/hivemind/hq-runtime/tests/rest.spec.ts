@@ -6,7 +6,7 @@ import type { ToolDefinition } from '@deepseek-ai/dsh-tools'
 import { createBrowserTimeZoneConfirmation } from '@deepseek-ai/dsh-time-context'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { HqControl } from '../src/control.ts'
-import { installRest, recoverRest, restState, restScheduleId, restBriefing, acknowledgeRestNotes, leaveRestNote, restWakeDisplay, greetingOnly } from '../src/rest.ts'
+import { installRest, recoverRest, restState, restScheduleId, restBriefing, acknowledgeRestNotes, leaveRestNote, restWakeDisplay, greetingOnly, socialTurnOnly } from '../src/rest.ts'
 
 const request = { handoff_id: 'rest-test', wake_at: '2030-01-01T01:00:00Z', summary: 'Review the existing task', next_steps: ['Inspect current receipts'], blockers: ['Waiting for evidence'] }
 function fixture() {
@@ -84,6 +84,8 @@ describe('native Runtime voluntary rest', () => {
     f.agent.session.append('tool/call', { name: 'hivemind_agent_message', callId: 'close', arguments: '{"kind":"reply","reply_to":"incoming","request_reply":false}', turn: 1, step: 3 } as never)
     await f.hooks.get('agent/turn-stopping')!({ agent: f.agent, turn: 1, signal: new AbortController().signal })
     expect(f.agent.steer).not.toHaveBeenCalled()
+    expect(socialTurnOnly(f.events)).toBe(true)
+    expect(socialTurnOnly(f.events, [createUserMessage({ source: { kind: 'plugin', plugin: 'runtime-attention' }, content: [{ type: 'text', text: 'New company evidence' }] })])).toBe(false)
     f.agent.session.append('tool/call', { name: 'runtime_user_agenda', callId: 'save', arguments: '{}', turn: 1, step: 4 } as never)
     await f.hooks.get('agent/turn-stopping')!({ agent: f.agent, turn: 1, signal: new AbortController().signal })
     expect(f.agent.steer).toHaveBeenCalledOnce()
