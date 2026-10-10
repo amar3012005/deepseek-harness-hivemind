@@ -32,3 +32,11 @@ Apply `dream-connectors.sql` before releasing a runner that exposes `/hivemind/d
 The native Dreamer reuses `dream_read` with complete, version-pinned provider schemas. Positive read operations only; no model-side search, connection management, or app writes. Metadata contracts are tenant-cached for one day by default. Execution pins account/version, validates arguments, checks grants again, and stores a private full receipt plus durable excerpt/provenance before exposing an evidence ID. Flashbacks may cite those IDs alongside memory IDs. Revoking access blocks future reads/evidence use, but does not erase previously shared Flashbacks.
 
 Default configuration: four read contracts per app, 12,000-character schema/result limits; all tunable through the plugin config. Existing chat connector behavior and native nine-tool Dreamer descriptors are retained.
+
+### Generated Remote assembly in overlays
+
+After native host compilation regenerates the controller Remote contribution, run
+`sh deploy/hivemind-chat/rebuild-session-remotes.sh`. The client remotes assembly
+inlines those generated descriptors; rebuilding only the controller leaves stale
+wire codecs. `verify-image.sh` exercises the actual compiled assembly's follow
+request codec and rejects an image that strips `maxTurns: 5`.
