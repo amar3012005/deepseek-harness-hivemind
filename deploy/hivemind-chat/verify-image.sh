@@ -13,6 +13,7 @@ if [ "$#" -eq 0 ]; then
 fi
 
 docker run --rm --entrypoint sh "$image" -ec '
+  node /opt/deepseek-harness/deploy/hivemind-chat/verify-shared-shell.mjs
   profile_dir="$(mktemp -d)"
   trap "rm -rf \"$profile_dir\"" EXIT
   node /opt/deepseek-harness/apps/cli/lib/bin.js --profile hivemind-web --dump-config > "$profile_dir/hivemind-web.yml"
