@@ -32,5 +32,5 @@
 
 /* Keep the initial walkthrough and wake controls; ongoing work lives in the chat. */
 @media (max-width: 600px) {
-  .container[data-runtime-tour-awakening]:not([data-runtime-tour-awakening="sleeping"]):not([data-runtime-tour-expanded]) { display: none; }
+  .container[data-runtime-tour-awakening]:not([data-runtime-tour-awakening="sleeping"]):not([data-runtime-tour-awakening="blocked"]):not([data-runtime-tour-expanded]) { display: none; }
 }
