@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { HiveLiveVoiceButton } from '../src/client/HiveLiveVoiceButton.tsx'
 
+vi.mock('voice-glow', () => ({ VoiceBeam: ({ children }: { children: React.ReactNode }) => children }))
 vi.mock('@deepseek-ai/dsh-client-ui-primitives', () => ({ Tooltip: ({ children }: { children: React.ReactNode }) => children }))
 vi.mock('../src/client/grok-voice.ts', () => ({ startGrokVoice: vi.fn(async () => ({ close: vi.fn(), id: 'grok-call' })) }))
 import { startGrokVoice } from '../src/client/grok-voice.ts'
@@ -32,12 +33,18 @@ describe('native HIVEMIND live voice composer', () => {
     vi.stubGlobal('Audio', class { autoplay = false; pause = vi.fn() })
     const fetcher = vi.fn(async () => ({ ok: true }))
     vi.stubGlobal('fetch', fetcher)
-    render(<HiveLiveVoiceButton sessionId={'session-1' as never} useInput={input()} t={t} />)
+    render(<div data-composer-card><HiveLiveVoiceButton sessionId={'session-1' as never} useInput={input()} t={t} /></div>)
     fireEvent.click(screen.getByText('voice.alternate'))
+    expect(document.querySelector('[data-room-call-strip]')).not.toBeNull()
     await waitFor(() => { expect(startGrokVoice).toHaveBeenCalledOnce() })
     expect(media).toHaveBeenCalledOnce()
     expect(fetcher).not.toHaveBeenCalled()
     expect(Peer.instance.createOffer).not.toHaveBeenCalled()
+    const args = vi.mocked(startGrokVoice).mock.calls.at(-1)!
+    args[3]() // Transport readiness does not mean the employee answered.
+    expect(vi.mocked(startCallRingback).mock.results.at(-1)?.value).not.toHaveBeenCalled()
+    args[7]?.()
+    expect(vi.mocked(startCallRingback).mock.results.at(-1)?.value).toHaveBeenCalledOnce()
   })
 
   it('acknowledges an invitation and starts the existing voice API even with a typed draft', async () => {
@@ -57,6 +64,9 @@ describe('native HIVEMIND live voice composer', () => {
     expect(Peer.instance.close).not.toHaveBeenCalled()
     Peer.instance.connectionState = 'connected'
     ;(Peer.instance as unknown as RTCPeerConnection).onconnectionstatechange?.(new Event('connectionstatechange'))
+    expect(vi.mocked(startCallRingback).mock.results.at(-1)?.value).not.toHaveBeenCalled()
+    const channel = Peer.instance.createDataChannel.mock.results[0]!.value as RTCDataChannel
+    channel.onmessage?.(new MessageEvent('message', { data: JSON.stringify({ type: 'response.audio.delta', delta: 'actual-provider-audio' }) }))
     expect(vi.mocked(startCallRingback).mock.results.at(-1)?.value).toHaveBeenCalledOnce()
     expect(fetcher).toHaveBeenCalledOnce()
   })

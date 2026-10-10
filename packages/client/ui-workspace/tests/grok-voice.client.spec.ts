@@ -20,6 +20,8 @@ class Audio {
     connect: () => void
     disconnect: () => void
   }
+  createBuffer = () => ({ getChannelData: () => new Float32Array(2) })
+  createBufferSource = () => ({ buffer: null, connect: vi.fn(), start: vi.fn(), stop: vi.fn() })
   currentTime = 0
   destination = {}
   createMediaStreamDestination = () => ({ stream: {} })
@@ -39,13 +41,16 @@ describe('native existing Grok PCM voice transport', () => {
     const track = { enabled: true }
     const stream = { getAudioTracks: () => [track] } as unknown as MediaStream
     const audio = { play: async () => {}, srcObject: null } as unknown as HTMLAudioElement
-    const closing = vi.fn()
-    const connection = await startGrokVoice('session-own-room', stream, audio, vi.fn(), vi.fn(), vi.fn(), closing)
+    const closing = vi.fn(); const answered = vi.fn()
+    const connection = await startGrokVoice('session-own-room', stream, audio, vi.fn(), vi.fn(), vi.fn(), closing, answered)
     const socket = Socket.instance
     expect(socket.protocols).toEqual(['hm.tara.v1', 'hm.tara.cap.test-capability'])
     expect(JSON.parse(fetch.mock.calls[0]![1]!.body as string)).toEqual({ sessionId: 'session-own-room' })
     socket.onopen?.()
     socket.onmessage?.({ data: JSON.stringify({ type: 'ready' }) })
+    expect(answered).not.toHaveBeenCalled()
+    socket.onmessage?.({ data: new Int16Array([100, 200]).buffer })
+    expect(answered).toHaveBeenCalledOnce()
     const frame = { inputBuffer: { getChannelData: () => new Float32Array([0.5]) } }
     Audio.processor.onaudioprocess?.(frame)
     expect(socket.send).toHaveBeenCalledTimes(1)

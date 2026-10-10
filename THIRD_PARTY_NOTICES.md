@@ -123,6 +123,7 @@ External packages installed for runtime use or distributed inside the prebuilt b
 | [`typescript`](https://github.com/microsoft/TypeScript) | Apache-2.0 |
 | [`undici`](https://github.com/nodejs/undici) | MIT |
 | [`use-sync-external-store`](https://github.com/facebook/react) | MIT |
+| [`voice-glow`](https://github.com/Jakubantalik/Libraries.dev) | MIT |
 | [`ws`](https://github.com/websockets/ws) | MIT |
 | [`yaml`](https://github.com/eemeli/yaml) | ISC |
 | [`zod`](https://github.com/colinhacks/zod) | MIT |
@@ -192,7 +193,7 @@ External packages **directly declared** for development, tests, types, or toolin
 | [`cytoscape`](https://github.com/cytoscape/cytoscape.js) | MIT |
 | [`cytoscape-cose-bilkent`](https://github.com/cytoscape/cytoscape.js-cose-bilkent) | MIT |
 | [`dayjs`](https://github.com/iamkun/dayjs) | MIT |
-| [`debug`](https://github.com/visionmedia/debug) | MIT |
+| [`debug`](https://github.com/debug-js/debug) | MIT |
 | [`electron`](https://github.com/electron/electron) | MIT |
 | [`electron-builder`](https://github.com/electron-userland/electron-builder) | MIT |
 | [`esbuild`](https://github.com/evanw/esbuild) | MIT |

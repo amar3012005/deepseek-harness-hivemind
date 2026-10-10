@@ -1,6 +1,7 @@
 /** Existing Tara browser PCM protocol, scoped by a server-issued one-use capability. */
 export async function startGrokVoice(sessionId: string, stream: MediaStream, audio: HTMLAudioElement,
-  onReady: () => void, onCaption: (text: string) => void, onClosed: (failed: boolean) => void, onClosing: () => void) {
+  onReady: () => void, onCaption: (text: string) => void, onClosed: (failed: boolean) => void, onClosing: () => void,
+  onAssistantAudio: () => void = () => {}) {
   const response = await fetch('/api/hivemind/voice/fallback/start', { method: 'POST', credentials: 'include',
     headers: { 'content-type': 'application/json' }, body: JSON.stringify({ sessionId }), signal: AbortSignal.timeout(35000) })
   const result = await response.json() as {
@@ -60,6 +61,7 @@ export async function startGrokVoice(sessionId: string, stream: MediaStream, aud
   socket.onmessage = (event) => {
     if (event.data instanceof ArrayBuffer) {
       const pcm = new Int16Array(event.data)
+      if (pcm.length) onAssistantAudio()
       const buffer = context.createBuffer(1, pcm.length, rate)
       const samples = buffer.getChannelData(0)
       for (let index = 0; index < pcm.length; index++) samples[index] = (pcm[index] ?? 0) / 32768
