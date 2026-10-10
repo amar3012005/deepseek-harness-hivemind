@@ -64,6 +64,7 @@ kind: "package-reference"
 | 字段 | 默认值 | 含义 |
 |---|---|---|
 | `thresholdRatio` | `0.8` | 在 `floor(routedContextWindow × ratio)` 处开始压缩。 |
+| `thresholdTokens` | — | 可选的绝对压力上限；在该值与模型相对阈值中的较小值处开始压缩。将绝对 `retainTokens` 设置为低于该上限。 |
 | `retainRatio` | `0.16` | 以已路由上下文窗口的一部分表示逐字保留的近期对话；与 `retainTokens` 互斥。 |
 | `retainTokens` | — | 逐字保留的近期对话绝对预算；与 `retainRatio` 互斥，并且必须低于已解析阈值。 |
 | `summarizationProvider` | `''` | 与 `summarizationModel` 一起设置；空对使用最新已路由请求目标，再回退到 `AgentOptions` 对。 |
