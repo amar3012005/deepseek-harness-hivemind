@@ -17,7 +17,7 @@ export function setupEmbeddedSessionBootstrap(sessions: Pick<ISessions, 'list' |
         return
       }
       creating = true
-      void sessions.create().then(id => sessions.open(id)).finally(() => {
+      void sessions.create().then((id) => { sessions.open(id) }).finally(() => {
         creating = false
         ensureSession()
       })
