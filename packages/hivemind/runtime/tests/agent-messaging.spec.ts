@@ -11,6 +11,15 @@ it('resolves authenticated unique slugs without accepting missing or ambiguous r
   expect(() => authorizedRecipient([row, { id: 'other', slug: 'ravi-patel' }], 'ravi-patel')).toThrow('ambiguous_use_exact_employee_id')
 })
 
+it('resolves a unique authenticated employee name without another model lookup', () => {
+  const row = { id: 'employee-id', slug: 'canonical-slug', name: 'monny' }
+  expect(authorizedRecipient([row], 'monny')).toBe(row)
+  expect(authorizedRecipient([row], 'Monny')).toBe(row)
+  expect(authorizedRecipient([row], 'outside-employee')).toBeUndefined()
+  expect(() => authorizedRecipient([row, { id: 'other', slug: 'other', name: 'MONNY' }], 'monny')).toThrow('ambiguous_use_exact_employee_id')
+  expect(authorizedRecipient([row, { id: 'other', slug: 'other', name: 'MONNY' }], 'employee-id')).toBe(row)
+})
+
 it('keeps delegated children on native Team messaging without hiding room messaging globally', async () => {
   let preStep: (input: { agent: Agent; signal: AbortSignal }, next: () => Promise<void>) => Promise<void>
   const scope = {
@@ -148,15 +157,17 @@ it('normalizes a registered Chief update before delivery and rejects a paused re
   await tool.execute(args, execution)
   expect(deliverAgentMessage).toHaveBeenCalledExactlyOnceWith(agent,
     expect.objectContaining({ kind: 'question', target: 'employee', key: 'correction', text: args.message, summary: args.summary }), execution.signal)
-  await expect(tool.execute({ ...args, recipient: 'Sofia' }, execution)).rejects.toThrow('Read hivemind_hq_contract action list')
-  expect(deliverAgentMessage).toHaveBeenCalledTimes(1)
+  await tool.execute({ ...args, recipient: 'Sofia' }, execution)
+  expect(deliverAgentMessage).toHaveBeenLastCalledWith(agent, expect.objectContaining({ target: 'employee' }), execution.signal)
+  await expect(tool.execute({ ...args, recipient: 'Other-company Sofia' }, execution)).rejects.toThrow('Read hivemind_hq_contract action list')
+  expect(deliverAgentMessage).toHaveBeenCalledTimes(2)
   await tool.execute({ ...args, message_key: 'greeting', message: 'Hi, I am Runtime.', summary: 'Hi, everyone!',
     request_reply: false }, execution)
   expect(deliverAgentMessage).toHaveBeenLastCalledWith(agent,
     expect.objectContaining({ kind: 'update', text: 'Hi, I am Runtime.', summary: 'Hi, everyone!' }), execution.signal)
   profile.status = 'paused'
-  await expect(tool.execute(args, execution)).rejects.toThrow('agent_message_recipient_unavailable')
-  expect(deliverAgentMessage).toHaveBeenCalledTimes(2)
+  await expect(tool.execute({ ...args, recipient: 'Sofia' }, execution)).rejects.toThrow('agent_message_recipient_unavailable')
+  expect(deliverAgentMessage).toHaveBeenCalledTimes(3)
 })
 
 it('uses the current sender preset directory rather than a sibling realm registry', () => {

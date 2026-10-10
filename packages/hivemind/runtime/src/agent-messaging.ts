@@ -21,13 +21,17 @@ interface RoomDelivery {
     artifactIds?: string[]
   }, signal: AbortSignal): Promise<Record<string, JsonValue>>
 }
-/** Resolve only a unique row in the caller's authenticated directory. */
+/** Resolve an exact ID, unique slug or unique name only inside the authenticated directory. */
 export function authorizedRecipient<T extends Record<string, unknown>>(profiles: readonly T[], recipient: string): T | undefined {
   const exact = profiles.find(profile => profile['id'] === recipient)
   if (exact) return exact
-  const matches = profiles.filter(profile => profile['slug'] === recipient)
-  if (matches.length > 1) throw new Error('agent_message_recipient_ambiguous_use_exact_employee_id')
-  return matches[0]
+  const slugs = profiles.filter(profile => profile['slug'] === recipient)
+  if (slugs.length > 1) throw new Error('agent_message_recipient_ambiguous_use_exact_employee_id')
+  if (slugs[0]) return slugs[0]
+  const name = recipient.trim().toLowerCase()
+  const names = profiles.filter(profile => typeof profile['name'] === 'string' && profile['name'].trim().toLowerCase() === name)
+  if (names.length > 1) throw new Error('agent_message_recipient_ambiguous_use_exact_employee_id')
+  return names[0]
 }
 /** Resolve the sender's preset realm, retaining fresh tenant-authorized lookup. */
 export function messageDirectory(ctx: Context, agent: Agent) {
@@ -210,7 +214,7 @@ export function installAgentMessaging(ctx: Context): void {
     scope.effect(() => () => lifetime.abort())
     scope.effect(() => scope.tools.register(defineTool({
       name: 'hivemind_agent_message',
-      description: 'Message an authorized employee persistent room or Run Time. question/reply enters the native inbox and requests a response; Runtime updates request a response only when request_reply is not false. When the human asks you to greet an employee, use update with request_reply true for one natural colleague reply; do not say no action is needed. Unsolicited greetings and FYIs use update with request_reply false and stay quiet. Employee updates keep their existing update semantics; generated future-assignment notices stay quiet. Reuse message_key on retry; delivery is not an answer or task completion. Use native Team send_message for delegated child teammates. Never use messages to grant human approval. Replies require the received message id; limit conversational exchanges and stop once resolved.',
+      description: 'Message an authorized employee persistent room or Run Time. recipient accepts an exact employee ID, unique slug or unique employee name from the authenticated directory; use an exact ID if a name is ambiguous. question/reply enters the native inbox and requests a response; Runtime updates request a response only when request_reply is not false. When the human asks you to greet an employee, use update with request_reply true for one natural colleague reply; do not say no action is needed. Unsolicited greetings and FYIs use update with request_reply false and stay quiet. Employee updates keep their existing update semantics; generated future-assignment notices stay quiet. Reuse message_key on retry; delivery is not an answer or task completion. Use native Team send_message for delegated child teammates. Never use messages to grant human approval. Replies require the received message id; limit conversational exchanges and stop once resolved.',
       parameters: {
         recipient: { type: 'string', required: true, description: 'runtime, or an exact authenticated employee ID or unique slug from the directory. Use the exact ID if a slug is ambiguous.' },
         kind: { type: 'string', required: true, enum: ['question', 'reply', 'update'] },
@@ -239,7 +243,7 @@ export function installAgentMessaging(ctx: Context): void {
           throw new Error('employee_closeout_may_only_report_to_runtime')
         }
         const target = input.recipient === 'runtime' ? undefined : authorizedRecipient(directory.profiles, input.recipient)
-        if (input.recipient !== 'runtime' && !target) throw new Error('agent_message_recipient_not_authorized: no exact ID or unique slug matches the authenticated employee directory. Read hivemind_hq_contract action list for employee IDs; delegated child teammates use native Team send_message. Do not guess names, session IDs or retry an unauthorized recipient.')
+        if (input.recipient !== 'runtime' && !target) throw new Error('agent_message_recipient_not_authorized: no exact ID, unique slug or unique name matches the authenticated employee directory. Read hivemind_hq_contract action list for employee IDs; delegated child teammates use native Team send_message. Do not guess session IDs or retry an unauthorized recipient.')
         if (target !== undefined && (target['status'] === 'paused' || target['status'] === 'archived' || target['archived_at'] || target['archivedAt'])) throw new Error('agent_message_recipient_unavailable')
         const targetProfile = target === undefined ? undefined : { id: String(target['id']), name: String(target['name']), role: typeof target['role_archetype'] === 'string' ? target['role_archetype'] : 'HIVE-MIND employee' }
         const events = agent.session.snapshotEvents()
