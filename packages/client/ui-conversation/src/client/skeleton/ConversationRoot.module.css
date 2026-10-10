@@ -780,13 +780,13 @@
 
 .heroIntroduction, .heroSuggestions, .composerInput { display: contents; }
 @media (max-width: 600px) {
-  .root[data-brain-chat][data-phase='hero'] .scrollBody { justify-content: flex-start; }
-  .root[data-brain-chat][data-phase='hero'] .composerSeat { flex: 1; min-height: 0; }
-  .root[data-brain-chat][data-phase='hero'] .composerHero { display: grid; flex: 1; grid-template-rows: minmax(0, 1fr) auto minmax(0, 1fr) auto auto; gap: 0; padding-bottom: 0; }
-  .root[data-brain-chat][data-phase='hero'] .heroIntroduction { display: block; grid-row: 1; align-self: end; margin-bottom: 16px; padding-inline: 20px; }
-  .root[data-brain-chat][data-phase='hero'] .heroSuggestions { display: block; grid-row: 2; padding-inline: 12px; }
-  .root[data-brain-chat][data-phase='hero'] .heroWorkspaceRow { grid-row: 4; margin-top: 0; }
-  .root[data-brain-chat][data-phase='hero'] .composerInput { display: block; grid-row: 5; }
+  .root[data-native-chat][data-phase='hero'] .scrollBody { justify-content: flex-start; }
+  .root[data-native-chat][data-phase='hero'] .composerSeat { flex: 1; min-height: 0; }
+  .root[data-native-chat][data-phase='hero'] .composerHero { display: grid; flex: 1; grid-template-rows: minmax(0, 1fr) auto minmax(0, 1fr) auto auto; gap: 0; padding-bottom: 0; }
+  .root[data-native-chat][data-phase='hero'] .heroIntroduction { display: block; grid-row: 1; align-self: end; margin-bottom: 16px; padding-inline: 20px; }
+  .root[data-native-chat][data-phase='hero'] .heroSuggestions { display: block; grid-row: 2; padding-inline: 12px; }
+  .root[data-native-chat][data-phase='hero'] .heroWorkspaceRow { grid-row: 4; margin-top: 0; }
+  .root[data-native-chat][data-phase='hero'] .composerInput { display: block; grid-row: 5; }
 }
 
 /* Employee phone rooms use Brain's compact transcript without changing desktop. */
