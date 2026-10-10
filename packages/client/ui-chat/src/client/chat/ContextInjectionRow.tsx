@@ -1,3 +1,4 @@
+import { briefAgentMessage } from './brief-agent-message.ts'
 import type { ReactNode } from 'react'
 import { useState } from 'react'
 import { assignmentMessageText } from './assignment-message.ts'
@@ -62,12 +63,14 @@ export function ContextInjectionRow({ content, source, provenance, form, openArt
       senderName?: unknown
       senderEmployee?: unknown
       text?: unknown
+      summary?: unknown
       artifacts?: unknown
     } | undefined
     try { message = JSON.parse(text) as typeof message } catch { /* Older records retain the existing disclosure. */ }
     if (typeof message?.text === 'string' && typeof message.senderName === 'string') {
-      const visibleText = assignmentMessageText(message, source)
-        ?? (message.text.startsWith(`${message.senderName}:`) ? message.text.slice(message.senderName.length + 1).trimStart() : message.text)
+      const visibleText = briefAgentMessage({ summary: message.summary }) ?? assignmentMessageText(message, source)
+        ?? briefAgentMessage({ text: message.text, senderName: message.senderName })
+        ?? t('message.teamDetailedUpdate')
       return <div className={css.messageRow}>{avatar?.({ ...(typeof message.senderEmployee === 'string' ? { employeeId: message.senderEmployee } : {}), name: message.senderName })}<article className={css.messageBubble} aria-label={`Message from ${message.senderName}`}>
         <strong className={css.sender}>{message.senderName}</strong>
         <p className={css.messageText}>{visibleText}</p>
@@ -89,7 +92,9 @@ export function ContextInjectionRow({ content, source, provenance, form, openArt
             </button>
           })}
         </div>
-        {document.documentElement.dataset.dshMode !== 'hivemind-chat' && <details className={css.messageDetails}>
+        {(document.documentElement.dataset.dshMode !== 'hivemind-chat'
+          || briefAgentMessage({ summary: message.summary }) !== undefined
+          || briefAgentMessage({ text: message.text }) === undefined) && <details className={css.messageDetails}>
           <summary>Agent message</summary>
           <div className={css.body} data-context-injection-body data-context-form={rendered ?? undefined}>{body}</div>
         </details>}

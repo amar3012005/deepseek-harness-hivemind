@@ -173,3 +173,24 @@ it('persists detailed Nightly replies inside the supported correlated message st
   const received=caller.session.snapshotEvents().find(e=>e.type==='hivemind/room-message-received')
   expect(received?.type==='hivemind/room-message-received'&&received.data).toMatchObject({ kind:'reply',senderId:ravi.id,targetId:caller.id,replyTo:question.messageId,text })
 })
+
+it('saves the same brief summary and complete detailed instructions in outbox, inbox and recovery', async () => {
+  const { caller, ravi, messaging, request } = fixture()
+  const detailed = { ...request, summary: 'Review today’s work and send me your findings.', text: 'Review today’s work.\n' + 'Keep every evidence receipt and explain each blocker.\n'.repeat(20) }
+  await messaging.send(caller, detailed, signal)
+  const queued = caller.session.snapshotEvents().find(event => event.type === 'hivemind/room-message-queued')
+  const received = ravi.session.snapshotEvents().find(event => event.type === 'hivemind/room-message-received')
+  expect(queued?.data).toMatchObject({ summary: detailed.summary, text: detailed.text })
+  expect(received?.data).toMatchObject({ summary: detailed.summary, text: detailed.text })
+  const admitted = ravi.inbox.nextTurn[0] as { content: { type: string; text: string }[] }
+  expect(JSON.parse(admitted.content[0]!.text)).toMatchObject({ summary: detailed.summary, text: detailed.text })
+  await messaging.send(caller, detailed, signal)
+  expect(ravi.steer).toHaveBeenCalledTimes(1)
+  await expect(messaging.send(caller, { ...detailed, summary: 'Changed summary' }, signal)).rejects.toThrow('key_conflict')
+})
+it.each(['', 'many\nlines', 'x'.repeat(241)])('rejects invalid visible summary before room delivery (%s)', async (summary) => {
+  const { caller, ravi, messaging, request } = fixture()
+  await expect(messaging.send(caller, { ...request, summary }, signal)).rejects.toThrow('summary_invalid')
+  expect(ravi.steer).not.toHaveBeenCalled()
+  expect(caller.session.snapshotEvents()).toHaveLength(0)
+})

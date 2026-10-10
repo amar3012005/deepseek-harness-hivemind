@@ -16,6 +16,8 @@ export interface RoomMessage {
   targetId: SessionId
   kind: 'question' | 'reply' | 'update'
   text: string
+  /** Brief display copy; full text remains the durable model-facing message. */
+  summary?: string
   taskId?: string
   replyTo?: string
   hops: number
@@ -48,6 +50,8 @@ export interface RoomMessageRequest {
   targetProfile?: { id: string; name: string; role: string }
   kind: RoomMessage['kind']
   text: string
+  /** Brief display copy; full text remains the durable model-facing message. */
+  summary?: string
   taskId?: string
   replyTo?: string
   artifactIds?: string[]
@@ -111,6 +115,8 @@ export class RoomMessaging {
     if (preset !== 'hivemind-hyperagents' && preset !== 'hivemind-hq') throw new Error('agent_message_employee_mode_required')
     if (caller.session.header.parentSession !== undefined) throw new Error('agent_message_persistent_room_required_use_native_team_mailbox')
     if (input.text.trim() === '' || input.text.length > 12000) throw new Error('agent_message_text_invalid')
+    if (input.summary !== undefined && (typeof input.summary !== 'string' || !input.summary.trim()
+      || input.summary.length > 240 || /[\r\n]/u.test(input.summary))) throw new Error('agent_message_summary_invalid')
     if (!['question', 'reply', 'update'].includes(input.kind)) throw new Error('agent_message_kind_invalid')
     const id = roomMessageId(caller.id, input.key)
     return this.serialized('rooms', async () => {
@@ -131,7 +137,7 @@ export class RoomMessaging {
       })
       const artifactFiles = artifacts.map(artifact => artifact.file)
       if (artifactFiles.length > 8) throw new Error('agent_message_artifact_limit')
-      const message: RoomMessage = { id, senderId: caller.id, senderName: preset === 'hivemind-hq' ? 'Run Time' : owner?.name ?? 'Employee', senderEmployee: preset === 'hivemind-hq' ? 'runtime' : owner?.id ?? '', targetId: target.id, kind: input.kind, text: input.text, hops, artifactIds: input.artifactIds ?? [], ...(input.taskId === undefined ? {} : { taskId: input.taskId }), ...(input.replyTo === undefined ? {} : { replyTo: input.replyTo }) }
+      const message: RoomMessage = { id, senderId: caller.id, senderName: preset === 'hivemind-hq' ? 'Run Time' : owner?.name ?? 'Employee', senderEmployee: preset === 'hivemind-hq' ? 'runtime' : owner?.id ?? '', targetId: target.id, kind: input.kind, text: input.text, ...(input.summary === undefined ? {} : { summary: input.summary }), hops, artifactIds: input.artifactIds ?? [], ...(input.taskId === undefined ? {} : { taskId: input.taskId }), ...(input.replyTo === undefined ? {} : { replyTo: input.replyTo }) }
       if (artifacts.length) message.artifacts = artifacts
       const old = events.find(e => e.type === 'hivemind/room-message-queued' && e.data.id === id)
       if (old?.type === 'hivemind/room-message-queued' && !isDeepStrictEqual(JSON.parse(JSON.stringify({ ...old.data, artifacts: undefined })), JSON.parse(JSON.stringify({ ...message, artifacts: undefined })))) throw new Error('agent_message_key_conflict')
@@ -160,7 +166,7 @@ export class RoomMessaging {
           const authenticatedActor = await this.ctx.serial('api-session/user-authorship',caller)
           const source = { kind: 'hivemind-agent-message' as const, messageId: id, senderId: caller.id, senderSessionId: caller.id,
             ...(authenticatedActor === undefined ? {} : { authenticatedActor }) }
-          const inputMessage = createUserMessage({ content, source: quiet ? { ...source, form: 'notice', summary: `${message.senderName}: ${message.text}`.slice(0, 120) } : { ...source, form: 'relay' } })
+          const inputMessage = createUserMessage({ content, source: quiet ? { ...source, form: 'notice', summary: `${message.senderName}: ${message.summary ?? message.text}`.slice(0, 120) } : { ...source, form: 'relay' } })
           const accepted = targetEvents.some(e => e.type === 'user/message' && e.data.source.kind === 'hivemind-agent-message' && e.data.source.messageId === id) || [...target.inbox.nextTurn, ...target.inbox.nextStep].some(m => m.source.kind === 'hivemind-agent-message' && m.source.messageId === id)
           if (!accepted) {
             if (quiet) target.session.append('user/message', inputMessage, { surfaceOp: 'append' })

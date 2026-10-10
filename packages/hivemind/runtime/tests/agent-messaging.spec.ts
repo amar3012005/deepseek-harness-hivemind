@@ -141,11 +141,11 @@ it('normalizes a registered Chief update before delivery and rejects a paused re
   const tool = register.mock.calls[0]![0] as { execute: (args: unknown, execution: unknown) => Promise<unknown> }
   const agent = { id: 'chief', session: { header: { agentPreset: 'hivemind-hq' },
     snapshotEvents: () => [], ownEvents: () => [] } }
-  const args = { recipient: 'sofia', kind: 'update', message_key: 'correction', message: 'Please revise the saved brief.' }
+  const args = { recipient: 'sofia', kind: 'update', message_key: 'correction', message: 'Please revise the saved brief.\nRetain the exact sources and fix the unresolved conclusion.', summary: 'Please revise the brief.' }
   const execution = { agent, signal: new AbortController().signal }
   await tool.execute(args, execution)
   expect(deliverAgentMessage).toHaveBeenCalledExactlyOnceWith(agent,
-    expect.objectContaining({ kind: 'question', target: 'employee', key: 'correction' }), execution.signal)
+    expect.objectContaining({ kind: 'question', target: 'employee', key: 'correction', text: args.message, summary: args.summary }), execution.signal)
   await expect(tool.execute({ ...args, recipient: 'Sofia' }, execution)).rejects.toThrow('Read hivemind_hq_contract action list')
   expect(deliverAgentMessage).toHaveBeenCalledTimes(1)
   profile.status = 'paused'

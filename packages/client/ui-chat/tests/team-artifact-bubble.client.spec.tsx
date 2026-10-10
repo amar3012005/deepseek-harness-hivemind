@@ -71,3 +71,25 @@ it('shows a validated native assignment naturally while keeping its entire paylo
   expect(details.textContent).toContain('Long internal operating guidance.')
   expect(details.textContent).toContain('Exact detailed objective')
 })
+
+it('shows an explicit brief summary while preserving every detailed finding in the closed disclosure', () => {
+  const text = 'NIGHTLY_REVIEW_REPLY={"findings":[{"observed":"Exact failed tool receipt"}]}\n' + 'Detailed context and evidence.\n'.repeat(20)
+  const view = render(<ContextInjectionRow {...props} content={[{ type: 'text', text: JSON.stringify({ senderName: 'Ravi', summary: 'I’ve sent Runtime today’s findings.', text }) }]} />)
+  const bubble = view.getByRole('article', { name: 'Message from Ravi' })
+  expect(bubble.querySelector('p')?.textContent).toBe('I’ve sent Runtime today’s findings.')
+  expect(bubble.querySelector('details')?.open).toBe(false)
+  expect(bubble.querySelector('details')?.textContent).toContain('Exact failed tool receipt')
+  expect(bubble.querySelector('details')?.textContent).toContain('Detailed context and evidence.')
+  fireEvent.click(view.getByText('Agent message'))
+  expect(bubble.querySelector('details')?.open).toBe(true)
+})
+it('keeps old long messages inspectable without inventing a successful outcome', () => {
+  document.documentElement.dataset.dshMode = 'hivemind-chat'
+  try {
+    const text = 'A detailed unresolved blocker.\n'.repeat(20)
+    const view = render(<ContextInjectionRow {...props} content={[{ type: 'text', text: JSON.stringify({ senderName: 'Ravi', summary: 'invalid\nsummary', text }) }]} />)
+    const bubble = view.getByRole('article', { name: 'Message from Ravi' })
+    expect(bubble.querySelector('p')?.textContent).toBe('A team update is available. Open the message details to read it.')
+    expect(bubble.querySelector('details')?.textContent).toContain(JSON.stringify(text).slice(1, -1))
+  } finally { delete document.documentElement.dataset.dshMode }
+})

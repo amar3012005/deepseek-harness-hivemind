@@ -98,7 +98,8 @@ export class HqControl extends TypertRemoteService {
         content: [{ type: 'text', text:
           'The administrator explicitly selected native Full access for Runtime. Within existing organization credentials and provider API scopes, ' +
           'plan and delegate bounded useful work without asking again for routine permission, including applicable app/project and company-memory save decisions. ' +
-          'This existing permission selection satisfies those tools’ approval requirements; it is not a new human instruction or a fabricated approval answer. ' +
+          'This covers only existing native exemptions for connected-app writes, project and applicable app saves, company-memory saves and listed research tools. ' +
+          'It is not blanket approval: residual native asks under approval=never are rejected, and downstream deny checks still apply. ' +
           'Preserve confirmed user direction, attribution and all tenant/credential/deny guards. Missing connections and essential facts are real blockers: ' +
           'report them through Runtime and ask only what changes the decision. Direct-human employee work keeps its own permissions.' }],
       })] }
