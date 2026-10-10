@@ -168,6 +168,25 @@ describe('the shipped preset root', () => {
     expect(findEntry(hivemind, 'tool-skill')?.disabled).not.toBe(true)
   })
 
+  it('mounts native context recovery in every company preset without a second token meter', async () => {
+    const chat = await shippedEntries('hivemind-chat') as EntryOptions[]
+    const group = chat.find(entry => entry.id === 'compaction')
+    expect(group).toMatchObject({
+      name: 'cordis:group', group: true,
+      isolate: { compaction: true, toolResultPruner: true },
+    })
+    for (const id of ['hivemind-chat', 'hivemind-hq', 'hivemind-hyperagents']) {
+      const entries = await shippedEntries(id) as EntryOptions[]
+      const include = entries.find(entry => entry.id === 'hivemind-chat-base') as
+        { config: { patches: Parameters<typeof applyEntryPatches>[1] } } | undefined
+      const effective = include ? applyEntryPatches(chat, include.config.patches, () => {}) : entries
+      expect(findEntry(effective, 'compaction-basic'), id).toMatchObject({ name: '@deepseek-ai/dsh-compaction-basic' })
+      expect(findEntry(effective, 'command-compact')?.disabled, id).not.toBe(true)
+      expect(findEntry(effective, 'tool-result-pruner')?.config, id).toMatchObject({ thresholdChars: 8192 })
+      expect(findEntry(effective, 'token-meter'), id).toBeUndefined()
+    }
+  })
+
   it('mounts HQ policy at the actual HIVE Chat include boundary with shared plugin parity', async () => {
     const [hq] = (await shippedEntries('hivemind-hq') as EntryOptions[]).filter(entry => entry.id === 'hivemind-chat-base') as Array<{
       config: { path: string; patches: Parameters<typeof applyEntryPatches>[1] }
