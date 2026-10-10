@@ -8,6 +8,7 @@ import Loader from '@deepseek-ai/cordis-plugin-loader'
 import Include from '@deepseek-ai/cordis-plugin-include'
 import WebServer from '@deepseek-ai/dsh-host-webserver'
 import ExecutionScope from '@deepseek-ai/dsh-hivemind-execution-scope'
+import Decision from '@deepseek-ai/dsh-hivemind-decision'
 import { it, expect } from 'vitest'
 
 it('mounts packaged enabled attention through Loader, rejects unsigned traffic and disposes HTTP host', async () => {
@@ -28,7 +29,7 @@ it('mounts packaged enabled attention through Loader, rejects unsigned traffic a
     const configPath = join(root, 'cordis.yml')
     await writeFile(configPath, [
       "- name: '@deepseek-ai/dsh-host-webserver'", '  config:', '    host: 127.0.0.1', '    port: 0',
-      "- name: '@deepseek-ai/dsh-hivemind-execution-scope'", '- name: attention-loader-fixture',
+      "- name: '@deepseek-ai/dsh-hivemind-execution-scope'", "- name: '@deepseek-ai/dsh-hivemind-decision'", '  config:', '    enabled: false', '- name: attention-loader-fixture',
       "- name: '@deepseek-ai/dsh-hivemind-hq-runtime/attention'", '  config:', '    enabled: true', "    admitEventsAfter: '2026-10-01T00:00:00Z'",
       `    serviceSecretEnv: ${secret}`, `    connectionStringEnv: ${database}`, '    schema: hivemind',
       '    triggerSchema: hivemind', '    maxConnections: 1', '    statementTimeoutMs: 1000', '',
@@ -39,6 +40,7 @@ it('mounts packaged enabled attention through Loader, rejects unsigned traffic a
     const modules = new Map<string, unknown>([
       ['@deepseek-ai/dsh-host-webserver', WebServer],
       ['@deepseek-ai/dsh-hivemind-execution-scope', ExecutionScope],
+      ['@deepseek-ai/dsh-hivemind-decision', Decision],
       ['attention-loader-fixture', fixture], ['@deepseek-ai/dsh-hivemind-hq-runtime/attention', attention],
     ])
     context.loader.internal = { version: 'v2', async import(specifier: string) {
