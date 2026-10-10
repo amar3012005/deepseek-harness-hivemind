@@ -54,6 +54,7 @@ const MAX_REST_MS = 4 * 60 * 60 * 1000
 /** A conversational greeting carries no operational wake or changed task. */
 export function greetingOnly(messages: readonly UserMessage[]): boolean {
   const passive = new Set(['hivemind-hq/wake-briefing', 'dsh-hivemind-runtime/turn', 'dsh-hivemind-runtime/history',
+    'dsh-hivemind-connected-apps/workflow', 'dsh-hivemind-connected-apps/receipt',
     'hivemind-runtime/hq-private-recall', 'hivemind-web-runner/authenticated-initiator', 'hivemind-runtime-full-access', 'time-context'])
   const humans = messages.filter(message => message.source.kind === 'user')
   const human = humans[0]
@@ -275,7 +276,6 @@ export function installRest(ctx: Context): void {
     // extra model turns just to rebuild the existing operational handoff.
     // A reply to this turn's own social message closes that exchange. It is
     // not fresh company work, even when it arrives before the turn commits.
-    const socialReplies = new Set<string>()
     const direct = admitted.filter((message) => {
       if (String(message.source.kind) !== 'hivemind-agent-message') return true
       try {
@@ -295,7 +295,6 @@ export function installRest(ctx: Context): void {
           } | undefined
         if (packet.kind !== 'reply' || !packet.id || !outgoing || outgoing.targetId !== packet.senderId
           || packet.taskId || outgoing.taskId || packet.artifactIds?.length || outgoing.artifactIds?.length) return true
-        socialReplies.add(packet.id)
         return false
       } catch { return true }
     })
@@ -309,7 +308,7 @@ export function installRest(ctx: Context): void {
       return event.data.name === 'hivemind_agent_message' && !args.task_id
         && (!Array.isArray(args.artifact_ids) || args.artifact_ids.length === 0)
         && ((args.kind === 'update' && !args.reply_to)
-          || (args.kind === 'reply' && typeof args.reply_to === 'string' && socialReplies.has(args.reply_to)))
+          || (args.kind === 'reply' && args.request_reply === false))
     })) return
     const latest = restIntents(events).at(-1)
     const priorBinding = latest && events.findLast(event => event.type === 'hivemind/hq-rest-wake' && event.data.handoffId === latest.id)
