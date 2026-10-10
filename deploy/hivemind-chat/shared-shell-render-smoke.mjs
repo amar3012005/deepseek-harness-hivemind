@@ -2,8 +2,6 @@ import { readFileSync } from 'node:fs'
 import { resolve, dirname } from 'node:path'
 import { createContext, SourceTextModule, runInContext } from 'node:vm'
 import { JSDOM } from 'jsdom'
-import { createElement } from 'react'
-import { renderToStaticMarkup } from 'react-dom/server'
 import ts from 'typescript'
 
 const root = resolve(process.argv[2] ?? '/opt/deepseek-harness')
@@ -39,7 +37,18 @@ try {
   await (await load(entry, true)).evaluate()
   const shared = context.__SHARED_SEED__
   const primitives = shared['@deepseek-ai/dsh-client-ui-primitives']
-  const svg = renderToStaticMarkup(createElement(primitives.IconBellOutline16))
+  // Use the actual shell renderer and React identity. A Node SSR renderer
+  // owns a different dispatcher and cannot render hook-bearing shell components.
+  const react = shared.react
+  const reactDom = shared['react-dom']
+  const container = dom.window.document.createElement('div')
+  dom.window.document.body.append(container)
+  const renderRoot = shared['react-dom/client'].createRoot(container)
+  const render = (component, props) => {
+    reactDom.flushSync(() => renderRoot.render(react.createElement(component, props)))
+    return container.innerHTML
+  }
+  const svg = render(primitives.IconBellOutline16)
   if (!svg.includes('<svg') || !svg.includes('<path')) throw new Error('Compiled bell did not render')
   // Capture the existing compiled renderer inside its closure, leaving shipped bytes unchanged.
   const plugin = readFileSync(resolve(root, 'packages/client/ui-chat/lib/client.js'), 'utf8')
@@ -57,9 +66,21 @@ try {
   }) }
   runInContext(plugin.slice(0, returnOffset) + 'globalThis.__SIGNAL_RENDERER__ = RuntimeSignalRow;\n'
     + plugin.slice(returnOffset), context)
-  const html = renderToStaticMarkup(createElement(context.__SIGNAL_RENDERER__, {
-    signal: { action: 'notify', summary: 'Artifact check' }, pending: false,
-  }))
+  const html = render(context.__SIGNAL_RENDERER__, {
+    signal: { eventId: 'artifact-check', action: 'notify', summary: 'Artifact check', appName: 'Slack',
+      logoUrl: 'https://artifact.invalid/slack.svg' }, pending: false,
+  })
   if (!html.includes('data-runtime-notification-bell') || !html.includes('<svg')) throw new Error('Compiled notification omitted bell')
-  console.log('Compiled shell bell and chat notification render passed; zero network requests')
+  if (!html.includes('Slack') || !html.includes('Artifact check')) throw new Error('Compiled notification omitted app context')
+  if (!dom.window.document.querySelector('style[data-plugin-css$="/RuntimeSignalRow.module.css"]')) {
+    throw new Error('Compiled notification omitted responsive stylesheet')
+  }
+  const logo = container.querySelector('img')
+  if (!logo) throw new Error('Compiled notification omitted logo')
+  reactDom.flushSync(() => logo.dispatchEvent(new dom.window.Event('error')))
+  if (container.querySelector('img') || !container.querySelector('[data-runtime-signal-logo]')?.textContent.includes('S')) {
+    throw new Error('Compiled notification logo fallback did not update through shared React')
+  }
+  reactDom.flushSync(() => renderRoot.unmount())
+  console.log('Compiled shared React bell, attention context, stylesheet, and logo-hook fallback passed; zero network requests')
 } finally { dom.window.close() }
