@@ -15,6 +15,7 @@ fi
 docker run --rm --entrypoint sh "$image" -ec '
   node /opt/deepseek-harness/deploy/hivemind-chat/verify-shared-shell.mjs
   node --experimental-vm-modules /opt/deepseek-harness/deploy/hivemind-chat/shared-shell-render-smoke.mjs
+  node /opt/deepseek-harness/deploy/hivemind-chat/verify-session-wire.mjs
   node /opt/deepseek-harness/deploy/hivemind-chat/pdf-lazy-smoke.mjs
   profile_dir="$(mktemp -d)"
   trap "rm -rf \"$profile_dir\"" EXIT

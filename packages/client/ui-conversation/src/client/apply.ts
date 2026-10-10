@@ -10,6 +10,7 @@ import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
+import { setupEmbeddedSessionBootstrap } from './embedded-session-bootstrap.ts'
 import { UiConversation } from './conversation/assembly.ts'
 import type { ViewTab } from './contract/views.ts'
 import type {
@@ -129,35 +130,7 @@ export function apply(ctx: Context, config: Config = Config({})): void {
   // but start its first session directly when this clean UI is React-mounted.
   if (document.documentElement.dataset.dshEmbedded === 'true') {
     uiConversation.configureWorkspaceRequirement(false)
-    ctx.effect(() => {
-      let creating = false
-      let pending: ReturnType<typeof setTimeout> | undefined
-      const ensureSession = (): void => {
-        const state = sessions.list.getSnapshot()
-        if (state.current !== undefined || creating || pending !== undefined) return
-        pending = setTimeout(() => {
-          pending = undefined
-          const settled = sessions.list.getSnapshot()
-          if (settled.current !== undefined) return
-          const existing = settled.ids[0]
-          if (existing !== undefined) {
-            sessions.open(existing)
-            return
-          }
-          creating = true
-          void sessions.create().then(id => sessions.open(id)).finally(() => {
-            creating = false
-            ensureSession()
-          })
-        }, state.phase === 'ready' ? 50 : 750)
-      }
-      const stop = sessions.list.subscribe(ensureSession)
-      ensureSession()
-      return () => {
-        if (pending !== undefined) clearTimeout(pending)
-        stop()
-      }
-    }, 'ui-conversation: embedded HIVE session bootstrap')
+    ctx.effect(() => setupEmbeddedSessionBootstrap(sessions), 'ui-conversation: embedded HIVE session bootstrap')
   }
 
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-conversation: dictionaries')
