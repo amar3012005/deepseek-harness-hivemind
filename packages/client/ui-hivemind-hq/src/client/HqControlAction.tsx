@@ -131,7 +131,8 @@ export function HqControlAction({
     try {
       const result=await startFresh(sessionId,{ confirmed:true })
       if (!result.ok) {setError(t('freshFailed'));setPending(false);return}
-      window.location.assign('/hivemind/app/employee/harness')
+      // Reopen the canonical Runtime, not the remembered employee selection.
+      window.location.assign(`/hivemind/app/employee/harness/session/${encodeURIComponent(sessionId)}`)
     } catch {setError(t('freshFailed'));setPending(false)}
   }
   return <div className={css.control}>

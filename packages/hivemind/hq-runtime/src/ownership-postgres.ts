@@ -67,6 +67,7 @@ export default class PostgresHqOwnership extends Service {
   /** Human-only scoped reset; company memory, profiles and other users are untouched. */
   async resetFresh(root: SessionId, ids: readonly SessionId[]): Promise<{ sessions: number; memories: number }> {
     let p=this.ctx.hivemindExecutionScope.require()
+    const actorUserId=p.userId
     const current=await this.freshTargets(root)
     if (JSON.stringify(current)!==JSON.stringify(ids)) throw new Error('fresh_reset_scope_changed')
     const client=await this.pool.connect()
@@ -78,9 +79,13 @@ export default class PostgresHqOwnership extends Service {
       if (lock.rowCount!==ids.length) throw new Error('fresh_reset_scope_changed')
       const leased=await client.query('SELECT 1 FROM harness_session_leases WHERE session_id=ANY($1::text[]) AND released_at IS NULL AND expires_at>now() LIMIT 1',[ids])
       if (leased.rowCount) throw new Error('fresh_reset_sessions_still_owned')
-      const memories=this.config.sharedOrganizationAgents
-        ? await client.query("DELETE FROM hyper_agent_operating_memories WHERE org_id=$1 AND project_slug='hyper-agents'",[p.orgId])
-        : await client.query("DELETE FROM hyper_agent_operating_memories WHERE org_id=$1 AND author_user_id=$2 AND project_slug='hyper-agents'",[p.orgId,p.userId])
+      // The runner cannot delete this Core-owned table directly. A narrow database
+      // capability authenticates the admin and canonical Runtime before clearing private history.
+      await client.query("SELECT set_config('app.hivemind_user_id',$1,true)",[actorUserId])
+      const memories=await client.query<{ removed: string }>(
+        'SELECT reset_agent_operating_memory($1::uuid,$2::uuid,$3::text,$4::boolean) AS removed',
+        [p.orgId,actorUserId,root,this.config.sharedOrganizationAgents === true])
+      await client.query("SELECT set_config('app.hivemind_user_id',$1,true)",[p.userId])
       await client.query('DELETE FROM harness_session_events WHERE org_id=$1 AND user_id=$2 AND session_id=$3',[p.orgId,p.userId,root])
       // Native projection checkpoints bind to header.createdAt, not SQL revision.
       // This canonical ID now names a new empty lifecycle, so old cache rows must not match it.
@@ -91,7 +96,7 @@ export default class PostgresHqOwnership extends Service {
       const sessions=await client.query('DELETE FROM harness_sessions WHERE org_id=$1 AND user_id=$2 AND id=ANY($3::text[]) AND id<>$4',[p.orgId,p.userId,ids,root])
       if (sessions.rowCount!==ids.length-1) throw new Error('fresh_reset_scope_changed')
       await client.query('COMMIT')
-      return { sessions:ids.length,memories:memories.rowCount ?? 0 }
+      return { sessions:ids.length,memories:Number(memories.rows[0]?.removed ?? 0) }
     } catch(error) { await client.query('ROLLBACK').catch(() => undefined);throw error } finally {client.release()}
   }
   /** Atomically retain one canonical root without accepting model-supplied tenant identifiers. */
