@@ -82,7 +82,12 @@ export default class PostgresHqOwnership extends Service {
         ? await client.query("DELETE FROM hyper_agent_operating_memories WHERE org_id=$1 AND project_slug='hyper-agents'",[p.orgId])
         : await client.query("DELETE FROM hyper_agent_operating_memories WHERE org_id=$1 AND author_user_id=$2 AND project_slug='hyper-agents'",[p.orgId,p.userId])
       await client.query('DELETE FROM harness_session_events WHERE org_id=$1 AND user_id=$2 AND session_id=$3',[p.orgId,p.userId,root])
-      await client.query('UPDATE harness_sessions SET event_count=0,revision=revision+1,header=jsonb_set(header,\'{agentPreset}\',\'"hivemind-hq"\'::jsonb),updated_at=now() WHERE org_id=$1 AND user_id=$2 AND id=$3',[p.orgId,p.userId,root])
+      // Native projection checkpoints bind to header.createdAt, not SQL revision.
+      // This canonical ID now names a new empty lifecycle, so old cache rows must not match it.
+      await client.query(`UPDATE harness_sessions SET event_count=0,revision=revision+1,
+        header=jsonb_set(jsonb_set(header,'{agentPreset}','"hivemind-hq"'::jsonb),'{createdAt}',
+          to_jsonb(GREATEST($4::bigint,COALESCE((header->>'createdAt')::bigint,0)+1))),updated_at=now()
+        WHERE org_id=$1 AND user_id=$2 AND id=$3`,[p.orgId,p.userId,root,Date.now()])
       const sessions=await client.query('DELETE FROM harness_sessions WHERE org_id=$1 AND user_id=$2 AND id=ANY($3::text[]) AND id<>$4',[p.orgId,p.userId,ids,root])
       if (sessions.rowCount!==ids.length-1) throw new Error('fresh_reset_scope_changed')
       await client.query('COMMIT')

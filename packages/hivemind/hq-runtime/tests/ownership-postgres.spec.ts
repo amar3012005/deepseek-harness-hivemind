@@ -67,6 +67,7 @@ suite('canonical company HQ ownership', () => {
   })
   it('fresh reset removes only the requesting team and its private memories', async () => {
     await claim(a, 'a-hq')
+    await admin.query("UPDATE harness_sessions SET header=jsonb_set(header,'{createdAt}','1000') WHERE id='a-hq'")
     await admin.query('CREATE TABLE IF NOT EXISTS hyper_agent_operating_memories(id text,org_id uuid,author_user_id uuid,project_slug text)')
     await admin.query('GRANT SELECT,DELETE ON hyper_agent_operating_memories TO codex_schedule_test')
     await admin.query('TRUNCATE hyper_agent_operating_memories')
@@ -77,6 +78,8 @@ suite('canonical company HQ ownership', () => {
     expect(ids).toEqual(['a-employee','a-hq'])
     await expect(scope.run(a,()=>ctx.hivemindHqOwnership.resetFresh(SessionId('a-hq'),ids))).resolves.toEqual({ sessions:2,memories:1 })
     expect((await admin.query("SELECT header->>'agentPreset' AS preset,event_count::int AS event_count FROM harness_sessions WHERE id='a-hq'")).rows[0]).toMatchObject({ preset:'hivemind-hq',event_count:0 })
+    const lifecycle = (await admin.query("SELECT (header->>'createdAt')::double precision AS created FROM harness_sessions WHERE id='a-hq'")).rows[0]
+    expect(lifecycle.created).toBeGreaterThan(1000)
     expect((await admin.query('SELECT id FROM harness_sessions ORDER BY id')).rows.map(r=>r.id)).toEqual(['a-brain','a-hq','b-hq','c-hq'])
     expect((await admin.query('SELECT id FROM hyper_agent_operating_memories ORDER BY id')).rows.map(r=>r.id)).toEqual(['company','other'])
   })

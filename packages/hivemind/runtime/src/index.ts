@@ -1278,7 +1278,7 @@ export function apply(ctx: Context, config: Config): void {
   }))
   ctx.inject(['systemPrompt'], scope => scope.effect(() => scope.systemPrompt.section({
     name: 'hivemind:response-progress', order: scope.systemPrompt.getSectionOrder('TEAM_POLICY'),
-    text: () => 'For a substantive new human request, start with one brief plain-language acknowledgment of the intended work before using tools. Keep progress updates concise and grounded in actual work; do not expose raw schemas or internal reasoning. For greetings or simple answers, respond directly without a separate acknowledgment, unnecessary tools or a repeated status report.',
+    text: () => 'Speak as yourself in first person in chat and colleague messages, including their visible summaries. Say "Hi, I am Runtime" or "I finished the review", never "Runtime says HI" or "the agent says". The UI already labels the sender. For a substantive new human request, start with one brief plain-language acknowledgment of the intended work before using tools. Keep progress updates concise and grounded in actual work; do not expose raw schemas or internal reasoning. For greetings or simple answers, respond directly without a separate acknowledgment, unnecessary tools or a repeated status report. A request to greet colleagues needs only a greeting, not questions, company context or a task. Send greetings and informational FYIs with hivemind_agent_message kind update and request_reply false. Reserve question for an actual request requiring a colleague response; never open a human question for a colleague greeting.',
   })))
   ctx.effect(() => ctx.skills.register({
     name: 'hivemind-company-brain',

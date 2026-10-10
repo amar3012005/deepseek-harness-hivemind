@@ -150,6 +150,16 @@ describe('HIVE-MIND operating-run projection', () => {
     expect(nodes(value)[0]?.data).toMatchObject({ title: 'Campaign visual', status: 'completed', attempts: 2 })
   })
 
+  it('folds repeated media start receipts when older history is prepended', () => {
+    const value = assemble([
+      event(2, 'hivemind/media-workflow-started', { workflowId: 'retried-media', kind: 'image' }),
+      event(3, 'hivemind/media-workflow-ended', { workflowId: 'retried-media', status: 'completed' }),
+    ])
+    value.prepend([event(1, 'hivemind/media-workflow-started', { workflowId: 'retried-media', kind: 'image' })])
+    expect(nodes(value)).toHaveLength(1)
+    expect(nodes(value)[0]?.data).toMatchObject({ status: 'completed' })
+  })
+
   it('replays plan revision and inline workstream progress as visible operating state', () => {
     const value = assemble([
       event(1, 'hivemind/run-plan', { planId: 'p1', revision: 1, objective: 'Assess market', approach: 'Analyze', playbooks: [], workstreams: [{ id: 'review', objective: 'Review evidence', actor: { kind: 'inline_employee', employeeId: 'marta' } }] }),

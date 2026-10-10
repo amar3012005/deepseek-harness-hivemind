@@ -125,6 +125,8 @@ it('admits explicit Runtime updates to employees as response requests without ch
   expect(explicitEmployeeMessageKind('hivemind-hyperagents', true, 'update')).toBe('update')
   expect(explicitEmployeeMessageKind('hivemind-hyperagents', false, 'update')).toBe('update')
   expect(explicitEmployeeMessageKind('hivemind-hq', true, 'reply')).toBe('reply')
+  expect(explicitEmployeeMessageKind('hivemind-hq', true, 'update', undefined, false)).toBe('update')
+  expect(explicitEmployeeMessageKind('hivemind-hq', true, 'update', 'question', false)).toBe('question')
 })
 
 
@@ -148,9 +150,13 @@ it('normalizes a registered Chief update before delivery and rejects a paused re
     expect.objectContaining({ kind: 'question', target: 'employee', key: 'correction', text: args.message, summary: args.summary }), execution.signal)
   await expect(tool.execute({ ...args, recipient: 'Sofia' }, execution)).rejects.toThrow('Read hivemind_hq_contract action list')
   expect(deliverAgentMessage).toHaveBeenCalledTimes(1)
+  await tool.execute({ ...args, message_key: 'greeting', message: 'Hi, I am Runtime.', summary: 'Hi, everyone!',
+    request_reply: false }, execution)
+  expect(deliverAgentMessage).toHaveBeenLastCalledWith(agent,
+    expect.objectContaining({ kind: 'update', text: 'Hi, I am Runtime.', summary: 'Hi, everyone!' }), execution.signal)
   profile.status = 'paused'
   await expect(tool.execute(args, execution)).rejects.toThrow('agent_message_recipient_unavailable')
-  expect(deliverAgentMessage).toHaveBeenCalledTimes(1)
+  expect(deliverAgentMessage).toHaveBeenCalledTimes(2)
 })
 
 it('uses the current sender preset directory rather than a sibling realm registry', () => {

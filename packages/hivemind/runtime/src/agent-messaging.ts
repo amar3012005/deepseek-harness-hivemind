@@ -146,9 +146,10 @@ export function installAgentMessaging(ctx: Context): void {
       parameters: {
         recipient: { type: 'string', required: true, description: 'runtime, or an exact authenticated employee ID or unique slug from the directory. Use the exact ID if a slug is ambiguous.' },
         kind: { type: 'string', required: true, enum: ['question', 'reply', 'update'] },
+        request_reply: { type: 'boolean', description: 'For a Runtime update to an employee, false delivers a quiet informational notice without waking the employee. Set false for greetings and FYI messages requiring no action. Use question for a real request or assignment requiring a response. Never ask the human to answer a colleague greeting.' },
         message_key: { type: 'string', required: true, description: 'Stable unique key for this message, reused unchanged on retry.' },
-        message: { type: 'string', required: true, description: 'Complete colleague-to-colleague message, including the assignment, findings, evidence and unresolved questions needed by the receiving agent. Keep all necessary detail here; it is saved unchanged and available in Agent message details. Put saved artifact IDs in artifact_ids and task identity in task_id.' },
-        summary: { type: 'string', description: 'One short plain-language sentence for the visible chat bubble, at most 240 characters and no line breaks. State only what the full message supports. Use this with detailed assignments, findings or blockers; it never grants approval or marks a task complete. Reuse it unchanged with message_key.' },
+        message: { type: 'string', required: true, description: 'Speak directly in your own first-person voice to your colleague: "Hi, I am Runtime" or "I finished the analysis"; never narrate "Runtime says" or speak as another employee. Include the assignment, findings, evidence and unresolved questions needed by the receiving agent. Keep all necessary detail here; it is saved unchanged and available in Agent message details. Put saved artifact IDs in artifact_ids and task identity in task_id.' },
+        summary: { type: 'string', description: 'One short plain-language sentence in your own first-person voice for the visible chat bubble, at most 240 characters and no line breaks. For example "Hi, everyone!" or "I finished the analysis." Never say "Runtime says HI" or narrate yourself in third person. State only what the full message supports. It never grants approval or marks a task complete. Reuse it unchanged with message_key.' },
         task_id: { type: 'string' }, reply_to: { type: 'string' },
         artifact_ids: { type: 'array', items: { type: 'string' }, description: 'Only artifact IDs with a saved file/PDF event in this sender room. IDs received from another employee are not sender-owned attachments; use task_id and a precise text reference for a correction, or ask the authorized producer to share its saved file. Never invent receipts.' },
       },
@@ -157,7 +158,7 @@ export function installAgentMessaging(ctx: Context): void {
       async execute(args, execution) {
         const agent = execution.agent
         if (!agent) throw new Error('agent_message_live_sender_required')
-        const input = args as { recipient: string; kind: 'question' | 'reply' | 'update'; message_key: string; message: string; summary?: string; task_id?: string; reply_to?: string; artifact_ids?: string[] }
+        const input = args as { recipient: string; kind: 'question' | 'reply' | 'update'; request_reply?: boolean; message_key: string; message: string; summary?: string; task_id?: string; reply_to?: string; artifact_ids?: string[] }
         const directory = await messageDirectory(scope, agent).profiles(execution.signal)
         const owner = sessionOwner(agent.session.snapshotEvents())
         let preset = agent.session.header.agentPreset
@@ -189,7 +190,7 @@ export function installAgentMessaging(ctx: Context): void {
         return rooms.deliverAgentMessage(agent, {
           key: input.message_key, target: targetProfile?.id ?? input.recipient,
           kind: explicitEmployeeMessageKind(preset, targetProfile !== undefined, input.kind,
-            queued === undefined ? undefined : (queued.data as { kind?: string }).kind), text: input.message,
+            queued === undefined ? undefined : (queued.data as { kind?: string }).kind, input.request_reply), text: input.message,
           ...(input.summary === undefined ? {} : { summary: input.summary }),
           ...(targetProfile === undefined ? {} : { targetProfile }),
           ...(input.task_id === undefined ? {} : { taskId: input.task_id }),
@@ -203,8 +204,9 @@ export function installAgentMessaging(ctx: Context): void {
 
 /** Explicit Chief messages use the existing response-requesting inbox, never scheduler notices. */
 export function explicitEmployeeMessageKind(preset: string | undefined, employeeTarget: boolean,
-  kind: 'question' | 'reply' | 'update', savedKind?: string): 'question' | 'reply' | 'update' {
+  kind: 'question' | 'reply' | 'update', savedKind?: string, requestReply?: boolean): 'question' | 'reply' | 'update' {
   if (preset !== 'hivemind-hq' || !employeeTarget || kind !== 'update') return kind
+  if (savedKind === 'question') return 'question'
   // A delivered historical notice is not silently replayed as a new request.
-  return savedKind === 'update' ? 'update' : 'question'
+  return savedKind === 'update' || requestReply === false ? 'update' : 'question'
 }

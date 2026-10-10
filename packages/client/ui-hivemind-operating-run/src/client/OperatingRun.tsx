@@ -821,13 +821,19 @@ const mediaWorkflowDefinition: ConversationNodeDefinition<MediaWorkflowData> = {
     if (String(observed.type) !== 'hivemind/media-workflow-started' && String(observed.type) !== 'hivemind/media-workflow-ended') return null
     const id = string(record(observed.data)?.['workflowId'])
     if (!id) return null
-    return { id, role: String(observed.type) === 'hivemind/media-workflow-started' ? 'start' : 'update' }
+    // A retry can repeat the same workflow's started receipt. Fold all receipts
+    // into one native context instead of claiming a second unique start.
+    return { id, role: 'update' }
   },
   start: (_context, match) => mediaWorkflowData(match.event),
   update: (context, match) => mediaWorkflowData(match.event, context.state),
-  buildViewNode: context => context.start === undefined ? null : {
-    key: context.key, kind: 'hivemind-media-workflow', id: context.id, target: 'chat',
-    anchorSeq: context.start.event.seq, location: context.start.location, visibility: 'visible', data: context.state,
+  buildViewNode: (context) => {
+    const anchor = context.matches[0]
+    const state = context.matches.reduce<MediaWorkflowData | undefined>(
+      (previous, match) => mediaWorkflowData(match.event, previous), undefined)
+    if (anchor === undefined || state === undefined) return null
+    return { key: context.key, kind: 'hivemind-media-workflow', id: context.id, target: 'chat',
+      anchorSeq: anchor.event.seq, location: anchor.location, visibility: 'visible', data: state }
   },
 }
 

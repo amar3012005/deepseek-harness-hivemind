@@ -338,7 +338,7 @@ export function apply(ctx: ClientContext): void {
     }) : name === 'conversation.chat.assistantAvatar' && /^\/hivemind\/app\/overview(?:\/|$)/u.test(window.location.pathname)
       ? createElement('span', { 'data-chat-agent-avatar': true, style: { width: 32, flexShrink: 0, alignSelf: 'flex-end' } }, createElement(BrainModeIcon, { size: 32 }))
       : null))
-  ctx.inject(['remote.commands', 'remote.agentPresets'], (ctx: ClientContext) => {
+  ctx.inject(['remote.commands', 'remote.agentPresets', 'connection'], (ctx: ClientContext) => {
     const selectEmployee = async (sessionId: SessionId, id: string | null, runtime = false): Promise<boolean> => {
       if (ctx.sessions.binding(sessionId) === undefined) throw new Error('Session is not ready. Please reopen it.')
       const targetPreset = runtime ? 'hivemind-hq' : id === null ? 'hivemind-chat' : 'hivemind-hyperagents'
@@ -473,7 +473,10 @@ export function apply(ctx: ClientContext): void {
           const message = (row.projectionValues as { hyperagentLatestMessage?: string | null } | undefined)?.hyperagentLatestMessage
           let preview = ''
           try { preview = message ? (JSON.parse(message) as { text: string }).text : '' } catch { /* Missing legacy projection. */ }
-          return [{ id: employee?.id ?? 'runtime', sessionId: id, preview, running: row.running, unread: row.completed === true, actionRequired: roomNeedsInput(ctx.uiSession.pendingInteractions.getSnapshot().get(id)), scheduled: scheduledRooms.has(id), updatedAt: row.updatedAt }]
+          const pending = ctx.uiSession.pendingInteractions.getSnapshot().get(id)
+          return [{ id: employee?.id ?? 'runtime', sessionId: id, preview, running: row.running, unread: row.completed === true,
+            actionRequired: roomNeedsInput(pending), waitingForAnswer: pending?.kind === 'question',
+            scheduled: scheduledRooms.has(id), updatedAt: row.updatedAt }]
         })
         ;(window as unknown as { __HIVEMIND_AGENT_ROOMS__: unknown }).__HIVEMIND_AGENT_ROOMS__ = rooms
         window.dispatchEvent(new CustomEvent('hivemind:agent-rooms', { detail: { rooms } }))
@@ -483,16 +486,23 @@ export function apply(ctx: ClientContext): void {
         try {
           const result = await ctx.remote.schedule.catalog()
           if (disposed || request !== scheduleRead) return
-          scheduledRooms = new Set(result.ok ? result.value.filter(task => task.status === 'active').map(task => task.sessionId) : [])
+          if (!result.ok) return
+          scheduledRooms = new Set(result.value.filter(task => task.status === 'active').map(task => task.sessionId))
         } catch {
           if (disposed || request !== scheduleRead) return
-          scheduledRooms = new Set()
+          // A failed read is unknown, not evidence that scheduled work vanished.
         }
         publish()
       }
       const stopApproval = ctx.uiSession.pendingInteractions.subscribe(publish)
       const stopSchedule = ctx.remote.$on('schedule/changed', () => { void refreshSchedules() })
       const stopReset = ctx.on('connection/reset', () => { scheduledRooms = new Set(); publish(); void refreshSchedules() })
+      const connection = ctx.get('connection') as ConnectionHandle
+      const refreshConnectedSchedules = (): void => {
+        if (connection.state.getSnapshot() === 'connected') void refreshSchedules()
+      }
+      const stopConnection = connection.state.subscribe(refreshConnectedSchedules)
+      window.addEventListener('focus', refreshConnectedSchedules)
       void refreshSchedules()
       const stop = ctx.sessions.list.subscribe(publish)
       window.addEventListener('hivemind:request-agent-rooms', publish)
@@ -505,6 +515,8 @@ export function apply(ctx: ClientContext): void {
         stopApproval()
         stopSchedule()
         stopReset()
+        stopConnection()
+        window.removeEventListener('focus', refreshConnectedSchedules)
         stop()
         window.removeEventListener('hivemind:request-agent-rooms', publish)
         if (host.__HIVEMIND_SELECT_AGENT__ === bridge) delete host.__HIVEMIND_SELECT_AGENT__
