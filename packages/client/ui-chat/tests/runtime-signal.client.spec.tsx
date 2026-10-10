@@ -17,6 +17,7 @@ describe('Runtime signal admission presentation', () => {
   it('does not claim a queued notify or requested wake is processing', () => {
     const signal = runtimeSignal(source)!
     const { rerender } = render(<RuntimeSignalRow signal={signal} pending />)
+    expect(screen.getByRole('status', { name: 'Runtime notification' }).querySelector('[data-runtime-notification-bell] svg')).not.toBeNull()
     expect(screen.getByText('Queued for Runtime’s next turn')).toBeTruthy()
     rerender(<RuntimeSignalRow signal={{ ...signal, action: 'wake' }} pending />)
     expect(screen.getByText('Waiting for Runtime')).toBeTruthy()

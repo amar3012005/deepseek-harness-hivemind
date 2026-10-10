@@ -7,6 +7,13 @@ import type { IconProps } from './props.ts'
 
 export type { IconProps } from './props.ts'
 
+/** Passive notification marker; the surrounding row supplies its accessible name. */
+export const IconBellOutline16 = ({ size = 16, className }: IconProps) => (
+  <svg width={size} height={size} className={className} viewBox="0 0 16 16" fill="none" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
+    <path d="M3 11h10l-1.5-2V6a3.5 3.5 0 0 0-7 0v3L3 11Zm3.5 2a1.5 1.5 0 0 0 3 0M8 1v1" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+  </svg>
+)
+
 /** ic_ds_new_chat_outline_16 */
 export const IconNewChatOutline16 = ({ size = 16, className }: IconProps) => (
   <svg width={size} height={size} className={className} viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">

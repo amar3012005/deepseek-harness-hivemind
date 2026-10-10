@@ -1,10 +1,11 @@
 import type { RuntimeSignal } from './runtime-signal.ts'
+import { IconBellOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
 import css from './ContextInjectionRow.module.css'
 
 /** A passive chat event: never submits, wakes, or changes the composer. */
 export function RuntimeSignalRow({ signal, pending }: { signal: RuntimeSignal; pending: boolean }) {
-  return <article className={css.messageBubble} data-runtime-signal="" role="status">
-    <strong className={css.sender}>{signal.summary}</strong>
+  return <article className={css.messageBubble} data-runtime-signal="" role="status" aria-label="Runtime notification">
+    <strong className={css.sender}><span aria-hidden="true" data-runtime-notification-bell=""><IconBellOutline16 /></span> {signal.summary}</strong>
     <p className={css.messageText}>{pending
       ? signal.action === 'notify' ? 'Queued for Runtime’s next turn' : 'Waiting for Runtime'
       : 'Received by Runtime'}</p>
