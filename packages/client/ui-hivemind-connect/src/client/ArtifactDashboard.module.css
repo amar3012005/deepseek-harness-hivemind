@@ -46,3 +46,19 @@
 
 :global([data-hivemind-artifacts-seat][data-collapsed]) .trigger { justify-content:center; }
 :global([data-hivemind-artifacts-seat][data-collapsed]) .trigger span { display:none; }
+
+@media (max-width:700px) {
+  .backdrop:not([data-page]) { padding:max(12px,env(safe-area-inset-top,0px)) 12px max(12px,env(safe-area-inset-bottom,0px)); }
+  .dashboard { max-height:100%; min-height:0; height:100%; }
+  .header { gap:12px; flex-wrap:wrap; }
+  .header > div:first-child { min-width:0; flex:1; }
+  .header h1,.header p { overflow-wrap:anywhere; }
+  .actions button,.filters button,.viewerBar button { min-width:44px; min-height:44px; touch-action:manipulation; }
+  .content { min-height:0; overscroll-behavior:contain; }
+  .caption strong { white-space:normal; overflow-wrap:anywhere; }
+  .viewer { min-height:0; }
+  .viewerBar { flex-wrap:wrap; }
+  .viewerBar strong { flex-basis:100%; white-space:normal; overflow-wrap:anywhere; }
+  .viewerContent iframe { min-height:0; }
+  .viewer[data-fullscreen] { padding:max(12px,env(safe-area-inset-top,0px)) 12px max(12px,env(safe-area-inset-bottom,0px)); }
+}
