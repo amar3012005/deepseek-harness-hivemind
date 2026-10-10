@@ -155,7 +155,7 @@ describe('HIVE-MIND operating-run projection', () => {
       event(2, 'hivemind/media-workflow-started', { workflowId: 'retried-media', kind: 'image' }),
       event(3, 'hivemind/media-workflow-ended', { workflowId: 'retried-media', status: 'completed' }),
     ])
-    value.prepend([event(1, 'hivemind/media-workflow-started', { workflowId: 'retried-media', kind: 'image' })])
+    value.prepend([event(1, 'hivemind/media-workflow-started', { workflowId: 'retried-media', kind: 'image' })], false)
     expect(nodes(value)).toHaveLength(1)
     expect(nodes(value)[0]?.data).toMatchObject({ status: 'completed' })
   })
