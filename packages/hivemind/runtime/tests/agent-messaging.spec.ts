@@ -1,7 +1,7 @@
-import { expect, it, vi } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
-import { authorizedRecipient, messageDirectory, installAgentMessaging, explicitEmployeeMessageKind } from '../src/agent-messaging.ts'
+import { authorizedRecipient, messageDirectory, installAgentMessaging, explicitEmployeeMessageKind, reconcileRoomMessages } from '../src/agent-messaging.ts'
 
 it('resolves authenticated unique slugs without accepting missing or ambiguous recipients', () => {
   const row = { id: 'employee-id', slug: 'ravi-patel' }
@@ -167,4 +167,63 @@ it('uses the current sender preset directory rather than a sibling realm registr
   const ctx = { get: () => ({ serviceFor }), hivemindEmployeeDirectory: stale } as unknown as Context
   expect(messageDirectory(ctx, sender)).toBe(current)
   expect(serviceFor).toHaveBeenCalledWith(sender, 'hivemindEmployeeDirectory')
+})
+
+
+describe('company packet recovery independent of native Team retries', () => {
+  function recoveryFixture() {
+    const packet = { id: 'saved', senderId: 'chief', targetId: 'employee-room', kind: 'question', text: 'Prepare the saved brief.',
+      artifactIds: [], delivery: { key: 'same-key', target: 'employee' } }
+    const events = [{ type: 'hivemind/room-message-queued', data: packet }] as { type: string; data: unknown }[]
+    const profiles = [{ id: 'employee', name: 'Ravi', status: 'active' }]
+    const rooms = { deliverAgentMessage: vi.fn(async (_agent: Agent, _input: Record<string, unknown>, _signal: AbortSignal) => {
+      events.push({ type: 'hivemind/room-message-delivered', data: { id: 'saved' } }); return {}
+    }) }
+    const ctx = { hivemindEmployeeDirectory: { profiles: vi.fn(async () => ({ profiles })) },
+      logger: { warn: vi.fn() } } as unknown as Context
+    const agent = { id: 'chief', session: { header: { agentPreset: 'hivemind-hq' }, snapshotEvents: () => events } } as unknown as Agent
+    return { packet, events, profiles, rooms, ctx, agent }
+  }
+  it('replays a saved failed packet with its exact key and payload, then stops after confirmation', async () => {
+    const f = recoveryFixture(), signal = new AbortController().signal
+    await reconcileRoomMessages(f.ctx, f.rooms, f.agent, signal)
+    await reconcileRoomMessages(f.ctx, f.rooms, f.agent, signal)
+    expect(f.rooms.deliverAgentMessage).toHaveBeenCalledTimes(1)
+    expect(f.rooms.deliverAgentMessage.mock.calls[0]?.[1]).toMatchObject({ key: 'same-key', target: 'employee', text: f.packet.text })
+  })
+  it('recovers legacy packets only when an actual saved tool call supplies the matching stable key', async () => {
+    const { createHash } = await import('node:crypto')
+    const f = recoveryFixture()
+    f.packet.id = `agent-message-${createHash('sha256').update(JSON.stringify(['chief', 'same-key'])).digest('hex')}`
+    Reflect.deleteProperty(f.packet, 'delivery')
+    await reconcileRoomMessages(f.ctx, f.rooms, f.agent, new AbortController().signal)
+    expect(f.rooms.deliverAgentMessage).not.toHaveBeenCalled()
+    f.events.push({ type: 'tool/call', data: { name: 'hivemind_agent_message',
+      arguments: JSON.stringify({ message_key: 'same-key', recipient: 'employee' }) } })
+    await reconcileRoomMessages(f.ctx, f.rooms, f.agent, new AbortController().signal)
+    expect(f.rooms.deliverAgentMessage).toHaveBeenCalledTimes(1)
+  })
+  it.each(['missing', 'paused', 'archived'])('does not retry a recipient whose current authorization is %s', async (status) => {
+    const f = recoveryFixture()
+    if (status === 'missing') f.profiles.length = 0
+    else f.profiles[0]!.status = status
+    await reconcileRoomMessages(f.ctx, f.rooms, f.agent, new AbortController().signal)
+    expect(f.rooms.deliverAgentMessage).not.toHaveBeenCalled()
+  })
+  it.each(['completed', 'deleted', 'reassigned'])('does not replay work which is now %s', async (status) => {
+    const f = recoveryFixture()
+    Object.assign(f.packet, { taskId: 'task-1' })
+    f.events.push({ type: 'team/task', data: { task: { id: 'task-1', status } } })
+    if (status === 'reassigned') f.events.push({ type: 'hivemind/hq-employee-assignment', data: { taskId: 'task-1', sessionId: 'another-room' } })
+    await reconcileRoomMessages(f.ctx, f.rooms, f.agent, new AbortController().signal)
+    expect(f.rooms.deliverAgentMessage).not.toHaveBeenCalled()
+  })
+  it('bounds recovery and preserves failed packets for the next admitted turn without creating replies', async () => {
+    const f = recoveryFixture()
+    f.events.splice(0, 1, ...Array.from({ length: 20 }, (_, i) => ({ type: 'hivemind/room-message-queued', data: { ...f.packet, id: `saved-${i}` } })))
+    f.rooms.deliverAgentMessage.mockRejectedValue(new Error('temporarily unavailable'))
+    await reconcileRoomMessages(f.ctx, f.rooms, f.agent, new AbortController().signal)
+    expect(f.rooms.deliverAgentMessage).toHaveBeenCalledTimes(8)
+    expect(f.events).toHaveLength(20)
+  })
 })
