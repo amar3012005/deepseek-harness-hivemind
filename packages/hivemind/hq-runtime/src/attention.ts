@@ -105,6 +105,8 @@ export function apply(ctx: Context, config: Config): void {
           WHERE e.id=$1 AND e.org_id=$2 AND e.user_id=$3 AND s.org_id=e.org_id AND s.user_id=e.user_id
             AND s.status='active' AND s.runtime_attention AND s.runtime_attention_enabled_at IS NOT NULL AND e.received_at>=s.runtime_attention_enabled_at ${nativeSignalProvenanceSql(config.schema,config.admitEventsAfter)}`,
         [input.eventId,input.orgId,input.userId])
+        // An absent scoped event is a normal denial; never resolve storage for an unowned caller.
+        if (!event.rows[0]) { await client.query('COMMIT'); return undefined }
         const storage=await organizationAgentScope(client,{ orgId:input.orgId,userId:input.userId,profile:'hivemind-chat',variation:'harness' })
         await client.query("SELECT set_config('app.hivemind_user_id',$1,true)",[storage.userId])
         const root=await client.query<{ session_id:string }>(`SELECT h.session_id FROM harness_company_hq h JOIN harness_sessions r

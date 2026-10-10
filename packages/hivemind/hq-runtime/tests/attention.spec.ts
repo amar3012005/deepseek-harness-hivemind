@@ -24,7 +24,7 @@ function signedToken(operation: string) {
   const input = `${encode({ alg: 'HS256', typ: 'JWT' })}.${encode({ iss: 'hivemind-control-plane', aud: 'hivemind-runtime-attention', sub: userId, org_id: orgId, event_id: 'event', operation, iat: at, exp: at + 30, jti: randomUUID() })}`
   return `${input}.${createHmac('sha256', token).update(input).digest('base64url')}`
 }
-function fixture(allowedOrgIds = [orgId]) {
+function fixture(allowedOrgIds = [orgId], sharedOrganizationAgents = false) {
   const events: { type: string; data: unknown }[] = [mode]
   let handler: (req: unknown, res: unknown) => Promise<void> = async () => { throw Error('not_registered') }
   const send = vi.fn((message: unknown) => { events.push({ type: 'agent/inbox/spliced', data: { inserted: [message] } }) })
@@ -41,7 +41,7 @@ function fixture(allowedOrgIds = [orgId]) {
     hivemindExecutionScope: scope, hivemindDecision:decision,
     sessionController: { inspect: async () => ({ meta: { agentPreset: 'hivemind-hq' }, events }), resolveAgent: async () => ({ agent: target }) },
     sessions: { flush } } as unknown as Context
-  apply(ctx, { enabled: true, allowedOrgIds, admitEventsAfter:'2026-10-01T00:00:00Z', serviceSecretEnv: 'ATTENTION_TEST_TOKEN', connectionStringEnv: 'ATTENTION_TEST_DATABASE', schema: 'hivemind', triggerSchema: 'public', maxConnections: 1, statementTimeoutMs: 1000 })
+  apply(ctx, { enabled: true, allowedOrgIds, sharedOrganizationAgents, admitEventsAfter:'2026-10-01T00:00:00Z', serviceSecretEnv: 'ATTENTION_TEST_TOKEN', connectionStringEnv: 'ATTENTION_TEST_DATABASE', schema: 'hivemind', triggerSchema: 'public', maxConnections: 1, statementTimeoutMs: 1000 })
   const snapshot = attentionSnapshot(events, 'session-owned-root', 1, attentionMemorySnapshot(database.memory as never[]))
   database.row = { session_id: 'session-owned-root', subscription_id: 'subscription', runtime_attention_revision: 1,
     org_id: orgId, user_id: userId, toolkit: 'slack', occurred_at: null, received_at:'2026-10-08T00:00:00Z', data: { text: 'Buyer approval arrived.', api_key: 'secret' },
@@ -71,6 +71,11 @@ describe('authenticated native attention seam', () => {
     ;(database.row as { attention_settings:unknown }).attention_settings={ version:1,revision:7,enabled:false }
     expect((await f.request('assess')).result).toMatchObject({ action:'retain',reason:'settings_disabled',settingsRevision:7 });expect(f.evaluate).not.toHaveBeenCalled()
     database.row=undefined;expect((await f.request('assess')).status).toBe(403);expect(f.evaluate).not.toHaveBeenCalled()
+  })
+  it('shared organization mode denies absent scoped event before resolving storage or assessing', async()=>{
+    const f=fixture([orgId],true);database.row=undefined
+    expect((await f.request('assess')).status).toBe(403);expect(f.evaluate).not.toHaveBeenCalled();expect(f.send).not.toHaveBeenCalled()
+    expect(JSON.stringify(database.queries)).not.toContain('harness_organization_agent_scopes')
   })
   it('validates service token before any owner lookup', async () => {
     const f = fixture(); expect((await f.request('context', 'Bearer invalid')).status).toBe(401)
