@@ -1,3 +1,4 @@
+import { roomNeedsInput } from './room-activity.ts'
 import { ChatgptPlanConnection } from './ChatgptPlanConnection.tsx'
 import { createAuthenticationProbe } from './auth-recovery.ts'
 import { probeBoot, saveNativeArtifact } from './native-transport.ts'
@@ -472,7 +473,7 @@ export function apply(ctx: ClientContext): void {
           const message = (row.projectionValues as { hyperagentLatestMessage?: string | null } | undefined)?.hyperagentLatestMessage
           let preview = ''
           try { preview = message ? (JSON.parse(message) as { text: string }).text : '' } catch { /* Missing legacy projection. */ }
-          return [{ id: employee?.id ?? 'runtime', sessionId: id, preview, running: row.running, unread: row.completed === true, actionRequired: String(ctx.uiSession.pendingInteractions.getSnapshot().get(id)?.kind) === 'approval', scheduled: scheduledRooms.has(id), updatedAt: row.updatedAt }]
+          return [{ id: employee?.id ?? 'runtime', sessionId: id, preview, running: row.running, unread: row.completed === true, actionRequired: roomNeedsInput(ctx.uiSession.pendingInteractions.getSnapshot().get(id)), scheduled: scheduledRooms.has(id), updatedAt: row.updatedAt }]
         })
         ;(window as unknown as { __HIVEMIND_AGENT_ROOMS__: unknown }).__HIVEMIND_AGENT_ROOMS__ = rooms
         window.dispatchEvent(new CustomEvent('hivemind:agent-rooms', { detail: { rooms } }))
