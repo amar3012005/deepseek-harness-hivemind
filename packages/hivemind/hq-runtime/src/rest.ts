@@ -54,13 +54,15 @@ const MAX_REST_MS = 4 * 60 * 60 * 1000
 /** A conversational greeting carries no operational wake or changed task. */
 export function greetingOnly(messages: readonly UserMessage[]): boolean {
   const passive = new Set(['hivemind-hq/wake-briefing', 'dsh-hivemind-runtime/turn',
-    'hivemind-runtime/hq-private-recall', 'hivemind-web-runner/authenticated-initiator', 'time-context'])
+    'hivemind-runtime/hq-private-recall', 'hivemind-web-runner/authenticated-initiator', 'hivemind-runtime-full-access', 'time-context'])
   const humans = messages.filter(message => message.source.kind === 'user')
   const human = humans[0]
   return humans.length === 1 && human !== undefined && messages.every(message => message.source.kind === 'user'
     || (message.source.kind === 'plugin' && passive.has(message.source.plugin)))
     && human.content.every(block => block.type === 'text')
-    && /^(?:hi+|hey+|hello+|good morning|good afternoon|good evening|thanks|thank you)[!.\s]*$/iu.test(
+    && !/\b(?:and|then)\b/iu.test(human.content.flatMap(block => block.type === 'text' ? [block.text] : []).join(''))
+    && new RegExp('^(?:(?:hi+|hey+|hello+|good morning|good afternoon|good evening|thanks|thank you)[!.\\s]*'
+      + '|(?:say (?:hi|hello) to|greet) [\\p{L}\\p{N}_ -]{1,80}[!.]?)$', 'iu').test(
       human.content.flatMap(block => block.type === 'text' ? [block.text] : []).join('').trim(),
     )
 }
@@ -271,7 +273,15 @@ export function installRest(ctx: Context): void {
     const admitted = current.flatMap(event => event.type === 'user/message' ? [event.data] : [])
     // A social reply is not a voluntary sleep transition. Never manufacture
     // extra model turns just to rebuild the existing operational handoff.
-    if (!toolWork && greetingOnly(admitted)) return
+    if (greetingOnly(admitted) && current.filter(event => event.type === 'tool/call').every((event) => {
+      if (event.type !== 'tool/call') return false
+      let args: Record<string, unknown>
+      try { args = typeof event.data.arguments === 'string' ? JSON.parse(event.data.arguments) : event.data.arguments as Record<string, unknown> } catch { return false }
+      if (event.data.name === 'list_agents') return true
+      if (event.data.name === 'hivemind_hq_contract') return args.action === 'list'
+      return event.data.name === 'hivemind_agent_message' && args.kind === 'update'
+        && !args.task_id && !args.reply_to && (!Array.isArray(args.artifact_ids) || args.artifact_ids.length === 0)
+    })) return
     const latest = restIntents(events).at(-1)
     const priorBinding = latest && events.findLast(event => event.type === 'hivemind/hq-rest-wake' && event.data.handoffId === latest.id)
     if (!toolWork && priorBinding?.type === 'hivemind/hq-rest-wake') {

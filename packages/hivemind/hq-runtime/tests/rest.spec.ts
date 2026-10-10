@@ -66,6 +66,19 @@ describe('native Runtime voluntary rest', () => {
     await f.hooks.get('agent/turn-stopping')!({ agent: f.agent, turn: 1, signal: new AbortController().signal })
     expect(f.agent.steer).toHaveBeenCalledOnce()
   })
+  it('ends a requested colleague greeting after directory lookup and message delivery', async () => {
+    const f = fixture()
+    f.ctx.hivemindHq.mode = () => ({ enabled: true }) as never
+    f.agent.session.append('turn/start', { turn: 1 } as never)
+    f.agent.session.append('user/message', createUserMessage({ source: { kind: 'user' }, content: [{ type: 'text', text: 'Say hi to monny.' }] }), { surfaceOp: 'none' } as never)
+    f.agent.session.append('tool/call', { name: 'hivemind_hq_contract', callId: 'directory', arguments: '{"action":"list"}', turn: 1, step: 1 } as never)
+    f.agent.session.append('tool/call', { name: 'hivemind_agent_message', callId: 'greet', arguments: '{"kind":"update","request_reply":true,"message":"Hi monny!"}', turn: 1, step: 2 } as never)
+    await f.hooks.get('agent/turn-stopping')!({ agent: f.agent, turn: 1, signal: new AbortController().signal })
+    expect(f.agent.steer).not.toHaveBeenCalled()
+    f.agent.session.append('tool/call', { name: 'runtime_user_agenda', callId: 'save', arguments: '{}', turn: 1, step: 3 } as never)
+    await f.hooks.get('agent/turn-stopping')!({ agent: f.agent, turn: 1, signal: new AbortController().signal })
+    expect(f.agent.steer).toHaveBeenCalledOnce()
+  })
   it('classifies only social exchanges, never work or mixed event delivery', () => {
     const human = (text: string) => createUserMessage({ source: { kind: 'user' }, content: [{ type: 'text', text }] })
     const passive = createUserMessage({ source: { kind: 'plugin', plugin: 'time-context' }, content: [{ type: 'text', text: 'Current time' }] })
@@ -73,6 +86,8 @@ describe('native Runtime voluntary rest', () => {
     expect(greetingOnly([human('hi'), passive])).toBe(true)
     expect(greetingOnly([human('hii'), passive])).toBe(true)
     expect(greetingOnly([human('hello!')])).toBe(true)
+    expect(greetingOnly([human('Say hi to monny.')])).toBe(true)
+    expect(greetingOnly([human('Say hi to monny and fix the CRM')])).toBe(false)
     expect(greetingOnly([human('hi, fix the CRM')])).toBe(false)
     expect(greetingOnly([human('Wakeup ! chief')])).toBe(false)
     expect(greetingOnly([human('hi'), signal])).toBe(false)
