@@ -99,7 +99,14 @@ export function apply(ctx: ClientContext): void {
     if (existing !== undefined) return existing.promise
     const abort = new AbortController()
     const promise = (async () => {
-      const result = await skills.list({ sessionId }, abort.signal)
+      let result
+      try {
+        result = await skills.list({ sessionId }, abort.signal)
+      } catch (error) {
+        if (abort.signal.aborted) return []
+        throw error
+      }
+      if (abort.signal.aborted) return []
       if (!result.ok) throw new Error(`skills/list failed: ${result.error.code}: ${result.error.message}`)
       return result.value.skills
     })()
@@ -108,6 +115,7 @@ export function apply(ctx: ClientContext): void {
     promise.then(
       // Settled snapshot backs the synchronous lexicon reads.
       (skills) => {
+        if (fetches.get(sessionId) !== entry) return
         entry.settled = skills
         notifyLexicon(sessionId)
       },

@@ -284,6 +284,23 @@ describe('catalog cache', () => {
     expect(payloads[2]).toEqual({ sessionId: 's1' })
   })
 
+  it('settles an in-flight catalog on reconnect and retries the current generation', async () => {
+    let calls = 0
+    const { list: next } = countingList()
+    const list: ListFn = (payload, signal) => {
+      if (++calls !== 1) return next(payload, signal)
+      return new Promise((_resolve, reject) => {
+        signal!.addEventListener('abort', () => { reject(new DOMException('Catalog invalidated', 'AbortError')) }, { once: true })
+      })
+    }
+    const { ctx, source } = await bench(list)
+    const pending = source.candidates(proj('s1'), req(''))
+    ctx.emit('connection/reset')
+    await expect(pending).resolves.toEqual([])
+    expect(await source.candidates(proj('s1'), req(''))).not.toHaveLength(0)
+    expect(calls).toBe(2)
+  })
+
   it('connection/reset clears every cached session', async () => {
     const { list, payloads } = countingList()
     const { ctx, source } = await bench(list)
