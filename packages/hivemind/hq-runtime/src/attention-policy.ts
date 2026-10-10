@@ -20,7 +20,7 @@ export function attentionSender(data: unknown) {
   if (value.verified !== true || value.verification !== 'slack_oauth_subject' ||
       !['owner', 'admin'].includes(String(value.role)) ||
       typeof value.userId !== 'string' || typeof value.orgId !== 'string') return { verified: false }
-  return { verified: true, userId: value.userId, orgId: value.orgId, role: value.role,
+  return { verified: true, userId: value.userId, orgId: value.orgId, role: String(value.role),
     name: typeof value.name === 'string' ? value.name.slice(0, 200) : null,
     verification: 'slack_oauth_subject' }
 }
