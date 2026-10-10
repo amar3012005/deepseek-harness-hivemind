@@ -11,9 +11,8 @@ describe('PDF binary assets', () => {
     wasmUrl: { 'decoder.wasm': 'BgcI' },
   }
 
-  it('reads the ambient build payload only when the factory is created', async () => {
-    vi.stubGlobal('__DSH_PDFJS_ASSETS__', assets)
-    const Factory = createPdfBinaryDataFactory()
+  it('reads only the explicitly loaded resource payload', async () => {
+    const Factory = createPdfBinaryDataFactory(assets)
     const factory = new Factory()
     expect(Array.from(await factory.fetch({ kind: 'cMapUrl', filename: 'sample.bcmap' }))).toEqual([1, 2, 3])
     expect(Array.from(await factory.fetch({ kind: 'standardFontDataUrl', filename: 'font.pfb' }))).toEqual([4, 5])

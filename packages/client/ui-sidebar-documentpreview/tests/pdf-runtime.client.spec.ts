@@ -3,7 +3,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { PdfDocument, PdfSession } from '../src/client/pdf/document.ts'
 
-const api = vi.hoisted(() => ({ getDocument: vi.fn(), createWorker: vi.fn(), destroyBridge: vi.fn() }))
+const api = vi.hoisted(() => ({ getDocument: vi.fn(), createWorker: vi.fn(), destroyBridge: vi.fn(), loadAssets: vi.fn() }))
+vi.mock('@deepseek-ai/dsh-client-pdf-assets', () => ({ loadPdfAssets: api.loadAssets }))
 vi.mock('pdfjs-dist', () => ({ getDocument: api.getDocument, PDFWorker: { create: api.createWorker } }))
 vi.mock('../src/client/pdf/assets.ts', () => ({
   workerSource: 'export const WorkerMessageHandler = {}',
@@ -33,6 +34,7 @@ beforeEach(() => {
   sessions.length = 0
   releases.length = 0
   vi.clearAllMocks()
+  api.loadAssets.mockResolvedValue({ workerSource: 'export const WorkerMessageHandler = {}', assets: { cMapUrl: {}, standardFontDataUrl: {}, wasmUrl: {} } })
   api.createWorker.mockReturnValue({ destroy: api.destroyBridge })
   vi.stubGlobal('Worker', ControlledWorker)
   vi.stubGlobal('URL', class extends NativeURL {
@@ -69,6 +71,7 @@ function setup(controller = new AbortController(), failed = vi.fn()) {
 describe('PDF Worker lifecycle', () => {
   it('starts a real module-worker port before calling getDocument with complete bytes and local assets', async () => {
     const h = setup()
+    await Promise.resolve()
     expect(workers[0]!.options).toEqual({ type: 'module', name: 'dsh-pdf' })
     expect(api.getDocument).not.toHaveBeenCalled()
     workers[0]!.ready()
@@ -98,6 +101,7 @@ describe('PDF Worker lifecycle', () => {
 
   it('cancels startup before the worker handshake without invoking PDF.js', async () => {
     const h = setup()
+    await Promise.resolve()
     h.controller.abort()
     await expect(h.session.document).rejects.toMatchObject({ name: 'AbortError' })
     await h.session.dispose()
@@ -109,6 +113,7 @@ describe('PDF Worker lifecycle', () => {
 
   it('awaits document destruction before terminating a healthy worker and rejects a late load', async () => {
     const h = setup()
+    await Promise.resolve()
     workers[0]!.ready()
     await h.entered.promise
     const destruction = Promise.withResolvers<undefined>()
@@ -127,6 +132,7 @@ describe('PDF Worker lifecycle', () => {
 
   it('reports worker startup failure and releases its Blob without a fake-worker fallback', async () => {
     const h = setup()
+    await Promise.resolve()
     const error = new ErrorEvent('error', { message: 'worker blocked' })
     workers[0]!.dispatchEvent(error)
     await expect(h.session.document).rejects.toMatchObject({ kind: 'worker', cause: error })
@@ -138,6 +144,7 @@ describe('PDF Worker lifecycle', () => {
 
   it('reports a worker crash after loading and releases the document and worker', async () => {
     const h = setup()
+    await Promise.resolve()
     workers[0]!.ready()
     await h.entered.promise
     h.loading.resolve({ numPages: 1, getPage: vi.fn() })
@@ -151,10 +158,26 @@ describe('PDF Worker lifecycle', () => {
     expect(workers[0]!.terminate).toHaveBeenCalledOnce()
   })
 
+  it('cancels while deferred resources are loading without starting a worker', async () => {
+    const deferred = Promise.withResolvers<unknown>()
+    api.loadAssets.mockReturnValueOnce(deferred.promise)
+    const h = setup()
+    expect(workers).toEqual([])
+    h.controller.abort()
+    await expect(h.session.document).rejects.toMatchObject({ name: 'AbortError' })
+    deferred.resolve({ workerSource: 'worker', assets: { cMapUrl: {}, standardFontDataUrl: {}, wasmUrl: {} } })
+    await Promise.resolve()
+    await h.session.dispose()
+    expect(workers).toEqual([])
+    expect(createURL).not.toHaveBeenCalled()
+    expect(api.getDocument).not.toHaveBeenCalled()
+  })
+
   it('allocates nothing for an already-ended document lifetime', async () => {
     const controller = new AbortController()
     controller.abort()
     const h = setup(controller)
+    await Promise.resolve()
     await expect(h.session.document).rejects.toMatchObject({ name: 'AbortError' })
     await h.session.dispose()
     expect(workers).toEqual([])
@@ -164,6 +187,7 @@ describe('PDF Worker lifecycle', () => {
 
   it('ignores unrelated Worker wire messages until its own startup acknowledgement', async () => {
     const h = setup()
+    await Promise.resolve()
     for (const data of [null, 'noise', { action: 'ready', sourceName: 'worker' }, { type: 'other-worker' }]) {
       workers[0]!.dispatchEvent(new MessageEvent('message', { data }))
     }
@@ -179,6 +203,7 @@ describe('PDF Worker lifecycle', () => {
     const failed = vi.fn(() => { throw callbackError })
     const log = vi.spyOn(console, 'error').mockImplementation(() => {})
     const h = setup(new AbortController(), failed)
+    await Promise.resolve()
     workers[0]!.dispatchEvent(new MessageEvent('messageerror'))
     await expect(h.session.document).rejects.toBeInstanceOf(PdfWorkerFailure)
     await h.session.dispose()
@@ -189,6 +214,7 @@ describe('PDF Worker lifecycle', () => {
 
   it('suppresses late failure reports and finishes abort cleanup when the worker crashes', async () => {
     const h = setup()
+    await Promise.resolve()
     workers[0]!.ready()
     await h.entered.promise
     h.loading.resolve({ numPages: 1, getPage: vi.fn() })
@@ -209,6 +235,7 @@ describe('PDF Worker lifecycle', () => {
   it('logs a library teardown rejection after releasing the bridge, Worker, and Blob', async () => {
     const log = vi.spyOn(console, 'error').mockImplementation(() => {})
     const h = setup()
+    await Promise.resolve()
     workers[0]!.ready()
     await h.entered.promise
     h.loading.resolve({ numPages: 1, getPage: vi.fn() })
@@ -227,6 +254,7 @@ describe('PDF Worker lifecycle', () => {
       throw new DOMException('Worker blocked by policy', 'SecurityError')
     }))
     const h = setup()
+    await Promise.resolve()
     await expect(h.session.document).rejects.toMatchObject({ name: 'SecurityError' })
     expect(revokeURL).toHaveBeenCalledOnce()
     expect(api.getDocument).not.toHaveBeenCalled()

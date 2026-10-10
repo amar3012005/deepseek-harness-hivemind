@@ -2253,6 +2253,12 @@ importers:
         specifier: workspace:^
         version: link:../../util/package-manifest
 
+  packages/client/pdf-assets:
+    devDependencies:
+      pdfjs-dist:
+        specifier: 6.3.289
+        version: 6.3.289
+
   packages/client/resources:
     devDependencies:
       '@deepseek-ai/cordis':
@@ -4140,6 +4146,9 @@ importers:
 
   packages/client/ui-sidebar-documentpreview:
     devDependencies:
+      '@deepseek-ai/dsh-client-pdf-assets':
+        specifier: workspace:^
+        version: link:../pdf-assets
       '@deepseek-ai/cordis':
         specifier: workspace:^
         version: link:../../../vendor/cordis
@@ -4864,6 +4873,9 @@ importers:
 
   packages/client/web:
     devDependencies:
+      '@deepseek-ai/dsh-client-pdf-assets':
+        specifier: workspace:^
+        version: link:../pdf-assets
       '@deepseek-ai/cordis':
         specifier: workspace:^
         version: link:../../../vendor/cordis

@@ -1,6 +1,7 @@
 /** One real module Worker and PDF.js loading task per mounted binary document. */
 import { getDocument, PDFWorker } from 'pdfjs-dist'
-import { createPdfBinaryDataFactory, workerSource } from './assets.ts'
+import { loadPdfAssets } from '@deepseek-ai/dsh-client-pdf-assets'
+import { createPdfBinaryDataFactory } from './assets.ts'
 import type { PdfSession } from './document.ts'
 import { PdfWorkerFailure } from './errors.ts'
 
@@ -67,7 +68,9 @@ export function openPdf(data: Uint8Array<ArrayBuffer>, signal: AbortSignal, repo
 
   const initialize = async () => {
     stopped.throwIfAborted()
-    const BinaryDataFactory = createPdfBinaryDataFactory()
+    const { assets, workerSource } = await loadPdfAssets()
+    stopped.throwIfAborted()
+    const BinaryDataFactory = createPdfBinaryDataFactory(assets)
     const bytes = data.slice()
     url = URL.createObjectURL(new Blob([
       workerSource,
