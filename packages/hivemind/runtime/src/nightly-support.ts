@@ -2,7 +2,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import { createHash } from 'node:crypto'
 import { isRuntimeRoom } from './runtime-decision-memory.ts'
 import { z } from 'zod'
-/** Typed technical counts only: private reports and arbitrary message text cannot enter support email. */
+/** Validated bounded technical diagnostics; raw business records and secrets cannot enter support email. */
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import { defineTool } from '@deepseek-ai/dsh-tools'
@@ -19,14 +19,26 @@ const coverageSchema=z.object({
   inspected:z.number().int().min(0).max(1000),
   missing:z.number().int().min(0).max(1000),
 }).strict().refine(c=>c.inspected+c.missing===c.expected)
-const issueSchema=z.object({ capability:z.enum(supportCapabilities),code:z.enum(supportCodes),severity:z.enum(['critical','high','medium','low']),count:z.number().int().min(1).max(1000000),cause:z.enum(['confirmed','suspected','unknown']) }).strict()
+const unsafeDetail=new RegExp([
+  String.raw`\b(?:bearer|basic)\s+\S+`,
+  String.raw`\b(?:api[_ \-]?key|access[_ \-]?token|refresh[_ \-]?token|password|secret)\s*[:=]\s*\S+`,
+  String.raw`\b(?:sk|ghp|github_pat)[_-][a-z0-9_-]{12,}`,
+  String.raw`\beyJ[a-z0-9_-]+\.[a-z0-9_-]+\.[a-z0-9_-]+`,
+  String.raw`\b(?:https?|postgres(?:ql)?|redis):\/\/`,
+  String.raw`[\w.+-]+@[\w.-]+\.[a-z]{2,}`,
+  String.raw`\b[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}\b`,
+].join('|'),'i')
+const technicalText=z.string().min(1).max(1200).refine(text=>
+  text===text.trim()&&!/[\u0000-\u001f\u007f]/.test(text)&&!unsafeDetail.test(text))
+const detailsSchema=z.object({ functional_area:z.enum(['marketing','finance','sales','operations','product','engineering','hr','support','other']).optional(),task_context:technicalText.optional(),impact:technicalText.optional(),proposed_fix:technicalText.optional(),owner:z.enum(['runtime','hyperagent']),agent_index:z.number().int().min(1).max(1000).optional(),tool:z.string().regex(/^[a-z][a-z0-9_.:-]{0,119}$/).optional(),expected:technicalText,observed:technicalText,recovery:technicalText,prevention:technicalText,evidence:z.array(z.object({ kind:z.enum(['tool_result','task_receipt','schema_validation','coverage_gap']),turn:z.number().int().min(1).max(10000000).optional(),sequence:z.number().int().min(1).max(10000000).optional() }).strict()).min(1).max(5) }).strict().refine(value=>value.owner==='hyperagent'?value.agent_index!==undefined:value.agent_index===undefined)
+const issueSchema=z.object({ capability:z.enum(supportCapabilities),code:z.enum(supportCodes),severity:z.enum(['critical','high','medium','low']),count:z.number().int().min(1).max(1000000),cause:z.enum(['confirmed','suspected','unknown']),details:detailsSchema.optional() }).strict()
 const supportSchema=z.discriminatedUnion('operation',[z.object({ operation:z.literal('status'),occurrence:z.iso.datetime() }).strict(),z.object({ operation:z.literal('submit'),occurrence:z.iso.datetime(),coverage:coverageSchema,issues:z.array(issueSchema).max(20) }).strict()])
 export function runtimeSupportReportTool(
   send: (agent: Agent, input: Record<string, JsonValue>, signal: AbortSignal) => Promise<Record<string, JsonValue>>,
 ) {
   return defineTool({
     name: 'runtime_support_report',
-    description: 'Runtime only: send or inspect one sanitized technical Nightly routine check report to the server-configured SUPPORT inbox. Use the ORIGINAL saved scheduled occurrence as occurrence, including delayed work. Submit only evidence-backed coverage counts and the enumerated failure categories; no company documents, private memory, transcripts, raw logs, names, IDs, links, tokens, free text or repair instructions. Exact same occurrence and unchanged content reconcile retries without resending. Missing configuration is a visible blocker, never permission to choose a recipient or use another email tool. Status reads the actual provider delivery ledger. Accepted/queued is not delivered, delivered is not read, and this report grants no authority to repair or change access.',
+    description: 'Runtime only: submit or inspect one detailed technical Nightly report to the server-configured SUPPORT inbox. Keep the ORIGINAL saved native occurrence on delayed delivery/retry. Include validated details for Runtime and every inspected HyperAgent: expected, observed, recovery, prevention and structured technical evidence. Fields are bounded technical summaries, never raw business logs, private memory/transcripts, secrets, names, UUIDs, URLs or arbitrary recipients. Use hyperagent agent_index from the authorized roster order rather than employee names. Missing replies are missing coverage. Exact occurrence/content dedupes retries; conflicts require status, not resend. Accepted/queued is not delivered, delivered is not read or approval. No repair or access-change authority is granted',
     parameters: {
       operation: { type: 'string', enum: ['submit','status'], required: true },
       occurrence: { type: 'string', required: true, description: 'Original native scheduled occurrence as UTC RFC3339, not current time after a queue delay.' },
@@ -41,6 +53,12 @@ export function runtimeSupportReportTool(
         severity: { type: 'string', enum: ['critical','high','medium','low'], required: true },
         count: { type: 'integer', required: true, description: 'Proven count from 1 through 1000000.' },
         cause: { type: 'string', enum: ['confirmed','suspected','unknown'], required: true },
+        details: { type:'object',additionalProperties:false,description:'Validated technical summary; all text fields are single-line, trimmed, 1–1200 characters, without secrets, names, business content, UUIDs, email addresses or URLs.',properties:{
+          functional_area:{ type:'string',enum:['marketing','finance','sales','operations','product','engineering','hr','support','other'] },task_context:{ type:'string' },impact:{ type:'string' },proposed_fix:{ type:'string' },
+          owner:{ type:'string',enum:['runtime','hyperagent'],required:true },agent_index:{ type:'integer',description:'Required only for HyperAgent: 1–1000 authorized roster ordinal.' },tool:{ type:'string',description:'Optional tool contract name, not arguments or credentials.' },
+          expected:{ type:'string',required:true },observed:{ type:'string',required:true },recovery:{ type:'string',required:true },prevention:{ type:'string',required:true },
+          evidence:{ type:'array',items:{ type:'object',additionalProperties:false,properties:{ kind:{ type:'string',enum:['tool_result','task_receipt','schema_validation','coverage_gap'],required:true },turn:{ type:'integer' },sequence:{ type:'integer' } } },description:'1–5 structured evidence references; no raw logs or links.',required:true },
+        } },
       } } },
     },
     output: { schema: { type: 'object', additionalProperties: true, properties: {} }, render: (_args: unknown, value: JsonValue) => [{ type: 'text', text: JSON.stringify(value) }] },
@@ -49,10 +67,42 @@ export function runtimeSupportReportTool(
       const agent=execution.agent
       if(!agent||!isRuntimeRoom(agent))throw Error('runtime_support_room_required')
       const input=supportSchema.parse(args)
-      if(input.operation==='submit')requireNightlyOccurrence(agent,input.occurrence)
-      return send(agent, input, execution.signal)
+      if(input.operation==='submit'){requireNightlyOccurrence(agent,input.occurrence);requireNightlyReportEvidence(agent,input)}
+      return send(agent, JSON.parse(JSON.stringify(input)) as Record<string,JsonValue>, execution.signal)
     },
   })
+}
+
+/** Diagnostics must derive from persisted correlated inbox replies or Runtime's own receipts. */
+export function requireNightlyReportEvidence(agent:Agent,input:z.infer<typeof supportSchema>):void {
+  if(input.operation!=='submit')return
+  const events=agent.session.snapshotEvents() as readonly { type:string;seq:number;data:Record<string,unknown> }[]
+  const read=(text:unknown,marker:string):Record<string,unknown>|undefined=>{
+    if(typeof text!=='string')return
+    const line=text.split('\n').find(value=>value.startsWith(marker))
+    try {const value:unknown=JSON.parse(line?.slice(marker.length)??'');return value&&typeof value==='object'&&!Array.isArray(value)?value as Record<string,unknown>:undefined}catch{return}
+  }
+  for(const issue of input.issues){
+    const detail=issue.details
+    if(!detail||!detail.functional_area||!detail.task_context||!detail.impact||!detail.proposed_fix)
+      throw Error('nightly_detailed_work_context_required')
+    const evidenced=detail.evidence.some((ref)=>{
+      const event=events.find(value=>value.seq===ref.sequence)
+      if(!event)return false
+      if(detail.owner==='runtime')return event.type==='tool/result'
+      if(event.type!=='hivemind/room-message-received'||event.data.kind!=='reply'||event.data.targetId!==agent.id)return false
+      const reply=event.data,request=events.find(value=>value.type==='hivemind/room-message-queued'&&value.data.id===reply.replyTo)
+      if(request?.type!=='hivemind/room-message-queued'||request.data.kind!=='question'
+        ||request.data.senderId!==agent.id||request.data.targetId!==reply.senderId)return false
+      const asked=read(request.data.text,'NIGHTLY_REVIEW_REQUEST='),answered=read(reply.text,'NIGHTLY_REVIEW_REPLY=')
+      if(asked?.['occurrence']!==input.occurrence||asked['agent_index']!==detail.agent_index
+        ||answered?.['occurrence']!==input.occurrence||!Array.isArray(answered['findings']))return false
+      return answered['findings'].some(value=>value&&typeof value==='object'
+        &&['tool','expected','observed','recovery','prevention','functional_area','task_context','impact','proposed_fix'].every(key=>
+          (value as Record<string,unknown>)[key]===(detail as unknown as Record<string,unknown>)[key]))
+    })
+    if(!evidenced)throw Error('saved_correlated_nightly_evidence_required')
+  }
 }
 
 /** Read only the native Schedule's persisted original occurrence; never current wall clock. */

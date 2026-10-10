@@ -4,10 +4,10 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-host-webserver'
-import type {} from '@deepseek-ai/dsh-schedule'
+import type { ScheduleCatalogEntry } from '@deepseek-ai/dsh-schedule'
 import type {} from '@deepseek-ai/dsh-hivemind-execution-scope'
 import { z } from 'zod'
-const requestSchema=z.object({ orgId:z.uuid(),userId:z.uuid(),sessionId:z.string().regex(/^session-[a-z0-9-]{1,120}$/u),operation:z.enum(['inspect','ensure']) }).strict()
+const requestSchema=z.object({ orgId:z.uuid(),userId:z.uuid(),sessionId:z.string().regex(/^session-[a-z0-9-]{1,120}$/u),operation:z.enum(['inspect','ensure','upgrade']) }).strict()
 const contextSchema=z.object({ org_id:z.uuid(),session_id:z.string(),time_zone:z.string(),time_zone_source:z.enum(['organization','default_utc']),support_configured:z.boolean() }).strict()
 declare module '@deepseek-ai/cordis' {
   interface Events {
@@ -33,8 +33,8 @@ export function authorizeNightlyRoutine(authorization:string|undefined,secret:st
 }
 export function nightlyRoutineRequest(timeZone:string) {
   new Intl.DateTimeFormat('en',{ timeZone }).format()
-  return { title:'Nightly routine check',daily:{ time:'00:00:00',time_zone:timeZone },prompt:
-    'Load hivemind-nightly-routine-check. Use this ORIGINAL native scheduled occurrence and evidence window even if queued behind other work. Review Runtime and the active authorized employees using scoped evidence and ordinary queued native messages; missing evidence or replies are missing coverage. Keep the detailed report private, and submit only enumerated technical categories/counts through runtime_support_report, then check its actual delivery status. No repairs, private content export, arbitrary recipient, company-memory writes, external access changes or cancellation are authorized. Native Schedule queues this followup without interrupting current work.' }
+  return { title:'Nightly report',daily:{ time:'00:00:00',time_zone:timeZone },prompt:
+    'Load hivemind-nightly-routine-check. Use this ORIGINAL native scheduled occurrence and evidence window even if queued behind other work. Ask EVERY active authorized HyperAgent through ordinary queued native messages about tool-call failures, schema errors and task/work blockers, expected/observed behavior, recovery, prevention and structured evidence; include Runtime own findings using scoped evidence; missing evidence or replies are missing coverage. Keep the detailed report private, and submit bounded sanitized technical details and enumerated categories/counts through runtime_support_report, then check its actual delivery status. No repairs, private content export, arbitrary recipient, company-memory writes, external access changes or cancellation are authorized. Native Schedule queues this followup without interrupting current work.' }
 }
 export function installNightlyRoutineHost(ctx:Context,secret:string,allowedOrgIds:readonly string[]):void {
   ctx.effect(()=>ctx.webServer.register({ kind:'exact',path:'/internal/hivemind/nightly-routine',handler:async(req,res)=>{
@@ -56,8 +56,19 @@ export function installNightlyRoutineHost(ctx:Context,secret:string,allowedOrgId
         const id=`schedule-${createHash('sha256').update(`${input.sessionId}\0${key}`).digest('hex')}`
         const existing=(await ctx.schedule.catalog()).find(record=>record.id===id&&record.sessionId===input.sessionId)
         if(existing?.status==='inactive')throw Error('nightly_inactive_schedule_requires_explicit_resume')
-        if(existing&&(existing.kind!=='daily'||existing.time!=='00:00:00.000'||existing.timeZone!==proof.time_zone||existing.title!==request.title||existing.prompt!==request.prompt))throw Error('nightly_existing_schedule_requires_explicit_edit')
-        const record=input.operation==='ensure'?await ctx.schedule.ensure(SessionId(input.sessionId),key,request):existing
+        if(existing&&(existing.kind!=='daily'||existing.time!=='00:00:00.000'||existing.timeZone!==proof.time_zone))throw Error('nightly_existing_schedule_requires_explicit_edit')
+        let record:ScheduleCatalogEntry|undefined=existing
+        if(input.operation==='upgrade'){
+          if(!existing)throw Error('nightly_existing_schedule_required')
+          const { sessionId,status,lastDelivery,...expected }=existing
+          const result=await ctx.schedule.update({ sessionId,id:existing.id,expected,title:request.title,prompt:request.prompt })
+          if(!('record'in result))throw Error('nightly_schedule_compare_update_failed')
+          record={ ...result.record,sessionId,status,...(lastDelivery===undefined?{}:{ lastDelivery }) }
+        }else if(input.operation==='ensure'){
+          if(existing&&(existing.title!==request.title||existing.prompt!==request.prompt))throw Error('nightly_existing_schedule_requires_explicit_edit')
+          const ensured=await ctx.schedule.ensure(SessionId(input.sessionId),key,request)
+          record=existing??{ ...ensured,sessionId:SessionId(input.sessionId),status:'active' as const }
+        }
         return { status:record?'configured':'not_configured',schedule:record??null,time_zone:proof.time_zone,time_zone_source:proof.time_zone_source,support_configured:proof.support_configured,queued_native_delivery:true }
       })
       reply(200,result)

@@ -3,7 +3,7 @@
 Run on the release host. No provider email, repairs, model calls, broad rollout or parallel scheduler.
 """
 import argparse,json,os,re,subprocess,tempfile
-p=argparse.ArgumentParser();p.add_argument('--native-sha',required=True);p.add_argument('--org',required=True);p.add_argument('--user',required=True);p.add_argument('--session',required=True);p.add_argument('--fixture',action='store_true');p.add_argument('--apply',action='store_true');a=p.parse_args()
+p=argparse.ArgumentParser();p.add_argument('--native-sha',required=True);p.add_argument('--org',required=True);p.add_argument('--user',required=True);p.add_argument('--session',required=True);p.add_argument('--fixture',action='store_true');p.add_argument('--apply',action='store_true');p.add_argument('--upgrade',action='store_true');a=p.parse_args()
 assert re.fullmatch('[a-f0-9]{40}',a.native_sha)
 for value in [a.org,a.user]:assert re.fullmatch('[a-f0-9-]{36}',value)
 assert re.fullmatch('session-[a-z0-9-]{1,120}',a.session)
@@ -13,7 +13,7 @@ image=inspect(runner['Image']);assert image['Config']['Labels']['org.opencontain
 for service in [runner,control]:assert service['State']['Running'] and service['State'].get('Health',{}).get('Status')=='healthy'
 renv=dict(v.split('=',1)for v in runner['Config']['Env']if'='in v)
 secret=renv['HIVE_HARNESS_RUNNER_SERVICE_SECRET'];assert len(secret)>=32
-payload={'orgId':a.org,'userId':a.user,'sessionId':a.session,'operation':'ensure'if a.apply else'inspect'}
+payload={'orgId':a.org,'userId':a.user,'sessionId':a.session,'operation':'upgrade'if a.upgrade and a.apply else'ensure'if a.apply else'inspect'}
 network=list(control['NetworkSettings']['Networks'])[0];assert (network=='attention-fullstack-20261008')==a.fixture
 values={'SERVICE_SECRET':secret,'PAYLOAD':json.dumps(payload,separators=(',',':')),'BASE_URL':'http://attention-fullstack-runner:3080'if a.fixture else'http://harness-runner:3080'}
 fd,path=tempfile.mkstemp(prefix='nightly-private-',dir='/root/releases');os.chmod(path,0o600)
