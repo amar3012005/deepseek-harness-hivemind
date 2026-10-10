@@ -12,23 +12,36 @@ import { z as zod } from 'zod'
 import type { Agent, RequestErrorAction } from '@deepseek-ai/dsh-agent'
 import type { LlmFailure, ResolvedRetryPolicy } from '@deepseek-ai/dsh-llm'
 import type {} from '@deepseek-ai/dsh-session-projection'
+import { registerStepFallback, type StepFallbackConfig } from './fallback.ts'
 import { RetryId } from './brand.ts'
 import type { LlmRetryEventData } from './types.ts'
 
 export type { LlmRetryEventData, LlmRetryStartedEventData } from './types.ts'
 export { RetryId } from './brand.ts'
 
+export { registerStepFallback } from './fallback.ts'
+export type { StepFallbackConfig } from './fallback.ts'
+
 export const name = 'llm-retry'
 export const inject = ['agents', 'sessionProjections']
 
-/** This policy executor has no config; providers own `retryPolicy`. */
-export type Config = Readonly<Record<string, never>>
+/** Providers own retryPolicy; an independent fallback route is explicitly opt-in. */
+export interface Config {
+  /** Optional independently funded platform route for a failed model step. */
+  fallback?: StepFallbackConfig
+}
 
 /** Runtime schema for {@link Config}. */
-export const Config = z.object({}) as unknown as z<Config>
+export const Config = z.object({
+  fallback: z.union([z.object({
+    fromProvider: z.string().required(),
+    provider: z.string().required(),
+    model: z.string().required(),
+  })]),
+}) as unknown as z<Config>
 
 function validateConfig(config: Config): void {
-  const [key] = Object.keys(config)
+  const [key] = Object.keys(config).filter(key => key !== 'fallback')
   if (key === undefined) return
   if (key === 'retryPolicy') {
     throw new Error('llm-retry: retryPolicy belongs under each provider configuration')
@@ -98,7 +111,7 @@ function cancellableDelay(delayMs: number, signal: AbortSignal): Promise<boolean
 /**
  * Install provider-routed normal or unbounded request recovery.
  * @param ctx - plugin context that owns the listener and active waits.
- * @param config - empty executor config; provider registrations own policy.
+ * @param config - optional independent fallback; provider registrations own retry policy.
  * @param internals - non-serializable deterministic hooks for tests.
  */
 interface RetryStateEntry {
@@ -122,6 +135,7 @@ declare module '@deepseek-ai/dsh-session-projection/types' {
 
 export function apply(ctx: Context, config: Config = {}, internals: RetryInternals = {}): void {
   validateConfig(config)
+  registerStepFallback(ctx, config.fallback)
   ctx.sessionProjections.register({
     key: 'llmRetry',
     stateVersion: 1,

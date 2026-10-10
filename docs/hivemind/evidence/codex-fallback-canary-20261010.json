@@ -1,0 +1,56 @@
+{
+  "source": "53a42201c6a12b43a4279be6b5021f543c5c0551",
+  "route": "openai-codex/gpt-5.6-luna",
+  "protocol": "openai-codex-responses",
+  "credentialSource": "existing protected host llm-pi-ai/openai-codex OAuth grant; user authorized shared platform fallback",
+  "text": {
+    "stopReason": "stop",
+    "text": "READY",
+    "ms": 1454
+  },
+  "toolRoundtrip": {
+    "tool": "read_fixture",
+    "arguments": {
+      "key": "canary"
+    },
+    "toolCalls": 1,
+    "pairedToolResult": true,
+    "stopReason": "stop",
+    "text": "FIXTURE_READY",
+    "ms": 2328
+  },
+  "unavailable": {
+    "gpt-6-luna": "Absent stale installed catalog, but real authorized text/tool calls succeeded via explicit native model profile",
+    "gpt-5.4-mini": "catalogued but account rejects model for ChatGPT OAuth",
+    "directOpenAI": "no configured nonempty API key",
+    "Groq": "organization_delinquent"
+  },
+  "scope": "bounded standalone native provider compatibility, not production fallback activation",
+  "requestedRoute": {
+    "model": "gpt-6-luna",
+    "provider": "openai-codex",
+    "protocol": "openai-codex-responses",
+    "text": {
+      "stopReason": "stop",
+      "text": "READY",
+      "ms": 1174
+    },
+    "toolRoundtrip": {
+      "tool": "read_fixture",
+      "arguments": {
+        "key": "canary"
+      },
+      "toolCalls": 1,
+      "pairedToolResult": true,
+      "stopReason": "stop",
+      "text": "FIXTURE_READY",
+      "ms": 2473
+    },
+    "catalogResolution": {
+      "explicitModelProfile": true,
+      "nativeOAuthRetained": true,
+      "contextWindow": 1050000,
+      "maxTokens": 8192
+    }
+  }
+}

@@ -108,6 +108,7 @@ export const KNOWN_SESSION_EVENT_TYPES: ReadonlySet<string> = new Set([
   'hivemind/workstream-started',
   'hook/invoked',
   'hook/result',
+  'llm/fallback',
   'llm/retry',
   'llm/retry-started',
   'model/selection',

@@ -1,3 +1,4 @@
+import type { LlmCallConfig } from '@deepseek-ai/dsh-llm'
 import type { LlmFailure } from '@deepseek-ai/dsh-llm/types'
 import type { RetryId } from './brand.ts'
 
@@ -5,6 +6,8 @@ export type { RetryId }
 
 declare module '@deepseek-ai/dsh-session/types' {
   interface SessionEventMap {
+    /** Required non-surface route checkpoint for one failed model step. */
+    'llm/fallback': LlmFallbackEventData
     /** Durable, non-surface record of one provider-routed retry scheduled after a failed request attempt. */
     'llm/retry': LlmRetryEventData
     /** Durable transition written after a retry wait succeeds and before the next request attempt starts. */
@@ -45,4 +48,13 @@ export interface LlmRetryStartedEventData {
   turn: number
   step: number
   retry: number
+}
+
+/** Durable primary selection and independently authorized route for one model step. */
+export interface LlmFallbackEventData {
+  turn: number
+  step: number
+  primary: LlmCallConfig
+  fallback: LlmCallConfig
+  failureCode: string
 }

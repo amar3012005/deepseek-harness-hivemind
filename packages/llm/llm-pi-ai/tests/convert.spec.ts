@@ -883,6 +883,13 @@ describe('mapStopReason / mapUsage', () => {
       .toEqual({ kind: 'error', failure: { message: 'pi-ai stream error', code: 'PI_AI_ERROR' } })
   })
 
+  it.each([
+    '402 {"code":"in_flight_budget_exhausted","retry_after":120}',
+    '402 {"limit_source":"openrouter_credits","message":"max_tokens 32768 but can only afford 27402"}',
+  ])('classifies OpenRouter budget reservation as stable QUOTA: %s', (errorMessage) => {
+    expect(mapStopReason(assistant({ stopReason:'error',errorMessage }))).toMatchObject({ kind:'error',failure:{ code:'QUOTA' } })
+  })
+
   it('maps routable HTTP-ish error messages to stable codes', () => {
     expect(mapStopReason(assistant({ stopReason: 'error', errorMessage: 'HTTP 401: bad key' })))
       .toMatchObject({ kind: 'error', failure: { code: 'AUTH' } })

@@ -376,6 +376,7 @@ describe('PiAiAdapter provider routing', () => {
 
   it.each([
     [401, 'AUTH'],
+    [402, 'QUOTA'],
     [400, 'INVALID_REQUEST'],
     [429, 'RATE_LIMIT'],
     [500, 'SERVER'],
