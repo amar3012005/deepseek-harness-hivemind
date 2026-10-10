@@ -10,6 +10,18 @@ import { deriveBrowserTimeZoneContext, createTimestampFormatter, formatTimestamp
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { HqRestNote, HqRestNoteRequest, HqRestNoteResult, HqRestState } from './types.ts'
 
+/** A native nightly review already has its recurring Schedule; it is not voluntary rest. */
+export function isNightlyScheduledTurn(agent:Agent):boolean {
+  const events=agent.session.snapshotEvents(),boundary=events.findLast(event=>event.type==='turn/end')?.seq??-1
+  const schedule='schedule-'+createHash('sha256').update(`${agent.id}\0nightly-routine-check-v1`).digest('hex')
+  return events.some((event)=>{
+    if(event.seq<=boundary||event.type!=='user/message'||event.data.source.kind!=='schedule')return false
+    const text=event.data.content.flatMap(block=>block.type==='text'?[block.text]:[]).join('\n')
+    const line=text.split('\n').find(value=>value.startsWith('reminders_json: '))
+    try {const entries:unknown=JSON.parse(line?.slice('reminders_json: '.length)??'');return Array.isArray(entries)&&entries.some(entry=>entry&&typeof entry==='object'&&entry.occurrence_at===event.data.source.occurrenceAt)&&entries.some(entry=>entry&&typeof entry==='object'&&entry.schedule_id===schedule)}catch{return false}
+  })
+}
+
 export interface RestIntent {
   readonly id: string
   readonly requestedWakeAt: string
@@ -315,7 +327,7 @@ export function installRest(ctx: Context): void {
     const toolWork = current.some(event => event.type === 'tool/call')
     // A social reply is not a voluntary sleep transition. Never manufacture
     // extra model turns just to rebuild the existing operational handoff.
-    if (socialTurnOnly(current)) return
+    if (socialTurnOnly(current) || isNightlyScheduledTurn(agent)) return
     const latest = restIntents(events).at(-1)
     const priorBinding = latest && events.findLast(event => event.type === 'hivemind/hq-rest-wake' && event.data.handoffId === latest.id)
     if (!toolWork && priorBinding?.type === 'hivemind/hq-rest-wake') {

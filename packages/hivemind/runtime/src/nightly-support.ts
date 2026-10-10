@@ -32,15 +32,15 @@ const technicalText=z.string().min(1).max(1200).refine(text=>
   text===text.trim()&&!/[\u0000-\u001f\u007f]/.test(text)&&!unsafeDetail.test(text))
 const detailsSchema=z.object({ functional_area:z.enum(['marketing','finance','sales','operations','product','engineering','hr','support','other']).optional(),task_context:technicalText.optional(),impact:technicalText.optional(),proposed_fix:technicalText.optional(),owner:z.enum(['runtime','hyperagent']),agent_index:z.number().int().min(1).max(1000).optional(),tool:z.string().regex(/^[a-z][a-z0-9_.:-]{0,119}$/).optional(),expected:technicalText,observed:technicalText,recovery:technicalText,prevention:technicalText,evidence:z.array(z.object({ kind:z.enum(['tool_result','task_receipt','schema_validation','coverage_gap']),turn:z.number().int().min(1).max(10000000).optional(),sequence:z.number().int().min(1).max(10000000).optional() }).strict()).min(1).max(5) }).strict().refine(value=>value.owner==='hyperagent'?value.agent_index!==undefined:value.agent_index===undefined)
 const issueSchema=z.object({ capability:z.enum(supportCapabilities),code:z.enum(supportCodes),severity:z.enum(['critical','high','medium','low']),count:z.number().int().min(1).max(1000000),cause:z.enum(['confirmed','suspected','unknown']),details:detailsSchema.optional() }).strict()
-const supportSchema=z.discriminatedUnion('operation',[z.object({ operation:z.literal('status'),occurrence:z.iso.datetime() }).strict(),z.object({ operation:z.literal('submit'),occurrence:z.iso.datetime(),coverage:coverageSchema,issues:z.array(issueSchema).max(20) }).strict()])
+const supportSchema=z.discriminatedUnion('operation',[z.object({ operation:z.literal('status'),occurrence:z.iso.datetime() }).strict(),z.object({ operation:z.literal('evidence'),occurrence:z.iso.datetime() }).strict(),z.object({ operation:z.literal('submit'),occurrence:z.iso.datetime(),coverage:coverageSchema,issues:z.array(issueSchema).max(20) }).strict()])
 export function runtimeSupportReportTool(
   send: (agent: Agent, input: Record<string, JsonValue>, signal: AbortSignal) => Promise<Record<string, JsonValue>>,
 ) {
   return defineTool({
     name: 'runtime_support_report',
-    description: 'Runtime only: submit or inspect one detailed technical Nightly report to the server-configured SUPPORT inbox. Keep the ORIGINAL saved native occurrence on delayed delivery/retry. Include validated details for Runtime and every inspected HyperAgent: expected, observed, recovery, prevention and structured technical evidence. Fields are bounded technical summaries, never raw business logs, private memory/transcripts, secrets, names, UUIDs, URLs or arbitrary recipients. Use hyperagent agent_index from the authorized roster order rather than employee names. Missing replies are missing coverage. Exact occurrence/content dedupes retries; conflicts require status, not resend. Accepted/queued is not delivered, delivered is not read or approval. No repair or access-change authority is granted',
+    description: 'Runtime only: read evidence, submit or inspect one detailed technical Nightly report to the server-configured SUPPORT inbox. Keep the ORIGINAL saved native occurrence on delayed delivery/retry. Include validated details for Runtime and every inspected HyperAgent: expected, observed, recovery, prevention and structured technical evidence. Fields are bounded technical summaries, never raw business logs, private memory/transcripts, secrets, names, UUIDs, URLs or arbitrary recipients. Use hyperagent agent_index from the authorized roster order rather than employee names. Missing replies are missing coverage. Read operation evidence before submit to obtain exact correlated findings and native sequence references; copy finding fields verbatim rather than inventing references. Exact occurrence/content dedupes retries; conflicts require status, not resend. Accepted/queued is not delivered, delivered is not read or approval. No repair or access-change authority is granted',
     parameters: {
-      operation: { type: 'string', enum: ['submit','status'], required: true },
+      operation: { type: 'string', enum: ['submit','status','evidence'], required: true },
       occurrence: { type: 'string', required: true, description: 'Original native scheduled occurrence as UTC RFC3339, not current time after a queue delay.' },
       coverage: { type: 'object', properties: {
         expected: { type: 'integer', required: true, description: '0 through 1000.' },
@@ -62,15 +62,53 @@ export function runtimeSupportReportTool(
       } } },
     },
     output: { schema: { type: 'object', additionalProperties: true, properties: {} }, render: (_args: unknown, value: JsonValue) => [{ type: 'text', text: JSON.stringify(value) }] },
-    isConcurrencySafe: args => args.operation === 'status',
+    isConcurrencySafe: args => args.operation !== 'submit',
     async execute(args, execution) {
       const agent=execution.agent
       if(!agent||!isRuntimeRoom(agent))throw Error('runtime_support_room_required')
       const input=supportSchema.parse(args)
+      if(input.operation==='evidence'){requireNightlyOccurrence(agent,input.occurrence);return nightlyReportEvidence(agent,input.occurrence)}
       if(input.operation==='submit'){requireNightlyOccurrence(agent,input.occurrence);requireNightlyReportEvidence(agent,input)}
       return send(agent, JSON.parse(JSON.stringify(input)) as Record<string,JsonValue>, execution.signal)
     },
   })
+}
+
+/** Read only this Runtime's persisted review replies; never export raw logs or other sessions. */
+export function nightlyReportEvidence(agent:Agent,occurrence:string):Record<string,JsonValue> {
+  const events=agent.session.snapshotEvents() as readonly { type:string;seq:number;data:Record<string,unknown> }[]
+  const read=(text:unknown,marker:string):Record<string,unknown>|undefined=>{
+    if(typeof text!=='string')return
+    try {const value:unknown=JSON.parse(text.split('\n').find(line=>line.startsWith(marker))?.slice(marker.length)??'');return value&&typeof value==='object'&&!Array.isArray(value)?value as Record<string,unknown>:undefined}catch{return}
+  }
+  const requests=events.filter(event=>event.type==='hivemind/room-message-queued'&&event.data.senderId===agent.id&&event.data.kind==='question')
+    .flatMap((event)=>{const marker=read(event.data.text,'NIGHTLY_REVIEW_REQUEST=');return marker?.['occurrence']===occurrence&&Number.isInteger(marker['agent_index'])?[{ event,index:marker['agent_index'] as number }]:[]}).slice(-1000)
+  const replies:JsonValue[]=[]
+  let findingCount=0
+  for(const { event:request,index } of requests){
+    const reply=events.findLast(event=>event.type==='hivemind/room-message-received'&&event.data.kind==='reply'&&event.data.targetId===agent.id&&event.data.senderId===request.data.targetId&&event.data.replyTo===request.data.id&&read(event.data.text,'NIGHTLY_REVIEW_REPLY=')?.['occurrence']===occurrence)
+    if(!reply){replies.push({ agent_index:index,status:'missing' });continue}
+    const marker=read(reply.data.text,'NIGHTLY_REVIEW_REPLY=')
+    if(!marker)continue
+    const findings:JsonValue[]=[]
+    let invalid=0
+    for(const finding of Array.isArray(marker['findings'])?marker['findings']:[]){
+      if(findingCount>=20)break
+      if(!finding||typeof finding!=='object'){invalid++;continue}
+      const details=detailsSchema.safeParse({ ...Object.fromEntries(['functional_area','task_context','impact','proposed_fix','tool','expected','observed','recovery','prevention'].filter(key=>Object.hasOwn(finding,key)).map(key=>[key,(finding as Record<string,unknown>)[key]])),owner:'hyperagent',agent_index:index,evidence:[{ kind:'tool_result',sequence:reply.seq }] })
+      if(!details.success||!details.data.functional_area||!details.data.task_context
+        ||!details.data.impact||!details.data.proposed_fix){invalid++;continue}
+      findings.push(JSON.parse(JSON.stringify(details.data)) as JsonValue);findingCount++
+    }
+    replies.push({ agent_index:index,status:'received',sequence:reply.seq,findings,invalid_findings:invalid })
+  }
+  const start=events.findLast(event=>event.type==='turn/start')?.seq??-1
+  const runtime_receipts=events.filter(event=>event.seq>start&&event.type==='tool/result').slice(-30).map((event)=>{
+    const message=event.data['message'] as { source?:{ callId?:string };content?:{ isError?:boolean }[] }|undefined
+    const call=events.findLast(value=>value.type==='tool/call'&&value.data['callId']===message?.source?.callId)
+    return { sequence:event.seq,tool:typeof call?.data['name']==='string'?call.data['name']:null,is_error:message?.content?.some(block=>block.isError===true)??false }
+  })
+  return { occurrence,replies,runtime_receipts,findings_limit:20 }
 }
 
 /** Diagnostics must derive from persisted correlated inbox replies or Runtime's own receipts. */

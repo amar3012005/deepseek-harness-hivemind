@@ -1,7 +1,7 @@
 import { it, expect } from 'vitest'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { createHash } from 'node:crypto'
-import { requireNightlyOccurrence, runtimeSupportReportTool } from '../src/nightly-support.ts'
+import { nightlyReportEvidence, requireNightlyOccurrence, runtimeSupportReportTool } from '../src/nightly-support.ts'
 function actor(preset='hivemind-hq',slug='runtime'):Agent {return { session:{ header:{ agentPreset:preset },snapshotEvents:()=>[{ type:'hivemind/session-owner',data:{ id:slug==='runtime'?null:'employee',slug } }] } } as unknown as Agent}
 it('exposes only bounded enumerated diagnostics without arbitrary recipient or private text',()=>{
   const tool=runtimeSupportReportTool(async()=>({})),schema=JSON.stringify(tool.parameters)
@@ -61,4 +61,20 @@ it('accepts bounded detailed diagnostics only with the actual native occurrence 
   await expect(tool.execute(own,{ agent,signal:new AbortController().signal } as never)).rejects.toThrow('saved_correlated_nightly_evidence_required')
 
   await expect(tool.execute({ ...input,issues:[{ ...input.issues[0],details:{ ...details,observed:'Bearer credentialvalue' } }] },{ agent,signal:new AbortController().signal } as never)).rejects.toThrow();expect(sends).toBe(2)
+})
+
+it('projects only bounded correlated findings with exact references and never dispatches evidence reads',async()=>{
+  const occurrence='2026-10-11T00:00:00.000Z',id='session-nightly-evidence'
+  const schedule='schedule-'+createHash('sha256').update(`${id}\0nightly-routine-check-v1`).digest('hex')
+  const finding={ functional_area:'engineering',task_context:'Artifact inspection blocked.',impact:'Verification cannot finish.',proposed_fix:'Repair the artifact reader.',tool:'hivemind_artifact_read',expected:'A bounded preview.',observed:'Reader unavailable.',recovery:'Verified saved failure.',prevention:'Exercise the preview contract.' }
+  const events=[{ type:'hivemind/session-owner',seq:1,data:{ id:null,slug:'runtime' } },{ type:'user/message',seq:2,data:{ source:{ kind:'schedule',occurrenceAt:occurrence },content:[{ type:'text',text:'reminders_json: '+JSON.stringify([{ schedule_id:schedule,occurrence_at:occurrence }]) }] } },{ type:'hivemind/room-message-queued',seq:3,data:{ id:'request',senderId:id,targetId:'employee',kind:'question',text:'NIGHTLY_REVIEW_REQUEST='+JSON.stringify({ occurrence,agent_index:1 }) } },{ type:'hivemind/room-message-received',seq:4,data:{ targetId:id,senderId:'employee',kind:'reply',replyTo:'request',text:'private raw content never exported\nNIGHTLY_REVIEW_REPLY='+JSON.stringify({ occurrence,findings:[finding] }) } }]
+  const agent={ id,session:{ header:{ agentPreset:'hivemind-hq' },snapshotEvents:()=>events } } as unknown as Agent
+  let sends=0;const tool=runtimeSupportReportTool(async()=>{sends++;return{}})
+  const result=await tool.execute({ operation:'evidence',occurrence },{ agent,signal:new AbortController().signal } as never)
+  expect(result).toEqual(nightlyReportEvidence(agent,occurrence));expect(sends).toBe(0)
+  const json=JSON.stringify(result);expect(json).toContain('"sequence":4');expect(json).toContain(finding.observed);expect(json).not.toContain('private raw content')
+  const details=(result.replies as { findings:{ owner:string }[] }[])[0]!.findings[0]!
+  await expect(tool.execute({ operation:'submit',occurrence,coverage:{ expected:2,inspected:2,missing:0 },issues:[{ capability:'artifacts',code:'unavailable',severity:'medium',count:1,cause:'unknown',details }] },{ agent,signal:new AbortController().signal } as never)).resolves.toEqual({});expect(sends).toBe(1)
+  events[3]!.data.senderId='wrong';expect(JSON.stringify(nightlyReportEvidence(agent,occurrence))).not.toContain(finding.observed)
+  events[3]!.data.senderId='employee';events[3]!.data.text='NIGHTLY_REVIEW_REPLY='+JSON.stringify({ occurrence,findings:[{ ...finding,observed:'Bearer leakedcredential' }] });expect(JSON.stringify(nightlyReportEvidence(agent,occurrence))).not.toContain('leakedcredential')
 })

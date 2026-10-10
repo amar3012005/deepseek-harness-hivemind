@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
@@ -6,7 +7,7 @@ import type { ToolDefinition } from '@deepseek-ai/dsh-tools'
 import { createBrowserTimeZoneConfirmation } from '@deepseek-ai/dsh-time-context'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { HqControl } from '../src/control.ts'
-import { installRest, recoverRest, restState, restScheduleId, restBriefing, acknowledgeRestNotes, leaveRestNote, restWakeDisplay, greetingOnly, socialTurnOnly } from '../src/rest.ts'
+import { installRest, recoverRest, restState, restScheduleId, restBriefing, acknowledgeRestNotes, leaveRestNote, restWakeDisplay, greetingOnly, socialTurnOnly, isNightlyScheduledTurn } from '../src/rest.ts'
 
 const request = { handoff_id: 'rest-test', wake_at: '2030-01-01T01:00:00Z', summary: 'Review the existing task', next_steps: ['Inspect current receipts'], blockers: ['Waiting for evidence'] }
 function fixture() {
@@ -324,4 +325,16 @@ it('formats persisted UTC instants in the actual confirmed zone with explicit UT
   const events = [{ type: 'user/message', data: createBrowserTimeZoneConfirmation('Europe/Berlin') }] as SessionEvent[]
   expect(restWakeDisplay(events, iso)).toMatchObject({ iso, timeZone: 'Europe/Berlin', local: '2026-10-05T09:00:00+02:00[Europe/Berlin]' })
   expect(restWakeDisplay([], iso)).toMatchObject({ iso, timeZone: 'UTC', local: '2026-10-05T07:00:00+00:00[UTC]' })
+})
+
+it('does not manufacture a rest wake for an authenticated nightly scheduled review',async()=>{
+  const f=fixture();const occurrence='2030-01-01T00:00:00.000Z'
+  const id='schedule-'+createHash('sha256').update(`${f.agent.id}\0nightly-routine-check-v1`).digest('hex')
+  f.agent.session.append('user/message',{ source:{ kind:'schedule',occurrenceAt:occurrence },content:[{ type:'text',text:'reminders_json: '+JSON.stringify([{ schedule_id:id,occurrence_at:occurrence }]) }] } as never)
+  expect(isNightlyScheduledTurn(f.agent)).toBe(true)
+  f.agent.session.append('tool/call',{ name:'runtime_support_report' } as never)
+  await f.hooks.get('agent/turn-stopping')!({ agent:f.agent,turn:1,signal:new AbortController().signal })
+  expect(f.agent.steer).not.toHaveBeenCalled()
+  f.agent.session.append('turn/end',{ turn:1,reason:{ kind:'completed' } } as never)
+  expect(isNightlyScheduledTurn(f.agent)).toBe(false)
 })
