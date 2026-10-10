@@ -1,10 +1,14 @@
+# Agent Note: Shared shell exports in immutable overlays
+
+Status: implemented
+
 ## Problem
 
 The b6af0f7b64 runner overlay compiles a notification renderer that consumes `IconBellOutline16` and a primitives library that exports it, but retains a web shell whose shared primitives namespace omits that export. Native conversation rendering therefore receives an undefined component. The overlay builder rebuilds client packages without rebuilding `apps/web`.
 
 ## Decision
 
-The overlay release helper compiles primitives before rebuilding the shared web shell. Immutable image verification compares all compiled primitives export names with the shell namespace and rejects missing names. Plugins keep using the shared primitives instance.
+The overlay release helper compiles primitives before rebuilding the shared web shell. Immutable image verification parses the compiled library exports and the actual shell seed's namespace initializer with the TypeScript AST, then rejects missing namespace properties. Plugins keep using the shared primitives instance.
 
 ## Alternatives considered
 
