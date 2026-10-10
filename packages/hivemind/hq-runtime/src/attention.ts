@@ -149,7 +149,7 @@ export function apply(ctx: Context, config: Config): void {
   async function run(input: z.infer<typeof request>, res: ServerResponse) {
     const row = await owned(input)
     if (!row) { reply(res, 403, { error: 'runtime_attention_scope_or_consent_denied' }); return }
-    const principal = { orgId: input.orgId, userId: input.userId, profile: 'hivemind-chat' as const, variation: 'harness' }
+    const principal = { orgId: row.org_id, userId: row.user_id, profile: 'hivemind-chat' as const, variation: 'harness' }
     await ctx.hivemindExecutionScope.run(principal, async () => {
       const id = SessionId(row.session_id)
       const inspection = await ctx.sessionController.inspect(id)

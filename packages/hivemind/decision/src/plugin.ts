@@ -19,7 +19,7 @@ export function createOpenRouterDecisionPlugin(config: OpenRouterDecisionPluginC
   if (config.enabled && (!config.endpoint || (!apiKeyRef && !gatewayTokenRef))) throw new Error('enabled decision provider requires endpoint and credential references')
   return {
     name: 'hivemind-openrouter-decisions',
-    inject: config.enabled ? ['hivemindIdentity', 'credentials'] : ['hivemindIdentity'],
+    inject: config.enabled ? ['hivemindExecutionScope', 'credentials'] : ['hivemindExecutionScope'],
     async apply(ctx: Context) {
       const provider = config.enabled ? new OpenRouterDecisionProvider({
         endpoint: config.endpoint ?? '',

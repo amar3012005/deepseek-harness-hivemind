@@ -1,6 +1,6 @@
 /** Bounded native decision service; evaluates evidence, never grants permissions or executes work. */
 import { Context, Service } from '@deepseek-ai/cordis'
-import type {} from '@deepseek-ai/dsh-hivemind-identity'
+import type {} from '@deepseek-ai/dsh-hivemind-execution-scope'
 import { z } from 'zod'
 import { evaluationSchema, validateAnswers } from './protocol.ts'
 import type { EvaluationRequest, EvaluationResponse } from './protocol.ts'
@@ -28,7 +28,7 @@ declare module '@deepseek-ai/cordis' { interface Context { hivemindDecision: Hiv
 
 /** Stateless service: authenticated scope, no cross-tenant cache, no durable writes or automatic routing. */
 export class HiveMindDecision extends Service {
-  static inject = ['hivemindIdentity']
+  static inject = ['hivemindExecutionScope']
   private readonly timeoutMs: number
   constructor(ctx: Context, private readonly config: DecisionConfig = {}) {
     super(ctx, 'hivemindDecision')
@@ -42,7 +42,7 @@ export class HiveMindDecision extends Service {
     const parsed = evaluationSchema.safeParse(raw)
     if (!parsed.success || new TextEncoder().encode(JSON.stringify(parsed.data)).byteLength > 65536) return fail('INVALID_REQUEST')
     return this.bounded(signal, started, async (bounded) => {
-      try { await this.ctx.hivemindIdentity.resolve(bounded) } catch { return fail('UNAUTHORIZED') }
+      try { this.authenticatedScope() } catch { return fail('UNAUTHORIZED') }
       if (bounded.aborted) return fail(signal?.aborted ? 'CANCELLED' : 'TIMEOUT')
       if (!this.config.provider) return fail('PROVIDER_UNAVAILABLE')
       let response: unknown
@@ -63,7 +63,7 @@ export class HiveMindDecision extends Service {
     if (!choices.length) return fail('NO_ELIGIBLE_CHOICE')
     if (request.mode === 'policy' || choices.length === 1) {
       return this.bounded(signal, started, async (bounded) => {
-        try { await this.ctx.hivemindIdentity.resolve(bounded) } catch { return fail('UNAUTHORIZED') }
+        try { this.authenticatedScope() } catch { return fail('UNAUTHORIZED') }
         if (bounded.aborted) return fail(signal?.aborted ? 'CANCELLED' : 'TIMEOUT')
         const selected = choices.reduce((best, choice) => choice.priority > best.priority ? choice : best)
         return { ok: true, choiceId: selected.id, rationale: choices.length === 1 ? 'Only eligible choice.' : 'Highest configured priority; input order breaks ties.', method: 'policy', elapsedMs: Math.round(performance.now() - started) }
@@ -74,6 +74,11 @@ export class HiveMindDecision extends Service {
     const answer = result.response.answers.selection
     if (!answer || answer.type !== 'choice') return fail('INVALID_PROVIDER_OUTPUT')
     return { ok: true, choiceId: answer.choice, probabilities: answer.probabilities, confidence: answer.confidence, rationale: 'Highest provider-reported probability among eligible choices; this is a recommendation, not authorization.', method: 'model', elapsedMs: Math.round(performance.now() - started) }
+  }
+  /** Only host-established request-local scope authorizes assessment; input carries no identity. */
+  private authenticatedScope(): void {
+    const principal = this.ctx.hivemindExecutionScope.require()
+    if (!principal.orgId || !principal.userId || principal.profile !== 'hivemind-chat' || !principal.variation) throw new Error('authenticated execution scope required')
   }
   private async bounded<T extends { ok: true }>(
     signal: AbortSignal | undefined,

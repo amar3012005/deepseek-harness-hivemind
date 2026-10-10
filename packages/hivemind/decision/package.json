@@ -29,13 +29,13 @@
   "peerDependencies": {
     "@deepseek-ai/cordis": "workspace:^",
     "@deepseek-ai/dsh-llm": "workspace:^",
-    "@deepseek-ai/dsh-hivemind-identity": "workspace:^",
+    "@deepseek-ai/dsh-hivemind-execution-scope": "workspace:^",
     "@deepseek-ai/dsh-credentials": "workspace:^"
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "workspace:^",
     "@deepseek-ai/dsh-llm": "workspace:^",
-    "@deepseek-ai/dsh-hivemind-identity": "workspace:^",
+    "@deepseek-ai/dsh-hivemind-execution-scope": "workspace:^",
     "@deepseek-ai/dsh-credentials": "workspace:^"
   },
   "dependencies": {

@@ -7,12 +7,12 @@ const evaluation: EvaluationRequest = { state: 'hi', questions: { selection: { t
 const answer = { model: 'inception/mercury-decide', answers: { selection: { type: 'choice', choice: 'fast', probabilities: { fast: 0.9, deep: 0.1 }, confidence: 0.8 } } }
 async function boot(provider?: DecisionProvider, denied = false, timeoutMs = 100) {
   const ctx = new Context()
-  await ctx.plugin({ name: 'identity-fixture', apply(scope) { scope.provide('hivemindIdentity', { resolve: vi.fn(async () => { if (denied) throw new Error('private details'); return { userId: 'admin', orgId: 'test-company' } }) }) } })
+  await ctx.plugin({ name: 'scope-fixture', apply(scope) { scope.provide('hivemindExecutionScope', { require: vi.fn(() => { if (denied) throw new Error('private details'); return { userId: 'admin', orgId: 'test-company',profile:'hivemind-chat',variation:'harness' } }) }) } })
   const fiber = await ctx.plugin(HiveMindDecision, { ...(provider ? { provider } : {}), timeoutMs })
   return Object.assign(ctx, { dispose: () => fiber.dispose() })
 }
 describe('native decision service', () => {
-  it('uses an injected identity service and returns calibrated choice probabilities', async () => {
+  it('uses an authenticated execution scope and returns calibrated choice probabilities', async () => {
     const provider = { evaluate: vi.fn(async () => answer) }, ctx = await boot(provider)
     try { expect(await ctx.hivemindDecision.decide(choice)).toMatchObject({ ok: true, choiceId: 'fast', method: 'model', confidence: 0.8 }); expect(provider.evaluate).toHaveBeenCalledOnce() } finally { await ctx.dispose() }
   })
@@ -79,7 +79,7 @@ describe('native credential composition', () => {
     const { createOpenRouterDecisionPlugin } = await import('../src/plugin.ts')
     expect(() => createOpenRouterDecisionPlugin({ enabled: true })).toThrow()
     const ctx = new Context()
-    ctx.provide('hivemindIdentity', { resolve: async () => ({ userId: 'u', orgId: 'o' }) })
+    ctx.provide('hivemindExecutionScope', { require: () => ({ userId: 'u', orgId: 'o',profile:'hivemind-chat',variation:'harness' }) })
     const fiber = await ctx.plugin(createOpenRouterDecisionPlugin())
     try { expect(await ctx.hivemindDecision.decide({ ...choice, mode: 'policy' })).toMatchObject({ ok: true, method: 'policy' }) } finally { await fiber.dispose() }
   })
@@ -87,7 +87,7 @@ describe('native credential composition', () => {
     const { createOpenRouterDecisionPlugin } = await import('../src/plugin.ts')
     const ctx = new Context(), authorizations: string[] = []
     let version = 1
-    ctx.provide('hivemindIdentity', { resolve: async () => ({ userId: 'u', orgId: 'o' }) })
+    ctx.provide('hivemindExecutionScope', { require: () => ({ userId: 'u', orgId: 'o',profile:'hivemind-chat',variation:'harness' }) })
     ctx.provide('credentials', { resolve: async () => ({ value: `fixture-${version}` }) })
     vi.stubGlobal('fetch', vi.fn(async (_, init: RequestInit) => { authorizations.push(new Headers(init.headers).get('authorization')!); return new Response(JSON.stringify(answer)) }))
     const fiber = await ctx.plugin(createOpenRouterDecisionPlugin({ enabled: true, endpoint: 'https://openrouter.ai/api/alpha/decisions', apiKeyRef: 'OPENROUTER_API_KEY' }))
@@ -101,5 +101,38 @@ describe('native credential composition', () => {
     const provider = new OpenRouterDecisionProvider({ endpoint: 'https://openrouter.ai/api/alpha/decisions', resolveHeaders: async () => ({ authorization: 'Bearer fixture' }), fetch: vi.fn(async () => new Response('private-debug-token', { status: 429 })) as typeof fetch })
     const ctx = await boot(provider)
     try { const result = await ctx.hivemindDecision.decide(choice); expect(result).toMatchObject({ ok: false, code: 'PROVIDER_UNAVAILABLE' }); expect(JSON.stringify(result)).not.toContain('private-debug-token') } finally { await ctx.dispose() }
+  })
+})
+
+describe('global host authenticated composition', () => {
+  it('boots without per-agent identity and refuses calls outside an authenticated dispatch', async () => {
+    const { default: ExecutionScope } = await import('../../execution-scope/src/index.ts')
+    const { createOpenRouterDecisionPlugin } = await import('../src/plugin.ts')
+    const ctx = new Context()
+    const scope = await ctx.plugin(ExecutionScope)
+    const decision = await ctx.plugin(createOpenRouterDecisionPlugin())
+    try {
+      expect(ctx.hivemindDecision).toBeDefined()
+      expect(await ctx.hivemindDecision.decide({ ...choice, mode: 'policy' })).toMatchObject({ ok: false, code: 'UNAUTHORIZED' })
+      expect(await ctx.hivemindExecutionScope.run({ orgId: 'a', userId: 'admin', profile: 'hivemind-chat', variation: 'harness' }, () => ctx.hivemindDecision.decide({ ...choice, mode: 'policy' }))).toMatchObject({ ok: true })
+    } finally { await decision.dispose(); await scope.dispose() }
+  })
+  it('keeps concurrent request principals isolated and does not accept identity from model input', async () => {
+    const { default: ExecutionScope } = await import('../../execution-scope/src/index.ts')
+    const ctx = new Context(), seen: string[] = []
+    const scope = await ctx.plugin(ExecutionScope)
+    const decision = await ctx.plugin(HiveMindDecision, { provider: { async evaluate() {
+      await new Promise(resolve => setTimeout(resolve, 5))
+      const principal = ctx.hivemindExecutionScope.require()
+      seen.push(`${principal.orgId}/${principal.userId}`)
+      return answer
+    } } })
+    try {
+      const results = await Promise.all(['a', 'b'].map(orgId => ctx.hivemindExecutionScope.run({ orgId, userId: `user-${orgId}`, profile: 'hivemind-chat', variation: 'harness' }, () => ctx.hivemindDecision.evaluate(evaluation))))
+      expect(results.every(result => result.ok)).toBe(true)
+      expect(seen.sort()).toEqual(['a/user-a', 'b/user-b'])
+      expect(await ctx.hivemindDecision.evaluate({ ...evaluation, state: { orgId: 'a', userId: 'user-a' } })).toMatchObject({ ok: false, code: 'UNAUTHORIZED' })
+      expect(seen).toHaveLength(2)
+    } finally { await decision.dispose(); await scope.dispose() }
   })
 })
