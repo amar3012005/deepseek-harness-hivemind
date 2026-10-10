@@ -557,7 +557,10 @@ export function apply(ctx: Context, config: Partial<Config> = {}): void {
     if (plan === undefined) return
     // The observer intentionally accepts optional plugin event families without
     // importing or requiring their implementation packages.
-    const observed = event as unknown as { readonly type: string; readonly data: unknown }
+    const observed = event as unknown as { readonly type: string; readonly data: unknown; readonly surfaceOp?: unknown }
+    // Native compaction replaces old results for model context. This is not
+    // another execution, approval, deliverable, or current-work receipt.
+    if (observed.type === 'tool/result' && asRecord(observed.surfaceOp)?.['op'] === 'replace') return
     const data = asRecord(observed.data)
     const sessionKey = session as unknown as object
     if (observed.type === 'hivemind/research-gathered') {
@@ -618,7 +621,7 @@ export function apply(ctx: Context, config: Partial<Config> = {}): void {
     }
     if (observed.type === 'tool/result') {
       const call = callForResult(sessionLike, observed.data)
-      if (call === undefined || isOperatingInternal(call.name)) return
+      if (call === undefined || isOperatingInternal(call.name) || call.name === 'skill') return
       const error = receiptStatus(observed.data)
       const wasApproved = approvedCalls.get(sessionKey)?.delete(call.callId) ?? false
       const kind = browserTool(call.name) ? 'browser' : wasApproved ? 'connected_action' : hasMedia(observed.data) ? 'artifact' : undefined

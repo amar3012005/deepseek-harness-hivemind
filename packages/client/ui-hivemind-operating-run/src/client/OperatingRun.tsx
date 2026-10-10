@@ -717,28 +717,28 @@ const receiptDefinition: ConversationNodeDefinition<ReceiptData> = {
   match: (event) => {
     const observed = event as unknown as { readonly type: string; readonly data: unknown; readonly seq: number }
     // Research may report progress before explicit workstream start; preserve its own exact event anchor.
-    if (observed.type === 'hivemind/workstream-progress') return { id: `workstream-progress:${observed.seq}`, role: 'start' }
+    if (observed.type === 'hivemind/workstream-progress') return { id: `workstream-progress:${observed.seq}`, role: 'update' }
     if (observed.type !== 'hivemind/operating-receipt') return null
     const id = receiptIdentity(observed as unknown as SessionEventLike)
-    return id === undefined ? null : { id, role: 'start' }
+    return id === undefined ? null : { id, role: 'update' }
   },
   start: (_context, match) => match.event.type === 'hivemind/workstream-progress'
     ? { kind: 'workstream progress', title: 'Work progress', status: 'running', summary: text(record(match.event.data)?.['summary'], '') }
     : receiptData(match.event as unknown as SessionEventLike),
   update: (_context, match) => receiptData(match.event as unknown as SessionEventLike),
-  buildViewNode: context =>
-    context.start === undefined
-      ? null
-      : {
-        key: context.key,
-        kind: 'hivemind-operating-receipt',
-        id: context.id,
-        target: 'chat',
-        anchorSeq: context.start.event.seq,
-        location: context.start.location,
-        visibility: 'visible',
-        data: context.state,
-      },
+  buildViewNode: (context) => {
+    // Receipts may repeat after replay or workflow progress. Fold the same
+    // receipt identity into one node, retaining the first durable anchor.
+    const anchor = context.matches[0]
+    const latest = context.matches.at(-1)
+    if (anchor === undefined || latest === undefined) return null
+    const state: ReceiptData = latest.event.type === 'hivemind/workstream-progress'
+      ? { kind: 'workstream progress', title: 'Work progress', status: 'running', summary: text(record(latest.event.data)?.['summary'], '') }
+      : receiptData(latest.event as unknown as SessionEventLike)
+    return { key: context.key, kind: 'hivemind-operating-receipt', id: context.id, target: 'chat',
+      anchorSeq: anchor.event.seq, location: anchor.location,
+      visibility: state.toolName === 'skill' ? 'hidden' : 'visible', data: state }
+  },
 }
 
 const evaluationDefinition: ConversationNodeDefinition<EvaluationData> = {

@@ -167,7 +167,7 @@
 - id: agent-default-model
   config:
     provider: cloudflare-openrouter-streaming
-    model: anthropic/claude-haiku-5.5
+    model: openai/gpt-6-luna
 
 - id: session-persistence-jsonl
   disabled: true

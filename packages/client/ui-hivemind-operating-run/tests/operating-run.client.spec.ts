@@ -47,6 +47,16 @@ function nodes(value: ConversationNodeAssembler): readonly ChatConversationViewN
 }
 
 describe('HIVE-MIND operating-run projection', () => {
+  it('folds repeated receipt identities without breaking history or duplicating cards', () => {
+    const value = assemble([
+      event(1, 'turn/start', { turn: 1 }),
+      event(2, 'hivemind/operating-receipt', { receiptId: 'artifact:call-1', toolName: 'image_generate', status: 'running' }),
+      event(3, 'hivemind/operating-receipt', { receiptId: 'artifact:call-1', toolName: 'image_generate', status: 'completed' }),
+    ])
+    expect(nodes(value)).toHaveLength(1)
+    expect(nodes(value)[0]).toMatchObject({ anchorSeq: 2, visibility: 'visible', data: { status: 'completed' } })
+  })
+
   it('projects loaded methods before the durable plan, research receipt, and employee handoff', () => {
     const value = assemble([
       event(1, 'turn/start', { turn: 1 }),
@@ -191,6 +201,15 @@ describe('HIVE-MIND operating-run projection', () => {
       event(1, 'hivemind/employee-delegation-start', { delegationId: 'employee-pending', jobId: 'hivemind_employee-1', executionState: 'pending', employeeId: 'marta', employeeName: 'Marta', role: 'Risk lead', task: 'Challenge the recommendation', acceptanceCriteria: [], selectedPlaybooks: [] }),
     ])
     expect(nodes(value)[0]?.data).toMatchObject({ employeeName: 'Marta', status: 'waiting' })
+  })
+
+  it('hides historical internal skill receipts while retaining genuine deliverable receipts', () => {
+    const value = assemble([
+      event(1, 'hivemind/operating-receipt', { runId: 'run-1', planId: 'plan-1', receiptId: 'artifact:skill-1', kind: 'artifact', status: 'completed', title: 'Artifact receipt', toolName: 'skill' }),
+      event(2, 'hivemind/operating-receipt', { runId: 'run-1', planId: 'plan-1', receiptId: 'artifact:image-1', kind: 'artifact', status: 'completed', title: 'Artifact receipt', toolName: 'image_generate' }),
+    ])
+    expect(nodes(value)[0]?.visibility).toBe('hidden')
+    expect(nodes(value)[1]?.visibility).toBe('visible')
   })
 
   it('projects native receipts and a compact evaluation without replacing their native tool cards', () => {

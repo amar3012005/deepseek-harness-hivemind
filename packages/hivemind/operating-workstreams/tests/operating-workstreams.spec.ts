@@ -245,6 +245,12 @@ describe('HIVE-MIND operating workstreams', () => {
     emit('tool/result', { message: { toolCallId: 'browser-1', content: [{ type: 'tool-result', content: [{ type: 'image' }] }] } })
     log.push({ type: 'tool/call', data: { callId: 'artifact-1', name: 'image_generate', arguments: '{}' } })
     emit('tool/result', { message: { toolCallId: 'artifact-1', content: [{ type: 'tool-result', content: [{ type: 'image' }] }] } })
+    ctx.emit('session/event', session as never, {
+      type: 'tool/result', surfaceOp: { op: 'replace', startSeq: 1, endSeq: 1 },
+      data: { message: { toolCallId: 'artifact-1', content: [{ type: 'tool-result', content: [{ type: 'image' }] }] } },
+    } as never)
+    log.push({ type: 'tool/call', data: { callId: 'skill-1', name: 'skill', arguments: '{}' } })
+    emit('tool/result', { message: { toolCallId: 'skill-1', content: [{ type: 'tool-result', content: [{ type: 'image' }] }] } })
     emit('tool-workflow/run-start', { runId: 'flow-1', name: 'validate-evidence' })
     emit('tool-workflow/run-end', { runId: 'flow-1', stopReason: 'completed' })
     emit('approval/asked', { id: 'approval-1', callId: 'action-1', toolName: 'send_email' })

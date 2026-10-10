@@ -38,11 +38,12 @@ for (const [feature, ids] of Object.entries(presentation)) {
 const defaultModel = row('agent-default-model')
 const llmProvider = row('llm-pi-ai')
 if (!defaultModel.includes('provider: cloudflare-openrouter-streaming')
-  || !defaultModel.includes('model: anthropic/claude-haiku-5.5')
+  || !defaultModel.includes('model: openai/gpt-6-luna')
   || !llmProvider.includes('cloudflare-openrouter-streaming:')
   || !llmProvider.includes('id: anthropic/claude-haiku-5.5')
+  || !llmProvider.includes('id: openai/gpt-6-luna')
   || !/reasoning:\s*['"]?low['"]?/.test(llmProvider)) {
-  throw new Error('hivemind-web image profile must use the streaming Claude Haiku 5.5 route with required reasoning')
+  throw new Error('hivemind-web image profile must use the streaming GPT-6 Luna route with required reasoning and retain Haiku')
 }
 if (!llmProvider.includes('id: openrouter/deepseek/deepseek-v4-flash-0731')
   || !/reasoning:\s*['"]?off['"]?/.test(llmProvider)) {
