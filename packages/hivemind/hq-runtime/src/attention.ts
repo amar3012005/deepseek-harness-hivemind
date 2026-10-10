@@ -177,11 +177,14 @@ export function apply(ctx: Context, config: Config): void {
         reply(res, 409, { error: 'runtime_attention_before_activation' }); return
       }
       const decision = row.relevance_decision?.runtimeAttention
-      if (!memory.ready || row.relevance_status !== 'approved' || decision?.policy !== 'runtime_attention_v3' || !['notify','wake'].includes(decision.action)
+      const legacy = decision?.policy === 'runtime_attention_v2'
+      const native = decision?.policy === 'runtime_attention_v3'
+      const allowedAction = decision && (legacy ? decision.action === 'wake' : native && ['notify','wake'].includes(decision.action))
+      if (!memory.ready || row.relevance_status !== 'approved' || !allowedAction || !decision
         || decision.contextRevision !== snapshot.revision || decision.targetSessionId !== row.session_id
-        || decision.settingsRevision !== (row.attention_settings && typeof row.attention_settings==='object' ? (row.attention_settings as { revision?:number }).revision ?? 0 : 0)
-        || !Number.isFinite(decision.probability) || decision.probability < 0 || decision.probability > 1
-        || !Number.isFinite(decision.margin) || decision.margin < 0 || decision.margin > 1 || (decision.action === 'wake' && !snapshot.enabled)) {
+        || (native && decision.settingsRevision !== (row.attention_settings && typeof row.attention_settings==='object' ? (row.attention_settings as { revision?:number }).revision ?? 0 : 0))
+        || !Number.isFinite(decision.probability) || decision.probability < (legacy ? 0.45 : 0) || decision.probability > 1
+        || !Number.isFinite(decision.margin) || decision.margin < (legacy ? 0.05 : 0) || decision.margin > 1 || (decision.action === 'wake' && !snapshot.enabled)) {
         reply(res, 409, { error: 'runtime_attention_stale_or_not_admitted' }); return
       }
       const resolved = await ctx.sessionController.resolveAgent(id)
