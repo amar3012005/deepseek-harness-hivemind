@@ -1127,6 +1127,16 @@ describe('ChatView', () => {
     expect(view.getAllByText('Keep this query')).toHaveLength(1)
   })
 
+  it('starts admission thinking from the new submission rather than an older open turn', () => {
+    const oldStart = Date.now() - 125_000
+    const h = makeHarness({ nodes: [user(1, 'older request')], turnTimings: new Map([[1, { startTime: oldStart }]]) }, {
+      pendingSubmissions: [{ requestId: 'req-new' as never, placement: 'transcript', time: Date.now(),
+        text: 'new request', attachments: [] }],
+    })
+    const view = render(<h.ChatView {...h.props} />)
+    expect(view.getByRole('status').textContent).toBe('思考中...')
+  })
+
   it('renders a local steer echo as pending steering before Host image admission completes', () => {
     const h = makeHarness(
       { nodes: [assistant(1, 'working')] },
