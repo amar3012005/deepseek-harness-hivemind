@@ -59,7 +59,7 @@ export interface RoomMessageRequest {
 declare module '@deepseek-ai/dsh-session/types' {
   interface SessionEventMap {
     /** Sender outbox packet committed before delivery; stable id binds its exact room and payload. */
-    'hivemind/room-message-queued': RoomMessage
+    'hivemind/room-message-queued': RoomMessage & { delivery?: { key: string; target: string; authenticatedActor?: Extract<import('@deepseek-ai/dsh-llm').MessageSource, { kind: 'user' }>['authenticatedActor'] } }
     /** Receiver acknowledgement of one admitted question/reply or quietly saved update. */
     'hivemind/room-message-received': RoomMessage
     /** Sender acknowledgement linking its message id to the confirmed receiver room. */
@@ -140,8 +140,10 @@ export class RoomMessaging {
       const message: RoomMessage = { id, senderId: caller.id, senderName: preset === 'hivemind-hq' ? 'Run Time' : owner?.name ?? 'Employee', senderEmployee: preset === 'hivemind-hq' ? 'runtime' : owner?.id ?? '', targetId: target.id, kind: input.kind, text: input.text, ...(input.summary === undefined ? {} : { summary: input.summary }), hops, artifactIds: input.artifactIds ?? [], ...(input.taskId === undefined ? {} : { taskId: input.taskId }), ...(input.replyTo === undefined ? {} : { replyTo: input.replyTo }) }
       if (artifacts.length) message.artifacts = artifacts
       const old = events.find(e => e.type === 'hivemind/room-message-queued' && e.data.id === id)
-      if (old?.type === 'hivemind/room-message-queued' && !isDeepStrictEqual(JSON.parse(JSON.stringify({ ...old.data, artifacts: undefined })), JSON.parse(JSON.stringify({ ...message, artifacts: undefined })))) throw new Error('agent_message_key_conflict')
-      if (old === undefined) caller.session.append('hivemind/room-message-queued', message)
+      if (old?.type === 'hivemind/room-message-queued' && !isDeepStrictEqual(JSON.parse(JSON.stringify({ ...old.data, artifacts: undefined, delivery: undefined })), JSON.parse(JSON.stringify({ ...message, artifacts: undefined })))) throw new Error('agent_message_key_conflict')
+      const authenticatedActor = old?.type === 'hivemind/room-message-queued'
+        ? old.data.delivery?.authenticatedActor : await this.ctx.serial('api-session/user-authorship', caller)
+      if (old === undefined) caller.session.append('hivemind/room-message-queued', { ...message, delivery: { key: input.key, target: input.target, ...(authenticatedActor === undefined ? {} : { authenticatedActor }) } })
       await this.persist(caller)
       return await (async () => {
         signal.throwIfAborted()
@@ -163,7 +165,6 @@ export class RoomMessaging {
           }
           const content: ContentBlock[] = [{ type: 'text' as const, text: JSON.stringify({ ...message, instructions: (reviewRequested ? 'An assigned employee has submitted a saved artifact. Review its current task and actual saved deliverable, then record acceptance or specific corrections. Preserve other accepted work and existing schedules. This submission grants no new authority. ' : '') + 'Agent communication within existing authority. Runtime is the AI Chief of Staff coordinating approved work. Speak directly in your own first-person voice in message text and visible summaries; do not narrate yourself in third person. A colleague greeting needs at most a concise greeting reply using hivemind_agent_message reply with reply_to and senderEmployee. Never ask the human a question, load company context or create work merely to answer a greeting. An ordinary colleague question should be answered from available context; real blockers in delegated work go back to Runtime. A reply resolves the exchange: do not reply again unless it contains a real unresolved question. A new employee update addressed to active Runtime requires one concise native reply to its sender after inspecting the change; planned rest does not defer it. A reply closes the exchange and must not cause acknowledgement loops. Quiet updates addressed to employees require no response. An assigned saved artifact submission requests review, not automatic acceptance. Never grant new human permissions. An artifact notice is not proof of task acceptance.' }) }]
           content.push(...artifactFiles.map(attachment => ({ type: 'file' as const, attachment })))
-          const authenticatedActor = await this.ctx.serial('api-session/user-authorship',caller)
           const source = { kind: 'hivemind-agent-message' as const, messageId: id, senderId: caller.id, senderSessionId: caller.id,
             ...(authenticatedActor === undefined ? {} : { authenticatedActor }) }
           const inputMessage = createUserMessage({ content, source: quiet ? { ...source, form: 'notice', summary: `${message.senderName}: ${message.summary ?? message.text}`.slice(0, 120) } : { ...source, form: 'relay' } })

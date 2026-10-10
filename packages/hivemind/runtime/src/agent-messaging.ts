@@ -42,6 +42,72 @@ export function employeeFailureSummary(code: string): string {
           : 'a model request failure'
   return `Chief, my turn ended because of ${category}. The assignment remains unfinished; please review the blocker before resuming it.`
 }
+/** Replay bounded company-owned packets through the same native Inbox owner.
+ * A fresh authenticated directory remains mandatory; no native Team outbox is assumed.
+ */
+export async function reconcileRoomMessages(ctx: Context, rooms: RoomDelivery, agent: Agent, signal: AbortSignal): Promise<void> {
+  if (agent.session.header.parentSession !== undefined) return
+  const events = agent.session.snapshotEvents()
+  const delivered = new Set(events.filter(event => String(event.type) === 'hivemind/room-message-delivered')
+    .map(event => (event.data as { id: string }).id))
+  type Packet = {
+    id: string
+    senderId: string
+    targetId: string
+    kind: 'question' | 'reply' | 'update'
+    text: string
+    summary?: string
+    taskId?: string
+    replyTo?: string
+    artifactIds: string[]
+    delivery?: { key: string; target: string }
+  }
+  const savedKeys = new Map<string, { key: string; target: string }>()
+  for (const event of events) {
+    if (event.type !== 'tool/call' || event.data.name !== 'hivemind_agent_message') continue
+    try {
+      const input = JSON.parse(event.data.arguments) as { message_key?: string; recipient?: string }
+      if (typeof input.message_key !== 'string' || typeof input.recipient !== 'string') continue
+      const id = `agent-message-${createHash('sha256').update(JSON.stringify([agent.id, input.message_key])).digest('hex')}`
+      savedKeys.set(id, { key: input.message_key, target: input.recipient })
+    } catch { /* Historical malformed tool input cannot reconstruct a delivery key. */ }
+  }
+  const pending = events.filter(event => String(event.type) === 'hivemind/room-message-queued')
+    .map(event => event.data as unknown as Packet)
+    .map(packet => packet.delivery === undefined ? { ...packet, delivery: savedKeys.get(packet.id) } : packet)
+    .filter(packet => packet.senderId === agent.id && packet.delivery !== undefined && !delivered.has(packet.id)).slice(0, 8)
+  if (pending.length === 0) return
+  const directory = await messageDirectory(ctx, agent).profiles(signal)
+  const owner = sessionOwner(events)
+  if (agent.session.header.agentPreset !== 'hivemind-hq' && !directory.profiles.some(profile => profile['id'] === owner?.id)) return
+  for (const packet of pending) {
+    signal.throwIfAborted()
+    const delivery = packet.delivery
+    if (delivery === undefined) continue
+    if (packet.taskId !== undefined && agent.session.header.agentPreset === 'hivemind-hq') {
+      const task = events.findLast(event => String(event.type) === 'team/task'
+        && (event.data as { task?: { id?: string } }).task?.id === packet.taskId)?.data as { task?: { status?: string } } | undefined
+      const assignment = events.findLast(event => String(event.type) === 'hivemind/hq-employee-assignment'
+        && (event.data as { taskId?: string }).taskId === packet.taskId)?.data as { sessionId?: string } | undefined
+      if (task?.task?.status === 'completed' || task?.task?.status === 'deleted'
+        || (assignment?.sessionId !== undefined && assignment.sessionId !== packet.targetId)) continue
+    }
+    // Never infer an identity or change a saved target when permissions or the roster changed.
+    const profile = delivery.target === 'runtime' ? undefined : authorizedRecipient(directory.profiles, delivery.target)
+    if (delivery.target !== 'runtime' && (profile === undefined || profile['status'] === 'paused'
+      || profile['status'] === 'archived' || profile['archived_at'] || profile['archivedAt'])) continue
+    try {
+      await rooms.deliverAgentMessage(agent, { key: delivery.key, target: delivery.target, kind: packet.kind, text: packet.text,
+        ...(profile === undefined ? {} : { targetProfile: { id: String(profile['id']), name: String(profile['name']), role: String(profile['role_archetype'] ?? 'HIVE-MIND employee') } }),
+        ...(packet.summary === undefined ? {} : { summary: packet.summary }),
+        ...(packet.taskId === undefined ? {} : { taskId: packet.taskId }),
+        ...(packet.replyTo === undefined ? {} : { replyTo: packet.replyTo }), artifactIds: packet.artifactIds }, signal)
+    } catch {
+      signal.throwIfAborted()
+      ctx.logger.warn('A saved company message remains unconfirmed; a later admitted turn can retry the same packet.')
+    }
+  }
+}
 export function installAgentMessaging(ctx: Context): void {
   ctx.inject(['sessionController', 'hivemindEmployeeDirectory'], (scope) => {
     const rooms = Reflect.get(scope, 'sessionController') as RoomDelivery
@@ -135,6 +201,8 @@ export function installAgentMessaging(ctx: Context): void {
         agent.ctx.effect(() => agent.ctx.tools.restrict({ deny: ['hivemind_agent_message'] }))
         childMasks.add(agent)
       }
+      try { await reconcileRoomMessages(scope, rooms, agent, signal) }
+      catch { signal.throwIfAborted(); scope.logger.warn('Saved company messages could not be reconciled on this turn.') }
       await notify(agent, signal)
       return next()
     }))

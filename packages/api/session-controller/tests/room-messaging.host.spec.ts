@@ -60,6 +60,7 @@ describe('Persistent agent room messaging', () => {
     const { caller, ravi, messaging, request } = fixture()
     const receipt = await messaging.send(caller, request, signal)
     expect(receipt.status).toBe('accepted')
+    expect(caller.session.snapshotEvents().find(e => e.type === 'hivemind/room-message-queued')?.data).toMatchObject({ delivery: { key: request.key, target: request.target } })
     await messaging.send(caller, request, signal)
     expect(ravi.steer).toHaveBeenCalledTimes(1)
     expect(ravi.session.snapshotEvents().filter(e => e.type === 'hivemind/room-message-received')).toHaveLength(1)
@@ -193,4 +194,18 @@ it.each(['', 'many\nlines', 'x'.repeat(241)])('rejects invalid visible summary b
   await expect(messaging.send(caller, { ...request, summary }, signal)).rejects.toThrow('summary_invalid')
   expect(ravi.steer).not.toHaveBeenCalled()
   expect(caller.session.snapshotEvents()).toHaveLength(0)
+})
+
+
+it('preserves the original authenticated sender when a later turn retries a queued packet', async () => {
+  const { ctx, caller, ravi, messaging, request } = fixture()
+  const original = { name: 'Original admin', userId: 'admin-1', orgId: 'org', role: 'owner' }
+  const current = { name: 'Later admin', userId: 'admin-2', orgId: 'org', role: 'admin' }
+  Object.assign(ctx, { serial: vi.fn().mockResolvedValueOnce(original).mockResolvedValue(current) })
+  vi.mocked(ctx.sessions.flush).mockResolvedValueOnce(true).mockRejectedValueOnce(new Error('receiver unavailable'))
+  await expect(messaging.send(caller, request, signal)).rejects.toThrow('receiver unavailable')
+  await messaging.send(caller, request, signal)
+  expect(ravi.steer).toHaveBeenCalledTimes(1)
+  expect(Reflect.get(ravi.inbox.nextTurn[0] as object, 'source')).toMatchObject({ authenticatedActor: original })
+  expect(ctx.serial).toHaveBeenCalledTimes(1)
 })
