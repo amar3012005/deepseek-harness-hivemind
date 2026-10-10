@@ -30,7 +30,7 @@ export function attentionAuthorization(authorization: string | undefined, secret
       || typeof claims.org_id !== 'string' || !uuid.test(claims.org_id)
       || typeof claims.jti !== 'string' || !uuid.test(claims.jti)
       || typeof claims.event_id !== 'string' || !claims.event_id || claims.event_id.length > 300
-      || !['context', 'deliver'].includes(String(claims.operation))
+      || !['context', 'assess', 'deliver'].includes(String(claims.operation))
       || typeof claims.iat !== 'number' || !Number.isInteger(claims.iat)
       || typeof claims.exp !== 'number' || !Number.isInteger(claims.exp)
       || claims.iat > Math.floor(now / 1000) + 5 || claims.exp <= Math.floor(now / 1000)

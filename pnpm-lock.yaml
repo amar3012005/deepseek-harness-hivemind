@@ -1650,6 +1650,9 @@ importers:
 
   packages/bundle/hivemind-web-app:
     dependencies:
+      '@deepseek-ai/dsh-hivemind-decision':
+        specifier: workspace:^
+        version: link:../../hivemind/decision
       '@deepseek-ai/dsh-client-ui-hivemind-connect':
         specifier: workspace:^
         version: link:../../client/ui-hivemind-connect
@@ -6805,6 +6808,26 @@ importers:
         specifier: workspace:^
         version: link:../../core/tools
 
+  packages/hivemind/decision:
+    dependencies:
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:^
+        version: link:../../../vendor/cordis
+      '@deepseek-ai/dsh-credentials':
+        specifier: workspace:^
+        version: link:../../credentials/credentials
+      '@deepseek-ai/dsh-hivemind-identity':
+        specifier: workspace:^
+        version: link:../identity
+      '@deepseek-ai/dsh-llm':
+        specifier: workspace:^
+        version: link:../../llm/llm
+
+
   packages/hivemind/app-builder:
     dependencies:
       '@deepseek-ai/schemastery':
@@ -7070,6 +7093,9 @@ importers:
 
   packages/hivemind/hq-runtime:
     dependencies:
+      '@deepseek-ai/dsh-hivemind-decision':
+        specifier: workspace:^
+        version: link:../decision
       '@deepseek-ai/dsh-time-context':
         specifier: workspace:^
         version: link:../../context/time-context

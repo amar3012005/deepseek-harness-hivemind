@@ -36,8 +36,8 @@ function fixture(allowedOrgIds = [orgId]) {
   const snapshot = attentionSnapshot(events, 'session-owned-root', 1, attentionMemorySnapshot(database.memory as never[]))
   database.row = { session_id: 'session-owned-root', subscription_id: 'subscription', runtime_attention_revision: 1,
     org_id: orgId, user_id: userId, toolkit: 'slack', occurred_at: null, received_at:'2026-10-08T00:00:00Z', data: { text: 'Buyer approval arrived.', api_key: 'secret' },
-    relevance_status: 'approved', relevance_decision: { runtimeAttention: { policy: 'runtime_attention_v2', action: 'wake',
-      contextRevision: snapshot.revision, targetSessionId: 'session-owned-root', probability: 0.9, margin: 0.5 } } }
+    relevance_status: 'approved', relevance_decision: { runtimeAttention: { policy: 'runtime_attention_v3', action: 'wake',
+      contextRevision: snapshot.revision, targetSessionId: 'session-owned-root', probability: 0.9, margin: 0.5, settingsRevision:0 } } }
   async function request(operation = 'deliver', authorization = `Bearer ${signedToken(operation)}`) {
     const req = { method: 'POST', headers: { authorization }, async *[Symbol.asyncIterator]() {
       yield Buffer.from(JSON.stringify({ operation, eventId: 'event', orgId, userId }))
@@ -74,6 +74,8 @@ describe('authenticated native attention seam', () => {
     const f=fixture(); const results=await Promise.all([f.request(),f.request()])
     expect(results.map(value=>value.status)).toEqual([202,200]); expect(f.send).toHaveBeenCalledTimes(1)
   })
+  it('settings revision changes deny stale admission',async()=>{const f=fixture(); (database.row as unknown as { attention_settings:unknown }).attention_settings={ version:1,revision:1,enabled:false };expect((await f.request()).status).toBe(409);expect(f.send).not.toHaveBeenCalled()})
+  it('notify admits durable evidence without waking', async()=>{const f=fixture(); database.row!.relevance_decision!.runtimeAttention!.action='notify'; expect((await f.request()).status).toBe(202); expect(f.send).toHaveBeenCalledWith(expect.anything(),'next-turn',false); expect((await f.request()).status).toBe(200); expect(f.send).toHaveBeenCalledTimes(1)})
   it('empty or other-company allowlist denies before reading private context', async () => {
     const f=fixture([]);expect((await f.request('context')).status).toBe(403);expect(database.queries).toHaveLength(0);expect(f.send).not.toHaveBeenCalled()
   })
@@ -111,10 +113,10 @@ describe('authenticated native attention seam', () => {
     const f=fixture();(database.row as { received_at:string }).received_at='2026-09-30T00:00:00Z'
     expect((await f.request('context')).status).toBe(200);expect((await f.request()).status).toBe(409);expect(f.send).not.toHaveBeenCalled()
   })
-  it('notify is not confused with non-waking inbox delivery', async () => {
+  it('notify uses non-waking inbox delivery', async () => {
     const f = fixture(); const row = database.row as { relevance_decision: { runtimeAttention: { action: string } } }
     row.relevance_decision.runtimeAttention.action = 'notify'
-    expect((await f.request()).status).toBe(409); expect(f.send).not.toHaveBeenCalled()
+    expect((await f.request()).status).toBe(202); expect(f.send).toHaveBeenCalledWith(expect.anything(),'next-turn',false)
   })
   it('fresh mode epoch and task changes invalidate old decisions', () => {
     const first = attentionSnapshot([mode], 'root', 1)
