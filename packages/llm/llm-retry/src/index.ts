@@ -28,16 +28,18 @@ export const inject = ['agents', 'sessionProjections']
 /** Providers own retryPolicy; an independent fallback route is explicitly opt-in. */
 export interface Config {
   /** Optional independently funded platform route for a failed model step. */
-  fallback?: StepFallbackConfig
+  fallback?: StepFallbackConfig | StepFallbackConfig[]
 }
 
 /** Runtime schema for {@link Config}. */
+const fallbackRoute = z.object({
+  fromProvider: z.string().required(),
+  provider: z.string().required(),
+  model: z.string().required(),
+  maxTokens: z.number().min(1),
+})
 export const Config = z.object({
-  fallback: z.union([z.object({
-    fromProvider: z.string().required(),
-    provider: z.string().required(),
-    model: z.string().required(),
-  })]),
+  fallback: z.union([fallbackRoute, z.array(fallbackRoute)]),
 }) as unknown as z<Config>
 
 function validateConfig(config: Config): void {

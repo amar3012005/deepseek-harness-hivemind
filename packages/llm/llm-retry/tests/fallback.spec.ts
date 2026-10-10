@@ -23,10 +23,10 @@ function tool(id:string):StreamChunk[]{return[{ type:'block-start',index:0,block
 async function* partial():AsyncGenerator<StreamChunk>{yield{ type:'block-start',index:0,blockType:'text' };yield{ type:'text-delta',index:0,text:'discard me' };yield{ type:'block-end',index:0,block:{ type:'text',text:'discard me' } };yield*tool('discarded');throw new LlmError('stream ended before terminal event','TRANSPORT')}
 const contexts:Context[]=[]
 afterEach(async()=>{await Promise.all(contexts.splice(0).map(ctx=>ctx.fiber.dispose()))})
-async function harness(entries:Entry[],enabled=true){
+async function harness(entries:Entry[],enabled=true,routes: Retry.StepFallbackConfig[] | undefined=undefined){
   const ctx=new Context();contexts.push(ctx)
   for(const plugin of [LlmRuntime,SessionStore,SessionProjectionRegistry,SystemPrompt,ToolRuntime,AgentRegistry])await ctx.plugin(plugin)
-  await ctx.plugin(Retry,enabled?{ fallback:{ fromProvider:'primary',provider:'backup',model:'quick' } }:{})
+  await ctx.plugin(Retry,enabled?{ fallback:routes ?? { fromProvider:'primary',provider:'backup',model:'quick' } }:{})
   await ctx.plugin(AgentLoop,{ agents:[] })
   const adapter=new Adapter(entries);ctx.llm.registerAdapter(['primary','backup'],adapter)
   let toolExecutions=0;ctx.tools.register(defineContentToolFixture({ name:'read_fixture',description:'fixture',parameters:{},async execute(){toolExecutions++;return[{ type:'text',text:'saved evidence' }]} }))
@@ -35,6 +35,19 @@ async function harness(entries:Entry[],enabled=true){
   return{ ctx,agent,adapter,send,toolExecutions:()=>toolExecutions }
 }
 describe('independent native model-step fallback',()=>{
+  it('supports both authorized directions without switching twice in one step', async () => {
+    const routes = [{ fromProvider: 'primary', provider: 'backup', model: 'quick', maxTokens: 8192 }, { fromProvider: 'backup', provider: 'primary', model: 'selected', maxTokens: 4096 }]
+    const h = await harness([new LlmError('budget', 'QUOTA'), new LlmError('other budget', 'QUOTA')], true, routes)
+    await h.send()
+    expect(h.adapter.requests.map(r => r.provider)).toEqual(['primary', 'backup'])
+    expect(h.adapter.requests[1]?.maxTokens).toBe(8192)
+    const reverse = await harness([new LlmError('budget', 'QUOTA'), text('recovered')], true, routes)
+    reverse.agent.options.provider = 'backup'; reverse.agent.options.model = 'quick'
+    await reverse.send()
+    expect(reverse.adapter.requests.map(r => r.provider)).toEqual(['backup', 'primary'])
+    expect(reverse.adapter.requests[1]?.maxTokens).toBe(4096)
+  })
+
   it('recovers a budget failure, executes completed tools once, and returns to primary on the next step',async()=>{
     const h=await harness([tool('saved'),new LlmError('402 in_flight_budget_exhausted','QUOTA',{ status:402,providerRetryAfterMs:120000 }),tool('next'),text('accepted')]);await h.send()
     expect(h.adapter.requests.map(r=>r.provider)).toEqual(['primary','primary','backup','primary'])
