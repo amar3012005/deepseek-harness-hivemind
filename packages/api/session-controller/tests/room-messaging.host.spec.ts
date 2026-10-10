@@ -21,6 +21,7 @@ function fixture() {
   const caller = agent('hq', 'hivemind-hq')
   const ravi = agent('ravi')
   const ctx = {
+    serial: async () => undefined,
     agents: { get: (id: string) => agents.get(id) },
     sessions: { flush: vi.fn(() => Promise.resolve(true)) },
   } as unknown as Context
@@ -161,4 +162,14 @@ it('wakes active Runtime once for a new employee notification without an artifac
   caller.session.append('hivemind/hq-mode', { enabled: false } as never)
   expect((await messaging.send(ravi, { ...notice, key: 'paused-notice' }, signal)).status).toBe('recorded')
   expect(caller.steer).toHaveBeenCalledTimes(1)
+})
+
+it('persists detailed Nightly replies inside the supported correlated message string',async()=>{
+  const { caller,ravi,messaging,request }=fixture();const occurrence='2026-10-10T00:00:00.000Z'
+  const question=await messaging.send(caller,{ ...request,key:'nightly-request',text:'NIGHTLY_REVIEW_REQUEST='+JSON.stringify({ occurrence,agent_index:1 }) },signal)
+  const findings=[{ tool:'hivemind_app_get',expected:'A valid app reference.',observed:'Identifier rejected.',recovery:'Discovery retried.',prevention:'Validate before use.' }]
+  const text='NIGHTLY_REVIEW_REPLY='+JSON.stringify({ occurrence,findings })
+  await messaging.send(ravi,{ key:'nightly-reply',target:'runtime',kind:'reply',replyTo:question.messageId,text },signal)
+  const received=caller.session.snapshotEvents().find(e=>e.type==='hivemind/room-message-received')
+  expect(received?.type==='hivemind/room-message-received'&&received.data).toMatchObject({ kind:'reply',senderId:ravi.id,targetId:caller.id,replyTo:question.messageId,text })
 })

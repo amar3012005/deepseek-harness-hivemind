@@ -4,7 +4,7 @@ import type { Agent, PreStepDecision } from '@deepseek-ai/dsh-agent'
 import type { Context } from '@deepseek-ai/cordis'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
-import { currentNightlyOccurrence, installNightlyRoutineGuidance } from '../src/nightly-routine-guidance.ts'
+import { currentNightlyOccurrence, installNightlyRoutineGuidance, nightlyRoutineSkill } from '../src/nightly-routine-guidance.ts'
 const occurrence='2026-10-09T18:16:54.867Z'
 function fixture(kind='schedule', preset='hivemind-hq') {
   const id='session-nightly-fixture'
@@ -51,3 +51,5 @@ it('activates from claimed schedule input before native persistence',()=>{
   expect(currentNightlyOccurrence(f.agent)).toBeUndefined()
   expect(currentNightlyOccurrence(f.agent,[event.data])).toBe(occurrence)
 })
+
+it('separates short employee chat from actual correlated persisted diagnostics',()=>{const text=nightlyRoutineSkill.content;for(const expected of ['visible chat reply is short plain-language status only','NIGHTLY_REVIEW_REQUEST=','NIGHTLY_REVIEW_REPLY=','reply_to the exact received request message id','actual saved hivemind/room-message-received','Runtime inbox reply event sequence','actual saved tool/result event sequences'])expect(text).toContain(expected)})
