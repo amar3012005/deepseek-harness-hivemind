@@ -53,7 +53,7 @@ export function isHqLead(ctx: Context, agent: Agent): boolean {
 const MAX_REST_MS = 4 * 60 * 60 * 1000
 /** A conversational greeting carries no operational wake or changed task. */
 export function greetingOnly(messages: readonly UserMessage[]): boolean {
-  const passive = new Set(['hivemind-hq/wake-briefing', 'dsh-hivemind-runtime/turn',
+  const passive = new Set(['hivemind-hq/wake-briefing', 'dsh-hivemind-runtime/turn', 'dsh-hivemind-runtime/history',
     'hivemind-runtime/hq-private-recall', 'hivemind-web-runner/authenticated-initiator', 'hivemind-runtime-full-access', 'time-context'])
   const humans = messages.filter(message => message.source.kind === 'user')
   const human = humans[0]
@@ -273,14 +273,43 @@ export function installRest(ctx: Context): void {
     const admitted = current.flatMap(event => event.type === 'user/message' ? [event.data] : [])
     // A social reply is not a voluntary sleep transition. Never manufacture
     // extra model turns just to rebuild the existing operational handoff.
-    if (greetingOnly(admitted) && current.filter(event => event.type === 'tool/call').every((event) => {
+    // A reply to this turn's own social message closes that exchange. It is
+    // not fresh company work, even when it arrives before the turn commits.
+    const socialReplies = new Set<string>()
+    const direct = admitted.filter((message) => {
+      if (String(message.source.kind) !== 'hivemind-agent-message') return true
+      try {
+        const packet = JSON.parse(message.content.flatMap(block => block.type === 'text' ? [block.text] : []).join('')) as {
+          id?: string
+          kind?: string
+          replyTo?: string
+          senderId?: string
+          taskId?: string
+          artifactIds?: string[]
+        }
+        const outgoing = current.find(event => String(event.type) === 'hivemind/room-message-queued'
+          && (event.data as { id?: string }).id === packet.replyTo)?.data as {
+            targetId?: string
+            taskId?: string
+            artifactIds?: string[]
+          } | undefined
+        if (packet.kind !== 'reply' || !packet.id || !outgoing || outgoing.targetId !== packet.senderId
+          || packet.taskId || outgoing.taskId || packet.artifactIds?.length || outgoing.artifactIds?.length) return true
+        socialReplies.add(packet.id)
+        return false
+      } catch { return true }
+    })
+    if (greetingOnly(direct) && current.filter(event => event.type === 'tool/call').every((event) => {
       if (event.type !== 'tool/call') return false
       let args: Record<string, unknown>
-      try { args = typeof event.data.arguments === 'string' ? JSON.parse(event.data.arguments) : event.data.arguments as Record<string, unknown> } catch { return false }
+      try { args = JSON.parse(event.data.arguments) } catch { return false }
       if (event.data.name === 'list_agents') return true
+      if (!args || typeof args !== 'object' || Array.isArray(args)) return false
       if (event.data.name === 'hivemind_hq_contract') return args.action === 'list'
-      return event.data.name === 'hivemind_agent_message' && args.kind === 'update'
-        && !args.task_id && !args.reply_to && (!Array.isArray(args.artifact_ids) || args.artifact_ids.length === 0)
+      return event.data.name === 'hivemind_agent_message' && !args.task_id
+        && (!Array.isArray(args.artifact_ids) || args.artifact_ids.length === 0)
+        && ((args.kind === 'update' && !args.reply_to)
+          || (args.kind === 'reply' && typeof args.reply_to === 'string' && socialReplies.has(args.reply_to)))
     })) return
     const latest = restIntents(events).at(-1)
     const priorBinding = latest && events.findLast(event => event.type === 'hivemind/hq-rest-wake' && event.data.handoffId === latest.id)
