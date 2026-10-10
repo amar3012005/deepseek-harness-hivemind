@@ -171,7 +171,7 @@ export function QueueDock({ useSession, updateQueue, notify, loadImage, t }: Que
               && typeof row.source === 'object' && row.source !== null && !Array.isArray(row.source)
               && row.source['kind'] === 'schedule'
             return (
-              <li key={row.id} className={css.row}>
+              <li key={row.id} className={css.row} data-scheduled-follow-up={scheduled || undefined}>
                 {/* Single-item strip has no count header, so the row itself carries the queue glyph. */}
                 {rowCount === 1 && <span className={css.lead} aria-hidden><IconQueueOutline14 /></span>}
                 {editing?.id === row.id

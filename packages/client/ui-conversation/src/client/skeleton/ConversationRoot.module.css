@@ -830,3 +830,12 @@
   .root[data-native-chat] .composerSeat { flex-shrink:0; background:transparent; pointer-events:none; }
   .root[data-native-chat] .composerSeat > * { pointer-events:auto; }
 }
+
+/* Mobile supplementary follow-ups remain durable, outside the composer surface. */
+@media (max-width: 600px) {
+  .root[data-native-chat] :global([data-scheduled-follow-up]) { display: none; }
+  .root[data-native-chat] :global([data-queue-dock]):has(:global([data-scheduled-follow-up])):not(:has(:global(li:not([data-scheduled-follow-up])))) { display: none; }
+  .root[data-native-chat] :global([data-testid="todo-panel"]) { display: none; }
+  .root[data-agent-room] .header:not(.headerHidden) { position: relative !important; inset: auto !important; background: #faf9f4; flex-shrink: 0; }
+  .root[data-agent-room] .scrollBody { padding-top: 0; scroll-padding-top: 0; }
+}
