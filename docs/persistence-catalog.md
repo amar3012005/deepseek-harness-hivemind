@@ -1095,7 +1095,7 @@ Source: [`packages/hivemind/research/src/index.ts:176`](../packages/hivemind/res
 'hivemind/room-message-delivered': { id: string; targetId: SessionId }
 ```
 
-Source: [`packages/api/session-controller/src/room-messaging.ts:62`](../packages/api/session-controller/src/room-messaging.ts)
+Source: [`packages/api/session-controller/src/room-messaging.ts:66`](../packages/api/session-controller/src/room-messaging.ts)
 
 <a id="hivemindroom-message-queued--log-only"></a>
 
@@ -1106,7 +1106,7 @@ Source: [`packages/api/session-controller/src/room-messaging.ts:62`](../packages
 'hivemind/room-message-queued': RoomMessage
 ```
 
-Source: [`packages/api/session-controller/src/room-messaging.ts:58`](../packages/api/session-controller/src/room-messaging.ts)
+Source: [`packages/api/session-controller/src/room-messaging.ts:62`](../packages/api/session-controller/src/room-messaging.ts)
 
 <a id="hivemindroom-message-received--log-only"></a>
 
@@ -1117,7 +1117,7 @@ Source: [`packages/api/session-controller/src/room-messaging.ts:58`](../packages
 'hivemind/room-message-received': RoomMessage
 ```
 
-Source: [`packages/api/session-controller/src/room-messaging.ts:60`](../packages/api/session-controller/src/room-messaging.ts)
+Source: [`packages/api/session-controller/src/room-messaging.ts:64`](../packages/api/session-controller/src/room-messaging.ts)
 
 <a id="hivemindrun-evaluation--log-only"></a>
 
