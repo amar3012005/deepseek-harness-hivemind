@@ -25,7 +25,9 @@ export function verifySharedShell(primitives, shell) {
   let properties
   function inspect(node) {
     if (ts.isObjectLiteralExpression(node)) {
-      properties = new Set(node.properties.filter(ts.isPropertyAssignment).map(property => property.name.getText(program)))
+      const candidate = new Set(node.properties.filter(ts.isPropertyAssignment).map(property => property.name.getText(program)))
+      if (!properties || names.filter(name => candidate.has(name)).length
+        > names.filter(name => properties.has(name)).length) properties = candidate
       return
     }
     ts.forEachChild(node, inspect)

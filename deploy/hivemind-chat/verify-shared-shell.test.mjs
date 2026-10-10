@@ -9,7 +9,7 @@ test('rejects an older shell when plugins add a shared icon', () => {
 
 test('accepts complete minified namespaces and aliased exports', () => {
   assert.equal(verifySharedShell('export { bell as IconBellOutline16, Button };',
-    'const namespace=Object.freeze({IconBellOutline16:a,Button:b}); const seed={"@deepseek-ai/dsh-client-ui-primitives":namespace};'), 2)
+    'const namespace=Object.freeze(Object.defineProperty({IconBellOutline16:a,Button:b},Symbol.toStringTag,{value:"Module"})); const seed={"@deepseek-ai/dsh-client-ui-primitives":namespace};'), 2)
 })
 
 test('rejects missing libraries and incidental references outside the namespace', () => {
