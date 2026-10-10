@@ -30,6 +30,7 @@ const POLICY_CONFIG_KEYS = [
   'retainTokens',
   'summarizationProvider',
   'summarizationModel',
+  'summarizationReasoningEffort',
   'maxTokens',
   'compactionRetries',
   'maxOverflowRetries',
@@ -90,6 +91,7 @@ export function resolveConfig(config: BasicCompactionConfig = {}): ResolvedConfi
     ...retention,
     summarizationProvider: config.summarizationProvider ?? '',
     summarizationModel: config.summarizationModel ?? '',
+    ...config.summarizationReasoningEffort === undefined ? {} : { summarizationReasoningEffort: config.summarizationReasoningEffort },
     maxTokens: config.maxTokens ?? 8192,
     compactionRetries: config.compactionRetries ?? 1,
     maxOverflowRetries: config.maxOverflowRetries ?? 1,
@@ -122,6 +124,8 @@ export function resolveTargetPolicy(
     ...resolveRetention(override ?? {}, inheritedRetention),
     summarizationProvider: override?.summarizationProvider ?? config.summarizationProvider,
     summarizationModel: override?.summarizationModel ?? config.summarizationModel,
+    ...(override?.summarizationReasoningEffort ?? config.summarizationReasoningEffort) === undefined ? {}
+      : { summarizationReasoningEffort: override?.summarizationReasoningEffort ?? config.summarizationReasoningEffort },
     maxTokens: override?.maxTokens ?? config.maxTokens,
     compactionRetries: override?.compactionRetries ?? config.compactionRetries,
     maxOverflowRetries: override?.maxOverflowRetries ?? config.maxOverflowRetries,
@@ -240,6 +244,9 @@ function validatePolicy(
   const retainRatio = config.retainRatio
   const retainTokens = config.retainTokens
   const maxTokens = config.maxTokens
+  if (config.summarizationReasoningEffort !== undefined) {
+    assertNonEmptyString(`${name}.summarizationReasoningEffort`, config.summarizationReasoningEffort)
+  }
   const compactionRetries = config.compactionRetries
   const maxOverflowRetries = config.maxOverflowRetries
   if (thresholdRatio !== undefined) assertRatio(`${name}.thresholdRatio`, thresholdRatio)

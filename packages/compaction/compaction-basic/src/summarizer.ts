@@ -5,7 +5,7 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis'
-import { contentHasImage, createUserMessage, BlockAssembler, LlmError } from '@deepseek-ai/dsh-llm'
+import { contentHasImage, createUserMessage, BlockAssembler, LlmError, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 import type {
   ContentBlock, FinishReason, GenerateOptions, Message, TokenUsage, ToolSchema,
 } from '@deepseek-ai/dsh-llm'
@@ -15,6 +15,7 @@ interface SummaryConfig {
   readonly summarizationProvider: string
   readonly summarizationModel: string
   readonly maxTokens: number
+  readonly summarizationReasoningEffort?: string
 }
 
 /** Tags wrapping the structured summary inside the landed checkpoint node. */
@@ -89,6 +90,8 @@ export type SummaryResult = {
   provider: string
   model: string
   maxTokens?: number
+  /** Explicit effort sent by the summary request, when present. */
+  reasoningEffort?: GenerateOptions['reasoningEffort']
   /** Provider-reported usage for this summarization request. */
   usage?: TokenUsage
 } & (
@@ -141,6 +144,17 @@ export async function summarizeWithLlm(
     )
   }
 
+  // Effort identifiers belong to a provider/model. Never transfer them to a
+  // separately configured summary route, or turn adapter defaults into policy.
+  const header = agent.session.requestHeader()
+  const inheritedEffort = latest?.provider === target.provider && latest.model === target.model
+    && header?.adapterDefaults?.reasoningEffort !== true
+    ? latest.reasoningEffort
+    : undefined
+  const reasoningEffort = config.summarizationReasoningEffort === undefined
+    ? inheritedEffort
+    : ReasoningEffortId(config.summarizationReasoningEffort)
+
   const assembler = new BlockAssembler()
   const messages: Message[] = [
     ...input.messages,
@@ -155,6 +169,7 @@ export async function summarizeWithLlm(
     messages,
     ...input.tools === undefined ? {} : { tools: [...input.tools] },
     maxTokens: config.maxTokens,
+    ...reasoningEffort === undefined ? {} : { reasoningEffort },
     sessionId: agent.session.id,
     purpose: 'compaction',
     ...signal === undefined ? {} : { signal },
@@ -166,7 +181,7 @@ export async function summarizeWithLlm(
   const rawOutput = assembler.blocks()
   const summary = summaryText(rawOutput)
   if (!summary.some(block => block.text.trim().length > 0)) {
-    throw new Error('summarization produced no text summary content')
+    throw new LlmError('summarization produced no text summary content', 'EMPTY_SUMMARY')
   }
   return {
     summary,
@@ -175,6 +190,7 @@ export async function summarizeWithLlm(
     provider: options.provider,
     model: options.model,
     maxTokens: config.maxTokens,
+    ...options.reasoningEffort === undefined ? {} : { reasoningEffort: options.reasoningEffort },
     ...(assembler.usage === undefined ? {} : { usage: assembler.usage }),
   }
 }

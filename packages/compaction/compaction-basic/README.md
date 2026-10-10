@@ -69,6 +69,7 @@ All settings are optional. The defaults start condensing at 80% of the routed mo
 | `retainTokens` | — | Absolute recent-conversation budget kept verbatim; mutually exclusive with `retainRatio` and must be below the resolved threshold. |
 | `summarizationProvider` | `''` | Set together with `summarizationModel`; an empty pair uses the latest routed request target, then the `AgentOptions` pair. |
 | `summarizationModel` | `''` | Set together with `summarizationProvider`; an empty pair uses the latest routed request target, then the `AgentOptions` pair. |
+| `summarizationReasoningEffort` | — | Explicit provider-supported summary effort. Otherwise inherit only an explicit effort from the identical logged provider/model; do not transfer effort between models. |
 | `maxTokens` | `8192` | Output cap for the summarization request; may include reasoning tokens. |
 | `compactionRetries` | `1` | Extra condensation attempts after the first when pressure remains above threshold. |
 | `maxOverflowRetries` | `1` | Maximum retries after a confirmed context-window overflow; `0` disables recovery only. |
@@ -121,6 +122,8 @@ A direct `ctx.llm.stream()` call uses the configured provider/model pair and cap
 ### The region transaction
 
 The transaction validates the surface span and the durable lock, appends `compaction/start`, summarizes through the hook, revalidates stability (whole-surface for automatic calls, selected-span for manual calls), rejects a summary that does not shrink its source, appends `compaction/summary` plus the replacement `user/message`, and makes exactly one `compaction/end` attempt. A live unmatched start is the durable lock: an unmatched marker before a newer `session/end-seed` is stale evidence from a prior lifecycle and does not block; one after that boundary reports `busy`. A failed close deliberately leaves a blocking orphan. Cancellation remains authoritative after cleanup and durability.
+
+An empty or reasoning-only summary fails with `EMPTY_SUMMARY`; the original surface remains intact. After a failed automatic pressure summary, subsequent tool steps in that same turn skip pressure summarization. Idle transition permits the next turn to retry; explicit manual condensation and confirmed-overflow recovery retain their separate native paths. This bounds repeated auxiliary calls, not the duration of the first provider request. Explicit summary effort is recorded on `compaction/summary` with the call envelope.
 
 ### Config resolution
 

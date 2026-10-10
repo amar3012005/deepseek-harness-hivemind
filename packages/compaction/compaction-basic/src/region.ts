@@ -466,6 +466,7 @@ function commitCompactionBody(
     provider,
     model,
     maxTokens,
+    reasoningEffort,
     usage,
     checkpointMessage,
   } = summarized
@@ -485,6 +486,7 @@ function commitCompactionBody(
     provider,
     model,
     ...maxTokens === undefined ? {} : { maxTokens },
+    ...reasoningEffort === undefined ? {} : { reasoningEffort },
     ...usage === undefined ? {} : { usage },
   })
   session.append('user/message', checkpointMessage, {
