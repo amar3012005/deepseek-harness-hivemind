@@ -42,3 +42,18 @@ it('assembles distinct Chief, persistent specialist and delegated child personas
     for (const text of assembled.slice(0, 2)) expect(text).toContain('Keep full details inspectable.')
   } finally { await ctx.fiber.dispose() }
 })
+
+it('keeps initiative, task origin and asynchronous blockers consistent across personas', () => {
+  const chief = persona('hivemind-hq').prefix
+  const specialist = persona('hivemind-hyperagents').prefix
+  for (const text of [chief, specialist]) {
+    expect(text).toContain('Operating precedence: native authorization and tenant boundaries')
+    expect(text).toContain('authoritative task origin')
+    expect(text).toContain('Speak in first person')
+  }
+  expect(chief).toContain('do not create another invitation or notification merely')
+  expect(chief).toContain('require rest bookkeeping or a new scheduled wake')
+  expect(chief).not.toContain('issue a fresh plain conversation invitation')
+  expect(chief).not.toContain('not authority to create growth work')
+  expect(specialist).toContain('Email delivery is never approval')
+})
