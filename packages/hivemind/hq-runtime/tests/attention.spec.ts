@@ -1,6 +1,9 @@
 import { createHmac, randomUUID } from 'node:crypto'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import type { Context } from '@deepseek-ai/cordis'
+import { Context } from '@deepseek-ai/cordis'
+import ExecutionScope from '../../execution-scope/src/index.ts'
+import { HiveMindDecision } from '../../decision/src/index.ts'
+import type { EvaluationRequest } from '../../decision/src/index.ts'
 import { apply } from '../src/attention.ts'
 import { attentionMemorySnapshot } from '../src/attention-memory.ts'
 import { attentionAdmitted, attentionAuthorization, attentionEvidence, attentionSnapshot } from '../src/attention-contract.ts'
@@ -27,9 +30,15 @@ function fixture(allowedOrgIds = [orgId]) {
   const send = vi.fn((message: unknown) => { events.push({ type: 'agent/inbox/spliced', data: { inserted: [message] } }) })
   const flush = vi.fn(async () => true)
   const target = { session: { snapshotEvents: () => events }, send }
+  const host = new Context(), scope = new ExecutionScope(host)
+  const evaluate = vi.fn(async (_input: EvaluationRequest) => {
+    expect(scope.require()).toMatchObject({ orgId, userId, profile:'hivemind-chat',variation:'harness' })
+    return { model:'inception/mercury-decide',answers:{ attention:{ type:'choice',choice:'retain',probabilities:{ retain:0.8,notify:0.1,wake:0.1 },confidence:0.7 } } }
+  })
+  const decision = new HiveMindDecision(host,{ provider:{ evaluate } })
   const ctx = { webServer: { register: (route: { handler: typeof handler }) => { handler = route.handler; return () => {} } },
     effect: (effect: () => unknown) => effect(),
-    hivemindExecutionScope: { run: async (_scope: unknown, operation: () => unknown) => operation() },
+    hivemindExecutionScope: scope, hivemindDecision:decision,
     sessionController: { inspect: async () => ({ meta: { agentPreset: 'hivemind-hq' }, events }), resolveAgent: async () => ({ agent: target }) },
     sessions: { flush } } as unknown as Context
   apply(ctx, { enabled: true, allowedOrgIds, admitEventsAfter:'2026-10-01T00:00:00Z', serviceSecretEnv: 'ATTENTION_TEST_TOKEN', connectionStringEnv: 'ATTENTION_TEST_DATABASE', schema: 'hivemind', triggerSchema: 'public', maxConnections: 1, statementTimeoutMs: 1000 })
@@ -47,10 +56,22 @@ function fixture(allowedOrgIds = [orgId]) {
       end(value: string) { result = JSON.parse(value) as unknown } }
     await handler(req, res); return { status, result }
   }
-  return { request, send, flush, events }
+  return { request, send, flush, events, evaluate }
 }
 beforeEach(() => { database.row = undefined; database.queries = []; database.memory = []; process.env.ATTENTION_TEST_TOKEN = token; process.env.ATTENTION_TEST_DATABASE = 'mock-only' })
 describe('authenticated native attention seam', () => {
+  it('authenticated assessment uses host execution scope after owned reads without persisting or waking', async()=>{
+    const f=fixture();const result=await f.request('assess');expect(result.status).toBe(200)
+    expect(result.result).toMatchObject({ action:'retain',reason:'native_attention',probabilities:{ retain:0.8,notify:0.1,wake:0.1 } })
+    expect(f.evaluate).toHaveBeenCalledOnce();expect(f.send).not.toHaveBeenCalled();expect(f.flush).not.toHaveBeenCalled()
+    expect(JSON.stringify(database.queries)).toContain("s.config->'attention_settings'")
+  })
+  it('denies unauthorized assessment before provider and rereads effective saved settings', async()=>{
+    const f=fixture();expect((await f.request('assess','Bearer invalid')).status).toBe(401);expect(f.evaluate).not.toHaveBeenCalled()
+    ;(database.row as { attention_settings:unknown }).attention_settings={ version:1,revision:7,enabled:false }
+    expect((await f.request('assess')).result).toMatchObject({ action:'retain',reason:'settings_disabled',settingsRevision:7 });expect(f.evaluate).not.toHaveBeenCalled()
+    database.row=undefined;expect((await f.request('assess')).status).toBe(403);expect(f.evaluate).not.toHaveBeenCalled()
+  })
   it('validates service token before any owner lookup', async () => {
     const f = fixture(); expect((await f.request('context', 'Bearer invalid')).status).toBe(401)
     expect(database.queries).toHaveLength(0); expect(f.send).not.toHaveBeenCalled()
@@ -76,7 +97,7 @@ describe('authenticated native attention seam', () => {
   })
   it('staged runner accepts existing v2 wakes without new provider activation',async()=>{const f=fixture();const d=(database.row as { relevance_decision:{ runtimeAttention:{ policy:string;probability:number;margin:number } } }).relevance_decision.runtimeAttention;d.policy='runtime_attention_v2';d.probability=0.6;d.margin=0.1;expect((await f.request()).status).toBe(202);expect(f.send).toHaveBeenCalledWith(expect.anything(),'next-turn',true)})
   it('settings revision changes deny stale admission',async()=>{const f=fixture(); (database.row as unknown as { attention_settings:unknown }).attention_settings={ version:1,revision:1,enabled:false };expect((await f.request()).status).toBe(409);expect(f.send).not.toHaveBeenCalled()})
-  it('notify admits durable evidence without waking', async()=>{const f=fixture(); database.row!.relevance_decision!.runtimeAttention!.action='notify'; expect((await f.request()).status).toBe(202); expect(f.send).toHaveBeenCalledWith(expect.anything(),'next-turn',false); expect((await f.request()).status).toBe(200); expect(f.send).toHaveBeenCalledTimes(1)})
+  it('notify admits durable evidence without waking', async()=>{const f=fixture(); (database.row as { relevance_decision:{ runtimeAttention:{ action:string } } }).relevance_decision.runtimeAttention.action='notify'; expect((await f.request()).status).toBe(202); expect(f.send).toHaveBeenCalledWith(expect.anything(),'next-turn',false); expect((await f.request()).status).toBe(200); expect(f.send).toHaveBeenCalledTimes(1)})
   it('empty or other-company allowlist denies before reading private context', async () => {
     const f=fixture([]);expect((await f.request('context')).status).toBe(403);expect(database.queries).toHaveLength(0);expect(f.send).not.toHaveBeenCalled()
   })

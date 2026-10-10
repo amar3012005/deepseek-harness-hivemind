@@ -6820,9 +6820,9 @@ importers:
       '@deepseek-ai/dsh-credentials':
         specifier: workspace:^
         version: link:../../credentials/credentials
-      '@deepseek-ai/dsh-hivemind-identity':
+      '@deepseek-ai/dsh-hivemind-execution-scope':
         specifier: workspace:^
-        version: link:../identity
+        version: link:../execution-scope
       '@deepseek-ai/dsh-llm':
         specifier: workspace:^
         version: link:../../llm/llm

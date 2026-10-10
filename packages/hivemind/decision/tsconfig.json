@@ -16,7 +16,7 @@
       "path": "../../llm/llm"
     },
     {
-      "path": "../identity"
+      "path": "../execution-scope"
     },
     {
       "path": "../../credentials/credentials"
