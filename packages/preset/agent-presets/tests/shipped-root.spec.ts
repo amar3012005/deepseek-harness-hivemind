@@ -182,7 +182,7 @@ describe('the shipped preset root', () => {
       const effective = include ? applyEntryPatches(chat, include.config.patches, () => {}) : entries
       expect(findEntry(effective, 'compaction-basic'), id).toMatchObject({
         name: '@deepseek-ai/dsh-compaction-basic',
-        config: { thresholdRatio: 0.65, thresholdTokens: 48000, retainTokens: 12000, maxTokens: 4096, summarizationProvider:'openai-codex',summarizationModel:'gpt-6-luna',summarizationReasoningEffort:'low' },
+        config: { thresholdRatio: 0.65, thresholdTokens: 48000, retainTokens: 12000, maxTokens: 4096, summarizationProvider:'openai-codex',summarizationModel:'gpt-6-luna',summarizationReasoningEffort:'off' },
       })
       expect(findEntry(effective, 'command-compact')?.disabled, id).not.toBe(true)
       expect(findEntry(effective, 'tool-result-pruner')?.config, id).toMatchObject({ thresholdChars: 8192 })

@@ -189,7 +189,7 @@
         maxTokens: 4096
         summarizationProvider: openai-codex
         summarizationModel: gpt-6-luna
-        summarizationReasoningEffort: low
+        summarizationReasoningEffort: off
     - id: command-compact
       name: '@deepseek-ai/dsh-command-compact'
     - id: tool-result-pruner
