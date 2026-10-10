@@ -9,3 +9,12 @@ it('opens five recent turns on phones while retaining twenty on desktop', () => 
   vi.stubGlobal('window', { matchMedia: () => ({ matches: false }) })
   expect(initialHistoryTurns()).toBe(20)
 })
+
+it('opens five turns for desktop HIVE routes without changing native desktop', () => {
+  for (const pathname of ['/hivemind/app/overview/session/saved', '/hivemind/app/employee/harness/session/runtime']) {
+    vi.stubGlobal('window', { location: { pathname }, matchMedia: () => ({ matches: false }) })
+    expect(initialHistoryTurns()).toBe(5)
+  }
+  vi.stubGlobal('window', { location: { pathname: '/' }, matchMedia: () => ({ matches: false }) })
+  expect(initialHistoryTurns()).toBe(20)
+})

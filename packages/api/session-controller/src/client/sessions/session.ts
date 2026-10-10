@@ -53,9 +53,10 @@ function projectionsBaseline(value: SessionProjectionBaseline): ProjectionsBasel
 export const PAGE_MESSAGES = 50
 export const INITIAL_PAGE_TURNS = 20
 
-/** Phone readers open a bounded recent window; older history keeps its native cursor. */
+/** HIVE readers open five turns on every device; native desktop retains its window. */
 export function initialHistoryTurns(): number {
-  return typeof window !== 'undefined' && window.matchMedia?.('(max-width: 600px)').matches
+  const hive = typeof window !== 'undefined' && window.location?.pathname?.startsWith('/hivemind/')
+  return hive || (typeof window !== 'undefined' && window.matchMedia?.('(max-width: 600px)').matches)
     ? 5 : INITIAL_PAGE_TURNS
 }
 

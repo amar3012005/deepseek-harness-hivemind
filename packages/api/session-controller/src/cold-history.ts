@@ -43,15 +43,21 @@ export function historyWindowCut(
     // and all intervening receipt/status events as part of this turn's group.
     if (maxTurns !== undefined) {
       let found = false
+      let closedPreviousTurn = false
       for (let previous = index - 1; previous >= 0; previous -= 1) {
         const candidate = events[previous] as SessionEvent
-        if (candidate.type === 'turn/end') break
+        if (candidate.type === 'turn/end') {
+          closedPreviousTurn = true
+          break
+        }
         if (candidate.type === 'user/message' && isAppendSurfaceEvent(candidate)) {
           cut = Math.min(cut, candidate.seq)
           found = true
         }
       }
-      if (!found && events[0]?.seq !== 0) return undefined
+      // Timer and inbox turns need no human prompt. A preceding turn/end
+      // proves the whole opening group is present, even in a nonzero suffix.
+      if (!found && !closedPreviousTurn && events[0]?.seq !== 0) return undefined
     }
     return cut
   }

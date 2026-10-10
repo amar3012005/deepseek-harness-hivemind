@@ -46,6 +46,17 @@ function setup(events = fixtures()) {
 }
 
 describe('bounded native history', () => {
+  it('bounds automatic turns without human prompts and preserves incomplete boundaries', async () => {
+    const events = fixtures(1000).filter(event => event.type !== 'user/message')
+      .map((event, seq) => ({ ...event, seq: SessionSeq(seq) }))
+    const { ctx, header, read } = setup(events)
+    const source = await readColdHistorySource(ctx, header.id, new AbortController().signal,
+      { maxMessages: 50, maxTurns: 5, withProjections: true })
+    expect(source?.source).toBe('window')
+    expect(read.mock.calls.reduce((sum, [, length]) => sum + length, 0)).toBe(256)
+    expect(historyWindowCut(events.slice(-21), 50, 5)).toBe(3980)
+    expect(historyWindowCut(events.slice(-20), 50, 5)).toBeUndefined()
+  })
   it.each([10, 1000])('opens five turns without checkpoints at %i turns', async (turns) => {
     const { ctx, header, cache, read } = setup(fixtures(turns))
     cache.coldReadFloor.mockReturnValue(SessionLogOffset(0))
