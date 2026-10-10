@@ -17,3 +17,10 @@ test('rejects missing libraries and incidental references outside the namespace'
   assert.throws(() => verifySharedShell('export { IconBellOutline16 };',
     'const namespace={Button:b}; const seed={"@deepseek-ai/dsh-client-ui-primitives":namespace}; plugin.IconBellOutline16'), /Shared shell is stale/u)
 })
+
+test('checks compiled closure imports even when the library itself is stale', () => {
+  assert.throws(() => verifySharedShell('export { Button };',
+    'const namespace={Button:b}; const seed={"@deepseek-ai/dsh-client-ui-primitives":namespace};',
+    ['const p=require("@deepseek-ai/dsh-client-ui-primitives"); p.IconBellOutline16;']),
+  /missing primitives: IconBellOutline16/u)
+})

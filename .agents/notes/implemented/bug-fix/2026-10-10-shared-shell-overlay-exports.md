@@ -8,7 +8,7 @@ The b6af0f7b64 runner overlay compiles a notification renderer that consumes `Ic
 
 ## Decision
 
-The overlay release helper compiles primitives before rebuilding the shared web shell. Immutable image verification parses the compiled library exports and the actual shell seed's namespace initializer with the TypeScript AST, then rejects missing namespace properties. Plugins keep using the shared primitives instance.
+The overlay release helper compiles primitives before rebuilding the shared web shell. Immutable image verification parses the compiled library exports, client closure primitive references, and the actual shell seed's namespace initializer with the TypeScript AST, then rejects missing namespace properties. A VM renders the shell's compiled bell and notification closure using the actual seed table with network access disabled. Plugins keep using the shared primitives instance.
 
 ## Alternatives considered
 
