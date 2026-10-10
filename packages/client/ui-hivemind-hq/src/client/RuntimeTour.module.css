@@ -29,3 +29,8 @@
 @keyframes point { 0%, 100% { transform: rotate(-1deg); } 50% { transform: rotate(1.5deg) translateY(-2px); } }
 @media (max-width: 540px) { .card { min-height: 0; } .art { flex-basis: 25%; align-items: end; } .copy { padding: 20px 16px 18px 4px; } .copy p { font-size: 13px; } .copy h2 { font-size: 22px; } .eyebrow { font-size: 9px; } .banner { flex-wrap: wrap; padding: 12px; } .banner > .actions { width: 100%; justify-content: flex-end; } .banner > img { width: 48px; height: 48px; } .actions { gap: 3px; } .actions button { padding: 8px; font-size: 12px; } }
 @media (prefers-reduced-motion: reduce) { .art img { animation: none !important; } }
+
+/* Keep the initial walkthrough and wake controls; ongoing work lives in the chat. */
+@media (max-width: 600px) {
+  .container[data-runtime-tour-awakening]:not([data-runtime-tour-awakening="sleeping"]):not([data-runtime-tour-expanded]) { display: none; }
+}
