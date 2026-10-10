@@ -1,5 +1,7 @@
 # HIVE-MIND Harness chat runner
 
+Immutable overlays that change `client/ui-primitives` must run `sh deploy/hivemind-chat/rebuild-shared-shell.sh` after their package builds and before image verification. It compiles the primitives library before rebuilding the web shell that seeds its shared namespace. Copy these release scripts into the overlay along with its changed sources. `verify-image.sh` checks every compiled primitive export against the shell namespace and rejects stale shells before profile validation. A plugin-only rebuild cannot publish newly added primitive exports to the browser.
+
 Build the repository-owned runner from the committed `singulance-chat` branch:
 
 ```sh
