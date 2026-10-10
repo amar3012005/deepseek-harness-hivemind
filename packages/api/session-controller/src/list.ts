@@ -131,8 +131,17 @@ export class ApiSessionList {
       startedSessions?: (ids: readonly SessionId[], signal?: AbortSignal) => Promise<ReadonlySet<SessionId>>
       effectivePresets?: (ids: readonly SessionId[], signal?: AbortSignal) => Promise<ReadonlyMap<SessionId, string>>
     } | undefined
-    const effectivePresets = await persistence?.effectivePresets?.(records.map(record => record.header.id), signal)
-    const started = await persistence?.startedSessions?.(records.map(record => record.header.id), signal)
+    // Providers can return scoped facts with the authorized listing. Preserve the
+    // native fallback for providers/live-only records without those facts.
+    const missing = records.filter(record => record.navigation === undefined).map(record => record.header.id)
+    const effectivePresets = new Map(missing.length === 0 ? [] : await persistence?.effectivePresets?.(missing, signal))
+    const fallbackStarted = missing.length === 0 ? undefined : await persistence?.startedSessions?.(missing, signal)
+    const started = new Map<SessionId, boolean>(fallbackStarted === undefined ? [] : missing.map(id => [id, fallbackStarted.has(id)]))
+    for (const record of records) {
+      const navigation = record.navigation
+      if (navigation?.agentPreset !== undefined) effectivePresets.set(record.header.id, navigation.agentPreset)
+      if (navigation !== undefined) started.set(record.header.id, navigation.started)
+    }
     signal?.throwIfAborted()
     const items: SessionSummary[] = []
     const cold: SessionHeader[] = []
@@ -149,7 +158,7 @@ export class ApiSessionList {
     }
     for (const header of cold) {
       const projected = this.summarizeCold(header)
-      const summary = started === undefined ? projected : { ...projected, blank: !started.has(header.id) }
+      const summary = started.has(header.id) ? { ...projected, blank: !started.get(header.id) } : projected
       const selected = effectivePresets?.get(header.id)
       items.push(selected === undefined ? summary : { ...summary, agentPreset: selected })
     }

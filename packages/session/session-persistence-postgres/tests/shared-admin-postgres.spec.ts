@@ -83,6 +83,14 @@ it.skipIf(!url)('shares canonical native rooms and schedules with active admins 
 
     expect(await scope.run(b,()=>store.stat(SessionId('session-private-brain')))).toBeUndefined()
     expect((await scope.run(b,()=>store.list())).map(item=>item.header.id)).not.toContain('session-private-brain')
+    // The list carries scoped facts, so first chat admission needs no per-room queries.
+    const visible = await scope.run(b,()=>store.list())
+    expect(visible.find(item=>item.header.id==='session-canonical')?.navigation).toEqual({ agentPreset:'hivemind-hq',started:true })
+    expect(visible.find(item=>item.header.id==='session-employee')?.navigation).toEqual({ agentPreset:'hivemind-hyperagents',started:false })
+    expect(await scope.run(b,()=>store.effectivePresets([SessionId('session-canonical'),SessionId('session-private-brain')]))).toEqual(new Map([['session-canonical','hivemind-hq']]))
+    expect(await scope.run(b,()=>store.startedSessions([SessionId('session-canonical'),SessionId('session-private-brain')]))).toEqual(new Set(['session-canonical']))
+    expect(await scope.run(member,()=>store.list())).toEqual([])
+
     expect(await scope.run(a,()=>store.employeeRoomId('layla'))).toBe(await scope.run(b,()=>store.employeeRoomId('layla')))
     await expect(scope.run(member,()=>store.employeeRoomId('layla'))).rejects.toThrow()
     ctx.provide('agents',{ get:()=>undefined } as never)
@@ -95,6 +103,8 @@ it.skipIf(!url)('shares canonical native rooms and schedules with active admins 
     await backend.dispatch(async()=>{deliveredActor=scope.require().userId})
     expect(deliveredActor).toBe(b.userId)
     await admin.query('UPDATE user_organizations SET is_active=false WHERE user_id=$1',[b.userId])
+    expect(await scope.run(b,()=>store.list())).toEqual([])
+    expect(await scope.run(b,()=>store.effectivePresets([SessionId('session-canonical')]))).toEqual(new Map())
     await expect(scope.run(b,()=>store.employeeRoomId('layla'))).rejects.toThrow()
     await expect(scope.run(b,()=>store.open(SessionId('session-canonical'),'read'))).rejects.toThrow()
     await admin.query('UPDATE harness_scheduled_due SET due_at=now() WHERE task_id=$1',[record.id]);deliveredActor=undefined

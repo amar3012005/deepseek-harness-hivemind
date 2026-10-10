@@ -40,6 +40,10 @@ interface SessionRow extends QueryResultRow {
   event_count: string | number
   revision: string | number
 }
+interface SessionMetadataRow extends SessionRow {
+  preset: string | null
+  started: boolean
+}
 interface Owner { holder: string; hash: string; fence: number }
 const LIVE_WRITE_BATCH_MAX_DELAY_MS = 200
 function connectionString(name: string): string {
@@ -329,24 +333,90 @@ export class PostgresSessionPersistence extends SessionPersistence {
   }
   async list(options?: SessionPersistenceListOptions): Promise<readonly SessionPersistenceSnapshot[]> {
     checkAbort(options?.signal)
-    const scope = this.capture()
-    const result = await this.query<SessionRow>(scope,
-      'SELECT header,inherited_event_count,event_count,revision FROM harness_sessions WHERE org_id=$1 AND user_id=$2',
-      scopeParams(scope))
-    if (!this.config.sharedOrganizationAgents) return result.rows.map(row => this.snapshot(row))
-    let shared: AgentStorageScope | undefined
-    try { shared = await this.sharedScope(scope) } catch { /* Non-admins keep their own Brain rooms. */ }
-    const extra = shared && shared.userId !== scope.userId ? await this.query<SessionRow>(shared,
-      'SELECT header,inherited_event_count,event_count,revision FROM harness_sessions WHERE org_id=$1 AND user_id=$2',scopeParams(shared)) : undefined
-    const rows = new Map([...result.rows,...extra?.rows ?? []].map(row=>[row.header.id,row]))
-    const visible: SessionPersistenceSnapshot[] = []
-    for (const row of rows.values()) {
-      try {
-        if (await this.row(await this.sessionScope(row.header.id),row.header.id)) visible.push(this.snapshot(row))
-      } catch { /* Denied organization-agent rooms are omitted. */ }
+    if (!this.config.sharedOrganizationAgents) {
+      const scope = this.capture()
+      const result = await this.query<SessionRow>(scope,
+        'SELECT header,inherited_event_count,event_count,revision FROM harness_sessions WHERE org_id=$1 AND user_id=$2', scopeParams(scope))
+      checkAbort(options?.signal)
+      return result.rows.map(row => this.snapshot(row))
     }
-    return visible
+    const { visible } = await this.visibleMetadata(options?.signal)
+    return [...visible.values()].map(row => ({ ...this.snapshot(row), navigation: {
+      ...(row.preset == null ? {} : { agentPreset: row.preset }), started: row.started,
+    } }))
   }
+
+  /** Resolve the same personal/shared lineage as sessionScope, with a fresh
+   * administrator proof and bounded database round trips instead of one per room.
+   * Only scoped metadata is loaded: no event bodies or reusable authority cache.
+   */
+  private async visibleMetadata(signal?: AbortSignal): Promise<{
+    visible: Map<SessionId, SessionMetadataRow>
+    denied: Map<SessionId, unknown>
+  }> {
+    checkAbort(signal)
+    const human = this.capture()
+    const metadata = async (scope: AgentStorageScope) => {
+      const result = await this.query<SessionMetadataRow>(scope, `SELECT s.header,
+        s.inherited_event_count,s.event_count,s.revision,
+        COALESCE(chosen.preset,s.header->>'agentPreset') AS preset,
+        EXISTS (SELECT 1 FROM harness_session_events e
+          WHERE e.session_id=s.id AND e.org_id=s.org_id AND e.user_id=s.user_id
+          AND (e.event_type='turn/start' OR
+            (e.event_type='user/message' AND e.payload->'data'->'source'->>'kind'='user'))) AS started
+        FROM harness_sessions s
+        LEFT JOIN (
+          SELECT DISTINCT ON (e.session_id) e.session_id,
+            e.payload->'data'->>'agentPreset' AS preset FROM harness_session_events e
+          WHERE e.org_id=$1 AND e.user_id=$2 AND e.event_type='agent-preset/selected'
+          ORDER BY e.session_id,e.sequence DESC
+        ) chosen ON chosen.session_id=s.id
+        WHERE s.org_id=$1 AND s.user_id=$2`, scopeParams(scope))
+      checkAbort(signal)
+      return new Map(result.rows.map(row => [row.header.id, row]))
+    }
+    const personal = await metadata(human)
+    const denied = new Map<SessionId, unknown>()
+    if (!this.config.sharedOrganizationAgents) return { visible: personal, denied }
+    let shared: Map<SessionId, SessionMetadataRow> | undefined
+    let authorityError: unknown
+    let sharedAuthority: AgentStorageScope | undefined
+    try { sharedAuthority = await this.sharedScope(human) }
+    catch (error) { authorityError = error }
+    if (sharedAuthority) shared = sharedAuthority.userId === human.userId ? personal : await metadata(sharedAuthority)
+    checkAbort(signal)
+    const visible = new Map<SessionId, SessionMetadataRow>()
+    const isAgent = (row: SessionMetadataRow) => ['hivemind-hq', 'hivemind-hyperagents'].includes(row.preset ?? '')
+    for (const [id] of new Map([...personal, ...shared ?? []])) {
+      const owned = personal.get(id)
+      // Personal root Brain sessions do not require organization authority.
+      if (owned && owned.header.parentSession === undefined && !isAgent(owned)) {
+        visible.set(id, owned)
+        continue
+      }
+      if (!shared) {
+        if (owned) denied.set(id, authorityError)
+        continue
+      }
+      const candidate = shared.get(id)
+      if (!candidate) {
+        if (owned) denied.set(id, new SessionPersistenceNotFoundError(id))
+        continue
+      }
+      const visited = new Set<SessionId>()
+      let root: SessionMetadataRow | undefined = candidate
+      while (root.header.parentSession !== undefined) {
+        if (visited.has(root.header.id)) { root = undefined; break }
+        visited.add(root.header.id)
+        root = shared.get(root.header.parentSession)
+        if (!root) break
+      }
+      if (root && isAgent(root)) visible.set(id, candidate)
+      else if (owned) visible.set(id, owned)
+    }
+    return { visible, denied }
+  }
+
   /** Canonical room lookup uses authenticated scope, never browser-supplied tenant ids.
    * Adopt the earliest owned legacy room; otherwise use a stable native identity.
    * Existing session creation/adoption and fencing arbitrate concurrent opens.
@@ -410,15 +480,16 @@ export class PostgresSessionPersistence extends SessionPersistence {
       checkAbort(signal)
       return new Map(result.rows.flatMap(row => row.preset === null ? [] : [[row.id, row.preset] as const]))
     }
-    const result = new Map<SessionId,string>()
+    const { visible, denied } = await this.visibleMetadata(signal)
+    const result = new Map<SessionId, string>()
     for (const id of ids) {
-      const scope = await this.sessionScope(id)
-      const row = await this.query<{ preset:string | null }>(scope,'SELECT COALESCE((SELECT payload->\'data\'->>\'agentPreset\' FROM harness_session_events WHERE session_id=$3 AND event_type=\'agent-preset/selected\' ORDER BY sequence DESC LIMIT 1),header->>\'agentPreset\') AS preset FROM harness_sessions WHERE org_id=$1 AND user_id=$2 AND id=$3',scopeParams(scope,id))
-      if (row.rows[0]?.preset != null) result.set(id,row.rows[0].preset)
-      checkAbort(signal)
+      if (denied.has(id)) throw denied.get(id)
+      const row = visible.get(id)
+      if (row?.preset != null) result.set(id, row.preset)
     }
     return result
   }
+
   /** Durable conversation starts, across authorized personal/shared scopes. */
   async startedSessions(ids: readonly SessionId[], signal?: AbortSignal): Promise<ReadonlySet<SessionId>> {
     checkAbort(signal)
@@ -432,15 +503,16 @@ export class PostgresSessionPersistence extends SessionPersistence {
       checkAbort(signal)
       return new Set(result.rows.map(row => row.id))
     }
+    if (ids.length === 0) return new Set()
+    const { visible, denied } = await this.visibleMetadata(signal)
     const result = new Set<SessionId>()
     for (const id of ids) {
-      const scope = await this.sessionScope(id)
-      const rows = await this.query<{ id:SessionId }>(scope,'SELECT s.id FROM harness_sessions s WHERE s.org_id=$1 AND s.user_id=$2 AND s.id=$3 AND EXISTS(SELECT 1 FROM harness_session_events e WHERE e.session_id=s.id AND e.org_id=s.org_id AND e.user_id=s.user_id AND (e.event_type=\'turn/start\' OR (e.event_type=\'user/message\' AND e.payload->\'data\'->\'source\'->>\'kind\'=\'user\')))',scopeParams(scope,id))
-      if (rows.rows[0]) result.add(id)
-      checkAbort(signal)
+      if (denied.has(id)) throw denied.get(id)
+      if (visible.get(id)?.started) result.add(id)
     }
     return result
   }
+
   private snapshot(row: SessionRow): SessionPersistenceSnapshot {
     return {
       header: materializeCreateHeader(row.header), eventCount: Number(row.event_count),
