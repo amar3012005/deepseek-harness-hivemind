@@ -57,3 +57,15 @@ it('activates from claimed schedule input before native persistence',()=>{
 })
 
 it('separates short employee chat from actual correlated persisted diagnostics',()=>{const text=nightlyRoutineSkill.content;for(const expected of ['visible chat reply is short plain-language status only','NIGHTLY_REVIEW_REQUEST=','NIGHTLY_REVIEW_REPLY=','reply_to the exact received request message id','actual saved hivemind/room-message-received','Runtime inbox reply event sequence','actual saved tool/result event sequences'])expect(text).toContain(expected)})
+
+
+it('keeps nightly review in the skill and email without a task or report artifact', () => {
+  const text = nightlyRoutineSkill.content
+  expect(text).toContain('not a saved work task')
+  expect(text).toContain('one detailed email')
+  expect(text).toContain('Lead with the issues themselves')
+  expect(text).toContain('Do not author HTML')
+  expect(text).toContain('internal tool metadata')
+  expect(text).not.toContain('Save the full report as')
+  expect(text).not.toContain('organization-authorized HTML report')
+})
