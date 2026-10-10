@@ -1129,7 +1129,7 @@ function ArtifactThumbnail({ attachment, load, title, unavailable }: {
   return url ? <img src={url} alt={title} style={{ width: '100%', height: 'auto' }} onError={() => { setFailed(true) }} /> : null
 }
 
-function ArtifactPanel({ sessionId, node, t, read, loadImage, openPreview, registeredAt }: PanelProps<'hivemind-artifact'> & { read: (id: FileAttachmentRef['attachmentId']) => Promise<{ ok: boolean; value?: { attachment: FileAttachmentRef; data: string } }> ; loadImage: (ref: ImageAttachmentRef) => Promise<string>; openPreview: () => void; registeredAt: number }) {
+export function ArtifactPanel({ sessionId, node, t, read, loadImage, openPreview, registeredAt }: PanelProps<'hivemind-artifact'> & { read: (id: FileAttachmentRef['attachmentId']) => Promise<{ ok: boolean; value?: { attachment: FileAttachmentRef; data: string } }> ; loadImage: (ref: ImageAttachmentRef) => Promise<string>; openPreview: () => void; registeredAt: number }) {
   const [busy, setBusy] = useState(false)
   const [failed, setFailed] = useState(false)
   useEffect(() => {
@@ -1143,13 +1143,15 @@ function ArtifactPanel({ sessionId, node, t, read, loadImage, openPreview, regis
     <div className={css.artifactResult}>
       {node.data.preview === undefined ? null : <div className={css.artifactHeroImage}><ArtifactThumbnail attachment={node.data.preview} load={loadImage} title={node.data.title} unavailable={t('artifact.thumbnailUnavailable')} /></div>}
       <div className={css.artifactFileRow}>
-        <button type="button" className={css.artifactFilePreview} onClick={openPreview} disabled={node.data.file === undefined}>
+        <button type="button" className={css.artifactFilePreview} onClick={openPreview} disabled={node.data.file === undefined} title={node.data.file?.name ?? node.data.title}>
           <ArtifactTypeIcon mediaType={node.data.mediaType} name={node.data.file?.name ?? node.data.title} />
           <span><strong>{node.data.file?.name ?? node.data.title}</strong><small>{t('artifact.preview')}</small></span>
         </button>
         <button
           type="button"
-          className={css.artifactAction}
+          className={`${css.artifactAction} ${css.artifactFileDownload}`}
+          aria-label={`${t(busy ? 'artifact.downloading' : 'artifact.open')}: ${node.data.file?.name ?? node.data.title}`}
+          title={t(busy ? 'artifact.downloading' : 'artifact.open')}
           disabled={busy || node.data.file === undefined}
           onClick={async () => {
             setBusy(true)
@@ -1166,7 +1168,8 @@ function ArtifactPanel({ sessionId, node, t, read, loadImage, openPreview, regis
             }
           }}
         >
-          {t(busy ? 'artifact.downloading' : 'artifact.open')}
+          <span className={css.artifactFileDownloadIcon} aria-hidden="true"><IconDownloadOutline16 /></span>
+          <span className={css.artifactFileDownloadLabel}>{t(busy ? 'artifact.downloading' : 'artifact.open')}</span>
         </button>
       </div>
       {failed ? <div role="alert">{t('artifact.failed')}</div> : null}
