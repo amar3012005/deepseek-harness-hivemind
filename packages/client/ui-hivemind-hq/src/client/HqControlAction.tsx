@@ -130,7 +130,7 @@ export function HqControlAction({
     setPending(true)
     try {
       const result=await startFresh(sessionId,{ confirmed:true })
-      if (!result.ok) {setError(result.error.message);setPending(false);return}
+      if (!result.ok) {setError(t('freshFailed'));setPending(false);return}
       window.location.assign('/hivemind/app/employee/harness')
     } catch {setError(t('freshFailed'));setPending(false)}
   }

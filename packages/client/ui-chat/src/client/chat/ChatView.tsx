@@ -149,7 +149,7 @@ function openFailureMessage(error: unknown, fallback: string): string {
 function observedRpcIds(
   order: readonly string[],
   nodes: ChatSnapshot['nodes'],
-  queue: readonly { readonly rpcId?: string }[],
+  queue: readonly { readonly rpcId?: string; readonly placement?: string }[],
 ): ReadonlySet<string> {
   const observed = new Set<string>()
   for (const key of order) {
@@ -161,7 +161,7 @@ function observedRpcIds(
     if (source?.kind === 'user' && typeof source.rpcId === 'string') observed.add(source.rpcId)
   }
   for (const item of queue) {
-    if (item.rpcId !== undefined) observed.add(item.rpcId)
+    if (item.rpcId !== undefined && item.placement === 'steering') observed.add(item.rpcId)
   }
   return observed
 }
@@ -907,9 +907,17 @@ export function ChatView({
           {/* No pending placeholders: questions (ui-user-questions) and approvals
               (ApprovalPanel) both take over the composer, so a flow card would
               double-render the same wait. */}
+          {visibleSubmissions.map(submission => (
+            <PendingSubmissionBubble
+              key={submission.requestId}
+              submission={submission}
+              renderMessageImages={renderMessageImages}
+              t={t}
+            />
+          ))}
           {/* Turn-level loading signal: rides the whole running turn (first-token
               wait, tool execution, streaming) so it never flickers per step. */}
-          {running && <TurnStatus
+          {(running || visibleSubmissions.some(submission => submission.placement === 'transcript')) && <TurnStatus
             startTime={runningTurnStart}
             working={runningCalls.length > 0}
             activity={/^\/hivemind\/app\/employee\/harness(?:\/|$)/u.test(window.location.pathname)
@@ -925,14 +933,6 @@ export function ChatView({
             />
           ))}
           {runtimeSignals.map(signal => <RuntimeSignalRow key={signal.eventId} signal={signal} pending />)}
-          {visibleSubmissions.map(submission => (
-            <PendingSubmissionBubble
-              key={submission.requestId}
-              submission={submission}
-              renderMessageImages={renderMessageImages}
-              t={t}
-            />
-          ))}
         </div>
         {!atBottom && (
           <div className={css.toBottomSlot}>

@@ -135,6 +135,8 @@ export interface Config {
   readonly allowedRootPresets?: string[]
   /** Maximum immutable teammate names retained by one Team. */
   readonly maxMembers?: number
+  /** Independent authorized employee rooms do not consume spawned teammate slots. */
+  readonly maxPersistentAssignees?: number
   /** Maximum non-deleted tasks retained by one Team. */
   readonly maxTasks?: number
   /** Maximum queued-minus-delivered messages for one target member. */

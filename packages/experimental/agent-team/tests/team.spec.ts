@@ -189,6 +189,20 @@ describe('Team identity and provisioning', () => {
     await teamFiber.dispose()
     expect(ctx.agents.get(employee.id)).toBe(employee)
   })
+  it('lists more than eight authorized employees without consuming spawned teammate capacity', async () => {
+    const { ctx, lead } = await setup([], { maxMembers: 1 })
+    await ctx.sessions.flush(lead.session)
+    for (let index = 0; index < 9; index++) {
+      const employee = await ctx.agentLoop.create(SessionId(`directory-employee-${index}`), { provider: 'mock', model: 'mock' })
+      await ctx.sessions.flush(employee.session)
+      await ctx.agentTeams.bindPersistentAssignee(lead, employee, `employee-${index}`, `Employee ${index}`)
+    }
+    expect(ctx.agentTeams.listMembers(lead)).toHaveLength(10)
+    const child = await spawn(ctx, lead, 'available-child')
+    expect(child.member.name).toBe('available-child')
+    await expect(spawn(ctx, lead, 'extra-child')).rejects.toMatchObject({ code: 'TEAM_MEMBER_LIMIT' })
+  })
+
   it('wakes only an authorized bound Lead when an independent employee completes a real turn', async () => {
     const { ctx, lead } = await setup([textResponse('The employee work is complete.')])
     const employee = await ctx.agentLoop.create(SessionId('persistent-status-employee'), { provider:'mock',model:'mock' })

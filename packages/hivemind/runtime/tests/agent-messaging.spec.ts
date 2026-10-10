@@ -1,7 +1,7 @@
 import { expect, it, vi } from 'vitest'
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
-import { authorizedRecipient, installAgentMessaging, explicitEmployeeMessageKind } from '../src/agent-messaging.ts'
+import { authorizedRecipient, messageDirectory, installAgentMessaging, explicitEmployeeMessageKind } from '../src/agent-messaging.ts'
 
 it('resolves authenticated unique slugs without accepting missing or ambiguous recipients', () => {
   const row = { id: 'employee-id', slug: 'ravi-patel' }
@@ -151,4 +151,14 @@ it('normalizes a registered Chief update before delivery and rejects a paused re
   profile.status = 'paused'
   await expect(tool.execute(args, execution)).rejects.toThrow('agent_message_recipient_unavailable')
   expect(deliverAgentMessage).toHaveBeenCalledTimes(1)
+})
+
+it('uses the current sender preset directory rather than a sibling realm registry', () => {
+  const sender = {} as Agent
+  const current = { profiles: vi.fn() }
+  const stale = { profiles: vi.fn() }
+  const serviceFor = vi.fn(() => current)
+  const ctx = { get: () => ({ serviceFor }), hivemindEmployeeDirectory: stale } as unknown as Context
+  expect(messageDirectory(ctx, sender)).toBe(current)
+  expect(serviceFor).toHaveBeenCalledWith(sender, 'hivemindEmployeeDirectory')
 })

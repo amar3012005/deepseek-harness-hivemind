@@ -185,6 +185,22 @@ describe('observed retirement', () => {
     expect(retirements).toEqual([{ reason: 'observed', attachments: refs }])
   })
 
+  it('keeps an idle transcript echo while admission temporarily puts it in the inbox', async () => {
+    const { api, session } = makeSession()
+    api.onHistory = () => Promise.resolve(ok(historyValue([])))
+    await session.open()
+    const handle = session.beginSubmission({ mode: 'queue', text: 'keep my message', attachments: [] })
+    session.handleControlFrame({ type: 'queue', sessionId: SID, items: [queuedItem(handle.requestId, [])] })
+    await settleFrames()
+    expect(session.getSnapshot().pendingSubmissions).toMatchObject([{ requestId: handle.requestId, placement: 'transcript' }])
+    session.handleControlFrame({ type: 'queue', sessionId: SID, items: [] })
+    await settleFrames()
+    expect(session.getSnapshot().pendingSubmissions).toHaveLength(1)
+    await api.pushFollow(SID, { type: 'event', event: promptEvent(SessionSeq(0), handle.requestId) as never })
+    await settleFrames()
+    expect(session.getSnapshot().pendingSubmissions).toEqual([])
+  })
+
   it('a queue occurrence carrying the rpcId retires the echo (running-turn submissions)', async () => {
     const { session } = makeSession()
     const retirements: PendingSubmissionRetirement[] = []

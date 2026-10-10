@@ -750,7 +750,8 @@ export class Session implements SessionFace {
   private observeSubmissionQueue(items: readonly SessionQueuedItem[]): void {
     if (this.submissionSettlements.size === 0) return
     for (const item of items) {
-      if (item.rpcId !== undefined) {
+      if (item.rpcId !== undefined
+        && this.pendingSubmissions.find(echo => echo.requestId === item.rpcId)?.placement !== 'transcript') {
         this.scheduleObservedRetirement(item.rpcId, attachmentRefsIn(item.message.content))
       }
     }

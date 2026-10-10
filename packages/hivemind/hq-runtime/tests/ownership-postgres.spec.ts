@@ -76,6 +76,7 @@ suite('canonical company HQ ownership', () => {
     const ids=await scope.run(a,()=>ctx.hivemindHqOwnership.freshTargets(SessionId('a-hq')))
     expect(ids).toEqual(['a-employee','a-hq'])
     await expect(scope.run(a,()=>ctx.hivemindHqOwnership.resetFresh(SessionId('a-hq'),ids))).resolves.toEqual({ sessions:2,memories:1 })
+    expect((await admin.query("SELECT header->>'agentPreset' AS preset,event_count::int AS event_count FROM harness_sessions WHERE id='a-hq'")).rows[0]).toMatchObject({ preset:'hivemind-hq',event_count:0 })
     expect((await admin.query('SELECT id FROM harness_sessions ORDER BY id')).rows.map(r=>r.id)).toEqual(['a-brain','a-hq','b-hq','c-hq'])
     expect((await admin.query('SELECT id FROM hyper_agent_operating_memories ORDER BY id')).rows.map(r=>r.id)).toEqual(['company','other'])
   })

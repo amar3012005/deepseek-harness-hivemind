@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { Context } from '@deepseek-ai/cordis'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
-import { allowsEmployeeWork, employeeWorkPrompt, prepareEmployee, workReference, installEmployeeDelivery } from '../src/employee-room.ts'
+import { allowsEmployeeWork, employeeWorkPrompt, prepareEmployee, reconcileEmployeeRoster, workReference, installEmployeeDelivery } from '../src/employee-room.ts'
 
 function fixture() {
   const events = [
@@ -130,4 +130,25 @@ it('fails closed for malformed deadline or unsupported registry versions before 
     Object.assign(f.profile.policy_rules.native_lifecycle, state)
     expect(await allowsEmployeeWork(f.ctx, f.target, f.ref, signal)).toBe(false)
   }
+})
+
+it('refreshes the full authorized roster including newly created employees without starting tasks', async () => {
+  const profiles = [{ id: 'sofia', slug: 'sofia', name: 'Sofia' }, { id: 'lali', slug: 'lali', name: 'Lali' },
+    { id: 'closed', slug: 'closed', name: 'Closed', status: 'paused' }]
+  const root = { id: 'runtime' } as Agent
+  const members: { id: string; ownership: string }[] = []
+  const resolve = vi.fn(async (id: string) => ({ id: `room-${id}` }))
+  const bind = vi.fn(async (_root: Agent, target: Agent) => { members.push({ id: target.id, ownership: 'persistent' }) })
+  const directory = { profiles: vi.fn(async () => ({ profiles })) }
+  const ctx = { get: (name: string) => name === 'agentPresets' ? { serviceFor: () => directory } : undefined,
+    sessionController: { resolvePersistentEmployeeRoom: resolve },
+    agentTeams: { listMembers: () => members, bindPersistentAssignee: bind } } as unknown as Context
+  await reconcileEmployeeRoster(ctx, root, signal)
+  expect(bind).toHaveBeenCalledTimes(2)
+  profiles.push({ id: 'monny', slug: 'monny', name: 'Monny' })
+  await reconcileEmployeeRoster(ctx, root, signal)
+  expect(bind).toHaveBeenCalledTimes(3)
+  expect(bind).toHaveBeenLastCalledWith(root, { id: 'room-monny' }, 'monny', 'Monny')
+  expect(directory.profiles).toHaveBeenCalledTimes(2)
+  expect(resolve).not.toHaveBeenCalledWith('closed', expect.anything(), expect.anything())
 })

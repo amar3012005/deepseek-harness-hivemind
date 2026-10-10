@@ -62,6 +62,7 @@ export class TeamService extends TypertRemoteService {
   static Config: z<Config> = z.object({
     allowedRootPresets: z.array(z.string()).default([]),
     maxMembers: z.number().step(1).min(1).default(DEFAULT_MAX_MEMBERS),
+    maxPersistentAssignees: z.number().step(1).min(1).default(128),
     maxTasks: z.number().step(1).min(1).default(DEFAULT_MAX_TASKS),
     maxPendingMessagesPerMember: z.number().step(1).min(1).default(DEFAULT_MAX_PENDING_MESSAGES),
     maxMessageBytes: z.number().step(1).min(1).default(DEFAULT_MAX_MESSAGE_BYTES),
@@ -85,6 +86,7 @@ export class TeamService extends TypertRemoteService {
     this.config = {
       allowedRootPresets: config.allowedRootPresets ?? [],
       maxMembers: positiveLimit('maxMembers', config.maxMembers ?? DEFAULT_MAX_MEMBERS),
+      maxPersistentAssignees: positiveLimit('maxPersistentAssignees', config.maxPersistentAssignees ?? 128),
       maxTasks: positiveLimit('maxTasks', config.maxTasks ?? DEFAULT_MAX_TASKS),
       maxPendingMessagesPerMember: positiveLimit(
         'maxPendingMessagesPerMember',
@@ -100,7 +102,8 @@ export class TeamService extends TypertRemoteService {
     this.activity = new TeamActivity()
     this.lifecycle = new TeamRuntimeLifecycle(this.config.disposalTimeoutMs)
     this.journal = new TeamJournal(ctx, (root) => { this.activity.notify(TeamId(root.id)) })
-    this.roster = new TeamRoster(ctx, this.journal, this.lifecycle, this.config.maxMembers, this.config.allowedRootPresets)
+    this.roster = new TeamRoster(ctx, this.journal, this.lifecycle,
+      this.config.maxMembers, this.config.allowedRootPresets, this.config.maxPersistentAssignees)
     this.mailbox = new TeamMailbox(
       ctx,
       this.journal,

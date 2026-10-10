@@ -1276,6 +1276,10 @@ export function apply(ctx: Context, config: Config): void {
     }
     return next()
   }))
+  ctx.inject(['systemPrompt'], scope => scope.effect(() => scope.systemPrompt.section({
+    name: 'hivemind:response-progress', order: scope.systemPrompt.getSectionOrder('TEAM_POLICY'),
+    text: () => 'For a substantive new human request, start with one brief plain-language acknowledgment of the intended work before using tools. Keep progress updates concise and grounded in actual work; do not expose raw schemas or internal reasoning. For greetings or simple answers, respond directly without a separate acknowledgment, unnecessary tools or a repeated status report.',
+  })))
   ctx.effect(() => ctx.skills.register({
     name: 'hivemind-company-brain',
     description: 'Load only for multi-source, temporal reconstruction, or conflict-reconciliation work. Simple profile, entity lookup, recall, directory, and stable single-fact saves call hivemind_meta directly.',

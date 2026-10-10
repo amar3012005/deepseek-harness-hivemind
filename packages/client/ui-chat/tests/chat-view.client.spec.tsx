@@ -1114,6 +1114,19 @@ describe('ChatView', () => {
     expect(view.getAllByText('即发即显')).toHaveLength(1)
   })
 
+  it('keeps the sent bubble above immediate thinking through transient inbox admission', () => {
+    const h = makeHarness({ nodes: [] }, { pendingSubmissions: [{ requestId: 'req-idle' as never,
+      placement: 'transcript', time: 5_000, text: 'Keep this query', attachments: [] }] })
+    const view = render(<h.ChatView {...h.props} />)
+    expect(view.getByText('Keep this query').closest('[data-submission-echo]')).not.toBeNull()
+    act(() => h.setSession({ queue: [{ id: 'incoming', rpcId: 'req-idle', placement: 'queued',
+      content: [{ type: 'text', text: 'Keep this query' }], time: 5_000 }] as never }))
+    expect(view.getAllByText('Keep this query')).toHaveLength(1)
+    expect(view.getByText('Keep this query').closest('[data-submission-echo]')).not.toBeNull()
+    act(() => h.setSession({ queue: [], running: true }))
+    expect(view.getAllByText('Keep this query')).toHaveLength(1)
+  })
+
   it('renders a local steer echo as pending steering before Host image admission completes', () => {
     const h = makeHarness(
       { nodes: [assistant(1, 'working')] },
@@ -1327,7 +1340,8 @@ describe('ChatView', () => {
       const view = render(<h.ChatView {...h.props} />)
       const disclosure = view.getByText('Work details').closest('details')
       expect(disclosure?.open).toBe(false)
-      expect(disclosure?.textContent).toContain('INVALID_ARGUMENTS')
+      expect(disclosure?.textContent).not.toContain('INVALID_ARGUMENTS')
+      expect(disclosure?.textContent).toContain('Your conversation is saved')
       expect(view.getByRole('status', { hidden: true }).closest('details')).toBe(disclosure)
     } finally {
       delete document.documentElement.dataset.dshMode

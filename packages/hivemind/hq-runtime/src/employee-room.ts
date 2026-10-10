@@ -52,6 +52,33 @@ export async function authenticatedRoot(ctx: Context, id: string, signal: AbortS
   return resolved.agent
 }
 
+/** Refresh the native roster from the current authenticated company directory.
+ * Room admission/binding does not send a message, create a task or start work.
+ * Re-read on every explicit roster request so newly created employees are included.
+ */
+export async function reconcileEmployeeRoster(ctx: Context, root: Agent, signal: AbortSignal): Promise<void> {
+  const service = ctx.get('agentPresets')?.serviceFor(root, 'hivemindEmployeeDirectory')
+    ?? ctx.get('hivemindEmployeeDirectory')
+  if (!service) throw new Error('hq_employee_directory_required')
+  const directory = await service.profiles(signal)
+  const members = ctx.agentTeams.listMembers(root)
+  for (const raw of directory.profiles) {
+    signal.throwIfAborted()
+    if (!employeeDispatchAllowed(raw)) continue
+    const name = raw['name']
+    const role = typeof raw['role_archetype'] === 'string' ? raw['role_archetype'] : 'HIVE-MIND employee'
+    const employeeId = raw['id']
+    const slug = raw['slug']
+    if (typeof name !== 'string' || !name.trim() || typeof employeeId !== 'string' || typeof slug !== 'string'
+      || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/u.test(slug)) throw new Error('hq_employee_slug_invalid')
+    // Resolve the canonical room, rather than guessing a session from a display name.
+    const target = await rooms(ctx).resolvePersistentEmployeeRoom(employeeId,
+      { id: employeeId, name, role }, signal)
+    if (members.some(member => member.id === target.id && member.ownership === 'persistent')) continue
+    await ctx.agentTeams.bindPersistentAssignee(root, target, slug, name)
+  }
+}
+
 /** Freeze the authenticated employee room as native task assignee.
  * @param ctx - Native task, persistence and room services.
  * @param root - Exact live Runtime root.

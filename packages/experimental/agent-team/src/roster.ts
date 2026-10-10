@@ -71,6 +71,7 @@ export class TeamRoster {
     private readonly lifecycle: TeamRuntimeLifecycle,
     private readonly maxMembers: number,
     private readonly allowedRootPresets: readonly string[] = [],
+    private readonly maxPersistentAssignees = 128,
   ) {}
 
   /**
@@ -242,7 +243,7 @@ export class TeamRoster {
         if (existing.id !== target.id || existing.name !== name || existing.ownership !== 'persistent') throw new TeamError('persistent assignee identity conflicts', 'TEAM_MEMBER_NAME_TAKEN')
         return
       }
-      if (state.members.length >= this.maxMembers) throw new TeamError('Team member limit reached', 'TEAM_MEMBER_LIMIT')
+      if (state.members.filter(member => member.ownership === 'persistent').length >= this.maxPersistentAssignees) throw new TeamError('Persistent employee limit reached', 'TEAM_MEMBER_LIMIT')
       await this.journal.appendAndFlush(caller, 'team/member', { version: 2, teamId: TeamId(caller.id), member: {
         id: target.id, name, description: requiredText(description, 'description', 200), provider: 'persistent-room', context: 'fresh', phase: 'active', ownership: 'persistent',
       } })
@@ -348,7 +349,7 @@ export class TeamRoster {
       if (state.members.some(member => member.name === name)) {
         throw new TeamError(`teammate name "${name}" was already used in this Team`, 'TEAM_MEMBER_NAME_TAKEN')
       }
-      if (state.members.length >= this.maxMembers) {
+      if (state.members.filter(member => member.ownership !== 'persistent').length >= this.maxMembers) {
         throw new TeamError(`Team member limit ${this.maxMembers} reached`, 'TEAM_MEMBER_LIMIT')
       }
       await this.journal.appendAndFlush(root, 'team/member', { version: 2, teamId: TeamId(root.id), member })

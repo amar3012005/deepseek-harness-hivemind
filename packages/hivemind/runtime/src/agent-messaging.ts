@@ -6,6 +6,7 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import { sessionOwner } from './continuity.ts'
 import type {} from '@deepseek-ai/dsh-hivemind-employee-directory'
+import type {} from '@deepseek-ai/dsh-agent-presets'
 
 interface RoomDelivery {
   deliverAgentMessage(caller: Agent, input: {
@@ -27,6 +28,11 @@ export function authorizedRecipient<T extends Record<string, unknown>>(profiles:
   const matches = profiles.filter(profile => profile['slug'] === recipient)
   if (matches.length > 1) throw new Error('agent_message_recipient_ambiguous_use_exact_employee_id')
   return matches[0]
+}
+/** Resolve the sender's preset realm, retaining fresh tenant-authorized lookup. */
+export function messageDirectory(ctx: Context, agent: Agent) {
+  return (typeof ctx.get === 'function' ? ctx.get('agentPresets')?.serviceFor(agent, 'hivemindEmployeeDirectory') : undefined)
+    ?? ctx.hivemindEmployeeDirectory
 }
 export function employeeFailureSummary(code: string): string {
   const category = /POLICY|SAFETY|REFUS|CONTENT_FILTER/i.test(code) ? 'a provider policy rejection'
@@ -52,7 +58,7 @@ export function installAgentMessaging(ctx: Context): void {
         && !confirmed(`response-${event.seq}`)
         && (event.data.reason.kind === 'error' || event.data.reason.kind === 'completed'))
       if (pending.length === 0) return
-      const directory = await scope.hivemindEmployeeDirectory.profiles(signal)
+      const directory = await messageDirectory(scope, agent).profiles(signal)
       if (!directory.profiles.some(profile => profile['id'] === owner.id)) return
       for (const event of pending) {
         if (event.type !== 'turn/end') continue
@@ -152,7 +158,7 @@ export function installAgentMessaging(ctx: Context): void {
         const agent = execution.agent
         if (!agent) throw new Error('agent_message_live_sender_required')
         const input = args as { recipient: string; kind: 'question' | 'reply' | 'update'; message_key: string; message: string; summary?: string; task_id?: string; reply_to?: string; artifact_ids?: string[] }
-        const directory = await scope.hivemindEmployeeDirectory.profiles(execution.signal)
+        const directory = await messageDirectory(scope, agent).profiles(execution.signal)
         const owner = sessionOwner(agent.session.snapshotEvents())
         let preset = agent.session.header.agentPreset
         for (const event of agent.session.ownEvents()) if (String(event.type) === 'agent-preset/selected') preset = (event.data as { agentPreset: string }).agentPreset

@@ -16,7 +16,7 @@ import { installAwakening, awakeningContext } from './awakening.ts'
 import { installDelegatedBlockerTool, unresolvedDelegatedTask } from './delegated-blocker.ts'
 import { investigationExpired } from './investigation.ts'
 import { wakeBriefing } from './wake-briefing.ts'
-import { dispatchEmployee, reconcileEmployeeArtifacts } from './employee-room.ts'
+import { dispatchEmployee, reconcileEmployeeArtifacts, reconcileEmployeeRoster } from './employee-room.ts'
 import type {} from './control.ts'
 import { calendarItems } from './calendar.ts'
 import { projectCalendarTaskStatus } from './task-schedule-lifecycle.ts'
@@ -77,6 +77,12 @@ declare module '@deepseek-ai/dsh-session/types' {
   }
 }
 export function apply(ctx: Context): void {
+  ctx.effect(() => ctx.on('tools/pre-execute', async (execution, next) => {
+    if (execution.name === 'list_agents' && execution.agent && isHqLead(ctx, execution.agent)) {
+      await reconcileEmployeeRoster(ctx, execution.agent, execution.signal)
+    }
+    return next()
+  }))
   installDelegatedBlockerTool(ctx)
   installRest(ctx)
   installAwakening(ctx)

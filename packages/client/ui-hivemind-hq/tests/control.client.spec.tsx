@@ -95,3 +95,15 @@ it('refreshes displayed autonomy on the native state notification without granti
   await screen.findByText(en.active)
   expect(setMode).not.toHaveBeenCalled()
 })
+
+it('shows a simple reset failure without exposing backend details', async () => {
+  vi.spyOn(window, 'confirm').mockReturnValue(true)
+  const startFresh = vi.fn().mockResolvedValue({ ok: false, error: { message: 'raw database diagnostic' } })
+  render(<HqControlAction {...base} load={vi.fn().mockResolvedValue({ ok: true, value: mode })}
+    setMode={vi.fn()} startFresh={startFresh} />)
+  fireEvent.click(await screen.findByRole('button', { name: en.startFresh }))
+  await screen.findByText(en.freshFailed)
+  expect(screen.queryByText('raw database diagnostic')).toBeNull()
+  expect(startFresh).toHaveBeenCalledOnce()
+  vi.restoreAllMocks()
+})
