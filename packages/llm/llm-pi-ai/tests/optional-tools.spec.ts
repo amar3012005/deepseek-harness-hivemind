@@ -35,7 +35,7 @@ describe('Codex explicit minimal reasoning', () => {
   })
   it.each([undefined, null])('does not force none for an undeclared off mapping %s', (off) => {
     const request = { input: [] }
-    expect(codexRequestPayload(request, { api: 'openai-codex-responses', thinkingLevelMap: { off } }, 'off')).toBe(request)
+    expect(codexRequestPayload(request, { api: 'openai-codex-responses', thinkingLevelMap: off === undefined ? {} : { off } }, 'off')).toBe(request)
   })
   it('keeps explicit low and other provider protocols unchanged', () => {
     const request = { reasoning: { effort: 'low' } }
