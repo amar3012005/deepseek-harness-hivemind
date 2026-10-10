@@ -74,6 +74,7 @@ describe('authenticated native attention seam', () => {
     const f=fixture(); const results=await Promise.all([f.request(),f.request()])
     expect(results.map(value=>value.status)).toEqual([202,200]); expect(f.send).toHaveBeenCalledTimes(1)
   })
+  it('staged runner accepts existing v2 wakes without new provider activation',async()=>{const f=fixture();const d=(database.row as { relevance_decision:{ runtimeAttention:{ policy:string;probability:number;margin:number } } }).relevance_decision.runtimeAttention;d.policy='runtime_attention_v2';d.probability=0.6;d.margin=0.1;expect((await f.request()).status).toBe(202);expect(f.send).toHaveBeenCalledWith(expect.anything(),'next-turn',true)})
   it('settings revision changes deny stale admission',async()=>{const f=fixture(); (database.row as unknown as { attention_settings:unknown }).attention_settings={ version:1,revision:1,enabled:false };expect((await f.request()).status).toBe(409);expect(f.send).not.toHaveBeenCalled()})
   it('notify admits durable evidence without waking', async()=>{const f=fixture(); database.row!.relevance_decision!.runtimeAttention!.action='notify'; expect((await f.request()).status).toBe(202); expect(f.send).toHaveBeenCalledWith(expect.anything(),'next-turn',false); expect((await f.request()).status).toBe(200); expect(f.send).toHaveBeenCalledTimes(1)})
   it('empty or other-company allowlist denies before reading private context', async () => {
