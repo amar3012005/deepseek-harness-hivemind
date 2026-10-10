@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import { startGrokVoice } from './grok-voice.ts'
+import { startCallRingback } from './call-ringback.ts'
 import css from './HiveLiveVoiceButton.module.css'
 
 type Props = Pick<PropsRuntime<'conversation.input.right'>, 'sessionId' | 'useInput'> & PropsLocale<'workspace'>
@@ -19,8 +20,11 @@ export function HiveLiveVoiceButton({ sessionId, useInput, t }: Props) {
   const [micMuted, setMicMuted] = useState(false)
   const [micClosing, setMicClosing] = useState(false)
   const connection = useRef<VoiceConnection>()
+  const ringback = useRef<() => void>()
+  const stopRingback = () => { ringback.current?.(); ringback.current = undefined }
   const generation = useRef(0)
   const stop = useCallback(() => {
+    ringback.current?.(); ringback.current = undefined
     generation.current++
     const current = connection.current; connection.current = undefined
     if (current?.closingTimer) clearTimeout(current.closingTimer)
@@ -61,6 +65,7 @@ export function HiveLiveVoiceButton({ sessionId, useInput, t }: Props) {
   const toggle = async (alternate = false) => {
     if (state !== 'idle') { stop(); return }
     const ticket = ++generation.current
+    stopRingback(); ringback.current = startCallRingback()
     setState('connecting'); setError(false); setBusy(false)
     let local: VoiceConnection | undefined
     let mayFallback = false
@@ -77,7 +82,7 @@ export function HiveLiveVoiceButton({ sessionId, useInput, t }: Props) {
       }
       try {
         const fallback = await startGrokVoice(sessionId, local.stream, local.audio,
-          () => { if (generation.current === ticket) setState('live') }, setCaption,
+          () => { if (generation.current === ticket) { stopRingback(); setState('live') } }, setCaption,
           (failed) => { if (generation.current === ticket) { stop(); setError(failed) } },
           () => { setMicMuted(true); setMicClosing(true) })
         if (generation.current !== ticket) { fallback.close(); return false }
@@ -105,7 +110,7 @@ export function HiveLiveVoiceButton({ sessionId, useInput, t }: Props) {
       }
       peer.onconnectionstatechange = () => {
         if (generation.current !== ticket) return
-        if (peer.connectionState === 'connected') { everConnected = true; setState('live') }
+        if (peer.connectionState === 'connected') { everConnected = true; stopRingback(); setState('live') }
         if (!mayFallback && peer.connectionState === 'failed' && !everConnected) void recover().then((recovered) => { if (!recovered && generation.current === ticket) { stop(); setError(true) } })
         else if (!mayFallback && ['failed', 'closed'].includes(peer.connectionState)) { stop(); setError(true) }
       }

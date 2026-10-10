@@ -6,6 +6,8 @@ import { HiveLiveVoiceButton } from '../src/client/HiveLiveVoiceButton.tsx'
 vi.mock('@deepseek-ai/dsh-client-ui-primitives', () => ({ Tooltip: ({ children }: { children: React.ReactNode }) => children }))
 vi.mock('../src/client/grok-voice.ts', () => ({ startGrokVoice: vi.fn(async () => ({ close: vi.fn(), id: 'grok-call' })) }))
 import { startGrokVoice } from '../src/client/grok-voice.ts'
+vi.mock('../src/client/call-ringback.ts', () => ({ startCallRingback: vi.fn(() => vi.fn()) }))
+import { startCallRingback } from '../src/client/call-ringback.ts'
 const t = ((key: string) => key) as never
 const input = (draft = '') => ((select: (value: { draft: string }) => unknown) => select({ draft })) as never
 class Peer {
@@ -48,10 +50,14 @@ describe('native HIVEMIND live voice composer', () => {
     const invitation = new CustomEvent('hivemind:start-room-call', { cancelable: true, detail: { sessionId: 'session-1' } })
     fireEvent(window, invitation)
     expect(invitation.defaultPrevented).toBe(true)
+    expect(startCallRingback).toHaveBeenCalled()
     await waitFor(() => { expect(Peer.instance.setRemoteDescription).toHaveBeenCalledOnce() })
     const repeat = new CustomEvent('hivemind:start-room-call', { cancelable: true, detail: { sessionId: 'session-1' } })
     fireEvent(window, repeat)
     expect(Peer.instance.close).not.toHaveBeenCalled()
+    Peer.instance.connectionState = 'connected'
+    ;(Peer.instance as unknown as RTCPeerConnection).onconnectionstatechange?.(new Event('connectionstatechange'))
+    expect(vi.mocked(startCallRingback).mock.results.at(-1)?.value).toHaveBeenCalledOnce()
     expect(fetcher).toHaveBeenCalledOnce()
   })
 
