@@ -13,7 +13,7 @@ import {
   resolveTargetPolicy,
 } from '@deepseek-ai/dsh-compaction-basic/src/config.ts'
 import type { CompactionResult } from '@deepseek-ai/dsh-compaction'
-import LlmRuntime, { createUserMessage, ToolCallId, CONTEXT_WINDOW_EXCEEDED_CODE, createSystemMessage, createToolResultMessage, LlmAdapter , createMessage } from '@deepseek-ai/dsh-llm'
+import LlmRuntime, { createUserMessage, ToolCallId, ReasoningEffortId, CONTEXT_WINDOW_EXCEEDED_CODE, createSystemMessage, createToolResultMessage, LlmAdapter , createMessage } from '@deepseek-ai/dsh-llm'
 import type {
   ContentBlock,
   GenerateOptions,
@@ -1304,6 +1304,33 @@ async function summarizerHarness(
 }
 
 describe('default one-shot summarizer', () => {
+  it('inherits explicit same-target effort and durably records the summary envelope', async () => {
+    const { adapter,compact }=await summarizerHarness([{ type:'text',text:'summary' }])
+    vi.spyOn(adapter,'resolveModel').mockResolvedValue({ provider:MODEL,id:MODEL,name:MODEL,reasoning:{ efforts:[{ id:ReasoningEffortId('low'),name:'Low' }] } })
+    const session=conversation(3,'long history '.repeat(200))
+    session.append('request/header',{ header:{ config:{ provider:MODEL,model:MODEL,reasoningEffort:ReasoningEffortId('low') } },reason:'initial' })
+    const nodes=session.surface.nodes
+    await compact.compactRegion(nodes[0]!,nodes[3]!,agent(session,MODEL),SIGNAL)
+    expect(adapter.lastOptions?.reasoningEffort).toBe('low')
+    expect(session.snapshotEvents().findLast(e=>e.type==='compaction/summary')?.data).toMatchObject({ reasoningEffort:'low' })
+  })
+
+  it('does not transfer a different conversation route effort to the configured summarizer', async () => {
+    const { adapter,compact }=await summarizerHarness([{ type:'text',text:'summary' }],undefined,MODEL,{ auto:false,summarizationProvider:MODEL,summarizationModel:MODEL })
+    const session=conversation(1)
+    session.append('request/header',{ header:{ config:{ provider:'other',model:'other',reasoningEffort:ReasoningEffortId('high') } },reason:'initial' })
+    await compact.runSummarize(promptInput('history'),agent(session,MODEL))
+    expect(adapter.lastOptions).not.toHaveProperty('reasoningEffort')
+  })
+
+  it('uses configured summary effort even before pending conversation selection has entered the header', async () => {
+    const { adapter,compact }=await summarizerHarness([{ type:'text',text:'summary' }],undefined,MODEL,{ auto:false,summarizationProvider:MODEL,summarizationModel:MODEL,summarizationReasoningEffort:'low' })
+    vi.spyOn(adapter,'resolveModel').mockResolvedValue({ provider:MODEL,id:MODEL,name:MODEL,reasoning:{ efforts:[{ id:ReasoningEffortId('low'),name:'Low' }] } })
+    const session=conversation(1)
+    session.append('request/header',{ header:{ config:{ provider:'old-route',model:'old-model',reasoningEffort:ReasoningEffortId('high') } },reason:'initial' })
+    await compact.runSummarize(promptInput('history'),agent(session,MODEL))
+    expect(adapter.lastOptions).toMatchObject({ provider:MODEL,model:MODEL,reasoningEffort:'low' })
+  })
   it.each([undefined, '', 'SYSTEM HEAD\n精确前缀\n'])('preserves the routed prefix through region summarization with system %j', async (system) => {
     const { adapter, compact } = await summarizerHarness([{ type: 'text', text: 'summary' }])
     const session = conversation(3, undefined, system)
@@ -1549,7 +1576,7 @@ describe('default one-shot summarizer', () => {
   it('rejects empty or reasoning-only successful output', async () => {
     const { compact } = await summarizerHarness([{ type: 'reasoning', text: 'private' }])
     await expect(compact.runSummarize(promptInput('history'), agent(conversation(1), MODEL)))
-      .rejects.toThrow(/no text summary content/)
+      .rejects.toMatchObject({ code:'EMPTY_SUMMARY' })
   })
 
   it('rejects image summary output instead of silently dropping it', async () => {
@@ -1664,6 +1691,24 @@ describe('automatic listener and loader composition', () => {
     await expect(preStep(ctx, agent(session, MODEL))).resolves.toEqual({ kind: 'enter', messages: [] })
     expect(warnings).toContainEqual(expect.stringContaining('temporary failure'))
     expect(session.snapshotEvents().some(event => event.type === 'compaction/summary')).toBe(false)
+  })
+
+  it('does not repeat a failed pressure summary on every tool step; a later turn can retry', async () => {
+    const ctx=createContext()
+    const compact=new TestCompactionEngine(ctx,{ thresholdRatio:0.5,retainTokens:180 })
+    compact.error='temporary failure'
+    const session=conversation(4),owner=agent(session,MODEL)
+    const calls=vi.spyOn(compact,'compactIfNeeded')
+    await preStep(ctx,owner)
+    await preStep(ctx,owner)
+    await preStep(ctx,owner)
+    expect(calls).toHaveBeenCalledTimes(1)
+    await preStep(ctx,agent(conversation(4),MODEL))
+    expect(calls).toHaveBeenCalledTimes(2)
+    agentEvents(ctx,owner).emit('agent/status',{ status:'idle' })
+    await preStep(ctx,owner)
+    expect(calls).toHaveBeenCalledTimes(3)
+    expect(session.snapshotEvents().some(e=>e.type==='compaction/summary')).toBe(false)
   })
 
   it('warns once per routed target when proactive pressure has no context metadata', async () => {

@@ -77,6 +77,7 @@ const retainRatioSchema = z.number()
 const retainTokensSchema = z.number().step(1).min(0)
 const summarizationProviderSchema = z.string()
 const summarizationModelSchema = z.string()
+const summarizationReasoningEffortSchema = z.string().min(1)
 const maxTokensSchema = z.number().step(1).min(1)
 const compactionRetriesSchema = z.number().step(1).min(0)
 const maxOverflowRetriesSchema = z.number().step(1).min(0)
@@ -90,6 +91,7 @@ const modelPolicy: z<ModelCompactPolicyConfig> = z.object({
   retainTokens: retainTokensSchema,
   summarizationProvider: summarizationProviderSchema,
   summarizationModel: summarizationModelSchema,
+  summarizationReasoningEffort: summarizationReasoningEffortSchema,
   maxTokens: maxTokensSchema,
   compactionRetries: compactionRetriesSchema,
   maxOverflowRetries: maxOverflowRetriesSchema,
@@ -113,6 +115,7 @@ export class BasicCompactionEngine extends CompactionEngine {
     retainTokens: retainTokensSchema,
     summarizationProvider: summarizationProviderSchema,
     summarizationModel: summarizationModelSchema,
+    summarizationReasoningEffort: summarizationReasoningEffortSchema,
     maxTokens: maxTokensSchema,
     compactionRetries: compactionRetriesSchema,
     maxOverflowRetries: maxOverflowRetriesSchema,
@@ -126,6 +129,7 @@ export class BasicCompactionEngine extends CompactionEngine {
   private readonly warnedPressureConfigTargets = new Set<string>()
   private readonly overflowRetries = new WeakMap<Agent, number>()
   private readonly overflowAgents = new WeakMap<Session, Agent>()
+  private readonly failedPressureTurns = new WeakSet<Agent>()
 
   constructor(ctx: Context, config: BasicCompactionConfig = {}) {
     super(ctx)
@@ -152,7 +156,7 @@ export class BasicCompactionEngine extends CompactionEngine {
       { agent, signal },
       next,
     ): Promise<PreStepDecision> => {
-      if (!signal.aborted) {
+      if (!signal.aborted && !this.failedPressureTurns.has(agent)) {
         try {
           const result = await this.compactIfNeeded(agent, 'pressure', signal)
           if (result !== null) logResult(result, 'step pressure')
@@ -161,6 +165,10 @@ export class BasicCompactionEngine extends CompactionEngine {
             if (this.warnedPressureConfigTargets.has(error.targetKey)) return next()
             this.warnedPressureConfigTargets.add(error.targetKey)
           }
+          // An unsuccessful summary must not repeat its expensive auxiliary
+          // request on every tool step. A later turn or explicit overflow can
+          // retry through the existing native recovery paths.
+          this.failedPressureTurns.add(agent)
           const message = error instanceof Error ? error.message : String(error)
           ctx.logger.warn(`step compaction failed: ${message}; continuing the turn`)
         }
@@ -169,7 +177,10 @@ export class BasicCompactionEngine extends CompactionEngine {
     })
 
     ctx.on('agent/status', ({ agent, status }) => {
-      if (status === 'idle') this.overflowRetries.delete(agent)
+      if (status === 'idle') {
+        this.overflowRetries.delete(agent)
+        this.failedPressureTurns.delete(agent)
+      }
     })
 
     // A successful response starts a fresh overflow-recovery sequence even

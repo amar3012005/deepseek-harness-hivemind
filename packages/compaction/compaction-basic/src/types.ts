@@ -20,6 +20,8 @@ export interface CompactionPolicyConfig {
   summarizationProvider?: string
   /** Summary model; set together with `summarizationProvider`, or inherit the conversation target. */
   summarizationModel?: string
+  /** Explicit summary effort; omitted inherits an explicit same-target conversation effort only. */
+  summarizationReasoningEffort?: string
   /** Provider generation cap for summarization. Defaults to `8192`. */
   maxTokens?: number
   /** Extra attempts after the first compaction when pressure remains above threshold. Defaults to `1`. */
@@ -55,6 +57,7 @@ interface ResolvedPolicyFields {
   readonly thresholdTokens?: number
   readonly summarizationProvider: string
   readonly summarizationModel: string
+  readonly summarizationReasoningEffort?: string
   readonly maxTokens: number
   readonly compactionRetries: number
   readonly maxOverflowRetries: number

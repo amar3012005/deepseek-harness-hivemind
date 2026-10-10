@@ -69,6 +69,7 @@ kind: "package-reference"
 | `retainTokens` | — | 逐字保留的近期对话绝对预算；与 `retainRatio` 互斥，并且必须低于已解析阈值。 |
 | `summarizationProvider` | `''` | 与 `summarizationModel` 一起设置；空对使用最新已路由请求目标，再回退到 `AgentOptions` 对。 |
 | `summarizationModel` | `''` | 与 `summarizationProvider` 一起设置；空对使用最新已路由请求目标，再回退到 `AgentOptions` 对。 |
+| `summarizationReasoningEffort` | — | 显式指定提供商支持的摘要推理档位。否则仅继承已记录的相同提供商/模型的显式档位，不跨模型传递档位。 |
 | `maxTokens` | `8192` | 摘要请求的输出上限；可包含推理 token。 |
 | `compactionRetries` | `1` | 压力仍高于阈值时，在首次压缩后进行的额外尝试次数。 |
 | `maxOverflowRetries` | `1` | 已确认上下文窗口溢出后的最大重试次数；`0` 只禁用恢复。 |
@@ -121,6 +122,8 @@ kind: "package-reference"
 ### 区域事务
 
 事务验证表层范围与持久锁，追加 `compaction/start`，通过钩子生成摘要，重新验证稳定性（自动调用要求整个表层、手动调用只要求所选范围），拒绝不缩小源内容的摘要，追加 `compaction/summary` 与替换 `user/message`，并恰好进行一次 `compaction/end` 尝试。活动的未匹配 start 是持久锁：位于较新 `session/end-seed` 之前的未匹配标记是先前生命周期留下的陈旧证据，不会阻塞；位于该边界之后的标记报告 `busy`。闭合失败会有意留下阻塞性的未匹配标记。完成清理与持久化后，取消仍具有最终决定权。
+
+空摘要或仅含推理的摘要会以 `EMPTY_SUMMARY` 失败；原始表层保持完整。自动压力摘要失败后，同一轮的后续工具步骤跳过压力摘要。进入空闲状态后允许下一轮重试；显式手动压缩和已确认溢出恢复保留各自的原生路径。这限制重复辅助调用次数，而不限制首次提供商请求的时长。显式摘要推理档位与调用信息一同记录在 `compaction/summary` 上。
 
 ### 配置解析
 

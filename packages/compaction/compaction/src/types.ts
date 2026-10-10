@@ -7,7 +7,7 @@
  * @module @deepseek-ai/dsh-compaction/types
  */
 
-import type { ContentBlock, TokenUsage } from '@deepseek-ai/dsh-llm'
+import type { ContentBlock, TokenUsage, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 import type { CommandId } from '@deepseek-ai/dsh-commands/brand'
 import type { SessionSeq } from '@deepseek-ai/dsh-session/types'
 import type { CompactionId } from './brand.ts'
@@ -49,6 +49,8 @@ declare module '@deepseek-ai/dsh-session/types' {
       model: string
       /** The generation cap the summarize call sent, when one applied. */
       maxTokens?: number
+      /** Explicit reasoning effort used by the summarizer, when sent. */
+      reasoningEffort?: ReasoningEffortId
       /** Provider-reported token usage for the summarization request, when emitted. */
       usage?: TokenUsage
     } & (
