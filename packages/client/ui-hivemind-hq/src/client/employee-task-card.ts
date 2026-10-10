@@ -29,9 +29,11 @@ export const employeeTaskCard: ConversationNodeDefinition<EmployeeTaskCardState>
       seen: { ...previous?.seen, [key]: fingerprint } }
   },
   update: context => context.state,
-  buildViewNode: context => context.start === undefined || context.state === undefined || !context.state.visible ? null : {
+  // Prepending history can reveal an earlier identical receipt. Keep the target
+  // identity stable when replay changes this card from visible to hidden.
+  buildViewNode: context => context.start === undefined || context.state === undefined ? null : {
     key: context.key, kind: 'hivemind-employee-task', id: context.id, target: 'chat',
     anchorSeq: context.start.event.seq, location: context.start.location,
-    processDisclosure: 'independent', visibility: 'visible', data: context.state.snapshot,
+    processDisclosure: 'independent', visibility: context.state.visible ? 'visible' : 'hidden', data: context.state.snapshot,
   },
 }

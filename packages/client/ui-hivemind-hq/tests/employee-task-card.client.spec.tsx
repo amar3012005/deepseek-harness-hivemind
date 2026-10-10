@@ -3,6 +3,8 @@ import { afterEach, expect, it } from 'vitest'
 import { cleanup, render } from '@testing-library/react'
 import { RuntimeTaskCard } from '../src/client/RuntimeTaskCard.tsx'
 import { employeeTaskCard } from '../src/client/employee-task-card.ts'
+import { ConversationNodeAssembler } from '@deepseek-ai/dsh-client-ui-conversation/client'
+import type { ConversationViewNode } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { HqWorkspaceTask } from '@deepseek-ai/dsh-hivemind-hq-runtime/client'
 afterEach(cleanup)
 const task = { id: 'internal-task-1', revision: 1, title: 'Buyer evidence brief', owner: 'ravi-id',
@@ -47,8 +49,34 @@ it('deduplicates internal revisions per task while retaining actual status trans
   }
   expect(project('pending', 1, [])).not.toBeNull()
   expect(project('in_progress', 2, [])).not.toBeNull()
-  expect(project('in_progress', 3, ['pdf'])).toBeNull()
-  expect(project('in_progress', 4, ['pdf', 'html'])).toBeNull()
+  expect(project('in_progress', 3, ['pdf'])).toMatchObject({ visibility: 'hidden' })
+  expect(project('in_progress', 4, ['pdf', 'html'])).toMatchObject({ visibility: 'hidden' })
   expect(project('completed', 5, ['pdf', 'html'])).toMatchObject({ anchorSeq: 5, data: { task: { status: 'completed' } } })
-  expect(project('completed', 6, ['pdf', 'html'])).toBeNull()
+  expect(project('completed', 6, ['pdf', 'html'])).toMatchObject({ visibility: 'hidden' })
+})
+
+it('keeps a materialized card hidden when an older identical receipt is prepended', () => {
+  const assembler = new ConversationNodeAssembler({
+    entries: () => [employeeTaskCard], fallbackEntry: () => undefined,
+  }, { entries: () => [{ target: 'chat', create: () => ({
+    empty: [] as readonly ConversationViewNode[],
+    replace: ({ nodes }: { nodes: readonly ConversationViewNode[] }) => nodes,
+    apply: ({ upserts }: { upserts: readonly ConversationViewNode[] }) => upserts,
+  }) }] })
+  assembler.activateTarget('chat')
+  const receipt = (seq: number) => ({ type: 'event', event: {
+    seq, time: 1_700_000_000_000 + seq, type: 'hivemind/employee-task-snapshot',
+    data: { rootSessionId: 'runtime', employeeId: 'ravi-id', employeeName: 'Ravi Patel',
+      task, calendar: null, sourceSequence: seq },
+  } })
+  assembler.replaceWindow([receipt(42)] as never, true)
+  assembler.flush()
+  const initial = assembler.snapshot('chat') as readonly ConversationViewNode[]
+  expect(initial).toHaveLength(1)
+  expect(initial[0]).toMatchObject({ visibility: 'visible' })
+  assembler.prepend([receipt(41)] as never, false)
+  expect(() => assembler.flush()).not.toThrow()
+  const changes = assembler.snapshot('chat') as readonly ConversationViewNode[]
+  expect(changes).toContainEqual(expect.objectContaining({ key: initial[0]?.key, visibility: 'hidden' }))
+  expect(changes).toContainEqual(expect.objectContaining({ anchorSeq: 41, visibility: 'visible' }))
 })
