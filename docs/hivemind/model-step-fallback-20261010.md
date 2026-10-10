@@ -53,3 +53,26 @@ Focused checks: 226 tests across native retry/persistence and pi-ai config/conve
 Root owns cutover. Before marking complete, root must verify an authorized organization canary through deployed native adapter and saved task continuation, and a deliberately bounded failed-primary attempt recovered through the configured native policy with each tool executed once. Text/tool standalone compatibility does not satisfy that production proof.
 
 Rollback: disable the fallback policy on the same event-aware binary; subsequent steps return to saved primary. **Do not downgrade to a binary that does not recognize required `llm/fallback` events** in sessions that used fallback. It must retain the generated catalog/event support, otherwise persistence correctly refuses the unknown required event. Credential and selected primary configuration rollback use their existing native owners.
+
+
+## Final route policy and minimal reasoning
+
+User authorized Codex GPT-6 Luna primary, with Cloudflare/OpenRouter GPT-6 Luna independent fallback. Configure `llm-retry.fallback` as an array:
+
+```yaml
+fallback:
+  - fromProvider: openai-codex
+    provider: cloudflare-openrouter-streaming
+    model: openai/gpt-6-luna
+    maxTokens: 8192
+  - fromProvider: cloudflare-openrouter-streaming
+    provider: openai-codex
+    model: gpt-6-luna
+    maxTokens: 8192
+```
+
+One durable switch per model step prevents ping-pong even when both providers fail. Per-route output cap never increases the primary request cap. No retry for invalid request/auth/context failures.
+
+Set the native Codex model `reasoningEfforts.off: 'none'`, provider profile `reasoning: 'off'`, agent-default-model `reasoningEffort: 'off'`, and each saved room's native reasoning selection off after the new adapter is live. The Codex payload hook explicitly sends `reasoning: {effort: none}` only for this declared mapping, and preserves `strict: false` for optional function arguments. Other providers and off:null mappings are unchanged. Native standalone exact-model none tool roundtrip passed in2542ms; local actual adapter wire regression confirms none plus non-strict tools. Production none activation and fallback recovery still require root's final release proof.
+
+Root's independent gateway tool-result roundtrip passed in3013ms with output cap8192/low. It does not establish provider uptime beyond the probe. Keep the managed gateway model cap8192 too. Source baseline fallback commit60a1727637ed5ce7b9de190b25ad8b89d732e800 passed the normal full host/client pre-push checks.

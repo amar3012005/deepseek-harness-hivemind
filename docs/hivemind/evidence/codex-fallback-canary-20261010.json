@@ -51,6 +51,26 @@
       "nativeOAuthRetained": true,
       "contextWindow": 1050000,
       "maxTokens": 8192
+    },
+    "noneToolRoundtrip": {
+      "reasoningEffort": "none",
+      "tool": "read_fixture",
+      "pairedToolResult": true,
+      "toolCalls": 1,
+      "text": "FIXTURE_READY",
+      "stopReason": "stop",
+      "ms": 2542
     }
+  },
+  "independentGateway": {
+    "route": "cloudflare-openrouter-streaming/openai/gpt-6-luna",
+    "maxTokens": 8192,
+    "reasoningEffort": "low",
+    "toolCalls": 1,
+    "pairedToolResult": true,
+    "text": "FIXTURE_READY",
+    "ms": 3013,
+    "evidence": "/root/releases/codex-primary-20261011/openrouter-tool-roundtrip.json",
+    "owner": "root live canary"
   }
 }

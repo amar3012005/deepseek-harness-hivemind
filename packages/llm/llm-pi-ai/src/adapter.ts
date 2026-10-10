@@ -80,6 +80,24 @@ export function preserveOptionalToolArguments(payload: unknown): unknown {
   }
 }
 
+/** Preserve Codex tool schemas and honor an explicitly configured non-thinking mode.
+ * @param payload - Provider request body before transmission.
+ * @param model - Frozen native model descriptor for this request.
+ * @param reasoning - Validated request or profile effort.
+ * @returns Request body with explicit none only when the model declares that mapping.
+ */
+export function codexRequestPayload(
+  payload: unknown,
+  model: Pick<Model<Api>, 'api' | 'thinkingLevelMap'>,
+  reasoning: ModelThinkingLevel | undefined,
+): unknown {
+  if (model.api !== 'openai-codex-responses') return payload
+  const request = preserveOptionalToolArguments(payload)
+  if (reasoning !== 'off' || model.thinkingLevelMap?.off !== 'none'
+    || typeof request !== 'object' || request === null) return request
+  return { ...request, reasoning: { effort: 'none' } }
+}
+
 /** One resolution's frozen view: the profiles and the collection built from them. */
 interface PiAiSnapshot {
   /** The resolved profiles this collection was built from, used as its identity. */
@@ -404,7 +422,7 @@ export class PiAiAdapter extends LlmAdapter {
         // Profile headers are deployment-owned; attribution names are
         // Harness-owned and therefore win collisions.
         headers: requestHeaders(profile.headers),
-        ...model.api === 'openai-codex-responses' ? { onPayload: preserveOptionalToolArguments } : {},
+        ...model.api === 'openai-codex-responses' ? { onPayload: payload => codexRequestPayload(payload, model, reasoning) } : {},
       })
       const iterator = toStreamChunks(events, model.contextWindow, options.signal, model.id)[Symbol.asyncIterator]()
       let exhausted = false
