@@ -270,6 +270,16 @@
         sharedOrganizationAgents: !!js process.env.HIVE_SHARED_ORGANIZATION_AGENTS_ENABLED === 'true'
         serviceSecretEnv: HIVE_HARNESS_RUNNER_SERVICE_SECRET
 
+    - id: hivemind-decision
+      name: '@deepseek-ai/dsh-hivemind-decision'
+      config:
+        enabled: !!js process.env.HIVEMIND_DECISION_ENABLED === '1'
+        endpoint: !!js process.env.HIVEMIND_DECISION_ENDPOINT || undefined
+        apiKeyRef: !!js process.env.HIVEMIND_DECISION_API_KEY_REF || undefined
+        gatewayTokenRef: !!js process.env.HIVEMIND_DECISION_GATEWAY_TOKEN_REF || undefined
+        gatewayByokAlias: !!js process.env.HIVEMIND_DECISION_GATEWAY_BYOK_ALIAS || undefined
+        timeoutMs: 3000
+
     - id: hivemind-runtime-attention
       name: '@deepseek-ai/dsh-hivemind-hq-runtime/attention'
       config:

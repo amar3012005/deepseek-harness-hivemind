@@ -68,6 +68,9 @@
     },
     {
       "path": "../connected-apps"
+    },
+    {
+      "path": "../decision"
     }
   ]
 }
