@@ -147,3 +147,17 @@ This Dev Note is non-authoritative working context: notes for maintainers and op
 - The separately published `./invariant` companion validates each scheduled retry against the session log — naming the current open turn and latest closed step, matching the failed request's durable provider, and requiring each `llm/retry-started` event to name one prior scheduled attempt with the same retry id, turn, step, and retry number.
 
 </details>
+
+### Independent model-step fallback
+
+An explicitly authorized independent provider can recover an eligible failed model step without waiting for primary backoff:
+
+```yaml
+llm-retry:
+  fallback:
+    fromProvider: primary-provider
+    provider: independently-authorized-provider
+    model: verified-tool-compatible-model
+```
+
+The policy is disabled by default. It records a required non-surface `llm/fallback` checkpoint, retries the same step once, and returns to primary on subsequent steps. Completed tools are not replayed. Authentication, invalid requests/tool formats and context overflow are not redirected. Preserve event-aware reader support when rolling back configuration after a session has used fallback.

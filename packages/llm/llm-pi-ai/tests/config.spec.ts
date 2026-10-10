@@ -107,3 +107,15 @@ describe('request image policy bounds', () => {
     }).toThrow(message)
   })
 })
+
+
+describe('verified Codex native route despite stale bundled model catalog',()=>{
+  it('accepts an explicit GPT-6 Luna entry while retaining native OAuth and Responses API',()=>{
+    const config=Config({ providers:{ 'openai-codex':{ models:[{ id:'gpt-6-luna',name:'GPT-6 Luna',contextWindow:1050000,maxTokens:8192,input:['text','image'],reasoningEfforts:{ off:null,low:'low',medium:'medium',high:'high' } }] } } })
+    const route=resolveProfiles(config.providers).get('openai-codex')!
+    expect(route.piProvider?.auth?.oauth).toBeDefined()
+    expect(route.apiKeyEnv).toBeUndefined()
+    expect(route.piProvider?.getModels()).toEqual([expect.objectContaining({ id:'gpt-6-luna',api:'openai-codex-responses',contextWindow:1050000,maxTokens:8192 })])
+    expect(route.configuredMaxTokens.get('gpt-6-luna')).toBe(8192)
+  })
+})
