@@ -322,6 +322,26 @@ describe('compact configuration and defaults', () => {
     expect(Object.isFrozen(resolved)).toBe(true)
   })
 
+  it('caps proactive pressure independently of a million-token model window', () => {
+    const config = resolveConfig({ thresholdRatio: 0.65, thresholdTokens: 48_000, retainTokens: 12_000 })
+    const policy = resolveTargetPolicy(config, { provider: MODEL, model: MODEL })
+    expect(resolveCompactSpec(policy, 1_050_000)).toMatchObject({ thresholdTokens: 48_000, retainTokens: 12_000 })
+    expect(resolveCompactSpec(policy, 32_000).thresholdTokens).toBe(20_800)
+  })
+
+  it('inherits and overrides an absolute pressure cap without changing other routes', () => {
+    const config = resolveConfig({ thresholdTokens: 48_000, retainTokens: 2_000,
+      modelPolicies: [{ provider: MODEL, model: MODEL, thresholdTokens: 24_000 }] })
+    expect(resolveCompactSpec(resolveTargetPolicy(config, { provider: MODEL, model: MODEL }), 1_050_000).thresholdTokens).toBe(24_000)
+    expect(resolveCompactSpec(resolveTargetPolicy(config, { provider: 'other', model: MODEL }), 1_050_000).thresholdTokens).toBe(48_000)
+    for (const thresholdTokens of [0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(() => resolveConfig({ thresholdTokens })).toThrow(/thresholdTokens/)
+    }
+    const invalid = resolveTargetPolicy(resolveConfig({ thresholdTokens: 100, retainTokens: 100 }),
+      { provider: MODEL, model: MODEL })
+    expect(() => resolveCompactSpec(invalid, 1_050_000)).toThrow(/retainTokens/)
+  })
+
   it('resolves threshold and retention overrides independently', () => {
     const thresholdOnly = resolveConfig({
       thresholdRatio: 0.5,
@@ -497,6 +517,31 @@ describe('compact configuration and defaults', () => {
 })
 
 describe('pressure measurement and retention', () => {
+  it('compacts long-lived model replay early while retaining recent intent and original history', async () => {
+    const ctx = createContext(1_050_000)
+    const compact = service({ auto: false, thresholdRatio: 0.65, thresholdTokens: 48_000,
+      retainTokens: 12_000, maxTokens: 4096 }, ctx)
+    const session = conversation(80, 'persistent company context '.repeat(300), 'organization-isolated system')
+    const latest = createUserMessage({ content: [{ type: 'text', text: 'Continue the approved CRM expansion; keep the same employee and checkpoint.' }], source: { kind: 'user' } })
+    session.append('user/message', latest, { surfaceOp: 'append' })
+    const beforeEvents = session.snapshotEvents()
+    const before = ctx.tokenMeter.measure(session).totalTokens
+    expect(before).toBeGreaterThan(48_000)
+    // The old default would not trigger despite substantial replay cost.
+    expect(before).toBeLessThan(1_050_000 * 0.8)
+    const started = performance.now()
+    await expect(compactIfNeeded(compact, session)).resolves.not.toBeNull()
+    const after = ctx.tokenMeter.measure(session).totalTokens
+    expect(after).toBeLessThan(48_000)
+    expect(session.deriveMessages().at(-1)).toEqual(latest)
+    expect(session.snapshotEvents().slice(0, beforeEvents.length)).toEqual(beforeEvents)
+    const reloaded = Session.create(SessionId('bounded-context-reloaded'), session.snapshotEvents())
+    expect(reloaded.deriveMessages()).toEqual(session.deriveMessages())
+    expect(ctx.tokenMeter.measure(reloaded).totalTokens).toBe(after)
+    console.info('bounded-context-fixture', JSON.stringify({ before, after, ms: performance.now() - started, summary: 'deterministic fixture; no provider latency measurement' }))
+  })
+
+
   const compactConfig: BasicCompactionConfig = {
     auto: false,
     thresholdRatio: 0.5,

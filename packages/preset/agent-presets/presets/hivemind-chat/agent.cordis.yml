@@ -180,6 +180,13 @@
   config:
     - id: compaction-basic
       name: '@deepseek-ai/dsh-compaction-basic'
+      config:
+        # Bound model replay independently of large advertised model windows.
+        # The full immutable chat and tool evidence remain in session storage.
+        thresholdRatio: 0.65
+        thresholdTokens: 48000
+        retainTokens: 12000
+        maxTokens: 4096
     - id: command-compact
       name: '@deepseek-ai/dsh-command-compact'
     - id: tool-result-pruner

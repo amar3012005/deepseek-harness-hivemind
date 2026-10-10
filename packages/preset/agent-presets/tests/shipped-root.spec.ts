@@ -180,7 +180,10 @@ describe('the shipped preset root', () => {
       const include = entries.find(entry => entry.id === 'hivemind-chat-base') as
         { config: { patches: Parameters<typeof applyEntryPatches>[1] } } | undefined
       const effective = include ? applyEntryPatches(chat, include.config.patches, () => {}) : entries
-      expect(findEntry(effective, 'compaction-basic'), id).toMatchObject({ name: '@deepseek-ai/dsh-compaction-basic' })
+      expect(findEntry(effective, 'compaction-basic'), id).toMatchObject({
+        name: '@deepseek-ai/dsh-compaction-basic',
+        config: { thresholdRatio: 0.65, thresholdTokens: 48000, retainTokens: 12000, maxTokens: 4096 },
+      })
       expect(findEntry(effective, 'command-compact')?.disabled, id).not.toBe(true)
       expect(findEntry(effective, 'tool-result-pruner')?.config, id).toMatchObject({ thresholdChars: 8192 })
       expect(findEntry(effective, 'token-meter'), id).toBeUndefined()

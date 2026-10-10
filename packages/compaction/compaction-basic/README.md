@@ -64,6 +64,7 @@ All settings are optional. The defaults start condensing at 80% of the routed mo
 | Field | Default | Meaning |
 |---|---|---|
 | `thresholdRatio` | `0.8` | Start condensing at `floor(routedContextWindow × ratio)`. |
+| `thresholdTokens` | — | Optional absolute pressure cap; condensation starts at the smaller of this and the model-relative threshold. Set an absolute `retainTokens` below that cap. |
 | `retainRatio` | `0.16` | Recent conversation kept verbatim as a fraction of the routed context window; mutually exclusive with `retainTokens`. |
 | `retainTokens` | — | Absolute recent-conversation budget kept verbatim; mutually exclusive with `retainRatio` and must be below the resolved threshold. |
 | `summarizationProvider` | `''` | Set together with `summarizationModel`; an empty pair uses the latest routed request target, then the `AgentOptions` pair. |
