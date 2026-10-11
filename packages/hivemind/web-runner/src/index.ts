@@ -12,7 +12,7 @@ import type { IndexInjection } from '@deepseek-ai/dsh-host-webserver'
 import type {} from '@deepseek-ai/dsh-session-persistence'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import { authenticatedActorFromSource, principalForActor, type AuthenticatedActor } from '@deepseek-ai/dsh-hivemind-execution-scope'
-import { resolveOrganizationAgentAccess, currentTurnActor, referencedSessionIds, admittedVoiceCallRef, admittedUserConfirmationRef, runtimeWitnessServices, withAuthenticatedInitiator, retainAdmittedUserWitness, retainTurnConfirmationRef } from './organization-agent-access.ts'
+import { resolveOrganizationAgentAccess, isAdmittedHumanSource, currentTurnActor, referencedSessionIds, admittedVoiceCallRef, admittedUserConfirmationRef, runtimeWitnessServices, withAuthenticatedInitiator, retainAdmittedUserWitness, retainTurnConfirmationRef } from './organization-agent-access.ts'
 import type {} from '@deepseek-ai/dsh-tools'
 import type {} from '@deepseek-ai/dsh-api-gateway'
 import { registerQuestionRespondents, validateQuestionRoom } from './question-respondent.ts'
@@ -390,7 +390,9 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
       const actor = await resolveActor(principal,signal)
       turns.set(agent.id,turn)
       actors.set(agent.id,actor)
-      const admitted=messages.filter(message=>message.source.kind==='user' && authenticatedActorFromSource(message.source)?.userId===actor.userId).at(-1)
+      const admitted=messages.filter(message=>isAdmittedHumanSource(message.source)
+        && authenticatedActorFromSource(message.source)?.userId===actor.userId
+        && authenticatedActorFromSource(message.source)?.orgId===actor.orgId).at(-1)
       if(admitted) admittedUsers.set(agent.id,{ id:admitted.id,actor })
       else {
         const retained=retainAdmittedUserWitness(admittedUsers.get(agent.id),actor,sameTurn)

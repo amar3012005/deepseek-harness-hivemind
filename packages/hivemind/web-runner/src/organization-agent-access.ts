@@ -52,16 +52,40 @@ export async function resolveOrganizationAgentAccess(base: string, token: string
   })
 }
 
+/** Native late-answer metadata is produced only by authenticated question admission. */
+export function isAdmittedHumanSource(source: unknown): boolean {
+  if (!record(source)) return false
+  if (source['kind'] === 'user') return true
+  return source['kind'] === 'user-question-reply' && source['outcome'] === 'answered'
+    && typeof source['callId'] === 'string' && source['callId'].length > 0
+    && source['questionCallId'] === source['callId']
+    && source['questionEventId'] === `late-${source['callId']}`
+    && source['questionAnswer'] === true && source['questionAnswerSubmission'] === true
+}
+
+/** Answer confirmation requires the original saved native question in this room. */
+function savedQuestionMatches(
+  events: readonly { type: string; seq: number; data: unknown }[], source: Record<string, unknown>, replySeq: number,
+): boolean {
+  const calls=events.filter(event => event.type === 'tool/call' && event.seq < replySeq
+    && record(event.data) && event.data['name'] === 'ask_user_question'
+    && event.data['callId'] === source['callId'] && record(event.data['arguments'])
+    && Array.isArray(event.data['arguments']['questions']) && event.data['arguments']['questions'].length > 0)
+  return calls.length===1
+}
+
 /** A newly admitted trigger owns its turn; continuation steps retain that actor.
  * Never consult a later queued chat message for current-turn authority. */
 export function currentTurnActor(
   messages:readonly { source:unknown }[], continuation:AuthenticatedActor | undefined,
   sameTurn=messages.length===0,
 ):AuthenticatedActor | undefined {
-  const direct=messages.filter(message=>record(message.source)&&message.source['kind']==='user')
+  const direct=messages.filter(message=>isAdmittedHumanSource(message.source))
     .map(message=>authenticatedActorFromSource(message.source)).filter(value=>value!==undefined).at(-1)
   return direct ?? (sameTurn ? continuation : undefined)
-    ?? messages.map(message=>authenticatedActorFromSource(message.source)).filter(value=>value!==undefined).at(-1)
+    ?? messages.filter(message=>!record(message.source)||message.source['kind']!=='user-question-reply'
+      ||isAdmittedHumanSource(message.source))
+      .map(message=>authenticatedActorFromSource(message.source)).filter(value=>value!==undefined).at(-1)
 }
 
 /** Only a same-turn same-actor witness survives nonhuman inbox/context updates. */
@@ -116,7 +140,8 @@ export function admittedUserConfirmationRef(
   const event=events.find((event)=>{
     if(event.type!=='user/message'||!record(event.data)||event.data['id']!==id) return false
     const source=event.data['source'];const author=authenticatedActorFromSource(source)
-    return record(source)&&source['kind']==='user'&&author?.userId===actor.userId&&author.orgId===actor.orgId
+    return record(source)&&isAdmittedHumanSource(source)&&author?.userId===actor.userId&&author.orgId===actor.orgId
+      && (source['kind']==='user' || savedQuestionMatches(events,source,event.seq))
   })
   return event?`event:${event.seq}`:undefined
 }

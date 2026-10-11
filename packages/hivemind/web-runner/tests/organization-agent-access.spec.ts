@@ -122,3 +122,24 @@ it('retains an exact ended-call reference through same-turn handoffs without a t
   expect(retainTurnConfirmationRef('stale plaintext',a,a,true)).toBeUndefined()
   expect(retainTurnConfirmationRef('event:522',a,a,true)).toBe('event:522')
 })
+
+it('recognizes an authenticated answered native question only against its saved same-room ask',()=>{
+  const actor={ userId,orgId,name:'Admin',role:'owner' as const }
+  const source={ kind:'user-question-reply',outcome:'answered',callId:'call-saved',questionCallId:'call-saved',questionEventId:'late-call-saved',questionAnswer:true,questionAnswerSubmission:true,authenticatedActor:actor }
+  const call={ type:'tool/call',seq:7,data:{ name:'ask_user_question',callId:'call-saved',arguments:{ questions:[{ id:'choice',question:'Which direction?' }] } } }
+  const reply={ type:'user/message',seq:20,data:{ id:'saved-answer',source } }
+  expect(currentTurnActor([{ source }],undefined,false)).toEqual(actor)
+  expect(admittedUserConfirmationRef([call,reply],'saved-answer',actor)).toBe('event:20')
+  expect(admittedUserConfirmationRef([reply],'saved-answer',actor)).toBeUndefined()
+  expect(admittedUserConfirmationRef([call,{ ...call,seq:8 },reply],'saved-answer',actor)).toBeUndefined()
+  expect(admittedUserConfirmationRef([{ ...call,seq:21 },reply],'saved-answer',actor)).toBeUndefined()
+  expect(admittedUserConfirmationRef([{ ...call,data:{ ...call.data,callId:'foreign-call' } },reply],'saved-answer',actor)).toBeUndefined()
+  expect(admittedUserConfirmationRef([{ ...call,data:{ ...call.data,name:'request_permission' } },reply],'saved-answer',actor)).toBeUndefined()
+  expect(admittedUserConfirmationRef([call,reply],'saved-answer',{ ...actor,userId:'foreign' })).toBeUndefined()
+  expect(admittedUserConfirmationRef([call,reply],'saved-answer',{ ...actor,orgId:'foreign' })).toBeUndefined()
+  for(const change of [{ outcome:'pending' },{ questionAnswer:false },{ questionCallId:'wrong' },{ questionEventId:'wrong' },{ kind:'agent-message' }]) {
+    const changed={ ...source,...change }
+    expect(admittedUserConfirmationRef([call,{ ...reply,data:{ ...reply.data,source:changed } }],'saved-answer',actor)).toBeUndefined()
+    if(changed.kind==='user-question-reply')expect(currentTurnActor([{ source:changed }],undefined,false)).toBeUndefined()
+  }
+})

@@ -5,7 +5,11 @@ const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]
 export function authenticatedActorFromSource(value: unknown): AuthenticatedActor | undefined {
   if (!value || typeof value!=='object') return undefined
   const source=value as Record<string,unknown>
-  if (source['kind']!=='user' && source['kind']!=='schedule' && source['kind']!=='hivemind-runtime-event' && source['kind']!=='hivemind-agent-message'
+  const answeredQuestion=source['kind']==='user-question-reply' && source['outcome']==='answered'
+    && typeof source['callId']==='string' && source['callId'].length>0
+    && source['questionCallId']===source['callId'] && source['questionEventId']===`late-${source['callId']}`
+    && source['questionAnswer']===true && source['questionAnswerSubmission']===true
+  if (!answeredQuestion && source['kind']!=='user' && source['kind']!=='schedule' && source['kind']!=='hivemind-runtime-event' && source['kind']!=='hivemind-agent-message'
     && !(source['kind']==='plugin' && source['plugin']==='hivemind-live-voice')) return undefined
   const actor=source['authenticatedActor'] as AuthenticatedActor | undefined
   if (!actor || !uuid.test(actor.userId) || !uuid.test(actor.orgId) || !['admin','owner'].includes(actor.role)
