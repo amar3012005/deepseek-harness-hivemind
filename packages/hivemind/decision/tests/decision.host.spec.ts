@@ -165,3 +165,15 @@ describe('bounded Decisions alternate model', () => {
     expect(fetcher).toHaveBeenCalledTimes(2)
   })
 })
+
+
+describe('verified Mercury free gateway configuration', () => {
+  it('uses the selected free Mercury model with gateway-only stored-key authentication', async () => {
+    let sent: RequestInit | undefined
+    const provider = new OpenRouterDecisionProvider({ endpoint: 'https://gateway.ai.cloudflare.com/v1/account/gateway/custom-decision-jev/api/v1/systemone', model: 'inception/mercury-decide:free', resolveHeaders: async () => ({ 'cf-aig-authorization': 'Bearer fixture', 'cf-aig-byok-alias': 'first-jev' }), fetch: vi.fn(async (_, init) => { sent = init; return new Response(JSON.stringify({ ...answer, model: 'inception/mercury-decide-20260930' })) }) as typeof fetch })
+    await provider.evaluate(evaluation, new AbortController().signal)
+    expect(JSON.parse(String(sent?.body))).toEqual({ model: 'inception/mercury-decide:free', ...evaluation })
+    expect(new Headers(sent?.headers).has('authorization')).toBe(false)
+    expect(new Headers(sent?.headers).get('cf-aig-byok-alias')).toBe('first-jev')
+  })
+})

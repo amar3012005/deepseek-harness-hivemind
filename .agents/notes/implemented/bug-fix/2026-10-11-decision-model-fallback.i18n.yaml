@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-10-11-decision-model-fallback.md
-2026-10-11-decision-model-fallback.md: 3ff8335a0ebde4b18c1add6adfbd9a1022772fa0
-2026-10-11-decision-model-fallback.zh.md: f74f2bf2ac2c9625e933d29d13585b54877a02e2
+2026-10-11-decision-model-fallback.md: 768d57577f2605bdc5b5f8b9058812533e72a92b
+2026-10-11-decision-model-fallback.zh.md: 8b8e0047266e761906d3bef3ab6dce6e93c7935e
