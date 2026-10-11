@@ -102,7 +102,7 @@ describe('HIVE progressive context', () => {
     const assistant = session.append('assistant/message', {
       turn: 1, step: 1, stream: [], message: createAssistantMessage({
         source: { provider: 'test', model: 'test' },
-        content: [{ type: 'tool-call', id: 'old' as never, name: 'read', arguments: {} }],
+        content: [{ type: 'tool-call', id: 'old' as never, name: 'read', arguments: '{}'  }],
       }),
     }, { surfaceOp: 'append' })
     const oldResult = session.append('tool/result', { turn: 1, step: 1, message: createToolResultMessage({
@@ -116,7 +116,7 @@ describe('HIVE progressive context', () => {
     const current = session.append('user/message', user('Continue this exact task'), { surfaceOp: 'append' })
     session.append('assistant/message', { turn: 2, step: 1, stream: [], message: createAssistantMessage({
       source: { provider: 'test', model: 'test' },
-      content: [{ type: 'tool-call', id: 'current' as never, name: 'read', arguments: {} }],
+      content: [{ type: 'tool-call', id: 'current' as never, name: 'read', arguments: '{}'  }],
     }) }, { surfaceOp: 'append' })
     const currentResult = session.append('tool/result', { turn: 2, step: 1, message: createToolResultMessage({
       callId: 'current' as never, content: [{ type: 'text', text: 'CURRENT_EVIDENCE' }], isError: false,
