@@ -16,7 +16,7 @@ type DockProps = PropsRuntime<'conversation.input.dock'>
   & PropsLocale<'question'> & PropsStore<ReturnType<typeof createQuestionDraftStore>>
   & ContinuedQuestionActions
 
-/** Persisted projection is authoritative; closing this panel submits nothing. */
+/** Persisted projection is authoritative; ordinary question dismissal submits nothing; memory decline is an explicit answer. */
 export function ContinuedQuestionDock(props: DockProps) {
   const projection = props.useProjection('userQuestions')
   const continued = projection?.active.filter(item => item.state === 'continued') ?? []
@@ -24,15 +24,12 @@ export function ContinuedQuestionDock(props: DockProps) {
   const [closed, setClosed] = useState<string | null>(null)
   const [sent, setSent] = useState<ReadonlySet<string>>(() => new Set())
   const current = continued.find(item => item.callId === selected) ?? continued[0]
-  const carrier = useMemo<QuestionWait | undefined>(() => current === undefined ? undefined : ({
-    key: `continued:${props.sessionId}:${current.callId}`,
-    questions: current.questions,
-    autoFocus: false,
-    cancel: () => { setClosed(current.callId); return Promise.resolve() },
-    answer: async (answer) => {
+  const carrier = useMemo<QuestionWait | undefined>(() => {
+    if (current === undefined) return undefined
+    const answer = async (batch: QuestionAnswer): Promise<void> => {
       let accepted: boolean
       try {
-        accepted = await props.onAnswer(current.callId, answer)
+        accepted = await props.onAnswer(current.callId, batch)
       } catch (error) {
         // A reconnect can rediscover a reply queued before its projection settles.
         if (error !== null && typeof error === 'object' && 'code' in error && error.code === 'REPLY_QUEUED') {
@@ -43,8 +40,23 @@ export function ContinuedQuestionDock(props: DockProps) {
       }
       if (!accepted) throw new Error(props.t('durable.unavailable'))
       setSent(previous => new Set([...previous, current.callId]))
-    },
-  }), [current, props.sessionId, props.onAnswer, props.t])
+    }
+    return {
+      key: `continued:${props.sessionId}:${current.callId}`,
+      questions: current.questions,
+      autoFocus: false,
+      cancel: () => {
+        // Destination "Decline" is a decision, whereas ordinary question dismiss remains presentation-only.
+        if (current.questions.length === 1 && current.questions[0]?.intent?.kind === 'memory-save-destination') {
+          return answer({ answers: [{ id: current.questions[0].id, selected: [] }] })
+        }
+        setClosed(current.callId)
+        return Promise.resolve()
+      },
+      answer,
+    }
+  }, [current, props.sessionId, props.onAnswer, props.t])
+
   if (current === undefined || carrier === undefined) return null
   return <section className={css.dock} data-continued-question aria-label={props.t('durable.waiting')}>
     <div className={css.header}>

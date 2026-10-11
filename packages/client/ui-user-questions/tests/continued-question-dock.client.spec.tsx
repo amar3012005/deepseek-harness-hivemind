@@ -38,6 +38,18 @@ describe('continued question dock', () => {
     await waitFor(() => { expect(screen.getAllByRole('status')[0]?.textContent).toContain('Answer sent') })
     expect(screen.queryByText('Submit')).toBeNull()
   })
+  it('persists a memory destination decline through the native answer callback', async () => {
+    const memoryQuestion = { ...question, questions: [{ id: 'destination', question: 'Save the prepared memory?',
+      intent: { kind: 'memory-save-destination' }, options: [{ label: 'Personal' }, { label: 'Organization' }],
+    }] }
+    const props = kit([memoryQuestion])
+    render(<ContinuedQuestionDock {...props} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Decline' }))
+    await waitFor(() => { expect(props.onAnswer).toHaveBeenCalledOnce() })
+    expect(props.onAnswer).toHaveBeenCalledWith('call-one', { answers: [{ id: 'destination', selected: [] }] })
+    await waitFor(() => { expect(screen.queryByRole('button', { name: 'Decline' })).toBeNull() })
+  })
+
   it('does not claim open questions or show resolved questions', () => {
     const view = render(<ContinuedQuestionDock {...kit([{ ...question, state: 'open' }])} />)
     expect(view.container.textContent).toBe('')
