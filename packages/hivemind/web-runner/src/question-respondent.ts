@@ -2,6 +2,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-api-gateway'
 import type {} from '@deepseek-ai/dsh-session'
+import type {} from '@deepseek-ai/dsh-user-questions/types'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { SessionPersistenceSnapshot } from '@deepseek-ai/dsh-session-persistence'
@@ -75,6 +76,18 @@ export async function registerQuestionRespondents(ctx:Context,options:{
   authorize:(input:QuestionSubmission)=>Promise<{ agent:Agent;actor:AuthenticatedActor }|undefined>
   admitted:(agent:Agent,actor:AuthenticatedActor,messageId:string)=>void
 }):Promise<void> {
+  ctx.on('user-questions/late-answer-admission',async (agent,callId,questions,answer)=>{
+    const input:QuestionSubmission={ agentId:agent.id,eventId:`late-${callId}`,request:{ agent,callId,questions },value:answer,signal:new AbortController().signal }
+    const authority=await options.authorize(input)
+    if(!authority)return undefined
+    questionAnswerText(input,authority.actor)
+    return { questionCallId:callId,questionEventId:input.eventId,questionAnswer:true,questionAnswerSubmission:true,
+      authenticatedActor:authority.actor }
+  })
+  ctx.on('user-questions/late-answer-admitted',(agent,_callId,id,source)=>{
+    const actor=source['authenticatedActor']
+    if(object(actor))options.admitted(agent,actor as unknown as AuthenticatedActor,id)
+  })
   await ctx.inject(['sessions'],questionCtx=>questionCtx.effect(()=>questionCtx.on('typert/remote-event-result-admission',async (input)=>{
     if(input.event!=='user-questions/request')return
     const authority=await options.authorize(input)

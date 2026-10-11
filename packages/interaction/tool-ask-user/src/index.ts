@@ -7,6 +7,8 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis'
+import z from '@deepseek-ai/schemastery'
+import { registerTimedAskUser } from './timed.ts'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import '@deepseek-ai/dsh-user-questions'
 
@@ -16,7 +18,14 @@ export const inject = ['tools', 'userQuestions']
 const description = 'Ask the user a concise question when you need confirmation, a choice, or missing information before proceeding. '
   + 'Send one or more questions, each with a stable id that will be echoed in the answer.'
 
-export function apply(ctx: Context): void {
+export interface Config { mode?: 'legacy' | 'timed' | 'park'; timeout?: number }
+export const Config: z<Config> = z.object({ mode: z.union(['legacy', 'timed', 'park']).default('legacy'), timeout: z.number().default(120) })
+
+export function apply(ctx: Context, config: Config = {}): void {
+  if (config.mode === 'timed' || config.mode === 'park') {
+    registerTimedAskUser(ctx, config.timeout, config.mode === 'park')
+    return
+  }
   ctx.tools.register(defineTool({
     name: 'ask_user_question',
     description,
