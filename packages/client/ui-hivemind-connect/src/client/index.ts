@@ -38,7 +38,6 @@ import type { PendingInteractionPublisher } from '@deepseek-ai/dsh-client-ui-ses
 import type { TypertClientEventListener } from '@deepseek-ai/dsh-typert-protocol'
 import { en, zh, type HivemindConnectKey } from './locales.ts'
 import { setupEmbedMessaging } from './embed.ts'
-import { ComposioConnectionCard } from './ComposioConnectionCard.tsx'
 import {
   connectionPresentationOf, PendingConnectionAuthorization,
 } from './connection-question.ts'
@@ -844,13 +843,6 @@ export function apply(ctx: ClientContext): void {
     },
     refresh => ctx.sessions.list.subscribe(refresh), currentRoomIdentity,
   ), 'ui-hivemind-connect: Singulance hero headline')
-  ctx.slots.inject('tool.call.toolview', function* () {
-    const registration = (key: string) => ctx.slots.register({
-      name: 'tool.call.toolview', key, locale: NS,
-    }, ComposioConnectionCard)
-    yield registration('hivemind_connected_task')
-    yield registration('mcp__composio__COMPOSIO_MANAGE_CONNECTIONS')
-  })
   ctx.effect(() => {
     if (document.documentElement.dataset.dshMode === 'hivemind-chat' || isHivemindRoute(window.location.pathname)) {
       return setupHivemindSessionRouting(ctx.sessions)

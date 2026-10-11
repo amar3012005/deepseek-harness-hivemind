@@ -10,7 +10,7 @@ A transient Mercury failure leaves authorized activity pending. The current Open
 
 ## Decision
 
-The existing dedicated Decisions provider accepts the pinned Mercury, free Mercury and Jev models. A server-configured alternate receives the identical typed state and questions after primary transport or output failure. The web bundle selects Jev as Mercury's alternate and reserves 1.2 seconds for primary inference within the existing three-second total deadline. Caller cancellation stops recovery. Each response must pass the original keyed primitive and normalized distribution validation before consumption. Credentials are resolved for each attempt; bodies and secrets remain unlogged.
+The existing dedicated Decisions provider accepts the pinned Mercury, free Mercury and Jev models. A server-configured alternate receives the identical typed state and questions after primary transport or output failure. The web bundle selects Jev as Mercury's alternate and permits six seconds for primary inference within an eight-second total deadline. The earlier 1.2-second primary and three-second total budget timed out during live recovery through the verified free gateway route. Successful responses return immediately; the deadline is a maximum, not a mandatory wait. Caller cancellation stops recovery. Each response must pass the original keyed primitive and normalized distribution validation before consumption. Credentials are resolved for each attempt; bodies and secrets remain unlogged.
 
 ## Alternatives considered
 

@@ -280,8 +280,8 @@
         gatewayByokAlias: !!js process.env.HIVEMIND_DECISION_GATEWAY_BYOK_ALIAS || undefined
         model: !!js process.env.HIVEMIND_DECISION_MODEL || 'inception/mercury-decide'
         fallbackModel: typesafe/jev-1.13
-        primaryTimeoutMs: 1200
-        timeoutMs: 3000
+        primaryTimeoutMs: 6000
+        timeoutMs: 8000
 
     - id: hivemind-runtime-attention
       name: '@deepseek-ai/dsh-hivemind-hq-runtime/attention'

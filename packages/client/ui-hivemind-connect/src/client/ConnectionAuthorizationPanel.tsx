@@ -36,7 +36,7 @@ export function ConnectionAuthorizationPanel({ matched, t, dismissible = true }:
       <details className={css.reason}><summary>{t('composio.reason')}</summary><p className={css.detail}>{question.question}</p></details>
       <p className={css.detail}>{failed ? t('composio.failed') : returned ? t('composio.returned') : null}</p>
       <div className={css.actions}>
-        <a className={css.connectButton} href={presentation.redirectUrl} target="_blank" rel="noreferrer">
+        <a className={css.connectButton} href={cancelling ? undefined : presentation.redirectUrl} aria-disabled={cancelling || undefined} target="_blank" rel="noreferrer">
           <span>{presentation.connectLabel}</span>
         </a>
         <Button variant="outline" onClick={continueWorkflow} disabled={verifying || cancelling}>
