@@ -1,5 +1,7 @@
 # HIVE-MIND artifact renderer
 
+Unspecified substantial written deliverables default to saved HTML through `hivemind_generate` with `format: web`. PDF and other document formats require an explicit human format request or an existing recorded explicit task requirement. This guidance does not restrict reading existing source documents or alter generator schemas and availability.
+
 ## HIVE design profiles
 
 The renderer owns five visual baselines: `executive`, `editorial`, `campaign`,

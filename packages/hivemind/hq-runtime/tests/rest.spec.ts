@@ -128,12 +128,79 @@ describe('native Runtime voluntary rest', () => {
     expect(greetingOnly([signal])).toBe(false)
     expect(greetingOnly([])).toBe(false)
   })
-  it('accepts exactly four hours but rejects longer sleeps before saving any intent', async () => {
+  it('accepts a requested review at exactly four hours', async () => {
     const f = fixture()
-    await expect(f.execute({ ...request, wake_at: '2030-01-01T04:00:00.001Z' })).rejects.toThrow('hq_rest_wake_exceeds_four_hours')
-    expect(f.events).toHaveLength(0)
-    expect(f.ensure).not.toHaveBeenCalled()
-    await expect(f.execute({ ...request, wake_at: '2030-01-01T04:00:00Z' })).resolves.toMatchObject({ status: 'rest_ready' })
+    await expect(f.execute({ ...request, wake_at: '2030-01-01T04:00:00Z' })).resolves.toMatchObject({ status: 'rest_ready', effectiveWakeAt: '2030-01-01T04:00:00.000Z' })
+  })
+
+  it('bounds repeated far-future requests once without changing deadlines, identity or independent timers', async () => {
+    const f = fixture()
+    f.ctx.hivemindHq.mode = () => ({ enabled: true }) as never
+    const workspace = { tasks: [{ id: 'task-3', revision: 2, status: 'in_progress', owner: 'Analyst', artifactIds: [], dueAt: '2030-01-04T12:00:00Z' }],
+      calendar: [{ id: 'employee-plan', startsAt: '2030-01-03T09:00:00Z', resolved: false }], wakes: [] }
+    f.ctx.hivemindHq.workspace = async () => workspace as never
+    f.schedules.set('employee-work', { id: 'employee-work', sessionId: 'employee', title: 'Employee work', prompt: 'Actual authorized work', kind: 'at', status: 'active', scheduledAt: '2030-01-03T09:00:00Z' })
+    f.agent.session.append('turn/start', { turn: 1 } as never)
+    const far = { ...request, wake_at: '2030-01-04T12:00:00Z' }
+    const expected = { status: 'rest_ready', requestedWakeAt: '2030-01-04T12:00:00.000Z', effectiveWakeAt: '2030-01-01T04:00:00.000Z' }
+    await expect(f.execute(far)).resolves.toMatchObject(expected)
+    const stateTool = f.tools.get('hivemind_hq_rest_state')!
+    const state = await stateTool.execute({}, { agent: f.agent, signal: new AbortController().signal } as never) as {
+      exactRetry: typeof request
+    }
+    expect(state.exactRetry).toEqual({ ...far, wake_at: expected.requestedWakeAt })
+    vi.setSystemTime(new Date('2030-01-01T00:01:00Z'))
+    await expect(f.execute(state.exactRetry)).resolves.toMatchObject(expected)
+    await expect(f.execute(far)).resolves.toMatchObject(expected)
+    expect(f.ensure).toHaveBeenCalledOnce()
+    expect(f.events.filter(event => event.type === 'hivemind/hq-rest-intent')).toHaveLength(1)
+    expect(f.events.filter(event => event.type === 'hivemind/hq-rest-wake')).toHaveLength(1)
+    expect(workspace.tasks[0]!.dueAt).toBe('2030-01-04T12:00:00Z')
+    expect(workspace.calendar[0]!.startsAt).toBe('2030-01-03T09:00:00Z')
+    expect(f.schedules.get('employee-work')?.scheduledAt).toBe('2030-01-03T09:00:00Z')
+    await f.hooks.get('agent/turn-stopping')!({ agent: f.agent, turn: 1, signal: new AbortController().signal })
+    expect(f.agent.steer).not.toHaveBeenCalled()
+    await expect(f.execute({ ...far, wake_at: '2030-01-05T12:00:00Z' })).rejects.toThrow('hq_rest_identity_conflict')
+  })
+
+  it('recovers the checkpointed bounded review time after a failed Schedule call without moving its identity', async () => {
+    const f = fixture()
+    const far = { ...request, wake_at: '2030-01-04T12:00:00Z' }
+    f.ensure.mockRejectedValueOnce(new Error('provider unavailable'))
+    await expect(f.execute(far)).rejects.toThrow('provider unavailable')
+    f.crash()
+    vi.setSystemTime(new Date('2030-01-01T01:00:00Z'))
+    await recoverRest(f.ctx, f.agent)
+    expect((await restState(f.ctx, f.agent)).latest).toMatchObject({ requestedWakeAt: '2030-01-04T12:00:00.000Z', effectiveWakeAt: '2030-01-01T04:00:00.000Z', ready: true })
+    await expect(f.execute(far)).resolves.toMatchObject({ status: 'rest_ready', effectiveWakeAt: '2030-01-01T04:00:00.000Z' })
+    expect(f.ensure).toHaveBeenCalledTimes(2)
+    expect(f.events.filter(event => event.type === 'hivemind/hq-rest-intent')).toHaveLength(1)
+  })
+
+  it('offers one exact replacement for a legacy confirmed later wake without rewriting its handoff', async () => {
+    const f = fixture()
+    await f.execute()
+    const intent = f.events.find(event => event.type === 'hivemind/hq-rest-intent')!
+    const binding = f.events.find(event => event.type === 'hivemind/hq-rest-wake')!
+    const late = '2030-01-04T12:00:00.000Z'
+    Object.assign(intent.data, { requestedWakeAt: late })
+    Reflect.deleteProperty(intent.data, 'reviewWakeAt')
+    Object.assign(binding.data, { effectiveWakeAt: late })
+    const priorWake = f.schedules.get(restScheduleId(f.agent.id, request.handoff_id))!
+    priorWake.scheduledAt = late
+    const before = JSON.stringify(f.events)
+    const result = await f.execute({ ...request, wake_at: late }) as { status: string; exactReviewRequest: typeof request }
+    expect(result.status).toBe('earlier_review_required')
+    expect(result.exactReviewRequest).toMatchObject({ wake_at: '2030-01-01T04:00:00.000Z', summary: request.summary, next_steps: request.next_steps, blockers: request.blockers })
+    expect(result.exactReviewRequest.handoff_id).not.toBe(request.handoff_id)
+    expect(JSON.stringify(f.events)).toBe(before)
+    expect(priorWake.scheduledAt).toBe(late)
+    expect(f.ensure).toHaveBeenCalledOnce()
+    const state = await f.tools.get('hivemind_hq_rest_state')!.execute({}, { agent: f.agent, signal: new AbortController().signal } as never)
+    expect(state).toMatchObject({ exactRetry: null, exactReviewRequest: result.exactReviewRequest })
+    await expect(f.execute(result.exactReviewRequest)).resolves.toMatchObject({ status: 'rest_ready', effectiveWakeAt: '2030-01-01T04:00:00.000Z' })
+    expect(intent.data).toMatchObject({ requestedWakeAt: late })
+    expect(binding.data).toMatchObject({ effectiveWakeAt: late })
   })
 
   it('preserves saved decisions without repeated sleep invitations without creating a new request registry', () => {

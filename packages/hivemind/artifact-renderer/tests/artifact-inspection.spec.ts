@@ -95,3 +95,56 @@ it('recognizes native Markdown-PDF transfers whose producer event omits MIME', (
   const pdf = { ...received, data: { ...received.data, artifacts: [{ artifactId: 'html-artifact', producerSessionId: 'sofia-room', file: { ...documentFile, name: 'saved.pdf' } }] } }
   expect(savedDocumentReference(agent([pdf]), 'html-artifact')?.mediaType).toBe('application/pdf')
 })
+
+it('reads an exact native saved preview attachment ID without substituting it for document contents', async () => {
+  const preview = { attachmentId: 'sha256:' + 'a'.repeat(64), mediaType: 'image/png' as const, bytes: png.byteLength, width: 4, height: 3 }
+  const native = new Context(); await native.plugin(SystemPrompt); await native.plugin(ToolRuntime)
+  native.provide('attachments', { ...ctx.attachments, readImage: async () => ({ ref: preview, data: png }) })
+  registerArtifactInspection(native)
+  for (const type of ['hivemind/generation-created', 'hivemind/artifact-created']) {
+    const owner = agent([{ type, data: { artifactId: 'pdf-or-html', preview, file: documentFile, pdf: documentFile, mediaType: 'text/html' } }])
+    const result = await native.tools.execute({ name: 'hivemind_artifact_inspect', arguments: { artifact_id: preview.attachmentId },
+      callId: ToolCallId('inspect-native-preview-' + type), agent: owner, signal: new AbortController().signal })
+    expect(result.isError).toBe(false)
+    expect(result.content).toContainEqual({ type: 'image', attachment: preview })
+    expect(savedDocumentReference(owner, preview.attachmentId)).toBeUndefined()
+  }
+  await native.fiber.dispose()
+})
+
+it('distinguishes unsupported admitted documents, missing receipts and an actual image byte-budget overflow', async () => {
+  const native = new Context(); await native.plugin(SystemPrompt); await native.plugin(ToolRuntime)
+  native.provide('attachments', ctx.attachments)
+  registerArtifactInspection(native)
+  const run = (owner: Agent, id: string) => native.tools.execute({ name: 'hivemind_artifact_inspect', arguments: { artifact_id: id },
+    callId: ToolCallId('inspect-reader-error'), agent: owner, signal: new AbortController().signal })
+  const office = agent([{ type: 'hivemind/generation-created', data: { artifactId: 'office-file', file: documentFile, mediaType: 'application/vnd.openxmlformats-officedocument.presentationml.presentation' } }])
+  const unsupported = await run(office, 'office-file')
+  expect(unsupported.isError).toBe(true)
+  expect(JSON.stringify(unsupported.content)).toContain('media type application/vnd.openxmlformats-officedocument.presentationml.presentation is not supported')
+  expect(JSON.stringify(unsupported.content)).not.toContain('30 MiB')
+  const unknownUpload = agent([{ type: 'user/message', data: { source: { kind: 'user' }, content: [{ type: 'file', attachment: { ...documentFile, name: 'source.docx' } }] } }])
+  expect(JSON.stringify((await run(unknownUpload, documentFile.attachmentId)).content)).toContain('application/octet-stream is not supported')
+  const missing = await run(agent([]), 'not-admitted')
+  expect(missing.isError).toBe(true)
+  expect(JSON.stringify(missing.content)).toContain('Saved artifact receipt unavailable in this room')
+  expect(JSON.stringify(missing.content)).not.toContain('30 MiB')
+  const oversized = await run(agent([{ type: 'hivemind/generation-created', data: { artifactId: 'oversized-image', file: { ...file, bytes: 31 * 1024 * 1024 }, mediaType: 'image/png' } }]), 'oversized-image')
+  expect(oversized.isError).toBe(true)
+  expect(JSON.stringify(oversized.content)).toContain('Saved image exceeds 30 MiB inspection limit')
+  await native.fiber.dispose()
+})
+
+it('keeps native preview IDs and owner-uploaded images bound to admitted receipts, denying prose, foreign receipts and host paths', async () => {
+  const preview = { attachmentId: 'sha256:' + 'b'.repeat(64), mediaType: 'image/png' as const, bytes: png.byteLength, width: 4, height: 3 }
+  const imageStore = { attachments: { ...ctx.attachments, readImage: async () => ({ ref: preview, data: png }) } } as unknown as Context
+  const uploaded = { type: 'user/message', data: { source: { kind: 'user' }, content: [{ type: 'image', attachment: preview }] } }
+  expect(await inspectSavedImage(imageStore, agent([uploaded]), preview.attachmentId, new AbortController().signal)).toEqual(preview)
+  for (const events of [
+    [{ type: 'user/message', data: { source: { kind: 'user' }, content: [{ type: 'text', text: preview.attachmentId }] } }],
+    [{ type: 'hivemind/hq-task-artifacts', data: { artifactIds: [preview.attachmentId] } }],
+    [{ type: 'hivemind/room-message-received', data: { targetId: 'foreign-room', senderId: 'producer', artifactIds: ['shared'], artifacts: [{ artifactId: 'shared', producerSessionId: 'producer', preview }] } }],
+  ]) await expect(inspectSavedImage(imageStore, agent(events), preview.attachmentId, new AbortController().signal)).rejects.toThrow('receipt unavailable in this room')
+  await expect(inspectSavedImage(imageStore, agent([uploaded]), '/tmp/preview.png', new AbortController().signal)).rejects.toThrow('receipt unavailable in this room')
+  await expect(inspectSavedImage(imageStore, agent([uploaded]), preview.attachmentId.slice(0, 16), new AbortController().signal)).rejects.toThrow('receipt unavailable in this room')
+})
