@@ -293,7 +293,7 @@ const CAPABILITY_DESCRIPTIONS: Readonly<Record<CapabilityLane, string>> = {
   automation: 'Tenant-scoped scheduled tasks, durable workflows, goals, and autonomous Ralph execution.',
   skills: 'Search and load exact specialized instructions progressively without mounting the full skill catalog.',
   artifact:
-    'Discover configured PDF, presentation, spreadsheet, image, video and web generators, then produce stored files. Load document design or Brand DNA when useful. Calculate financial totals with the deterministic calculator.',
+    'Inspect saved artifacts and admitted owner-uploaded HTML/Markdown/plain-text/PDF source files by their exact attachment receipts, without filesystem access. Discover configured PDF, presentation, spreadsheet, image, video and web generators, then produce stored files. Load document design or Brand DNA when useful. Calculate financial totals with the deterministic calculator.',
   visual:
     'On-demand image inspection, including extracting working Brand DNA from an official-site screenshot when stored guidance is absent.',
   memory: 'Durable HIVE-MIND memory writes.',

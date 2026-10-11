@@ -4,6 +4,7 @@ import { mkdtemp, writeFile, rm, readFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
+import { createHash } from 'node:crypto'
 import { Context } from '@deepseek-ai/cordis'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
 import Include from '@deepseek-ai/cordis-plugin-include'
@@ -15,10 +16,12 @@ import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
+import { ToolCallId } from '@deepseek-ai/dsh-llm/brand'
 import * as Persona from '@deepseek-ai/dsh-persona'
 import * as Hq from '../src/index.ts'
+import ExecutionScope from '@deepseek-ai/dsh-hivemind-execution-scope'
 import { TestSessionQuery } from '../../../experimental/agent-team/tests/test-session-query.ts'
-import { MockAdapter, textResponse } from '../../../core/agent-loop/tests/mock-adapter.ts'
+import { MockAdapter, textResponse, toolCallResponse } from '../../../core/agent-loop/tests/mock-adapter.ts'
 import { load, DEFAULT_SCHEMA, Type, dump } from 'js-yaml'
 import { expect, it, vi } from 'vitest'
 
@@ -26,9 +29,13 @@ it('admits current stage before the first model request, saves full history and 
   const dir = await mkdtemp(join(tmpdir(), 'runtime-stage-loader-'))
   const ctx = new Context()
   let boardReads = 0
-  const adapter = new MockAdapter([textResponse('I will inspect the current deployment evidence.'), textResponse('Hello!')])
+  const adapter = new MockAdapter([textResponse('I will inspect the current deployment evidence.'), textResponse('Hello!'), textResponse('I will continue our authorized preparation.'),
+    toolCallResponse('receive-current-result', 'fixture_employee_result', {}),
+    toolCallResponse('inspect-current-result', 'fixture_inspection', {}), textResponse('I reviewed the saved contribution.'),
+    textResponse('I will request the current daily evidence.'), textResponse('I will reconcile the saved daily reply.')])
   const dependencies = { name: 'stage-fixture', async apply(scope: Context) {
     await mountAgentLoopTestDependencies(scope)
+    await scope.plugin(ExecutionScope)
     await scope.plugin(JsonlSessionPersistence, { root: join(dir, 'sessions') })
     await scope.plugin(TestSessionQuery)
     await scope.plugin(AgentLoop, { agents: [] })
@@ -44,6 +51,21 @@ it('admits current stage before the first model request, saves full history and 
     } } as never)
     scope.get('llm')!.registerAdapter(['mock'], adapter)
     scope.get('tools')!.register(defineTool({ name: 'hivemind_research_answer', description: 'External search fixture; never called.', parameters: {}, output: { schema:{ type:'object',properties:{},additionalProperties:false },render:()=>[] }, execute: async () => { throw Error('unexpected external search') } }))
+    scope.get('tools')!.register(defineTool({ name: 'fixture_employee_result', description: 'Fixture-owned external employee delivery.', parameters: {},
+      output: { schema: { type:'object',properties:{},additionalProperties:true },render: (_args,result) => [{ type:'text',text:JSON.stringify(result) }] },
+      execute: async (_args,execution) => {
+        const agent = execution.agent!
+        agent.session.append('hivemind/room-message-received', { id:'current-result',senderId:'employee-room',senderName:'Analyst',
+          senderEmployee:'analyst',targetId:agent.id,kind:'update',text:'The submitted evidence is ready for review.',taskId:'task-1',artifactIds:[],hops:0 } as never)
+        agent.send(createUserMessage({ source:{ kind:'hivemind-agent-message',form:'relay',messageId:'current-result',senderId:SessionId('employee-room'),senderSessionId:SessionId('employee-room') },
+          content:[{ type:'text',text:'The submitted evidence is ready for review.' }] }), 'next-step', true)
+        return { status:'delivered' }
+      },
+    }))
+    scope.get('tools')!.register(defineTool({ name: 'fixture_inspection', description: 'Fixture-owned evidence inspection.', parameters: {},
+      output: { schema: { type:'object',properties:{},additionalProperties:true },render: (_args,result) => [{ type:'text',text:JSON.stringify(result) }] },
+      execute: async () => ({ status:'inspected' }),
+    }))
   } }
   try {
     const schema = DEFAULT_SCHEMA.extend(new Type('tag:yaml.org,2002:js', { kind: 'scalar', construct: value => value }))
@@ -72,10 +94,58 @@ it('admits current stage before the first model request, saves full history and 
     expect(first).not.toContain('Current Nightly report:')
     expect(agent.session.snapshotEvents().some(event => event.type === 'user/message' && event.data.id === original.id)).toBe(true)
     expect(boardReads).toBe(1)
+    const blockers = await ctx.get('hivemindExecutionScope')!.run({ orgId:'fixture-org',userId:'fixture-owner',
+      profile:'hivemind-chat',variation:'hivemind-hq' }, () => ctx.get('tools')!.execute({
+      name:'hivemind_hq_blocker',arguments:{ action:'list' },callId:ToolCallId('scoped-blocker-list'),
+      agent,signal:new AbortController().signal,
+    }))
+    expect(blockers.isError, JSON.stringify(blockers.content)).toBe(false)
+    expect(JSON.stringify(blockers.content)).toContain('blockers')
     agent.send(createUserMessage({ source: { kind: 'user' }, content: [{ type: 'text', text: 'hello' }] }), 'next-turn', true)
     await vi.waitFor(() => expect(adapter.requests).toHaveLength(2))
     await vi.waitFor(() => expect(agent.status).toBe('idle'))
     expect(boardReads).toBe(1)
+    const actor = { userId:'fixture-owner',orgId:'fixture-org',role:'owner',name:'Owner' }
+    agent.session.append('hivemind/voice-call-ended', { callId:'saved-admin-call',provider:'codex',
+      initialCheckIn:false,interrupted:false,hadUserSpeech:true,transcript:'user: Existing customers first.',authenticatedActor:actor })
+    agent.send(createUserMessage({ source:{ kind:'plugin',plugin:'hivemind-live-voice',form:'recall',
+      voiceCallId:'saved-admin-call',authenticatedActor:actor },content:[{ type:'text',text:'Reconcile this saved administrator conversation.' }] }), 'next-turn', true)
+    await vi.waitFor(() => expect(adapter.requests).toHaveLength(3))
+    await vi.waitFor(() => expect(agent.status).toBe('idle'))
+    expect(JSON.stringify(adapter.requests[2])).toContain('Administrator call follow-up:')
+    expect(JSON.stringify(adapter.requests[2])).toContain('continue already authorized preparation, planning, delegation and review')
+    expect(boardReads).toBe(2)
+    const turnCount = agent.session.snapshotEvents().filter(event => event.type === 'turn/start').length
+    agent.send(createUserMessage({ source:{ kind:'user' },content:[{ type:'text',text:'Review the next returned evidence and continue our internal work.' }] }), 'next-turn', true)
+    await vi.waitFor(() => expect(adapter.requests).toHaveLength(6))
+    await vi.waitFor(() => expect(agent.status).toBe('idle'))
+    expect(agent.session.snapshotEvents().filter(event => event.type === 'turn/start')).toHaveLength(turnCount + 1)
+    expect(JSON.stringify(adapter.requests[3])).not.toContain('Employee result or blocker:')
+    expect(JSON.stringify(adapter.requests[4])).toContain('Employee result or blocker:')
+    expect(JSON.stringify(adapter.requests[4])).toContain('Advance the next eligible dependency after review')
+    expect(agent.session.snapshotEvents().filter(event => event.type === 'user/message'
+      && event.data.source.kind === 'plugin' && event.data.source.plugin === 'hivemind-hq/stage-guidance')).toHaveLength(1)
+    expect(boardReads).toBe(3)
+    const occurrenceAt = '2026-10-11T04:25:00Z'
+    const scheduleId = 'schedule-' + createHash('sha256').update(`${agent.id}\0nightly-routine-check-v1`).digest('hex')
+    agent.send(createUserMessage({ source:{ kind:'schedule',occurrenceAt },content:[{ type:'text',text:'reminders_json: '+JSON.stringify([{ schedule_id:scheduleId,occurrence_at:occurrenceAt }]) }] }), 'next-turn', true)
+    await vi.waitFor(() => expect(adapter.requests).toHaveLength(7))
+    await vi.waitFor(() => expect(agent.status).toBe('idle'))
+    agent.session.append('hivemind/room-message-queued', { id:'daily-request',senderId:agent.id,senderName:'Runtime',senderEmployee:'runtime',
+      targetId:SessionId('employee-room'),kind:'question',text:'NIGHTLY_REVIEW_REQUEST='+JSON.stringify({ occurrence:occurrenceAt,agent_index:1 }),artifactIds:[],hops:0 })
+    agent.session.append('hivemind/room-message-received', { id:'daily-reply',senderId:SessionId('employee-room'),senderName:'Analyst',senderEmployee:'analyst',
+      targetId:agent.id,kind:'reply',replyTo:'daily-request',text:'Saved daily diagnostics.',artifactIds:[],hops:0 })
+    agent.send(createUserMessage({ source:{ kind:'hivemind-agent-message',form:'relay',messageId:'daily-reply',senderId:SessionId('employee-room'),senderSessionId:SessionId('employee-room') },
+      content:[{ type:'text',text:'Saved daily diagnostics.' }] }), 'next-turn', true)
+    await vi.waitFor(() => expect(adapter.requests).toHaveLength(8))
+    await vi.waitFor(() => expect(agent.status).toBe('idle'))
+    const replyTurnStart = agent.session.snapshotEvents().findLast(event => event.type === 'turn/start')!.seq
+    const replyStage = agent.session.snapshotEvents().findLast(event => event.seq > replyTurnStart && event.type === 'user/message'
+      && event.data.source.kind === 'plugin' && event.data.source.plugin === 'hivemind-hq/wake-briefing')
+    expect(JSON.stringify(replyStage)).toContain('Current Nightly report:')
+    expect(JSON.stringify(adapter.requests[7])).toContain('Current Nightly report:')
+    expect(JSON.stringify(adapter.requests[7])).toContain('ordinary detailed email')
+    expect(boardReads).toBe(5)
     expect(ctx.tools.get('hivemind_hq_rest')).toBeDefined()
     await ctx.fiber.dispose()
     expect(ctx.get('tools')).toBeUndefined()

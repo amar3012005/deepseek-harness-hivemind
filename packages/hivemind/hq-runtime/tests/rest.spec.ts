@@ -371,3 +371,54 @@ it('recognizes only the current pending native nightly schedule before first req
   expect(isNightlyScheduledTurn(f.agent,[createUserMessage({ source:{ kind:'user' },content:[{ type:'text',text }] })])).toBe(false)
   expect(isNightlyScheduledTurn(f.agent,[createUserMessage({ source:{ kind:'schedule',occurrenceAt:'2030-02-01T00:00:00Z' },content:[{ type:'text',text }] })])).toBe(false)
 })
+
+it('recognizes an admitted nightly reply before its first request only from the exact native request, sender and occurrence', () => {
+  const f = fixture()
+  const occurrence = '2030-01-01T00:00:00Z'
+  const scheduleId = 'schedule-' + createHash('sha256').update(`${f.agent.id}\0nightly-routine-check-v1`).digest('hex')
+  const batchOccurrence = '2030-01-01T00:05:00Z'
+  f.agent.session.append('user/message', createUserMessage({ source: { kind: 'schedule', occurrenceAt: batchOccurrence },
+    content: [{ type: 'text', text: 'reminders_json: ' + JSON.stringify([{ schedule_id: 'another-recurring-reminder', occurrence_at: batchOccurrence },
+      { schedule_id: scheduleId, occurrence_at: occurrence }]) }] }))
+  const request = { id: 'daily-request', senderId: f.agent.id, targetId: 'employee-room', kind: 'question',
+    text: 'NIGHTLY_REVIEW_REQUEST=' + JSON.stringify({ occurrence, agent_index: 1 }) }
+  const reply = { id: 'daily-reply', senderId: 'employee-room', targetId: f.agent.id, kind: 'reply', replyTo: request.id }
+  f.agent.session.append('hivemind/room-message-queued', request as never)
+  f.agent.session.append('turn/end', { turn: 1, reason: { kind: 'completed' } } as never)
+  f.agent.session.append('hivemind/room-message-received', reply as never)
+  f.agent.session.append('turn/start', { turn: 2 } as never)
+  const admitted = createUserMessage({ source: { kind: 'hivemind-agent-message', form: 'relay', messageId: reply.id,
+    senderId: reply.senderId, senderSessionId: reply.senderId } as never, content: [{ type: 'text', text: 'Actual saved daily reply' }] })
+  expect(isNightlyScheduledTurn(f.agent, [admitted])).toBe(true)
+  expect(isNightlyScheduledTurn(f.agent)).toBe(false)
+  for (const source of [
+    { ...admitted.source, messageId: 'unknown-reply' },
+    { ...admitted.source, senderId: 'foreign-room' },
+    { ...admitted.source, senderSessionId: 'foreign-room' },
+  ]) expect(isNightlyScheduledTurn(f.agent, [createUserMessage({ source: source as never, content: admitted.content })])).toBe(false)
+  const requestEvent = f.events.find(event => event.type === 'hivemind/room-message-queued')!
+  for (const invalid of [
+    { ...request, senderId: 'foreign-root' },
+    { ...request, targetId: 'foreign-room' },
+    { ...request, kind: 'update' },
+    { ...request, text: 'NIGHTLY_REVIEW_REQUEST=' + JSON.stringify({ occurrence: '2030-01-02T00:00:00Z' }) },
+  ]) {
+    Object.assign(requestEvent, { data: invalid })
+    expect(isNightlyScheduledTurn(f.agent, [admitted])).toBe(false)
+  }
+  Object.assign(requestEvent, { data: request })
+  f.agent.session.append('user/message', admitted)
+  expect(isNightlyScheduledTurn(f.agent)).toBe(true)
+})
+
+it('preserves the nightly occurrence in a native mixed recurring batch and rejects a mismatched batch source', () => {
+  const f = fixture()
+  const occurrenceAt = '2030-01-01T00:00:00Z'
+  const id = 'schedule-' + createHash('sha256').update(`${f.agent.id}\0nightly-routine-check-v1`).digest('hex')
+  const scheduled = createUserMessage({ source: { kind: 'schedule', occurrenceAt }, content: [{ type: 'text',
+    text: 'reminders_json: ' + JSON.stringify([{ schedule_id: 'unrelated', occurrence_at: occurrenceAt },
+      { schedule_id: id, occurrence_at: '2030-01-02T00:00:00Z' }]) }] })
+  expect(isNightlyScheduledTurn(f.agent, [scheduled])).toBe(true)
+  expect(isNightlyScheduledTurn(f.agent, [createUserMessage({ ...scheduled,
+    source: { kind: 'schedule', occurrenceAt: '2030-01-03T00:00:00Z' } })])).toBe(false)
+})

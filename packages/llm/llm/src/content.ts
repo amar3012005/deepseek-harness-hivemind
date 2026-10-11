@@ -152,12 +152,11 @@ export function contentHasFile(content: readonly ContentBlock[]): boolean {
  * @returns deterministic handle text naming the file, its size, and its address.
  */
 export function fileHandleText(ref: FileAttachmentRef, readonlyPath: string | undefined): string {
-  const digest = String(ref.attachmentId).slice('sha256:'.length, 'sha256:'.length + 8)
-  const identity = `File ${quoted(ref.name)} (${ref.bytes} bytes, sha256:${digest})`
+  const identity = `File ${quoted(ref.name)} (${ref.bytes} bytes, attachment ID ${ref.attachmentId})`
   if (readonlyPath === undefined) {
-    return `[${identity} was uploaded, but the current execution environment cannot access a readable path. Report that limitation if its contents are needed; do not claim to have read it.]`
+    return `[${identity} was uploaded, but the current execution environment cannot access a readable path. Use this exact admitted attachment ID with an available native attachment reader; otherwise report the access limitation if its contents are needed. Do not claim to have read it.]`
   }
-  return `[${identity}: verbatim read-only copy saved at ${quoted(readonlyPath)}. Read that path with your file tools when its contents are needed; copy it to a writable location before modifying it. When delegating file work, include this saved path in the delegation prompt; only subagents sharing this execution environment can read it.]`
+  return `[${identity}: verbatim read-only copy saved at ${quoted(readonlyPath)}. Use the exact admitted attachment ID with an available native attachment reader, or read the path with authorized file tools when its contents are needed; copy it to a writable location before modifying it. When delegating file work, share inspected content or an accepted attachment receipt. A saved local path alone does not grant colleague access; only subagents sharing this execution environment can read it.]`
 }
 
 /** Replace every file occurrence, including nested tool results, with handle text. */

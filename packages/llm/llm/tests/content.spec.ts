@@ -423,13 +423,15 @@ describe('file projection', () => {
     const withPath = fileHandleText(fileBlock('notes.pdf').attachment, '/home/.dsh/attachments/v1/files/ab/x/notes.pdf')
     expect(withPath).toContain('"notes.pdf"')
     expect(withPath).toContain('42 bytes')
-    expect(withPath).toContain('sha256:abababab')
+    expect(withPath).toContain('attachment ID ' + fileBlock('notes.pdf').attachment.attachmentId)
     expect(withPath).toContain('"/home/.dsh/attachments/v1/files/ab/x/notes.pdf"')
-    expect(withPath).toContain('include this saved path in the delegation prompt')
+    expect(withPath).toContain('share inspected content or an accepted attachment receipt')
     expect(withPath).toContain('only subagents sharing this execution environment can read it')
     const withoutPath = fileHandleText(fileBlock('notes.pdf').attachment, undefined)
     expect(withoutPath).toContain('current execution environment cannot access a readable path')
-    expect(withoutPath).toContain('do not claim to have read it')
+    expect(withoutPath).toContain('attachment ID ' + fileBlock('notes.pdf').attachment.attachmentId)
+    expect(withoutPath).toContain('native attachment reader')
+    expect(withoutPath).toContain('Do not claim to have read it')
   })
 
   it('replaces every file occurrence with handle text and keeps file-free history identical', () => {

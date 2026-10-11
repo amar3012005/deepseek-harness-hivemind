@@ -517,6 +517,14 @@ export class HiveMindOperatingRuns extends Service {
 export function apply(ctx: Context, config: Partial<Config> = {}): void {
   const maxSummaryChars = config.maxSummaryChars ?? 4_000
   const service = new HiveMindOperatingRuns(ctx, config.maxPersonaChars ?? 8_000)
+  let hqFullAccessAllowed: ((agent: Agent, signal: AbortSignal) => Promise<boolean>) | undefined
+  ctx.inject(['hivemindHq'], hqCtx => hqCtx.effect(() => {
+    const hq = hqCtx.get('hivemindHq') as {
+      fullAccessAllowed?: (agent: Agent, signal: AbortSignal) => Promise<boolean>
+    }
+    hqFullAccessAllowed = (agent, signal) => hq.fullAccessAllowed?.(agent, signal) ?? Promise.resolve(false)
+    return () => { hqFullAccessAllowed = undefined }
+  }))
 
   // This observer is deliberately observational. It follows native session and
   // approval receipts, derives the active run from the session log, and never
@@ -686,9 +694,7 @@ export function apply(ctx: Context, config: Partial<Config> = {}): void {
         }
         const reason = text(input['approval_reason'], 'approval_reason', maxSummaryChars)
         const presets = ctx.get('permissionPresets') as { current(session: Agent['session']): string } | undefined
-        const permissionGranted = (presets?.current(execution.agent.session) === 'danger-full-access' || await (Reflect.get(ctx, 'hivemindHq') as {
-          fullAccessAllowed?: (agent: Agent, signal: AbortSignal) => Promise<boolean>
-        } | undefined)?.fullAccessAllowed?.(execution.agent, execution.signal))
+        const permissionGranted = (presets?.current(execution.agent.session) === 'danger-full-access' || await hqFullAccessAllowed?.(execution.agent, execution.signal))
         const outcome = permissionGranted ? 'allowed-once' as const
           : await ctx.approval.request({ agent: execution.agent, toolName: 'hivemind_workstream', callId: execution.rootCallId, reason, signal: execution.signal })
         if (outcome === 'pending') execution.concludeTurn()

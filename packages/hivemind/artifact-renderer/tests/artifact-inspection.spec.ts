@@ -45,6 +45,22 @@ it('returns actual image attachment in the native model result', async () => {
 
 const html = '<!doctype html><html><body><h1>30-day customer acquisition</h1><p>Saved strategy, not a filename.</p></body></html>'
 const documentFile = { attachmentId: 'shared-html-file', name: 'gtm.html', bytes: Buffer.byteLength(html) } as FileAttachmentRef
+it('reads exact native owner-uploaded text without exposing host filesystem access', async () => {
+  const file = { attachmentId:'owner-checklist',name:'checklist.md',bytes:Buffer.byteLength(html) } as FileAttachmentRef
+  const uploaded = { type:'user/message',data:{ source:{ kind:'user' },content:[{ type:'file',attachment:file }] } }
+  const native = new Context(); await native.plugin(SystemPrompt); await native.plugin(ToolRuntime)
+  native.provide('attachments', { ...ctx.attachments, async *readFileStream() { yield Buffer.from(html) } })
+  registerArtifactInspection(native)
+  const result = await native.tools.execute({ name:'hivemind_artifact_inspect',arguments:{ artifact_id:file.attachmentId },
+    callId:ToolCallId('inspect-uploaded-checklist'),agent:agent([uploaded]),signal:new AbortController().signal })
+  expect(result.isError).toBe(false)
+  expect(JSON.stringify(result.content)).toContain(html)
+  expect(savedDocumentReference(agent([]), file.attachmentId)).toBeUndefined()
+  expect(savedDocumentReference(agent([uploaded]), '/tmp/checklist.md')).toBeUndefined()
+  expect(savedDocumentReference(agent([{ ...uploaded,data:{ ...uploaded.data,source:{ kind:'plugin' } } }]), file.attachmentId)).toBeUndefined()
+  expect(savedDocumentReference(agent([{ ...uploaded,data:{ ...uploaded.data,content:[{ type:'text',text:file.attachmentId }] } }]), file.attachmentId)).toBeUndefined()
+  await native.fiber.dispose()
+})
 const received = { type: 'hivemind/room-message-received', data: { targetId: 'room', senderId: 'sofia-room', artifactIds: ['html-artifact'], artifacts: [{ artifactId: 'html-artifact', producerSessionId: 'sofia-room', mediaType: 'text/html', file: documentFile }] } }
 it('reads exact shared HTML through native tool output without job or task', async () => {
   const native = new Context(); await native.plugin(SystemPrompt); await native.plugin(ToolRuntime)

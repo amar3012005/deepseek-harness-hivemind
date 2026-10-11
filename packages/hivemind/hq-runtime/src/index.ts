@@ -55,6 +55,7 @@ export const inject = [
   'hivemindHq',
   'hivemindEmployeeDirectory',
   'sessionController',
+  'hivemindExecutionScope',
 ]
 declare module '@deepseek-ai/dsh-session/types' {
   interface SessionEventMap {
@@ -88,6 +89,7 @@ export function apply(ctx: Context): void {
   installRest(ctx)
   installAwakening(ctx)
   const briefed = new WeakMap<object, number>()
+  const stageBriefed = new WeakMap<object, string>()
   const researchMasked = new WeakSet<object>()
   const investigationMasks = new WeakMap<object, () => void>()
   ctx.effect(() => ctx.on('agent/pre-step', async ({ agent, turn, signal }, next) => {
@@ -145,19 +147,31 @@ export function apply(ctx: Context): void {
     const currentStart = currentEvents.findLast(event => event.type === 'turn/start')?.seq ?? -1
     if (greetingOnly(decision.messages)
       || socialTurnOnly(currentEvents.filter(event => event.seq > currentStart), decision.messages)) return decision
+    const awakening = await awakeningContext(ctx, agent, turn, decision.messages)
+    const guidance = runtimeStageGuidance(agent.session.snapshotEvents(), decision.messages, agent.id,
+      Boolean(awakening), isNightlyScheduledTurn(agent, decision.messages))
+    if (briefed.get(agent) === turn) {
+      if (stageBriefed.get(agent) === guidance) return decision
+      // Newly admitted calls, colleague results and signals can steer an active
+      // turn. Refresh only their stage directive, not the full company briefing.
+      stageBriefed.set(agent, guidance)
+      return { ...decision, messages: [createUserMessage({
+        source: { kind: 'plugin', plugin: 'hivemind-hq/stage-guidance', form: 'recall' },
+        content: [{ type: 'text', text: guidance }],
+      }), ...decision.messages] }
+    }
     await recoverRest(ctx, agent, signal)
     await acknowledgeRestNotes(ctx, agent)
-    const awakening = await awakeningContext(ctx, agent, turn, decision.messages)
-    if (briefed.get(agent) === turn) return decision
     // The admitted message is durable native context: inject once per turn,
     // and reread on cold restoration rather than adding a copy per tool step.
     const workspace = await ctx.hivemindHq.workspace(agent)
     briefed.set(agent, turn)
+    stageBriefed.set(agent, guidance)
     const rest = restBriefing(agent, decision.messages)
     const currentRest = await restState(ctx, agent)
     const briefing = createUserMessage({
       source: { kind: 'plugin', plugin: 'hivemind-hq/wake-briefing', form: 'recall', sections: [rest.section] },
-      content: [{ type: 'text', text: `${runtimeStageGuidance(agent.session.snapshotEvents(), decision.messages, agent.id, Boolean(awakening), isNightlyScheduledTurn(agent, decision.messages))}\n${wakeBriefing(workspace, agent.session.snapshotEvents(), agent.id)}\n${rest.text}\nCurrent native rest state: ${JSON.stringify(currentRest.latest)}. A missing wake is not confirmed sleep; choose a new justified handoff when needed, without restoring a deleted timer.` }],
+      content: [{ type: 'text', text: `${guidance}\n${wakeBriefing(workspace, agent.session.snapshotEvents(), agent.id)}\n${rest.text}\nCurrent native rest state: ${JSON.stringify(currentRest.latest)}. A missing wake is not confirmed sleep; choose a new justified handoff when needed, without restoring a deleted timer.` }],
     })
     if (awakening) return { ...decision, messages: [briefing, ...decision.messages, createUserMessage({
       source: { kind: 'plugin', plugin: 'hivemind-hq/first-awakening', form: 'snapshot', sections: [{ name: 'hq-first-awakening', text: awakening }] },
@@ -487,16 +501,8 @@ export function apply(ctx: Context): void {
           const planned = calendarItems(root.session.snapshotEvents()).find(
             item => item.taskId === task.id,
           )
-          const firstAwakening = root.session.snapshotEvents().some(
-            event => event.type === 'hivemind/hq-awakening-start',
-          ) && !root.session.snapshotEvents().some(
-            event => event.type === 'hivemind/hq-awakening-checkpoint'
-              && (event.data.stage === 'conversation' || event.data.stage === 'remembered') && !event.data.blocked,
-          )
-          // Initial discovery plans future work. A dispatch needs its saved
-          // calendar first; ordinary subsequent work retains its native flow.
-          if (task.status === 'pending' && firstAwakening && !planned)
-            throw new Error('hq_first_awakening_schedule_before_assign: use action schedule with task_id, employee_id, starts_at and ends_at; do not assign before its saved start')
+          // Orientation does not delay authorized ready work. A saved future
+          // start remains authoritative until the employee's own room is due.
           if (task.status === 'pending' && planned && Date.parse(planned.startsAt) > Date.now())
             throw new Error('hq_task_planned_start_not_due')
           return dispatchEmployee(ctx, root, task.id, input.employee_id, execution.signal)

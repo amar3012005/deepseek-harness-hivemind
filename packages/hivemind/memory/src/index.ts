@@ -97,6 +97,7 @@ async function approveSaveDestination(
   ctx: Context,
   execution: ToolExecution,
   request: SaveRequest,
+  fullAccessAllowed: ((agent: Agent, signal: AbortSignal) => Promise<boolean>) | undefined,
 ): Promise<SaveRequest | undefined> {
   if (execution.agent === undefined) throw new TypeError('hivemind-memory: active agent required')
   const choices: Array<keyof typeof SAVE_DESTINATIONS> = ['personal', 'organization']
@@ -112,9 +113,7 @@ async function approveSaveDestination(
   }
   appendSaveEvent(execution.agent, { operation_id: operationId, status: 'prepared' })
   const presets = ctx.get('permissionPresets') as { current(session: Agent['session']): string } | undefined
-  if (presets?.current(execution.agent.session) === 'danger-full-access' || await (Reflect.get(ctx, 'hivemindHq') as {
-    fullAccessAllowed?: (agent: Agent, signal: AbortSignal) => Promise<boolean>
-  } | undefined)?.fullAccessAllowed?.(execution.agent, execution.signal)) {
+  if (presets?.current(execution.agent.session) === 'danger-full-access' || await fullAccessAllowed?.(execution.agent, execution.signal)) {
     // Full access is explicit session permission; it does not change tenant ACLs.
     // A concrete requested/prepared scope wins. Company-brain saves otherwise
     // use the company, or the explicitly selected project.
@@ -357,6 +356,14 @@ export function memoryPlugin(config: MemoryPluginConfig, provider: MemoryProvide
     name: 'hivemind-memory',
     inject: ['tools'],
     apply(ctx: Context): void {
+      let hqFullAccessAllowed: ((agent: Agent, signal: AbortSignal) => Promise<boolean>) | undefined
+      ctx.inject(['hivemindHq'], hqCtx => hqCtx.effect(() => {
+        const hq = hqCtx.get('hivemindHq') as {
+          fullAccessAllowed?: (agent: Agent, signal: AbortSignal) => Promise<boolean>
+        }
+        hqFullAccessAllowed = (agent, signal) => hq.fullAccessAllowed?.(agent, signal) ?? Promise.resolve(false)
+        return () => { hqFullAccessAllowed = undefined }
+      }))
       ctx.provide('hivemindMemory', provider)
       ctx.effect(() => ctx.tools.register(defineTool({
         name: 'hivemind_save_memory',
@@ -377,7 +384,7 @@ export function memoryPlugin(config: MemoryPluginConfig, provider: MemoryProvide
         async execute(args, execution) {
           if (execution.agent === undefined) throw new TypeError('hivemind-memory: active agent required')
           const prepared = provider.prepareSave?.(execution.agent, saveRequest(args)) ?? saveRequest(args)
-          const approved = await approveSaveDestination(ctx, execution, prepared)
+          const approved = await approveSaveDestination(ctx, execution, prepared, hqFullAccessAllowed)
           return approved === undefined
             ? { operation: 'save', status: 'cancelled' }
             : provider.save(execution.agent, approved, execution.signal, execution)
@@ -430,7 +437,7 @@ export function memoryPlugin(config: MemoryPluginConfig, provider: MemoryProvide
             ...(projects.length === 1 ? { project: projects[0] } : {}),
             ...(requestedScope === undefined ? {} : { scope: requestedScope }),
           }
-          const approved = await approveSaveDestination(ctx, execution, approvalRequest)
+          const approved = await approveSaveDestination(ctx, execution, approvalRequest, hqFullAccessAllowed)
           if (approved === undefined) return { operation: 'batch_save', status: 'cancelled', count: prepared.length }
           if (approved.scope === undefined) throw new Error('hivemind-memory: approved batch destination is unavailable')
           const results: Record<string, JsonValue>[] = []
@@ -527,7 +534,7 @@ export function memoryPlugin(config: MemoryPluginConfig, provider: MemoryProvide
               ? args
               : object(args.save, 'save')
             const prepared = provider.prepareSave?.(execution.agent, saveRequest(rawSave)) ?? saveRequest(rawSave)
-            const approved = await approveSaveDestination(ctx, execution, prepared)
+            const approved = await approveSaveDestination(ctx, execution, prepared, hqFullAccessAllowed)
             return approved === undefined
               ? { operation: 'save', status: 'cancelled' }
               : provider.save(execution.agent, approved, execution.signal, execution)
