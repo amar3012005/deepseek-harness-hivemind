@@ -32,12 +32,16 @@ export function currentNightlyOccurrence(agent: Agent, admitted: readonly UserMe
   const scheduleId = 'schedule-' + createHash('sha256').update(`${agent.id}\0nightly-routine-check-v1`).digest('hex')
   const candidates = [...events.flatMap(event => event.seq > boundary && event.type === 'user/message' ? [event.data] : []), ...admitted]
   for (const message of candidates) {
-    if (message.source.kind === 'hivemind-agent-message') {
+    if (String(message.source.kind) === 'hivemind-agent-message') {
       const messageId = (message.source as { messageId?: string }).messageId
-      const reply = events.findLast(event => event.type === 'hivemind/room-message-received' && event.data.id === messageId && event.data.kind === 'reply' && event.data.targetId === agent.id)
-      if (reply?.type === 'hivemind/room-message-received') {
-        const request = events.find(event => event.type === 'hivemind/room-message-queued' && event.data.id === reply.data.replyTo && event.data.targetId === reply.data.senderId)
-        if (request?.type === 'hivemind/room-message-queued') {
+      const roomEvents = events as unknown as readonly {
+        type: string
+        data: { id?: string; kind?: string; targetId?: string; senderId?: string; replyTo?: string; text?: string }
+      }[]
+      const reply = roomEvents.findLast(event => event.type === 'hivemind/room-message-received' && event.data.id === messageId && event.data.kind === 'reply' && event.data.targetId === agent.id)
+      if (reply) {
+        const request = roomEvents.find(event => event.type === 'hivemind/room-message-queued' && event.data.id === reply.data.replyTo && event.data.targetId === reply.data.senderId)
+        if (request && typeof request.data.text === 'string') {
           try {
             const marker = request.data.text.split('\n').find(line => line.startsWith('NIGHTLY_REVIEW_REQUEST='))
             const review = JSON.parse(marker?.slice('NIGHTLY_REVIEW_REQUEST='.length) ?? '')
