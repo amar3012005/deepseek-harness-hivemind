@@ -37,7 +37,7 @@ it('uses the original nightly batch member even when another reminder is first, 
 
 it('accepts bounded detailed diagnostics only with the actual native occurrence and rejects credentials before dispatch',async()=>{
   const occurrence='2026-10-09T00:00:00.000Z',id='session-nightly-test';const schedule='schedule-'+createHash('sha256').update(`${id}\0nightly-routine-check-v1`).digest('hex')
-  const agent=actor();Object.assign(agent,{ id });agent.session.snapshotEvents=()=>[{ type:'hivemind/session-owner',data:{ id:null,slug:'runtime' } },{ type:'user/message',data:{ source:{ kind:'schedule',occurrenceAt:occurrence },content:[{ type:'text',text:'reminders_json: '+JSON.stringify([{ schedule_id:schedule,occurrence_at:occurrence }]) }] } }] as never
+  const agent=actor();Object.assign(agent,{ id });agent.session.snapshotEvents=()=>[{ type:'hivemind/session-owner',seq:1,data:{ id:null,slug:'runtime' } },{ type:'user/message',seq:2,data:{ source:{ kind:'schedule',occurrenceAt:occurrence },content:[{ type:'text',text:'reminders_json: '+JSON.stringify([{ schedule_id:schedule,occurrence_at:occurrence }]) }] } }] as never
   let sends=0;const tool=runtimeSupportReportTool(async()=>{sends++;return{ status:'accepted' }})
   const details={ functional_area:'marketing',task_context:'Marketing review blocked by schema validation.',impact:'Assigned work cannot advance.',proposed_fix:'Discover a validated identifier.',owner:'hyperagent',agent_index:1,tool:'hivemind_app_get',expected:'A discovered identifier is used.',observed:'Schema validation rejected the malformed identifier.',recovery:'Read-only discovery was retried.',prevention:'Validate the returned identifier before the next call.',evidence:[{ kind:'tool_result',turn:2,sequence:8 }] }
   const input={ operation:'submit',occurrence,coverage:{ expected:2,inspected:2,missing:0 },issues:[{ capability:'crm',code:'invalid_identifier',severity:'high',count:1,cause:'confirmed',details }] }
@@ -53,6 +53,10 @@ it('accepts bounded detailed diagnostics only with the actual native occurrence 
     agent.session.snapshotEvents=()=>[...base,request,{ ...reply,data:{ ...reply.data,...patch } }] as never
     await expect(tool.execute(input,{ agent,signal:new AbortController().signal } as never)).rejects.toThrow('saved_correlated_nightly_evidence_required')
   }
+  agent.session.snapshotEvents=()=>[...base,request,reply] as never
+  const { agent_index: _wrongIndex, ...wrongOwnerDetails }=details
+  const incorrectlyOwned={ ...input,issues:[{ ...input.issues[0],details:{ ...wrongOwnerDetails,owner:'runtime' } }] }
+  await expect(tool.execute(incorrectlyOwned,{ agent,signal:new AbortController().signal } as never)).rejects.toMatchObject({ code:'NIGHTLY_EVIDENCE_MISMATCH' })
   agent.session.snapshotEvents=()=>[...base,{ type:'tool/result',seq:8,data:{} }] as never
   const { agent_index: _index,...ownDetails }=details
   const own={ ...input,issues:[{ ...input.issues[0],details:{ ...ownDetails,owner:'runtime' } }] }
@@ -60,7 +64,7 @@ it('accepts bounded detailed diagnostics only with the actual native occurrence 
   agent.session.snapshotEvents=()=>base
   await expect(tool.execute(own,{ agent,signal:new AbortController().signal } as never)).rejects.toThrow('saved_correlated_nightly_evidence_required')
 
-  await expect(tool.execute({ ...input,issues:[{ ...input.issues[0],details:{ ...details,observed:'Bearer credentialvalue' } }] },{ agent,signal:new AbortController().signal } as never)).rejects.toThrow();expect(sends).toBe(2)
+  await expect(tool.execute({ ...input,issues:[{ ...input.issues[0],details:{ ...details,observed:'Bearer credentialvalue' } }] },{ agent,signal:new AbortController().signal } as never)).rejects.toMatchObject({ code:'INVALID_ARGS' });expect(sends).toBe(2)
 })
 
 it('projects only bounded correlated findings with exact references and never dispatches evidence reads',async()=>{
@@ -82,4 +86,17 @@ it('projects only bounded correlated findings with exact references and never di
   await expect(tool.execute({ operation:'submit',occurrence,coverage:{ expected:2,inspected:2,missing:0 },issues:[{ capability:'artifacts',code:'unavailable',severity:'medium',count:1,cause:'unknown',details }] },{ agent,signal:new AbortController().signal } as never)).resolves.toEqual({});expect(sends).toBe(1)
   events[3]!.data.senderId='wrong';expect(JSON.stringify(nightlyReportEvidence(agent,occurrence))).not.toContain(finding.observed)
   events[3]!.data.senderId='employee';events[3]!.data.text='NIGHTLY_REVIEW_REPLY='+JSON.stringify({ occurrence,findings:[{ ...finding,observed:'Bearer leakedcredential' }] });expect(JSON.stringify(nightlyReportEvidence(agent,occurrence))).not.toContain('leakedcredential')
+})
+
+
+it('denies an old nightly occurrence in an ordinary admitted signal while allowing delivery-status lookup', async () => {
+  const occurrence='2026-10-11T00:00:00.000Z',id='session-nightly-active'
+  const schedule='schedule-'+createHash('sha256').update(`${id}\0nightly-routine-check-v1`).digest('hex')
+  const events=[{ type:'hivemind/session-owner',seq:1,data:{ id:null,slug:'runtime' } },{ type:'user/message',seq:2,data:{ source:{ kind:'schedule',occurrenceAt:occurrence },content:[{ type:'text',text:'reminders_json: '+JSON.stringify([{ schedule_id:schedule,occurrence_at:occurrence }]) }] } },{ type:'turn/end',seq:3,data:{} },{ type:'user/message',seq:4,data:{ source:{ kind:'plugin',plugin:'attention' },content:[{ type:'text',text:'Production deployment failed' }] } }]
+  const agent={ id,session:{ header:{ agentPreset:'hivemind-hq' },snapshotEvents:()=>events } } as unknown as Agent
+  let sent=0;const tool=runtimeSupportReportTool(async()=>{sent++;return { status:'delivered' }}),exec={ agent,signal:new AbortController().signal } as never
+  await expect(tool.execute({ operation:'evidence',occurrence },exec)).rejects.toMatchObject({ code:'NIGHTLY_NOT_ACTIVE' })
+  await expect(tool.execute({ operation:'submit',occurrence,coverage:{ expected:1,inspected:1,missing:0 },issues:[] },exec)).rejects.toMatchObject({ code:'NIGHTLY_NOT_ACTIVE' })
+  expect(sent).toBe(0)
+  await expect(tool.execute({ operation:'status',occurrence },exec)).resolves.toEqual({ status:'delivered' })
 })

@@ -27,9 +27,13 @@ it('rejects malformed, different-schedule and unanchored batches',()=>{
 it('requests native progressive skill loading once per active turn without replacing the actual request',async()=>{
   type Handler = (input: { agent: Agent; turn: number }, next: () => Promise<PreStepDecision>) => Promise<PreStepDecision>
   let handler: Handler
+  let render: (input: { agent: Agent }) => string
   const ctx={
     inject:(_deps:string[],fn:(scope:Context)=>void)=>fn(ctx), effect:(fn:()=>unknown)=>fn(),
-    skills:{ register:()=>()=>{} }, systemPrompt:{ section:()=>()=>{},getSectionOrder:()=>1 },
+    skills:{ register:()=>()=>{} },
+    systemPrompt:{
+      section:(section: { text: typeof render })=>{render=section.text;return()=>{}},getSectionOrder:()=>1,
+    },
     hivemindEmployeeDirectory:{ profiles:async()=>({ profiles:[] }) }, get:()=>undefined,
     on:(_name:string,fn:Handler)=>{handler=fn;return ()=>{}},
   } as unknown as Context
@@ -45,6 +49,12 @@ it('requests native progressive skill loading once per active turn without repla
   expect(reminder).toContain('If the skill is unavailable')
   expect(reminder).not.toContain(nightlyRoutineSkill.content)
   expect(reminder.length).toBeLessThan(1200)
+  expect(render!({ agent:f.agent })).toContain('Nightly report')
+  // Prompt assembly precedes pre-step: old process-local review state cannot
+  // leak into a newly admitted ordinary signal.
+  f.events.push({ type:'turn/end',seq:4,data:{} } as unknown as SessionEvent)
+  expect(render!({ agent:f.agent })).toBe('')
+  f.events.pop()
   expect(await call()).toBe(decision)
   expect(await call(fixture('user').agent)).toBe(decision)
   expect(await call(fixture('schedule','hivemind-hyperagents').agent)).toBe(decision)

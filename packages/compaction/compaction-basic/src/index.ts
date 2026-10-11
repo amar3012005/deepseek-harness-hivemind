@@ -342,6 +342,25 @@ export class BasicCompactionEngine extends CompactionEngine {
       const first = agent.session.eventAt(range.start)
       if (range.start === range.end && first?.type === 'user/message'
         && isCompactCheckpointSource(first.data.source)) return result
+      // A prior checkpoint plus a small new tool exchange is not a useful
+      // summary batch. Price only fresh selected nodes through the native
+      // meter: static schemas and the checkpoint must not repeatedly trigger
+      // summary-of-summary. This hysteresis survives cold replay because its
+      // inputs are the durable surface, not a process-local turn counter.
+      // Real overflow and pressure near adapter capacity remain unrestricted.
+      const surface = agent.session.surface.nodes
+      const startIndex = surface.indexOf(range.start)
+      const endIndex = surface.indexOf(range.end)
+      const selected = measurement.nodes.slice(startIndex, endIndex + 1)
+      let hasCheckpoint = false
+      let freshTokens = 0
+      for (const node of selected) {
+        const event = agent.session.eventAt(node.seq)
+        if (event?.type === 'user/message' && isCompactCheckpointSource(event.data.source)) hasCheckpoint = true
+        else freshTokens += node.tokens
+      }
+      if (hasCheckpoint && freshTokens < spec.retainTokens
+        && measurement.totalTokens < spec.contextWindow * 0.9) return result
       result = await this.compactRegion(range.start, range.end, agent, signal)
       measurement = meter.measure(agent.session)
       if (measurement.totalTokens < spec.thresholdTokens) return result
