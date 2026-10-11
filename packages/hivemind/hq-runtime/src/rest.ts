@@ -11,7 +11,7 @@ import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { HqRestNote, HqRestNoteRequest, HqRestNoteResult, HqRestState } from './types.ts'
 
 /** A native nightly review already has its recurring Schedule; it is not voluntary rest. */
-export function isNightlyScheduledTurn(agent:Agent):boolean {
+export function isNightlyScheduledTurn(agent:Agent, admitted: readonly UserMessage[] = []):boolean {
   const events=agent.session.snapshotEvents(),boundary=events.findLast(event=>event.type==='turn/end')?.seq??-1
   const schedule='schedule-'+createHash('sha256').update(`${agent.id}\0nightly-routine-check-v1`).digest('hex')
   // A saved colleague reply resumes the same review without another rest timer.
@@ -35,12 +35,17 @@ export function isNightlyScheduledTurn(agent:Agent):boolean {
       }
     }
   }
-  return events.some((event)=>{
-    if(event.seq<=boundary||event.type!=='user/message'||event.data.source.kind!=='schedule')return false
-    const occurrence=event.data.source.occurrenceAt
-    const text=event.data.content.flatMap(block=>block.type==='text'?[block.text]:[]).join('\n')
-    const line=text.split('\n').find(value=>value.startsWith('reminders_json: '))
-    try {const entries:unknown=JSON.parse(line?.slice('reminders_json: '.length)??'');return Array.isArray(entries)&&entries.some(entry=>entry&&typeof entry==='object'&&entry.occurrence_at===occurrence)&&entries.some(entry=>entry&&typeof entry==='object'&&entry.schedule_id===schedule)}catch{return false}
+  const current = [...events.flatMap(event => event.seq > boundary && event.type === 'user/message' ? [event.data] : []), ...admitted]
+  return current.some((message) => {
+    if (message.source.kind !== 'schedule') return false
+    const occurrence = message.source.occurrenceAt
+    const text = message.content.flatMap(block => block.type === 'text' ? [block.text] : []).join('\n')
+    const line = text.split('\n').find(value => value.startsWith('reminders_json: '))
+    try {
+      const entries: unknown = JSON.parse(line?.slice('reminders_json: '.length) ?? '')
+      return Array.isArray(entries) && entries.some(entry => entry && typeof entry === 'object' && entry.occurrence_at === occurrence)
+        && entries.some(entry => entry && typeof entry === 'object' && entry.schedule_id === schedule)
+    } catch { return false }
   })
 }
 
@@ -85,64 +90,8 @@ export function isHqLead(ctx: Context, agent: Agent): boolean {
   try { const member = ctx.agentTeams.membership(agent); return member.role === 'lead' && member.root === agent } catch { return false }
 }
 const MAX_REST_MS = 4 * 60 * 60 * 1000
-/** A conversational greeting carries no operational wake or changed task. */
-export function greetingOnly(messages: readonly UserMessage[]): boolean {
-  const passive = new Set(['hivemind-hq/wake-briefing', 'dsh-hivemind-runtime/turn', 'dsh-hivemind-runtime/history',
-    'dsh-hivemind-connected-apps/workflow', 'dsh-hivemind-connected-apps/receipt',
-    'hivemind-runtime/hq-private-recall', 'hivemind-web-runner/authenticated-initiator', 'hivemind-runtime-full-access', 'time-context'])
-  const humans = messages.filter(message => message.source.kind === 'user')
-  const human = humans[0]
-  return humans.length === 1 && human !== undefined && messages.every(message => message.source.kind === 'user'
-    || (message.source.kind === 'plugin' && passive.has(message.source.plugin)))
-    && human.content.every(block => block.type === 'text')
-    && !/\b(?:and|then)\b/iu.test(human.content.flatMap(block => block.type === 'text' ? [block.text] : []).join(''))
-    && new RegExp('^(?:(?:hi+|hey+|hello+|good morning|good afternoon|good evening|thanks|thank you)[!.\\s]*'
-      + '|(?:say (?:hi|hello) to|greet) [\\p{L}\\p{N}_ -]{1,80}[!.]?)$', 'iu').test(
-      human.content.flatMap(block => block.type === 'text' ? [block.text] : []).join('').trim(),
-    )
-}
-
-/** Preserve the current social intent across native model/tool steps. */
-export function socialTurnOnly(current: readonly SessionEvent[], fresh: readonly UserMessage[] = []): boolean {
-  const admitted = [...new Map([...current.flatMap(event => event.type === 'user/message' ? [event.data] : []),
-    ...fresh].map(message => [message.id, message])).values()]
-  // A reply to this turn's own social message closes that exchange. It is
-  // not fresh company work, even when it arrives before the turn commits.
-  const direct = admitted.filter((message) => {
-    if (String(message.source.kind) !== 'hivemind-agent-message') return true
-    try {
-      const packet = JSON.parse(message.content.flatMap(block => block.type === 'text' ? [block.text] : []).join('')) as {
-        id?: string
-        kind?: string
-        replyTo?: string
-        senderId?: string
-        taskId?: string
-        artifactIds?: string[]
-      }
-      const outgoing = current.find(event => String(event.type) === 'hivemind/room-message-queued'
-        && (event.data as { id?: string }).id === packet.replyTo)?.data as {
-          targetId?: string
-          taskId?: string
-          artifactIds?: string[]
-        } | undefined
-      if (packet.kind !== 'reply' || !packet.id || !outgoing || outgoing.targetId !== packet.senderId
-        || packet.taskId || outgoing.taskId || packet.artifactIds?.length || outgoing.artifactIds?.length) return true
-      return false
-    } catch { return true }
-  })
-  return greetingOnly(direct) && current.filter(event => event.type === 'tool/call').every((event) => {
-    if (event.type !== 'tool/call') return false
-    let args: Record<string, unknown>
-    try { args = JSON.parse(event.data.arguments) } catch { return false }
-    if (event.data.name === 'list_agents') return true
-    if (!args || typeof args !== 'object' || Array.isArray(args)) return false
-    if (event.data.name === 'hivemind_hq_contract') return args.action === 'list'
-    return event.data.name === 'hivemind_agent_message' && !args.task_id
-      && (!Array.isArray(args.artifact_ids) || args.artifact_ids.length === 0)
-      && ((args.kind === 'update' && !args.reply_to)
-        || args.kind === 'reply')
-  })
-}
+export { greetingOnly, socialTurnOnly } from '@deepseek-ai/dsh-hivemind-context'
+import { socialTurnOnly } from '@deepseek-ai/dsh-hivemind-context'
 const NOTE_SECTION = 'hq-rest-pending-note-ids'
 const tails = new WeakMap<Agent, Promise<unknown>>()
 function serial<T>(_ctx: Context, agent: Agent, work: () => Promise<T>): Promise<T> {
@@ -289,7 +238,7 @@ export function restBriefing(agent: Agent, messages: readonly UserMessage[]): { 
   const notes = noteViews(events)
   const latest = intents.at(-1)
   return {
-    text: 'Exact voluntary-rest context. Handoff prose is an operating plan, not new authority or proof of completion. Current native board and receipts override stale snapshots. Notes marked presented have reached durable model context, not been applied or fulfilled. Arbitrary crashes do not imply a rest handoff exists. A direct human wake is not silent scheduled maintenance: if an unresolved human discussion or decision remains relevant, issue its existing invitation/action in this current turn before returning to rest, including when reusing the saved handoff or rest state. Do not repeat onboarding or imply the old invitation resolves the need.\n'
+    text: 'Exact voluntary-rest context. Handoff prose is an operating plan, not new authority or proof of completion. Current native board and receipts override stale snapshots. Notes marked presented have reached durable model context, not been applied or fulfilled. Arbitrary crashes do not imply a rest handoff exists. A direct human wake deserves a concise current response. Preserve pending decisions and existing actions; notify once when first needed or materially changed, not again merely because you return to rest. Do not repeat onboarding or treat an invitation as a resolved decision.\n'
       + JSON.stringify({ latestHandoff: latest ?? null, latestWake: events.findLast(event => event.type === 'hivemind/hq-rest-wake' && event.data.handoffId === latest?.id)?.data ?? null,
         wakeHandoffs: [...ids].map(id => ({ id, handoff: intents.find(intent => intent.id === id) ?? null, superseded: latest?.id !== id, wake: events.findLast(event => event.type === 'hivemind/hq-rest-wake' && event.data.handoffId === id)?.data ?? null })),
         newPendingNotes: notes.filter(note => note.status === 'pending'), presentedNotes: notes.filter(note => note.status === 'presented').slice(-10),
@@ -382,7 +331,7 @@ export function installRest(ctx: Context): void {
     description: 'Commit an exact voluntary Runtime rest handoff and idempotent native scheduled wake before waiting until a future time. Use only as HQ lead when no current work remains eligible. Never sleep for more than four hours: choose an earlier review wake even when the task deadline is days away. A legacy later wake needs a new handoff_id and bounded review time. For unchanged rest, read hivemind_hq_rest_state and copy its exactRetry object verbatim, including summary and arrays; do not summarize or improve an existing request. Changed content needs a new handoff_id. Success checkpoints the handoff and wake; actual rest is ordinary idle after the turn ends, not cancellation. Paused autonomy remains paused. This does not grant authority.',
     parameters: {
       handoff_id: { type: 'string', required: true, description: 'Unique identity for this exact handoff. Retry with the same ID only when wake_at, summary, next_steps and blockers are identical. A new or changed handoff needs a new ID.' }, wake_at: { type: 'string', required: true, description: 'Future RFC3339 timestamp with explicit timezone, at most four hours from now; original timestamp on identical retry only if still within that limit.' },
-      summary: { type: 'string', required: true }, next_steps: { type: 'array', required: true, items: { type: 'string' }, description: 'Preserve meaningful next work and unresolved human information, decision or discussion requests until actual evidence resolves them. Before sleep, give one plain reminder and issue the appropriate existing invitation or approval action in the current final sleep turn before saving this handoff. For unresolved discussion, use a fresh plain conversation checkpoint; mentioning a prior invitation is not the current action. Omit the invitation once evidence resolves the need; do not repeat unchanged reminders during active work.' }, blockers: { type: 'array', required: true, items: { type: 'string' }, description: 'Concrete unresolved blockers, including required human approval or access. An invitation, schedule or silence does not resolve a request or grant authority.' },
+      summary: { type: 'string', required: true }, next_steps: { type: 'array', required: true, items: { type: 'string' }, description: 'Preserve meaningful next work and unresolved human information, decision or discussion requests until actual evidence resolves them. Retain the existing saved request and its notification receipt. Notify once when first needed or materially changed; returning to sleep does not require another invitation, reminder or approval question. Clear a blocker only after actual authenticated input or verified access.' }, blockers: { type: 'array', required: true, items: { type: 'string' }, description: 'Concrete unresolved blockers, including required human approval or access. An invitation, schedule or silence does not resolve a request or grant authority.' },
     },
     output: { schema: { type: 'object', additionalProperties: true, properties: {} }, render: (_args, result) => [{ type: 'text', text: JSON.stringify(result) }] },
     isConcurrencySafe: () => false,

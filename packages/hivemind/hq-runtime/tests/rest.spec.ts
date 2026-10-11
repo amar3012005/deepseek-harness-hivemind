@@ -114,13 +114,13 @@ describe('native Runtime voluntary rest', () => {
     await expect(f.execute({ ...request, wake_at: '2030-01-01T04:00:00Z' })).resolves.toMatchObject({ status: 'rest_ready' })
   })
 
-  it('guides a current relevant invitation before handoff without creating a new request registry', () => {
+  it('preserves saved decisions without repeated sleep invitations without creating a new request registry', () => {
     const f = fixture()
     const schema = JSON.stringify(f.tools.get('hivemind_hq_rest')!.parameters)
-    expect(schema).toContain('current final sleep turn before saving this handoff')
-    expect(schema).toContain('Omit the invitation once evidence resolves the need')
-    expect(restBriefing(f.agent, []).text).toContain('A direct human wake is not silent scheduled maintenance')
-    expect(restBriefing(f.agent, []).text).toContain('including when reusing the saved handoff or rest state')
+    expect(schema).toContain('returning to sleep does not require another invitation')
+    expect(schema).toContain('actual authenticated input or verified access')
+    expect(restBriefing(f.agent, []).text).toContain('A direct human wake deserves a concise current response')
+    expect(restBriefing(f.agent, []).text).toContain('not again merely because you return to rest')
     expect(f.events).toHaveLength(0)
     expect(f.ensure).not.toHaveBeenCalled()
   })
@@ -337,4 +337,15 @@ it('does not manufacture a rest wake for an authenticated nightly scheduled revi
   expect(f.agent.steer).not.toHaveBeenCalled()
   f.agent.session.append('turn/end',{ turn:1,reason:{ kind:'completed' } } as never)
   expect(isNightlyScheduledTurn(f.agent)).toBe(false)
+})
+
+it('recognizes only the current pending native nightly schedule before first request commit', () => {
+  const f = fixture()
+  const id = 'schedule-' + createHash('sha256').update(`${f.agent.id}\0nightly-routine-check-v1`).digest('hex')
+  const occurrenceAt = '2030-01-01T00:00:00Z'
+  const text = 'reminders_json: ' + JSON.stringify([{ schedule_id:id,occurrence_at:occurrenceAt }])
+  const scheduled = createUserMessage({ source:{ kind:'schedule',occurrenceAt },content:[{ type:'text',text }] })
+  expect(isNightlyScheduledTurn(f.agent,[scheduled])).toBe(true)
+  expect(isNightlyScheduledTurn(f.agent,[createUserMessage({ source:{ kind:'user' },content:[{ type:'text',text }] })])).toBe(false)
+  expect(isNightlyScheduledTurn(f.agent,[createUserMessage({ source:{ kind:'schedule',occurrenceAt:'2030-02-01T00:00:00Z' },content:[{ type:'text',text }] })])).toBe(false)
 })

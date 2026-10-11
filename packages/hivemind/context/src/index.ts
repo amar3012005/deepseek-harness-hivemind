@@ -1,3 +1,4 @@
+export { greetingOnly, socialTurnOnly } from './social-turn.ts'
 /** HIVE-MIND organization and recent-conversation context projection. */
 import type { Context, Plugin } from '@deepseek-ai/cordis'
 import { isCompactCheckpointSource } from '@deepseek-ai/dsh-compaction/checkpoint'

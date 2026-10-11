@@ -3,7 +3,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import type { ToolDefinition } from '@deepseek-ai/dsh-tools'
-import { installRuntimeDecisionMemory } from '../src/runtime-decision-memory.ts'
+import { installRuntimeDecisionMemory, freshDecisionMemoryContext } from '../src/runtime-decision-memory.ts'
 function fixture(runtime = true) {
   const tools = new Map<string, ToolDefinition>()
   const events = [{ type:'hivemind/session-owner',data:{ id:runtime ? null : 'employee-id',slug:runtime ? 'runtime':'sofia',name:'Name',role:'Role' } }] as unknown as SessionEvent[]
@@ -19,14 +19,14 @@ function fixture(runtime = true) {
 describe('Runtime decision memory',()=>{
   it('uses two scoped tools, fresh query-free reads and no employee access',async()=>{
     const f=fixture();expect([...f.tools.keys()]).toEqual(['runtime_user_agenda','runtime_uncertainties'])
-    expect(JSON.parse(await f.call())).toEqual({ uncertainties:[],userAgenda:[] })
+    expect(JSON.parse(await f.call())).toEqual({ uncertainties:{ available:true,memories:[] },userAgenda:{ available:true,memories:[] } })
     expect(f.request.mock.calls[0]).toEqual([f.agent,{ action:'recall',kind:'uncertainty',agent_slug:'runtime',state:'open',limit:8 },expect.any(AbortSignal)])
     const employee=fixture(false);expect(employee.tools.size).toBe(0)
     await expect(employee.call()).rejects.toThrow('runtime_voice_room_required')
   })
   it('fails a missing read rather than treating it as an empty agenda',async()=>{
     const f=fixture();f.request.mockRejectedValueOnce(new Error('offline'))
-    await expect(f.call()).rejects.toThrow('offline')
+    await expect(f.call()).rejects.toThrow('runtime_decision_memory_unavailable')
   })
   it('saves minimal private notes and automatically uses the latest actual user source',async()=>{
     const f=fixture()
@@ -74,4 +74,39 @@ describe('Runtime decision memory',()=>{
     await expect(f.tools.get('runtime_uncertainties')!.execute({ action:'recall' }, { agent:{ ...employee.agent,id:f.agent.id },signal:new AbortController().signal } as never)).rejects.toThrow('runtime_memory_required')
   })
 
+})
+
+it('recovers independently current agendas, changed direction and uncertainty priority without history mutation', async () => {
+  const f = fixture(), original = [...f.events]
+  f.request.mockImplementation(async (_agent, args: unknown) => {
+    const kind = (args as { kind: string }).kind
+    return { ok: true, memories: kind === 'user_agenda' ? [
+      { id:'new-sales',kind,title:'Existing customers',summary:'Confirmed changed direction',context:{ agendaKey:'sales',supersedesId:'old-sales',state:'confirmed',priority:90 } },
+      { id:'ops',kind,title:'Release readiness',summary:'Independent agenda',context:{ agendaKey:'ops',state:'confirmed',priority:70 } },
+    ] : [{ id:'question',kind,title:'Missing access',summary:'Pending',context:{ state:'open',priority:80 } }] } as never
+  })
+  const result = JSON.parse(await f.call())
+  expect(result.userAgenda.memories).toMatchObject([{ id:'new-sales',agendaKey:'sales',supersedesId:'old-sales' },{ id:'ops',agendaKey:'ops' }])
+  expect(result.uncertainties.memories[0]).toMatchObject({ id:'question',state:'open',priority:80 })
+  expect(f.events).toEqual(original)
+})
+
+it('bounds a nonsettling retrieval and preserves the other kind', async () => {
+  vi.useFakeTimers()
+  try {
+    const f = fixture()
+    f.request.mockImplementationOnce(async () => new Promise<never>(() => {}))
+    const pending = freshDecisionMemoryContext(f.request, f.agent, new AbortController().signal)
+    await vi.advanceTimersByTimeAsync(2501)
+    expect(JSON.parse(await pending)).toEqual({ uncertainties:{ available:false,memories:null },userAgenda:{ available:true,memories:[] } })
+  } finally { vi.useRealTimers() }
+})
+
+it('propagates native turn cancellation rather than caching unavailable heads', async () => {
+  const f = fixture(), abort = new AbortController()
+  f.request.mockImplementation(async () => new Promise<never>(() => {}))
+  const pending = freshDecisionMemoryContext(f.request, f.agent, abort.signal)
+  const assertion = expect(pending).rejects.toThrow('cancelled-turn')
+  abort.abort(new Error('cancelled-turn'))
+  await assertion
 })

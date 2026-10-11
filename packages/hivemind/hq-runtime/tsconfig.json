@@ -71,6 +71,9 @@
     },
     {
       "path": "../decision"
+    },
+    {
+      "path": "../context"
     }
   ]
 }

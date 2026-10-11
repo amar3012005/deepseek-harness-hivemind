@@ -11,11 +11,12 @@ import {
   type HqTaskReview,
 } from './review.ts'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
-import { installRest, recoverRest, acknowledgeRestNotes, restBriefing, restState, isHqLead, greetingOnly, socialTurnOnly } from './rest.ts'
+import { installRest, recoverRest, acknowledgeRestNotes, restBriefing, restState, isNightlyScheduledTurn, isHqLead, greetingOnly, socialTurnOnly } from './rest.ts'
 import { installAwakening, awakeningContext } from './awakening.ts'
 import { installDelegatedBlockerTool, unresolvedDelegatedTask } from './delegated-blocker.ts'
 import { investigationExpired } from './investigation.ts'
 import { wakeBriefing } from './wake-briefing.ts'
+import { runtimeStageGuidance } from './stage-guidance.ts'
 import { dispatchEmployee, reconcileEmployeeArtifacts, reconcileEmployeeRoster } from './employee-room.ts'
 import type {} from './control.ts'
 import { calendarItems } from './calendar.ts'
@@ -156,7 +157,7 @@ export function apply(ctx: Context): void {
     const currentRest = await restState(ctx, agent)
     const briefing = createUserMessage({
       source: { kind: 'plugin', plugin: 'hivemind-hq/wake-briefing', form: 'recall', sections: [rest.section] },
-      content: [{ type: 'text', text: `${wakeBriefing(workspace, agent.session.snapshotEvents(), agent.id)}\n${rest.text}\nCurrent native rest state: ${JSON.stringify(currentRest.latest)}. A missing wake is not confirmed sleep; choose a new justified handoff when needed, without restoring a deleted timer.` }],
+      content: [{ type: 'text', text: `${runtimeStageGuidance(agent.session.snapshotEvents(), decision.messages, agent.id, Boolean(awakening), isNightlyScheduledTurn(agent, decision.messages))}\n${wakeBriefing(workspace, agent.session.snapshotEvents(), agent.id)}\n${rest.text}\nCurrent native rest state: ${JSON.stringify(currentRest.latest)}. A missing wake is not confirmed sleep; choose a new justified handoff when needed, without restoring a deleted timer.` }],
     })
     if (awakening) return { ...decision, messages: [briefing, ...decision.messages, createUserMessage({
       source: { kind: 'plugin', plugin: 'hivemind-hq/first-awakening', form: 'snapshot', sections: [{ name: 'hq-first-awakening', text: awakening }] },
