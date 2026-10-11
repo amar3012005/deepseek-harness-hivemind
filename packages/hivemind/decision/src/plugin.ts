@@ -11,6 +11,7 @@ export interface OpenRouterDecisionPluginConfig {
   gatewayTokenRef?: string
   gatewayByokAlias?: string
   timeoutMs?: number
+  model?: string
   fallbackModel?: string
   primaryTimeoutMs?: number
 }
@@ -25,6 +26,7 @@ export function createOpenRouterDecisionPlugin(config: OpenRouterDecisionPluginC
     async apply(ctx: Context) {
       const provider = config.enabled ? new OpenRouterDecisionProvider({
         endpoint: config.endpoint ?? '',
+        ...(config.model === undefined ? {} : { model: config.model }),
         ...(config.fallbackModel === undefined ? {} : { fallbackModel: config.fallbackModel }),
         ...(config.primaryTimeoutMs === undefined ? {} : { primaryTimeoutMs: config.primaryTimeoutMs }),
         async resolveHeaders(signal) {

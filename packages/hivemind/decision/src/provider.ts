@@ -21,12 +21,12 @@ export class OpenRouterDecisionProvider implements DecisionProvider {
   private readonly primaryTimeoutMs: number
   constructor(private readonly config: OpenRouterDecisionConfig) {
     const url = new URL(config.endpoint)
-    if (url.protocol !== 'https:' || url.username || url.password || url.search || url.hash || !url.pathname.endsWith('/api/alpha/decisions')) throw new Error('decision endpoint must be an HTTPS alpha Decisions endpoint')
+    if (url.protocol !== 'https:' || url.username || url.password || url.search || url.hash || !['/api/alpha/decisions', '/api/v1/systemone'].some(path => url.pathname.endsWith(path))) throw new Error('decision endpoint must be an HTTPS Decisions endpoint')
     this.endpoint = url.href
     this.primaryTimeoutMs = config.primaryTimeoutMs ?? 0
     if (config.fallbackModel && (!Number.isInteger(this.primaryTimeoutMs) || this.primaryTimeoutMs < 10 || this.primaryTimeoutMs > 10000)) throw new Error('fallback requires bounded primaryTimeoutMs')
     for (const model of [config.model, config.fallbackModel]) {
-      if (model && !['inception/mercury-decide', 'typesafe/jev-1.13'].includes(model)) throw new Error('unsupported decision model')
+      if (model && !['inception/mercury-decide', 'inception/mercury-decide:free', 'typesafe/jev-1.13'].includes(model)) throw new Error('unsupported decision model')
     }
   }
   async evaluate(request: EvaluationRequest, signal: AbortSignal): Promise<unknown> {
