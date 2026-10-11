@@ -37,4 +37,24 @@ describe('durable Team reply checkpoint', () => {
     expect(fulfillTeamWait(agent)).toBeUndefined()
     expect(agent.session.snapshotEvents().filter(event => event.type === 'team/wait/fulfilled')).toHaveLength(1)
   })
+  it('settles direct Inbox relay only from the exact expected sender after the checkpoint', () => {
+    const agent = fixture()
+    let current = true
+    Object.assign(agent, { ctx: { get: () => ({ tryMembership: () => ({ id: teamId }),
+      listMembers: () => current ? [{ id: 'employee', status: 'inactive' }] : [] }) } })
+    const add = (sender: string, form: 'relay' | 'notice') => agent.session.append('user/message', createUserMessage({
+      source: { kind: 'agent-message', form, senderSessionId: SessionId(sender) },
+      content: [{ type: 'text', text: 'review result' }],
+    }), { surfaceOp: 'append' })
+    add('foreign', 'relay')
+    add('employee', 'notice')
+    expect(fulfillTeamWait(agent)).toBeUndefined()
+    current = false
+    add('employee', 'relay')
+    expect(fulfillTeamWait(agent)).toBeUndefined()
+    current = true
+    expect(fulfillTeamWait(agent)?.callId).toBe(callId)
+    expect(fulfillTeamWait(agent)).toBeUndefined()
+  })
+
 })

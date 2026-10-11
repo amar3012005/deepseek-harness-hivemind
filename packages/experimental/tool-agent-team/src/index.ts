@@ -40,7 +40,7 @@ The Team Lead and all teammates share the same working directory and filesystem.
 
 Prefer read/edit/write for file changes. If a file operation returns FS_STALE_VERSION, read the current file, rebase your intended change onto the new content, and retry. Bash, formatters, code generators, and scripts are not fully protected by the filesystem version guard; coordinate them explicitly and have the Lead review the final diff and run tests.
 
-send_message steers a running target at its nearest step boundary, starts an idle target, and cold-resumes an inactive teammate. A delivered peer item starts with its stable message id and sender name. A successful send is already durable even when its result says queued; do not resend it. Shared-task workflow is list, get, claim with the current revision, perform the work, then complete. Task readiness never starts an owner. Before wait_agent, use list_agents and make sure another required member is running or provisioning; use send_message first when the required member is inactive. wait_agent observes only changes after that call starts, never wakes a member, and returns noProgress immediately when no other member can produce a change. Re-list after wakeup or timeout. The Lead must wait for required teammates before giving the final answer.`
+send_message steers a running target at its nearest step boundary, starts an idle target, and cold-resumes an inactive teammate. A delivered peer item identifies its sender. A successful send returns the native target Inbox message id; it means acceptance, not processing or synchronous storage flush. Team sends do not retain unaccepted intent, retry or deduplicate explicit resends. Shared-task workflow is list, get, claim with the current revision, perform the work, then complete. Task readiness never starts an owner. Before wait_agent, use list_agents and make sure another required member is running or provisioning; use send_message first when the required member is inactive. wait_agent observes only changes after that call starts, never wakes a member, and returns noProgress immediately when no other member can produce a change. Re-list after wakeup or timeout. The Lead must wait for required teammates before giving the final answer.`
 
 const ACTIVE_WAIT_STATUSES: ReadonlySet<TeamMemberView['status']> = new Set(['running', 'provisioning'])
 const NO_ACTIVE_PEER_MESSAGE = 'No other Team member is running or provisioning. wait_agent cannot make progress or wake inactive teammates. Re-list with list_agents and team_task_list, then use send_message to wake each required inactive teammate before waiting again.'
@@ -100,7 +100,6 @@ const SEND_VALUE_SCHEMA = {
   additionalProperties: false,
   properties: {
     messageId: { type: 'string', required: true },
-    status: { type: 'string', required: true, enum: ['accepted', 'queued'] },
   },
 } as const
 
@@ -273,7 +272,7 @@ function install(agent: Agent, ctx: Context, config: Required<Config>): () => vo
           const members = ctx.agentTeams.listMembers(caller).filter(member =>
             member.id !== caller.id && ACTIVE_WAIT_STATUSES.has(member.status))
           const original = caller.session.snapshotEvents().findLast(event =>
-            event.type === 'user/message' && event.data.source.kind !== 'team-message')
+            event.type === 'user/message' && event.data.source.kind !== 'team-message' && event.data.source.kind !== 'agent-message')
           caller.session.append('team/wait/parked', { callId: exec.callId, teamId: ctx.agentTeams.membership(caller).id,
             expectedSenderIds: members.map(member => member.id),
             ...(original?.type === 'user/message' ? { originalSourceMessageId: original.data.id } : {}) })

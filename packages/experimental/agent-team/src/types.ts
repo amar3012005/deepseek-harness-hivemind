@@ -1,6 +1,7 @@
 /** Public Agent Teams identities, durable records, and service request values. */
 
 import type { Branded } from '@deepseek-ai/dsh-brand'
+import type { MessageId } from '@deepseek-ai/dsh-llm/brand'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm/types'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 
@@ -172,10 +173,9 @@ export interface SendTeamMessageRequest {
   readonly signal: AbortSignal
 }
 
-/** Result after a peer message enters the durable mailbox. */
+/** Target native Inbox acceptance; no new Team outbox, retry or deduplication. */
 export interface SendTeamMessageResult {
-  readonly messageId: TeamMessageId
-  readonly status: 'accepted' | 'queued'
+  readonly messageId: MessageId
 }
 
 /** Input for creating one shared task. */
@@ -231,7 +231,7 @@ declare module '@deepseek-ai/dsh-session/types' {
     'team/member': { version: 2; teamId: TeamId; member: TeamMemberSnapshot }
     /** Whole shared-task value, stored only in the Team Lead Session. */
     'team/task': { version: 2; teamId: TeamId; task: TeamTaskSnapshot }
-    /** Durable mailbox enqueue, stored before delivery is attempted. */
+    /** Historical pre-upgrade mailbox enqueue; new sends use native Inbox delivery. */
     'team/message/queued': { version: 2; teamId: TeamId; message: TeamMessageSnapshot }
     /** Durable acknowledgement that the target Session recorded the message. */
     'team/message/delivered': {

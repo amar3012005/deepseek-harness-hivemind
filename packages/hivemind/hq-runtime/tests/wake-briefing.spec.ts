@@ -6,6 +6,17 @@ import type { HqWorkspace } from '../src/types.ts'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 const workspace: HqWorkspace = { mode: { enabled: false, revision: 0, changedAt: 0 }, tasks: [], calendar: [], wakes: [] }
 describe('HQ wake briefing', () => {
+  it('projects received native relay identity with bounded text and no invented authority', () => {
+    const events = [{ type: 'user/message', data: { id: 'native-inbox-message',
+      source: { kind: 'agent-message', form: 'relay', senderSessionId: 'worker' },
+      content: [{ type: 'text', text: 'result'.repeat(1000) }] } },
+    { type: 'user/message', data: { id: 'notice', source: { kind: 'agent-message', form: 'notice', senderSessionId: 'worker' }, content: [] } }] as unknown as SessionEvent[]
+    const text = wakeBriefing(workspace, events, 'root')
+    expect(text).toContain('native-inbox-message')
+    expect(text).toContain('worker')
+    expect(text).not.toContain('result'.repeat(100))
+    expect(text).not.toContain('\"notice\"')
+  })
   it('requires initiative and delegation without inventing approval or repeating onboarding', () => {
     const text = wakeBriefing(workspace, [], 'root')
     expect(text).toContain('older reports, handoffs and invitations do not replace them')

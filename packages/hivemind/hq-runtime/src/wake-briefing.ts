@@ -1,5 +1,6 @@
 /** Read-only model context over durable native HQ records; no competing ledger. */
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
+import { directTeamMessageBriefing } from './team-message-briefing.ts'
 import type { HqWorkspace } from './types.ts'
 
 /** Model-only narrative preview; exact durable records remain available through HQ tools. */
@@ -35,13 +36,14 @@ export function wakeWorkspaceProjection(workspace: HqWorkspace) {
 }
 
 export function wakeBriefing(workspace: HqWorkspace, events: readonly SessionEvent[], sessionId: string): string {
-  const employeeMessages = events.filter(event => event.type === 'team/message/queued'
+  const historicalMessages = events.filter(event => event.type === 'team/message/queued'
     && event.data.message.targetId === sessionId).slice(-12).map((event) => {
     if (event.type !== 'team/message/queued') throw new Error('unexpected_message_event')
     return { id: event.data.message.id, sender: event.data.message.senderName,
       text: event.data.message.content.filter(block => block.type === 'text')
         .map(block => block.type === 'text' ? block.text : '').join('\n').slice(0, 320) }
   })
+  const employeeMessages = [...historicalMessages, ...directTeamMessageBriefing(events)].slice(-12)
   const roomNotices = events.filter(event => String(event.type) === 'hivemind/room-message-received'
     && (!(event.data as { targetId?: string }).targetId || (event.data as { targetId?: string }).targetId === sessionId))
     .slice(-12).map((event) => {

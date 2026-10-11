@@ -220,3 +220,11 @@ Promotion to a product-role group requires reviewing the public contract, limita
 Undecided directions include nested Teams, automatic ownership release policies, cross-process mailbox transactions, and filesystem isolation via worktrees; none of these are committed.
 
 </details>
+
+### Matched direct Inbox compatibility (dsh-v0.2.1-alpha.2)
+
+New `sendMessage` attempts return the target native `MessageId`, or throw before acceptance. Success means native Inbox acceptance, not processing or a separate synchronous storage flush. New sends create no Team outbox/delivered rows and do not retain rejected intent, retry it after restart, or deduplicate explicit resends. The target Agent owns ordinary Inbox persistence and cold resume.
+
+HIVEMIND keeps its authenticated independent persistent employee rooms and separate business-message receipts; generic Team sends cannot target those bound independent roots. Existing task authority and room ownership remain intact.
+
+Historical queued/delivered records remain readable. A bounded compatibility pass reconciles up to 64 old pending identities per member startup, checking the exact target receipt before delivery. This deliberately extends the tag's read-only historical contract to avoid abandoning previously accepted work. There is no periodic retry loop or new legacy admission API. Before cutover, inventory old pending rows; if more than 64 remain for any root, reconcile bounded batches through the existing authorized native owner and verify receipts before release. Production inventory on 2026-10-11 found zero pending legacy Team messages.

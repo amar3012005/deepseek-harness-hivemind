@@ -67,6 +67,7 @@ function record(value: unknown): Record<string, unknown> | undefined {
 function unresolvedPeerMessage(event: SessionEvent | undefined, events: readonly SessionEvent[]): boolean {
   if (event?.type !== 'user/message') return false
   const source = record(event.data.source)
+  if (source?.kind === 'agent-message' && source.form === 'relay') return true // Native direct Team messages have no reply-to identity.
   if (source?.kind === 'team-message') return true // Native Team messages lack a reply-to identity; do not guess completion.
   if (source?.kind !== 'hivemind-agent-message' || source.form === 'notice') return false
   const receipt = events.find(item => String(item.type) === 'hivemind/room-message-received'

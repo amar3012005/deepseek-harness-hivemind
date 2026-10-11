@@ -13,6 +13,7 @@ import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import SubagentService, { snapshotSubagentDescriptor } from '@deepseek-ai/dsh-subagent'
 import * as SubagentSpawn from '@deepseek-ai/dsh-subagent-spawn-in-process'
 import { MockAdapter, textResponse } from '../../../core/agent-loop/tests/mock-adapter.ts'
+import { legacyMailbox } from './legacy-mailbox-fixture.ts'
 import TeamService, { TeamId, TeamMessageId } from '../src/index.ts'
 import type { TeamMailbox } from '../src/mailbox.ts'
 import { teamProjectionDefinition } from '../src/projection.ts'
@@ -231,7 +232,7 @@ for (const backend of backends) {
         content: [{ type: 'text', text: 'resume after reconciliation' }],
         signal: SIGNAL,
       })
-      expect(receipt.status).toBe('accepted')
+      expect(receipt.messageId).toEqual(expect.any(String))
       await vi.waitFor(() => { expect(second.ctx.agents.get(childId)).toBeUndefined() }, { timeout: 5_000 })
       await vi.waitFor(() => { expect(durable(activeHandle.agent).pendingMessages).toEqual([]) })
 
@@ -301,7 +302,7 @@ for (const backend of backends) {
       await vi.waitFor(() => { expect(first.ctx.agents.get(started.member.id)).toBeUndefined() }, { timeout: 5_000 })
       vi.spyOn(first.ctx.sessionPersistence, 'open')
         .mockRejectedValueOnce(new Error('temporary target read failure'))
-      const queued = await first.ctx.agentTeams.sendMessage(firstLead, {
+      const queued = await legacyMailbox(first.ctx).send(firstLead, {
         target: 'mail-worker',
         content: [{ type: 'text', text: 'durable retry context' }],
         signal: SIGNAL,

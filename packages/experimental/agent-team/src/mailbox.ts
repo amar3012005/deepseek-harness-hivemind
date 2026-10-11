@@ -1,6 +1,5 @@
 /** Durable Team mailbox admission, target-local dispatch, acknowledgement, and recovery. */
 
-import { randomUUID } from 'node:crypto'
 import type { Context } from '@deepseek-ai/cordis'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import type { Agent } from '@deepseek-ai/dsh-agent'
@@ -9,17 +8,14 @@ import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
 import { steerHostSubagentPrompt } from '@deepseek-ai/dsh-subagent/internal'
-import { errorMessage, TeamError } from './error.ts'
+import { errorMessage } from './error.ts'
 import type { TeamJournal } from './journal.ts'
 import type { TeamRuntimeLifecycle } from './lifecycle.ts'
 import { readPersistedSession } from './persisted.ts'
 import type { TeamRoster } from './roster.ts'
-import { resolveActiveMember } from './roster.ts'
 import { messageAccepted } from './session-message.ts'
 import { TeamId, TeamMessageId } from './types.ts'
 import type {
-  SendTeamMessageRequest,
-  SendTeamMessageResult,
   TeamMessageSnapshot,
 } from './types.ts'
 
@@ -34,32 +30,13 @@ export class TeamMailbox {
    * @param journal - authoritative Lead-log transaction owner.
    * @param roster - Team membership and member-name resolver.
    * @param lifecycle - shared Team runtime admission cutoff.
-   * @param maxPendingMessagesPerMember - per-target queued-minus-delivered limit.
-   * @param maxMessageBytes - maximum complete sender-framed delivery size.
    */
   constructor(
     private readonly ctx: Context,
     private readonly journal: TeamJournal,
     private readonly roster: TeamRoster,
     private readonly lifecycle: TeamRuntimeLifecycle,
-    private readonly maxPendingMessagesPerMember: number,
-    private readonly maxMessageBytes: number,
   ) {}
-
-  /**
-   * Queue one durable peer message, then attempt immediate delivery.
-   * @param caller - exact live sending Team member.
-   * @param request - target name, content, and pre-queue cancellation.
-   * @returns durable message identity and immediate-delivery observation.
-   */
-  async send(caller: Agent, request: SendTeamMessageRequest): Promise<SendTeamMessageResult> {
-    if (this.lifecycle.disposed) throw new TeamError('Agent Teams service is disposing', 'TEAM_DISPOSED')
-    const operation = this.sendAdmitted(caller, {
-      ...request,
-      signal: AbortSignal.any([request.signal, this.lifecycle.signal]),
-    })
-    return await this.trackDispatch(operation)
-  }
 
   /**
    * Observe target-side durable receipts and checkpoint their Lead-log acknowledgement.
@@ -90,7 +67,7 @@ export class TeamMailbox {
     const state = this.journal.state(membership.root)
     const messages = state.messages.filter(message =>
       !state.delivered.includes(message.id)
-      && (membership.role === 'lead' || message.targetId === agent.id))
+      && (membership.role === 'lead' || message.targetId === agent.id)).slice(0, 64)
     for (const message of messages) {
       signal.throwIfAborted()
       await this.tryDispatch(membership.root, message, signal)
@@ -103,52 +80,6 @@ export class TeamMailbox {
    */
   pendingDispatches(): readonly Promise<unknown>[] {
     return [...this.inFlightDispatches]
-  }
-
-  /** Queue and dispatch one mailbox item admitted before the disposal cutoff. */
-  private async sendAdmitted(
-    caller: Agent,
-    request: SendTeamMessageRequest,
-  ): Promise<SendTeamMessageResult> {
-    const membership = this.roster.membership(caller)
-    request.signal.throwIfAborted()
-    const root = membership.root
-    const content = structuredClone(request.content)
-    const queued = await this.journal.transact(root.id, async () => {
-      request.signal.throwIfAborted()
-      const state = this.journal.state(root)
-      const target = resolveActiveMember(root, state, request.target)
-      if (state.members.find(member => member.id === target.id)?.ownership === 'persistent') throw new TeamError('persistent assignees use their host room mailbox', 'TEAM_INVALID_TARGET')
-      if (target.id === caller.id) throw new TeamError('a Team member cannot message itself', 'TEAM_SELF_MESSAGE')
-      const pendingForTarget = state.messages.filter(candidate =>
-        candidate.targetId === target.id && !state.delivered.includes(candidate.id)).length
-      if (pendingForTarget >= this.maxPendingMessagesPerMember) {
-        throw new TeamError(
-          `teammate "${target.name}" has ${pendingForTarget} pending messages`,
-          'TEAM_MAILBOX_FULL',
-        )
-      }
-      const queued: TeamMessageSnapshot = {
-        id: TeamMessageId(`team-message-${randomUUID()}`),
-        senderId: caller.id,
-        senderName: membership.name,
-        targetId: target.id,
-        content,
-      }
-      if (Buffer.byteLength(JSON.stringify(this.deliveryContent(queued)), 'utf8') > this.maxMessageBytes) {
-        throw new TeamError(`team message exceeds ${this.maxMessageBytes} bytes`, 'TEAM_MESSAGE_TOO_LARGE')
-      }
-      await this.journal.appendAndFlush(root, 'team/message/queued', {
-        version: 2,
-        teamId: TeamId(root.id),
-        message: queued,
-      })
-      // Register dispatch before releasing the root transaction so concurrent
-      // senders enter the target-local queue in durable mailbox order.
-      return { message: queued, dispatch: this.tryDispatch(root, queued, request.signal) }
-    })
-    const accepted = await queued.dispatch
-    return { messageId: queued.message.id, status: accepted ? 'accepted' : 'queued' }
   }
 
   /** Attempt one queued message exactly once in this process at a time. */

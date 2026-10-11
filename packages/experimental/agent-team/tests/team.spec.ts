@@ -18,6 +18,7 @@ import { MockAdapter, textResponse, toolCallResponse } from '../../../core/agent
 import LocalAttachmentStore from '../../../attachment/attachment-local/src/index.ts'
 import { GenerationRegistry, registerGenerationTools } from '../../../hivemind/artifact-renderer/src/generation.ts'
 import { markdownReportProvider } from '../../../hivemind/artifact-renderer/src/office-providers.ts'
+import { legacyMailbox } from './legacy-mailbox-fixture.ts'
 import TeamService, { TeamError, TeamId, TeamMessageId, TeamTaskId } from '../src/index.ts'
 import { TeamRuntimeLifecycle } from '../src/lifecycle.ts'
 import { teamProjectionDefinition } from '../src/projection.ts'
@@ -122,6 +123,7 @@ interface TeamServiceInternals {
   readonly mailbox: {
     tryDispatch(root: Agent, message: TeamMessageSnapshot, signal: AbortSignal): Promise<boolean>
     serializeDispatch(message: TeamMessageSnapshot, operation: () => Promise<boolean>): Promise<boolean>
+    send(caller: Agent, request: { target: string; content: ReturnType<typeof content>; signal: AbortSignal }): Promise<{ messageId: ReturnType<typeof TeamMessageId>; status: 'accepted' | 'queued' }>
     markDelivered(root: Agent, messageId: ReturnType<typeof TeamMessageId>, targetId: SessionId): Promise<void>
   }
   readonly journal: {
@@ -1194,7 +1196,44 @@ describe('Team Remote API', () => {
   })
 })
 
-describe('Team mailbox and waiting', () => {
+describe('Direct native Team Inbox contract', () => {
+  it('returns target native MessageId without a Team outbox or delivery edge', async () => {
+    const { ctx, lead } = await setup(['hang'])
+    const started = await spawn(ctx, lead, 'direct-worker')
+    const worker = await waitRunning(ctx, started.member.id)
+    const before = lead.session.snapshotEvents().filter(event => event.type === 'team/message/queued' || event.type === 'team/message/delivered')
+    const sent = await ctx.agentTeams.sendMessage(lead, { target: 'direct-worker', content: content('direct request'), signal: SIGNAL })
+    expect(Object.keys(sent)).toEqual(['messageId'])
+    expect(worker.inbox.nextStep.some(message => message.id === sent.messageId && message.source.kind === 'agent-message'
+      && message.source.senderSessionId === lead.id)).toBe(true)
+    expect(lead.session.snapshotEvents().filter(event => event.type === 'team/message/queued' || event.type === 'team/message/delivered')).toEqual(before)
+    worker.cancel({ kind: 'parent' })
+    await waitNoAgent(ctx, worker.id)
+  })
+  it('does not create retry intent when native target admission rejects', async () => {
+    const { ctx, lead } = await setup(['hang'])
+    const started = await spawn(ctx, lead, 'unavailable-worker')
+    const worker = await waitRunning(ctx, started.member.id)
+    vi.spyOn(ctx.subagents as unknown as HostPromptDeliverer, deliverSubagentPrompt).mockRejectedValueOnce(new Error('native admission unavailable'))
+    await expect(ctx.agentTeams.sendMessage(lead, { target: 'unavailable-worker', content: content('not accepted'), signal: SIGNAL })).rejects.toThrow('native admission unavailable')
+    expect(durable(lead).pendingMessages).toEqual([])
+    worker.cancel({ kind: 'parent' })
+    await waitNoAgent(ctx, worker.id)
+  })
+  it('cold-resumes one stored teammate using its ordinary native Inbox', async () => {
+    const { ctx, lead } = await setup([textResponse('initial'), textResponse('continued')])
+    const started = await spawn(ctx, lead, 'stored-worker')
+    await waitNoAgent(ctx, started.member.id)
+    const sent = await ctx.agentTeams.sendMessage(lead, { target: 'stored-worker', content: content('continue stored work'), signal: SIGNAL })
+    await waitNoAgent(ctx, started.member.id)
+    const events = await storedEvents(ctx, started.member.id)
+    expect(events.some(event => event.type === 'user/message' && event.data.id === sent.messageId
+      && event.data.source.kind === 'agent-message' && event.data.source.senderSessionId === lead.id)).toBe(true)
+    expect(durable(lead).pendingMessages).toEqual([])
+  })
+})
+
+describe('Historical Team mailbox recovery and waiting', () => {
   it('steers a message addressed to the Lead and checkpoints its receipt', async () => {
     const { ctx, lead } = await setup(['hang'])
     const message: TeamMessageSnapshot = {
@@ -1226,10 +1265,10 @@ describe('Team mailbox and waiting', () => {
     lead.followup(createUserMessage({ content: content('keep the Lead busy'), source: { kind: 'user' } }))
     await waitRunning(ctx, lead.id)
 
-    const first = await ctx.agentTeams.sendMessage(reporter, {
+    const first = await legacyMailbox(ctx).send(reporter, {
       target: 'lead', content: content('first progress report'), signal: SIGNAL,
     })
-    const second = await ctx.agentTeams.sendMessage(reporter, {
+    const second = await legacyMailbox(ctx).send(reporter, {
       target: 'lead', content: content('second progress report'), signal: SIGNAL,
     })
     expect([first.status, second.status]).toEqual(['accepted', 'accepted'])
@@ -1273,7 +1312,7 @@ describe('Team mailbox and waiting', () => {
     const { ctx, lead } = await setup(['hang'])
     const started = await spawn(ctx, lead, 'pending-target')
     const target = await waitRunning(ctx, started.member.id)
-    const immediate = await ctx.agentTeams.sendMessage(lead, {
+    const immediate = await legacyMailbox(ctx).send(lead, {
       target: 'pending-target',
       content: content('live steer receipt'),
       signal: SIGNAL,
@@ -1366,7 +1405,7 @@ describe('Team mailbox and waiting', () => {
       return flush(session)
     })
 
-    const first = await ctx.agentTeams.sendMessage(lead, {
+    const first = await legacyMailbox(ctx).send(lead, {
       target: 'busy-target', content: content('first steered message'), signal: SIGNAL,
     })
 
@@ -1377,7 +1416,7 @@ describe('Team mailbox and waiting', () => {
       && message.source.messageId === first.messageId)).toBe(true)
 
     flushed.length = 0
-    const second = await ctx.agentTeams.sendMessage(lead, {
+    const second = await legacyMailbox(ctx).send(lead, {
       target: 'busy-target', content: content('second steered message'), signal: SIGNAL,
     })
 
@@ -1414,12 +1453,12 @@ describe('Team mailbox and waiting', () => {
         return input.id
       })
 
-    const first = ctx.agentTeams.sendMessage(lead, {
+    const first = legacyMailbox(ctx).send(lead, {
       target: 'ordered-target', content: content('first steer'), signal: SIGNAL,
     })
     await entered.promise
     let secondSettled = false
-    const second = ctx.agentTeams.sendMessage(lead, {
+    const second = legacyMailbox(ctx).send(lead, {
       target: 'ordered-target', content: content('second steer'), signal: SIGNAL,
     }).finally(() => { secondSettled = true })
     await vi.waitFor(() => { expect(durable(lead).pendingMessages).toHaveLength(2) })
@@ -1456,7 +1495,7 @@ describe('Team mailbox and waiting', () => {
     })
     await ctx.sessions.flush(lead.session)
 
-    const later = await ctx.agentTeams.sendMessage(lead, {
+    const later = await legacyMailbox(ctx).send(lead, {
       target: 'reordered-target', content: content('later steer'), signal: SIGNAL,
     })
     expect(later.status).toBe('accepted')
@@ -1560,7 +1599,7 @@ describe('Team mailbox and waiting', () => {
     const inactiveStarted = await spawn(ctx, lead, 'inactive-target')
     await waitNoAgent(ctx, inactiveStarted.member.id)
     const openRead = vi.spyOn(ctx.sessionPersistence, 'open').mockRejectedValueOnce(new Error('read unavailable'))
-    const uncertain = await ctx.agentTeams.sendMessage(lead, {
+    const uncertain = await legacyMailbox(ctx).send(lead, {
       target: 'inactive-target', content: content('inspection failure'), signal: SIGNAL,
     })
     expect(uncertain.status).toBe('queued')
@@ -1568,7 +1607,7 @@ describe('Team mailbox and waiting', () => {
 
     vi.spyOn(ctx.subagents as unknown as HostPromptDeliverer, deliverSubagentPrompt)
       .mockRejectedValueOnce(new Error('delivery unavailable'))
-    const failed = await ctx.agentTeams.sendMessage(lead, {
+    const failed = await legacyMailbox(ctx).send(lead, {
       target: 'inactive-target', content: content('delivery failure'), signal: SIGNAL,
     })
     expect(failed.status).toBe('queued')
@@ -1588,7 +1627,7 @@ describe('Team mailbox and waiting', () => {
     ctx.agentTeams.interrupt(lead, 'beta')
     await waitNoAgent(ctx, beta.id)
 
-    const first = await ctx.agentTeams.sendMessage(alpha, {
+    const first = await legacyMailbox(ctx).send(alpha, {
       target: 'beta', content: content('first update'), signal: SIGNAL,
     })
     expect(first.status).toBe('accepted')
@@ -1625,26 +1664,26 @@ describe('Team mailbox and waiting', () => {
     })
     const target = await spawn(ctx, lead, 'target')
     await waitNoAgent(ctx, target.member.id)
-    await expect(ctx.agentTeams.sendMessage(lead, {
+    await expect(legacyMailbox(ctx).send(lead, {
       target: 'target', content: content('x'.repeat(300)), signal: SIGNAL,
     })).rejects.toMatchObject({ code: 'TEAM_MESSAGE_TOO_LARGE' })
     vi.spyOn(ctx.sessionPersistence, 'open').mockRejectedValueOnce(new Error('temporary read failure'))
-    const queued = await ctx.agentTeams.sendMessage(lead, {
+    const queued = await legacyMailbox(ctx).send(lead, {
       target: 'target', content: content('one'), signal: SIGNAL,
     })
     expect(queued.status).toBe('queued')
-    await expect(ctx.agentTeams.sendMessage(lead, {
+    await expect(legacyMailbox(ctx).send(lead, {
       target: 'target', content: content('two'), signal: SIGNAL,
     })).rejects.toMatchObject({ code: 'TEAM_MAILBOX_FULL' })
-    await expect(ctx.agentTeams.sendMessage(lead, {
+    await expect(legacyMailbox(ctx).send(lead, {
       target: 'lead', content: content('self'), signal: SIGNAL,
     })).rejects.toMatchObject({ code: 'TEAM_SELF_MESSAGE' })
-    await expect(ctx.agentTeams.sendMessage(lead, {
+    await expect(legacyMailbox(ctx).send(lead, {
       target: 'missing', content: content('unknown target'), signal: SIGNAL,
     })).rejects.toMatchObject({ code: 'TEAM_MEMBER_NOT_FOUND' })
     const controller = new AbortController()
     controller.abort(new TeamError('cancelled before queue', 'TEST_CANCELLED'))
-    await expect(ctx.agentTeams.sendMessage(lead, {
+    await expect(legacyMailbox(ctx).send(lead, {
       target: 'target', content: content('cancelled'), signal: controller.signal,
     })).rejects.toMatchObject({ code: 'TEST_CANCELLED' })
   })
@@ -1653,7 +1692,7 @@ describe('Team mailbox and waiting', () => {
     const { ctx, lead } = await setup(['hang', textResponse('after interrupt')])
     const started = await spawn(ctx, lead, 'worker')
     const worker = await waitRunning(ctx, started.member.id)
-    const followup = await ctx.agentTeams.sendMessage(lead, {
+    const followup = await legacyMailbox(ctx).send(lead, {
       target: 'worker', content: content('retained follow-up'), signal: SIGNAL,
     })
     expect(followup.status).toBe('accepted')
@@ -1884,7 +1923,7 @@ describe('Team mailbox and waiting', () => {
         })
       })
 
-    const sending = ctx.agentTeams.sendMessage(lead, {
+    const sending = legacyMailbox(ctx).send(lead, {
       target: 'mailbox-worker',
       content: content('resume during disposal'),
       signal: SIGNAL,
@@ -1988,7 +2027,7 @@ describe('Team mailbox and waiting', () => {
       provider: 'spawn',
       signal: SIGNAL,
     })).rejects.toMatchObject({ code: 'TEAM_DISPOSED' })
-    await expect(ctx.agentTeams.sendMessage(lead, {
+    await expect(legacyMailbox(ctx).send(lead, {
       target: 'nobody', content: content('must reject'), signal: SIGNAL,
     })).rejects.toMatchObject({ code: 'TEAM_DISPOSED' })
     await expect(internal.mailbox.tryDispatch(lead, {

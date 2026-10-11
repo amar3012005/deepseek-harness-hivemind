@@ -11,6 +11,7 @@ import { TeamJournal } from './journal.ts'
 import { TeamRuntimeLifecycle } from './lifecycle.ts'
 import { TeamMailbox } from './mailbox.ts'
 import { teamProjectionDefinition } from './projection.ts'
+import { directTeamMessage } from './direct-inbox.ts'
 import { TeamRoster } from './roster.ts'
 import type { TeamMembership } from './roster.ts'
 import { TeamTaskBoard } from './task-board.ts'
@@ -57,6 +58,7 @@ function positiveLimit(name: string, value: number): number {
 
 /** Agent Teams service backed by the exact live Lead Session log. */
 export class TeamService extends TypertRemoteService {
+  private readonly directDeliveries = new Set<Promise<SendTeamMessageResult>>()
   static inject = ['agents', 'sessions', 'sessionPersistence', 'sessionProjections', 'subagents']
 
   static Config: z<Config> = z.object({
@@ -109,8 +111,6 @@ export class TeamService extends TypertRemoteService {
       this.journal,
       this.roster,
       this.lifecycle,
-      this.config.maxPendingMessagesPerMember,
-      this.config.maxMessageBytes,
     )
     this.tasks = new TeamTaskBoard(this.journal, this.config.maxTasks)
 
@@ -173,14 +173,24 @@ export class TeamService extends TypertRemoteService {
   }
 
   /**
-   * Queue one durable peer message, then attempt immediate delivery.
+   * Admit one peer message directly into the target native Inbox.
    * @param caller - exact live sending Team member.
    * @param request - target name, content, and pre-queue cancellation.
-   * @returns durable message identity and immediate-delivery observation.
+   * @returns native target MessageId; acceptance does not certify processing or synchronous flush.
    */
   async sendMessage(caller: Agent, request: SendTeamMessageRequest): Promise<SendTeamMessageResult> {
     this.requireDispatch(caller)
-    return await this.mailbox.send(caller, request)
+    if (this.lifecycle.disposed) throw new TeamError('Agent Teams service is disposing', 'TEAM_DISPOSED')
+    const teamId = this.roster.membership(caller).id
+    const operation = directTeamMessage(this.ctx, this.roster, this.journal, caller, {
+      ...request, signal: AbortSignal.any([request.signal, this.lifecycle.signal]),
+    }, this.config.maxMessageBytes)
+    this.directDeliveries.add(operation)
+    try {
+      const result = await operation
+      this.activity.notify(teamId)
+      return result
+    } finally { this.directDeliveries.delete(operation) }
   }
 
   /**
@@ -363,7 +373,7 @@ export class TeamService extends TypertRemoteService {
 
     const failures: unknown[] = []
     await this.lifecycle.settle(this.roster.pendingCreations(), failures)
-    await this.lifecycle.settle(this.mailbox.pendingDispatches(), failures)
+    await this.lifecycle.settle([...this.mailbox.pendingDispatches(), ...this.directDeliveries], failures)
     for (const [root, childIds] of this.roster.liveChildrenByRoot()) {
       try {
         await this.roster.stopTeammates(root, childIds)

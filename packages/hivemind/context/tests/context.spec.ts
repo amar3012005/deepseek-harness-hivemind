@@ -297,6 +297,24 @@ describe('HIVE progressive context', () => {
     expect(foldUserQuestions(restored.snapshotEvents()).active).toMatchObject([{ callId: 'approval-call', state: 'continued' }])
   })
 
+  it('retains native direct Team relay evidence through bounded replay and cold restoration', async () => {
+    const session = Session.create(SessionId('native-team-relay'))
+    session.append('turn/start', { turn: 1 })
+    session.append('user/message', user('Review employee result'), { surfaceOp: 'append' })
+    const relay = session.append('user/message', createUserMessage({
+      source: { kind: 'agent-message', senderSessionId: 'native-worker', form: 'relay' } as never,
+      content: [{ type: 'text', text: 'Native saved peer result needing review.' }],
+    }), { surfaceOp: 'append' })
+    session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+    const original = session.snapshotEvents()
+    const restored = Session.create(SessionId('native-team-cold'), original)
+    const harness = mount()
+    await harness.preStep({ agent: { session: restored }, turn: 2, signal: new AbortController().signal } as never,
+      async () => ({ kind: 'enter', messages: restored.deriveMessages() }))
+    expect(restored.surface.nodes).toContain(relay.seq)
+    expect(restored.snapshotEvents().slice(0, original.length)).toEqual(original)
+  })
+
   it('retains an unreviewed employee artifact until the exact saved Runtime acceptance', async () => {
     const session = Session.create(SessionId('unreviewed-employee'))
     session.append('turn/start', { turn: 1 })
