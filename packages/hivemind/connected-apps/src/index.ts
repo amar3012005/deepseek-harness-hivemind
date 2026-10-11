@@ -997,6 +997,8 @@ function latestUserRequest(messages: readonly unknown[] | undefined): string | u
  * and still resume; human-authored turns require an explicit continuation.
  */
 function shouldProjectWorkflow(messages: readonly unknown[] | undefined): boolean {
+  if (messages?.some(message => record(message) && record(message['source'])
+    && message['source']['kind'] === 'hivemind-runtime-event')) return false
   const request = latestUserRequest(messages)
   return request === undefined || WORKFLOW_CONTINUATION_REQUEST.test(request)
 }
@@ -1568,6 +1570,8 @@ export function apply(ctx: Context, config: Config = {}): void {
     searchFingerprints: Set<string>
     billableCalls: number
     workflowId?: string
+    projectWorkflow: boolean
+    initialReceiptSignature: string
   }>()
   const apiKey = config.apiKey?.trim()
   const composio = apiKey
@@ -2471,6 +2475,8 @@ export function apply(ctx: Context, config: Config = {}): void {
         enabled: connectedAppsEnabled(ctx, config.enabledByDefault === true),
         searchFingerprints: new Set(),
         billableCalls: 0,
+        projectWorkflow: shouldProjectWorkflow(messages),
+        initialReceiptSignature: JSON.stringify(latestConnectedReceipt(agent)) ?? '',
       })
     }
     const decision = await next()
@@ -2484,14 +2490,17 @@ export function apply(ctx: Context, config: Config = {}): void {
         sessionId: String(agent.session.header.id), turnId: turn, kind: 'turn_admission',
       })
     }
+    const state = turns.get(agent)
+    if (state === undefined) return decision
+    const projectWorkflow = state.projectWorkflow
     const unfinished = unfinishedWorkflow(agent.session.snapshotEvents(), turn)
     const visibleMessages = [...visibleSessionMessages(agent.session), ...messages]
     const projections: ReturnType<typeof createUserMessage>[] = []
-    if (unfinished !== undefined && shouldProjectWorkflow(messages)) {
+    if (unfinished !== undefined && projectWorkflow) {
       const workflowMessage = workflowContextMessage(unfinished)
       if (!hasVisiblePluginContext(visibleMessages, workflowMessage)) projections.push(workflowMessage)
     }
-    if (shouldProjectWorkflow(messages)) {
+    if (projectWorkflow) {
       const checkpoint = agent.session.snapshotEvents().findLast(event => event.type === 'hivemind/connected-receipt' && event.data.tool === 'workflow_checkpoint')
       if (checkpoint?.type === 'hivemind/connected-receipt') {
         const note = connectedReceiptContextMessage(checkpoint.data)
@@ -2499,12 +2508,13 @@ export function apply(ctx: Context, config: Config = {}): void {
       }
     }
     const receipt = latestConnectedReceipt(agent)
-    if (receipt !== undefined && !hasVisibleReceipt(visibleMessages, receipt)) {
+    if (receipt !== undefined && (projectWorkflow || JSON.stringify(receipt) !== state.initialReceiptSignature)
+      && !hasVisibleReceipt(visibleMessages, receipt)) {
       const receiptMessage = connectedReceiptContextMessage(receipt)
       if (!hasVisiblePluginContext(visibleMessages, receiptMessage)) projections.push(receiptMessage)
     }
     const authorization = pendingConnectionReceipt(agent)
-    if (authorization !== undefined && authorization !== receipt) {
+    if (projectWorkflow && authorization !== undefined && authorization !== receipt) {
       const message = connectedReceiptContextMessage(authorization)
       if (!hasVisiblePluginContext(visibleMessages, message)) projections.push(message)
     }

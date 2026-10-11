@@ -670,6 +670,29 @@ describe('progressive Composio bridge', () => {
     expect(decision.messages).toEqual([])
   })
 
+  it.each(['user', 'hivemind-runtime-event'])('keeps old receipts out of a new %s request throughout its turn', async (kind) => {
+    const events = [{ type: 'hivemind/connected-receipt', data: {
+      version: 1, tool: 'connection_authorization', receipt: {
+        status: 'connection_required', session_id: 'old-vercel', request_call_id: 'old-call', toolkits: ['vercel'],
+      },
+    } }]
+    const agent = { session: { header: { id: 'new-purpose' }, snapshotEvents: () => events, append: vi.fn() } }
+    const app = harness()
+    const next = vi.fn(async () => ({ kind: 'enter', messages: [] }))
+    const first = await app.listeners.get('agent/pre-step')?.({
+      agent, turn: 2, messages: [{ role: 'user', source: { kind }, content: [{ type: 'text', text: 'Find our catalog information.' }] }],
+    } as never, next as never) as { messages: unknown[] }
+    expect(first.messages).toEqual([])
+    const later = await app.listeners.get('agent/pre-step')?.({ agent, turn: 2, step: 2, messages: [] } as never, next as never) as { messages: unknown[] }
+    expect(later.messages).toEqual([])
+    events.push({ type: 'hivemind/connected-receipt', data: { version: 1, tool: 'CATALOG_READ', receipt: {
+      status: 'ready', session_id: 'current-catalog', request_call_id: 'current-call', toolkits: ['catalog'],
+    } } })
+    const current = await app.listeners.get('agent/pre-step')?.({ agent, turn: 2, step: 3, messages: [] } as never, next as never) as { messages: unknown[] }
+    expect(JSON.stringify(current.messages)).toContain('current-catalog')
+    expect(JSON.stringify(current.messages)).not.toContain('old-vercel')
+  })
+
   it('projects an unfinished workflow when the user explicitly continues it', async () => {
     const events = [
       { type: 'tool/call', data: { turn: 1, callId: 'call-search', name: 'hivemind_connected_task', arguments: JSON.stringify({
