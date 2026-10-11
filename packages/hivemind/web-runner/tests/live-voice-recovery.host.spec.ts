@@ -8,9 +8,10 @@ import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
 import { expect, it, vi } from 'vitest'
 import { MockAdapter, textResponse } from '../../../core/agent-loop/tests/mock-adapter.ts'
+import { ReactLoopInbox } from '../../../core/agent-loop/src/inbox.ts'
 import { persistVoiceCall } from '../src/live-voice.ts'
 
-const actor = { userId: 'owner', orgId: 'fixture-org', role: 'admin' as const }
+const actor = { userId: 'owner', orgId: 'fixture-org', role: 'admin' as const, name: 'Fixture Owner' }
 const receipt = { callId: 'actual-call', provider: 'grok' as const, authenticatedActor: actor,
   initialCheckIn: false, interrupted: false, hadUserSpeech: true, transcript: 'Confirmed fixture priorities.' }
 
@@ -75,7 +76,9 @@ it('does not replay input claimed before user-message admission or explicitly ca
   const f = await fixture()
   try {
     await persistVoiceCall(f.ctx, f.agent, receipt, 'Saved call')
-    const claimed = f.agent.inbox.claim('next-turn', 1)
+    const inbox = f.agent.inbox
+    if (!(inbox instanceof ReactLoopInbox)) throw new Error('Expected native ReactLoopInbox')
+    const claimed = inbox.claim('next-turn', 1)
     expect(claimed).toHaveLength(1)
     expect(f.agent.inbox.nextTurn).toHaveLength(0)
     await persistVoiceCall(f.ctx, f.agent, receipt, 'Retry while claimed')
