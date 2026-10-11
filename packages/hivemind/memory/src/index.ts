@@ -2,7 +2,11 @@
 import { createHash } from 'node:crypto'
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
-import { defineTool, type ToolExecution } from '@deepseek-ai/dsh-tools'
+import { defineTool, type ToolExecution, type ToolRunContext } from '@deepseek-ai/dsh-tools'
+import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
+import type {} from '@deepseek-ai/dsh-session-persistence'
+import { createUserMessage, ToolCallId } from '@deepseek-ai/dsh-llm'
+import type {} from '@deepseek-ai/dsh-user-questions'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 
 export interface RecallRequest {
@@ -67,13 +71,15 @@ export interface MemoryProvider {
 }
 
 declare module '@deepseek-ai/cordis' {
-  interface Context { hivemindMemory: MemoryProvider }
+  interface Context { hivemindMemory: MemoryProvider; hivemindMemoryApproval: MemoryApprovalService }
 }
 
 export interface MemoryPluginConfig { defaultLimit: number }
 
 declare module '@deepseek-ai/dsh-session/types' {
   interface SessionEventMap {
+    /** Stores an immutable prepared write and exact native call identity for approved continuation. */
+    'hivemind/memory-save-checkpoint': SaveCheckpoint
     /** Records the governed HIVE memory-save lifecycle, destination, and idempotency key. */
     'hivemind/memory-save': {
       operation_id: string
@@ -84,11 +90,103 @@ declare module '@deepseek-ai/dsh-session/types' {
   }
 }
 
+interface PendingSave {
+  pending: true
+  callId: ToolExecution['callId']
+  status?: 'pending'
+  message?: string
+}
+
+/** Immutable payload owned by the memory tool, never reconstructed from model replay. */
+interface SaveCheckpoint {
+  callId: string
+  rootCallId: string
+  tool: string
+  arguments: JsonValue
+  requests: SaveRequest[]
+  status: 'pending' | 'completed' | 'failed'
+  result?: JsonValue
+}
+
+function checkpointFor(agent: Agent, callId: string): SaveCheckpoint | undefined {
+  return agent.session.snapshotEvents().findLast(event => event.type === 'hivemind/memory-save-checkpoint'
+    && event.data.callId === callId)?.data as SaveCheckpoint | undefined
+}
+
+function prepareCheckpoint(execution: Pick<ToolExecution, 'agent' | 'callId' | 'rootCallId' | 'name' | 'arguments'>, requests: SaveRequest[]): SaveRequest[] {
+  if (execution.agent === undefined) throw new TypeError('hivemind-memory: active agent required')
+  const saved = checkpointFor(execution.agent, String(execution.callId))
+  if (saved !== undefined) return saved.requests
+  execution.agent.session.append('hivemind/memory-save-checkpoint', {
+    callId: String(execution.callId), rootCallId: String(execution.rootCallId ?? execution.callId),
+    tool: execution.name ?? 'hivemind_meta', arguments: JSON.parse(JSON.stringify(execution.arguments ?? {})) as JsonValue,
+    requests, status: 'pending',
+  })
+  return requests
+}
+
 const SAVE_DESTINATIONS = {
   personal: 'Personal',
   organization: 'Organization',
   project: 'Project',
 } as const
+
+function destinationQuestions(request: SaveRequest, operationId: string) {
+  const choices: Array<keyof typeof SAVE_DESTINATIONS> = ['personal', 'organization']
+  if (request.project !== undefined) choices.push('project')
+  const questionId = `hivemind-memory-save-destination:${operationId}`
+  return [{
+    id: questionId,
+    question: `Save “${request.title}” to HIVE-MIND?`,
+    detail: 'Choose one destination, then approve this prepared memory save. Skip to decline.',
+    intent: { kind: 'memory-save-destination' as const },
+    options: choices.map(scope => ({
+      label: SAVE_DESTINATIONS[scope],
+      description: scope === 'project' ? `Save to the selected project: ${request.project}` : `Save this memory to your ${scope} scope.`,
+    })),
+  }]
+}
+
+/** Maintenance-only migration for a demonstrably unexecuted, exact legacy save. */
+export class MemoryApprovalService extends TypertRemoteService {
+  constructor(ctx: Context, private readonly provider: MemoryProvider) { super(ctx, 'hivemindMemoryApproval') }
+
+  @Remote
+  async recoverPrepared(agent: Agent, callId: ToolCallId): Promise<boolean> {
+    if (this.ctx.agents.get(agent.id) !== agent || !this.ctx.agents.roots().includes(agent)) throw new Error('hivemind-memory: exact live root required')
+    if (agent.status !== 'idle') throw new Error('hivemind-memory: recovery requires an idle driver')
+    return agent.runMaintenance(async (signal) => {
+      const events = agent.session.snapshotEvents()
+      if (checkpointFor(agent, String(callId)) !== undefined) return false
+      const call = events.findLast(event => event.type === 'tool/call' && event.data.callId === callId)
+      if (call?.type !== 'tool/call' || !['hivemind_meta', 'hivemind_save_memory'].includes(call.data.name)) throw new Error('hivemind-memory: exact saved standalone save required')
+      const parsed = object(JSON.parse(call.data.arguments), 'saved arguments')
+      if (call.data.name === 'hivemind_meta' && parsed['operation'] !== 'save') throw new Error('hivemind-memory: saved call is not a save')
+      const raw = call.data.name === 'hivemind_meta' ? object(parsed['save'] ?? parsed, 'saved save') : parsed
+      const request = this.provider.prepareSave?.(agent, saveRequest(raw)) ?? saveRequest(raw)
+      const execution = { agent, callId, rootCallId: callId, name: call.data.name, arguments: parsed }
+      const operationId = saveOperationId(execution as ToolExecution, request)
+      // No provider execution, successful result, reply or different concurrent save can be crossed.
+      const following = events.filter(event => event.seq > call.seq)
+      const lifecycle = following.filter(event => event.type === 'hivemind/memory-save')
+      if (lifecycle.length !== 1 || lifecycle[0]?.type !== 'hivemind/memory-save'
+        || lifecycle[0].data.operation_id !== operationId || lifecycle[0].data.status !== 'prepared') return false
+      if (following.some(event => event.type === 'tool/result' && event.data.message.content[0].toolCallId === callId
+        && event.data.error?.code !== 'TOOL_OUTCOME_UNKNOWN')) return false
+      if (following.some(event => event.type === 'user/message' && event.data.source.kind === 'user-question-reply' && event.data.source.callId === callId)
+        || [...agent.inbox.nextStep, ...agent.inbox.nextTurn].some(message => message.source.kind === 'user-question-reply' && message.source.callId === callId)) return false
+      const questions = destinationQuestions(request, operationId)
+      await this.ctx.parallel('user-questions/park-admission', agent, callId, questions)
+      signal.throwIfAborted()
+      this.ctx.userQuestions.park({ agent, signal, questions }, callId)
+      prepareCheckpoint(execution, [request])
+      agent.session.append('user-question/parked', { callId, questions })
+      const sessions = this.ctx.get('sessions')
+      if (sessions !== undefined && !await sessions.flush(agent.session)) throw new Error('hivemind-memory: recovery checkpoint was not persisted')
+      return true
+    })
+  }
+}
 
 /** Pause one prepared save for a native destination approval, then return the
  * final request to the same invocation. A declined/cancelled card performs no
@@ -98,7 +196,7 @@ async function approveSaveDestination(
   execution: ToolExecution,
   request: SaveRequest,
   fullAccessAllowed: ((agent: Agent, signal: AbortSignal) => Promise<boolean>) | undefined,
-): Promise<SaveRequest | undefined> {
+): Promise<SaveRequest | PendingSave | undefined> {
   if (execution.agent === undefined) throw new TypeError('hivemind-memory: active agent required')
   const choices: Array<keyof typeof SAVE_DESTINATIONS> = ['personal', 'organization']
   if (request.project !== undefined) choices.push('project')
@@ -106,12 +204,28 @@ async function approveSaveDestination(
   const questionId = `hivemind-memory-save-destination:${operationId}`
   const prior = latestSaveEvent(execution.agent, operationId)
   if (prior?.status === 'completed' && prior.destination !== undefined) {
-    return { ...request, scope: prior.destination }
+    return { ...request, scope: prior.destination, idempotencyKey: `${operationId}:${prior.destination}` }
   }
   if (prior?.status === 'approved' && prior.destination !== undefined) {
-    return { ...request, scope: prior.destination }
+    return { ...request, scope: prior.destination, idempotencyKey: `${operationId}:${prior.destination}` }
   }
   appendSaveEvent(execution.agent, { operation_id: operationId, status: 'prepared' })
+  const questions = destinationQuestions(request, operationId)
+  const checkpoint = checkpointFor(execution.agent, String(execution.callId))
+  const reply = execution.agent.session.snapshotEvents().findLast(event => event.type === 'user/message'
+    && event.data.source.kind === 'user-question-reply' && event.data.source.callId === checkpoint?.callId)
+  if (reply?.type === 'user/message') {
+    const block = reply.data.content.find(item => item.type === 'text')
+    const answer = block?.type === 'text' ? JSON.parse(block.text) as { answers?: { id: string; selected: string[] }[] } : {}
+    const selected = answer.answers?.find(item => item.id === questionId)?.selected ?? []
+    const scope = selected.length === 1 ? choices.find(candidate => selected[0] === SAVE_DESTINATIONS[candidate]) : undefined
+    if (scope === undefined) {
+      appendSaveEvent(execution.agent, { operation_id: operationId, status: 'cancelled' })
+      return undefined
+    }
+    appendSaveEvent(execution.agent, { operation_id: operationId, status: 'approved', destination: scope })
+    return { ...request, scope, idempotencyKey: `${operationId}:${scope}` }
+  }
   const presets = ctx.get('permissionPresets') as { current(session: Agent['session']): string } | undefined
   if (presets?.current(execution.agent.session) === 'danger-full-access' || await fullAccessAllowed?.(execution.agent, execution.signal)) {
     // Full access is explicit session permission; it does not change tenant ACLs.
@@ -119,57 +233,21 @@ async function approveSaveDestination(
     // use the company, or the explicitly selected project.
     const scope = request.scope ?? (request.project !== undefined ? 'project' : 'organization')
     appendSaveEvent(execution.agent, { operation_id: operationId, status: 'approved', destination: scope })
-    return { ...request, scope }
+    return { ...request, scope, idempotencyKey: `${operationId}:${scope}` }
   }
-  try {
-    const userQuestions = ctx.get('userQuestions') as {
-      ask(input: {
-        agent: Agent
-        signal: AbortSignal
-        questions: readonly {
-          id: string
-          question: string
-          detail: string
-          options: readonly { label: string; description: string }[]
-          intent?: { kind: 'memory-save-destination' }
-        }[]
-      }): Promise<{ answers: readonly { id: string; selected: readonly string[] }[] }>
-    } | undefined
-    if (userQuestions === undefined) throw new Error('hivemind-memory: save approval channel is unavailable')
-    const answer = await userQuestions.ask({
-      agent: execution.agent,
-      signal: execution.signal,
-      questions: [{
-        id: questionId,
-        question: `Save “${request.title}” to HIVE-MIND?`,
-        detail: 'Choose one destination, then approve this prepared memory save.',
-        intent: { kind: 'memory-save-destination' },
-        options: choices.map(scope => ({
-          label: SAVE_DESTINATIONS[scope],
-          description: scope === 'project'
-            ? `Save to the selected project: ${request.project}`
-            : `Save this memory to your ${scope} scope.`,
-        })),
-      }],
-    })
-    const selected = answer.answers.find(item => item.id === questionId)?.selected ?? []
-    const scope = choices.find(candidate => selected.includes(SAVE_DESTINATIONS[candidate]))
-    if (scope === undefined) {
-      appendSaveEvent(execution.agent, { operation_id: operationId, status: 'cancelled' })
-      return undefined
-    }
-    appendSaveEvent(execution.agent, { operation_id: operationId, status: 'approved', destination: scope })
-    return { ...request, scope }
-  } catch (error: unknown) {
-    const code = typeof error === 'object' && error !== null && 'code' in error
-      ? (error as { code?: unknown }).code
-      : undefined
-    if (execution.signal.aborted || code === 'ASK_ABORTED' || code === 'ASK_CANCELLED') {
-      appendSaveEvent(execution.agent, { operation_id: operationId, status: 'cancelled' })
-      return undefined
-    }
-    throw error
+  const userQuestions = ctx.get('userQuestions') as {
+    park(input: { agent: Agent; signal: AbortSignal; questions: typeof questions }, callId: ToolExecution['callId']): PendingSave
+  } | undefined
+  if (userQuestions === undefined) throw new Error('hivemind-memory: save approval channel is unavailable')
+  await ctx.parallel('user-questions/park-admission', execution.agent, execution.callId, questions)
+  const pending = userQuestions.park({ agent: execution.agent, signal: execution.signal, questions }, execution.callId)
+  if (checkpoint === undefined) throw new Error('hivemind-memory: prepared save checkpoint is unavailable')
+  if (!execution.agent.session.snapshotEvents().some(event => event.type === 'user-question/parked' && event.data.callId === execution.callId)) {
+    execution.agent.session.append('user-question/parked', { callId: execution.callId, questions })
   }
+  ;(execution as ToolRunContext).concludeTurn()
+  return { ...pending, status: 'pending', message: 'Memory save awaits your destination approval. No write has occurred; answering resumes this exact prepared save.' }
+
 }
 
 type SaveEventStatus = 'prepared' | 'approved' | 'executing' | 'completed' | 'cancelled'
@@ -354,7 +432,7 @@ const output = {
 export function memoryPlugin(config: MemoryPluginConfig, provider: MemoryProvider) {
   return {
     name: 'hivemind-memory',
-    inject: ['tools'],
+    inject: ['tools', 'userQuestions', 'agents'],
     apply(ctx: Context): void {
       let hqFullAccessAllowed: ((agent: Agent, signal: AbortSignal) => Promise<boolean>) | undefined
       ctx.inject(['hivemindHq'], hqCtx => hqCtx.effect(() => {
@@ -364,6 +442,33 @@ export function memoryPlugin(config: MemoryPluginConfig, provider: MemoryProvide
         hqFullAccessAllowed = (agent, signal) => hq.fullAccessAllowed?.(agent, signal) ?? Promise.resolve(false)
         return () => { hqFullAccessAllowed = undefined }
       }))
+      const resuming = new WeakSet<Agent>()
+      ctx.effect(() => ctx.on('agent/pre-step', async ({ agent, signal }, next) => {
+        const decision = await next()
+        if (decision.kind === 'reject' || resuming.has(agent)) return decision
+        const checkpoints = new Map<string, SaveCheckpoint>()
+        for (const event of agent.session.snapshotEvents()) {
+          if (event.type === 'hivemind/memory-save-checkpoint') checkpoints.set(event.data.callId, event.data)
+        }
+        for (const saved of checkpoints.values()) {
+          if (saved.status !== 'pending' || !agent.session.snapshotEvents().some(event => event.type === 'user/message'
+            && event.data.source.kind === 'user-question-reply' && String(event.data.source.callId) === saved.callId)) continue
+          resuming.add(agent)
+          try {
+            const result = await ctx.tools.execute({ agent, signal, callId: ToolCallId(saved.callId),
+              rootCallId: ToolCallId(saved.rootCallId), name: saved.tool, arguments: saved.arguments })
+            agent.session.append('hivemind/memory-save-checkpoint', { ...saved,
+              status: result.isError ? 'failed' : 'completed', result: result.isError ? result.content as unknown as JsonValue : result.value })
+            agent.session.append('user/message', createUserMessage({
+              source: { kind: 'plugin', plugin: 'hivemind-memory', form: 'recall' },
+              content: [{ type: 'text', text: JSON.stringify({ operation: 'approved_memory_save', callId: saved.callId,
+                isError: result.isError, content: result.content }) }],
+            }), { surfaceOp: 'append' })
+          } finally { resuming.delete(agent) }
+        }
+        return decision
+      }))
+      new MemoryApprovalService(ctx, provider)
       ctx.provide('hivemindMemory', provider)
       ctx.effect(() => ctx.tools.register(defineTool({
         name: 'hivemind_save_memory',
@@ -383,8 +488,12 @@ export function memoryPlugin(config: MemoryPluginConfig, provider: MemoryProvide
         isConcurrencySafe: () => false,
         async execute(args, execution) {
           if (execution.agent === undefined) throw new TypeError('hivemind-memory: active agent required')
-          const prepared = provider.prepareSave?.(execution.agent, saveRequest(args)) ?? saveRequest(args)
+          const [prepared] = prepareCheckpoint(execution, [
+            provider.prepareSave?.(execution.agent, saveRequest(args)) ?? saveRequest(args),
+          ])
+          if (prepared === undefined) throw new Error('hivemind-memory: prepared save is unavailable')
           const approved = await approveSaveDestination(ctx, execution, prepared, hqFullAccessAllowed)
+          if (approved !== undefined && 'pending' in approved) return approved as unknown as Record<string, JsonValue>
           return approved === undefined
             ? { operation: 'save', status: 'cancelled' }
             : provider.save(execution.agent, approved, execution.signal, execution)
@@ -421,28 +530,29 @@ export function memoryPlugin(config: MemoryPluginConfig, provider: MemoryProvide
             throw new TypeError('hivemind-memory: batch requires between 1 and 25 items')
           }
           const requestedScope = optionalScope(args.scope, 'scope')
-          const prepared = args.items.map((item, index) => {
+          const prepared = prepareCheckpoint(execution, args.items.map((item, index) => {
             const raw = object(item, `items[${index}]`)
             const request = saveRequest({ ...raw, ...(requestedScope === undefined ? {} : { scope: requestedScope }) })
             return provider.prepareSave?.(agent, request) ?? request
-          })
+          }))
           const projects = [...new Set(prepared.flatMap(item => item.project === undefined ? [] : [item.project]))]
           if (requestedScope === 'project' && projects.length !== 1) {
             throw new TypeError('hivemind-memory: project batch requires one shared project')
           }
           const approvalRequest: SaveRequest = {
             title: `${prepared.length} prepared memories`,
-            content: prepared.map(item => item.title).join('\n'),
+            content: JSON.stringify(prepared.map(({ metadata: _metadata, idempotencyKey: _key, ...item }) => item)),
             sourceType: 'conversation',
             ...(projects.length === 1 ? { project: projects[0] } : {}),
             ...(requestedScope === undefined ? {} : { scope: requestedScope }),
           }
           const approved = await approveSaveDestination(ctx, execution, approvalRequest, hqFullAccessAllowed)
+          if (approved !== undefined && 'pending' in approved) return approved as unknown as Record<string, JsonValue>
           if (approved === undefined) return { operation: 'batch_save', status: 'cancelled', count: prepared.length }
           if (approved.scope === undefined) throw new Error('hivemind-memory: approved batch destination is unavailable')
           const results: Record<string, JsonValue>[] = []
           for (const request of prepared) {
-            results.push(await provider.save(agent, { ...request, scope: approved.scope }, execution.signal, execution))
+            results.push(await provider.save(agent, { ...request, scope: approved.scope, idempotencyKey: `${saveOperationId(execution, request)}:${approved.scope}` }, execution.signal, execution))
           }
           return { operation: 'batch_save', status: 'completed', count: results.length, destination: approved.scope, results }
         },
@@ -533,8 +643,12 @@ export function memoryPlugin(config: MemoryPluginConfig, provider: MemoryProvide
             const rawSave = args.save === undefined
               ? args
               : object(args.save, 'save')
-            const prepared = provider.prepareSave?.(execution.agent, saveRequest(rawSave)) ?? saveRequest(rawSave)
+            const [prepared] = prepareCheckpoint(execution, [
+              provider.prepareSave?.(execution.agent, saveRequest(rawSave)) ?? saveRequest(rawSave),
+            ])
+            if (prepared === undefined) throw new Error('hivemind-memory: prepared save is unavailable')
             const approved = await approveSaveDestination(ctx, execution, prepared, hqFullAccessAllowed)
+            if (approved !== undefined && 'pending' in approved) return approved as unknown as Record<string, JsonValue>
             return approved === undefined
               ? { operation: 'save', status: 'cancelled' }
               : provider.save(execution.agent, approved, execution.signal, execution)

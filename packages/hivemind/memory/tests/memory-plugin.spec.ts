@@ -1,4 +1,6 @@
 import { Context } from '@deepseek-ai/cordis'
+import AgentRegistry from '@deepseek-ai/dsh-agent'
+import UserQuestions from '@deepseek-ai/dsh-user-questions'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
 import { describe, expect, it, vi } from 'vitest'
@@ -7,6 +9,8 @@ import { memoryPlugin, saveOperationId } from '../src/index.ts'
 describe('hivemind-memory plugin lifecycle', () => {
   it('omits blank optional read filters while preserving required and write validation', async () => {
     const ctx = new Context()
+    await ctx.plugin(AgentRegistry)
+    await ctx.plugin(UserQuestions)
     await ctx.plugin(SystemPrompt, {})
     await ctx.plugin(ToolRuntime)
     const recall = vi.fn(async () => ({ status: 'ready' }))
@@ -33,6 +37,8 @@ describe('hivemind-memory plugin lifecycle', () => {
   })
   it('registers hivemind_meta in its Cordis effect and removes it on disposal', async () => {
     const ctx = new Context()
+    await ctx.plugin(AgentRegistry)
+    await ctx.plugin(UserQuestions)
     await ctx.plugin(SystemPrompt, {})
     await ctx.plugin(ToolRuntime)
     const fiber = await ctx.plugin(memoryPlugin({ defaultLimit: 5 }, {
@@ -53,6 +59,8 @@ describe('hivemind-memory plugin lifecycle', () => {
 
   it('normalizes historical flat entity and recall reads without another model turn', async () => {
     const ctx = new Context()
+    await ctx.plugin(AgentRegistry)
+    await ctx.plugin(UserQuestions)
     await ctx.plugin(SystemPrompt, {})
     await ctx.plugin(ToolRuntime)
     const entities = vi.fn(async () => ({ status: 'ready' }))
@@ -75,6 +83,8 @@ describe('hivemind-memory plugin lifecycle', () => {
 
   it('repairs only an unambiguous missing read operation before schema validation', async () => {
     const ctx = new Context()
+    await ctx.plugin(AgentRegistry)
+    await ctx.plugin(UserQuestions)
     await ctx.plugin(SystemPrompt, {})
     await ctx.plugin(ToolRuntime)
     const entities = vi.fn(async () => ({ status: 'ready' }))
@@ -99,6 +109,8 @@ describe('hivemind-memory plugin lifecycle', () => {
 
   it('marks memory mutations exclusive and keeps reads parallel-safe', async () => {
     const ctx = new Context()
+    await ctx.plugin(AgentRegistry)
+    await ctx.plugin(UserQuestions)
     await ctx.plugin(SystemPrompt, {})
     await ctx.plugin(ToolRuntime)
     const fiber = await ctx.plugin(memoryPlugin({ defaultLimit: 5 }, {
@@ -114,6 +126,8 @@ describe('hivemind-memory plugin lifecycle', () => {
 
   it('normalizes exhaustive save entities into searchable entity tags', async () => {
     const ctx = new Context()
+    await ctx.plugin(AgentRegistry)
+    await ctx.plugin(UserQuestions)
     await ctx.plugin(SystemPrompt, {})
     await ctx.plugin(ToolRuntime)
     const save = vi.fn(async (_agent, request) => ({ status: 'completed', tags: request.tags }))
@@ -171,6 +185,8 @@ describe('hivemind-memory plugin lifecycle', () => {
     ['Security alert', 'Unrecognized login attempt from a new device'],
   ])('blocks authentication material before approval: %s', async (title, content) => {
     const ctx = new Context()
+    await ctx.plugin(AgentRegistry)
+    await ctx.plugin(UserQuestions)
     await ctx.plugin(SystemPrompt, {})
     await ctx.plugin(ToolRuntime)
     const fiber = await ctx.plugin(memoryPlugin({ defaultLimit: 5 }, {
