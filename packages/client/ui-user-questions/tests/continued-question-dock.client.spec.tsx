@@ -13,7 +13,7 @@ afterEach(cleanup)
 type Props = ComponentProps<typeof ContinuedQuestionDock>
 const SID = 'one' as SessionId
 const question = { callId: 'call-one', state: 'continued', questions: [{ id: 'role', question: 'Which responsibility?', options: [{ label: 'Research' }] }] }
-function kit(active: unknown[] = [question], onAnswer = vi.fn(async () => true)): Props {
+function kit(active: unknown[] = [question], onAnswer: Props['onAnswer'] = vi.fn(async () => true)): Props {
   const store = createQuestionDraftStore().create(SID)
   return {
     sessionId: SID,
