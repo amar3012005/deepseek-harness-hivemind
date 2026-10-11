@@ -305,27 +305,27 @@ describe('HIVE progressive context', () => {
       source: { kind: 'hivemind-agent-message', messageId: 'employee-report', senderId: 'elena', senderSessionId: 'elena', form: 'relay' } as never,
       content: [{ type: 'text', text: 'Saved artifact and blocking schema failure details' }],
     }), { surfaceOp: 'append' })
-    session.append('hivemind/room-message-received' as never, {
+    Reflect.apply(session.append, session, ['hivemind/room-message-received', {
       id: 'employee-report', taskId: 'delegated-task', artifactIds: ['saved-artifact'],
-    } as never)
+    }])
     session.append('assistant/message', { turn: 1, step: 1, stream: [], message: createAssistantMessage({
       source: { provider: 'fixture', model: 'fixture' }, content: [{ type: 'text', text: 'The deliverable needs review.' }],
     }) }, { surfaceOp: 'append' })
     session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
-    session.append('team/task' as never, { task: { id: 'delegated-task', revision: 4, status: 'in_progress' } } as never)
+    Reflect.apply(session.append, session, ['team/task', { task: { id: 'delegated-task', revision: 4, status: 'in_progress' } }])
     const harness = mount()
     await harness.preStep({ agent: { session }, turn: 2, signal: new AbortController().signal } as never,
       async () => ({ kind: 'enter', messages: session.deriveMessages() }))
     expect(session.surface.nodes).toContain(relay.seq)
-    session.append('hivemind/hq-task-review' as never, { taskId: 'delegated-task', reviewer: 'runtime',
+    Reflect.apply(session.append, session, ['hivemind/hq-task-review', { taskId: 'delegated-task', reviewer: 'runtime',
       status: 'accepted', taskRevision: 4, artifactIds: ['different-artifact'],
-    } as never)
+    }])
     await harness.preStep({ agent: { session }, turn: 3, signal: new AbortController().signal } as never,
       async () => ({ kind: 'enter', messages: session.deriveMessages() }))
     expect(session.surface.nodes).toContain(relay.seq)
-    session.append('hivemind/hq-task-review' as never, { taskId: 'delegated-task', reviewer: 'runtime',
+    Reflect.apply(session.append, session, ['hivemind/hq-task-review', { taskId: 'delegated-task', reviewer: 'runtime',
       status: 'accepted', taskRevision: 4, artifactIds: ['saved-artifact'],
-    } as never)
+    }])
     await harness.preStep({ agent: { session }, turn: 4, signal: new AbortController().signal } as never,
       async () => ({ kind: 'enter', messages: session.deriveMessages() }))
     expect(session.surface.nodes).not.toContain(relay.seq)
