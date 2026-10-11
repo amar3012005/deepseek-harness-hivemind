@@ -1,7 +1,7 @@
 /** HIVE-MIND organization and recent-conversation context projection. */
 import type { Context, Plugin } from '@deepseek-ai/cordis'
 import { isCompactCheckpointSource } from '@deepseek-ai/dsh-compaction/checkpoint'
-import { activeTeamWait } from '@deepseek-ai/dsh-experimental-tool-agent-team/src/parked-wait.ts'
+import { activeTeamWait } from '@deepseek-ai/dsh-experimental-tool-agent-team'
 import type {} from '@deepseek-ai/dsh-session-projection'
 import type {} from '@deepseek-ai/dsh-user-questions/types'
 import type { Agent } from '@deepseek-ai/dsh-agent'
