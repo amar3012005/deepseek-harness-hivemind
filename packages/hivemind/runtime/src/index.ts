@@ -11,6 +11,7 @@ import { administratorMessageTool } from './administrator-messaging.ts'
 export type {} from './voice-outcome.ts'
 export type {} from './runtime-decision-memory.ts'
 import { installRuntimeDecisionMemory, isRuntimeRoom } from './runtime-decision-memory.ts'
+import { normalizePrivateMemoryReferences } from './private-memory-references.ts'
 import { privateMemoryFailure } from './private-memory-errors.ts'
 import { installVoiceOutcome } from './voice-outcome.ts'
 import { installAgentMessaging } from './agent-messaging.ts'
@@ -1156,6 +1157,12 @@ export function apply(ctx: Context, config: Config): void {
     employeeProfileTool(async (agent, input, signal) => {
       if (!config.serviceApiBase) throw new HiveMindRuntimeError('Employee profile changes require tenant-scoped service authority')
       const authority = await resolveAuthority(ctx, config, agent)
+      if (input['operation'] === 'inspect') {
+        const directory = hyperagentDirectory(await hiveRequest(authority, '/v1/hyperagents/profiles', { method: 'GET' }, signal, config))
+        const profile = directory.profiles.find(value => value['id'] === input['employee_id'])
+        if (!profile) throw new HiveMindRuntimeError('employee_profile_own_room_unavailable')
+        return { operation: 'inspect', employee: profile }
+      }
       const result = apiRecord(await hiveRequest(authority, '/employee-lifecycle', { method:'POST',body:JSON.stringify(input) }, signal, config), 'employee profile receipt')
       return Object.fromEntries(Object.entries(result).filter((entry): entry is [string, JsonValue] => entry[1] !== undefined))
     })))
@@ -2040,13 +2047,7 @@ Schema: save supports kind learning, decision_note, or handoff, always with stat
       async execute(args, execution) {
         const action = args.action
         const agent = requireAgent(execution.agent)
-        for (const field of ['room_id', 'run_id', 'trigger_id', 'supersedes_id'] as const) {
-          const value = args[field]
-          const identity = field === 'run_id' && value?.startsWith('trigger-') ? value.slice('trigger-'.length) : value
-          if (identity !== undefined && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(identity)) {
-            throw new HiveMindRuntimeError(`private memory ${field} must be an exact UUID from a receipt; omit it when unknown. Native session IDs are already stored in context.sessionId and are not room UUIDs.`)
-          }
-        }
+        const references = normalizePrivateMemoryReferences(args, agent.id)
         const authority = await resolveAuthority(ctx, config)
         if (action === 'recall') {
           const query = nonEmptyString(args.query, 'private memory query')
@@ -2054,7 +2055,7 @@ Schema: save supports kind learning, decision_note, or handoff, always with stat
           const limit = args.limit ?? 5
           if (limit < 1 || limit > 20) throw new HiveMindRuntimeError('private memory limit must be 1 to 20')
           return apiRecord(await hiveRequest(authority, '/v1/hyperagents/operating-memory', {
-            method: 'POST', body: JSON.stringify({ action, query, limit, ...(args.kind ? { kind: args.kind } : {}), ...(args.agent_slug ? { agent_slug: args.agent_slug } : {}), ...(args.room_id ? { room_id: args.room_id } : {}), ...(args.run_id ? { run_id: args.run_id } : {}) }),
+            method: 'POST', body: JSON.stringify({ action, query, limit, ...(args.kind ? { kind: args.kind } : {}), ...(args.agent_slug ? { agent_slug: args.agent_slug } : {}), ...(references.room_id ? { room_id: references.room_id } : {}), ...(references.run_id ? { run_id: references.run_id } : {}) }),
           }, execution.signal, config), 'private memory recall')
         }
         const owner = await ensureOwner(agent, execution.signal)
@@ -2069,10 +2070,10 @@ Schema: save supports kind learning, decision_note, or handoff, always with stat
         const body = {
           action, agent_slug: agentSlug, kind, title, summary, idempotency_key: idempotencyKey,
           context: { sessionId: agent.id },
-          ...(args.room_id ? { room_id: args.room_id } : {}),
-          ...(args.run_id ? { run_id: args.run_id } : {}),
-          ...(args.trigger_id ? { trigger_id: args.trigger_id } : {}),
-          ...(args.supersedes_id ? { supersedes_id: args.supersedes_id } : {}),
+          ...(references.room_id ? { room_id: references.room_id } : {}),
+          ...(references.run_id ? { run_id: references.run_id } : {}),
+          ...(references.trigger_id ? { trigger_id: references.trigger_id } : {}),
+          ...(references.supersedes_id ? { supersedes_id: references.supersedes_id } : {}),
         }
         return apiRecord(await hiveRequest(authority, '/v1/hyperagents/operating-memory', {
           method: 'POST', body: JSON.stringify(body),

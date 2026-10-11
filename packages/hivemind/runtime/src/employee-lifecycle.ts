@@ -105,21 +105,29 @@ export function employeeLifecycleTool(send: SendProfile) {
 export function employeeProfileTool(send: SendProfile) {
   return defineTool({
     name: 'hivemind_employee_profile',
-    description: 'Save the responsibility notes explicitly agreed with the user in your own persistent room for Runtime to review and complete your company-relevant profile. First recall your current authenticated profile and ask a concise native question with grounded suggestions and free-text when responsibilities are unclear. Confirm the user answer before saving; do not invent agreement. The saved proposal is not a Runtime-confirmed profile; wait for its native welcome before your first company-context check-in. Use current profile_revision (default 1). This edits only your own name, role and persona; it never grants tools, connectors, credentials, permissions or company-memory authority. Report success only after the saved receipt.',
+    description: 'Inspect your own authenticated profile with operation inspect (or no changes); this is read-only and requires no revision. Configure saves require operation configure, an exact current expected_profile_revision and at least one name, role or persona field. Never use an empty configure request to read a profile. Save the responsibility notes explicitly agreed with the user in your own persistent room for Runtime to review and complete your company-relevant profile. First recall your current authenticated profile and ask a concise native question with grounded suggestions and free-text when responsibilities are unclear. Confirm the user answer before saving; do not invent agreement. The saved proposal is not a Runtime-confirmed profile; wait for its native welcome before your first company-context check-in. Use the current saved profile_revision; inspect first and never assume a revision. This edits only your own name, role and persona; it never grants tools, connectors, credentials, permissions or company-memory authority. Report success only after the saved receipt.',
     parameters: {
-      expected_profile_revision: { type: 'number', required: true },
+      operation: { type: 'string', enum: ['inspect', 'configure'], description: 'Inspect reads your own profile; configure saves explicitly agreed changes.' },
+      expected_profile_revision: { type: 'number', description: 'Configure only: exact current profile revision from inspect.' },
       persona: { type: 'string', description: 'Agreed responsibilities and operating instructions, maximum 12000 characters.' }, role: { type: 'string', description: 'Short role label, maximum 40 characters; detailed responsibilities belong in persona.' }, name: { type: 'string', description: 'Nonempty display name, maximum 100 characters.' },
     },
     output: { schema: { type:'object',additionalProperties:true,properties:{} }, render: (_args: unknown, value: JsonValue) => [{ type:'text',text:JSON.stringify(value) }] },
-    isConcurrencySafe: () => false,
+    isConcurrencySafe: args => args.operation === 'inspect' || (args.operation === undefined && !['name', 'role', 'persona'].some(key => args[key as 'name'] !== undefined)),
     async execute(args, execution) {
       const agent = execution.agent
       const owner = agent && sessionOwner(agent.session.snapshotEvents())
       let preset = agent?.session.header.agentPreset
       for (const event of agent?.session.ownEvents() ?? []) if (String(event.type) === 'agent-preset/selected') preset = (event.data as { agentPreset:string }).agentPreset
       if (!agent || agent.session.header.parentSession !== undefined || preset !== 'hivemind-hyperagents' || !owner?.id) throw new Error('employee_profile_own_room_required')
+      const hasChanges = args.name !== undefined || args.role !== undefined || args.persona !== undefined
+      if (args.operation === 'inspect' || (args.operation === undefined && !hasChanges)) {
+        if (hasChanges) throw new Error('profile_inspect_is_read_only')
+        return send(agent, { operation: 'inspect', employee_id: owner.id }, execution.signal)
+      }
       validateEmployeeProfileFields(args)
-      return send(agent,{ ...Object.fromEntries(Object.entries(args).filter(([, value]) => value !== undefined)),operation:'configure',employee_id:owner.id },execution.signal)
+      const input = { ...Object.fromEntries(Object.entries(args).filter(([, value]) => value !== undefined)), operation: 'configure', employee_id: owner.id }
+      validateEmployeeLifecycleInput(input)
+      return send(agent, input, execution.signal)
     },
   })
 }

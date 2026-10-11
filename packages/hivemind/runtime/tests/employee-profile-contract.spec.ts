@@ -1,5 +1,5 @@
 import { expect, it, vi } from 'vitest'
-import { validateEmployeeProfileFields, lifecycleBusinessError, employeeLifecycleTool, confirmedEmployeeDeadlineSchedule, validateEmployeeLifecycleInput, lifecycleErrorGuidance } from '../src/employee-lifecycle.ts'
+import { validateEmployeeProfileFields, lifecycleBusinessError, employeeLifecycleTool, confirmedEmployeeDeadlineSchedule, validateEmployeeLifecycleInput, lifecycleErrorGuidance, employeeProfileTool } from '../src/employee-lifecycle.ts'
 it('matches Core profile bounds without truncating user responsibilities', () => {
   for (const [field, limit] of [['name', 100], ['role', 40], ['persona', 12000]] as const) {
     expect(() => validateEmployeeProfileFields({ [field]: 'a'.repeat(limit) })).not.toThrow()
@@ -76,4 +76,19 @@ it('retains Runtime authority and emits actionable recovery after real revision 
   await expect(tool.execute(args, { signal } as never)).rejects.toThrow('Only the persistent Runtime')
   expect(send).not.toHaveBeenCalled()
   expect(lifecycleErrorGuidance('employee_profile_revision_conflict')).toContain('Do not use expected_revision')
+})
+
+it('reads an own-room profile instead of sending empty configure and preserves write revisions', async () => {
+  const agent = { session:{ header:{ agentPreset:'hivemind-hyperagents' },snapshotEvents:()=>[{ type:'hivemind/session-owner',data:{ id:employeeId,slug:'employee' } }],ownEvents:()=>[] } }
+  const signal = new AbortController().signal
+  const send = vi.fn().mockResolvedValue({ operation:'inspect' })
+  const tool = employeeProfileTool(send)
+  await tool.execute({}, { agent,signal } as never)
+  expect(send).toHaveBeenLastCalledWith(agent,{ operation:'inspect',employee_id:employeeId },signal)
+  await expect(tool.execute({ operation:'configure',expected_profile_revision:1 },{ agent,signal } as never)).rejects.toThrow('empty_employee_configuration')
+  await expect(tool.execute({ operation:'inspect',persona:'new instructions' },{ agent,signal } as never)).rejects.toThrow('profile_inspect_is_read_only')
+  await expect(tool.execute({ operation:'configure',persona:'agreed responsibilities' },{ agent,signal } as never)).rejects.toThrow('missing_employee_revision')
+  await tool.execute({ operation:'configure',expected_profile_revision:2,persona:'agreed responsibilities' },{ agent,signal } as never)
+  expect(send).toHaveBeenLastCalledWith(agent,{ operation:'configure',employee_id:employeeId,expected_profile_revision:2,persona:'agreed responsibilities' },signal)
+  await expect(tool.execute({ operation:'inspect' },{ agent:{ ...agent,session:{ ...agent.session,header:{ agentPreset:'hivemind-hq' } } },signal } as never)).rejects.toThrow('employee_profile_own_room_required')
 })
