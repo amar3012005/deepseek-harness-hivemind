@@ -11,7 +11,7 @@ function fixture() {
   const session = Session.create(SessionId('lead'))
   session.append('turn/start', { turn: 1 })
   session.append('team/wait/parked', { callId, teamId, expectedSenderIds: ['employee'], originalSourceMessageId: 'nightly-occurrence' })
-  session.append('turn/end', { turn: 1, reason: { type: 'completed' } })
+  session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
   return { session } as unknown as Agent
 }
 function reply(agent: Agent, senderId = 'employee', targetTeam = teamId) {
