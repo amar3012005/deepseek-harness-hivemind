@@ -280,7 +280,7 @@ const ChatNodeList = memo(function ChatNodeList({ order, useChat, ...seatProps }
 export function ChatView({
   useSession, useChat, useChatNode, useChatNodeProcess, useSessions, useStore, actions, renderSlot,
   sessionId, openFile, openArtifact, loadOlder, loadThrough, loadImage, openView, chatScroll, forkAt, fileMentions,
-  useTranscriptView, useProjection, t,
+  useTranscriptView, useProjection, useSessionPendingInteraction, t,
 }: ChatViewSlotProps) {
   const order = useChat(s => s.order)
   const nodeStore = useChat(s => s.nodes)
@@ -291,6 +291,7 @@ export function ChatView({
   // Host-computed whole-log outline; the merge is view-layer only (the
   // conversation snapshot never carries projection values).
   const userQuestions = useProjection('userQuestions')
+  const pendingInteraction = useSessionPendingInteraction(snapshot => snapshot.get(sessionId))
   const turnOutline = useProjection('turnOutline')
   const railItems = useMemo(
     () => mergeTurnRailItems(turnNavigationItems, turnOutline),
@@ -377,9 +378,10 @@ export function ChatView({
   const runningTurnStart = useMemo(() => runningTurnStartTime(timeline), [timeline])
   // A parked question plus a closed journal turn is stronger evidence than a
   // delayed control-stream running bit. A later open turn remains real work.
-  const waitingForAnswer = userQuestions?.active.some(question => question.state === 'continued') === true
-    && ![...timeline.turns.values()].some(turn => turn.status === 'open')
-    && !visibleSubmissions.some(submission => submission.placement === 'transcript')
+  const waitingForAnswer = String(pendingInteraction?.kind) === 'question'
+    || (userQuestions?.active.some(question => question.state === 'continued') === true
+      && ![...timeline.turns.values()].some(turn => turn.status === 'open')
+      && !visibleSubmissions.some(submission => submission.placement === 'transcript'))
   const pendingTurnStart = visibleSubmissions.findLast(submission => submission.placement === 'transcript')?.time
   const activityStart = pendingTurnStart === undefined
     ? runningTurnStart : Math.max(pendingTurnStart, runningTurnStart ?? 0)

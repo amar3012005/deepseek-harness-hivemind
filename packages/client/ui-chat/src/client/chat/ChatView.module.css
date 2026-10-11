@@ -237,10 +237,9 @@
 .flowItem[data-avatar-group-end='false'] :global([data-chat-agent-avatar]) { visibility: hidden; }
 
 :global([data-agent-room]) .column {
-  width: min(var(--dsh-transcript-width, 720px), calc(100% - max(0px, calc((100% - var(--dsh-composer-card-max-width)) / 2))));
+  width: min(var(--dsh-transcript-width, 720px), 100%);
   max-width: var(--dsh-transcript-width, 720px);
-  margin-left: max(0px, calc((100% - var(--dsh-composer-card-max-width)) / 2));
-  margin-right: auto;
+  margin-inline: auto;
 }
 
 /* Compact activity spacing belongs to Runtime and employee rooms. */

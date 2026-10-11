@@ -10,6 +10,8 @@ import { isEnvironmentPreviewOpen } from './environment-preview.ts'
 import { websiteRead, type WebsiteRead } from './website-sources.ts'
 import { WebsitePreviewUpdates, WebsiteSourceCard } from './WebsitePreview.tsx'
 import { decodeArtifactText } from './artifact-text.ts'
+import { ConnectionAuthorizationPanel } from './ConnectionAuthorizationPanel.tsx'
+import type { ComposerChainProps } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { ConversationNodeDefinition } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-ui-chat/client'
 import { RuntimeAwakening } from './RuntimeAwakening.tsx'
@@ -179,6 +181,14 @@ export function apply(ctx: ClientContext): void {
   ctx.effect(setupEmbedMessaging, 'ui-hivemind-connect: embedded authentication')
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-hivemind-connect: dictionaries')
   const publishConnection = ctx.uiSession.registerPendingInteraction<PendingConnectionAuthorization>(() => 2)
+  // Use the native composer takeover so required human input stays visible
+  // even when the transcript's technical tool details are collapsed.
+  ctx.slots.inject('conversation.composer', () => ctx.slots.register({
+    name: 'conversation.composer',
+    select: ({ pendingInteraction }: ComposerChainProps): PendingConnectionAuthorization | null =>
+      pendingInteraction instanceof PendingConnectionAuthorization ? pendingInteraction : null,
+    locale: NS,
+  }, ConnectionAuthorizationPanel))
   ctx.remote.$on('user-questions/request', function (request, next) {
     return answerConnectionQuestion(ctx, this, request, next, publishConnection)
   })

@@ -2,7 +2,6 @@ import { useMemo } from 'react'
 import type { ToolCallViewProps } from '@deepseek-ai/dsh-client-ui-tool/client'
 import { Button } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
-import { ConnectionAuthorizationPanel } from './ConnectionAuthorizationPanel.tsx'
 import { PendingConnectionAuthorization } from './connection-question.ts'
 import css from './ComposioConnectionCard.module.css'
 
@@ -180,6 +179,6 @@ export function ComposioConnectionCard({
     {pending === undefined && connected&&logo!==undefined?<div className={`${css.connection} ${css.connected}`}><img src={logo} alt=""/><span><strong>{t('composio.connected',{ app })}</strong><small>{t('composio.connectionVerified')}</small></span></div>:null}
     {redirect&&receipt?.status!=='connection_required'?<div className={css.connection}><div><strong>{t('composio.connect',{ app })}</strong><p>{t('composio.connectDetail')}</p></div><a href={redirect} target="_blank" rel="noreferrer">{t('composio.authorize')}</a></div>:null}
     {draft?<p className={css.detail}>{t('composio.draftDetail')}</p>:null}{!cancelled&&!redirect&&!draft&&receipt?.summary?<p className={css.detail}>{receipt.summary}</p>:null}{!cancelled&&receipt?.error?<p className={css.error}>{receipt.error}</p>:null}
-    {pending === undefined ? null : <ConnectionAuthorizationPanel matched={pending} t={t} />}
+
   </section>
 }
