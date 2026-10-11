@@ -76,7 +76,11 @@ async function bench(declare = true, namespaceDeclared = true) {
   class QuestionRemote extends Service {
     constructor(owner: Context) { super(owner, 'remote') }
     $on = on
-    get userQuestions() { return this.ctx['remote.userQuestions'] }
+    get userQuestions() {
+      return (this.ctx as Context & {
+        'remote.userQuestions': { answer: typeof lateAnswer }
+      })['remote.userQuestions']
+    }
   }
   new QuestionRemote(ctx)
   const fiber = ctx.plugin({ inject: inject.filter(key => namespaceDeclared || key !== 'remote.userQuestions'), apply })
