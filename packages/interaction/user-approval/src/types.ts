@@ -54,11 +54,12 @@ declare module '@deepseek-ai/dsh-session/types' {
      * Exactly one per ask, appended when the outcome is known: a decision, a
      * cancellation, or the fail-closed `'unavailable'`.
      */
-    'approval/consumed': { id: ApprovalRequestId; callId: ToolCallId }
     'approval/decided': {
       id: ApprovalRequestId
       outcome: ApprovalOutcome
     }
+    /** One saved pending approval was consumed by this exact resumed tool call; never grants another action. */
+    'approval/consumed': { id: ApprovalRequestId; callId: ToolCallId }
   }
 }
 

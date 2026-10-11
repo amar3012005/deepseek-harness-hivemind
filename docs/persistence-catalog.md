@@ -148,12 +148,27 @@ Source: [`packages/preset/agent-presets/src/session.ts:28`](../packages/preset/a
   toolName: string
   callId?: ToolCallId
   reason?: string
+  fingerprint?: string
+  questions?: { id: string; question: string; detail?: string; options: { label: string }[] }[]
 }
 ```
 
 Types: [ToolCallId](subsystems/core.md)
 
 Source: [`packages/interaction/user-approval/src/types.ts:44`](../packages/interaction/user-approval/src/types.ts)
+
+<a id="approvalconsumed--log-only"></a>
+
+#### `approval/consumed` — log-only
+
+```ts persistence-catalog
+/** One saved pending approval was consumed by this exact resumed tool call; never grants another action. */
+'approval/consumed': { id: ApprovalRequestId; callId: ToolCallId }
+```
+
+Types: [ToolCallId](subsystems/core.md)
+
+Source: [`packages/interaction/user-approval/src/types.ts:62`](../packages/interaction/user-approval/src/types.ts)
 
 <a id="approvaldecided--log-only"></a>
 
@@ -171,7 +186,7 @@ Source: [`packages/interaction/user-approval/src/types.ts:44`](../packages/inter
 }
 ```
 
-Source: [`packages/interaction/user-approval/src/types.ts:55`](../packages/interaction/user-approval/src/types.ts)
+Source: [`packages/interaction/user-approval/src/types.ts:57`](../packages/interaction/user-approval/src/types.ts)
 
 <a id="approvalpolicy--log-only"></a>
 
@@ -299,7 +314,7 @@ Source: [`packages/interaction/commands/src/types.ts:103`](../packages/interacti
 'compaction/end': { compactionId: CompactionId; sourceCommandId?: CommandId; turn: number | null; error?: string }
 ```
 
-Source: [`packages/compaction/compaction/src/types.ts:72`](../packages/compaction/compaction/src/types.ts)
+Source: [`packages/compaction/compaction/src/types.ts:74`](../packages/compaction/compaction/src/types.ts)
 
 <a id="compactionprune--log-only"></a>
 
@@ -325,7 +340,7 @@ Source: [`packages/compaction/compaction/src/types.ts:72`](../packages/compactio
 }
 ```
 
-Source: [`packages/compaction/compaction/src/types.ts:82`](../packages/compaction/compaction/src/types.ts)
+Source: [`packages/compaction/compaction/src/types.ts:84`](../packages/compaction/compaction/src/types.ts)
 
 <a id="compactionstart--log-only"></a>
 
@@ -374,6 +389,8 @@ Source: [`packages/compaction/compaction/src/types.ts:24`](../packages/compactio
   model: string
   /** The generation cap the summarize call sent, when one applied. */
   maxTokens?: number
+  /** Explicit reasoning effort used by the summarizer, when sent. */
+  reasoningEffort?: ReasoningEffortId
   /** Provider-reported token usage for the summarization request, when emitted. */
   usage?: TokenUsage
 } & (
@@ -573,7 +590,7 @@ Source: [`packages/hivemind/connected-apps/src/index.ts:44`](../packages/hivemin
 }
 ```
 
-Source: [`packages/hivemind/runtime/src/index.ts:78`](../packages/hivemind/runtime/src/index.ts)
+Source: [`packages/hivemind/runtime/src/index.ts:79`](../packages/hivemind/runtime/src/index.ts)
 
 <a id="hiveminddesign-reference-selected--log-only"></a>
 
@@ -648,7 +665,7 @@ Source: [`packages/hivemind/employee-delegation/src/index.ts:121`](../packages/h
 'hivemind/employee-selection': { id: string | null; name?: string; role?: string; avatarUrl?: string; appearance?: JsonValue; joining?: { at: string; creationHash: string; profileRevision: number } }
 ```
 
-Source: [`packages/hivemind/runtime/src/index.ts:74`](../packages/hivemind/runtime/src/index.ts)
+Source: [`packages/hivemind/runtime/src/index.ts:75`](../packages/hivemind/runtime/src/index.ts)
 
 <a id="hivemindemployee-task-snapshot--log-only"></a>
 
@@ -826,7 +843,7 @@ Source: [`packages/hivemind/hq-runtime/src/control.ts:49`](../packages/hivemind/
 'hivemind/hq-rest-confirmed': RestWake
 ```
 
-Source: [`packages/hivemind/hq-runtime/src/rest.ts:41`](../packages/hivemind/hq-runtime/src/rest.ts)
+Source: [`packages/hivemind/hq-runtime/src/rest.ts:75`](../packages/hivemind/hq-runtime/src/rest.ts)
 
 <a id="hivemindhq-rest-intent--log-only"></a>
 
@@ -837,7 +854,7 @@ Source: [`packages/hivemind/hq-runtime/src/rest.ts:41`](../packages/hivemind/hq-
 'hivemind/hq-rest-intent': RestIntent
 ```
 
-Source: [`packages/hivemind/hq-runtime/src/rest.ts:35`](../packages/hivemind/hq-runtime/src/rest.ts)
+Source: [`packages/hivemind/hq-runtime/src/rest.ts:69`](../packages/hivemind/hq-runtime/src/rest.ts)
 
 <a id="hivemindhq-rest-note--log-only"></a>
 
@@ -848,7 +865,7 @@ Source: [`packages/hivemind/hq-runtime/src/rest.ts:35`](../packages/hivemind/hq-
 'hivemind/hq-rest-note': QuietNote
 ```
 
-Source: [`packages/hivemind/hq-runtime/src/rest.ts:39`](../packages/hivemind/hq-runtime/src/rest.ts)
+Source: [`packages/hivemind/hq-runtime/src/rest.ts:73`](../packages/hivemind/hq-runtime/src/rest.ts)
 
 <a id="hivemindhq-rest-notes-presented--log-only"></a>
 
@@ -859,7 +876,7 @@ Source: [`packages/hivemind/hq-runtime/src/rest.ts:39`](../packages/hivemind/hq-
 'hivemind/hq-rest-notes-presented': { readonly noteIds: readonly string[]; readonly messageSeq: number; readonly presentedAt: string }
 ```
 
-Source: [`packages/hivemind/hq-runtime/src/rest.ts:43`](../packages/hivemind/hq-runtime/src/rest.ts)
+Source: [`packages/hivemind/hq-runtime/src/rest.ts:77`](../packages/hivemind/hq-runtime/src/rest.ts)
 
 <a id="hivemindhq-rest-wake--log-only"></a>
 
@@ -870,7 +887,7 @@ Source: [`packages/hivemind/hq-runtime/src/rest.ts:43`](../packages/hivemind/hq-
 'hivemind/hq-rest-wake': RestWake
 ```
 
-Source: [`packages/hivemind/hq-runtime/src/rest.ts:37`](../packages/hivemind/hq-runtime/src/rest.ts)
+Source: [`packages/hivemind/hq-runtime/src/rest.ts:71`](../packages/hivemind/hq-runtime/src/rest.ts)
 
 <a id="hivemindhq-task-artifacts--log-only"></a>
 
@@ -996,7 +1013,7 @@ Source: [`packages/hivemind/playbooks/src/index.ts:198`](../packages/hivemind/pl
 'hivemind/read-scope': { scope: 'full' | 'personal' | 'organization' | 'project'; project?: string }
 ```
 
-Source: [`packages/hivemind/runtime/src/index.ts:70`](../packages/hivemind/runtime/src/index.ts)
+Source: [`packages/hivemind/runtime/src/index.ts:71`](../packages/hivemind/runtime/src/index.ts)
 
 <a id="hivemindreply-language--log-only"></a>
 
@@ -1007,7 +1024,7 @@ Source: [`packages/hivemind/runtime/src/index.ts:70`](../packages/hivemind/runti
 'hivemind/reply-language': { language: string }
 ```
 
-Source: [`packages/hivemind/runtime/src/index.ts:76`](../packages/hivemind/runtime/src/index.ts)
+Source: [`packages/hivemind/runtime/src/index.ts:77`](../packages/hivemind/runtime/src/index.ts)
 
 <a id="hivemindrequest-assembly-budget--log-only"></a>
 
@@ -1218,7 +1235,7 @@ Source: [`packages/hivemind/runtime/src/voice-outcome.ts:10`](../packages/hivemi
 'hivemind/web-search-route': { provider: 'native' | 'existing'; fallback: boolean }
 ```
 
-Source: [`packages/hivemind/runtime/src/index.ts:72`](../packages/hivemind/runtime/src/index.ts)
+Source: [`packages/hivemind/runtime/src/index.ts:73`](../packages/hivemind/runtime/src/index.ts)
 
 <a id="hivemindworkstream-approval--log-only"></a>
 
@@ -1731,6 +1748,30 @@ Types: [TeamId](subsystems/agent-team.md) · [TeamTaskSnapshot](subsystems/agent
 
 Source: [`packages/experimental/agent-team/src/types.ts:233`](../packages/experimental/agent-team/src/types.ts)
 
+<a id="teamwaitfulfilled--log-only"></a>
+
+#### `team/wait/fulfilled` — log-only
+
+```ts persistence-catalog
+/** The expected same-Team message settled this saved wait once; the message is retained in the native Inbox. */
+'team/wait/fulfilled': { readonly callId: ToolCallId; readonly messageId: string }
+```
+
+Types: [ToolCallId](subsystems/core.md)
+
+Source: [`packages/experimental/tool-agent-team/src/parked-wait.ts:17`](../packages/experimental/tool-agent-team/src/parked-wait.ts)
+
+<a id="teamwaitparked--log-only"></a>
+
+#### `team/wait/parked` — log-only
+
+```ts persistence-catalog
+/** A native Team wait ended its turn with these expected same-Team senders and original source identity. */
+'team/wait/parked': ParkedTeamWait
+```
+
+Source: [`packages/experimental/tool-agent-team/src/parked-wait.ts:15`](../packages/experimental/tool-agent-team/src/parked-wait.ts)
+
 ### `todo/*`
 
 <a id="todowrite--log-only"></a>
@@ -1955,6 +1996,21 @@ Source: [`packages/core/session/src/types.ts:276`](../packages/core/session/src/
 ```
 
 Source: [`packages/core/session/src/types.ts:297`](../packages/core/session/src/types.ts)
+
+### `user-question/*`
+
+<a id="user-questionparked--log-only"></a>
+
+#### `user-question/parked` — log-only
+
+```ts persistence-catalog
+/** Exact unanswered legacy ask preserved during an idle-only operator migration. */
+'user-question/parked': { callId: ToolCallId; questions: readonly AskUserQuestionItem[] }
+```
+
+Types: [ToolCallId](subsystems/core.md)
+
+Source: [`packages/interaction/user-questions/src/types.ts:113`](../packages/interaction/user-questions/src/types.ts)
 
 ### `web/*`
 

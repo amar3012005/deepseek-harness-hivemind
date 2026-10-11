@@ -11,7 +11,9 @@ export interface ParkedTeamWait {
 }
 declare module '@deepseek-ai/dsh-session/types' {
   interface SessionEventMap {
+    /** A native Team wait ended its turn with these expected same-Team senders and original source identity. */
     'team/wait/parked': ParkedTeamWait
+    /** The expected same-Team message settled this saved wait once; the message is retained in the native Inbox. */
     'team/wait/fulfilled': { readonly callId: ToolCallId; readonly messageId: string }
   }
 }
