@@ -1,3 +1,4 @@
+import { voiceFetch } from './voice-fetch.ts'
 /** Live voice media is owned by this composer button and released on navigation. */
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
@@ -40,7 +41,7 @@ export function HiveLiveVoiceButton({ sessionId, useInput, t }: Props) {
     current?.stream.getTracks().forEach(track => track.stop())
     current?.peer.close()
     if (current) { current.audio.pause(); current.audio.srcObject = null }
-    if (current?.id) void fetch('/api/hivemind/voice/stop', { method: 'POST', credentials: 'include', keepalive: true,
+    if (current?.id) void voiceFetch('/api/hivemind/voice/stop', { method: 'POST', credentials: 'include', keepalive: true,
       headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id: current.id }) }).catch(() => {})
     setState('idle'); setCaption(''); setSpeakerMuted(false); setMicMuted(false); setMicClosing(false)
   }, [])
@@ -85,7 +86,7 @@ export function HiveLiveVoiceButton({ sessionId, useInput, t }: Props) {
       fallbackAttempted = true; mayFallback = true; setState('connecting')
       local.peer.close()
       if (local.id) {
-        await fetch('/api/hivemind/voice/stop', { method: 'POST', credentials: 'include',
+        await voiceFetch('/api/hivemind/voice/stop', { method: 'POST', credentials: 'include',
           headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id: local.id }) }).catch(() => {})
         delete local.id
       }
@@ -142,7 +143,7 @@ export function HiveLiveVoiceButton({ sessionId, useInput, t }: Props) {
         } catch { /* Ignore non-JSON provider transport frames. */ }
       }
       await peer.setLocalDescription(await peer.createOffer())
-      const response = await fetch('/api/hivemind/voice/start', { method: 'POST', credentials: 'include',
+      const response = await voiceFetch('/api/hivemind/voice/start', { method: 'POST', credentials: 'include',
         headers: { 'content-type': 'application/json' }, body: JSON.stringify({ sessionId, sdp: peer.localDescription?.sdp }), signal: AbortSignal.timeout(35000) })
       const value = await response.json() as {
         id?: string
@@ -160,7 +161,7 @@ export function HiveLiveVoiceButton({ sessionId, useInput, t }: Props) {
         stream.getAudioTracks().forEach((track) => { track.enabled = false }); setMicMuted(true); setMicClosing(true)
       }, value.closingAfterMs)
       if (generation.current !== ticket) {
-        void fetch('/api/hivemind/voice/stop', { method: 'POST', credentials: 'include', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id: value.id }) })
+        void voiceFetch('/api/hivemind/voice/stop', { method: 'POST', credentials: 'include', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id: value.id }) })
         return
       }
       await peer.setRemoteDescription({ type: 'answer', sdp: value.sdp })
