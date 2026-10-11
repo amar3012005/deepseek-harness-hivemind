@@ -1,3 +1,4 @@
+import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import { defineTool } from '@deepseek-ai/dsh-tools'
@@ -33,4 +34,49 @@ export function administratorMessageTool(send: AdministratorMessageSender) {
       return send(agent, args, execution.signal)
     },
   })
+}
+
+/** Notify from the awaited native stopping seam; the approval itself stays parked. */
+export function installAdministratorApprovalNotification(ctx: Context, send: AdministratorMessageSender): void {
+  const attempted = new WeakMap<Agent, Set<string>>()
+  ctx.effect(() => ctx.on('agent/turn-stopping', async ({ agent, turn, signal }) => {
+    if (signal.aborted) return
+    try { requireAdministratorMessageOwner(agent) } catch { return }
+    const events = agent.session.snapshotEvents()
+    const start = events.findLast(event => event.type === 'turn/start' && event.data.turn === turn)
+    if (!start) return
+    const current = events.filter(event => event.seq > start.seq)
+    for (const event of current) {
+      if (String(event.type) !== 'approval/decided') continue
+      const decision = event.data as { id?: string; outcome?: string }
+      if (decision.outcome !== 'pending') continue
+      const asked = current.find(row => String(row.type) === 'approval/asked'
+        && (row.data as { id?: string }).id === decision.id)
+      const request = asked?.data as { callId?: string; reason?: string; toolName?: string } | undefined
+      if (!request?.callId || !current.some(row => row.type === 'tool/call'
+        && row.data.callId === request.callId && row.data.name === request.toolName)) continue
+      const callId = request.callId
+      const seen = attempted.get(agent) ?? new Set<string>()
+      attempted.set(agent, seen)
+      if (seen.has(callId)) continue
+      // A restored occurrence uses the same identity/content: Core reconciles its
+      // durable ledger, including unknown delivery, instead of issuing a new send.
+      const original = events.find(row => String(row.type) === 'approval/asked'
+        && (row.data as { callId?: string }).callId === callId)?.data as { reason?: string } | undefined
+      const reason = original?.reason?.trim().slice(0, 3500)
+      if (!await ctx.sessions.flush(agent.session)) continue
+      signal.throwIfAborted()
+      seen.add(callId)
+      try {
+        await send(agent, { message_key: `${callId}-user-request`, kind: 'approval',
+          subject: 'Approval needed to continue',
+          message: reason ? `I need your approval before continuing. ${reason}` : 'I need your approval before continuing this action. Please review the saved request in our conversation.',
+          request_call_id: callId }, AbortSignal.any([signal, AbortSignal.timeout(10_000)]))
+      } catch {
+        // Keep the actual permission request parked; never retry a possibly sent
+        // email with a different key or mistake transport failure for approval.
+        ctx.logger.warn('Runtime approval notification attempt failed; saved approval remains pending')
+      }
+    }
+  }))
 }

@@ -2,7 +2,7 @@ import { installSessionDiagnostics } from './session-diagnostics.ts'
 import { installRuntimeSupportReport } from './nightly-support.ts'
 import type {} from '@deepseek-ai/dsh-schedule'
 import { employeeLifecycleTool, employeeProfileTool, lifecycleBusinessError, confirmedEmployeeDeadlineSchedule } from './employee-lifecycle.ts'
-import { administratorMessageTool } from './administrator-messaging.ts'
+import { administratorMessageTool, installAdministratorApprovalNotification } from './administrator-messaging.ts'
 /**
  * Governed HIVE-MIND identity, context, recall, and HyperAgent discovery.
  *
@@ -1148,12 +1148,16 @@ export function apply(ctx: Context, config: Config): void {
     }))
 
   }
-  if (config.companyAwakeningEnabled) ctx.effect(() => ctx.tools.register(administratorMessageTool(async (agent, input, signal) => {
-    if (config.authorityMode !== 'scoped-service') throw new HiveMindRuntimeError('Administrator messaging requires scoped service authority')
-    const authority = await resolveAuthority(ctx, config, agent)
-    const result = apiRecord(await hiveRequest(authority, '/administrator-message', { method: 'POST', body: JSON.stringify(input) }, signal, config), 'administrator message receipt')
-    return Object.fromEntries(Object.entries(result).filter((entry): entry is [string, JsonValue] => entry[1] !== undefined))
-  })))
+  if (config.companyAwakeningEnabled) {
+    const sendAdministratorMessage = async (agent: Agent, input: Record<string, JsonValue>, signal: AbortSignal) => {
+      if (config.authorityMode !== 'scoped-service') throw new HiveMindRuntimeError('Administrator messaging requires scoped service authority')
+      const authority = await resolveAuthority(ctx, config, agent)
+      const result = apiRecord(await hiveRequest(authority, '/administrator-message', { method: 'POST', body: JSON.stringify(input) }, signal, config), 'administrator message receipt')
+      return Object.fromEntries(Object.entries(result).filter((entry): entry is [string, JsonValue] => entry[1] !== undefined))
+    }
+    ctx.effect(() => ctx.tools.register(administratorMessageTool(sendAdministratorMessage)))
+    installAdministratorApprovalNotification(ctx, sendAdministratorMessage)
+  }
   if (config.agentFeaturesEnabled && config.privateMemoryEnabled) ctx.effect(() => ctx.tools.register(
     employeeProfileTool(async (agent, input, signal) => {
       if (!config.serviceApiBase) throw new HiveMindRuntimeError('Employee profile changes require tenant-scoped service authority')
