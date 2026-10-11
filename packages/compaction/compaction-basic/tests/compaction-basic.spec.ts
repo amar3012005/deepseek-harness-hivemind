@@ -782,6 +782,32 @@ describe('pressure measurement and retention', () => {
     expect(session.snapshotEvents().slice(0, originalEvents.length)).toEqual(originalEvents)
   })
 
+  it('does not repeatedly summarize a checkpoint plus small new exchanges and preserves that decision on cold restore', async () => {
+    const ctx = createContext(1_050_000)
+    const compact = service({ auto:false, thresholdTokens:48_000, retainTokens:12_000 }, ctx)
+    const session = conversation(80, 'persistent company context '.repeat(300))
+    await compactIfNeeded(compact, session)
+    // A fresh authoritative exchange remains outside the immutable saved summary.
+    session.append('user/message', createUserMessage({ source:{ kind:'user' }, content:[{ type:'text',text:'Inspect this exact saved result before review.' }] }), { surfaceOp:'append' })
+    session.append('request/header', { header:{ config:{ provider:MODEL,model:MODEL },tools:[{ name:'bulk',description:'x'.repeat(220_000),parameters:{ type:'object' } }] },reason:'resume' })
+    const priced=ctx.tokenMeter.measure(session)
+    const checkpointIndex=priced.nodes.findIndex((node)=>{
+      const event=session.eventAt(node.seq)
+      return event?.type==='user/message' && event.data.source.kind==='plugin' && event.data.source.plugin==='compact'
+    })
+    const tailTokens=priced.nodes.slice(checkpointIndex+2).reduce((sum,node)=>sum+node.tokens,0)
+    const guard=service({ auto:false,thresholdTokens:48_000,retainTokens:Math.max(1000,tailTokens) },createContext(1_050_000))
+    const journal=session.snapshotEvents()
+    const count=journal.filter(event=>event.type==='compaction/summary').length
+    await expect(compactIfNeeded(guard,session)).resolves.toBeNull()
+    const restored=Session.create(SessionId('hysteresis-restored'),session.snapshotEvents())
+    await expect(compactIfNeeded(guard,restored)).resolves.toBeNull()
+    expect(session.snapshotEvents()).toEqual(journal)
+    expect(restored.snapshotEvents().filter(event=>event.type==='compaction/summary')).toHaveLength(count)
+    // Provider-confirmed overflow keeps its forced balanced reduction path.
+    await expect(compactIfNeeded(guard,restored,'context-overflow')).resolves.not.toBeNull()
+  })
+
   it('declines when envelope pressure is high but the surface has no compactable range', async () => {
     const compact = service(compactConfig)
     const bulkTools = [{ name: 'bulk', description: 'x'.repeat(100_000), parameters: { type: 'object' } }]

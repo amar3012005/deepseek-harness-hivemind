@@ -1,5 +1,7 @@
 import type { Context } from '@deepseek-ai/cordis'
-import { createHash } from 'node:crypto'
+import { HarnessError } from '@deepseek-ai/dsh-llm'
+import { currentNightlyOccurrence, requireNightlyOccurrence } from './nightly-occurrence.ts'
+export { requireNightlyOccurrence } from './nightly-occurrence.ts'
 import { isRuntimeRoom } from './runtime-decision-memory.ts'
 import { z } from 'zod'
 /** Validated bounded technical diagnostics; raw business records and secrets cannot enter support email. */
@@ -66,7 +68,15 @@ export function runtimeSupportReportTool(
     async execute(args, execution) {
       const agent=execution.agent
       if(!agent||!isRuntimeRoom(agent))throw Error('runtime_support_room_required')
-      const input=supportSchema.parse(args)
+      if (args.operation !== 'status' && currentNightlyOccurrence(agent) !== args.occurrence) {
+        throw new HarnessError('No matching Nightly report is active in this admitted turn. Continue the current request; do not retry an old report or route it through another email tool.', 'NIGHTLY_NOT_ACTIVE')
+      }
+      const parsed = supportSchema.safeParse(args)
+      if (!parsed.success) {
+        const paths = parsed.error.issues.slice(0, 8).map(issue => `${issue.path.join('.')}: ${issue.code}`).join('; ')
+        throw new HarnessError(`Nightly report input is invalid (${paths}). Correct those fields once using the saved evidence templates; do not repeat an unchanged submission.`, 'INVALID_ARGS')
+      }
+      const input=parsed.data
       if(input.operation==='evidence'){requireNightlyOccurrence(agent,input.occurrence);return nightlyReportEvidence(agent,input.occurrence)}
       if(input.operation==='submit'){requireNightlyOccurrence(agent,input.occurrence);requireNightlyReportEvidence(agent,input)}
       return send(agent, JSON.parse(JSON.stringify(input)) as Record<string,JsonValue>, execution.signal)
@@ -145,30 +155,10 @@ export function requireNightlyReportEvidence(agent:Agent,input:z.infer<typeof su
         &&['tool','expected','observed','recovery','prevention','functional_area','task_context','impact','proposed_fix'].every(key=>
           (value as Record<string,unknown>)[key]===(detail as unknown as Record<string,unknown>)[key]))
     })
-    if(!evidenced)throw Error('saved_correlated_nightly_evidence_required')
+    if(!evidenced)throw new HarnessError('saved_correlated_nightly_evidence_required: use the exact employee template with its hyperagent owner/index and saved reply sequence, or an actual Runtime tool/result sequence for Runtime findings. Do not rewrite ownership or retry unchanged evidence.', 'NIGHTLY_EVIDENCE_MISMATCH')
   }
 }
 
-/** Read only the native Schedule's persisted original occurrence; never current wall clock. */
-export function requireNightlyOccurrence(agent:Agent,occurrence:string):void {
-  const id='schedule-'+createHash('sha256').update(`${agent.id}\0nightly-routine-check-v1`).digest('hex')
-  const found=agent.session.snapshotEvents().some((event)=>{
-    if(event.type!=='user/message'||event.data.source.kind!=='schedule')return false
-    const sourceOccurrence=event.data.source.occurrenceAt
-    const text=event.data.content.flatMap(block=>block.type==='text'?[block.text]:[]).join('\n')
-    const line=text.split('\n').find(value=>value.startsWith('reminders_json: '))
-    if(!line)return false
-    try {
-      const entries:unknown=JSON.parse(line.slice('reminders_json: '.length))
-      return Array.isArray(entries)&&entries.some((entry:unknown)=>entry&&typeof entry==='object'&&(entry as Record<string,unknown>)['occurrence_at']===sourceOccurrence)&&entries.some((entry:unknown)=>{
-        if(!entry||typeof entry!=='object')return false
-        const data=entry as Record<string,unknown>
-        return data['schedule_id']===id&&data['occurrence_at']===occurrence
-      })
-    }catch{return false}
-  })
-  if(!found)throw Error('saved_nightly_occurrence_required')
-}
 /** Agent-local tools are registered only after the native Runtime owner preparation. */
 export function installRuntimeSupportReport(ctx:Context,send:Parameters<typeof runtimeSupportReportTool>[0]):void {
   const installed=new WeakSet<Agent>()
