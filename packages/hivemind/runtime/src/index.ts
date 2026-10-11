@@ -12,7 +12,7 @@ import { administratorMessageTool, installAdministratorApprovalNotification } fr
 
 export type {} from './voice-outcome.ts'
 export type {} from './runtime-decision-memory.ts'
-import { installRuntimeDecisionMemory, isRuntimeRoom } from './runtime-decision-memory.ts'
+import { installRuntimeDecisionMemory, isRuntimeRoom, freshDecisionMemoryContext } from './runtime-decision-memory.ts'
 import { normalizePrivateMemoryReferences } from './private-memory-references.ts'
 import { privateMemoryFailure } from './private-memory-errors.ts'
 import { installVoiceOutcome } from './voice-outcome.ts'
@@ -47,7 +47,7 @@ import type {} from '@deepseek-ai/dsh-hivemind-identity'
 import { principalForActor } from '@deepseek-ai/dsh-hivemind-execution-scope'
 import type {} from '@deepseek-ai/dsh-attachment'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
-import { contextPlugin } from '@deepseek-ai/dsh-hivemind-context'
+import { contextPlugin, socialTurnOnly } from '@deepseek-ai/dsh-hivemind-context'
 import { memoryPlugin, type EntitySearchRequest, type RecallRequest, type SaveRequest, type SaveStatusRequest } from '@deepseek-ai/dsh-hivemind-memory'
 import { employeeDispatchAllowed, employeeCloseoutAllowed, employeeCloseoutToolAllowed, hyperagentDirectory, projectHyperagentProfiles } from '@deepseek-ai/dsh-hivemind-employee-directory'
 import { completedTaskMemory, pendingTaskMemories, sessionOwner, sessionOwnerProjection, employeeSelectionProjection, employeeLatestMessageProjection, type SessionOwner } from './continuity.ts'
@@ -1896,7 +1896,7 @@ export function apply(ctx: Context, config: Config): void {
       await ctx.sessions.flush(agent.session)
       return owner
     }
-    const installDecisionTools = installRuntimeDecisionMemory(ctx, async (agent, input, signal) => {
+    const requestDecisionMemory = async (agent: Agent, input: Record<string, JsonValue>, signal: AbortSignal) => {
       // Core validates the persisted Chief room in addition to this signed actor claim.
       if (!await ctx.sessions.flush(agent.session)) throw new HiveMindRuntimeError('Runtime memory owner persistence required')
       const authority = await resolveAuthority(ctx, config, agent)
@@ -1904,7 +1904,8 @@ export function apply(ctx: Context, config: Config): void {
         method: 'POST', body: JSON.stringify(input),
       }, signal, config), 'Runtime decision memory receipt')
       return Object.fromEntries(Object.entries(result).filter((entry): entry is [string, JsonValue] => entry[1] !== undefined))
-    }, ensureOwner)
+    }
+    const installDecisionTools = installRuntimeDecisionMemory(ctx, requestDecisionMemory, ensureOwner)
     if (config.companyAwakeningEnabled) installRuntimeSupportReport(ctx, async (agent, input, signal) => {
       const authority = await resolveAuthority(ctx, config, agent)
       const result = apiRecord(await hiveRequest(authority, '/runtime-support-report', { method: 'POST', body: JSON.stringify(input) }, signal, config), 'support report receipt')
@@ -1967,6 +1968,9 @@ export function apply(ctx: Context, config: Config): void {
       for (const event of agent.session.snapshotEvents())
         if (String(event.type) === 'agent-preset/selected') preset = (event.data as { agentPreset: string }).agentPreset
       if (preset !== 'hivemind-hq') return decision
+      const currentEvents = agent.session.snapshotEvents()
+      const currentStart = currentEvents.findLast(event => event.type === 'turn/start')?.seq ?? -1
+      if (socialTurnOnly(currentEvents.filter(event => event.seq > currentStart), decision.messages)) return decision
       let recalled = hqRecall.get(agent)
       if (recalled?.turn === turn) return decision
       if (recalled?.turn !== turn) {
@@ -1976,6 +1980,11 @@ export function apply(ctx: Context, config: Config): void {
         const query = request?.type === 'user/message'
           ? request.data.content.filter(block => block.type === 'text')
             .map(block => block.type === 'text' ? block.text : '').join(' ').slice(0, 420) : ''
+        // Current query-free agenda heads are distinct from semantic historical notes.
+        // Both scoped reads start alongside relevant private recall, once per admitted turn.
+        const heads = freshDecisionMemoryContext(requestDecisionMemory, agent, signal)
+          .then(value => `Current confirmed agendas and open uncertainties. Compare independent priorities, follow newer confirmed direction and preserve pending questions; recalled historical plans are not current instructions.\n${value}`,
+            () => 'Current confirmed agenda and open uncertainty recall unavailable. Do not treat this as an empty agenda or invent user direction. Use current authenticated input and durable work; ask only if the gap changes the next decision.')
         let text: string
         try {
           const authority = await resolveAuthority(ctx, config)
@@ -1988,6 +1997,8 @@ export function apply(ctx: Context, config: Config): void {
           signal.throwIfAborted()
           text = 'Private operating memory recall unavailable for this wake. Do not infer that no prior work exists. Use durable tasks and receipts; report the gap if it blocks continuation.'
         }
+        text += `\n${await heads}`
+        signal.throwIfAborted()
         recalled = { turn, text }
         hqRecall.set(agent, recalled)
       }

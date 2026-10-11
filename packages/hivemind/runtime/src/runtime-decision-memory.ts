@@ -9,7 +9,7 @@ import { sessionOwner } from './continuity.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Events {
-    /** Fresh Runtime-only decision memory, awaited before voice admission. @mode serial */
+    /** Fresh Runtime-only decision memory, awaited before operating and voice admission. @mode serial */
     'hivemind/runtime-call-context'(this: Scoped<Agent>, input: { agent: Agent; signal: AbortSignal }): Promise<string>
   }
 }
@@ -30,9 +30,9 @@ export function isRuntimeRoom(agent: Agent): boolean {
 
 // Keep high-priority questions and current direction bounded independently; never
 // cut a serialized document mid-record or let old evidence crowd out the agenda.
-function callMemoryView(result: Record<string, JsonValue>): JsonValue[] {
+function callMemoryView(result: Record<string, JsonValue>, limit: number): JsonValue[] {
   if (result['ok'] !== true || !Array.isArray(result['memories'])) throw new Error('runtime_decision_memory_unavailable')
-  return result['memories'].map((value) => {
+  return result['memories'].slice(0, limit).map((value) => {
     if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('runtime_decision_memory_unavailable')
     const raw = value['context']
     const context = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {}
@@ -40,11 +40,39 @@ function callMemoryView(result: Record<string, JsonValue>): JsonValue[] {
     return {
       id: bounded(value['id'], 80), kind: bounded(value['kind'], 32), createdAt: bounded(value['createdAt'], 40),
       title: bounded(value['title'], 180), summary: bounded(value['summary'], 600),
+      agendaKey: bounded(context['agendaKey'], 80), supersedesId: bounded(context['supersedesId'], 80),
       state: bounded(context['state'], 32), priority: typeof context['priority'] === 'number' ? context['priority'] : 0,
       impact: bounded(context['impact'], 300),
       evidence: Array.isArray(context['evidence']) ? context['evidence'].slice(0, 3).map(item => bounded(item, 180)) : [],
     }
   })
+}
+
+/** Read current query-free heads through the existing owner-bound memory request.
+ * @returns Bounded confirmed agendas and open uncertainties; failure never means empty.
+ */
+export async function freshDecisionMemoryContext(request: Request, agent: Agent, signal: AbortSignal): Promise<string> {
+  const deadline = AbortSignal.any([signal, AbortSignal.timeout(2500)])
+  const read = async (kind: 'uncertainty' | 'user_agenda', state: string, limit: number) => {
+    let cancel: (() => void) | undefined
+    try {
+      deadline.throwIfAborted()
+      const aborted = new Promise<never>((_resolve, reject) => {
+        cancel = () => reject(deadline.reason)
+        deadline.addEventListener('abort', cancel, { once: true })
+      })
+      const result = await Promise.race([request(agent, { action: 'recall', kind, agent_slug: 'runtime', state, limit }, deadline), aborted])
+      return { available: true, memories: callMemoryView(result, limit) }
+    } catch {
+      signal.throwIfAborted()
+      return { available: false, memories: null }
+    } finally {
+      if (cancel) deadline.removeEventListener('abort', cancel)
+    }
+  }
+  const [uncertainties, userAgenda] = await Promise.all([read('uncertainty', 'open', 8), read('user_agenda', 'confirmed', 5)])
+  signal.throwIfAborted()
+  return JSON.stringify({ uncertainties, userAgenda })
 }
 
 /** Thin typed wrappers over the existing operating-memory store, scoped to Chief only. */
@@ -125,10 +153,11 @@ export function installRuntimeDecisionMemory(
     await ensureOwner(agent, signal)
     if (!isRuntimeRoom(agent)) throw new Error('runtime_voice_room_required')
     install(agent)
-    // Await fresh filtered reads before starting either voice provider. Failure is not an empty agenda.
-    const uncertainties = await request(agent, { action: 'recall', kind: 'uncertainty', agent_slug: 'runtime', state: 'open', limit: 8 }, signal)
-    const agenda = await request(agent, { action: 'recall', kind: 'user_agenda', agent_slug: 'runtime', state: 'confirmed', limit: 5 }, signal)
-    return JSON.stringify({ uncertainties: callMemoryView(uncertainties), userAgenda: callMemoryView(agenda) })
+    // Fresh heads are shared with operating admission; voice retains the same owner checks.
+    const context = await freshDecisionMemoryContext(request, agent, signal)
+    const heads = JSON.parse(context) as { uncertainties: { available: boolean }; userAgenda: { available: boolean } }
+    if (!heads.uncertainties.available || !heads.userAgenda.available) throw new Error('runtime_decision_memory_unavailable')
+    return context
   }))
   return install
 }

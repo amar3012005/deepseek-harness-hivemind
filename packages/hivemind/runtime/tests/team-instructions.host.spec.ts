@@ -30,7 +30,7 @@ it('assembles distinct Chief, persistent specialist and delegated child personas
       expect(text).not.toContain('Deployment identity')
       expect(text).toContain('Accepted current-revision review is required.')
     }
-    expect(assembled[0]).toContain("the user's AI Chief of Staff")
+    expect(assembled[0]).toContain("our company's AI Chief of Staff")
     expect(assembled[0]).toContain('For a delegated typed blocker, use its saved blocker_id')
     expect(assembled[0]).toContain('residual native ask under approval=never is rejected')
     expect(assembled[0]).toContain('Whenever genuine approval or app-connection permission')

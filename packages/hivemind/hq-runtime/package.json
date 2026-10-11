@@ -88,7 +88,8 @@
     "@deepseek-ai/dsh-api-session-controller": "workspace:^",
     "@deepseek-ai/dsh-hivemind-artifact-renderer": "workspace:^",
     "@deepseek-ai/dsh-host-webserver": "workspace:^",
-    "@deepseek-ai/dsh-hivemind-connected-apps": "workspace:^"
+    "@deepseek-ai/dsh-hivemind-connected-apps": "workspace:^",
+    "@deepseek-ai/dsh-hivemind-context": "workspace:^"
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "workspace:^",
@@ -111,7 +112,8 @@
     "@deepseek-ai/dsh-api-session-controller": "workspace:^",
     "@deepseek-ai/dsh-hivemind-artifact-renderer": "workspace:^",
     "@deepseek-ai/dsh-host-webserver": "workspace:^",
-    "@deepseek-ai/dsh-hivemind-connected-apps": "workspace:^"
+    "@deepseek-ai/dsh-hivemind-connected-apps": "workspace:^",
+    "@deepseek-ai/dsh-hivemind-context": "workspace:^"
   },
   "dependencies": {
     "pg": "^8.13.1",
