@@ -43,7 +43,8 @@ describe('durable Team reply checkpoint', () => {
     Object.assign(agent, { ctx: { get: () => ({ tryMembership: () => ({ id: teamId }),
       listMembers: () => current ? [{ id: 'employee', status: 'inactive' }] : [] }) } })
     const add = (sender: string, form: 'relay' | 'notice') => agent.session.append('user/message', createUserMessage({
-      source: { kind: 'agent-message', form, senderSessionId: SessionId(sender) },
+      // Malformed/foreign sources are deliberately injected to exercise rejection.
+      source: { kind: 'agent-message', form, senderSessionId: SessionId(sender) } as unknown as Parameters<typeof createUserMessage>[0]['source'],
       content: [{ type: 'text', text: 'review result' }],
     }), { surfaceOp: 'append' })
     add('foreign', 'relay')
