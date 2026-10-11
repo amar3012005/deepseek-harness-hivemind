@@ -78,6 +78,7 @@ export const KNOWN_SESSION_EVENT_TYPES: ReadonlySet<string> = new Set([
   'hivemind/media-workflow-ended',
   'hivemind/media-workflow-started',
   'hivemind/memory-save',
+  'hivemind/memory-save-checkpoint',
   'hivemind/operating-context',
   'hivemind/operating-receipt',
   'hivemind/playbooks-loaded',
