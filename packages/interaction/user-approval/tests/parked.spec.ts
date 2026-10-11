@@ -96,7 +96,7 @@ it('native service denies restored rejection, audits it once, and never creates 
   expect(appended.filter(event => event.type === 'approval/decided').map(event => event.data['outcome'])).toEqual(['rejected', 'rejected'])
   expect(appended.filter(event => event.type === 'approval/asked').every(event => !event.data['questions'])).toBe(true)
   expect(appended.some(event => event.type === 'approval/decided' && event.data['outcome'] === 'pending')).toBe(false)
-  session.append('user/message', { source: { kind: 'user', authenticatedActor: { userId: 'owner', orgId: 'organization' } }, content: [{ type: 'text', text: 'Please request this action again.' }] } as never)
+  events.push({ type: 'user/message', seq: events.length, data: { source: { kind: 'user', authenticatedActor: { userId: 'owner', orgId: 'organization' } }, content: [{ type: 'text', text: 'Please request this action again.' }] } })
   session.append('tool/call', call('fresh').data as never)
   expect(await ctx.approval.request({ agent, toolName: 'write', callId: ToolCallId('fresh') })).toBe('pending')
   expect(appended.filter(event => event.type === 'approval/consumed')).toHaveLength(1)
