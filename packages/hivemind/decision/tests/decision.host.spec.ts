@@ -136,3 +136,32 @@ describe('global host authenticated composition', () => {
     } finally { await decision.dispose(); await scope.dispose() }
   })
 })
+
+
+describe('bounded Decisions alternate model', () => {
+  it('uses Jev once after failed Mercury, keeping identical typed input', async () => {
+    const sent: unknown[] = []
+    const fetcher = vi.fn(async (_url: unknown, init?: RequestInit) => {
+      sent.push(JSON.parse(String(init?.body)))
+      return sent.length === 1 ? new Response('not logged', { status: 402 }) : new Response(JSON.stringify({ ...answer, model: 'typesafe/jev-1.13' }))
+    })
+    const provider = new OpenRouterDecisionProvider({ endpoint: 'https://openrouter.ai/api/alpha/decisions', fallbackModel: 'typesafe/jev-1.13', primaryTimeoutMs: 100, resolveHeaders: async () => ({ authorization: 'Bearer fixture' }), fetch: fetcher as typeof fetch })
+    expect(await provider.evaluate(evaluation, new AbortController().signal)).toMatchObject({ model: 'typesafe/jev-1.13' })
+    expect(sent).toEqual([{ model: 'inception/mercury-decide', ...evaluation }, { model: 'typesafe/jev-1.13', ...evaluation }])
+  })
+  it('does not invoke an alternate after a valid primary or caller cancellation', async () => {
+    const fetcher = vi.fn(async () => new Response(JSON.stringify(answer)))
+    const provider = new OpenRouterDecisionProvider({ endpoint: 'https://openrouter.ai/api/alpha/decisions', fallbackModel: 'typesafe/jev-1.13', primaryTimeoutMs: 100, resolveHeaders: async () => ({ authorization: 'Bearer fixture' }), fetch: fetcher as typeof fetch })
+    await provider.evaluate(evaluation, new AbortController().signal)
+    expect(fetcher).toHaveBeenCalledOnce()
+    const controller = new AbortController(); controller.abort()
+    await expect(provider.evaluate(evaluation, controller.signal)).rejects.toThrow('PROVIDER_UNAVAILABLE')
+    expect(fetcher).toHaveBeenCalledOnce()
+  })
+  it('rejects malformed responses from both models and stops after two attempts', async () => {
+    const fetcher = vi.fn(async () => new Response(JSON.stringify({ ...answer, answers: {} })))
+    const provider = new OpenRouterDecisionProvider({ endpoint: 'https://openrouter.ai/api/alpha/decisions', fallbackModel: 'typesafe/jev-1.13', primaryTimeoutMs: 100, resolveHeaders: async () => ({ authorization: 'Bearer fixture' }), fetch: fetcher as typeof fetch })
+    await expect(provider.evaluate(evaluation, new AbortController().signal)).rejects.toThrow('INVALID_PROVIDER_OUTPUT')
+    expect(fetcher).toHaveBeenCalledTimes(2)
+  })
+})
