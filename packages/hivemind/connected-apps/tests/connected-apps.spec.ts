@@ -44,6 +44,7 @@ function harness(
   const ctx = {
     ...(delegatedReport ? { serial: delegatedReport } : {}),
     tools: { register(value: typeof tool) { tool = value } },
+    sessions: { flush: vi.fn(async () => true) },
     effect<T>(callback: () => T) { return callback() },
     hivemindIdentity: { resolve: vi.fn(async () => identity) },
     userQuestions: { ask },
@@ -58,6 +59,9 @@ function harness(
     },
     logger: { warn: vi.fn() },
   }
+  // Optional Cordis services must use get(); undeclared property access throws
+  // in the production host instead of returning an absent service.
+  Object.defineProperty(ctx, 'hivemindHq', { get() { throw new Error('cannot get property "hivemindHq" without inject') } })
   apply(ctx as never, { apiKey: 'server-secret', enabledByDefault, ...config })
   return {
     tool: () => ({
