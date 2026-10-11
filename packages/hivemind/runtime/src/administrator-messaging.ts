@@ -71,7 +71,7 @@ export function installAdministratorApprovalNotification(ctx: Context, send: Adm
         await send(agent, { message_key: `${callId}-user-request`, kind: 'approval',
           subject: 'Approval needed to continue',
           message: reason ? `I need your approval before continuing. ${reason}` : 'I need your approval before continuing this action. Please review the saved request in our conversation.',
-          request_call_id: callId }, signal)
+          request_call_id: callId }, AbortSignal.any([signal, AbortSignal.timeout(10_000)]))
       } catch {
         // Keep the actual permission request parked; never retry a possibly sent
         // email with a different key or mistake transport failure for approval.

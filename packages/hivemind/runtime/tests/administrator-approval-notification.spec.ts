@@ -12,8 +12,8 @@ async function fixture(options: { runtime?: boolean; preset?: string; outcome?: 
   session.append('hivemind/session-owner', { id: options.runtime === false ? 'employee' : null, slug: options.runtime === false ? 'romeo' : 'runtime', name: 'Runtime', role: 'Chief' } as never)
   session.append('turn/start', { turn: 1 })
   if (options.call !== false) session.append('tool/call', { callId: 'request-call', name: 'sensitive_action', arguments: '{}' } as never)
-  session.append('approval/asked' as never, { id: 'approval-id', callId: 'request-call', toolName: 'sensitive_action', reason: 'Sending the prepared message requires your authorization.' } as never)
-  session.append('approval/decided' as never, { id: 'approval-id', outcome: options.outcome ?? 'pending' } as never)
+  session.append('approval/asked', { id: 'approval-id', callId: 'request-call', toolName: 'sensitive_action', reason: 'Sending the prepared message requires your authorization.' } as never)
+  session.append('approval/decided', { id: 'approval-id', outcome: options.outcome ?? 'pending' } as never)
   const agent = { session } as Agent
   const order: string[] = []
   const flush = vi.spyOn(ctx.sessions, 'flush').mockImplementation(async () => { order.push('persist'); return options.flush !== false })
