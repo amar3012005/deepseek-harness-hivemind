@@ -1,5 +1,5 @@
 /** Scoped Remote Event wiring for the browser question consumer. */
-import { Context } from '@deepseek-ai/cordis'
+import { Context, Service } from '@deepseek-ai/cordis'
 import { describe, expect, it, vi } from 'vitest'
 import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
@@ -33,7 +33,7 @@ type QuestionListener = (
   next: QuestionNext,
 ) => Promise<QuestionAnswer>
 
-async function bench(declare = true) {
+async function bench(declare = true, namespaceDeclared = true) {
   const ctx = new Context()
   await ctx.plugin(SlotRegistry).await()
   const slots = ctx.get('slots') as SlotRegistry
@@ -71,8 +71,15 @@ async function bench(declare = true) {
     return () => { listener = undefined }
   })
   const lateAnswer = vi.fn(async () => ({ ok: true, value: true }))
-  ctx.provide('remote', { $on: on, userQuestions: { answer: lateAnswer } } as never)
-  const fiber = ctx.plugin({ inject: [...inject], apply })
+  // Model the actual separately registered namespace, including Cordis injection checks.
+  await ctx.plugin({ apply: (owner: Context) => { owner.provide('remote.userQuestions', { answer: lateAnswer } as never) } }).await()
+  class QuestionRemote extends Service {
+    constructor(owner: Context) { super(owner, 'remote') }
+    $on = on
+    get userQuestions() { return this.ctx['remote.userQuestions'] }
+  }
+  new QuestionRemote(ctx)
+  const fiber = ctx.plugin({ inject: inject.filter(key => namespaceDeclared || key !== 'remote.userQuestions'), apply })
   await fiber.await()
   const invoke = (
     owner: Context,
@@ -105,7 +112,7 @@ async function bench(declare = true) {
 
 describe('apply', () => {
   it('declares the services it binds', () => {
-    expect(inject).toEqual(['sessions', 'remote', 'uiSession', 'slots', 'locale'])
+    expect(inject).toEqual(['sessions', 'remote', 'remote.userQuestions', 'uiSession', 'slots', 'locale'])
   })
 
   it('installs the Remote Event listener and delegates an unscoped request', async () => {
@@ -118,6 +125,17 @@ describe('apply', () => {
     expect(next).toHaveBeenCalledOnce()
     expect(b.slots.entries('conversation.composer')).toHaveLength(0)
     expect(b.pending.getSnapshot()).toEqual([])
+  })
+
+  it('rejects namespace access before transport when the native dependency is omitted', async () => {
+    const b = await bench(true, false)
+    const entry = b.slots.entries('conversation.input.dock')[0]!
+    const callbacks = (entry.inject as (sessionId: SessionId) => {
+      onAnswer: (callId: string, answer: QuestionAnswer) => Promise<boolean>
+    })(SESSION_ID)
+    await expect(callbacks.onAnswer('continued-one', ANSWER)).rejects.toThrow('without inject')
+    expect(b.lateAnswer).not.toHaveBeenCalled()
+    await b.fiber.dispose()
   })
 
   it('mounts continued-answer Remote callbacks and checks the result envelope', async () => {

@@ -49,7 +49,7 @@ type ClientQuestionNext = Parameters<QuestionListener>[1]
 type ClientQuestionAnswer = Awaited<ReturnType<QuestionListener>>
 
 /** Required services: Agent scopes, Remote Events, Session UI, Slot registry, and copy. */
-export const inject = ['sessions', 'remote', 'uiSession', 'slots', 'locale']
+export const inject = ['sessions', 'remote', 'remote.userQuestions', 'uiSession', 'slots', 'locale']
 
 /** Present one request until the user answers, cancels, or its lifetime ends. */
 async function answerQuestion(
