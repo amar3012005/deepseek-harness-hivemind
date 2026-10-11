@@ -288,7 +288,7 @@ describe('progressive Composio bridge', () => {
     ) => Promise<{ kind: string; content: Array<{ type: string; text: string }> }>
     const huge = JSON.stringify({ result: { data: { results: [{ primary_tool_slugs: ['SLACK_LIST_CHANNELS'], tool_schemas: { huge: true } }] } } })
     const decision = await post(
-      { name: 'hivemind_connected_task', arguments: { action: 'search' } },
+      { name: 'mcp__composio__COMPOSIO_SEARCH_TOOLS', arguments: { action: 'search' } },
       { isError: false, content: [{ type: 'text', text: huge }] },
       async () => ({ kind: 'accept', content: [{ type: 'text', text: huge }] }),
     )
