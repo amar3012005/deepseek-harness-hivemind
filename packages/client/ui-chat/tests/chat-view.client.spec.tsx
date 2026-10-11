@@ -379,7 +379,7 @@ function makeHarness(
       createSnapshotStore<SessionPendingInteractionSnapshot>(new Map()),
     ),
     useWorkspaces: emptyWorkspaces(),
-    useProjection: key => key === 'userQuestions' ? questionsValue : outlineValue,
+    useProjection: (key: string) => key === 'userQuestions' ? questionsValue : outlineValue,
     useInput: (() => { throw new Error('unused') }),
     inputActions: {
       setDraft: () => {},
