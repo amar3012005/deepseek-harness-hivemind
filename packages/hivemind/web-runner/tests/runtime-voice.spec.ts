@@ -20,6 +20,8 @@ describe('Runtime operator voice context', () => {
     expect(text).toContain('confirmation_ref call:saved-call')
     expect(text).toContain('do not ask the user for transcript availability')
     expect(text).toContain('hivemind_voice_baseline')
+    expect(text).toContain('call receipt itself grants no new authority')
+    expect(text).toContain('continue already authorized internal preparation, strategic planning, native team delegation')
   })
   it('preserves fallback no-speech evidence rather than promoting a transcript to confirmed goals', () => {
     const receipt = { callId: 'fallback-call', provider: 'grok' as const, initialCheckIn: false, interrupted: true, hadUserSpeech: false, transcript: '' }

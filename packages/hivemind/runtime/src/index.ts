@@ -1243,6 +1243,14 @@ export function apply(ctx: Context, config: Config): void {
       },
     }))
   })
+  let hqFullAccessAllowed: ((agent: Agent, signal: AbortSignal) => Promise<boolean>) | undefined
+  ctx.inject(['hivemindHq'], hqCtx => hqCtx.effect(() => {
+    const hq = hqCtx.get('hivemindHq') as {
+      fullAccessAllowed?: (agent: Agent, signal: AbortSignal) => Promise<boolean>
+    }
+    hqFullAccessAllowed = (agent, signal) => hq.fullAccessAllowed?.(agent, signal) ?? Promise.resolve(false)
+    return () => { hqFullAccessAllowed = undefined }
+  }))
   ctx.effect(() => ctx.on('tools/pre-execute', async (execution, next): Promise<PreToolDecision> => {
     // Enforce current registry authority before every dispatch, including cached,
     // nested, newly registered tools and danger-full-access sessions.
@@ -1271,9 +1279,7 @@ export function apply(ctx: Context, config: Config): void {
       }
     }
     const presets = ctx.get('permissionPresets') as { current(session: Agent['session']): string } | undefined
-    const fullAccess = execution.agent !== undefined && (presets?.current(execution.agent.session) === 'danger-full-access' || await (ctx.get('hivemindHq') as {
-      fullAccessAllowed?: (agent: Agent, signal: AbortSignal) => Promise<boolean>
-    } | undefined)?.fullAccessAllowed?.(execution.agent, execution.signal))
+    const fullAccess = execution.agent !== undefined && (presets?.current(execution.agent.session) === 'danger-full-access' || await hqFullAccessAllowed?.(execution.agent, execution.signal))
     if (fullAccess && [HIVE_CREATE_PROJECT_TOOL, HIVE_WEB_SEARCH_TOOL, 'web_fetch',
       'hivemind_research_answer', 'hivemind_research_request', 'hivemind_research_gather'].includes(execution.name)) {
       return next()

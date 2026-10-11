@@ -14,39 +14,45 @@ import type { HqRestNote, HqRestNoteRequest, HqRestNoteResult, HqRestState } fro
 export function isNightlyScheduledTurn(agent:Agent, admitted: readonly UserMessage[] = []):boolean {
   const events=agent.session.snapshotEvents(),boundary=events.findLast(event=>event.type==='turn/end')?.seq??-1
   const schedule='schedule-'+createHash('sha256').update(`${agent.id}\0nightly-routine-check-v1`).digest('hex')
+  const current = [...events.flatMap(event => event.seq > boundary && event.type === 'user/message' ? [event.data] : []), ...admitted]
   // A saved colleague reply resumes the same review without another rest timer.
-  const input = events.findLast(event => event.seq > boundary && event.type === 'user/message' && event.data.source.kind === 'hivemind-agent-message')
-  if (input?.type === 'user/message') {
-    const messageId = (input.data.source as { messageId?: string }).messageId
-    const reply = events.findLast(event => event.type === 'hivemind/room-message-received' && event.data.id === messageId && event.data.targetId === agent.id && event.data.kind === 'reply')
+  for (const input of current) {
+    if (input.source.kind !== 'hivemind-agent-message') continue
+    const source = input.source
+    const reply = events.findLast(event => event.type === 'hivemind/room-message-received'
+      && event.data.id === source.messageId && event.data.senderId === source.senderId
+      && event.data.senderId === source.senderSessionId && event.data.targetId === agent.id && event.data.kind === 'reply')
     if (reply?.type === 'hivemind/room-message-received') {
-      const request = events.find(event => event.type === 'hivemind/room-message-queued' && event.data.id === reply.data.replyTo && event.data.targetId === reply.data.senderId)
+      const request = events.find(event => event.type === 'hivemind/room-message-queued'
+        && event.data.id === reply.data.replyTo && event.data.senderId === agent.id
+        && event.data.kind === 'question' && event.data.targetId === reply.data.senderId)
       if (request?.type === 'hivemind/room-message-queued') {
         try {
           const line = request.data.text.split('\n').find(value => value.startsWith('NIGHTLY_REVIEW_REQUEST='))
           const original = JSON.parse(line?.slice('NIGHTLY_REVIEW_REQUEST='.length) ?? '').occurrence
-          if (typeof original === 'string' && events.some((event) => {
-            if (event.type !== 'user/message' || event.data.source.kind !== 'schedule') return false
-            const sourceOccurrence = event.data.source.occurrenceAt
-            const line = event.data.content.flatMap(block => block.type === 'text' ? [block.text] : []).join('\n').split('\n').find(value => value.startsWith('reminders_json: '))
-            try { const entries: unknown = JSON.parse(line?.slice('reminders_json: '.length) ?? ''); return Array.isArray(entries) && entries.some(entry => entry?.schedule_id === schedule && entry?.occurrence_at === original) && entries.some(entry => entry?.occurrence_at === sourceOccurrence) } catch { return false }
-          })) return true
+          if (typeof original === 'string' && events.some(event => event.type === 'user/message'
+            && nativeNightlyOccurrence(event.data, schedule, original))) return true
         } catch { /* Unrelated colleague replies never bypass rest checks. */ }
       }
     }
   }
-  const current = [...events.flatMap(event => event.seq > boundary && event.type === 'user/message' ? [event.data] : []), ...admitted]
-  return current.some((message) => {
-    if (message.source.kind !== 'schedule') return false
-    const occurrence = message.source.occurrenceAt
-    const text = message.content.flatMap(block => block.type === 'text' ? [block.text] : []).join('\n')
-    const line = text.split('\n').find(value => value.startsWith('reminders_json: '))
-    try {
-      const entries: unknown = JSON.parse(line?.slice('reminders_json: '.length) ?? '')
-      return Array.isArray(entries) && entries.some(entry => entry && typeof entry === 'object' && entry.occurrence_at === occurrence)
-        && entries.some(entry => entry && typeof entry === 'object' && entry.schedule_id === schedule)
-    } catch { return false }
-  })
+  return current.some(message => nativeNightlyOccurrence(message, schedule))
+}
+
+/** Native source names the batch's first occurrence; each reminder keeps its own. */
+function nativeNightlyOccurrence(message: UserMessage, schedule: string, original?: string): boolean {
+  if (message.source.kind !== 'schedule') return false
+  const occurrence = message.source.occurrenceAt
+  if (typeof occurrence !== 'string' || !Number.isFinite(Date.parse(occurrence))) return false
+  const text = message.content.flatMap(block => block.type === 'text' ? [block.text] : []).join('\n')
+  const line = text.split('\n').find(value => value.startsWith('reminders_json: '))
+  try {
+    const entries: unknown = JSON.parse(line?.slice('reminders_json: '.length) ?? '')
+    return Array.isArray(entries) && entries[0]?.occurrence_at === occurrence
+      && entries.some(entry => entry && typeof entry === 'object' && entry.schedule_id === schedule
+        && typeof entry.occurrence_at === 'string' && Number.isFinite(Date.parse(entry.occurrence_at))
+        && (original === undefined || entry.occurrence_at === original))
+  } catch { return false }
 }
 
 export interface RestIntent {
@@ -329,7 +335,7 @@ export function installRest(ctx: Context): void {
     sleepChecks.set(agent, { turn, repairs: repairs + 1 })
     agent.steer(createUserMessage({
       source: { kind: 'plugin', plugin: 'hivemind-hq/sleep-check' },
-      content: [{ type: 'text', text: 'Before this active Runtime turn finishes, commit a handoff and a justified future wake no later than four hours from now with hivemind_hq_rest. If a saved wake is later, preserve its context but create a new handoff_id with an earlier bounded review wake; do not retry the old multi-day sleep. Include completed findings, current task/calendar references, next steps and blockers. For unchanged state, read hivemind_hq_rest_state and copy its exactRetry arguments verbatim; preserve every summary and array string, not just the identifier and timestamp. If content changes, use a new handoff_id. Confirm its persisted future wake in the tool receipt. On automatic recovery, finish quietly at that receipt; do not announce unchanged findings, waiting, handoff saving or the next wake. If there is no concrete time-sensitive work, choose the four-hour review rather than a short polling timer. Do not repeat investigation, create a Goal, redo employee work or invent completed results. Pause or cancellation overrides this check.' }],
+      content: [{ type: 'text', text: 'Before this active Runtime turn finishes, commit a handoff and a justified future wake no later than four hours from now with hivemind_hq_rest. If a saved wake is later, preserve its context but create a new handoff_id with an earlier bounded review wake; do not retry the old multi-day sleep. Include completed findings, current task/calendar references, next steps and blockers. For unchanged state, read hivemind_hq_rest_state and copy its exactRetry arguments verbatim; preserve every summary and array string, not just the identifier and timestamp. If content changes, use a new handoff_id. Confirm its persisted future wake in the tool receipt. On automatic recovery, finish quietly at that receipt; do not announce unchanged findings, waiting, handoff saving or the next wake. If there is no concrete time-sensitive work, choose the four-hour review rather than a short polling timer. Do not repeat investigation, create a Goal, redo employee work or invent completed results. Pause or cancellation overrides this check. A canceled native connection request is closed: do not create a retry or review wake for it. Only separately authorized independent work may justify a future wake.' }],
     }))
   }))
   ctx.effect(() => ctx.on('agent/turn-ended', async ({ agent }) => { await acknowledgeRestNotes(ctx, agent) }))

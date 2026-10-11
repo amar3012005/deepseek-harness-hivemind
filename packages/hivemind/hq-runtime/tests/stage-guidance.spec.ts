@@ -7,6 +7,28 @@ const event = (type: string, data: unknown, seq = 2) => ({ type, data, seq }) as
 const start = event('turn/start', { turn: 216 }, 1)
 const stage = (messages: UserMessage[], events: SessionEvent[] = [start], awakening = false, nightly = false) => runtimeStageGuidance(events, messages, 'runtime', awakening, nightly)
 describe('Runtime current-stage selection', () => {
+  it('reconciles the exact authenticated administrator call before continuing existing work', () => {
+    const actor = { userId:'owner',orgId:'company',role:'owner',name:'Owner' }
+    const receipt = event('hivemind/voice-call-ended', { callId:'call-one',authenticatedActor:actor,
+      interrupted:true,hadUserSpeech:true,transcript:'user: Existing customers first.' }, 0)
+    const followup = input('plugin', { plugin:'hivemind-live-voice',voiceCallId:'call-one',authenticatedActor:actor })
+    const text = stage([followup], [receipt,start])
+    expect(text).toContain('Administrator call follow-up:')
+    expect(text).toContain('preserve unanswered topics')
+    expect(text).toContain('continue already authorized preparation, planning, delegation and review')
+    expect(text).toContain('silence or assistant speech grants no new authority')
+    expect(text).not.toContain('Recovery:')
+    for (const fields of [
+      { voiceCallId:'other-call',authenticatedActor:actor },
+      { voiceCallId:'call-one',authenticatedActor:{ ...actor,orgId:'foreign' } },
+      { voiceCallId:'call-one',authenticatedActor:{ ...actor,userId:'other' } },
+      { voiceCallId:'call-one',authenticatedActor:{ ...actor,role:'member' } },
+      { voiceCallId:'call-one' },
+    ]) expect(stage([input('plugin', { plugin:'hivemind-live-voice',...fields })], [receipt,start]))
+      .not.toContain('Administrator call follow-up:')
+    expect(stage([followup])).not.toContain('Administrator call follow-up:')
+    expect(stage([input('user')], [receipt,start])).not.toContain('Administrator call follow-up:')
+  })
   it('orients once using existing agendas before agenda-dependent assignments', () => {
     const text = stage([input('user')], [start], true)
     expect(text).toContain('one concise agenda-setting exchange')

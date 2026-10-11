@@ -1,10 +1,13 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { createToolResultMessage } from '@deepseek-ai/dsh-llm'
 import SessionStore from '@deepseek-ai/dsh-session'
 import type { ToolDefinition } from '@deepseek-ai/dsh-tools'
-import { apply } from '../src/index.ts'
+import { apply, inject } from '../src/index.ts'
+
+const nativeContexts: Context[] = []
+afterEach(async () => { await Promise.all(nativeContexts.splice(0).map(ctx => ctx.fiber.dispose())) })
 
 async function setup(actor: Record<string, unknown>, approvalRequired = false, approvalOutcome: 'allowed-once' | 'rejected' | 'pending' = 'allowed-once') {
   const tools = new Map<string, ToolDefinition>()
@@ -18,10 +21,11 @@ async function setup(actor: Record<string, unknown>, approvalRequired = false, a
     inject(message: unknown) { injections.push(message) },
   } as unknown as Agent
   const ctx = new Context()
+  nativeContexts.push(ctx)
   ctx.provide('tools', { register(tool: ToolDefinition) { tools.set(tool.name, tool); return () => {} } } as never)
   ctx.provide('hivemindEmployeeDirectory', { async profiles() { return { status: 'ready', contract: 'hivemind.hyperagent-profiles.v1', count: 1, profiles: [{ id: 'marta', name: 'Marta Silva', role_archetype: 'Risk lead', avatar_url: 'https://example.com/marta.png', persona: 'Challenge unsupported claims.', active_prompt_version: { version_label: 'v3' } }] } } } as never)
   ctx.provide('approval', { async request() { return approvalOutcome } } as never)
-  apply(ctx)
+  await ctx.plugin({ name: 'workstream-native-context-test', inject, apply })
   const tool = tools.get('hivemind_workstream')
   if (tool === undefined) throw new Error('workstream tool was not registered')
   return { ctx, tool, agent, events, injections }

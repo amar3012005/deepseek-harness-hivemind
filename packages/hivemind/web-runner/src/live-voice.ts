@@ -10,7 +10,7 @@ import { authContextFrom, credentialStoreFrom } from '@deepseek-ai/dsh-llm-pi-ai
 import { agentEvents, assembleContextFor, type Agent } from '@deepseek-ai/dsh-agent'
 import type {} from '@deepseek-ai/dsh-api-session-controller'
 import { renderPrompt } from '@deepseek-ai/dsh-system-prompt'
-import { SessionId } from '@deepseek-ai/dsh-session'
+import { SessionId, type SessionEvent } from '@deepseek-ai/dsh-session'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { HivemindPrincipal } from '@deepseek-ai/dsh-hivemind-execution-scope'
 import type {} from '@deepseek-ai/dsh-hivemind-runtime'
@@ -107,6 +107,46 @@ function textOf(value: unknown): string {
 function appendContext(agent: Agent, text: string, authenticatedActor?: import('@deepseek-ai/dsh-hivemind-execution-scope').AuthenticatedActor): void {
   agent.session.append('user/message', createUserMessage({ content: [{ type: 'text', text }],
     source: { kind: 'plugin', plugin: 'hivemind-live-voice', form: 'recall', ...(authenticatedActor === undefined ? {} : { authenticatedActor }) } }), { surfaceOp: 'append' })
+}
+
+type SavedVoiceCall = SessionEvent<'hivemind/voice-call-ended'>['data']
+
+/** Persist one actual call and recover only its missing native Inbox handoff.
+ * Durable insertion also accounts for a claimed, rejected or canceled input;
+ * retries must not replay that work merely because it is no longer pending.
+ */
+export async function persistVoiceCall(ctx: Context, agent: Agent, incoming: SavedVoiceCall,
+  context: string, reconcile = true): Promise<void> {
+  const sameActor = (actor: SavedVoiceCall['authenticatedActor']) => actor === undefined
+    ? incoming.authenticatedActor === undefined
+    : incoming.authenticatedActor !== undefined && actor.userId === incoming.authenticatedActor.userId
+      && actor.orgId === incoming.authenticatedActor.orgId
+      && actor.role === incoming.authenticatedActor.role
+  const saved = agent.session.snapshotEvents().findLast(event => event.type === 'hivemind/voice-call-ended'
+    && event.data.callId === incoming.callId)
+  if (saved?.type === 'hivemind/voice-call-ended'
+    && (saved.data.provider !== incoming.provider || !sameActor(saved.data.authenticatedActor))) throw new Error('voice_receipt_identity_conflict')
+  const receipt = saved?.type === 'hivemind/voice-call-ended' ? saved.data : incoming
+  if (!saved) {
+    agent.session.append('hivemind/voice-call-ended', receipt)
+    appendContext(agent, context, receipt.authenticatedActor)
+  }
+  if (!(await ctx.sessions.flush(agent.session))) throw new Error('voice_handoff_persistence_required')
+  if (reconcile) {
+    const matches = (message: import('@deepseek-ai/dsh-llm').UserMessage) => message.source.kind === 'plugin'
+      && message.source.plugin === 'hivemind-live-voice' && message.source.voiceCallId === receipt.callId
+      && sameActor(message.source.authenticatedActor)
+    const accepted = [...agent.inbox.nextTurn, ...agent.inbox.nextStep].some(matches)
+      || agent.session.snapshotEvents().some(event => event.type === 'user/message' && matches(event.data)
+        || event.type === 'agent/inbox/spliced' && event.data.inserted.some(matches))
+    if (!accepted) agent.followup(createUserMessage({
+      content: [{ type: 'text', text: runtimeDecisionReconciliation(receipt.callId, receipt.initialCheckIn, receipt) }],
+      source: { kind: 'plugin', plugin: 'hivemind-live-voice', form: 'recall', voiceCallId: receipt.callId,
+        ...(receipt.authenticatedActor ? { authenticatedActor: receipt.authenticatedActor } : {}) },
+    }))
+  }
+  // Inbox insertion/claim and receipt must both survive the finish response.
+  if (!(await ctx.sessions.flush(agent.session))) throw new Error('voice_handoff_persistence_required')
 }
 /** Decode routing metadata; OpenAI validates the credential.
  * @param token - Server-held subscription access token.
@@ -212,16 +252,9 @@ export function liveVoicePlugin(config: LiveVoiceConfig,
               if (result.status === 'pending') { reply(res, 202, { status: 'pending' }); return }
               if (result.session_id !== id || result.call_id !== input.callId || !['completed', 'failed'].includes(result.status ?? '')) throw new Error('voice_receipt_invalid')
               const marker = `Saved Grok Runtime conversation (${result.call_id}):`
-              if (!agent.session.snapshotEvents().some(event => event.type === 'user/message' && event.data.source.kind === 'plugin'
-                && event.data.source.plugin === 'hivemind-live-voice' && textOf(event.data).startsWith(marker))) {
-                const transcript = (result.turns ?? []).slice(0, 100).flatMap(turn => [turn.user_text ? `user: ${turn.user_text.slice(0,8000)}` : '', turn.agent_text ? `assistant: ${turn.agent_text.slice(0,8000)}` : '']).filter(Boolean).join('\n').slice(-20000)
-                const receipt = { ...(p.authenticatedActor === undefined ? {} : { authenticatedActor:p.authenticatedActor }), callId: input.callId as string, provider: 'grok' as const, initialCheckIn: result.initial_check_in === true, interrupted: result.interrupted !== false, hadUserSpeech: result.had_user_speech === true, transcript }
-                agent.session.append('hivemind/voice-call-ended', receipt)
-                appendContext(agent, `${marker}\nTerminal status: ${result.status}. This call alone does not confirm a complete baseline or authorize external actions.\n${runtimeSavedCallEvidence(receipt)}`, p.authenticatedActor)
-                if (!(await ctx.sessions.flush(agent.session))) throw new Error('voice_handoff_persistence_required')
-                agent.followup(createUserMessage({ content: [{ type: 'text', text: runtimeDecisionReconciliation(input.callId as string, result.initial_check_in === true, receipt) }], source: { kind: 'plugin', plugin: 'hivemind-live-voice', form: 'recall',voiceCallId:input.callId as string,...(p.authenticatedActor ? { authenticatedActor:p.authenticatedActor }: {}) } }))
-              }
-              if (!(await ctx.sessions.flush(agent.session))) throw new Error('voice_handoff_persistence_required')
+              const transcript = (result.turns ?? []).slice(0, 100).flatMap(turn => [turn.user_text ? `user: ${turn.user_text.slice(0,8000)}` : '', turn.agent_text ? `assistant: ${turn.agent_text.slice(0,8000)}` : '']).filter(Boolean).join('\n').slice(-20000)
+              const receipt = { ...(p.authenticatedActor === undefined ? {} : { authenticatedActor:p.authenticatedActor }), callId: input.callId as string, provider: 'grok' as const, initialCheckIn: result.initial_check_in === true, interrupted: result.interrupted !== false, hadUserSpeech: result.had_user_speech === true, transcript }
+              await persistVoiceCall(ctx, agent, receipt, `${marker}\nTerminal status: ${result.status}. This call alone does not confirm a complete baseline or authorize external actions.\n${runtimeSavedCallEvidence(receipt)}`)
               rooms.delete(input.callId as string)
               reply(res, 200, { ok: true })
             }); return
@@ -323,10 +356,7 @@ export function liveVoicePlugin(config: LiveVoiceConfig,
                 if (transcript.length) void ctx.hivemindExecutionScope.run(p, async () => {
                   const savedTranscript = transcript.join('\n').slice(-20000)
                   const receipt = { ...(p.authenticatedActor === undefined ? {} : { authenticatedActor:p.authenticatedActor }), callId: roomId, provider: 'codex' as const, initialCheckIn, interrupted: reason === 'interrupted', hadUserSpeech, transcript: savedTranscript }
-                  agent.session.append('hivemind/voice-call-ended', receipt)
-                  appendContext(agent, `Completed live voice conversation:\n${runtimeSavedCallEvidence(receipt)}`, p.authenticatedActor)
-                  if (!(await ctx.sessions.flush(agent.session))) throw new Error('voice_handoff_persistence_required')
-                  if (runtime) agent.followup(createUserMessage({ content: [{ type: 'text', text: runtimeDecisionReconciliation(roomId, initialCheckIn, receipt) }], source: { kind: 'plugin', plugin: 'hivemind-live-voice', form: 'recall',voiceCallId:roomId,...(p.authenticatedActor ? { authenticatedActor:p.authenticatedActor }: {}) } }))
+                  await persistVoiceCall(ctx, agent, receipt, `Completed live voice conversation:\n${runtimeSavedCallEvidence(receipt)}`, runtime)
                 }).catch(() => { /* Session persistence retains the unflushed prefix for recovery. */ })
               }
               const duration = initialCheckIn ? Math.min(config.maxDurationMs, 180000) : config.maxDurationMs
