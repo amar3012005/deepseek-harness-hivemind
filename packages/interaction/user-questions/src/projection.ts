@@ -40,7 +40,7 @@ const toolOptionSchema = z.object({
   description: z.string().optional(),
 }).loose()
 
-const intentSchema = z.union([z.object({ kind: z.literal('plan-review'), approve: z.string(), callId: z.string().transform(ToolCallId).optional() }).strict(), z.object({ kind: z.literal('memory-save-destination') }).strict()])
+const intentSchema = z.union([z.object({ kind: z.literal('plan-review'), approve: z.string(), callId: z.string().transform(ToolCallId).optional() }).strict().transform(intent => ({ kind: intent.kind, approve: intent.approve, ...(intent.callId === undefined ? {} : { callId: intent.callId }) })), z.object({ kind: z.literal('memory-save-destination') }).strict()])
 
 const toolQuestionSchema = z.object({
   id: z.string(),
