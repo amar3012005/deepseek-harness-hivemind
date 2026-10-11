@@ -11,3 +11,14 @@ it('resumes only a correlated saved reply to the original scheduled review',()=>
   Object.assign(events[3]!.data,{ senderId:'other' });expect(currentNightlyOccurrence(agent)).toBeUndefined()
   Object.assign(events[3]!.data,{ senderId:'employee' });Object.assign(events[0]!.data,{ source:{ kind:'user' } });expect(currentNightlyOccurrence(agent)).toBeUndefined()
 })
+
+it('keeps all active roster members in request phase and stops waiting instead of polling', async () => {
+  const { nightlyReviewPhase } = await import('../src/nightly-routine-guidance.ts')
+  const occurrence = '2026-10-11T04:00:00.000Z'
+  const roster = [{ id: 'a', name: 'A', index: 1 }, { id: 'b', name: 'B', index: 2 }]
+  const request = (index: number) => ({ type: 'hivemind/room-message-queued', data: { id: `request-${index}`, text: `NIGHTLY_REVIEW_REQUEST=${JSON.stringify({ occurrence, agent_index: index })}` } })
+  expect(nightlyReviewPhase([request(1)], occurrence, roster)).toContain('"id":"b"')
+  expect(nightlyReviewPhase([request(1), request(2)], occurrence, roster)).toContain('End this model turn now')
+  const replies = [1, 2].map(index => ({ type: 'hivemind/room-message-received', data: { kind: 'reply', replyTo: `request-${index}` } }))
+  expect(nightlyReviewPhase([request(1), request(2), ...replies], occurrence, roster)).toContain('all 2 requested employee replies are saved')
+})

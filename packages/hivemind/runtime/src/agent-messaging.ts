@@ -260,7 +260,7 @@ export function installAgentMessaging(ctx: Context): void {
             }) : []
         const artifactIds = queued === undefined ? [...new Set([...(input.artifact_ids ?? []), ...savedIds])]
           : (queued.data as { artifactIds: string[] }).artifactIds
-        return rooms.deliverAgentMessage(agent, {
+        const result = await rooms.deliverAgentMessage(agent, {
           key: input.message_key, target: targetProfile?.id ?? input.recipient,
           kind: explicitEmployeeMessageKind(preset, targetProfile !== undefined, input.kind,
             queued === undefined ? undefined : (queued.data as { kind?: string }).kind, input.request_reply), text: queued === undefined
@@ -273,6 +273,19 @@ export function installAgentMessaging(ctx: Context): void {
           ...(input.reply_to === undefined ? {} : { replyTo: input.reply_to }),
           ...(artifactIds.length === 0 ? {} : { artifactIds }),
         }, execution.signal)
+        const occurrence = preset === 'hivemind-hq' && target !== undefined && input.kind === 'question' ? currentNightlyOccurrence(agent) : undefined
+        if (occurrence !== undefined) {
+          const requested = new Set(agent.session.snapshotEvents().filter(event => String(event.type) === 'hivemind/room-message-queued').flatMap((event) => {
+            const packet = event.data as { text?: string; targetId?: string; delivery?: { target?: string } }
+            try {
+              const marker = packet.text?.split('\n').find(line => line.startsWith('NIGHTLY_REVIEW_REQUEST='))
+              return JSON.parse(marker?.slice('NIGHTLY_REVIEW_REQUEST='.length) ?? '').occurrence === occurrence ? [packet.delivery?.target] : []
+            } catch { return [] }
+          }))
+          const active = directory.profiles.filter(profile => profile['status'] !== 'paused' && profile['status'] !== 'archived' && !profile['archived_at'] && !profile['archivedAt'])
+          if (active.every(profile => requested.has(String(profile['id'])))) execution.concludeTurn()
+        }
+        return result
       },
     })))
   })

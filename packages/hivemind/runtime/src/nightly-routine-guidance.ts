@@ -5,6 +5,9 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
 import { createHash } from 'node:crypto'
 import { isRuntimeRoom } from './runtime-decision-memory.ts'
 import { requireNightlyOccurrence } from './nightly-support.ts'
+import type {} from '@deepseek-ai/dsh-hivemind-employee-directory'
+import type {} from '@deepseek-ai/dsh-agent-presets'
+import type {} from '@deepseek-ai/dsh-system-prompt'
 
 export const nightlyRoutineSkill = {
   name: 'hivemind-nightly-routine-check',
@@ -65,15 +68,50 @@ export function currentNightlyOccurrence(agent: Agent, admitted: readonly UserMe
   return undefined
 }
 
+/** Bounded current workflow state in the native system prompt, never stale recalled plans. */
+export function nightlyReviewPhase(events: readonly { type: string; data: unknown }[], occurrence: string,
+  roster: readonly { id: string; name: string; index: number }[]): string {
+  const asked = new Map<string, string>()
+  for (const event of events) {
+    if (event.type !== 'hivemind/room-message-queued') continue
+    const data = event.data as { id?: string; text?: string }
+    try {
+      const marker = data.text?.split('\n').find(line => line.startsWith('NIGHTLY_REVIEW_REQUEST='))
+      const review = JSON.parse(marker?.slice('NIGHTLY_REVIEW_REQUEST='.length) ?? '')
+      const member = roster.find(row => row.index === review.agent_index)
+      if (review.occurrence === occurrence && member && data.id) asked.set(member.id, data.id)
+    } catch { /* Uncorrelated text is not a saved review request. */ }
+  }
+  const missing = roster.filter(row => !asked.has(row.id))
+  if (missing.length) return `Nightly report ${occurrence}: request phase. These active authorized employees still need a review request: ${JSON.stringify(missing)}. Send one hivemind_agent_message question to each exact id, stable message_key for this occurrence. Ask for daily tool/schema failures, blocked work, impact, attempted recovery and proposed fixes. The native tool adds the correlation metadata. Do not call evidence repeatedly, substitute list_agents, submit a partial report or do unrelated task review. After all requests are saved, end this turn.`
+  const received = new Set(events.filter(event => event.type === 'hivemind/room-message-received')
+    .map(event => event.data as { replyTo?: string; kind?: string }).filter(data => data.kind === 'reply').map(data => data.replyTo))
+  const waiting = roster.filter(row => !received.has(asked.get(row.id)))
+  if (waiting.length) return `Nightly report ${occurrence}: all active employees were asked. Waiting for saved replies from ${JSON.stringify(waiting)}. End this model turn now with one ordinary brief update. Do not poll, repeat requests, call wait_agent or create a task/timer. Correlated replies resume this original review.`
+  return `Nightly report ${occurrence}: all ${roster.length} requested employee replies are saved. Inspect operation evidence once, synthesize validated employee findings plus Runtime's own receipts, submit the detailed report and check delivery status. Include missing evidence honestly; no separate task, report artifact, company-memory write or rest schedule.`
+}
+
 export function installNightlyRoutineGuidance(ctx: Context): void {
-  ctx.inject(['skills'], (scope) => {
+  ctx.inject(['skills', 'systemPrompt', 'hivemindEmployeeDirectory'], (scope) => {
+    const reviews = new WeakMap<Agent, { turn: number; occurrence: string; roster: { id: string; name: string; index: number }[] }>()
+    scope.effect(() => scope.systemPrompt.section({ name: 'hivemind:nightly-phase', order: scope.systemPrompt.getSectionOrder('TEAM_POLICY'), text: ({ agent }) => {
+      const review = agent && reviews.get(agent)
+      return agent && review ? nightlyReviewPhase(agent.session.snapshotEvents(), review.occurrence, review.roster) : ''
+    } }))
     scope.effect(() => scope.skills.register(nightlyRoutineSkill))
     const injected = new WeakMap<Agent, number>()
-    scope.effect(() => scope.on('agent/pre-step', async ({ agent, turn }, next) => {
+    scope.effect(() => scope.on('agent/pre-step', async ({ agent, turn, signal }, next) => {
       const decision = await next()
-      if (decision.kind === 'reject' || !isRuntimeRoom(agent) || injected.get(agent) === turn) return decision
+      if (decision.kind === 'reject' || !isRuntimeRoom(agent)) return decision
       const occurrence = currentNightlyOccurrence(agent, decision.messages)
-      if (!occurrence) return decision
+      if (!occurrence) { reviews.delete(agent); return decision }
+      if (reviews.get(agent)?.turn !== turn) {
+        const directory = scope.get('agentPresets')?.serviceFor(agent, 'hivemindEmployeeDirectory') ?? scope.hivemindEmployeeDirectory
+        const snapshot = await directory.profiles(signal)
+        const roster = snapshot.profiles.map((profile, index) => ({ profile, index: index + 1 })).filter(({ profile }) => profile['status'] !== 'paused' && profile['status'] !== 'archived' && !profile['archived_at'] && !profile['archivedAt']).map(({ profile, index }) => ({ id: String(profile['id']), name: String(profile['name']), index }))
+        reviews.set(agent, { turn, occurrence, roster })
+      }
+      if (injected.get(agent) === turn) return decision
       injected.set(agent, turn)
       const content = `Current admitted scheduled review: Nightly report. Original native occurrence: ${occurrence}. Load the full instructions through the native skill tool with name hivemind-nightly-routine-check before taking review actions. Keep this original occurrence even if delivery was queued. Use existing queued messages and authorized evidence, include Runtime and every active authorized HyperAgent, preserve missing coverage, and show only a simple routine-check summary in chat. Do not replace this scheduled review with an unrelated business update. If the skill is unavailable, report that blocker rather than guessing its instructions.`
       return { ...decision, messages: [...decision.messages, createUserMessage({
