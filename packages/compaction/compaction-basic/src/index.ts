@@ -7,6 +7,7 @@
 import { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { CompactionEngine, ManualCompactionError } from '@deepseek-ai/dsh-compaction'
+import { isCompactCheckpointSource } from '@deepseek-ai/dsh-compaction/checkpoint'
 import type { CompactionResult, CompactionTrigger } from '@deepseek-ai/dsh-compaction'
 import type { TokenMeter } from '@deepseek-ai/dsh-token-meter'
 import type { Session, SessionSeq } from '@deepseek-ai/dsh-session'
@@ -335,6 +336,12 @@ export class BasicCompactionEngine extends CompactionEngine {
         /* v8 ignore next -- paired with the defensive post-success branch above. */
         break
       }
+      // Static instructions/tool schemas may leave pressure above the cap.
+      // Re-summarizing the one prior checkpoint cannot reduce that envelope.
+      // Manual compaction and confirmed overflow retain their existing paths.
+      const first = agent.session.eventAt(range.start)
+      if (range.start === range.end && first?.type === 'user/message'
+        && isCompactCheckpointSource(first.data.source)) return result
       result = await this.compactRegion(range.start, range.end, agent, signal)
       measurement = meter.measure(agent.session)
       if (measurement.totalTokens < spec.thresholdTokens) return result

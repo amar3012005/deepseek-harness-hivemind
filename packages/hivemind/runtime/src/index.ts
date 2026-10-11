@@ -1,3 +1,4 @@
+import { installSessionDiagnostics } from './session-diagnostics.ts'
 import { installRuntimeSupportReport } from './nightly-support.ts'
 import type {} from '@deepseek-ai/dsh-schedule'
 import { employeeLifecycleTool, employeeProfileTool, lifecycleBusinessError, confirmedEmployeeDeadlineSchedule } from './employee-lifecycle.ts'
@@ -1904,6 +1905,7 @@ export function apply(ctx: Context, config: Config): void {
       const result = apiRecord(await hiveRequest(authority, '/runtime-support-report', { method: 'POST', body: JSON.stringify(input) }, signal, config), 'support report receipt')
       return Object.fromEntries(Object.entries(result).filter((entry): entry is [string, JsonValue] => entry[1] !== undefined))
     })
+    installSessionDiagnostics(ctx)
     const principals = new Map<Agent, ReturnType<typeof ctx.hivemindExecutionScope.require>>()
     const draining = new Map<Agent, Promise<void>>()
     const lifetime = new AbortController()

@@ -290,6 +290,7 @@ export function ChatView({
   const turnNavigationItems = useChat(s => s.navigation.items())
   // Host-computed whole-log outline; the merge is view-layer only (the
   // conversation snapshot never carries projection values).
+  const userQuestions = useProjection('userQuestions')
   const turnOutline = useProjection('turnOutline')
   const railItems = useMemo(
     () => mergeTurnRailItems(turnNavigationItems, turnOutline),
@@ -374,6 +375,11 @@ export function ChatView({
     [loadImage, renderSlot],
   )
   const runningTurnStart = useMemo(() => runningTurnStartTime(timeline), [timeline])
+  // A parked question plus a closed journal turn is stronger evidence than a
+  // delayed control-stream running bit. A later open turn remains real work.
+  const waitingForAnswer = userQuestions?.active.some(question => question.state === 'continued') === true
+    && ![...timeline.turns.values()].some(turn => turn.status === 'open')
+    && !visibleSubmissions.some(submission => submission.placement === 'transcript')
   const pendingTurnStart = visibleSubmissions.findLast(submission => submission.placement === 'transcript')?.time
   const activityStart = pendingTurnStart === undefined
     ? runningTurnStart : Math.max(pendingTurnStart, runningTurnStart ?? 0)
@@ -920,7 +926,10 @@ export function ChatView({
           ))}
           {/* Turn-level loading signal: rides the whole running turn (first-token
               wait, tool execution, streaming) so it never flickers per step. */}
-          {(running || visibleSubmissions.some(submission => submission.placement === 'transcript')) && <TurnStatus
+          {waitingForAnswer && <div className={css.turnStatus} role="status" aria-live="polite">
+            <span className={css.turnStatusLabel}>{t('chat.waitingForAnswer')}</span>
+          </div>}
+          {!waitingForAnswer && (running || visibleSubmissions.some(submission => submission.placement === 'transcript')) && <TurnStatus
             startTime={activityStart}
             working={runningCalls.length > 0}
             activity={/^\/hivemind\/app\/employee\/harness(?:\/|$)/u.test(window.location.pathname)

@@ -244,6 +244,8 @@ it('adds native scheduled occurrence and authenticated roster ordinal to a night
   expect(text).toContain('NIGHTLY_REVIEW_REQUEST={"occurrence":"2026-10-11T04:00:00.000Z","agent_index":2}')
   expect(text).toContain('NIGHTLY_REVIEW_REPLY=')
   expect(text).toContain('reply_to the exact received request ID')
+  expect(text).toContain('First call hyperagents_session_diagnostics')
+  expect(text).toContain('Private memory adds work context only')
   expect(nightlyReviewRequestText(text, '2026-10-11T04:00:00.000Z', 2)).toBe(text)
   expect(nightlyReviewRequestText('Ordinary colleague request.', undefined, 0)).toBe('Ordinary colleague request.')
   expect(() => nightlyReviewRequestText(text, '2026-10-11T05:00:00.000Z', 2)).toThrow('conflict')

@@ -758,6 +758,30 @@ describe('pressure measurement and retention', () => {
     expect(measure.mock.calls[0]).toEqual([session])
   })
 
+  it('does not automatically re-summarize a prior checkpoint alone under static envelope pressure', async () => {
+    const ctx = createContext(1_050_000)
+    const compact = service({ auto: false, thresholdTokens: 48_000, retainTokens: 12_000 }, ctx)
+    const session = conversation(80, 'persistent company context '.repeat(300))
+    await compactIfNeeded(compact, session)
+    const originalEvents = session.snapshotEvents()
+    session.append('request/header', {
+      header: { config: { provider: MODEL, model: MODEL }, tools: [{ name: 'bulk', description: 'x'.repeat(220_000), parameters: { type: 'object' } }] },
+      reason: 'resume',
+    })
+    // Retain every unsummarized tail message, leaving only the checkpoint as candidate.
+    const checkpoint = session.surface.nodes.find(seq => session.eventAt(seq)?.type === 'user/message' && JSON.stringify(session.eventAt(seq)?.data).includes('compactionId'))
+    expect(checkpoint).toBeDefined()
+    const measurement = ctx.tokenMeter.measure(session)
+    const checkpointIndex = measurement.nodes.findIndex(node => node.seq === checkpoint)
+    const tailTokens = measurement.nodes.slice(checkpointIndex + 1).reduce((sum, node) => sum + node.tokens, 0)
+    const tailCompact = service({ auto: false, thresholdTokens: 48_000, retainTokens: tailTokens }, createContext(1_050_000))
+    const summaryCount = originalEvents.filter(event => event.type === 'compaction/summary').length
+    await expect(compactIfNeeded(tailCompact, session)).resolves.toBeNull()
+    await expect(compactIfNeeded(tailCompact, session)).resolves.toBeNull()
+    expect(session.snapshotEvents().filter(event => event.type === 'compaction/summary')).toHaveLength(summaryCount)
+    expect(session.snapshotEvents().slice(0, originalEvents.length)).toEqual(originalEvents)
+  })
+
   it('declines when envelope pressure is high but the surface has no compactable range', async () => {
     const compact = service(compactConfig)
     const bulkTools = [{ name: 'bulk', description: 'x'.repeat(100_000), parameters: { type: 'object' } }]

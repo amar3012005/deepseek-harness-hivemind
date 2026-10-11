@@ -254,6 +254,7 @@ function makeHarness(
   const loadThrough = vi.fn<(seq: number) => Promise<void>>().mockResolvedValue(undefined)
   // Mutable outline holder: tests swap the value and drive a re-render via set().
   let outlineValue: unknown
+  let questionsValue: unknown
   const openView = vi.fn<(view: string, focus: string) => void>()
   // In-memory scroll memory matching the apply.ts per-session map contract.
   let savedScroll: ReturnType<ChatViewSlotProps['chatScroll']['read']> = null
@@ -378,7 +379,7 @@ function makeHarness(
       createSnapshotStore<SessionPendingInteractionSnapshot>(new Map()),
     ),
     useWorkspaces: emptyWorkspaces(),
-    useProjection: () => outlineValue,
+    useProjection: key => key === 'userQuestions' ? questionsValue : outlineValue,
     useInput: (() => { throw new Error('unused') }),
     inputActions: {
       setDraft: () => {},
@@ -427,6 +428,7 @@ function makeHarness(
     set, setSession: session.set, setChat: chatSource.set, ChatView, props,
     openFile, loadOlder, loadThrough, openView,
     setOutline: (value: unknown) => { outlineValue = value },
+    setQuestions: (value: unknown) => { questionsValue = value },
     chatScroll, forkAt, toolOwners,
     setTranscriptView: (mode: TranscriptViewMode) => { transcriptView.set(mode) },
     setNodeRenderer: (renderer: React.ComponentProps<typeof ChatNodeSeat>['renderSlot']) => {
@@ -3058,4 +3060,32 @@ describe('ChatView', () => {
     expect(failedView.getByText('Compaction cancelled.')).toBeTruthy()
     expect(failedView.container.querySelector('[data-state="error"]')).not.toBeNull()
   })
+})
+
+
+describe('durable question activity', () => {
+  it.each(['/hivemind/app/overview/session/runtime', '/hivemind/app/employee/harness/session/employee'])(
+    'replaces a stale Working timer without remount and resumes actual activity in %s', (path) => {
+      window.history.replaceState({}, '', path)
+      const h = makeHarness({ running: true, runningCalls: [], turnTimings: new Map([[1, { startTime: Date.now() - 426 * 60_000 }]]) })
+      render(<ChatView {...h.props} />)
+      expect(screen.queryByText('等待你的答复')).toBeNull()
+      act(() => {
+        h.setQuestions({ active: [{ callId: 'original-question', state: 'continued', questions: [] }], settled: [] })
+        h.set({ turnEnds: new Map([[1, 10]]) })
+      })
+      expect(screen.getByText('等待你的答复')).toBeTruthy()
+      expect(screen.queryByText(/426/)).toBeNull()
+      act(() => {
+        h.set({ turnTimings: new Map([[1, { startTime: Date.now() - 426 * 60_000 }], [2, { startTime: Date.now() }]]) })
+      })
+      expect(screen.queryByText('等待你的答复')).toBeNull()
+      act(() => {
+        h.setQuestions({ active: [], settled: [{ callId: 'original-question', answers: [] }] })
+        h.setSession({ running: false })
+        h.set({ turnEnds: new Map([[1, 10], [2, 10]]) })
+      })
+      expect(screen.queryByText('等待你的答复')).toBeNull()
+    },
+  )
 })
