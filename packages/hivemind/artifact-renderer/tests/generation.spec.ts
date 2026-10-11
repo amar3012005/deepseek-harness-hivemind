@@ -26,6 +26,9 @@ describe('generation providers', () => {
     expect(tools.get('hivemind_generation_discover')?.description).toContain('only when the requested format or its input representation is unknown')
     expect(tools.get('hivemind_generation_discover')?.description).toContain('Do not call this for a known self-contained HTML/web request')
     expect(tools.get('hivemind_generate')?.description).toContain('provide complete self-contained HTML directly')
+    expect(tools.get('hivemind_generate')?.description).toContain('Default unspecified substantial written deliverables to HTML')
+    expect(tools.get('hivemind_generate')?.description).toContain('only for an explicit human format request')
+    expect(tools.get('hivemind_generate')?.description).toContain('a PDF source attachment alone is not that request')
     expect(JSON.stringify(tools.get('hivemind_generate'))).toContain('HIVE visual baseline')
   })
 

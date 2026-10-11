@@ -58,6 +58,8 @@ function nativeNightlyOccurrence(message: UserMessage, schedule: string, origina
 export interface RestIntent {
   readonly id: string
   readonly requestedWakeAt: string
+  /** Host-selected review time; the exact request remains immutable for retries. */
+  readonly reviewWakeAt?: string
   readonly summary: string
   readonly nextSteps: readonly string[]
   readonly blockers: readonly string[]
@@ -144,6 +146,11 @@ export function restScheduleId(sessionId: string, id: string): string {
 function prompt(id: string): string {
   return `HQ_REST_WAKE[${id}] Review the exact committed rest handoff with this identity, any newer superseding handoff, new human notes, current task board and verified receipts. A wake or note grants no additional authority. Do not duplicate completed work. Remain quiet when nothing is eligible.`
 }
+function exactReviewRequest(agent: Agent, intent: RestIntent) {
+  const wakeAt = new Date(Date.now() + MAX_REST_MS).toISOString()
+  return { handoff_id: `rest-review-${createHash('sha256').update(`${agent.id}\0${intent.id}\0${wakeAt}`).digest('hex').slice(0, 40)}`,
+    wake_at: wakeAt, summary: intent.summary, next_steps: [...intent.nextSteps], blockers: [...intent.blockers] }
+}
 async function checkpoint(ctx: Context, agent: Agent): Promise<void> {
   if (!await ctx.sessions.flush(agent.session)) throw new Error('hq_rest_persistence_required')
 }
@@ -156,9 +163,13 @@ async function ensureWake(ctx: Context, agent: Agent, intent: RestIntent, signal
   if (!existing && restIntents(agent.session.snapshotEvents()).at(-1)?.id !== intent.id) throw new Error('hq_rest_superseded_pending_intent')
   if (existing && (existing.prompt !== prompt(intent.id) || existing.title !== `Runtime rest: ${intent.id}`))
     throw new Error('hq_rest_wake_identity_conflict')
+  // New intents checkpoint this host-selected time. Legacy pending intents can
+  // recover within their original four-hour window without rewriting the request.
+  const reviewAt = intent.reviewWakeAt
+    ?? new Date(Math.min(Date.parse(intent.requestedWakeAt), Date.parse(intent.createdAt) + MAX_REST_MS)).toISOString()
   const wake = existing ?? await ctx.schedule.ensure(agent.id, `hq-rest-${intent.id}`, {
     title: `Runtime rest: ${intent.id}`, prompt: prompt(intent.id),
-    ...(Date.parse(intent.requestedWakeAt) > Date.now() ? { at: intent.requestedWakeAt } : { after_seconds: 1 }),
+    ...(Date.parse(reviewAt) > Date.now() ? { at: reviewAt } : { after_seconds: 1 }),
   }, signal)
   const binding = { handoffId: intent.id, scheduleId: wake.id, effectiveWakeAt: wake.scheduledAt }
   const prior = agent.session.snapshotEvents().findLast(event => event.type === 'hivemind/hq-rest-wake' && event.data.handoffId === intent.id)
@@ -284,7 +295,7 @@ export function restWakeDisplay(
 export function installRest(ctx: Context): void {
   ctx.effect(() => ctx.tools.register(defineTool({
     name: 'hivemind_hq_rest_state',
-    description: 'Read the current saved Runtime handoff and native wake without rewriting them or scheduling work. Use before reusing unchanged rest; copy exact saved content only for an identical writer retry. A changed handoff needs a new ID. Wake ISO values ending Z are UTC instants; narrate the supplied local display and explicit zone, never relabel UTC digits as local time.',
+    description: 'Read the current saved Runtime handoff and native wake without rewriting them or scheduling work. Use before reusing unchanged rest; copy exactRetry only for an identical writer retry. If exactReviewRequest is present, submit it once to replace a legacy later wake under its new identity; do not retry the old handoff. A changed handoff needs a new ID. Wake ISO values ending Z are UTC instants; narrate the supplied local display and explicit zone, never relabel UTC digits as local time.',
     parameters: {},
     output: { schema: { type: 'object', additionalProperties: true, properties: {} }, render: (_args, result) => [{ type: 'text', text: JSON.stringify(result) }] },
     isConcurrencySafe: () => true,
@@ -295,9 +306,12 @@ export function installRest(ctx: Context): void {
       const events = agent.session.snapshotEvents()
       const handoff = restIntents(events).at(-1) ?? null
       const iso = state.latest?.effectiveWakeAt ?? state.latest?.requestedWakeAt
-      const exactRetry = handoff ? { handoff_id: handoff.id, wake_at: handoff.requestedWakeAt,
+      const replacement = handoff && state.latest?.wakeStatus === 'active' && iso && Date.parse(iso) > Date.now() + MAX_REST_MS
+        ? exactReviewRequest(agent, handoff) : null
+      const exactRetry = handoff && !replacement ? { handoff_id: handoff.id, wake_at: handoff.requestedWakeAt,
         summary: handoff.summary, next_steps: [...handoff.nextSteps], blockers: [...handoff.blockers] } : null
-      return JSON.parse(JSON.stringify({ state, handoff, exactRetry, wakeDisplay: iso ? restWakeDisplay(events, iso) : null }))
+      return JSON.parse(JSON.stringify({ state, handoff, exactRetry, exactReviewRequest: replacement,
+        wakeDisplay: iso ? restWakeDisplay(events, iso) : null }))
     },
   })))
   const sleepChecks = new WeakMap<Agent, { turn: number; repairs: number }>()
@@ -341,9 +355,9 @@ export function installRest(ctx: Context): void {
   ctx.effect(() => ctx.on('agent/turn-ended', async ({ agent }) => { await acknowledgeRestNotes(ctx, agent) }))
   ctx.effect(() => ctx.tools.register(defineTool({
     name: 'hivemind_hq_rest',
-    description: 'Commit an exact voluntary Runtime rest handoff and idempotent native scheduled wake before waiting until a future time. Use only as HQ lead when no current work remains eligible. Never sleep for more than four hours: choose an earlier review wake even when the task deadline is days away. A legacy later wake needs a new handoff_id and bounded review time. For unchanged rest, read hivemind_hq_rest_state and copy its exactRetry object verbatim, including summary and arrays; do not summarize or improve an existing request. Changed content needs a new handoff_id. Success checkpoints the handoff and wake; actual rest is ordinary idle after the turn ends, not cancellation. Paused autonomy remains paused. On automatic scheduled recovery, success ends the turn at the saved receipt without another visible wrap-up. Emit text only for a material new finding, failure or required decision, never to announce unchanged rest. This does not grant authority.',
+    description: 'Commit an exact voluntary Runtime rest handoff and idempotent native scheduled wake before waiting until a future time. Use only as HQ lead when no current work remains eligible. The host preserves the exact requested time and selects an effective review wake no later than four hours, without changing task or calendar deadlines. Use the actual effectiveWakeAt receipt; do not repeatedly calculate or repair the four-hour bound. A legacy confirmed later wake is not rewritten: submit the returned exactReviewRequest once under its new handoff_id. For unchanged rest, read hivemind_hq_rest_state and copy its exactRetry object verbatim, including summary and arrays; do not summarize or improve an existing request. Changed content needs a new handoff_id. Success checkpoints the handoff and wake; actual rest is ordinary idle after the turn ends, not cancellation. Paused autonomy remains paused. On automatic scheduled recovery, success ends the turn at the saved receipt without another visible wrap-up. Emit text only for a material new finding, failure or required decision, never to announce unchanged rest. This does not grant authority.',
     parameters: {
-      handoff_id: { type: 'string', required: true, description: 'Unique identity for this exact handoff. Retry with the same ID only when wake_at, summary, next_steps and blockers are identical. A new or changed handoff needs a new ID.' }, wake_at: { type: 'string', required: true, description: 'Future RFC3339 timestamp with explicit timezone, at most four hours from now; original timestamp on identical retry only if still within that limit.' },
+      handoff_id: { type: 'string', required: true, description: 'Unique identity for this exact handoff. Retry with the same ID only when wake_at, summary, next_steps and blockers are identical. A new or changed handoff needs a new ID.' }, wake_at: { type: 'string', required: true, description: 'Requested future RFC3339 timestamp with explicit timezone. The host selects a review within four hours and returns its actual effectiveWakeAt. Preserve the original requested timestamp on identical retries; do not change task deadlines to fit a review wake.' },
       summary: { type: 'string', required: true }, next_steps: { type: 'array', required: true, items: { type: 'string' }, description: 'Preserve meaningful next work and unresolved human information, decision or discussion requests until actual evidence resolves them. Retain the existing saved request and its notification receipt. Notify once when first needed or materially changed; returning to sleep does not require another invitation, reminder or approval question. Clear a blocker only after actual authenticated input or verified access.' }, blockers: { type: 'array', required: true, items: { type: 'string' }, description: 'Concrete unresolved blockers, including required human approval or access. An invitation, schedule or silence does not resolve a request or grant authority.' },
     },
     output: { schema: { type: 'object', additionalProperties: true, properties: {} }, render: (_args, result) => [{ type: 'text', text: JSON.stringify(result) }] },
@@ -355,8 +369,6 @@ export function installRest(ctx: Context): void {
       const request = { id: identity(args.handoff_id), requestedWakeAt: new Date(parseAtInput(bounded(args.wake_at, 'wake_at', 100))).toISOString(),
         summary: bounded(args.summary, 'summary', 4000), nextSteps: texts(args.next_steps, 'next_steps'), blockers: texts(args.blockers, 'blockers') }
       return serial(ctx, agent, async () => {
-        if (Date.parse(request.requestedWakeAt) > Date.now() + MAX_REST_MS)
-          throw new Error('hq_rest_wake_exceeds_four_hours: choose a review wake within four hours; use a new handoff_id when replacing a saved later wake. Keep task deadlines unchanged.')
         let intent = restIntents(agent.session.snapshotEvents()).find(item => item.id === request.id)
         if (intent) {
           const prior = { id: intent.id, requestedWakeAt: intent.requestedWakeAt, summary: intent.summary,
@@ -367,13 +379,16 @@ export function installRest(ctx: Context): void {
         } else {
           if (Date.parse(request.requestedWakeAt) <= Date.now()) throw new Error('hq_rest_new_wake_must_be_future')
           const workspace = await ctx.hivemindHq.workspace(agent)
+          const now = Date.now()
+          let reviewAt = Math.min(Date.parse(request.requestedWakeAt), now + MAX_REST_MS)
           // Empty automatic reviews have no time-sensitive work to poll. Keep the
           // native bounded review, while independent task/calendar timers retain
           // their exact dates and employee/input deliveries can wake the room.
           if (automaticRecoveryTurn(agent.session.snapshotEvents()) && workspace.tasks.length === 0
             && !workspace.calendar.some(item => !item.resolved))
-            request.requestedWakeAt = new Date(Date.now() + MAX_REST_MS).toISOString()
-          intent = { ...request, createdAt: new Date().toISOString(), sourceEventSeq: agent.session.snapshotEvents().at(-1)?.seq ?? -1,
+            reviewAt = now + MAX_REST_MS
+          intent = { ...request, reviewWakeAt: new Date(reviewAt).toISOString(), createdAt: new Date(now).toISOString(),
+            sourceEventSeq: agent.session.snapshotEvents().at(-1)?.seq ?? -1,
             tasks: workspace.tasks.map(task => ({ id: task.id, revision: task.revision, status: task.status, owner: task.owner,
               artifactIds: [...task.artifactIds], ...(task.reviewStatus ? { reviewStatus: task.reviewStatus } : {}) })) }
           agent.session.append('hivemind/hq-rest-intent', intent)
@@ -382,6 +397,11 @@ export function installRest(ctx: Context): void {
         const binding = await ensureWake(ctx, agent, intent, execution.signal)
         const ownWake = (await ctx.schedule.catalog()).find(item => item.id === binding.scheduleId && item.sessionId === agent.id)
         if (!ownWake) throw new Error('hq_rest_committed_wake_missing')
+        if (ownWake.status === 'active' && Date.parse(binding.effectiveWakeAt) > Date.now() + MAX_REST_MS)
+          return { status: 'earlier_review_required', requestedWakeAt: intent.requestedWakeAt, ...binding,
+            exactReviewRequest: exactReviewRequest(agent, intent),
+            wakeDisplay: restWakeDisplay(agent.session.snapshotEvents(), binding.effectiveWakeAt),
+            instructions: 'The existing confirmed handoff and native wake are unchanged. Submit exactReviewRequest verbatim once to commit an earlier review under its new identity, then finish at that receipt. Do not retry or rewrite this later handoff; task and calendar deadlines remain unchanged.' }
         agent.session.append('hivemind/hq-rest-confirmed', binding)
         await checkpoint(ctx, agent)
         // Voluntary rest waits for Schedule, not an immediate native goal round.
@@ -394,7 +414,7 @@ export function installRest(ctx: Context): void {
         return { status: ownWake.status === 'active' ? 'rest_ready' : 'wake_committed_inactive', superseded: restIntents(agent.session.snapshotEvents()).at(-1)?.id !== intent.id, requestedWakeAt: intent.requestedWakeAt,
           ...binding, wakeDisplay: restWakeDisplay(agent.session.snapshotEvents(), binding.effectiveWakeAt),
           autonomyPaused: !ctx.hivemindHq.mode(agent).enabled, wakeStatus: ownWake.status,
-          instructions: 'Handoff and native wake are checkpointed. Finish this turn; ordinary idle is rest. Paused mode does not automatically wake. A delivered or inactive wake is not a promise of a future wake.' }
+          instructions: 'Handoff and native wake are checkpointed. effectiveWakeAt is the actual review time; requestedWakeAt is the immutable request, not a changed task deadline. Finish this turn; ordinary idle is rest. Do not retry to repair the time bound. Paused mode does not automatically wake. A delivered or inactive wake is not a promise of a future wake.' }
       })
     },
   })))

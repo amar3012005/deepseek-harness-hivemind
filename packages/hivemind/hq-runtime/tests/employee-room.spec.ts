@@ -74,7 +74,28 @@ describe('HQ persistent employee delivery', () => {
     expect(prompt).toContain('retrieve the relevant authorized source or ask Runtime')
     expect(prompt).toContain('deadline does not make a reported blocker inactionable')
     expect(prompt).toContain('do not mark the task complete or grant new permissions')
+    expect(prompt).toContain('Default a substantial written deliverable to a saved HTML artifact')
+    expect(prompt).toContain('recorded explicit human request for PDF or another document format')
+    expect(prompt).toContain('this native Team task ID alone does not establish a workstream')
+    expect(prompt).toContain('Runtime owns administrator completion notifications')
   })
+  it.each(['a saved HTML brief', 'the PDF explicitly requested in owner message 42', 'the editable PPTX explicitly requested in owner call 7'])(
+    'preserves recorded format requirements on immediate and scheduled delegation: %s', (format) => {
+      const acceptanceCriteria = [`Deliver ${format}`, 'Keep unsupported causes explicit']
+      const root = { id: 'chief', session: { snapshotEvents: () => [{ type: 'hivemind/hq-task-contract',
+        data: { taskId: 'task-1', dueAt: '2026-10-03T20:00:00Z', acceptanceCriteria } }] } } as unknown as Agent
+      const description = `Review the customer evidence and deliver ${format}.`
+      const ctx = { agentTeams: { getTask: () => ({ description, subject: 'Customer brief', writeScopes: [] }) } } as unknown as Context
+      for (const planning of [undefined, { id: 'calendar-1', revision: 3 }]) {
+        const prompt = employeeWorkPrompt(ctx, root, 'task-1', planning)
+        const saved = JSON.parse(prompt.split('\n')[1]!) as { objective: string; acceptanceCriteria: string[] }
+        expect(saved).toMatchObject({ objective: description, acceptanceCriteria })
+        expect(prompt).toContain('preserving the saved task description and acceptance criteria')
+        expect(prompt).toContain('complete self-contained HTML')
+        if (planning) expect(workReference(prompt)).toMatchObject({ itemId: 'calendar-1', revision: 3 })
+      }
+    },
+  )
   it('resolves the exact directory from the root preset isolate realm', async () => {
     const profiles = vi.fn(async () => ({ profiles: [] }))
     const serviceFor = vi.fn(() => ({ profiles }))

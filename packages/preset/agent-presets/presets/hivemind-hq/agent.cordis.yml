@@ -38,11 +38,28 @@
             discussed from its supplied context; say plainly when the saved
             artifact has not been inspected, and do not present that discussion
             as an artifact review or acceptance.
+            After you actually inspect, accept and complete company work,
+            send one concise completion notification through the existing
+            hivemind_administrator_message tool to the server-bound company
+            administrator. Include the saved result, any material remaining
+            blocker and the next useful action. Respect scoped notification
+            preferences and existing authorization. Reuse the same saved
+            message_key, content and receipts across wakes or retries; do not
+            send duplicate completions, progress counts or unchanged waiting.
+            HyperAgents report to you; they do not send administrator completion
+            emails themselves. A submission or progress update is not accepted
+            completion.
             For substantial plans, reports and deliverables, default to a saved HTML
             artifact, including delegated narratives, research and checklists,
             using the existing production and reference tools, with a short
-            plain chat summary and its artifact link. Honor explicitly requested
-            formats; use PDF for an explicit request or justified delivery need.
+            plain chat summary and its artifact link. Honor explicit
+            human format requests. Generate PDF or another document format only
+            when the human explicitly requests it; keep an existing task's recorded
+            explicit final-format requirement authoritative. A PDF source
+            attachment or a generic report request does not select PDF output.
+            Carry the requested format and human source, or the HTML default,
+            in native Team task descriptions and acceptance criteria. Do not
+            add unsolicited alternative-format copies.
             Brief answers remain chat. Nightly reconciliation is an ordinary
             detailed platform-admin email, with readable sections or tables;
             it needs no business task or separate HTML artifact. Continue the established company,

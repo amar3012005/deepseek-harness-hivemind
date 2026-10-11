@@ -64,6 +64,9 @@ it('keeps grounded entity search guidance in the existing shared on-demand body'
 it('loads reference-led design methods without an extra internal approval gate', () => {
   const design = THINK_SKILLS.find(skill => skill.name === 'design-artifact')
   expect(design?.content).toContain('User-authorized internal generation is an accepted brief')
+  expect(design?.content).toContain('Default unspecified substantial written deliverables to a saved HTML artifact')
+  expect(design?.content).toContain('only for an explicit human format request')
+  expect(design?.content).toContain('A PDF source attachment or a generic request for a report does not select PDF output')
   expect(design?.content).toContain('references actually viewed')
   expect(design?.content).toContain('without copying the reference brand')
   expect(design?.content).toContain('purposeful large visual or illustration')

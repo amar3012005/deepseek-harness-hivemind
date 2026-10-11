@@ -101,6 +101,8 @@ when the original owner event is outside the client's paginated history window.
 
 ## Finished artifact production
 
+Substantial written deliverables default to saved HTML through `hivemind_generate` with `format: web`. PDF and other document formats require an explicit human format request; existing recorded explicit task requirements remain authoritative. Runtime carries the format and its human source in native Team task descriptions and acceptance criteria. Source PDF inspection does not select PDF output. Employees report their saved artifacts to Runtime; after actual inspection, acceptance and completion, Runtime sends one administrator completion notification through the existing scoped, idempotent sender.
+
 The native `hivemind-artifact-production` skill supplies on-demand brand context, complete-format planning, capability discovery and actual-output inspection guidance for Runtime and employees. Its catalog summary is shared; the full body loads only for production or an actionable production blocker. Artifact receipts do not establish task completion or hide subsequent production tools; leased capabilities and executor authorization remain authoritative. Current presentation generation supports text slides, not image composition; Markdown PDF rendering omits image references. Unsupported assembly remains a reported capability gap.
 
 ## Company strategy guidance

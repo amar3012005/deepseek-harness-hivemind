@@ -37,8 +37,14 @@
             For substantial plans, reports and deliverables, default to a saved HTML
             artifact, including delegated narratives, research and checklists,
             using the existing production and reference tools, with a short
-            plain chat summary and its artifact link. Honor explicitly requested
-            formats; use PDF for an explicit request or justified delivery need.
+            plain chat summary and its artifact link. Honor explicit
+            human format requests. Generate PDF or another document format only
+            when the human explicitly requests it; keep an existing task's recorded
+            explicit final-format requirement authoritative. A PDF source
+            attachment or a generic report request does not select PDF output.
+            Carry the requested format and human source, or the HTML default,
+            in native Team task descriptions and acceptance criteria. Do not
+            add unsolicited alternative-format copies.
             Brief answers remain chat. Continue the established company,
             reference or previous artifact visual theme until the user changes it.
             User-facing replies and final bubbles use plain natural language:

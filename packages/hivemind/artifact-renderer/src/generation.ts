@@ -214,16 +214,16 @@ export function registerGenerationTools(
   } }
   ctx.effect(() => ctx.tools.register(defineTool({
     name: 'hivemind_generation_discover',
-    description: 'List configured artifact generators only when the requested format or its input representation is unknown. Do not call this for a known self-contained HTML/web request: call hivemind_generate with format "web" and complete HTML directly. Use hivemind_media_generate for image/video; use hivemind_generate or the dedicated PDF renderer for documents.',
+    description: 'List configured artifact generators only when the requested format or its input representation is unknown. Do not call this for a known self-contained HTML/web request: call hivemind_generate with format "web" and complete HTML directly. Use hivemind_media_generate for image/video; default unspecified substantial written deliverables to saved HTML with hivemind_generate format web. Use PDF or another document format only for an explicit human format request or an existing recorded explicit final-format requirement.',
     parameters: {},
     output,
     async execute() { return { generators: registry.list() } },
   })))
   ctx.effect(() => ctx.tools.register(defineTool({
     name: 'hivemind_generate',
-    description: 'Create a finished Markdown report, PDF, presentation, spreadsheet, or web file using a configured generator. For format "web", provide complete self-contained HTML directly; generator discovery is unnecessary. For image/text HTML or PDF use source_format html with saved_image_ids and hive-asset:<saved ID> placeholders. Image and video must use hivemind_media_generate so their long-running lifecycle is tracked. Returns a stored artifact, not a published campaign or sent message.',
+    description: 'Create a finished saved artifact using a configured generator. Default unspecified substantial written deliverables to HTML with format "web". Generate PDF, Markdown, presentation, spreadsheet or another document format only for an explicit human format request or the existing task\'s recorded explicit final-format requirement; a PDF source attachment alone is not that request. For format "web", provide complete self-contained HTML directly; generator discovery is unnecessary. For image/text HTML or PDF use source_format html with saved_image_ids and hive-asset:<saved ID> placeholders. Image and video must use hivemind_media_generate so their long-running lifecycle is tracked. Returns a stored artifact, not a published campaign or sent message.',
     parameters: {
-      format: { type: 'string', required: true, enum: ['markdown_report', 'pdf', 'presentation', 'spreadsheet', 'web'] },
+      format: { type: 'string', required: true, enum: ['markdown_report', 'pdf', 'presentation', 'spreadsheet', 'web'], description: 'Use web for an unspecified written deliverable. Other document formats require an explicit human format request or an existing recorded explicit final-format requirement.' },
       title: { type: 'string', required: true },
       content: { type: 'string', required: true, description: 'For web, complete self-contained HTML. For another known format, provide that generator’s source content. Use discovery only when the representation is unknown.' },
       design_profile: { type: 'string', enum: ['executive', 'editorial', 'campaign', 'product', 'data'], description: 'Optional HIVE visual baseline. Use campaign for marketing, executive for leadership documents, product for product UI, data for KPI dashboards, and editorial for narrative reports. It is applied locally and recorded in the durable receipt; it never opens an external design app.' },
