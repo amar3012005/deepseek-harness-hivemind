@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-10-11-native-idle-timeout-recovery.md
+2026-10-11-native-idle-timeout-recovery.md: 0f9c81bd500205f7a47011b62b4b64cb7592b790
+2026-10-11-native-idle-timeout-recovery.zh.md: d74f28bd720263b6510fc5c561f46f3e6e2b0251

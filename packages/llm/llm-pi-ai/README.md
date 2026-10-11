@@ -241,3 +241,5 @@ This Dev Note is non-authoritative working context: undecided directions and not
 </details>
 
 **Runtime invariant:** No companion is published. This package exposes no independent event sequence or mutable data relation beyond contracts enforced at its owning seam.
+
+The idle watchdog settles a pending read at its own deadline even when the SDK ignores cancellation. Generator teardown is initiated without awaiting an abandoned read. Native timeout and caller cancellation remain distinct; existing provider retry policy owns subsequent attempts.

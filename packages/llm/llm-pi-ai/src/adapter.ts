@@ -440,15 +440,18 @@ export class PiAiAdapter extends LlmAdapter {
       } finally {
         if (!exhausted) {
           consumer.abort('pi-ai stream consumer stopped')
-          try {
-            await iterator.return(undefined)
-          } catch (_abortedSdkTeardown) {
-            // The stable signal already owns SDK termination; return-time abort cannot add an outcome.
-          }
+          // A pending SDK read may ignore abort; generator return queues behind
+          // that read. Teardown must not prevent the native timeout from settling.
+          // The upstream signal already owns termination (official dsh-v0.2.1-alpha.2).
+          void iterator.return(undefined).catch(() => {})
         }
       }
     } catch (error: unknown) {
-      if (timeoutOf(watchdog.signal, 'LLM_STREAM_IDLE_TIMEOUT') !== undefined) {
+      // Teardown can abort the consumer before a fused signal publishes the
+      // watchdog reason. Its own rejected demand retains that exact reason.
+      const expired = timeoutOf(watchdog.signal, 'LLM_STREAM_IDLE_TIMEOUT')
+        ?? (!options.signal?.aborted ? timeoutOf({ reason: error }, 'LLM_STREAM_IDLE_TIMEOUT') : undefined)
+      if (expired !== undefined) {
         throw new LlmError(`pi-ai stream idle timeout after ${streamIdleTimeoutMs}ms`, 'TIMEOUT', { cause: error })
       }
       if (options.signal?.aborted) {
