@@ -390,4 +390,18 @@ export class UserQuestionService extends TypertRemoteService {
   }
 }
 
+declare module '@deepseek-ai/dsh-llm' {
+  interface MessageSourceMap {
+    /**
+     * Late reply to a continued `ask_user_question` call, steered into the
+     * agent by `dsh-user-questions` as an answer batch. Closing a question
+     * panel persists no reply. Readers preserve this message without the
+     * producer; only the `userQuestions` projection reads the kind to close
+     * the question and record its answers.
+     * @persistenceAttribution
+     */
+    'user-question-reply': { kind: 'user-question-reply'; callId: ToolCallId; outcome: 'answered'; questionCallId?: string; questionAnswerSubmission?: boolean; questionAnswer?: boolean; questionEventId?: string; authenticatedActor?: Record<string, unknown> }
+  }
+}
+
 export default UserQuestionService

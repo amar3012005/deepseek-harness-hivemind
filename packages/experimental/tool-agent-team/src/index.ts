@@ -170,8 +170,8 @@ function install(agent: Agent, ctx: Context, config: Required<Config>): () => vo
   const disposers: Array<() => unknown> = []
   const register = (disposer: () => unknown): void => { disposers.push(disposer) }
   try {
-    register(scoped.on('agent/pre-step', ({ agent }, next) => {
-      if (config.parkWait) fulfillTeamWait(agent)
+    if (config.parkWait) register(scoped.on('agent/pre-step', ({ agent }, next) => {
+      fulfillTeamWait(agent)
       return next()
     }))
     register(scoped.systemPrompt.section({
