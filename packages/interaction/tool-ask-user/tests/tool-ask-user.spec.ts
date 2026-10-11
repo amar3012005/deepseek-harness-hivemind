@@ -55,6 +55,25 @@ function stubAgent(id: string, delegationDepth = 0): Agent {
 }
 
 describe('ask_user_question tool', () => {
+  it('parks the native call immediately with a turn-ending pending result, never waiting on the UI answerer', async () => {
+    const ctx = new Context()
+    await ctx.plugin(AgentRegistry)
+    await ctx.plugin(SystemPrompt)
+    await ctx.plugin(ToolRuntime)
+    await ctx.plugin(UserQuestionService)
+    await ctx.plugin(toolAskUser, { mode: 'park' })
+    const agent = stubAgent('parked-root')
+    ctx.agents.enter(agent, undefined)
+    let asked = false
+    registerQuestionAnswerer(ctx, { ask: () => { asked = true; return new Promise(() => {}) } })
+    const result = await ctx.tools.execute({ signal: testToolSignal, agent, callId: ToolCallId('park-one'),
+      name: 'ask_user_question', arguments: { questions: [{ id: 'decision', question: 'Which option?' }] } })
+    expect(result).toMatchObject({ isError: false, concludesTurn: true })
+    expect(result.content[0]?.type === 'text' && JSON.parse(result.content[0].text)).toMatchObject({ pending: true, callId: 'park-one' })
+    expect(asked).toBe(false)
+    await ctx.fiber.dispose()
+  })
+
   it('registers a model-facing tool schema', async () => {
     const ctx = await setup()
     const schema = ctx.tools.schemas().find(tool => tool.name === 'ask_user_question')

@@ -16,7 +16,7 @@ import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type {} from '@deepseek-ai/dsh-session-projection'
 import z from '@deepseek-ai/schemastery'
-import { userQuestionProjectionDefinition } from './projection.ts'
+import { userQuestionProjectionDefinition, questionsOf } from './projection.ts'
 import { TimedQuestionWait } from './timed-wait.ts'
 
 declare module '@deepseek-ai/cordis' {
@@ -226,6 +226,40 @@ export class UserQuestionService extends TypertRemoteService {
     this.assertLiveRoot(agent)
     const wait = this.waits.get(agent)?.get(callId)
     if (wait !== undefined) yield* wait.attach(signal)
+  }
+
+  /** Restore an unresolved legacy pure question after its old driver is idle; never creates an answer or tool result. */
+  @Remote
+  async parkLegacy(agent: Agent, callId: ToolCallId): Promise<boolean> {
+    this.assertLiveRoot(agent)
+    if (agent.status !== 'idle') throw new UserQuestionError('legacy question migration requires an idle driver', 'CALLER_BUSY')
+    return agent.runMaintenance(async (signal) => {
+      signal.throwIfAborted()
+      const events = agent.session.snapshotEvents()
+      const call = events.findLast(event => event.type === 'tool/call' && event.data.callId === callId)
+      if (call?.type !== 'tool/call' || call.data.name !== 'ask_user_question') {
+        throw new UserQuestionError('migration requires an exact saved ask_user_question call', 'BAD_CALL')
+      }
+      const questions = questionsOf(call.data.arguments)
+      if (questions === null) throw new UserQuestionError('saved questions are unreadable', 'BAD_CALL')
+      const result = events.findLast(event => event.type === 'tool/result' && event.data.message.content[0].toolCallId === callId)
+      // A successful answered result, or admitted/queued human reply, wins every migration race.
+      if (result?.type === 'tool/result' && result.data.error === undefined && result.data.message.content[0].isError !== true) return false
+      if (events.some((event) => {
+        if (event.type !== 'user/message') return false
+        const source: unknown = event.data.source
+        return isRecord(source) && ((source.kind === 'user-question-reply' && source.callId === callId)
+          || (source.kind === 'user' && source.questionCallId === callId && source.questionAnswer === true))
+      })) return false
+      if ([...agent.inbox.nextTurn, ...agent.inbox.nextStep].some(message => message.source.kind === 'user-question-reply' && message.source.callId === callId)) return false
+      await this.ctx.parallel('user-questions/park-admission', agent, callId, questions)
+      signal.throwIfAborted()
+      if (events.some(event => event.type === 'user-question/parked' && event.data.callId === callId)) return true
+      agent.session.append('user-question/parked', { callId, questions })
+      const sessions = this.ctx.get('sessions')
+      if (sessions !== undefined && !await sessions.flush(agent.session)) throw new UserQuestionError('migration checkpoint was not persisted', 'PARK_NOT_PERSISTED')
+      return true
+    })
   }
 
   /** Park a human question at the native tool boundary; the recorded pending result is its durable checkpoint. */

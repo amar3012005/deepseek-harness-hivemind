@@ -646,6 +646,24 @@ describe('late replies', () => {
     }, { surfaceOp: 'append' })
   }
 
+  it('migrates only an idle unanswered pure question and remains idempotent', async () => {
+    const ctx = await timedContext()
+    const agent = liveAgent('legacy-migration')
+    Object.assign(agent, { status: 'idle', runMaintenance: async (task: (signal: AbortSignal) => Promise<unknown>) => task(new AbortController().signal) })
+    ctx.agents.enter(agent, undefined)
+    askInLog(agent, timedCallId, [{ name: 'ask_user_question', description: 'Ask', parameters: { type: 'object', properties: { questions: { type: 'array' } } } }])
+    const admission = vi.fn(async () => {})
+    ctx.on('user-questions/park-admission', admission)
+    expect(await ctx.userQuestions.parkLegacy(agent, timedCallId)).toBe(true)
+    expect(await ctx.userQuestions.parkLegacy(agent, timedCallId)).toBe(true)
+    expect(agent.session.snapshotEvents().filter(event => event.type === 'user-question/parked')).toHaveLength(1)
+    expect(agent.session.snapshotEvents().filter(event => event.type === 'tool/result')).toHaveLength(0)
+    expect(ctx.sessionProjections.stateOf(agent.session, 'userQuestions')?.questions.active).toMatchObject([{ callId: timedCallId, state: 'continued' }])
+    Object.assign(agent, { status: 'running' })
+    await expect(ctx.userQuestions.parkLegacy(agent, timedCallId)).rejects.toMatchObject({ code: 'CALLER_BUSY' })
+    await ctx.fiber.dispose()
+  })
+
   it('requires authoritative admission before steering and retains server attribution', async () => {
     const ctx = await timedContext()
     const agent = liveAgent('late-authorized')

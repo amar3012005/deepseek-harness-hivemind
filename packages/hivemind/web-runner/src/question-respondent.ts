@@ -76,6 +76,10 @@ export async function registerQuestionRespondents(ctx:Context,options:{
   authorize:(input:QuestionSubmission)=>Promise<{ agent:Agent;actor:AuthenticatedActor }|undefined>
   admitted:(agent:Agent,actor:AuthenticatedActor,messageId:string)=>void
 }):Promise<void> {
+  ctx.on('user-questions/park-admission',async (agent,callId,questions)=>{
+    await options.authorize({ agentId:agent.id,eventId:`park-${callId}`,request:{ agent,callId,questions },
+      value:undefined,signal:new AbortController().signal })
+  })
   ctx.on('user-questions/late-answer-admission',async (agent,callId,questions,answer)=>{
     const input:QuestionSubmission={ agentId:agent.id,eventId:`late-${callId}`,request:{ agent,callId,questions },value:answer,signal:new AbortController().signal }
     const authority=await options.authorize(input)

@@ -81,6 +81,23 @@ const answeredText = JSON.stringify({
 const empty = { active: [], settled: [] }
 
 describe('userQuestions projection fold', () => {
+  it('retains approval pending after the gated tool denial and settles only the matching human answer', () => {
+    const approvalQuestions = [{ id: 'approval', question: 'Allow this operation?', options: [{ label: 'Allow once' }, { label: 'Reject' }] }]
+    const askedApproval = event(1, 'approval/asked', { id: 'approval-1', callId, questions: approvalQuestions } as never)
+    const pendingApproval = event(2, 'approval/decided', { id: 'approval-1', outcome: 'pending' } as never)
+    const deniedTool = resulted('Waiting for approval.', { name: 'ToolError', code: 'PERMISSION_DENIED' })
+    const log = [legacyHeader, askedApproval, pendingApproval, deniedTool]
+    expect(foldUserQuestions(JSON.parse(JSON.stringify(log)))).toEqual({ active: [{ callId, questions: approvalQuestions, state: 'continued' }], settled: [] })
+    const answered = event(4, 'user/message', reply(JSON.stringify({ answers: [{ id: 'approval', selected: ['Allow once'] }] })))
+    expect(foldUserQuestions([...log, answered])).toEqual({ active: [], settled: [{ callId, answers: [{ id: 'approval', selected: ['Allow once'] }] }] })
+  })
+
+  it('preserves an idle-migrated legacy call without a fabricated tool result', () => {
+    const log = [legacyHeader, asked, event(3, 'user-question/parked', { callId, questions })]
+    expect(foldUserQuestions(JSON.parse(JSON.stringify(log)))).toEqual({ active: [{ callId, questions, state: 'continued' }], settled: [] })
+    expect(log.filter(item => item.type === 'tool/result')).toHaveLength(0)
+  })
+
   it('recognises the timed tool schema by its wait parameter alone', () => {
     expect(isTimedAskUserQuestionSchema(timedSchema)).toBe(true)
     expect(isTimedAskUserQuestionSchema(legacySchema)).toBe(false)
@@ -295,6 +312,6 @@ describe('userQuestions projection fold', () => {
     expect(userQuestionProjectionDefinition.wire.view(opened))
       .toEqual({ active: [{ callId, questions, state: 'open' }], settled: [] })
     expect(userQuestionProjectionDefinition.apply(opened, event(5, 'turn/start', { turn: 2 }))).toBe(opened)
-    expect(userQuestionProjectionDefinition.stateVersion).toBe(2)
+    expect(userQuestionProjectionDefinition.stateVersion).toBe(3)
   })
 })

@@ -17,6 +17,7 @@ import type { AskUserQuestionAnswerItem, AskUserQuestionItem, AskUserQuestionOpt
 export interface UserQuestionFold {
   readonly timed: boolean
   readonly questions: UserQuestionProjectionView
+  readonly approvalCalls?: Readonly<Record<string, string>> | undefined
 }
 
 /** Host projection state; `questions` is the wire value, reused whenever an event changes nothing. */
@@ -242,7 +243,31 @@ function settleQuestion(
  */
 export function applyUserQuestionEvent(fold: UserQuestionFold, event: SessionEvent): UserQuestionFold {
   const view = fold.questions
+  // Compatible approval checkpoint extension: the approval owner records the
+  // original question and closes its audit pair with pending, never a grant.
+  const raw: unknown = event.data
+  if (String(event.type) === 'approval/asked' && isRecord(raw) && typeof raw.id === 'string'
+    && typeof raw.callId === 'string' && Array.isArray(raw.questions)) {
+    const parsed = z.array(questionSchema).min(1).safeParse(raw.questions)
+    if (!parsed.success) return fold
+    const callId = ToolCallId(raw.callId)
+    return { ...fold, approvalCalls: { ...fold.approvalCalls, [raw.id]: callId }, questions: {
+      ...view, active: [...view.active.filter(item => item.callId !== callId), { callId, questions: parsed.data, state: 'open' }],
+    } }
+  }
+  if (String(event.type) === 'approval/decided' && isRecord(raw) && typeof raw.id === 'string') {
+    const callId = fold.approvalCalls?.[raw.id]
+    if (callId === undefined) return fold
+    return { ...fold, questions: { ...view, active: raw.outcome === 'pending'
+      ? view.active.map(item => item.callId === callId ? { ...item, state: 'continued' } : item)
+      : view.active.filter(item => item.callId !== callId) } }
+  }
   switch (event.type) {
+    case 'user-question/parked': {
+      const parsed = z.array(questionSchema).min(1).safeParse(event.data.questions)
+      if (!parsed.success) return fold
+      return { ...fold, questions: { ...view, active: [...view.active.filter(item => item.callId !== event.data.callId), { callId: event.data.callId, questions: parsed.data, state: 'continued' }] } }
+    }
     case 'request/header': {
       // The log records the exact schema list the model saw; a seeded or
       // tool-less header carries none, which reads as the legacy tool.
@@ -268,6 +293,8 @@ export function applyUserQuestionEvent(fold: UserQuestionFold, event: SessionEve
     case 'tool/result': {
       const callId = event.data.message.content[0].toolCallId
       if (!view.active.some(question => question.callId === callId)) return fold
+      // A denied gated tool result does not withdraw its separately parked approval.
+      if (Object.values(fold.approvalCalls ?? {}).includes(callId)) return fold
       if (isPendingResult(event.data.message.content[0].content) || event.data.error?.code === TOOL_OUTCOME_UNKNOWN) {
         return {
           ...fold,
@@ -327,6 +354,7 @@ export const userQuestionProjectionDefinition = {
     inheritedEventCount: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).transform(SessionLogOffset),
     timed: z.boolean(),
     questions: projectionViewSchema,
+    approvalCalls: z.record(z.string(), z.string()).optional(),
   }).strict(),
   init: (_header, inheritedEventCount) => ({ inheritedEventCount, ...initialFold }),
   apply: (state, event) => {
@@ -335,7 +363,7 @@ export const userQuestionProjectionDefinition = {
     return fold === state ? state : { ...state, ...fold }
   },
   wire: { viewSchema: projectionViewSchema, view: state => state.questions },
-  stateVersion: 2,
+  stateVersion: 3,
 } satisfies ProjectionDefinition<'userQuestions', UserQuestionProjectionState>
 
 declare module '@deepseek-ai/dsh-session-projection/types' {
