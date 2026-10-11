@@ -602,7 +602,10 @@ function identityFromProfile(value: unknown): TenantIdentity {
 
 function contextFromResponse(value: unknown, maxChars: number): string {
   const response = apiRecord(value, 'profile context response')
-  const context = nonEmptyString(response['context'], 'profile context')
+  // Core returns an empty string for an authenticated organization with no
+  // saved profile facts. Absence of facts is valid; a malformed response is not.
+  const context = response['context']
+  if (typeof context !== 'string') throw new HiveMindRuntimeError('profile context must be a string')
   if (context.length > maxChars) throw new HiveMindRuntimeError('profile context exceeds its character limit')
   return context
 }
