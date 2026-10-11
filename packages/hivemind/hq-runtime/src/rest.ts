@@ -90,6 +90,13 @@ export function isHqLead(ctx: Context, agent: Agent): boolean {
   try { const member = ctx.agentTeams.membership(agent); return member.role === 'lead' && member.root === agent } catch { return false }
 }
 const MAX_REST_MS = 4 * 60 * 60 * 1000
+/** Only native scheduled recovery may end at a committed rest receipt without a wrap-up. */
+export function automaticRecoveryTurn(events: readonly SessionEvent[]): boolean {
+  const start = events.findLast(event => event.type === 'turn/start')?.seq ?? -1
+  const inputs = events.flatMap(event => event.seq > start && event.type === 'user/message'
+    && event.data.source.kind !== 'plugin' ? [event.data] : [])
+  return inputs.length > 0 && inputs.every(message => message.source.kind === 'schedule')
+}
 export { greetingOnly, socialTurnOnly } from '@deepseek-ai/dsh-hivemind-context'
 import { socialTurnOnly } from '@deepseek-ai/dsh-hivemind-context'
 const NOTE_SECTION = 'hq-rest-pending-note-ids'
@@ -322,13 +329,13 @@ export function installRest(ctx: Context): void {
     sleepChecks.set(agent, { turn, repairs: repairs + 1 })
     agent.steer(createUserMessage({
       source: { kind: 'plugin', plugin: 'hivemind-hq/sleep-check' },
-      content: [{ type: 'text', text: 'Before this active Runtime turn finishes, commit a handoff and a justified future wake no later than four hours from now with hivemind_hq_rest. If a saved wake is later, preserve its context but create a new handoff_id with an earlier bounded review wake; do not retry the old multi-day sleep. Include completed findings, current task/calendar references, next steps and blockers. For unchanged state, read hivemind_hq_rest_state and copy its exactRetry arguments verbatim; preserve every summary and array string, not just the identifier and timestamp. If content changes, use a new handoff_id. Confirm its persisted future wake before saying sleeping. Do not repeat investigation, create a Goal, redo employee work or invent completed results. Pause or cancellation overrides this check.' }],
+      content: [{ type: 'text', text: 'Before this active Runtime turn finishes, commit a handoff and a justified future wake no later than four hours from now with hivemind_hq_rest. If a saved wake is later, preserve its context but create a new handoff_id with an earlier bounded review wake; do not retry the old multi-day sleep. Include completed findings, current task/calendar references, next steps and blockers. For unchanged state, read hivemind_hq_rest_state and copy its exactRetry arguments verbatim; preserve every summary and array string, not just the identifier and timestamp. If content changes, use a new handoff_id. Confirm its persisted future wake in the tool receipt. On automatic recovery, finish quietly at that receipt; do not announce unchanged findings, waiting, handoff saving or the next wake. If there is no concrete time-sensitive work, choose the four-hour review rather than a short polling timer. Do not repeat investigation, create a Goal, redo employee work or invent completed results. Pause or cancellation overrides this check.' }],
     }))
   }))
   ctx.effect(() => ctx.on('agent/turn-ended', async ({ agent }) => { await acknowledgeRestNotes(ctx, agent) }))
   ctx.effect(() => ctx.tools.register(defineTool({
     name: 'hivemind_hq_rest',
-    description: 'Commit an exact voluntary Runtime rest handoff and idempotent native scheduled wake before waiting until a future time. Use only as HQ lead when no current work remains eligible. Never sleep for more than four hours: choose an earlier review wake even when the task deadline is days away. A legacy later wake needs a new handoff_id and bounded review time. For unchanged rest, read hivemind_hq_rest_state and copy its exactRetry object verbatim, including summary and arrays; do not summarize or improve an existing request. Changed content needs a new handoff_id. Success checkpoints the handoff and wake; actual rest is ordinary idle after the turn ends, not cancellation. Paused autonomy remains paused. This does not grant authority.',
+    description: 'Commit an exact voluntary Runtime rest handoff and idempotent native scheduled wake before waiting until a future time. Use only as HQ lead when no current work remains eligible. Never sleep for more than four hours: choose an earlier review wake even when the task deadline is days away. A legacy later wake needs a new handoff_id and bounded review time. For unchanged rest, read hivemind_hq_rest_state and copy its exactRetry object verbatim, including summary and arrays; do not summarize or improve an existing request. Changed content needs a new handoff_id. Success checkpoints the handoff and wake; actual rest is ordinary idle after the turn ends, not cancellation. Paused autonomy remains paused. On automatic scheduled recovery, success ends the turn at the saved receipt without another visible wrap-up. Emit text only for a material new finding, failure or required decision, never to announce unchanged rest. This does not grant authority.',
     parameters: {
       handoff_id: { type: 'string', required: true, description: 'Unique identity for this exact handoff. Retry with the same ID only when wake_at, summary, next_steps and blockers are identical. A new or changed handoff needs a new ID.' }, wake_at: { type: 'string', required: true, description: 'Future RFC3339 timestamp with explicit timezone, at most four hours from now; original timestamp on identical retry only if still within that limit.' },
       summary: { type: 'string', required: true }, next_steps: { type: 'array', required: true, items: { type: 'string' }, description: 'Preserve meaningful next work and unresolved human information, decision or discussion requests until actual evidence resolves them. Retain the existing saved request and its notification receipt. Notify once when first needed or materially changed; returning to sleep does not require another invitation, reminder or approval question. Clear a blocker only after actual authenticated input or verified access.' }, blockers: { type: 'array', required: true, items: { type: 'string' }, description: 'Concrete unresolved blockers, including required human approval or access. An invitation, schedule or silence does not resolve a request or grant authority.' },
@@ -354,6 +361,12 @@ export function installRest(ctx: Context): void {
         } else {
           if (Date.parse(request.requestedWakeAt) <= Date.now()) throw new Error('hq_rest_new_wake_must_be_future')
           const workspace = await ctx.hivemindHq.workspace(agent)
+          // Empty automatic reviews have no time-sensitive work to poll. Keep the
+          // native bounded review, while independent task/calendar timers retain
+          // their exact dates and employee/input deliveries can wake the room.
+          if (automaticRecoveryTurn(agent.session.snapshotEvents()) && workspace.tasks.length === 0
+            && !workspace.calendar.some(item => !item.resolved))
+            request.requestedWakeAt = new Date(Date.now() + MAX_REST_MS).toISOString()
           intent = { ...request, createdAt: new Date().toISOString(), sourceEventSeq: agent.session.snapshotEvents().at(-1)?.seq ?? -1,
             tasks: workspace.tasks.map(task => ({ id: task.id, revision: task.revision, status: task.status, owner: task.owner,
               artifactIds: [...task.artifactIds], ...(task.reviewStatus ? { reviewStatus: task.reviewStatus } : {}) })) }
@@ -370,6 +383,7 @@ export function installRest(ctx: Context): void {
         if (ownWake.status === 'active') {
           const goals = ctx.get?.('goals') as { disarm(agent: Agent): unknown } | undefined
           goals?.disarm(agent)
+          if (automaticRecoveryTurn(agent.session.snapshotEvents())) execution.concludeTurn()
         }
         return { status: ownWake.status === 'active' ? 'rest_ready' : 'wake_committed_inactive', superseded: restIntents(agent.session.snapshotEvents()).at(-1)?.id !== intent.id, requestedWakeAt: intent.requestedWakeAt,
           ...binding, wakeDisplay: restWakeDisplay(agent.session.snapshotEvents(), binding.effectiveWakeAt),

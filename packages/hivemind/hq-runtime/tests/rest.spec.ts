@@ -26,6 +26,7 @@ function fixture() {
   const hooks = new Map<string, (input: unknown) => unknown>()
   let agent: Agent
   const prompt = vi.fn()
+  const concludeTurn = vi.fn()
   const makeAgent = () => ({ id: 'root', session: { header: { agentPreset: 'hivemind-hq' }, snapshotEvents: () => events,
     ownEvents: () => events, append: (type: string, data: unknown) => {
       events.push({ seq: events.length, time: Date.now(), type, data } as SessionEvent)
@@ -48,13 +49,34 @@ function fixture() {
     hivemindHq: { restState: (subject: Agent) => restState(ctx, subject), workspace: async () => ({ tasks: [{ id: 'task-3', revision: 2, status: 'in_progress', owner: 'Ravi', artifactIds: ['saved-report'], reviewStatus: 'uncertain' }] }), mode: () => ({ enabled: false }) },
   } as unknown as Context
   installRest(ctx)
-  const execute = (args = request) => tools.get('hivemind_hq_rest')!.execute(args, { agent, signal: new AbortController().signal } as never)
+  const execute = (args = request) => tools.get('hivemind_hq_rest')!.execute(args, { agent, concludeTurn, signal: new AbortController().signal } as never)
   return { ctx, tools, hooks, get agent() { return agent }, get events() { return events },
-    schedules, ensure, remove, flush, execute, prompt,
+    schedules, ensure, remove, flush, execute, prompt, concludeTurn,
     crash: () => { events = structuredClone(durable); agent = makeAgent(); return agent } }
 }
 afterEach(() => vi.useRealTimers())
 describe('native Runtime voluntary rest', () => {
+  it('ends empty automatic recovery at its receipt and backs off without changing unrelated timers', async () => {
+    const f = fixture()
+    f.ctx.hivemindHq.workspace = async () => ({ tasks: [], calendar: [], wakes: [] }) as never
+    f.agent.session.append('turn/start', { turn: 1 } as never)
+    f.agent.session.append('user/message', createUserMessage({ source: { kind: 'schedule' } as never, content: [{ type: 'text', text: 'Review current handoff' }] }), { surfaceOp: 'none' } as never)
+    f.schedules.set('work', { id: 'work', sessionId: 'root', title: 'User work', prompt: 'Actual work', kind: 'at', status: 'active', scheduledAt: '2030-01-01T00:02:00Z' })
+    await expect(f.execute({ ...request, wake_at: '2030-01-01T00:00:30Z' })).resolves.toMatchObject({ effectiveWakeAt: '2030-01-01T04:00:00.000Z' })
+    expect(f.concludeTurn).toHaveBeenCalledOnce()
+    expect(f.schedules.get('work')?.scheduledAt).toBe('2030-01-01T00:02:00Z')
+  })
+  it('preserves a concrete automatic task wake and lets mixed human input receive its outcome', async () => {
+    const f = fixture()
+    f.agent.session.append('turn/start', { turn: 1 } as never)
+    f.agent.session.append('user/message', createUserMessage({ source: { kind: 'schedule' } as never, content: [{ type: 'text', text: 'Review task' }] }), { surfaceOp: 'none' } as never)
+    await expect(f.execute()).resolves.toMatchObject({ effectiveWakeAt: '2030-01-01T01:00:00.000Z' })
+    expect(f.concludeTurn).toHaveBeenCalledOnce()
+    f.concludeTurn.mockClear()
+    f.agent.session.append('user/message', createUserMessage({ source: { kind: 'user' }, content: [{ type: 'text', text: 'Tell me the result' }] }), { surfaceOp: 'none' } as never)
+    await f.execute()
+    expect(f.concludeTurn).not.toHaveBeenCalled()
+  })
   it('ends a greeting without forcing sleep tools but retains the check for work', async () => {
     const f = fixture()
     f.ctx.hivemindHq.mode = () => ({ enabled: true }) as never

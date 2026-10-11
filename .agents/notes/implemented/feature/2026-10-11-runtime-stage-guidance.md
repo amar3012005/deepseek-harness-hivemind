@@ -30,6 +30,8 @@ The first request receives purposeful guidance without new events, routing, stor
 
 The stage fixtures preserve both legacy Team receipt provenance and direct native Inbox sender membership; the separate matched Team compatibility change remains necessary for direct delivery. Persistent employee room messaging keeps its existing receipts. Connector evidence does not become administrator authority. Production rollout and ordinary-model end-to-end proof are independent release responsibilities.
 
+Automatic scheduled recovery concludes at the successful persisted rest receipt through the native tool marker, avoiding a model step solely to repeat unchanged waiting. Human and colleague outcomes remain visible. Empty automatic reviews without task or unresolved calendar work use the four-hour review bound while independently saved timers retain their exact dates. This limits empty review polling without suppressing failures, modifying unrelated schedules or creating another scheduler.
+
 ## Testing
 
 Focused fixtures cover first-request admission through the actual Loader and native agent loop, social retrieval exclusion, independent agenda supersession, deadline failures, source provenance, historical nightly exclusion, task evidence, approval scope and preserved full history. Host compilation validates package ownership. Controlled fixtures do not establish production email delivery or business reasoning quality.

@@ -104,3 +104,5 @@ text or claim to have inspected their contents. Runtime must use available nativ
 readers and multimodal tools for actual content review. Missing readers or video
 frame/audio inspection remain explicit gaps. Jev’s text-only advisory path rejects
 binary-only inputs instead of judging unseen content.
+
+Automatic scheduled recovery ends at the successful native rest receipt through the tool execution’s `concludeTurn()` marker. Human, employee and mixed-source turns retain their normal outcome response. An empty automatic review with no unresolved calendar item saves its next review four hours ahead; independent task and calendar schedules remain unchanged. The returned handoff time is authoritative for retries.
