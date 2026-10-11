@@ -1281,16 +1281,44 @@ describe('HyperAgents durable employee ownership and completion outbox', () => {
     subject.session.append('assistant/message', { turn: 1, step: 1, stream: [], message: createAssistantMessage({ content: [{ type: 'text', text: 'Campaign blueprint delivered.' }], source: { model: 'test' } as never }) }, { surfaceOp: 'append' })
     subject.session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
     await harness.turnEnded?.({ agent: subject, turn: 1, reason: { kind: 'completed' }, signal })
+    await vi.waitFor(() => expect(packets).toHaveLength(1))
     expect(events.filter(event => event.type === 'hivemind/task-memory-pending')).toHaveLength(1)
     expect(events.some(event => event.type === 'hivemind/task-memory-recorded')).toBe(false)
     unavailable = false
     await harness.preStep?.({ agent: subject, turn: 2, signal }, enter)
+    await vi.waitFor(() => expect(events.filter(event => event.type === 'hivemind/task-memory-recorded')).toHaveLength(1))
     expect(packets).toHaveLength(2)
     expect(packets[1]).toEqual(packets[0])
     expect(events.filter(event => event.type === 'hivemind/task-memory-recorded')).toHaveLength(1)
     await harness.preStep?.({ agent: subject, turn: 2, signal }, enter)
     expect(packets).toHaveLength(2)
     expect(harness.flush).toHaveBeenCalled()
+  })
+
+  it('does not hold a model step while a durable private receipt is being saved', async () => {
+    process.env.TEST_HIVE_RUNNER_SECRET = 'runner-service-secret-that-is-at-least-32-bytes'
+    const profile = { id: 'elena', slug: 'elena', name: 'Elena', role_archetype: 'strategist' }
+    let release!: () => void
+    const saving = new Promise<void>((resolve) => { release = resolve })
+    let saves = 0
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      if (String(url).endsWith('/v1/hyperagents/profiles')) return jsonResponse({ ok: true, contract: 'hivemind.hyperagent-profiles.v1', profiles: [profile], count: 1 })
+      saves++
+      await saving
+      return jsonResponse({ ok: true, memory: { id: 'saved-memory', status: 'completed', agentSlug: 'elena' } })
+    }))
+    const harness = mount({ ...config('unused'), authorityMode: 'scoped-service', privateMemoryEnabled: true, serviceApiBase: 'http://control.test', serviceHttpOrigins: ['http://control.test'], serviceSecretEnv: 'TEST_HIVE_RUNNER_SECRET' })
+    const events = [{ seq: 0, type: 'hivemind/session-owner', data: { id: 'elena', slug: 'elena', name: 'Elena', role: 'strategist' } }, { seq: 1, type: 'hivemind/task-memory-pending', data: { agent_slug: 'elena', idempotency_key: 'stable-packet', context: { turn: 1 } } }] as unknown as SessionEvent[]
+    const subject = { id: 'session-d292efdd-4b56-4053-b61c-9cd63a7cd8ff', session: { header: { agentPreset: 'hivemind-hyperagents' }, snapshotEvents: () => events, append: (type: string, data: unknown) => { events.push({ seq: events.length, type, data } as SessionEvent) } } } as unknown as Agent
+    try {
+      const result = await harness.preStep?.({ agent: subject, turn: 2, signal }, async () => ({ kind: 'enter', messages: [] }))
+      expect(result).toMatchObject({ kind: 'enter' })
+      await vi.waitFor(() => expect(saves).toBe(1))
+      expect(events.some(event => event.type === 'hivemind/task-memory-recorded')).toBe(false)
+      await harness.preStep?.({ agent: subject, turn: 2, signal }, async () => ({ kind: 'enter', messages: [] }))
+      expect(saves).toBe(1)
+    } finally { release() }
+    await vi.waitFor(() => expect(events.some(event => event.type === 'hivemind/task-memory-recorded')).toBe(true))
   })
 })
 

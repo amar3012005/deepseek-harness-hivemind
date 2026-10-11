@@ -1970,7 +1970,10 @@ export function apply(ctx: Context, config: Config): void {
       installDecisionTools(agent)
       principals.set(agent, ctx.hivemindExecutionScope.require())
       enqueueTasks(agent, owner)
-      if (pendingTaskMemories(agent.session.snapshotEvents()).length > 0) await retryTasks(agent)
+      // Private task receipts are durable and already have one scoped retry
+      // worker. Do not make a model step wait for optional memory ingestion.
+      // flushTasks deduplicates overlapping drains and retains failed packets.
+      if (pendingTaskMemories(agent.session.snapshotEvents()).length > 0) void retryTasks(agent)
       const decision = await next()
       if (decision.kind === 'reject') return decision
       let preset = agent.session.header?.agentPreset
@@ -2022,7 +2025,9 @@ export function apply(ctx: Context, config: Config): void {
       if (reason.kind !== 'completed' || owner === undefined) return
       principals.set(agent, ctx.hivemindExecutionScope.require())
       enqueueTasks(agent, owner)
-      await retryTasks(agent)
+      // The completion packet stays in the durable outbox until acknowledged.
+      // Optional private ingestion must not delay the visible turn settling.
+      void retryTasks(agent)
     }))
     ctx.effect(() => ctx.on('agent/disposed', ({ agent }) => { principals.delete(agent) }))
     ctx.effect(() => {
