@@ -963,7 +963,7 @@ function workflowContextMessage(state: UnfinishedWorkflowProjection) {
   return createUserMessage({
     content: [{
       type: 'text',
-      text: `## Unfinished connected-app workflow\nThis state is reconstructed from durable receipts in this conversation. If the current request continues it, follow its next_action in this session. For wait_connection, pass the exact projected toolkits for one bounded access check. Do not repeat search, check status separately, or using HIVE memory for connected-app evidence. If the user merely changed tasks, leave it pending. If the user explicitly says no, leave it, or stop this request, use cancel_connection with the exact saved session_id and request_call_id; do not cancel other requests or disconnect the account.\n${JSON.stringify(projection)}`,
+      text: `## Unfinished connected-app workflow\nThis state is reconstructed from durable receipts in this conversation. If the current request continues it, follow its next_action in this session. For wait_connection, pass the exact projected toolkits for one bounded access check. Do not repeat search, check status separately, or using HIVE memory for connected-app evidence. If the user merely changed tasks, leave it pending. If the user explicitly says no, leave it, or stop this request, or evidence establishes the request is no longer necessary, use cancel_connection with the exact saved session_id and request_call_id; do not cancel other requests or disconnect the account.\n${JSON.stringify(projection)}`,
     }],
     source: { kind: 'plugin', plugin: WORKFLOW_CONTEXT_SOURCE, form: 'recall' },
   })
@@ -1823,7 +1823,8 @@ export function apply(ctx: Context, config: Config = {}): void {
     name: BRIDGE_TOOL,
     description: 'Tenant-scoped connected-app gateway. Start external-app work with atomic search queries, explicit outcomes, exact result limits, all concrete search filters in known_fields, and a top-level session: { generate_id: true }. Follow recommended_plan_steps: for an explicitly planned read tool, call schemas with its exact slug in the same session, then execute using that contract. Never execute a plan hint directly or guess tools. External writes follow native permission policy. For dependent tasks save a checkpoint with the canonical report, sources, confirmed steps and next step; read_checkpoint restores it. Reuse operation_id on write retries. outcome_unknown requires destination reconciliation, never blind resend. Each successful execution completes only that step, not the whole task. When result_fields were requested, report projection_status and every missing_result_fields entry; never claim requested evidence was returned when projection_status is incomplete. For writes, request the stable resource identifier needed for later verification or follow-up when its exact field is known from the selected contract.',
     parameters: {
-      action: { type: 'string', required: true, enum: ['connection_status', 'search', 'schemas', 'manage_connection', 'wait_connection', 'cancel_connection', 'execute', 'checkpoint', 'read_checkpoint', 'read_receipt'], description: 'Use connection_status only for a pure status check of explicitly named apps. Use search for real app work. When the user declines or abandons a saved request, use cancel_connection with its exact session_id and request_call_id; it cancels only that local request, not the connected account.' },
+      action: { type: 'string', required: true, enum: ['connection_status', 'search', 'schemas', 'manage_connection', 'wait_connection', 'cancel_connection', 'execute', 'checkpoint', 'read_checkpoint', 'read_receipt'], description: 'Use connection_status only for a pure status check of explicitly named apps. Use search for real app work. When the user declines or abandons a saved request, or you establish it is no longer necessary, use cancel_connection with its exact session_id and request_call_id; it cancels only that local request, not the connected account.' },
+      cancellation_reason: { type: 'string', enum: ['user_declined', 'no_longer_needed'], description: 'For cancel_connection: user_declined for an explicit decline; no_longer_needed only when current evidence establishes this saved request is unnecessary. Do not treat unrelated topic changes as a decline.' },
       apps: { type: 'array', items: { type: 'string' }, description: 'One to four explicit app names for connection_status. Resolved against authenticated toolkit metadata, never semantic tool search.' },
       queries: {
         type: 'array',
@@ -1909,10 +1910,10 @@ export function apply(ctx: Context, config: Config = {}): void {
           && record(event.data.receipt) && event.data.receipt['request_call_id'] === callId)
         const saved = authorization?.type === 'hivemind/connected-receipt' && record(authorization.data.receipt) ? authorization.data.receipt : undefined
         if (saved === undefined || !['connection_required', 'cancelled'].includes(String(saved['status']))) throw new TypeError('Connection cancellation requires an unresolved exact saved request')
-        if (saved['status'] !== 'cancelled') appendConnectedReceipt(execution, 'connection_authorization', { ...saved, status: 'cancelled' }, workflow)
+        if (saved['status'] !== 'cancelled') appendConnectedReceipt(execution, 'connection_authorization', { ...saved, status: 'cancelled', cancellation_reason: args.cancellation_reason === 'no_longer_needed' ? 'no_longer_needed' : 'user_declined' }, workflow)
         if (!await ctx.sessions.flush(agent.session)) throw new Error('Connection cancellation was not durably saved')
         return { status: 'cancelled', session_id: workflow, request_call_id: callId,
-          next_action_guidance: 'The user abandoned this request. Do not resume it, ask for access, send another request email, or schedule a retry. A later explicit request may start a new workflow.' }
+          next_action_guidance: 'This saved request is closed. Do not resume it, ask for access, send another request email, or schedule a retry. A genuinely new authorized need may start a new workflow; closing this request does not authorize connecting an account.' }
       }
       if (args.action === 'wait_connection') {
         const continuationId = workflowSessionId(args)
@@ -1928,7 +1929,7 @@ export function apply(ctx: Context, config: Config = {}): void {
           && event.data.workflowSessionId === continuationId)
         const saved = matchedAuthorization?.type === 'hivemind/connected-receipt' && record(matchedAuthorization.data.receipt)
           ? matchedAuthorization.data.receipt : undefined
-        if (saved?.['status'] === 'cancelled') throw new TypeError('This connection request was cancelled; a new explicit request needs a new workflow')
+        if (saved?.['status'] === 'cancelled') throw new TypeError('This connection request was cancelled; a genuinely new authorized need requires a new workflow')
         const savedToolkits = saved === undefined ? [] : workflowToolkits(saved)
         if (savedToolkits.length > 0 && requested.some(toolkit => !savedToolkits.some(savedToolkit =>
           savedToolkit.toLowerCase() === toolkit.toLowerCase()))) {

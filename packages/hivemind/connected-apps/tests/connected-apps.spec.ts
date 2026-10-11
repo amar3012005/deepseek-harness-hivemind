@@ -913,7 +913,7 @@ describe('progressive Composio bridge', () => {
     expect(app.ask).not.toHaveBeenCalled()
   }, 7_000)
 
-  it('persists exact cancellation without provider calls and refuses later continuation', async () => {
+  it.each(['user_declined', 'no_longer_needed'])('persists exact %s cancellation without provider calls and refuses later continuation', async (reason) => {
     const app = harness()
     const events: Array<{ type: string; data: Record<string, unknown> }> = [{ type: 'hivemind/connected-receipt', data: {
       version: 1, tool: 'connection_authorization', workflowSessionId: 'workflow-1',
@@ -922,9 +922,10 @@ describe('progressive Composio bridge', () => {
       append: vi.fn((type: string, data: Record<string, unknown>) => events.push({ type, data })) } }
     const execution = { signal: new AbortController().signal, agent } as never
     await expect(app.tool().execute({ action: 'cancel_connection', session_id: 'workflow-1', request_call_id: 'wrong' }, execution)).rejects.toThrow('exact saved request')
-    await expect(app.tool().execute({ action: 'cancel_connection', session_id: 'workflow-1', request_call_id: 'original-call' }, execution)).resolves.toMatchObject({ status: 'cancelled' })
+    await expect(app.tool().execute({ action: 'cancel_connection', session_id: 'workflow-1', request_call_id: 'original-call', cancellation_reason: reason }, execution)).resolves.toMatchObject({ status: 'cancelled' })
     await app.tool().execute({ action: 'cancel_connection', session_id: 'workflow-1', request_call_id: 'original-call' }, execution)
     expect(agent.session.append).toHaveBeenCalledOnce()
+    expect(JSON.stringify(events.at(-1))).toContain(reason)
     expect(app.flush).toHaveBeenCalledTimes(2)
     await expect(app.tool().execute({ action: 'wait_connection', session_id: 'workflow-1' }, execution)).rejects.toThrow('cancelled')
     expect(execute).not.toHaveBeenCalled()
