@@ -15,7 +15,7 @@ function event(status = 'connection_required', workflow = 'saved-workflow', extr
     receipt: { status, session_id: workflow, request_call_id: 'original-call', toolkit: 'slack',
       app_label: 'Slack', reason: 'Read the saved pipeline discussion.', redirect_url: 'https://connect.example/slack', ...extra } } } }
 }
-function windowOf(...entries: unknown[]): SessionEventWindow { return { entries } as SessionEventWindow }
+function windowOf(...entries: unknown[]): SessionEventWindow { return { entries } as unknown as SessionEventWindow }
 afterEach(cleanup)
 it('restores pending authorization without a foreground turn and clears only matching verified workflow', () => {
   expect(savedConnectionRequests(windowOf(event()))).toHaveLength(1)
