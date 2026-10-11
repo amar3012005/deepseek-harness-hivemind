@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto'
 import { SpillLocator, type SpillRef } from '@deepseek-ai/dsh-spill'
 
 const execute = vi.fn()
-const toolkits = vi.fn(async (): Promise<{ items: Array<{
+const toolkits = vi.fn(async (_query?: { search: string; limit: number }, _options?: { signal: AbortSignal }): Promise<{ items: Array<{
   slug: string
   name?: string
   logo?: string
@@ -876,9 +876,12 @@ describe('progressive Composio bridge', () => {
   })
 
   it('cancels a slow provider status request at five seconds and parks the same workflow', async () => {
-    toolkits.mockImplementationOnce(async (_query, options) => await new Promise((_resolve, reject) => {
-      options.signal.addEventListener('abort', () => reject(options.signal.reason), { once: true })
-    }))
+    toolkits.mockImplementationOnce(async (_query, options) => {
+      if (options === undefined) throw new Error('Access check must pass SDK cancellation')
+      return await new Promise<Awaited<ReturnType<typeof toolkits>>>((_resolve, reject) => {
+        options.signal.addEventListener('abort', () => reject(options.signal.reason), { once: true })
+      })
+    })
     const app = harness()
     await expect(app.tool().execute({ action: 'wait_connection', toolkits: ['slack'], session_id: 'workflow-1' }, { signal: new AbortController().signal }))
       .resolves.toMatchObject({ status: 'connection_pending', session_id: 'workflow-1', connection_check: 'timed_out', next_action: 'remain_parked' })
