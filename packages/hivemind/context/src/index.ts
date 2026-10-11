@@ -3,8 +3,8 @@ import type { Context, Plugin } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock, Message, UserMessage } from '@deepseek-ai/dsh-llm'
-import { isAppendSurfaceEvent } from '@deepseek-ai/dsh-session'
-import type { SessionEvent } from '@deepseek-ai/dsh-session'
+import { isAppendSurfaceEvent, isReplacementSurfaceEvent } from '@deepseek-ai/dsh-session'
+import type { SessionEvent, SessionSeq } from '@deepseek-ai/dsh-session'
 /** Prompt-projection budgets and the registered on-demand capability tool. */
 export interface ContextConfig {
   historyTurns: number
@@ -62,13 +62,32 @@ function projectHistory(agent: Agent, config: ContextConfig): boolean {
   if (exchanges.length === 0) return false
   const lastCompleted = events.findLast(event => event.type === 'turn/end')
   if (lastCompleted === undefined || lastCompleted.data.reason.kind !== 'completed') return false
-  const nodes = [...session.surface.nodes].filter(seq => seq < lastCompleted.seq)
-  // Keep the native system message outside the replacement interval.
-  const pinned = nodes.findLastIndex((seq) => {
+  const nodes = [...session.surface.nodes]
+  // Surface order is positional, not numeric seq order. Pruning and native
+  // compaction append newer replacement events at older history positions.
+  // Follow their source provenance instead of filtering holes out of a range.
+  const historical = new Map<SessionSeq, boolean>()
+  const isHistorical = (seq: SessionSeq): boolean => {
+    const cached = historical.get(seq)
+    if (cached !== undefined) return cached
     const event = session.eventAt(seq)
-    return event?.type === 'system/message'
-  })
-  const shadowed = nodes.slice(pinned + 1)
+    if (event === undefined) return false
+    if (seq < lastCompleted.seq) return true
+    if (!isReplacementSurfaceEvent(event)) return false
+    const sources = (event.sourceEventSeqs ?? []).filter((source) => {
+      const original = session.eventAt(source)
+      return original !== undefined && (isAppendSurfaceEvent(original) || isReplacementSurfaceEvent(original))
+    })
+    const result = sources.length > 0 && sources.every(isHistorical)
+    historical.set(seq, result)
+    return result
+  }
+  // Keep the native system message outside the replacement interval, and stop
+  // at the first current-work node. Never replace a non-contiguous filtered set.
+  const pinned = nodes.findLastIndex(seq => session.eventAt(seq)?.type === 'system/message')
+  const tail = nodes.slice(pinned + 1)
+  const current = tail.findIndex(seq => !isHistorical(seq))
+  const shadowed = current === -1 ? tail : tail.slice(0, current)
   const start = shadowed[0], end = shadowed.at(-1)
   if (start === undefined || end === undefined) return false
   const text = recentConversationText(exchanges, config.historyTurns, config.historyMaxChars)

@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { createUserMessage, createAssistantMessage, createToolResultMessage } from '@deepseek-ai/dsh-llm'
+import { Session, SessionId, foldSurface } from '@deepseek-ai/dsh-session'
 import { contextPlugin } from '../src/index.ts'
 
 function user(text: string) {
@@ -94,6 +95,59 @@ describe('HIVE progressive context', () => {
     expect(text).not.toContain('Current work already admitted')
     expect(events).toHaveLength(8)
   })
+  it('uses complete positional provenance after pruning and compaction, including cold replay', async () => {
+    const session = Session.create(SessionId('history-replacements'))
+    session.append('turn/start', { turn: 1 })
+    const request = session.append('user/message', user('Review the company evidence'), { surfaceOp: 'append' })
+    const assistant = session.append('assistant/message', {
+      turn: 1, step: 1, stream: [], message: createAssistantMessage({
+        source: { provider: 'test', model: 'test' },
+        content: [{ type: 'tool-call', id: 'old' as never, name: 'read', arguments: {} }],
+      }),
+    }, { surfaceOp: 'append' })
+    const oldResult = session.append('tool/result', { turn: 1, step: 1, message: createToolResultMessage({
+      callId: 'old' as never, content: [{ type: 'text', text: 'OLD_EVIDENCE' }], isError: false,
+    }) }, { surfaceOp: 'append' })
+    session.append('assistant/message', { turn: 1, step: 2, stream: [], message: createAssistantMessage({
+      source: { provider: 'test', model: 'test' }, content: [{ type: 'text', text: 'Evidence reviewed.' }],
+    }) }, { surfaceOp: 'append' })
+    session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+    session.append('turn/start', { turn: 2 })
+    const current = session.append('user/message', user('Continue this exact task'), { surfaceOp: 'append' })
+    session.append('assistant/message', { turn: 2, step: 1, stream: [], message: createAssistantMessage({
+      source: { provider: 'test', model: 'test' },
+      content: [{ type: 'tool-call', id: 'current' as never, name: 'read', arguments: {} }],
+    }) }, { surfaceOp: 'append' })
+    const currentResult = session.append('tool/result', { turn: 2, step: 1, message: createToolResultMessage({
+      callId: 'current' as never, content: [{ type: 'text', text: 'CURRENT_EVIDENCE' }], isError: false,
+    }) }, { surfaceOp: 'append' })
+    const pruned = session.append('tool/result', { ...oldResult.data, message: {
+      ...oldResult.data.message,
+      content: [{ ...oldResult.data.message.content[0], content: [{ type: 'text', text: 'PRUNED_EVIDENCE' }] }],
+    } }, { surfaceOp: { op: 'replace', startSeq: oldResult.seq, endSeq: oldResult.seq }, sourceEventSeqs: [oldResult.seq] })
+    const compact = session.append('user/message', createUserMessage({
+      content: [{ type: 'text', text: 'Earlier decisions retained' }], source: { kind: 'plugin', plugin: 'compact' },
+    }), { surfaceOp: { op: 'replace', startSeq: request.seq, endSeq: request.seq }, sourceEventSeqs: [request.seq] })
+    const before = session.snapshotEvents()
+    const harness = mount()
+    await expect(harness.preStep({ agent: { session }, turn: 2, signal: new AbortController().signal } as never,
+      async () => ({ kind: 'enter', messages: session.deriveMessages() }))).resolves.toMatchObject({ startsRequestSeries: true })
+    const projection = session.snapshotEvents().at(-1)!
+    expect(projection.sourceEventSeqs).toContain(pruned.seq)
+    expect(projection.sourceEventSeqs).toContain(compact.seq)
+    expect(projection.sourceEventSeqs).toContain(assistant.seq)
+    expect(projection.sourceEventSeqs).not.toContain(current.seq)
+    expect(session.snapshotEvents().slice(0, before.length)).toEqual(before)
+    const restored = Session.create(SessionId('history-restored'), session.snapshotEvents())
+    expect(restored.surface.nodes).toEqual(session.surface.nodes)
+    expect(foldSurface(restored.snapshotEvents()).nodes).toEqual(session.surface.nodes)
+    expect(restored.deriveMessages()).toContainEqual(current.data)
+    expect(restored.deriveMessages().at(-1)).toEqual(currentResult.data.message)
+    const blocks = restored.deriveMessages().flatMap(message => message.content)
+    expect(blocks.filter(block => block.type === 'tool-call').map(block => block.id)).toEqual(['current'])
+    expect(blocks.filter(block => block.type === 'tool-result').map(block => block.toolCallId)).toEqual(['current'])
+  })
+
   it('starts a greeting with no skill catalog', async () => {
     const harness = mount()
     const catalog = createUserMessage({

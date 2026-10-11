@@ -690,9 +690,10 @@ export function apply(ctx: Context, config: Partial<Config> = {}): void {
           fullAccessAllowed?: (agent: Agent, signal: AbortSignal) => Promise<boolean>
         } | undefined)?.fullAccessAllowed?.(execution.agent, execution.signal))
         const outcome = permissionGranted ? 'allowed-once' as const
-          : await ctx.approval.request({ agent: execution.agent, toolName: 'hivemind_workstream', reason, signal: execution.signal })
+          : await ctx.approval.request({ agent: execution.agent, toolName: 'hivemind_workstream', callId: execution.rootCallId, reason, signal: execution.signal })
         execution.agent.session.append('hivemind/workstream-approval', { ...coordinates, workstreamId, outcome, reason, authority: permissionGranted ? 'permission_preset' : 'human_approval' })
-        return { status: outcome === 'allowed-once' ? 'approved' : 'not_approved', outcome, plan_id: coordinates.planId, workstream_id: workstreamId }
+        if (outcome === 'pending') execution.concludeTurn()
+        return { status: outcome === 'allowed-once' ? 'approved' : outcome === 'pending' ? 'waiting_for_approval' : 'not_approved', outcome, plan_id: coordinates.planId, workstream_id: workstreamId }
       }
       const summary = text(input['summary'], 'summary', maxSummaryChars)
       if (action === 'evidence_gap') {

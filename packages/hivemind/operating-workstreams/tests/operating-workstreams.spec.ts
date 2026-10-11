@@ -6,7 +6,7 @@ import SessionStore from '@deepseek-ai/dsh-session'
 import type { ToolDefinition } from '@deepseek-ai/dsh-tools'
 import { apply } from '../src/index.ts'
 
-async function setup(actor: Record<string, unknown>, approvalRequired = false, approvalOutcome: 'allowed-once' | 'rejected' = 'allowed-once') {
+async function setup(actor: Record<string, unknown>, approvalRequired = false, approvalOutcome: 'allowed-once' | 'rejected' | 'pending' = 'allowed-once') {
   const tools = new Map<string, ToolDefinition>()
   const events: Array<{ type: string; data: unknown }> = []
   const injections: unknown[] = []
@@ -91,6 +91,18 @@ describe('HIVE-MIND operating workstreams', () => {
     await tool.execute({ action: 'complete', workstream_id: 'work-1', summary: 'Approved recommendation.' }, { agent, signal: new AbortController().signal } as never)
     expect(events).toContainEqual({ type: 'hivemind/workstream-approval', data: expect.objectContaining({ runId: 'run-1', planId: 'plan-1', workstreamId: 'work-1', outcome: 'allowed-once' }) })
     expect(events.filter(event => event.type === 'hivemind/workstream-completed')).toHaveLength(1)
+  })
+
+  it('parks workstream approval with the exact native root call and ends its turn', async () => {
+    const { ctx, tool, agent } = await setup({ kind: 'main' }, true, 'pending')
+    const request = vi.spyOn(ctx.approval, 'request')
+    const concludeTurn = vi.fn()
+    const result = await tool.execute({ action: 'request_approval', workstream_id: 'work-1', approval_reason: 'Approve release.' }, {
+      agent, rootCallId: 'native-approval-call', signal: new AbortController().signal, concludeTurn,
+    } as never)
+    expect(request).toHaveBeenCalledWith(expect.objectContaining({ callId: 'native-approval-call' }))
+    expect(result).toMatchObject({ status: 'waiting_for_approval', outcome: 'pending' })
+    expect(concludeTurn).toHaveBeenCalledOnce()
   })
 
   it('fails closed when the human rejects an approval-gated workstream', async () => {
