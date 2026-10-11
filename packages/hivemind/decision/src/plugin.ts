@@ -11,6 +11,8 @@ export interface OpenRouterDecisionPluginConfig {
   gatewayTokenRef?: string
   gatewayByokAlias?: string
   timeoutMs?: number
+  fallbackModel?: string
+  primaryTimeoutMs?: number
 }
 /** Register one host-scoped service. Caller tools never receive credential or endpoint fields. */
 export function createOpenRouterDecisionPlugin(config: OpenRouterDecisionPluginConfig = {}): Plugin.Object<void> {
@@ -23,6 +25,8 @@ export function createOpenRouterDecisionPlugin(config: OpenRouterDecisionPluginC
     async apply(ctx: Context) {
       const provider = config.enabled ? new OpenRouterDecisionProvider({
         endpoint: config.endpoint ?? '',
+        ...(config.fallbackModel === undefined ? {} : { fallbackModel: config.fallbackModel }),
+        ...(config.primaryTimeoutMs === undefined ? {} : { primaryTimeoutMs: config.primaryTimeoutMs }),
         async resolveHeaders(signal) {
           if (signal.aborted) return {}
           const headers: Record<string, string> = {}

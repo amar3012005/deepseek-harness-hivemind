@@ -278,6 +278,8 @@
         apiKeyRef: !!js process.env.HIVEMIND_DECISION_API_KEY_REF || undefined
         gatewayTokenRef: !!js process.env.HIVEMIND_DECISION_GATEWAY_TOKEN_REF || undefined
         gatewayByokAlias: !!js process.env.HIVEMIND_DECISION_GATEWAY_BYOK_ALIAS || undefined
+        fallbackModel: typesafe/jev-1.13
+        primaryTimeoutMs: 1200
         timeoutMs: 3000
 
     - id: hivemind-runtime-attention
