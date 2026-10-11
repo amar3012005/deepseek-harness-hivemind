@@ -751,9 +751,10 @@ describe('progressive Composio bridge', () => {
     execute.mockResolvedValue({ status: 'ready' })
     const { tool } = harness()
     await tool().execute({ action: 'manage_connection', toolkits: ['slack'], session_id: 'session-1' }, { signal: AbortSignal.abort() })
-    await tool().execute({ action: 'wait_connection', toolkits: ['slack'], session_id: 'session-1' }, { signal: AbortSignal.abort() })
+    await tool().execute({ action: 'wait_connection', toolkits: ['slack'], session_id: 'session-1' }, { signal: new AbortController().signal })
     expect(execute).toHaveBeenNthCalledWith(1, 'COMPOSIO_MANAGE_CONNECTIONS', { session_id: 'session-1', toolkits: ['slack'] })
-    expect(execute).toHaveBeenNthCalledWith(2, 'COMPOSIO_WAIT_FOR_CONNECTIONS', { session_id: 'session-1', toolkits: ['slack'] })
+    expect(execute).toHaveBeenCalledOnce()
+    expect(toolkits).toHaveBeenCalledWith({ search: 'slack', limit: 8 }, { signal: expect.any(AbortSignal) })
   })
 
   it('checks an explicitly named toolkit without semantic tool search', async () => {
@@ -830,40 +831,109 @@ describe('progressive Composio bridge', () => {
   })
 
   it.each([
-    ['unspecified', { status: 'ready' }],
-    ['inactive', { toolkit: 'slack', has_active_connection: false }],
-    ['unrelated active account', { toolkit: 'gmail', has_active_connection: true }],
-    ['conflicting evidence', [{ toolkit: 'slack', status: 'ACTIVE' }, { toolkit: 'slack', status: 'EXPIRED' }]],
-  ])('keeps %s connection evidence paused without another model step', async (_label, data) => {
-    execute.mockResolvedValue({ data })
+    ['unspecified', []],
+    ['inactive', [{ slug: 'slack', name: 'Slack', connection: { isActive: false } }]],
+    ['unrelated active account', [{ slug: 'gmail', name: 'Gmail', connection: { isActive: true } }]],
+    ['conflicting evidence', [{ slug: 'slack', name: 'Slack', connection: { isActive: true } }, { slug: 'slack', name: 'Slack', connection: { isActive: false } }]],
+  ])('keeps %s connection evidence paused without another model step', async (_label, items) => {
+    toolkits.mockResolvedValue({ items })
     const app = harness()
-    await expect(app.tool().execute({ action: 'wait_connection', toolkits: ['slack'], session_id: 'workflow-1' }, { signal: AbortSignal.abort() }))
-      .resolves.toMatchObject({ status: 'connection_pending', session_id: 'workflow-1', pending_toolkits: ['slack'] })
+    await expect(app.tool().execute({ action: 'wait_connection', toolkits: ['slack'], session_id: 'workflow-1' }, { signal: new AbortController().signal }))
+      .resolves.toMatchObject({ status: 'connection_pending', session_id: 'workflow-1', pending_toolkits: ['slack'], next_action: 'remain_parked' })
     expect(app.concludeTurn).toHaveBeenCalledOnce()
+    expect(execute).not.toHaveBeenCalled()
   })
 
   it('continues only after every requested toolkit is active', async () => {
-    execute.mockResolvedValue({ data: { toolkit_connection_statuses: [
-      { toolkit: 'slack', status: 'ACTIVE' }, { toolkit: 'gmail', has_active_connection: true },
-    ] } })
+    toolkits.mockResolvedValue({ items: [
+      { slug: 'slack', name: 'Slack', connection: { isActive: true } },
+      { slug: 'gmail', name: 'Gmail', connection: { isActive: true } },
+    ] })
     const app = harness()
-    await expect(app.tool().execute({ action: 'wait_connection', toolkits: ['slack', 'gmail'], session_id: 'workflow-1' }, { signal: AbortSignal.abort() }))
+    await expect(app.tool().execute({ action: 'wait_connection', toolkits: ['slack', 'gmail'], session_id: 'workflow-1' }, { signal: new AbortController().signal }))
       .resolves.toMatchObject({ status: 'ready', session_id: 'workflow-1', pending_toolkits: [] })
     expect(app.concludeTurn).not.toHaveBeenCalled()
+    expect(toolkits).toHaveBeenCalledTimes(2)
+    expect(execute).not.toHaveBeenCalled()
   })
 
   it('does not wait with a missing workflow session', async () => {
     const app = harness()
-    await expect(app.tool().execute({ action: 'wait_connection', toolkits: ['slack'] }, { signal: AbortSignal.abort() }))
+    await expect(app.tool().execute({ action: 'wait_connection', toolkits: ['slack'] }, { signal: new AbortController().signal }))
       .rejects.toThrow('original search session_id')
     expect(execute).not.toHaveBeenCalled()
+    expect(create).not.toHaveBeenCalled()
   })
 
-  it('preserves provider failure instead of reporting connection success', async () => {
-    execute.mockRejectedValue(new Error('provider unavailable'))
+  it('parks on provider failure without reporting connection success or repeating authorization', async () => {
+    toolkits.mockRejectedValue(new Error('provider unavailable'))
+    const app = harness()
+    await expect(app.tool().execute({ action: 'wait_connection', toolkits: ['slack'], session_id: 'workflow-1' }, { signal: new AbortController().signal }))
+      .resolves.toMatchObject({ status: 'connection_pending', connection_check: 'unavailable' })
+    expect(app.concludeTurn).toHaveBeenCalledOnce()
+    expect(execute).not.toHaveBeenCalled()
+    expect(app.ask).not.toHaveBeenCalled()
+  })
+
+  it('cancels a slow provider status request at five seconds and parks the same workflow', async () => {
+    toolkits.mockImplementationOnce(async (_query, options) => await new Promise((_resolve, reject) => {
+      options.signal.addEventListener('abort', () => reject(options.signal.reason), { once: true })
+    }))
+    const app = harness()
+    await expect(app.tool().execute({ action: 'wait_connection', toolkits: ['slack'], session_id: 'workflow-1' }, { signal: new AbortController().signal }))
+      .resolves.toMatchObject({ status: 'connection_pending', session_id: 'workflow-1', connection_check: 'timed_out', next_action: 'remain_parked' })
+    expect(app.concludeTurn).toHaveBeenCalledOnce()
+    expect(execute).not.toHaveBeenCalled()
+    expect(app.ask).not.toHaveBeenCalled()
+  }, 7_000)
+
+  it('recovers exact saved toolkits after reload and leaves one original notification unchanged across Continue clicks', async () => {
+    toolkits.mockResolvedValue({ items: [{ slug: 'slack', name: 'Slack', connection: { isActive: false } }] })
+    const app = harness()
+    const receipt = { status: 'connection_required', request_call_id: 'original-call', toolkit: 'slack',
+      session_id: 'workflow-1', notification_status: 'accepted', redirect_url: 'https://connect.example/slack' }
+    const events = [{ type: 'hivemind/connected-receipt', data: { version: 1,
+      tool: 'connection_authorization', workflowSessionId: 'workflow-1', receipt } }]
+    const agent = { session: { header: { id: 'restored-room' }, snapshotEvents: () => events, append: vi.fn() } }
+    for (let click = 0; click < 2; click++) {
+      await expect(app.tool().execute({ action: 'wait_connection', session_id: 'workflow-1' },
+        { signal: new AbortController().signal, agent } as never))
+        .resolves.toMatchObject({ status: 'connection_pending', session_id: 'workflow-1', pending_toolkits: ['slack'] })
+    }
+    expect(toolkits).toHaveBeenCalledTimes(2)
+    expect(app.concludeTurn).toHaveBeenCalledTimes(2)
+    expect(agent.session.append).not.toHaveBeenCalledWith('hivemind/connected-receipt', expect.anything())
+    expect(receipt.notification_status).toBe('accepted')
+    expect(execute).not.toHaveBeenCalled()
+    expect(app.ask).not.toHaveBeenCalled()
+  })
+
+  it('checks every original app even when Continue supplies a partial toolkit list', async () => {
+    toolkits.mockResolvedValue({ items: [
+      { slug: 'slack', name: 'Slack', connection: { isActive: true } },
+      { slug: 'gmail', name: 'Gmail', connection: { isActive: false } },
+    ] })
+    const app = harness()
+    const events = [{ type: 'hivemind/connected-receipt', data: { version: 1,
+      tool: 'connection_authorization', workflowSessionId: 'workflow-1',
+      receipt: { status: 'connection_required', pending_toolkits: ['slack', 'gmail'], request_call_id: 'original' } } }]
+    const agent = { session: { header: { id: 'room' }, snapshotEvents: () => events, append: vi.fn() } }
+    await expect(app.tool().execute({ action: 'wait_connection', toolkits: ['slack'], session_id: 'workflow-1' },
+      { signal: new AbortController().signal, agent } as never))
+      .resolves.toMatchObject({ status: 'connection_pending', pending_toolkits: ['gmail'] })
+    expect(toolkits).toHaveBeenCalledTimes(2)
+    expect(agent.session.append).not.toHaveBeenCalledWith('hivemind/connected-receipt', expect.anything())
+    await expect(app.tool().execute({ action: 'wait_connection', toolkits: ['notion'], session_id: 'workflow-1' },
+      { signal: new AbortController().signal, agent } as never)).rejects.toThrow('original saved workflow')
+    expect(toolkits).toHaveBeenCalledTimes(2)
+  })
+
+  it('preserves cancellation by the caller rather than treating it as provider timeout', async () => {
+    toolkits.mockRejectedValue(new Error('cancelled'))
     const app = harness()
     await expect(app.tool().execute({ action: 'wait_connection', toolkits: ['slack'], session_id: 'workflow-1' }, { signal: AbortSignal.abort() }))
-      .rejects.toThrow('provider unavailable')
+      .rejects.toThrow('cancelled')
+    expect(app.concludeTurn).not.toHaveBeenCalled()
   })
 
   it('concludes a disconnected search with one session-bound connection receipt', async () => {
@@ -928,12 +998,12 @@ describe('progressive Composio bridge', () => {
     { name: 'contradictory toolkit', statuses: [{ toolkit: 'slack', status: 'ACTIVE' }, { toolkit: 'gmail', status: 'ACTIVE' }, { toolkit: 'gmail', status: 'PENDING' }], ready: false },
     { name: 'all affirmative toolkits', statuses: [{ toolkit: 'slack', status: 'ACTIVE' }, { toolkit: 'gmail', status: 'ACTIVE' }], ready: true },
   ])('updates only the matching saved authorization after verified access: $name', async ({ statuses, ready }) => {
-    execute.mockResolvedValueOnce({ data: { toolkit_connection_statuses: statuses } })
+    toolkits.mockResolvedValue({ items: statuses.map(item => ({ slug: item.toolkit, name: item.toolkit, connection: { isActive: item.status === 'ACTIVE' } })) })
     const app = harness()
     const events = [
       { type: 'hivemind/connected-receipt', data: { version: 1, tool: 'connection_authorization',
         workflowSessionId: 'workflow-1', receipt: { status: 'connection_required', request_call_id: 'original-call',
-          session_id: 'workflow-1', app_label: 'Slack', reason: 'Review the company sources.' } } },
+          session_id: 'workflow-1', pending_toolkits: ['slack', 'gmail'], app_label: 'Slack', reason: 'Review the company sources.' } } },
       { type: 'hivemind/connected-receipt', data: { version: 1, tool: 'connection_authorization',
         workflowSessionId: 'foreign-workflow', receipt: { status: 'connection_required', request_call_id: 'foreign-call',
           session_id: 'foreign-workflow' } } },
@@ -947,7 +1017,7 @@ describe('progressive Composio bridge', () => {
     if (ready) {
       expect(authorizationUpdates).toEqual([['hivemind/connected-receipt', {
         version: 1, tool: 'connection_authorization', workflowSessionId: 'workflow-1', receipt: {
-          status: 'ready', request_call_id: 'original-call', session_id: 'workflow-1',
+          status: 'ready', request_call_id: 'original-call', session_id: 'workflow-1', pending_toolkits: ['slack', 'gmail'],
           app_label: 'Slack', reason: 'Review the company sources.',
         },
       }]])
@@ -959,7 +1029,7 @@ describe('progressive Composio bridge', () => {
       expect(app.concludeTurn).toHaveBeenCalledOnce()
     }
     expect(app.ask).not.toHaveBeenCalled()
-    expect(execute).toHaveBeenCalledOnce()
+    expect(execute).not.toHaveBeenCalled()
     expect(events[0]?.data.receipt.status).toBe('connection_required')
     expect(events[1]?.data.receipt.status).toBe('connection_required')
   })

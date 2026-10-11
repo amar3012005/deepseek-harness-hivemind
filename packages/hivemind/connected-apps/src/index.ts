@@ -962,7 +962,7 @@ function workflowContextMessage(state: UnfinishedWorkflowProjection) {
   return createUserMessage({
     content: [{
       type: 'text',
-      text: `## Unfinished connected-app workflow\nThis state is reconstructed from durable receipts in this conversation. If the current request continues it, resume this session without repeating search, checking status separately, or using HIVE memory for connected-app evidence. If the user changed tasks, leave it pending.\n${JSON.stringify(projection)}`,
+      text: `## Unfinished connected-app workflow\nThis state is reconstructed from durable receipts in this conversation. If the current request continues it, follow its next_action in this session. For wait_connection, pass the exact projected toolkits for one bounded access check. Do not repeat search, check status separately, or using HIVE memory for connected-app evidence. If the user changed tasks, leave it pending.\n${JSON.stringify(projection)}`,
     }],
     source: { kind: 'plugin', plugin: WORKFLOW_CONTEXT_SOURCE, form: 'recall' },
   })
@@ -1579,7 +1579,7 @@ export function apply(ctx: Context, config: Config = {}): void {
   const contracts = new Map<string, Map<string, ExecutionContract>>()
   const resultFields = new Map<string, string[]>()
 
-  async function getSession(identity: { userId: string; orgId: string }, execution: Pick<ToolExecution, 'agent'>): Promise<ComposioSession> {
+  async function getSession(identity: { userId: string; orgId: string }, execution: Pick<ToolExecution, 'agent'>, requestOptions?: { signal: AbortSignal }): Promise<ComposioSession> {
     if (composio === undefined) throw new Error('Connected tools are not configured on this runtime')
     const client = await composio
     const canonicalKey = sessionKey(identity)
@@ -1591,28 +1591,31 @@ export function apply(ctx: Context, config: Config = {}): void {
         const restored = restoredRouterSession(execution, canonicalKey)
         if (restored !== undefined) {
           try {
-            return await client.sessions.use(restored.routerSessionId, { mcp: true })
+            return await client.sessions.use(restored.routerSessionId, { mcp: true },
+              ...(requestOptions === undefined ? [] : [requestOptions]))
           } catch (error: unknown) {
+            if (requestOptions?.signal.aborted === true) throw error
             ctx.logger.warn(`hivemind-connected-apps: could not restore Composio session; creating a successor: ${String(error)}`)
           }
         }
         let subject = restored?.subject ?? canonicalKey
         let connectedAccounts: Record<string, string[]> = {}
         try {
-          const accounts = await client.connectedAccounts.list({ userIds: [subject], statuses: ['ACTIVE'] })
+          const accounts = await client.connectedAccounts.list({ userIds: [subject], statuses: ['ACTIVE'] }, ...(requestOptions === undefined ? [] : [requestOptions]))
           connectedAccounts = activeConnectedAccounts(accounts)
           // Existing HIVE connections were historically created under the
           // organization id. Use that bounded subject only for a first session
           // whose canonical user has no active account.
           if (restored === undefined && !hasActiveAccount(accounts)) {
             const legacyKey = legacySessionKey(identity)
-            const legacyAccounts = await client.connectedAccounts.list({ userIds: [legacyKey], statuses: ['ACTIVE'] })
+            const legacyAccounts = await client.connectedAccounts.list({ userIds: [legacyKey], statuses: ['ACTIVE'] }, ...(requestOptions === undefined ? [] : [requestOptions]))
             if (hasActiveAccount(legacyAccounts)) {
               subject = legacyKey
               connectedAccounts = activeConnectedAccounts(legacyAccounts)
             }
           }
         } catch (error: unknown) {
+          if (requestOptions?.signal.aborted === true) throw error
           ctx.logger.warn(`hivemind-connected-apps: could not inspect connection scope: ${String(error)}`)
         }
         const callbackUrl = connectionCallbackUrl(config.connectionCallbackBaseUrl, execution)
@@ -1620,7 +1623,7 @@ export function apply(ctx: Context, config: Config = {}): void {
           mcp: true,
           connectedAccounts,
           ...(callbackUrl === undefined ? {} : { manageConnections: { enable: true, callbackUrl } }),
-        })
+        }, ...(requestOptions === undefined ? [] : [requestOptions]))
         if (execution.agent !== undefined) {
           execution.agent.session.append('hivemind/composio-session', {
             version: 1,
@@ -1848,7 +1851,7 @@ export function apply(ctx: Context, config: Config = {}): void {
       search_strategy: { type: 'string', enum: ['auto', 'tool_search'], description: 'Use auto normally; retry with tool_search only when the returned plan or tools do not match.' },
       tool_slug: { type: 'string', description: 'Exact selected tool slug.' },
       tool_slugs: { type: 'array', items: { type: 'string' }, description: 'Selected tool slugs or exact read-only slugs from recommended_plan_steps for schema loading.' },
-      toolkits: { type: 'array', items: { type: 'string' }, description: 'Exact toolkits returned by search.' },
+      toolkits: { type: 'array', items: { type: 'string' }, description: 'Exact toolkits returned by the original search. wait_connection checks access once within five seconds and parks if missing; never polls or starts authorization.' },
       session_id: { type: 'string', description: 'Search session id reused by later schema, connection, and execution operations.' },
       checkpoint_state: { type: 'string', enum: ['open', 'blocked', 'completed'], description: 'Task state. completed requires successful provider receipts for every requested external action.' },
       checkpoint_id: { type: 'string', description: 'Stable task identifier, reused across continuations.' },
@@ -1889,6 +1892,69 @@ export function apply(ctx: Context, config: Config = {}): void {
         })
         if (!response.ok) throw new Error(`Private receipt read was refused (${response.status}); do not infer missing evidence`)
         return { status: 'receipt_read', receipt: await response.json() as JsonValue }
+      }
+      if (args.action === 'wait_connection') {
+        const continuationId = workflowSessionId(args)
+        if (continuationId === undefined) throw new TypeError('Connection continuation requires the original search session_id')
+        const authorization = execution.agent?.session.snapshotEvents().findLast(event =>
+          event.type === 'hivemind/connected-receipt' && event.data.tool === 'connection_authorization'
+          && event.data.workflowSessionId === continuationId)
+        const saved = authorization?.type === 'hivemind/connected-receipt' && record(authorization.data.receipt)
+          ? authorization.data.receipt : undefined
+        const requested = stringArray(args.toolkits)
+        const savedToolkits = saved === undefined ? [] : workflowToolkits(saved)
+        if (savedToolkits.length > 0 && requested.some(toolkit => !savedToolkits.some(savedToolkit =>
+          savedToolkit.toLowerCase() === toolkit.toLowerCase()))) {
+          throw new TypeError('Connection continuation toolkits must match the original saved workflow')
+        }
+        // A partial model argument cannot clear a multi-app authorization.
+        const toolkits = savedToolkits.length > 0 ? savedToolkits : requested
+        if (toolkits.length === 0 || toolkits.length > 4) throw new TypeError('Connection operation requires one to four exact toolkits from the original workflow')
+        // Continue is one observational check, never the provider's long-poll
+        // WAIT_FOR_CONNECTIONS operation. The shared deadline also bounds
+        // cold router-session restoration and cancels the actual SDK request.
+        const deadline = AbortSignal.timeout(5_000)
+        const signal = AbortSignal.any([execution.signal, deadline])
+        let statuses: Array<{ toolkit: string; connected: boolean }> = []
+        let checkStatus = 'verified'
+        try {
+          const session = await getSession(identity, execution, { signal })
+          // SDK 0.18.1's Session facade omits the trailing transport option
+          // from its type alias; its concrete ToolRouterSession forwards it.
+          const readToolkits = session.toolkits as (
+            options: Parameters<ComposioSession['toolkits']>[0],
+            requestOptions: { signal: AbortSignal },
+          ) => ReturnType<ComposioSession['toolkits']>
+          const resolved = await Promise.all(toolkits.map(async toolkit => exactToolkit(
+            await readToolkits.call(session, { search: toolkit, limit: 8 }, { signal }), toolkit)))
+          statuses = resolved.map(item => ({ toolkit: item.slug, connected: item.connected }))
+        } catch (error: unknown) {
+          if (execution.signal.aborted) throw error
+          checkStatus = deadline.aborted ? 'timed_out' : 'unavailable'
+          ctx.logger.warn('hivemind-connected-apps: bounded access check could not verify the connection')
+        }
+        const pending = toolkits.filter(toolkit => !statuses.some(item =>
+          item.toolkit.toLowerCase() === toolkit.toLowerCase() && item.connected))
+        if (pending.length === 0 && saved !== undefined && saved['status'] !== 'ready' && execution.agent !== undefined) {
+          appendConnectedReceipt(execution, 'connection_authorization', { ...saved, status: 'ready' }, continuationId)
+          if (!await ctx.sessions.flush(execution.agent.session)) throw new Error('Verified connection checkpoint was not durably saved')
+        }
+        // Preserve the original authorization and notification receipt. Rechecks
+        // neither create a new OAuth request nor send another administrator email.
+        if (pending.length > 0) execution.concludeTurn()
+        return {
+          status: pending.length === 0 ? 'ready' : 'connection_pending',
+          session_id: continuationId,
+          pending_toolkits: pending,
+          toolkit_connection_statuses: statuses.map(item => ({ toolkit: item.toolkit, has_active_connection: item.connected })),
+          connection_check: checkStatus,
+          ...(pending[0] === undefined ? {} : { toolkit: pending[0], app_label: titleCaseToolkit(pending[0]) }),
+          next_action: pending.length === 0 ? 'continue_current_request' : 'remain_parked',
+          next_action_guidance: pending.length === 0
+            ? 'Verified access is active. Continue the original saved workflow.'
+            : 'Access is not verified. The original task remains paused; do not poll, repeat authorization, resend email, or ask another question. Resume only after explicit input.',
+          operations: [{ tool: 'connection_status', status: checkStatus }],
+        }
       }
       const session = await getSession(identity, execution)
       if (args.action === 'connection_status') {
@@ -2246,17 +2312,14 @@ export function apply(ctx: Context, config: Config = {}): void {
           }),
         }
       }
-      if (args.action === 'manage_connection' || args.action === 'wait_connection') {
+      if (args.action === 'manage_connection') {
         const toolkits = stringArray(args.toolkits)
         if (toolkits.length === 0) throw new TypeError('Connection operation requires at least one toolkit')
-        if (args.action === 'wait_connection' && continuationId === undefined) {
-          throw new TypeError('Connection continuation requires the original search session_id')
-        }
-        const metaTool = args.action === 'manage_connection' ? 'COMPOSIO_MANAGE_CONNECTIONS' : 'COMPOSIO_WAIT_FOR_CONNECTIONS'
+        const metaTool = 'COMPOSIO_MANAGE_CONNECTIONS'
         const managed = await session.execute(metaTool, { ...metaArguments, toolkits })
         const sourceReceipt = await saveReceipt(
           ctx, config, execution, JSON.stringify(managed),
-          args.action === 'manage_connection' ? 'composio-manage-connections.json' : 'composio-wait-for-connections.json',
+          'composio-manage-connections.json',
           { tool: metaTool },
         )
         const statuses = connectionStatuses(managed)
