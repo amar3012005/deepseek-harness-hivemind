@@ -32,7 +32,7 @@ export function savedConnectionRequests(window: SessionEventWindow): SavedConnec
     const toolkit = text(receipt?.['toolkit'], 100)
     if (!receipt || !workflow || !toolkit) continue
     const key = `${workflow}:${toolkit}`
-    if (receipt['status'] === 'ready') {
+    if ((receipt['status'] === 'ready' || receipt['status'] === 'cancelled')) {
       if (pending.get(key)?.callId === receipt['request_call_id']) pending.delete(key)
       continue
     }

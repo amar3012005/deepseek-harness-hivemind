@@ -45,3 +45,5 @@ The model sees nothing from this browser-only plugin. The paired runtime adds au
 Keep OAuth callbacks and credential reads in ICARUS or the Host runtime; do not move token handling into browser code.
 
 Agent room composers omit scope, mode and employee-picker labels without changing native selection or authority. The shared Environment uses the native Preview panel geometry: apps collapse while Preview is open, the panel yields at 45% viewport width, and its header control preserves explicit reopening and dismissal.
+
+The connection dock shows one compact app identity and access status with actions; its detailed reason is expandable. Dismissal submits a request to cancel that exact saved workflow, and the card clears only after its cancellation receipt arrives. Transcript and composer reuse the native conversation content width and pane axis.

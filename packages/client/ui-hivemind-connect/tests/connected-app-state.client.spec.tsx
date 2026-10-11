@@ -64,3 +64,9 @@ it('keeps only one human action card during active authorization and removes per
     useEmployeeEvents={select => select(windowOf(event(), event('ready')))} />)
   expect(view.container.textContent).toBe('')
 })
+
+it('clears a durably cancelled exact request while retaining unrelated and renewed requests', () => {
+  expect(savedConnectionRequests(windowOf(event(), event('cancelled')))).toEqual([])
+  expect(savedConnectionRequests(windowOf(event(), event('cancelled', 'saved-workflow', { request_call_id: 'other' })))).toHaveLength(1)
+  expect(savedConnectionRequests(windowOf(event(), event('cancelled'), event('connection_required', 'renewed-workflow', { request_call_id: 'renewed' })))[0]?.callId).toBe('renewed')
+})

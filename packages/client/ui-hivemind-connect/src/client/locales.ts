@@ -8,7 +8,7 @@ export type HivemindConnectKey =
   | 'composio.connectionPrompt' | 'composio.connectionActionDetail'
   | 'composio.searching' | 'composio.working' | 'composio.returned' | 'composio.inputRequired' | 'composio.verifying'
   | 'composio.continue'
-  | 'composio.dismiss'
+  | 'composio.dismiss' | 'composio.reason' | 'composio.cancelling'
   | 'composio.connected' | 'composio.connectionVerified'
   | 'employee.joined' | 'employee.ownerLocked' | 'employee.initial' | 'employee.auto' | 'employee.autoDetail' | 'employee.label' | 'employee.loading' | 'employee.unavailable'
   | 'employee.environment' | 'employee.hide' | 'employee.working' | 'employee.ready' | 'employee.panel' | 'employee.toggle'
@@ -34,7 +34,7 @@ export const en: Record<HivemindConnectKey, string> = {
   'session.recent': 'Recent',
   'session.running': 'Running',
   'composio.app': 'connected app', 'composio.checking': 'Checking connected apps…',
-  'composio.connectionRequired': 'Connection required', 'composio.approvalRequired': 'Approval required',
+  'composio.cancelling': 'Cancelling request…', 'composio.reason': 'Why access is needed', 'composio.connectionRequired': 'Connection required', 'composio.approvalRequired': 'Approval required',
   'composio.connectionPending': 'Waiting for connection',
   'composio.failed': 'Connected-app task failed', 'composio.completed': 'Connected-app task completed',
   'composio.cancelled': 'Connection request cancelled',
@@ -49,7 +49,7 @@ export const en: Record<HivemindConnectKey, string> = {
   'composio.returned': 'Returned from sign-in. Continue to verify access.',
   'composio.verifying': 'Verifying connection…',
   'composio.continue': "I've connected {app} — continue",
-  'composio.dismiss': 'Dismiss and stop this turn',
+  'composio.dismiss': 'Cancel this connection request',
   'composio.connected': '{app} connected',
   'composio.connectionVerified': 'Connection verified. Continuing this request.',
   'employee.initial': 'H', 'employee.auto': 'HyperAgents', 'employee.ownerLocked': 'This employee owns the session. Start a new session to choose another.', 'employee.autoDetail': 'Persistent HyperAgents Team Lead',
@@ -94,7 +94,7 @@ export const zh: Record<HivemindConnectKey, string> = {
   'session.recent': '最近',
   'session.running': '运行中',
   'composio.app': '已连接应用', 'composio.checking': '正在检查已连接应用…',
-  'composio.connectionRequired': '需要连接', 'composio.approvalRequired': '需要批准',
+  'composio.cancelling': '正在取消请求…', 'composio.reason': '为什么需要访问权限', 'composio.connectionRequired': '需要连接', 'composio.approvalRequired': '需要批准',
   'composio.connectionPending': '等待连接',
   'composio.failed': '连接应用任务失败', 'composio.completed': '连接应用任务已完成',
   'composio.cancelled': '连接请求已取消',
@@ -109,7 +109,7 @@ export const zh: Record<HivemindConnectKey, string> = {
   'composio.returned': '已返回登录页面。继续以验证访问权限。',
   'composio.verifying': '正在验证连接…',
   'composio.continue': '我已连接 {app} — 继续',
-  'composio.dismiss': '关闭并停止本轮',
+  'composio.dismiss': '取消此连接请求',
   'composio.connected': '{app} 已连接',
   'composio.connectionVerified': '连接已验证。正在继续此请求。',
   'employee.initial': 'H', 'employee.auto': 'HyperAgents', 'employee.ownerLocked': '此员工负责本会话。请新建会话以选择其他员工。', 'employee.autoDetail': '持久 HyperAgents 团队负责人',

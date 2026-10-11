@@ -890,6 +890,37 @@ describe('progressive Composio bridge', () => {
     expect(app.ask).not.toHaveBeenCalled()
   }, 7_000)
 
+  it('persists exact cancellation without provider calls and refuses later continuation', async () => {
+    const app = harness()
+    const events: Array<{ type: string; data: Record<string, unknown> }> = [{ type: 'hivemind/connected-receipt', data: {
+      version: 1, tool: 'connection_authorization', workflowSessionId: 'workflow-1',
+      receipt: { status: 'connection_required', request_call_id: 'original-call', toolkit: 'slack', session_id: 'workflow-1' } } }]
+    const agent = { session: { header: { id: 'restored-room' }, snapshotEvents: () => events,
+      append: vi.fn((type: string, data: Record<string, unknown>) => events.push({ type, data })) } }
+    const execution = { signal: new AbortController().signal, agent } as never
+    await expect(app.tool().execute({ action: 'cancel_connection', session_id: 'workflow-1', request_call_id: 'wrong' }, execution)).rejects.toThrow('exact saved request')
+    await expect(app.tool().execute({ action: 'cancel_connection', session_id: 'workflow-1', request_call_id: 'original-call' }, execution)).resolves.toMatchObject({ status: 'cancelled' })
+    await app.tool().execute({ action: 'cancel_connection', session_id: 'workflow-1', request_call_id: 'original-call' }, execution)
+    expect(agent.session.append).toHaveBeenCalledOnce()
+    expect(app.flush).toHaveBeenCalledTimes(2)
+    await expect(app.tool().execute({ action: 'wait_connection', session_id: 'workflow-1' }, execution)).rejects.toThrow('cancelled')
+    expect(execute).not.toHaveBeenCalled()
+    expect(toolkits).not.toHaveBeenCalled()
+  })
+
+  it('preserves another app authorization in the same workflow after exact cancellation', async () => {
+    const app = harness()
+    toolkits.mockResolvedValue({ items: [{ slug: 'gmail', name: 'Gmail', connection: { isActive: true } }] })
+    const events = ['gmail', 'slack'].map(toolkit => ({ type: 'hivemind/connected-receipt', data: {
+      version: 1, tool: 'connection_authorization', workflowSessionId: 'workflow-1',
+      receipt: { status: toolkit === 'slack' ? 'cancelled' : 'connection_required', toolkit,
+        session_id: 'workflow-1', request_call_id: `${toolkit}-call` } } }))
+    const agent = { session: { header: { id: 'restored-room' }, snapshotEvents: () => events, append: vi.fn() } }
+    await expect(app.tool().execute({ action: 'wait_connection', session_id: 'workflow-1', toolkits: ['gmail'] },
+      { signal: new AbortController().signal, agent } as never)).resolves.toMatchObject({ status: 'ready' })
+    expect(agent.session.append).toHaveBeenCalledWith('hivemind/connected-receipt', expect.objectContaining({ receipt: expect.objectContaining({ request_call_id: 'gmail-call', status: 'ready' }) }))
+  })
+
   it('recovers exact saved toolkits after reload and leaves one original notification unchanged across Continue clicks', async () => {
     toolkits.mockResolvedValue({ items: [{ slug: 'slack', name: 'Slack', connection: { isActive: false } }] })
     const app = harness()

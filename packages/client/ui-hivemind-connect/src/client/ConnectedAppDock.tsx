@@ -25,10 +25,10 @@ export function ConnectedAppDock({ sessionId, useEmployeeEvents, resume, t, useS
       connectLabel: t('composio.connect', { app: request.app }),
       continueLabel: t('composio.continue', { app: request.app }) },
     continue: () => resume(`Check my ${request.app} connection and continue the paused request.`),
-    cancel: async () => {},
+    cancel: () => resume(`Cancel the saved ${request.app} connection request with session_id ${JSON.stringify(request.workflow)} and request_call_id ${JSON.stringify(request.callId)}. Do not disconnect the account or resume the abandoned work.`),
   }), [request, sessionId, resume, t])
   if (matched === null || request === undefined || active instanceof PendingConnectionAuthorization) return null
   return <div data-connected-app-request={request.callId} data-request-highlighted={requestId === request.callId || undefined}>
-    <ConnectionAuthorizationPanel key={matched.key} matched={matched} t={t} dismissible={false} />
+    <ConnectionAuthorizationPanel key={matched.key} matched={matched} t={t} />
   </div>
 }

@@ -236,12 +236,6 @@
 /* Reserve the identity gutter while the group avatar follows its newest bubble. */
 .flowItem[data-avatar-group-end='false'] :global([data-chat-agent-avatar]) { visibility: hidden; }
 
-:global([data-agent-room]) .column {
-  width: min(var(--dsh-transcript-width, 720px), 100%);
-  max-width: var(--dsh-transcript-width, 720px);
-  margin-inline: auto;
-  transform: translateX(var(--hm-chat-center-offset, 0px));
-}
 
 /* Compact activity spacing belongs to Runtime and employee rooms. */
 .turnStatus[data-agent-room] {

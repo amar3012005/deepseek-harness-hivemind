@@ -32,9 +32,7 @@
   --dsh-composer-card-max-width: calc(var(--dsh-chat-content-width) + 32px);
   --dsh-composer-side-clearance: 16px;
   --dsh-composer-dock-inset: 8px;
-  /* The embedding shell supplies half its actual left rail width. Clamp to
-     available clearance so a narrow canvas never moves behind that rail. */
-  --hm-chat-center-offset: max(var(--hm-harness-center-offset, 0px), min(0px, calc((var(--dsh-composer-card-max-width) + 2 * var(--dsh-composer-side-clearance) - var(--dsh-conversation-column-width, 0px)) / 2)));
+
 }
 
 /* 76px with its rule: the height of the Sidebar's tab strip and header row
@@ -363,17 +361,6 @@
    when the session rail is visible as floating chrome. */
 :global(html[data-dsh-mode='hivemind-chat']) .composerSeat .composerStack {
   margin-inline: auto;
-}
-
-/* Share the viewport axis with the transcript, including the outer rail. */
-:global(html[data-dsh-mode='hivemind-chat']) :global([data-hivemind-harness-surface]) .composerSeat .composerStack {
-  transform: translateX(var(--hm-chat-center-offset, 0px)) !important;
-}
-
-@media (max-width: 600px) {
-  :global(html[data-dsh-mode='hivemind-chat']) :global([data-hivemind-harness-surface]) .composerSeat .composerStack {
-    transform: none !important;
-  }
 }
 
 /* Active phase: header is ordinary column chrome above the scrollport (not
