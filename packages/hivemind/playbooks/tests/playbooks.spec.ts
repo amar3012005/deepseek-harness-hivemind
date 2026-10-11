@@ -207,6 +207,7 @@ describe('hivemind playbooks', () => {
       'hivemind_meta',
       'hivemind_research_gather',
       'hivemind_research_answer',
+      'hyperagents_session_diagnostics',
       'hivemind_research_request',
       'web_fetch',
       'hivemind_browser_capture',
@@ -247,6 +248,7 @@ describe('hivemind playbooks', () => {
       'hivemind_operating_context',
       'hivemind_operating_plan',
       'hivemind_research_answer',
+      'hyperagents_session_diagnostics',
     ])
     expect(projected.sections).toEqual([])
     expect(
@@ -254,7 +256,7 @@ describe('hivemind playbooks', () => {
         .schemas()
         .map(tool => tool.name)
         .sort(),
-    ).toEqual(['ask_user_question', 'hivemind_browser_capture', 'hivemind_capabilities', 'hivemind_meta', 'hivemind_operating_context', 'hivemind_operating_plan', 'hivemind_research_answer', 'schedule_create', 'schedule_delete', 'schedule_list', 'schedule_update'])
+    ).toEqual(['ask_user_question', 'hivemind_browser_capture', 'hivemind_capabilities', 'hivemind_meta', 'hivemind_operating_context', 'hivemind_operating_plan', 'hivemind_research_answer', 'hyperagents_session_diagnostics', 'schedule_create', 'schedule_delete', 'schedule_list', 'schedule_update'])
     events.push({
       type: 'hivemind/operating-context',
       data: { runId: 'run-1', objective: 'Assess risk.', employeeCandidates: [], retrieval: {} },
