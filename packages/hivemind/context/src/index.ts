@@ -59,6 +59,32 @@ export function completedExchanges(events: readonly SessionEvent[]): Conversatio
  * @returns model-facing recent conversation text.
  */
 export function recentConversationText(exchanges: readonly ConversationExchange[], maxTurns: number, maxChars: number): string { const heading='## Recent conversation\nOnly completed user requests and final answers are retained; tool calls and tool outputs are omitted. The separate user message after this block is the current request and must be answered.\n'; const selected:string[]=[]; let remaining=maxChars-heading.length; for(const exchange of exchanges.slice(-maxTurns).reverse()){const rendered=`\n### User\n${exchange.user}\n\n### Assistant\n${exchange.assistant}\n`;if(rendered.length<=remaining){selected.unshift(rendered);remaining-=rendered.length;continue}if(selected.length>0||remaining<80)break;const userBudget=Math.max(20,Math.floor(remaining*.35)),assistantBudget=Math.max(20,remaining-userBudget-36);selected.unshift(`\n### User\n${exchange.user.slice(0,userBudget)}\n\n### Assistant\n${exchange.assistant.slice(0,assistantBudget)}\n`);break}return `${heading}${selected.join('')}`.slice(0,maxChars) }
+function record(value: unknown): Record<string, unknown> | undefined {
+  return value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : undefined
+}
+/** Keep admitted peer evidence until its correlated response or actual task review. */
+function unresolvedPeerMessage(event: SessionEvent | undefined, events: readonly SessionEvent[]): boolean {
+  if (event?.type !== 'user/message') return false
+  const source = record(event.data.source)
+  if (source?.kind === 'team-message') return true // Native Team messages lack a reply-to identity; do not guess completion.
+  if (source?.kind !== 'hivemind-agent-message' || source.form === 'notice') return false
+  const receipt = events.find(item => String(item.type) === 'hivemind/room-message-received'
+    && record(item.data)?.id === source.messageId)
+  const data = record(receipt?.data)
+  if (typeof data?.taskId === 'string' && Array.isArray(data.artifactIds) && data.artifactIds.length > 0) {
+    const task = record(events.findLast(item => String(item.type) === 'team/task'
+      && record(record(item.data)?.task)?.id === data.taskId)?.data)?.task
+    const snapshot = record(task)
+    if (typeof snapshot?.revision !== 'number') return true
+    const revision = snapshot.status === 'completed' ? snapshot.revision - 1 : snapshot.revision
+    return !events.some(item => item.seq > event.seq && String(item.type) === 'hivemind/hq-task-review'
+      && record(item.data)?.taskId === data.taskId && record(item.data)?.reviewer === 'runtime'
+      && record(item.data)?.status === 'accepted' && record(item.data)?.taskRevision === revision
+      && JSON.stringify(record(item.data)?.artifactIds) === JSON.stringify(data.artifactIds))
+  }
+  return !events.some(item => item.seq > event.seq && String(item.type) === 'hivemind/room-message-queued'
+    && record(item.data)?.replyTo === source.messageId && record(item.data)?.kind === 'reply')
+}
 function projectHistory(ctx: Context, agent: Agent, config: ContextConfig): boolean {
   const session = agent.session
   const events = session.snapshotEvents()
@@ -107,6 +133,7 @@ function projectHistory(ctx: Context, agent: Agent, config: ContextConfig): bool
     return (event?.type === 'assistant/message' && event.data.message.content.some(block =>
       block.type === 'tool-call' && calls.has(block.id)))
       || (event?.type === 'user/message' && waiting?.originalSourceMessageId === event.data.id)
+      || unresolvedPeerMessage(event, events)
   })
   const shadowed = protectedFrom === -1 ? historicalTail : historicalTail.slice(0, protectedFrom)
   const start = shadowed[0], end = shadowed.at(-1)

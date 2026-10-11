@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { createUserMessage, createAssistantMessage, createToolResultMessage } from '@deepseek-ai/dsh-llm'
 import { Session, SessionId, foldSurface } from '@deepseek-ai/dsh-session'
+import { foldUserQuestions } from '@deepseek-ai/dsh-user-questions/src/projection.ts'
 import { completedExchanges, recentConversationText, contextPlugin } from '../src/index.ts'
 
 function user(text: string) {
@@ -13,10 +14,12 @@ function mount(
   profileBrief?: (agent: Agent, signal: AbortSignal, turn: number) => Promise<string | undefined>,
   turnInstruction?: (agent: Agent, turn: number) => string | undefined,
   pendingCalls: string[] = [],
+  nativePending = false,
 ) {
   let preStep: ((payload: never, next: () => Promise<unknown>) => Promise<unknown>) | undefined
   const ctx = {
-    get: () => ({ snapshot: () => ({ values: { userQuestions: { active: pendingCalls.map(callId => ({ callId })) } } }) }),
+    get: () => ({ snapshot: (session: Session) => ({ values: { userQuestions: nativePending
+      ? foldUserQuestions(session.snapshotEvents()) : { active: pendingCalls.map(callId => ({ callId })) } } }) }),
     effect(callback: () => (() => void) | undefined) {
       return callback()
     },
@@ -184,7 +187,7 @@ describe('HIVE progressive context', () => {
     session.append('user/message', user('Prepare the research'), { surfaceOp: 'append' })
     const question = session.append('assistant/message', { turn: 1, step: 1, stream: [], message: createAssistantMessage({
       source: { provider: 'test', model: 'test' },
-      content: [{ type: 'tool-call', id: 'pending-question' as never, name: 'ask_user_question', arguments: {} }],
+      content: [{ type: 'tool-call', id: 'pending-question' as never, name: 'ask_user_question', arguments: '{}' }],
     }) }, { surfaceOp: 'append' })
     const pending = session.append('tool/result', { turn: 1, step: 1, message: createToolResultMessage({
       callId: 'pending-question' as never, content: [{ type: 'text', text: 'Pending authenticated answer' }], isError: false,
@@ -216,7 +219,7 @@ describe('HIVE progressive context', () => {
     const original = session.append('user/message', user('Collect the nightly employee reports'), { surfaceOp: 'append' })
     const call = session.append('assistant/message', { turn: 2, step: 1, stream: [], message: createAssistantMessage({
       source: { provider: 'test', model: 'test' },
-      content: [{ type: 'tool-call', id: 'team-wait' as never, name: 'wait', arguments: {} }],
+      content: [{ type: 'tool-call', id: 'team-wait' as never, name: 'wait', arguments: '{}' }],
     }) }, { surfaceOp: 'append' })
     const result = session.append('tool/result', { turn: 2, step: 1, message: createToolResultMessage({
       callId: 'team-wait' as never, content: [{ type: 'text', text: 'Waiting for Elena' }], isError: false,
@@ -263,6 +266,70 @@ describe('HIVE progressive context', () => {
     expect(recent).toContain('request-15\n')
     expect(recent).toContain('request-29\n')
     expect(recent.length).toBeLessThanOrEqual(16_000)
+  })
+
+  it('keeps a real pending approval from the native projection after denied tool output and cold replay', async () => {
+    const session = Session.create(SessionId('approval-window'))
+    session.append('turn/start', { turn: 1 })
+    session.append('user/message', user('Prepare the release'), { surfaceOp: 'append' })
+    const call = session.append('assistant/message', { turn: 1, step: 1, stream: [], message: createAssistantMessage({
+      source: { provider: 'fixture', model: 'fixture' },
+      content: [{ type: 'tool-call', id: 'approval-call' as never, name: 'publish_release', arguments: JSON.stringify({ revision: 'approved-source' }) }],
+    }) }, { surfaceOp: 'append' })
+    session.append('approval/asked', { id: 'approval-id', callId: 'approval-call', toolName: 'publish_release',
+      questions: [{ id: 'approval', question: 'Allow this release?', options: [{ label: 'Allow once' }, { label: 'Reject' }] }],
+    } as never)
+    session.append('approval/decided', { id: 'approval-id', outcome: 'pending' } as never)
+    const result = session.append('tool/result', { turn: 1, step: 1, message: createToolResultMessage({
+      callId: 'approval-call' as never, content: [{ type: 'text', text: 'Waiting for authenticated approval' }], isError: true,
+    }) }, { surfaceOp: 'append' })
+    session.append('assistant/message', { turn: 1, step: 2, stream: [], message: createAssistantMessage({
+      source: { provider: 'fixture', model: 'fixture' }, content: [{ type: 'text', text: 'Release is paused.' }],
+    }) }, { surfaceOp: 'append' })
+    session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+    const restored = Session.create(SessionId('approval-cold'), session.snapshotEvents())
+    expect(foldUserQuestions(restored.snapshotEvents()).active).toMatchObject([{ callId: 'approval-call', state: 'continued' }])
+    const harness = mount([], undefined, undefined, [], true)
+    await harness.preStep({ agent: { session: restored }, turn: 2, signal: new AbortController().signal } as never,
+      async () => ({ kind: 'enter', messages: restored.deriveMessages() }))
+    expect(restored.surface.nodes).toContain(call.seq)
+    expect(restored.surface.nodes).toContain(result.seq)
+    expect(foldUserQuestions(restored.snapshotEvents()).active).toMatchObject([{ callId: 'approval-call', state: 'continued' }])
+  })
+
+  it('retains an unreviewed employee artifact until the exact saved Runtime acceptance', async () => {
+    const session = Session.create(SessionId('unreviewed-employee'))
+    session.append('turn/start', { turn: 1 })
+    session.append('user/message', user('Review the delegated work'), { surfaceOp: 'append' })
+    const relay = session.append('user/message', createUserMessage({
+      source: { kind: 'hivemind-agent-message', messageId: 'employee-report', senderId: 'elena', senderSessionId: 'elena', form: 'relay' } as never,
+      content: [{ type: 'text', text: 'Saved artifact and blocking schema failure details' }],
+    }), { surfaceOp: 'append' })
+    session.append('hivemind/room-message-received' as never, {
+      id: 'employee-report', taskId: 'delegated-task', artifactIds: ['saved-artifact'],
+    } as never)
+    session.append('assistant/message', { turn: 1, step: 1, stream: [], message: createAssistantMessage({
+      source: { provider: 'fixture', model: 'fixture' }, content: [{ type: 'text', text: 'The deliverable needs review.' }],
+    }) }, { surfaceOp: 'append' })
+    session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+    session.append('team/task' as never, { task: { id: 'delegated-task', revision: 4, status: 'in_progress' } } as never)
+    const harness = mount()
+    await harness.preStep({ agent: { session }, turn: 2, signal: new AbortController().signal } as never,
+      async () => ({ kind: 'enter', messages: session.deriveMessages() }))
+    expect(session.surface.nodes).toContain(relay.seq)
+    session.append('hivemind/hq-task-review' as never, { taskId: 'delegated-task', reviewer: 'runtime',
+      status: 'accepted', taskRevision: 4, artifactIds: ['different-artifact'],
+    } as never)
+    await harness.preStep({ agent: { session }, turn: 3, signal: new AbortController().signal } as never,
+      async () => ({ kind: 'enter', messages: session.deriveMessages() }))
+    expect(session.surface.nodes).toContain(relay.seq)
+    session.append('hivemind/hq-task-review' as never, { taskId: 'delegated-task', reviewer: 'runtime',
+      status: 'accepted', taskRevision: 4, artifactIds: ['saved-artifact'],
+    } as never)
+    await harness.preStep({ agent: { session }, turn: 4, signal: new AbortController().signal } as never,
+      async () => ({ kind: 'enter', messages: session.deriveMessages() }))
+    expect(session.surface.nodes).not.toContain(relay.seq)
+    expect(session.snapshotEvents().find(event => event.seq === relay.seq)).toEqual(relay)
   })
 
   it('starts a greeting with no skill catalog', async () => {
