@@ -2,16 +2,49 @@
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import type { HqWorkspace } from './types.ts'
 
+/** Model-only narrative preview; exact durable records remain available through HQ tools. */
+function preview(text: string, limit: number): string {
+  return text.length <= limit ? text : text.slice(0, limit) + '… [preview; read saved record for full text]'
+}
+
+export function wakeWorkspaceProjection(workspace: HqWorkspace) {
+  const unfinished = workspace.tasks.filter(task => !['completed', 'cancelled', 'failed'].includes(task.status))
+  const terminal = workspace.tasks.filter(task => ['completed', 'cancelled', 'failed'].includes(task.status))
+  const narrativeLimit = Math.max(48, Math.min(320, Math.floor(6400 / Math.max(1, unfinished.length))))
+  return {
+    mode: workspace.mode,
+    tasks: unfinished.map(task => ({
+      id: task.id, revision: task.revision, title: preview(task.title, 180),
+      objective: preview(task.objective, narrativeLimit), status: task.status, owner: task.owner,
+      sessionId: task.sessionId, dependencies: task.dependencies, dueAt: task.dueAt,
+      artifactIds: task.artifactIds, reviewStatus: task.reviewStatus, nextWakeAt: task.nextWakeAt,
+      acceptanceCriteria: task.acceptanceCriteria.slice(0, 4).map(value => preview(value, 160)),
+      omittedAcceptanceCriteria: Math.max(0, task.acceptanceCriteria.length - 4),
+      authority: task.authority.map(value => preview(value, 160)),
+      fullRecordRequired: true,
+    })),
+    recentCompleted: terminal.slice(-8).map(task => ({ id: task.id, revision: task.revision,
+      title: preview(task.title, 120), status: task.status, owner: task.owner,
+      artifactIds: task.artifactIds, reviewStatus: task.reviewStatus, completedAt: task.completedAt })),
+    omittedCompleted: Math.max(0, terminal.length - 8),
+    wakes: workspace.wakes.filter(wake => wake.status !== 'completed').map(wake => ({ ...wake, title: preview(wake.title, 120) })),
+    recentDeliveredWakes: workspace.wakes.filter(wake => wake.status === 'completed').slice(-4).map(wake => ({ ...wake, title: preview(wake.title, 120) })),
+    calendar: workspace.calendar.filter(item => !item.resolved).map(item => ({ ...item, title: preview(item.title, 160) })),
+    projection: 'Narrative previews only. Read the exact saved task before execution, review or authority decisions. Pending work and receipt identities remain authoritative; omitted terminal history is retrievable.',
+  }
+}
+
 export function wakeBriefing(workspace: HqWorkspace, events: readonly SessionEvent[], sessionId: string): string {
   const employeeMessages = events.filter(event => event.type === 'team/message/queued'
     && event.data.message.targetId === sessionId).slice(-12).map((event) => {
     if (event.type !== 'team/message/queued') throw new Error('unexpected_message_event')
     return { id: event.data.message.id, sender: event.data.message.senderName,
       text: event.data.message.content.filter(block => block.type === 'text')
-        .map(block => block.type === 'text' ? block.text : '').join('\n').slice(0, 2400) }
+        .map(block => block.type === 'text' ? block.text : '').join('\n').slice(0, 320) }
   })
-  const roomNotices = events.filter(event => String(event.type) === 'hivemind/room-message-received')
-    .slice(-20).map((event) => {
+  const roomNotices = events.filter(event => String(event.type) === 'hivemind/room-message-received'
+    && (!(event.data as { targetId?: string }).targetId || (event.data as { targetId?: string }).targetId === sessionId))
+    .slice(-12).map((event) => {
       const message = event.data as unknown as {
         id: string
         senderName: string
@@ -23,7 +56,7 @@ export function wakeBriefing(workspace: HqWorkspace, events: readonly SessionEve
         artifactIds: string[]
       }
       return { id: message.id, sender: message.senderName, kind: message.kind,
-        text: message.text.slice(0, 2400), taskId: message.taskId, replyTo: message.replyTo,
+        text: preview(message.text, 320), taskId: message.taskId, replyTo: message.replyTo,
         artifactIds: message.artifactIds }
     })
   return 'HQ current operating briefing. Native task status and receipt/review links are authoritative. '
@@ -36,5 +69,5 @@ export function wakeBriefing(workspace: HqWorkspace, events: readonly SessionEve
     + 'Use hivemind_hq_blocker for Runtime-delegated employee blockers. Preserve the original task, employee and checkpoint; supply routine context from actual saved evidence within existing authority. For necessary human input or connections, send one hivemind_administrator_message with the saved blocker request_call_id and stable message_key, then wait asynchronously and keep other work moving. Resume the same employee only after actual authenticated input or verified connection. Email is not approval; external permissions still require native approval. Direct human-assigned employee questions retain their direct human flow. '
     + 'For a scheduled Nightly report, load hivemind-nightly-routine-check and use the original scheduled occurrence, authorized roster and evidence window. The review is technical reporting, not authority to perform repairs, email private company content or rewrite company memory. '
     + 'When nothing is due, remain quiet. Several deadline or review reminders may have queued while an earlier turn already inspected the same work. Compare their requested action with current receipts and the latest handoff; a queued reminder alone is not new work. Do not repeat an unchanged board report or review. Answer each new employee notification concisely through the native message tool; review submitted work before acceptance and never reply-loop to acknowledgements. Planned rest never exceeds four hours; if the saved wake is later, preserve the handoff context and replace it with a new handoff and an earlier review wake, leaving employee deadlines unchanged. Reuse the current handoff and confirmed active future wake within four hours when the next steps have not changed, rather than creating another handoff for each reminder. Report only a meaningful change, useful result, decision or new blocker. Private operating recall is separate from shared company memory. Retain reusable verified lessons, decisions and rationale, outcomes, failures and their evidence confidence, confirmed user preferences, ongoing goals, handoffs and retained feedback through the existing private operating-memory tools, not handoffs alone. Use learning or decision_note for supported material and handoff for unfinished-work continuity; do not invent new schema kinds. Keep authoring pinned to your actual Runtime identity. Employee private notes remain author-owned; use only the existing authorized scoped recall/shared result interface for information necessary to the assigned task, never assume permission to inspect arbitrary personal memory. Never promote private notes into company memory without its existing approval rules.\n'
-    + JSON.stringify({ observedAt: new Date().toISOString(), ...workspace, employeeMessages, roomNotices })
+    + JSON.stringify({ observedAt: new Date().toISOString(), ...wakeWorkspaceProjection(workspace), employeeMessages, roomNotices })
 }

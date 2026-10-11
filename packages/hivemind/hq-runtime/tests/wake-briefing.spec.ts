@@ -92,3 +92,17 @@ it('keeps saved human timing notes visible during initial awakening', async () =
   expect(text).toContain('Use minute-scale schedules for this test, not tomorrow.')
   expect(text).toContain('hq-rest-pending-note-ids')
 })
+
+
+it('bounds wake narratives while retaining every unfinished task and exact review links', () => {
+  const task = { id:'pending-1', revision:7, title:'CRM expansion', objective:'verbose saved recap '.repeat(2000), status:'blocked', owner:'romeo', dependencies:['dependency-1'], authority:['existing authenticated scope'], acceptanceCriteria:['verify final result '.repeat(200)], artifactIds:['artifact-1'], reviewStatus:'pending', dueAt:'2030-01-01' }
+  const large = { ...workspace, tasks:[task, ...Array.from({ length:20 }, (_,i) => ({ ...task, id:'completed-'+i, status:'completed' }))] }
+  const original = JSON.stringify(large)
+  const text = wakeBriefing(large, [], 'root')
+  expect(text.length).toBeLessThan(15000)
+  const projection = JSON.parse(text.slice(text.indexOf('{')))
+  expect(projection.tasks).toHaveLength(1)
+  expect(projection.tasks[0]).toMatchObject({ id:'pending-1', revision:7, status:'blocked', owner:'romeo', dependencies:['dependency-1'], artifactIds:['artifact-1'], reviewStatus:'pending', fullRecordRequired:true })
+  expect(projection.omittedCompleted).toBe(12)
+  expect(JSON.stringify(large)).toBe(original)
+})
