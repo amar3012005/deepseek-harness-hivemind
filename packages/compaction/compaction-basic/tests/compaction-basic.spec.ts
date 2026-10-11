@@ -318,8 +318,14 @@ describe('compact configuration and defaults', () => {
       maxOverflowRetries: 1,
       modelPolicies: [],
       auto: true,
+      pressureAuto: true,
     })
     expect(Object.isFrozen(resolved)).toBe(true)
+  })
+
+  it('validates the independent pressure switch without disabling overflow listeners', () => {
+    expect(resolveConfig({ pressureAuto:false })).toMatchObject({ auto:true,pressureAuto:false,maxOverflowRetries:1 })
+    expect(()=>resolveConfig({ pressureAuto:'false' } as unknown as BasicCompactionConfig)).toThrow('pressureAuto must be a boolean')
   })
 
   it('caps proactive pressure independently of a million-token model window', () => {
@@ -2084,6 +2090,30 @@ describe('automatic listener and loader composition', () => {
     expect(summaries).toBe(1)
     expect(await recover(ctx, agent(session, MODEL), overflow())).toBe(false)
     expect(session.snapshotEvents().filter(event => event.type === 'compaction/summary')).toHaveLength(summaries)
+  })
+
+  it('pressureAuto:false preserves routine history and complete tool pairs but still recovers actual overflow', async () => {
+    const ctx = createContext()
+    const compact = new TestCompactionEngine(ctx, { pressureAuto:false, thresholdRatio:0.5, retainTokens:180 })
+    const session = oversizedToolResult(4000,true)
+    session.append('user-question/parked', {
+      callId:ToolCallId('pending-question'),
+      questions:[{ id:'source',question:'Which source should be used?',
+        options:[{ label:'Existing source',description:'Use authorized evidence' }],multiSelect:false }],
+    })
+    const owner = agent(session,MODEL)
+    const original = session.snapshotEvents()
+    const messages = session.deriveMessages()
+    for(let step=0;step<4;step++) await preStep(ctx,owner)
+    expect(compact.calls).toHaveLength(0)
+    expect(session.snapshotEvents()).toEqual(original)
+    expect(session.deriveMessages()).toEqual(messages)
+    const cold=Session.create(SessionId('pressure-off-restored'),session.snapshotEvents())
+    await preStep(ctx,agent(cold,MODEL))
+    expect(cold.deriveMessages()).toEqual(messages)
+    expect(await recover(ctx,agent(cold,MODEL),overflow())).toBe(true)
+    expect(compact.calls).toHaveLength(1)
+    expect(cold.snapshotEvents().slice(0,original.length)).toEqual(original)
   })
 
   it('auto:false installs neither automatic listener', async () => {

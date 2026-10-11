@@ -41,6 +41,7 @@ const BASIC_COMPACT_CONFIG_KEYS: ReadonlySet<string> = new Set([
   ...POLICY_CONFIG_KEYS,
   'modelPolicies',
   'auto',
+  'pressureAuto',
 ])
 
 /** Complete exact-target override key set. */
@@ -73,6 +74,10 @@ export function resolveConfig(config: BasicCompactionConfig = {}): ResolvedConfi
     throw new Error('BasicCompactionConfig: auto must be a boolean')
   }
 
+  if (config.pressureAuto !== undefined && typeof config.pressureAuto !== 'boolean') {
+    throw new Error('BasicCompactionConfig: pressureAuto must be a boolean')
+  }
+
   const thresholdRatio = config.thresholdRatio ?? DEFAULT_THRESHOLD_RATIO
   const retention = resolveRetention(config, { retainRatio: DEFAULT_RETAIN_RATIO })
   validateRatioRetention(thresholdRatio, retention, 'BasicCompactionConfig')
@@ -97,6 +102,7 @@ export function resolveConfig(config: BasicCompactionConfig = {}): ResolvedConfi
     maxOverflowRetries: config.maxOverflowRetries ?? 1,
     modelPolicies,
     auto: config.auto ?? true,
+    pressureAuto: config.pressureAuto ?? true,
   })
 }
 
