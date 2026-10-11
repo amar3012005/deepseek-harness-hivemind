@@ -29,7 +29,9 @@ it('requests native progressive skill loading once per active turn without repla
   let handler: Handler
   const ctx={
     inject:(_deps:string[],fn:(scope:Context)=>void)=>fn(ctx), effect:(fn:()=>unknown)=>fn(),
-    skills:{ register:()=>()=>{} }, on:(_name:string,fn:Handler)=>{handler=fn;return ()=>{}},
+    skills:{ register:()=>()=>{} }, systemPrompt:{ section:()=>()=>{},getSectionOrder:()=>1 },
+    hivemindEmployeeDirectory:{ profiles:async()=>({ profiles:[] }) }, get:()=>undefined,
+    on:(_name:string,fn:Handler)=>{handler=fn;return ()=>{}},
   } as unknown as Context
   installNightlyRoutineGuidance(ctx)
   const f=fixture(), decision={ kind:'enter' as const,messages:[createUserMessage({ source:{ kind:'user' },content:[] })] }

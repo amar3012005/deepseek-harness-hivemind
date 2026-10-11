@@ -73,6 +73,11 @@ it('projects only bounded correlated findings with exact references and never di
   const result=await tool.execute({ operation:'evidence',occurrence },{ agent,signal:new AbortController().signal } as never) as Record<string,unknown>
   expect(result).toEqual(nightlyReportEvidence(agent,occurrence));expect(sends).toBe(0)
   const json=JSON.stringify(result);expect(json).toContain('"sequence":4');expect(json).toContain(finding.observed);expect(json).not.toContain('private raw content')
+  const templates=result.issue_templates as { details: { owner:string } }[]
+  expect(templates).toHaveLength(1)
+  await expect(tool.execute({ operation:'submit',occurrence,coverage:{ expected:2,inspected:2,missing:0 },issues:templates },{ agent,signal:new AbortController().signal } as never)).resolves.toEqual({})
+  expect(sends).toBe(1)
+  sends=0
   const details=(result.replies as { findings:{ owner:string }[] }[])[0]!.findings[0]!
   await expect(tool.execute({ operation:'submit',occurrence,coverage:{ expected:2,inspected:2,missing:0 },issues:[{ capability:'artifacts',code:'unavailable',severity:'medium',count:1,cause:'unknown',details }] },{ agent,signal:new AbortController().signal } as never)).resolves.toEqual({});expect(sends).toBe(1)
   events[3]!.data.senderId='wrong';expect(JSON.stringify(nightlyReportEvidence(agent,occurrence))).not.toContain(finding.observed)

@@ -38,7 +38,7 @@ export function runtimeSupportReportTool(
 ) {
   return defineTool({
     name: 'runtime_support_report',
-    description: 'Runtime only: read evidence, submit or inspect one detailed technical Nightly report to the server-configured SUPPORT inbox. Keep the ORIGINAL saved native occurrence on delayed delivery/retry. Include validated details for Runtime and every inspected HyperAgent: expected, observed, recovery, prevention and structured technical evidence. Fields are bounded technical summaries, never raw business logs, private memory/transcripts, secrets, names, UUIDs, URLs or arbitrary recipients. Use hyperagent agent_index from the authorized roster order rather than employee names. Missing replies are missing coverage. Read operation evidence before submit to obtain exact correlated findings and native sequence references; copy finding fields verbatim rather than inventing references. Exact occurrence/content dedupes retries; conflicts require status, not resend. Accepted/queued is not delivered, delivered is not read or approval. No repair or access-change authority is granted',
+    description: 'Runtime only: read evidence, submit or inspect one detailed technical Nightly report to the server-configured SUPPORT inbox. Keep the ORIGINAL saved native occurrence on delayed delivery/retry. Include validated details for Runtime and every inspected HyperAgent: expected, observed, recovery, prevention and structured technical evidence. Fields are bounded technical summaries, never raw business logs, private memory/transcripts, secrets, names, UUIDs, URLs or arbitrary recipients. Use hyperagent agent_index from the authorized roster order rather than employee names. Missing replies are missing coverage. Read operation evidence before submit and copy its issue_templates directly; adjust classification enums only. Never merge, rewrite or invent details/evidence references. Exact occurrence/content dedupes retries; conflicts require status, not resend. Accepted/queued is not delivered, delivered is not read or approval. No repair or access-change authority is granted',
     parameters: {
       operation: { type: 'string', enum: ['submit','status','evidence'], required: true },
       occurrence: { type: 'string', required: true, description: 'Original native scheduled occurrence as UTC RFC3339, not current time after a queue delay.' },
@@ -108,7 +108,13 @@ export function nightlyReportEvidence(agent:Agent,occurrence:string):Record<stri
     const call=events.findLast(value=>value.type==='tool/call'&&value.data['callId']===message?.source?.callId)
     return { sequence:event.seq,tool:typeof call?.data['name']==='string'?call.data['name']:null,is_error:message?.content?.some(block=>block.isError===true)??false }
   })
-  return { occurrence,replies,runtime_receipts,findings_limit:20 }
+  const issue_templates = replies.flatMap((reply) => {
+    const value = reply as { status?: string; findings?: JsonValue[] }
+    return value.status === 'received' ? (value.findings ?? []).map(details => ({
+      capability: 'runtime', code: 'unknown', severity: 'medium', count: 1, cause: 'unknown', details,
+    })) : []
+  })
+  return { occurrence,replies,runtime_receipts,issue_templates,findings_limit:20 }
 }
 
 /** Diagnostics must derive from persisted correlated inbox replies or Runtime's own receipts. */
