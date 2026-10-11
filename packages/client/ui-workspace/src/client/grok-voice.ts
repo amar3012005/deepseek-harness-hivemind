@@ -1,8 +1,9 @@
+import { voiceFetch } from './voice-fetch.ts'
 /** Existing Tara browser PCM protocol, scoped by a server-issued one-use capability. */
 export async function startGrokVoice(sessionId: string, stream: MediaStream, audio: HTMLAudioElement,
   onReady: () => void, onCaption: (text: string) => void, onClosed: (failed: boolean) => void, onClosing: () => void,
   onAssistantAudio: () => void = () => {}) {
-  const response = await fetch('/api/hivemind/voice/fallback/start', { method: 'POST', credentials: 'include',
+  const response = await voiceFetch('/api/hivemind/voice/fallback/start', { method: 'POST', credentials: 'include',
     headers: { 'content-type': 'application/json' }, body: JSON.stringify({ sessionId }), signal: AbortSignal.timeout(35000) })
   const result = await response.json() as {
     provider?: string
@@ -34,7 +35,7 @@ export async function startGrokVoice(sessionId: string, stream: MediaStream, aud
   }
   const handoff = async () => {
     for (let attempt = 0; attempt < 4; attempt++) {
-      const saved = await fetch('/api/hivemind/voice/fallback/finish', { method: 'POST', credentials: 'include', keepalive: true,
+      const saved = await voiceFetch('/api/hivemind/voice/fallback/finish', { method: 'POST', credentials: 'include', keepalive: true,
         headers: { 'content-type': 'application/json' }, body: JSON.stringify({ sessionId, callId: result.session_id }) })
       if (saved.ok && saved.status !== 202) return
       if (saved.status !== 202) throw new Error('voice_handoff_failed')
