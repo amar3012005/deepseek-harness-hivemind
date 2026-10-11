@@ -44,6 +44,21 @@ describe('saved approval exact action', () => {
   it.each(['Deny', 'yes', 'Allow always', ''])('never interprets unknown option %j as a decision', (selected) => {
     expect(decision(seed(selected))).toBeUndefined()
   })
+  it('opens a fresh approval only after a new authenticated direct human instruction', () => {
+    const events = seed('Reject')
+    events.splice(4, 0, { type: 'user/message', seq: 3.5, data: { source: { kind: 'user', authenticatedActor: { userId: 'owner', orgId: 'organization' } }, content: [{ type: 'text', text: 'Please request this action again.' }] } })
+    expect(decision(events)).toBeUndefined()
+  })
+  it.each(['agent-message', 'plugin', 'webhook', 'user-question-reply'])('never resets rejection from %s delivery', (kind) => {
+    const events = seed('Reject')
+    events.splice(4, 0, { type: 'user/message', seq: 3.5, data: { source: { kind, authenticatedActor: { userId: 'owner', orgId: 'organization' } }, content: [{ type: 'text', text: 'Continue.' }] } })
+    expect(decision(events)?.outcome).toBe('rejected')
+  })
+  it('never resets rejection from an unauthenticated user-shaped message', () => {
+    const events = seed('Reject')
+    events.splice(4, 0, { type: 'user/message', seq: 3.5, data: { source: { kind: 'user' }, content: [{ type: 'text', text: 'Continue.' }] } })
+    expect(decision(events)?.outcome).toBe('rejected')
+  })
   it('does not accept unauthenticated answers', () => {
     const events = seed('Reject'); Object.assign(events[3]!.data, { source: { kind: 'user-question-reply', callId: 'old', outcome: 'answered', questionAnswerSubmission: true, authenticatedActor: null } })
     expect(decision(events)).toBeUndefined()
@@ -81,4 +96,9 @@ it('native service denies restored rejection, audits it once, and never creates 
   expect(appended.filter(event => event.type === 'approval/decided').map(event => event.data['outcome'])).toEqual(['rejected', 'rejected'])
   expect(appended.filter(event => event.type === 'approval/asked').every(event => !event.data['questions'])).toBe(true)
   expect(appended.some(event => event.type === 'approval/decided' && event.data['outcome'] === 'pending')).toBe(false)
+  session.append('user/message', { source: { kind: 'user', authenticatedActor: { userId: 'owner', orgId: 'organization' } }, content: [{ type: 'text', text: 'Please request this action again.' }] } as never)
+  session.append('tool/call', call('fresh').data as never)
+  expect(await ctx.approval.request({ agent, toolName: 'write', callId: ToolCallId('fresh') })).toBe('pending')
+  expect(appended.filter(event => event.type === 'approval/consumed')).toHaveLength(1)
+  expect(appended.at(-1)?.data['outcome']).toBe('pending')
 })
