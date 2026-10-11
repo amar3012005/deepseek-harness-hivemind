@@ -6,7 +6,7 @@ export type HivemindConnectKey =
   | 'composio.connectionRequired' | 'composio.connectionPending' | 'composio.approvalRequired' | 'composio.failed' | 'composio.completed' | 'composio.cancelled'
   | 'composio.connect' | 'composio.connectDetail' | 'composio.authorize' | 'composio.draftDetail' | 'composio.inspect'
   | 'composio.connectionPrompt' | 'composio.connectionActionDetail'
-  | 'composio.inputRequired' | 'composio.verifying'
+  | 'composio.searching' | 'composio.working' | 'composio.returned' | 'composio.inputRequired' | 'composio.verifying'
   | 'composio.continue'
   | 'composio.dismiss'
   | 'composio.connected' | 'composio.connectionVerified'
@@ -44,6 +44,9 @@ export const en: Record<HivemindConnectKey, string> = {
   'composio.connectionPrompt': 'Connect {app} to continue, then return here.',
   'composio.connectionActionDetail': 'Authorize in a new tab, then continue this request.',
   'composio.inputRequired': 'I need your input to continue',
+  'composio.searching': 'Searching…',
+  'composio.working': 'Working…',
+  'composio.returned': 'Returned from sign-in. Continue to verify access.',
   'composio.verifying': 'Verifying connection…',
   'composio.continue': "I've connected {app} — continue",
   'composio.dismiss': 'Dismiss and stop this turn',
@@ -101,6 +104,9 @@ export const zh: Record<HivemindConnectKey, string> = {
   'composio.connectionPrompt': '连接 {app} 后返回此处继续。',
   'composio.connectionActionDetail': '请在新标签页中授权，然后继续此请求。',
   'composio.inputRequired': '需要你的输入才能继续',
+  'composio.searching': '正在查找…',
+  'composio.working': '正在处理…',
+  'composio.returned': '已返回登录页面。继续以验证访问权限。',
   'composio.verifying': '正在验证连接…',
   'composio.continue': '我已连接 {app} — 继续',
   'composio.dismiss': '关闭并停止本轮',

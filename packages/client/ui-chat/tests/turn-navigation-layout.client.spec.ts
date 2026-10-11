@@ -11,3 +11,13 @@ it('keeps the agent jump rail on the native conversation left edge at narrow wid
   expect(css).toMatch(/\[data-agent-room\]\) \.preview\s*\{\s*left: calc\(100% \+ 10px\);/u)
   expect(css.slice(agentRule)).not.toContain('opacity: 0')
 })
+
+it('shares the embedded viewport axis and preserves mobile geometry and native view navigation', () => {
+  const chat = readFileSync(new URL('../src/client/chat/ChatView.module.css', import.meta.url), 'utf8')
+  const shell = readFileSync(new URL('../../ui-conversation/src/client/skeleton/ConversationRoot.module.css', import.meta.url), 'utf8')
+  expect(chat).toContain('translateX(var(--hm-chat-center-offset, 0px))')
+  expect(shell).toContain('translateX(var(--hm-chat-center-offset, 0px)) !important')
+  expect(shell).toContain('--hm-chat-center-offset: max(')
+  expect(chat).toContain('margin: 0; transform: none;')
+  expect(shell).toMatch(/\.root\[data-agent-room\] \.composerViews\s*\{\s*display: block;/u)
+})

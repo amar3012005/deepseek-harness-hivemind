@@ -414,6 +414,7 @@ export function installEmployeeInputBlocker(ctx: Context): void {
 export function installDelegatedBlockerReporting(ctx: Context): void {
   installEmployeeInputBlocker(ctx)
   installEmployeeReportRepair(ctx)
+  ctx.effect(() => ctx.on('hivemind/runtime-connection-owner', agent => isHqLead(ctx, agent), { global: true }))
   ctx.effect(() => ctx.on('hivemind/delegated-connection-blocker', input => reportDelegatedConnection(ctx, input), { global: true }))
   ctx.effect(() => ctx.on('tools/pre-execute', async (execution, next) => {
     const decision = await next()

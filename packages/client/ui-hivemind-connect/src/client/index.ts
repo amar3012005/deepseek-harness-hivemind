@@ -10,6 +10,8 @@ import { isEnvironmentPreviewOpen } from './environment-preview.ts'
 import { websiteRead, type WebsiteRead } from './website-sources.ts'
 import { WebsitePreviewUpdates, WebsiteSourceCard } from './WebsitePreview.tsx'
 import { decodeArtifactText } from './artifact-text.ts'
+import { ConnectedAppStatus } from './ConnectedAppStatus.tsx'
+import { ConnectedAppDock } from './ConnectedAppDock.tsx'
 import { ConnectionAuthorizationPanel } from './ConnectionAuthorizationPanel.tsx'
 import type { ComposerChainProps } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { ConversationNodeDefinition } from '@deepseek-ai/dsh-client-ui-conversation/client'
@@ -705,6 +707,18 @@ export function apply(ctx: ClientContext): void {
     }
   })
   ctx.inject(['conversation'], () => {
+    ctx.slots.inject('conversation.input.dock', () => ctx.slots.register({
+      name: 'conversation.input.dock', id: 'hivemind-saved-connection', order: -20, locale: NS,
+      inject: sessionId => ({
+        hooks: { employeeEvents: employeeEvents(sessionId) },
+        resume: async (prompt: string) => {
+          const conversation = ctx.sessions.scope(sessionId)?.get('conversation')
+          if (conversation === undefined) throw new Error('Connection request is unavailable')
+          await conversation.send(prompt)
+        },
+      }),
+    }, ConnectedAppDock))
+
     ctx.effect(() => {
       let sending = false
       const sendPrompt = async (prompt: string): Promise<boolean> => {
@@ -727,6 +741,10 @@ export function apply(ctx: ClientContext): void {
       const conversation = scope?.get('conversation')
       if (conversation !== undefined) void conversation.send(prompt)
     }
+    ctx.slots.inject('conversation.chat.workUpdates', () => ctx.slots.register({
+      name: 'conversation.chat.workUpdates', id: 'hivemind-connected-app-status', locale: NS,
+      inject: sessionId => ({ hooks: { employeeEvents: employeeEvents(sessionId) } }),
+    }, ConnectedAppStatus))
     ctx.slots.inject('conversation.chat.workUpdates', () => ctx.slots.register({
       name: 'conversation.chat.workUpdates', id: 'hivemind-current-activity', locale: NS,
     }, ({ turn, sessionId, t }) => window.location.pathname.includes('/employee/harness')

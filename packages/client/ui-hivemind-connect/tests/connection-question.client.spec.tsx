@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { cleanup, fireEvent, render } from '@testing-library/react'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts'
@@ -33,7 +33,7 @@ function questions() {
   }]
 }
 
-afterEach(cleanup)
+afterEach(() => { cleanup(); vi.unstubAllGlobals() })
 
 describe('connection question presentation', () => {
   it('recognizes only a validated app-neutral HIVE connection question', () => {
@@ -50,7 +50,8 @@ describe('connection question presentation', () => {
 
     const link = view.getByRole('link', { name: presentation.connectLabel })
     const continueButton = view.getByRole('button', { name: presentation.continueLabel })
-    expect(view.getByText('需要你的输入才能继续')).toBeTruthy()
+    expect(view.getByText('Asana')).toBeTruthy()
+    expect(view.getAllByText(questions()[0]!.question)).toHaveLength(1)
     expect(link.getAttribute('href')).toBe(presentation.redirectUrl)
     expect(view.getAllByRole('link')).toHaveLength(1)
     expect(view.getAllByRole('button')).toHaveLength(2)
@@ -67,4 +68,20 @@ describe('connection question presentation', () => {
       selected: [presentation.continueLabel],
     }] })
   })
+})
+
+it('treats OAuth return as a hint without answering or claiming verified access', async () => {
+  let listener: ((event: { data: unknown }) => void) | undefined
+  vi.stubGlobal('BroadcastChannel', class {
+    addEventListener(_name: string, callback: typeof listener) { listener = callback }
+    close() {}
+  })
+  const pending = new PendingConnectionAuthorization('room' as SessionId, connectionPresentationOf(questions())!)
+  const view = render(<ConnectionAuthorizationPanel matched={pending} t={makeTranslate(zh, commonZh)} />)
+  let answered = false
+  void pending.result.then(() => { answered = true })
+  listener?.({ data: { status: 'success' } })
+  await Promise.resolve()
+  expect(answered).toBe(false)
+  expect(view.container.textContent).not.toContain('Asana 已连接')
 })

@@ -123,3 +123,11 @@
   .actions { align-items: stretch; flex-direction: column; }
   .connectButton { justify-content: center; }
 }
+
+/* One app and one status; keep long reasons inside the native input dock. */
+.appCard { padding: 8px 32px 8px 0; border: 0; gap: 8px; min-width: 0; flex-wrap: wrap; }
+.appCard img { width: 20px; height: 20px; }
+.appCard strong { font-size: 14px; }
+.appCard span { display: block; color: var(--dsw-alias-label-secondary); font-size: 13px; }
+.detail { overflow-wrap: anywhere; margin: 4px 0; }
+.root { min-width: 0; }

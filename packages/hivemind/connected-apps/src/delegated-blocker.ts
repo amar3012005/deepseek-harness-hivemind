@@ -17,6 +17,8 @@ export interface DelegatedConnectionReceipt {
 }
 declare module '@deepseek-ai/cordis' {
   interface Events {
+    /** Ask the native HQ owner whether this exact Agent is Runtime. @mode serial */
+    'hivemind/runtime-connection-owner'(agent: Agent): boolean | undefined
     /** Report only a verified native Runtime assignment. @mode serial */
     'hivemind/delegated-connection-blocker'(input: DelegatedConnectionRequest): Promise<DelegatedConnectionReceipt | undefined>
     /** Verify original workflow and fresh account state before resuming. @mode serial */

@@ -240,6 +240,7 @@
   width: min(var(--dsh-transcript-width, 720px), 100%);
   max-width: var(--dsh-transcript-width, 720px);
   margin-inline: auto;
+  transform: translateX(var(--hm-chat-center-offset, 0px));
 }
 
 /* Compact activity spacing belongs to Runtime and employee rooms. */
@@ -280,7 +281,7 @@
 
 @media (max-width: 600px) {
   :global([data-agent-room]) .scroll { padding: 8px 10px; }
-  :global([data-agent-room]) .column { width: 100%; max-width: 100%; margin: 0; --dsh-chat-flow-gap: 8px; }
+  :global([data-agent-room]) .column { width: 100%; max-width: 100%; margin: 0; transform: none; --dsh-chat-flow-gap: 8px; }
   :global([data-agent-room]) .roomDate { align-self: center; width: fit-content; margin: 12px auto 4px; padding: 3px 12px; border-radius: 8px; background: #fff; color: #6b6b65; font-size: 11px; }
   :global([data-agent-room]) .activityOrb { display: none; }
   :global([data-agent-room]) .turnStatus { min-height: 24px; padding-left: 4px; }

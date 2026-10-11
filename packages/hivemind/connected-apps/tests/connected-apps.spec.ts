@@ -34,6 +34,7 @@ function harness(
   const concludeTurn = vi.fn()
   const ask = vi.fn()
   const spills: Array<{ suggestedName: string; content: string }> = []
+  const flush = vi.fn(async () => true)
   let tool: {
     execute(
       args: Record<string, unknown>,
@@ -42,9 +43,9 @@ function harness(
   } | undefined
   const listeners = new Map<string, (...args: never[]) => unknown>()
   const ctx = {
-    ...(delegatedReport ? { serial: delegatedReport } : {}),
+    serial: delegatedReport ?? (async () => undefined),
     tools: { register(value: typeof tool) { tool = value } },
-    sessions: { flush: vi.fn(async () => true) },
+    sessions: { flush },
     effect<T>(callback: () => T) { return callback() },
     hivemindIdentity: { resolve: vi.fn(async () => identity) },
     userQuestions: { ask },
@@ -72,7 +73,21 @@ function harness(
     concludeTurn,
     ask,
     spills,
+    flush,
   }
+}
+
+
+function savedSearch(callId: string, response: unknown) {
+  return [
+    { type: 'tool/call', data: { name: 'hivemind_connected_task', callId, arguments: JSON.stringify({
+      action: 'search', queries: [{ use_case: 'Example: read one value.', result_fields: ['value'] }],
+      session: { generate_id: true },
+    }) } },
+    { type: 'tool/result', data: { message: { source: { callId }, content: [{ type: 'tool-result',
+      content: [{ type: 'text', text: JSON.stringify(response) }],
+    }] } } },
+  ]
 }
 
 describe('progressive Composio bridge', () => {
@@ -288,7 +303,7 @@ describe('progressive Composio bridge', () => {
     ) => Promise<{ kind: string; content: Array<{ type: string; text: string }> }>
     const huge = JSON.stringify({ result: { data: { results: [{ primary_tool_slugs: ['SLACK_LIST_CHANNELS'], tool_schemas: { huge: true } }] } } })
     const decision = await post(
-      { name: 'hivemind_connected_task', arguments: { action: 'search' } },
+      { name: 'mcp__composio__COMPOSIO_SEARCH_TOOLS', arguments: { action: 'search' } },
       { isError: false, content: [{ type: 'text', text: huge }] },
       async () => ({ kind: 'accept', content: [{ type: 'text', text: huge }] }),
     )
@@ -327,12 +342,14 @@ describe('progressive Composio bridge', () => {
     } }
     execute.mockResolvedValueOnce(search).mockResolvedValueOnce(provider)
     const app = harness(true, undefined, false, { withSpill: true })
-    const agent = { session: { header: { id: 'conversation-receipts' }, snapshotEvents: () => [], append: vi.fn() } }
+    const events: unknown[] = []
+    const agent = { session: { header: { id: 'conversation-receipts' }, snapshotEvents: () => events, append: vi.fn() } }
 
     const discovered = await app.tool().execute({
       action: 'search', queries: [{ use_case: 'Example: read one value.', result_fields: ['value'] }],
       session: { generate_id: true },
     }, { signal: AbortSignal.abort(), agent, name: 'hivemind_connected_task', callId: 'search-call' } as never)
+    events.push(...savedSearch('search-call', search))
     const completed = await app.tool().execute({
       action: 'execute', tool_slug: 'EXAMPLE_READ', arguments: { query: 'value' },
     }, { signal: AbortSignal.abort(), agent, name: 'hivemind_connected_task', callId: 'execute-call' } as never)
@@ -377,12 +394,14 @@ describe('progressive Composio bridge', () => {
       const app = harness(true, identity, false, {
         serviceApiBase: 'http://127.0.0.1:3000', serviceSecretEnv: 'TEST_CONNECTED_RECEIPT_SECRET', withSpill: true,
       })
-      const agent = { session: { header: { id: 'session-12345678' }, snapshotEvents: () => [], append: vi.fn() } }
+      const events: unknown[] = []
+      const agent = { session: { header: { id: 'session-12345678' }, snapshotEvents: () => events, append: vi.fn() } }
       await app.listeners.get('agent/pre-step')?.({ agent, turn: 1, messages: [] } as never, (async () => ({ kind: 'accept', messages: [] })) as never)
       await app.tool().execute({
         action: 'search', queries: [{ use_case: 'Example: read one value.', result_fields: ['value'] }],
         session: { generate_id: true },
       }, { signal: AbortSignal.abort(), agent, name: 'hivemind_connected_task', callId: 'search-call' } as never)
+      events.push(...savedSearch('search-call', search))
       const completed = await app.tool().execute({
         action: 'execute', tool_slug: 'EXAMPLE_READ', arguments: { query: 'value' },
       }, { signal: AbortSignal.abort(), agent, name: 'hivemind_connected_task', callId: 'execute-call' } as never)
@@ -904,6 +923,99 @@ describe('progressive Composio bridge', () => {
     expect(app.concludeTurn).toHaveBeenCalledOnce()
   })
 
+  it.each([
+    { name: 'missing toolkit', statuses: [{ toolkit: 'slack', status: 'ACTIVE' }], ready: false },
+    { name: 'contradictory toolkit', statuses: [{ toolkit: 'slack', status: 'ACTIVE' }, { toolkit: 'gmail', status: 'ACTIVE' }, { toolkit: 'gmail', status: 'PENDING' }], ready: false },
+    { name: 'all affirmative toolkits', statuses: [{ toolkit: 'slack', status: 'ACTIVE' }, { toolkit: 'gmail', status: 'ACTIVE' }], ready: true },
+  ])('updates only the matching saved authorization after verified access: $name', async ({ statuses, ready }) => {
+    execute.mockResolvedValueOnce({ data: { toolkit_connection_statuses: statuses } })
+    const app = harness()
+    const events = [
+      { type: 'hivemind/connected-receipt', data: { version: 1, tool: 'connection_authorization',
+        workflowSessionId: 'workflow-1', receipt: { status: 'connection_required', request_call_id: 'original-call',
+          session_id: 'workflow-1', app_label: 'Slack', reason: 'Review the company sources.' } } },
+      { type: 'hivemind/connected-receipt', data: { version: 1, tool: 'connection_authorization',
+        workflowSessionId: 'foreign-workflow', receipt: { status: 'connection_required', request_call_id: 'foreign-call',
+          session_id: 'foreign-workflow' } } },
+    ]
+    const agent = { id: 'runtime-room', session: { header: { id: 'runtime-room' }, snapshotEvents: () => events, append: vi.fn() } }
+    await expect(app.tool().execute({ action: 'wait_connection', toolkits: ['slack', 'gmail'], session_id: 'workflow-1' },
+      { signal: new AbortController().signal, agent, callId: 'verify-call' } as never))
+      .resolves.toMatchObject({ status: ready ? 'ready' : 'connection_pending' })
+    const authorizationUpdates = agent.session.append.mock.calls.filter(([type, data]) =>
+      type === 'hivemind/connected-receipt' && data.tool === 'connection_authorization')
+    if (ready) {
+      expect(authorizationUpdates).toEqual([['hivemind/connected-receipt', {
+        version: 1, tool: 'connection_authorization', workflowSessionId: 'workflow-1', receipt: {
+          status: 'ready', request_call_id: 'original-call', session_id: 'workflow-1',
+          app_label: 'Slack', reason: 'Review the company sources.',
+        },
+      }]])
+      expect(app.flush).toHaveBeenCalledOnce()
+      expect(app.concludeTurn).not.toHaveBeenCalled()
+    } else {
+      expect(authorizationUpdates).toEqual([])
+      expect(app.flush).not.toHaveBeenCalled()
+      expect(app.concludeTurn).toHaveBeenCalledOnce()
+    }
+    expect(app.ask).not.toHaveBeenCalled()
+    expect(execute).toHaveBeenCalledOnce()
+    expect(events[0]?.data.receipt.status).toBe('connection_required')
+    expect(events[1]?.data.receipt.status).toBe('connection_required')
+  })
+
+  it.each(['accepted', 'not_sent', 'unknown'] as const)(
+    'ends the Runtime connection turn after one saved request and one email attempt (%s)', async (outcome) => {
+      execute.mockResolvedValueOnce({ data: {
+        results: [{ primary_tool_slugs: ['ASANA_LIST_TASKS'], toolkits: ['asana'] }],
+        toolkit_connection_statuses: [{ toolkit: 'asana', has_active_connection: false }],
+        session: { id: 'workflow-asana' },
+      } }).mockResolvedValueOnce({ data: { redirect_url: 'https://connect.example/asana' } })
+      const order: string[] = []
+      const serial = vi.fn(async (event: string) => event === 'hivemind/runtime-connection-owner' ? true : undefined)
+      const app = harness(true, undefined, false, {
+        serviceApiBase: 'http://127.0.0.1:3000', serviceSecretEnv: 'TEST_RUNTIME_CONNECTION_SECRET',
+      }, serial)
+      app.flush.mockImplementation(async () => { order.push('flush'); return true })
+      const agent = { id: 'runtime-room', session: { header: { id: 'runtime-room' }, snapshotEvents: () => [], append: vi.fn() } }
+      const emails: Array<Record<string, unknown>> = []
+      process.env.TEST_RUNTIME_CONNECTION_SECRET = 'runtime-connection-secret-at-least-32-bytes'
+      vi.stubGlobal('fetch', vi.fn(async (url: URL, init: RequestInit) => {
+        if (String(url).endsWith('/administrator-message')) {
+          order.push('email')
+          emails.push(JSON.parse(String(init.body)))
+          expect(agent.session.append).toHaveBeenCalledWith('hivemind/connected-receipt', expect.objectContaining({
+            version: 1, tool: 'connection_authorization', workflowSessionId: 'workflow-asana',
+            receipt: expect.objectContaining({ status: 'connection_required', request_call_id: 'connection-call',
+              session_id: 'workflow-asana', app_label: 'Asana', reason: 'List current Asana tasks.' }),
+          }))
+          const token = String((init.headers as Record<string, string>).authorization).split(' ')[1]!
+          const claims = JSON.parse(Buffer.from(token.split('.')[1]!, 'base64url').toString())
+          expect(claims).toMatchObject({ operating_role: 'runtime', operating_session: 'runtime-room', org_id: 'org-a', sub: 'user-a' })
+          if (outcome === 'unknown') throw new Error('connection lost after send')
+          return new Response(JSON.stringify({ status: 'accepted' }), { status: outcome === 'not_sent' ? 503 : 200 })
+        }
+        return new Response(JSON.stringify({ receipt_id: 'receipt-1', bytes: 10 }), { status: 201 })
+      }))
+      try {
+        await expect(app.tool().execute({ action: 'search', queries: [{ app: 'Asana', use_case: 'List current Asana tasks.' }],
+          session: { generate_id: true } }, { signal: new AbortController().signal, agent,
+          callId: 'connection-call', name: 'hivemind_connected_task' } as never))
+          .resolves.toMatchObject({ status: 'connection_required', notification_status: outcome, session_id: 'workflow-asana' })
+        expect(emails).toEqual([{ message_key: 'connection-call-user-request', kind: 'approval',
+          request_call_id: 'connection-call', subject: 'Connect Asana', message: 'List current Asana tasks.' }])
+        expect(order).toEqual(['flush', 'email'])
+        expect(serial).toHaveBeenCalledWith('hivemind/runtime-connection-owner', agent)
+        expect(app.ask).not.toHaveBeenCalled()
+        expect(execute).toHaveBeenCalledTimes(2)
+        expect(app.concludeTurn).toHaveBeenCalledOnce()
+      } finally {
+        delete process.env.TEST_RUNTIME_CONNECTION_SECRET
+        vi.unstubAllGlobals()
+      }
+    },
+  )
+
   it('hands a Runtime-delegated missing connector to its durable blocker without a human popup', async () => {
     execute.mockResolvedValueOnce({ data: {
       results: [{ primary_tool_slugs: ['ASANA_LIST_TASKS'], toolkits: ['asana'] }],
@@ -1012,11 +1124,11 @@ describe('progressive Composio bridge', () => {
     expect(app.concludeTurn).not.toHaveBeenCalled()
   })
 
-  it('does not make an unselected related schema executable', async () => {
+  it('does not make a schema absent from provider discovery executable', async () => {
     execute
       .mockResolvedValueOnce({ data: { results: [{
         primary_tool_slugs: ['GMAIL_FETCH_EMAILS'],
-        related_tool_slugs: ['GMAIL_FETCH_MESSAGE_BY_MESSAGE_ID'],
+        related_tool_slugs: ['GMAIL_LIST_LABELS'],
       }] } })
       .mockResolvedValueOnce({ data: { tool_schemas: {
         GMAIL_FETCH_MESSAGE_BY_MESSAGE_ID: { input_schema: {
@@ -1145,7 +1257,7 @@ describe('progressive Composio bridge', () => {
     } }] } })
     const key = createHash('sha256').update(JSON.stringify({
       workflow: 'hivemind:user-a:conversation-write:current', tool_slug: 'SLACK_SEND_MESSAGE',
-      arguments: { text: 'hello' }, call_id: 'write-call',
+      arguments: { text: 'hello' }, operation_id: 'default',
     })).digest('hex')
     const events = [
       { type: 'tool/call', data: { name: 'hivemind_connected_task', callId: 'write-call', arguments: JSON.stringify({ action: 'execute' }) } },
@@ -1378,7 +1490,7 @@ describe('progressive Composio bridge', () => {
       session: { id: 'workflow-1' },
       search_strategy: 'tool_search',
     }, execution as never)).resolves.toMatchObject({ status: 'no_matching_tool' })
-    await expect(app.tool().execute(request, execution as never)).rejects.toThrow('returned session id')
+    await expect(app.tool().execute(request, execution as never)).rejects.toThrow('search repeated without new evidence')
     expect(execute).toHaveBeenCalledTimes(2)
   })
 
