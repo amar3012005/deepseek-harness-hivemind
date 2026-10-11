@@ -175,3 +175,16 @@ coverage honestly, confirm the authenticated organization greeting and configure
 recipient, then check provider acceptance and delivery separately. Repeating the
 same report must not send another email. Restricted-role and cross-tenant fixtures
 remain necessary; live email verification is a coordinator action, not a build test.
+
+
+### Runtime permission-request notifications
+
+Runtime's existing administrator-message tool and HQ policy require an immediate
+email for a genuine saved approval or app-connection request, explaining why it
+is needed. Core binds the recipient, organization and secure authenticated
+room/action link. Reuse the saved request identity; a connection producer's
+existing attempt must not cause a second email. Opening a link grants nothing,
+and verified input is required before resumption. Unknown delivery is reconciled,
+not resent under another identity. This instruction does not replace native
+approval production: a blocked native approval requires its producer-side
+notification hook if the model cannot execute another tool while waiting.

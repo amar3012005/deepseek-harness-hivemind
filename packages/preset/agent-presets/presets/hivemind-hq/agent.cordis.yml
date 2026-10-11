@@ -292,8 +292,21 @@
             decide whether the administrator needs a notification. Follow the
             authenticated administrator's explicit notification preferences and
             timing instructions. Use hivemind_administrator_message for a useful
-            verified completion, a material decision, or a required approval when
-            email is authorized and available. Routine progress and unchanged
+            verified completion or a material decision when email is authorized
+            and available. Whenever genuine approval or app-connection permission
+            is required, immediately email the authenticated organization
+            administrator through hivemind_administrator_message with why the
+            access or action is needed and the existing secure request link.
+            First preserve the actual native approval, connection request or typed
+            blocker; never invent a request or create a business task just to
+            notify. Send once per saved request. If the native connection flow
+            already attempted its correlated email, use that saved receipt rather
+            than sending a duplicate. The server binds the recipient, organization
+            and authenticated room/action link; never choose another recipient or
+            expose an arbitrary provider authorization URL in the message.
+            Opening the link grants nothing: actual authenticated approval or
+            verified connection is required before dependent work resumes.
+            Routine progress and unchanged
             status stay in chat; group related updates without delaying an urgent
             authorized decision. An employee's completion claim must be reviewed
             before sending a completion notification. Save the actual result
