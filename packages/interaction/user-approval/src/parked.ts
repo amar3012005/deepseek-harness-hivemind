@@ -46,7 +46,22 @@ export function acceptedParkedApproval(
       const answers = batch.answers ?? batch
       if (Array.isArray(answers) && answers.length === 1 && answers[0].id === 'approval'
         && Array.isArray(answers[0].selected) && answers[0].selected.length === 1 && !answers[0].custom) {
-        if (answers[0].selected[0] === 'Reject') return { id, outcome: 'rejected', consumed }
+        if (answers[0].selected[0] === 'Reject') {
+          // A direct authenticated human instruction can request this action
+          // anew. Background delivery and question replies never reset denial.
+          const freshInstruction = events.some((value) => {
+            if (value.type !== 'user/message' || value.seq <= answer.seq || value.seq >= current.seq) return false
+            const source = value.data.source as unknown as Record<string, unknown>
+            const actor = source['authenticatedActor']
+            return source['kind'] === 'user' && actor !== null && typeof actor === 'object'
+              && typeof (actor as Record<string, unknown>)['userId'] === 'string'
+              && ((actor as Record<string, unknown>)['userId'] as string).trim().length > 0
+              && typeof (actor as Record<string, unknown>)['orgId'] === 'string'
+              && ((actor as Record<string, unknown>)['orgId'] as string).trim().length > 0
+          })
+          if (freshInstruction) continue
+          return { id, outcome: 'rejected', consumed }
+        }
         if (answers[0].selected[0] === 'Allow once' && !consumed) return { id, outcome: 'allowed-once', consumed: false }
       }
     } catch { /* Natural-language assent and malformed answers never grant permission. */ }
