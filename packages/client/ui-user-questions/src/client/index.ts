@@ -115,7 +115,13 @@ export function apply(ctx: ClientContext): void {
     locale: NS,
     store: questionDraftStore,
     inject: sessionId => ({
-      onAnswer: (callId, answer) => ctx.remote.userQuestions.answer(sessionId, callId, { answers: answer.answers }),
+      onAnswer: async (callId, answer) => {
+        const result = await ctx.remote.userQuestions.answer(sessionId, callId, answer)
+        if (!result.ok) {
+          throw Object.assign(new Error('Question answer was not accepted'), { code: result.error.code })
+        }
+        return result.value
+      },
     }),
   }, ContinuedQuestionDock))
   ctx.remote.$on('user-questions/request', function (request, next) {

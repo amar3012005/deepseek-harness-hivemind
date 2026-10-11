@@ -39,7 +39,7 @@ async function bench(declare = true) {
   const slots = ctx.get('slots') as SlotRegistry
   if (declare) {
     slots.register(
-      { name: 'root', children: { 'conversation.composer': { kind: 'chain', scope: 'session' } } } as never,
+      { name: 'root', children: { 'conversation.composer': { kind: 'chain', scope: 'session' }, 'conversation.input.dock': { kind: 'list', scope: 'session' } } } as never,
       () => null,
     )
   }
@@ -70,7 +70,8 @@ async function bench(declare = true) {
     listener = value
     return () => { listener = undefined }
   })
-  ctx.provide('remote', { $on: on } as never)
+  const lateAnswer = vi.fn(async () => ({ ok: true, value: true }))
+  ctx.provide('remote', { $on: on, userQuestions: { answer: lateAnswer } } as never)
   const fiber = ctx.plugin({ inject: [...inject], apply })
   await fiber.await()
   const invoke = (
@@ -88,6 +89,7 @@ async function bench(declare = true) {
     agent,
     scopeOf,
     cancel,
+    lateAnswer,
     pending: { getSnapshot: () => [...pending.keys()] },
     registerPendingInteraction,
     on,
@@ -116,6 +118,21 @@ describe('apply', () => {
     expect(next).toHaveBeenCalledOnce()
     expect(b.slots.entries('conversation.composer')).toHaveLength(0)
     expect(b.pending.getSnapshot()).toEqual([])
+  })
+
+  it('mounts continued-answer Remote callbacks and checks the result envelope', async () => {
+    const b = await bench()
+    const entry = b.slots.entries('conversation.input.dock')[0]!
+    const inject = entry.inject as (sessionId: SessionId) => {
+      onAnswer: (callId: string, answer: QuestionAnswer) => Promise<boolean>
+    }
+    const callbacks = inject(SESSION_ID)
+    await expect(callbacks.onAnswer('continued-one', ANSWER)).resolves.toBe(true)
+    expect(b.lateAnswer).toHaveBeenCalledWith(SESSION_ID, 'continued-one', ANSWER)
+    b.lateAnswer.mockResolvedValueOnce({ ok: true, value: false })
+    await expect(callbacks.onAnswer('settled-one', ANSWER)).resolves.toBe(false)
+    b.lateAnswer.mockResolvedValueOnce({ ok: false, error: { code: 'REPLY_QUEUED' } } as never)
+    await expect(callbacks.onAnswer('continued-one', ANSWER)).rejects.toMatchObject({ code: 'REPLY_QUEUED' })
   })
 
   it('projects a scoped request through one stable composer and returns its answer', async () => {
