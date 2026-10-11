@@ -107,7 +107,14 @@ export interface UserQuestionProjectionView {
   readonly settled: readonly SettledUserQuestion[]
 }
 
-declare module '@deepseek-ai/dsh-llm' {
+declare module '@deepseek-ai/dsh-session/types' {
+  interface SessionEventMap {
+    /** Exact unanswered legacy ask preserved during an idle-only operator migration. */
+    'user-question/parked': { callId: ToolCallId; questions: readonly AskUserQuestionItem[] }
+  }
+}
+
+declare module '@deepseek-ai/dsh-llm/types' {
   interface MessageSourceMap {
     /**
      * Late reply to a continued `ask_user_question` call, steered into the
@@ -159,6 +166,8 @@ declare module '@deepseek-ai/cordis' {
      * @param request - pending user-question request.
      * @mode waterfall
      */
+    /** Authoritative host access check for idle-only legacy question migration. */
+    'user-questions/park-admission'(agent: Agent, callId: ToolCallId, questions: readonly AskUserQuestionItem[]): Promise<void>
     /** Authoritative host admission for a late answer, before durable Inbox delivery. */
     'user-questions/late-answer-admission'(agent: Agent, callId: ToolCallId, questions: readonly AskUserQuestionItem[], answer: AskUserQuestionAnswer): Promise<Record<string, unknown> | undefined>
     /** Receipt after the authenticated late answer was flushed. */
