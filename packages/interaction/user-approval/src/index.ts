@@ -238,8 +238,8 @@ export class ApprovalService extends Service {
       ...req.reason !== undefined ? { reason: req.reason } : {},
       ...(fingerprint && !consumed ? { fingerprint, questions: [{ id: 'approval', question: `Allow this ${req.toolName} action once?`, ...(req.reason ? { detail: req.reason } : {}), options: [{ label: 'Allow once' }, { label: 'Reject' }] }] } : {}),
     })
-    if (consumed && req.callId) session.append('approval/consumed', { id: consumed, callId: req.callId })
-    const outcome = consumed ? 'allowed-once' : fingerprint ? 'pending' : await this.decide(req, session)
+    if (consumed && !consumed.consumed && req.callId) session.append('approval/consumed', { id: consumed.id, callId: req.callId })
+    const outcome = consumed ? consumed.outcome : fingerprint ? 'pending' : await this.decide(req, session)
     session.append('approval/decided', { id, outcome })
     return outcome
   }
