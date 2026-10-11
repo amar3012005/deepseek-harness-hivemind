@@ -14,11 +14,17 @@ export function runtimeStageGuidance(events: readonly SessionEvent[], admitted: 
     const source = input.source
     if (source.kind === 'plugin' && source.plugin === 'hivemind-live-voice' && source.voiceCallId
       && source.authenticatedActor && ['owner', 'admin'].includes(source.authenticatedActor.role)) {
-      const receipt = events.findLast(event => event.type === 'hivemind/voice-call-ended'
-        && event.data.callId === source.voiceCallId
-        && event.data.authenticatedActor?.userId === source.authenticatedActor?.userId
-        && event.data.authenticatedActor?.orgId === source.authenticatedActor?.orgId
-        && event.data.authenticatedActor?.role === source.authenticatedActor?.role)
+      const receipt = events.findLast((event) => {
+        // The voice event is owned by the Runtime plugin; HQ consumes this
+        // native saved receipt without introducing a reverse package dependency.
+        if (String(event.type) !== 'hivemind/voice-call-ended') return false
+        const data = event.data as unknown as { callId?: unknown
+          authenticatedActor?: { userId?: unknown; orgId?: unknown; role?: unknown } }
+        return data.callId === source.voiceCallId
+          && data.authenticatedActor?.userId === source.authenticatedActor?.userId
+          && data.authenticatedActor?.orgId === source.authenticatedActor?.orgId
+          && data.authenticatedActor?.role === source.authenticatedActor?.role
+      })
       if (receipt) stages.add('Administrator call follow-up: reconcile the exact saved same-room transcript and its interrupted/user-speech flags. Save only actual confirmed direction and separately resolved uncertainties; preserve unanswered topics. Compare the updated agendas with current tasks, priorities and available employees, then continue already authorized preparation, planning, delegation and review. The call ending, silence or assistant speech grants no new authority. Do not repeat onboarding, ask for the saved transcript or replay completed actions.')
     }
     if (source.kind === 'user') {

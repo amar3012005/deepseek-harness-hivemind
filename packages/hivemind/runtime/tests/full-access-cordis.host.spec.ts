@@ -26,7 +26,7 @@ async function mount() {
   const current = vi.fn(() => 'workspace-write')
   root.provide('permissionPresets', { current })
   const config: Config = {
-    authorityMode: 'scoped-service', agentFeaturesEnabled: true, icarusConfigPath: '/unused',
+    authorityMode: 'scoped-service', agentFeaturesEnabled: true, legacyToolsEnabled: false, icarusConfigPath: '/unused',
     requestTimeoutMs: 2_000, responseMaxBytes: 64_000, profileContextMaxChars: 4_000,
     profileBriefMaxChars: 500, recallResultLimit: 7, entityResultLimit: 10,
     recallItemMaxChars: 2_000, historyTurns: 5, historyMaxChars: 8_000,

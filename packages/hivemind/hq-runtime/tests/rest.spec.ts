@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
-import type { SessionEvent } from '@deepseek-ai/dsh-session'
+import { SessionId, type SessionEvent } from '@deepseek-ai/dsh-session'
 import type { ToolDefinition } from '@deepseek-ai/dsh-tools'
 import { createBrowserTimeZoneConfirmation } from '@deepseek-ai/dsh-time-context'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
@@ -379,7 +379,7 @@ it('recognizes an admitted nightly reply before its first request only from the 
   const batchOccurrence = '2030-01-01T00:05:00Z'
   f.agent.session.append('user/message', createUserMessage({ source: { kind: 'schedule', occurrenceAt: batchOccurrence },
     content: [{ type: 'text', text: 'reminders_json: ' + JSON.stringify([{ schedule_id: 'another-recurring-reminder', occurrence_at: batchOccurrence },
-      { schedule_id: scheduleId, occurrence_at: occurrence }]) }] }))
+      { schedule_id: scheduleId, occurrence_at: occurrence }]) }] }), { surfaceOp: 'append' })
   const request = { id: 'daily-request', senderId: f.agent.id, targetId: 'employee-room', kind: 'question',
     text: 'NIGHTLY_REVIEW_REQUEST=' + JSON.stringify({ occurrence, agent_index: 1 }) }
   const reply = { id: 'daily-reply', senderId: 'employee-room', targetId: f.agent.id, kind: 'reply', replyTo: request.id }
@@ -387,15 +387,16 @@ it('recognizes an admitted nightly reply before its first request only from the 
   f.agent.session.append('turn/end', { turn: 1, reason: { kind: 'completed' } } as never)
   f.agent.session.append('hivemind/room-message-received', reply as never)
   f.agent.session.append('turn/start', { turn: 2 } as never)
-  const admitted = createUserMessage({ source: { kind: 'hivemind-agent-message', form: 'relay', messageId: reply.id,
-    senderId: reply.senderId, senderSessionId: reply.senderId } as never, content: [{ type: 'text', text: 'Actual saved daily reply' }] })
+  const source = { kind: 'hivemind-agent-message' as const, form: 'relay' as const, messageId: reply.id,
+    senderId: SessionId(reply.senderId), senderSessionId: SessionId(reply.senderId) }
+  const admitted = createUserMessage({ source, content: [{ type: 'text', text: 'Actual saved daily reply' }] })
   expect(isNightlyScheduledTurn(f.agent, [admitted])).toBe(true)
   expect(isNightlyScheduledTurn(f.agent)).toBe(false)
-  for (const source of [
-    { ...admitted.source, messageId: 'unknown-reply' },
-    { ...admitted.source, senderId: 'foreign-room' },
-    { ...admitted.source, senderSessionId: 'foreign-room' },
-  ]) expect(isNightlyScheduledTurn(f.agent, [createUserMessage({ source: source as never, content: admitted.content })])).toBe(false)
+  for (const invalidSource of [
+    { ...source, messageId: 'unknown-reply' },
+    { ...source, senderId: SessionId('foreign-room') },
+    { ...source, senderSessionId: SessionId('foreign-room') },
+  ]) expect(isNightlyScheduledTurn(f.agent, [createUserMessage({ source: invalidSource, content: admitted.content })])).toBe(false)
   const requestEvent = f.events.find(event => event.type === 'hivemind/room-message-queued')!
   for (const invalid of [
     { ...request, senderId: 'foreign-root' },
@@ -407,7 +408,7 @@ it('recognizes an admitted nightly reply before its first request only from the 
     expect(isNightlyScheduledTurn(f.agent, [admitted])).toBe(false)
   }
   Object.assign(requestEvent, { data: request })
-  f.agent.session.append('user/message', admitted)
+  f.agent.session.append('user/message', admitted, { surfaceOp: 'append' })
   expect(isNightlyScheduledTurn(f.agent)).toBe(true)
 })
 
@@ -419,6 +420,6 @@ it('preserves the nightly occurrence in a native mixed recurring batch and rejec
     text: 'reminders_json: ' + JSON.stringify([{ schedule_id: 'unrelated', occurrence_at: occurrenceAt },
       { schedule_id: id, occurrence_at: '2030-01-02T00:00:00Z' }]) }] })
   expect(isNightlyScheduledTurn(f.agent, [scheduled])).toBe(true)
-  expect(isNightlyScheduledTurn(f.agent, [createUserMessage({ ...scheduled,
+  expect(isNightlyScheduledTurn(f.agent, [createUserMessage({ content: scheduled.content,
     source: { kind: 'schedule', occurrenceAt: '2030-01-03T00:00:00Z' } })])).toBe(false)
 })
