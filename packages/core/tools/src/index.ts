@@ -1701,6 +1701,8 @@ export class ToolRuntime extends Service {
       signal: exec.signal,
     })
     switch (outcome) {
+      case 'pending':
+        return { decision: { kind: 'deny', reason: `Waiting for your approval of tool "${exec.name}"; the action has not run. Resume only after the authenticated answer.` }, approvalCancelled: false }
       case 'allowed-once': return { decision: { kind: 'allow' }, approvalCancelled: false }
       case 'rejected': return {
         decision: { kind: 'deny', reason: `the user rejected tool "${exec.name}"` },

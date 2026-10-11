@@ -14,6 +14,27 @@ import type { HqRestNote, HqRestNoteRequest, HqRestNoteResult, HqRestState } fro
 export function isNightlyScheduledTurn(agent:Agent):boolean {
   const events=agent.session.snapshotEvents(),boundary=events.findLast(event=>event.type==='turn/end')?.seq??-1
   const schedule='schedule-'+createHash('sha256').update(`${agent.id}\0nightly-routine-check-v1`).digest('hex')
+  // A saved colleague reply resumes the same review without another rest timer.
+  const input = events.findLast(event => event.seq > boundary && event.type === 'user/message' && event.data.source.kind === 'hivemind-agent-message')
+  if (input?.type === 'user/message') {
+    const messageId = (input.data.source as { messageId?: string }).messageId
+    const reply = events.findLast(event => event.type === 'hivemind/room-message-received' && event.data.id === messageId && event.data.targetId === agent.id && event.data.kind === 'reply')
+    if (reply?.type === 'hivemind/room-message-received') {
+      const request = events.find(event => event.type === 'hivemind/room-message-queued' && event.data.id === reply.data.replyTo && event.data.targetId === reply.data.senderId)
+      if (request?.type === 'hivemind/room-message-queued') {
+        try {
+          const line = request.data.text.split('\n').find(value => value.startsWith('NIGHTLY_REVIEW_REQUEST='))
+          const original = JSON.parse(line?.slice('NIGHTLY_REVIEW_REQUEST='.length) ?? '').occurrence
+          if (typeof original === 'string' && events.some((event) => {
+            if (event.type !== 'user/message' || event.data.source.kind !== 'schedule') return false
+            const sourceOccurrence = event.data.source.occurrenceAt
+            const line = event.data.content.flatMap(block => block.type === 'text' ? [block.text] : []).join('\n').split('\n').find(value => value.startsWith('reminders_json: '))
+            try { const entries: unknown = JSON.parse(line?.slice('reminders_json: '.length) ?? ''); return Array.isArray(entries) && entries.some(entry => entry?.schedule_id === schedule && entry?.occurrence_at === original) && entries.some(entry => entry?.occurrence_at === sourceOccurrence) } catch { return false }
+          })) return true
+        } catch { /* Unrelated colleague replies never bypass rest checks. */ }
+      }
+    }
+  }
   return events.some((event)=>{
     if(event.seq<=boundary||event.type!=='user/message'||event.data.source.kind!=='schedule')return false
     const occurrence=event.data.source.occurrenceAt

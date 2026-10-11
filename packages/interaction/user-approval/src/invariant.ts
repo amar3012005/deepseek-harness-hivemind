@@ -7,7 +7,7 @@ import type { ApprovalRequestId } from './index.ts'
 import { APPROVAL_POLICIES } from './index.ts'
 
 const PACKAGE_NAME = '@deepseek-ai/dsh-user-approval'
-const APPROVAL_OUTCOMES = ['allowed-once', 'rejected', 'cancelled', 'unavailable'] as const
+const APPROVAL_OUTCOMES = ['allowed-once', 'rejected', 'cancelled', 'unavailable', 'pending'] as const
 
 /** Cordis companion plugin name. */
 export const name = 'user-approval-invariant'
@@ -16,11 +16,14 @@ export const inject = ['invariants']
 
 type ApprovalTransition =
   | { kind: 'asked'; id: ApprovalRequestId }
-  | { kind: 'decided'; id: ApprovalRequestId }
+  | { kind: 'decided'; id: ApprovalRequestId; parked: boolean }
+  | { kind: 'consumed'; id: ApprovalRequestId }
 
 interface ApprovalTrace {
   openTurn: number | null
   pending: Set<ApprovalRequestId>
+  parked: Set<ApprovalRequestId>
+  consumed: Set<ApprovalRequestId>
 }
 
 /** Validate one approval event against committed unmatched questions. */
@@ -41,7 +44,12 @@ function validateApprovalEvent(
     if (!APPROVAL_OUTCOMES.includes(event.data.outcome)) {
       fail(`approval/decided carries unknown outcome ${JSON.stringify(event.data.outcome)}`)
     }
-    return { kind: 'decided', id: event.data.id }
+    return { kind: 'decided', id: event.data.id, parked: event.data.outcome === 'pending' }
+  }
+  if (event.type === 'approval/consumed') {
+    if (trace.openTurn === null) fail('approval/consumed appended outside an open turn')
+    if (!trace.parked.has(event.data.id) || trace.consumed.has(event.data.id)) fail('approval/consumed requires an unused pending checkpoint')
+    return { kind: 'consumed', id: event.data.id }
   }
   if (event.type === 'approval/policy' && !APPROVAL_POLICIES.includes(event.data.policy)) {
     fail(`approval/policy carries unknown policy ${JSON.stringify(event.data.policy)}`)
@@ -50,9 +58,10 @@ function validateApprovalEvent(
 }
 
 /** Apply one accepted approval-pair transition. */
-function applyApprovalTransition(pending: Set<ApprovalRequestId>, transition: ApprovalTransition): void {
-  if (transition.kind === 'asked') pending.add(transition.id)
-  else pending.delete(transition.id)
+function applyApprovalTransition(trace: ApprovalTrace, transition: ApprovalTransition): void {
+  if (transition.kind === 'asked') trace.pending.add(transition.id)
+  else if (transition.kind === 'consumed') trace.consumed.add(transition.id)
+  else { trace.pending.delete(transition.id); if (transition.parked) trace.parked.add(transition.id) }
 }
 
 /** Install audit pairing and closed-vocabulary checks. */
@@ -62,13 +71,13 @@ const install: InvariantInstaller = Object.assign((ctx: Context, fail: Invariant
   const traces = new WeakMap<Session, ApprovalTrace>()
   const staged = new WeakMap<SessionEvent, { session: Session; transition: ApprovalTransition }>()
   const seed = (session: Session): ApprovalTrace => {
-    const trace: ApprovalTrace = { openTurn: null, pending: new Set() }
+    const trace: ApprovalTrace = { openTurn: null, pending: new Set(), parked: new Set(), consumed: new Set() }
     traces.set(session, trace)
     for (const event of session.snapshotEvents()) {
       if (event.type === 'turn/start') trace.openTurn = event.data.turn
       else if (event.type === 'turn/end') trace.openTurn = null
       const transition = validateApprovalEvent(trace, event, fail)
-      if (transition !== undefined) applyApprovalTransition(trace.pending, transition)
+      if (transition !== undefined) applyApprovalTransition(trace, transition)
     }
     return trace
   }
@@ -86,12 +95,12 @@ const install: InvariantInstaller = Object.assign((ctx: Context, fail: Invariant
       trace.openTurn = null
       return
     }
-    if (event.type !== 'approval/asked' && event.type !== 'approval/decided') return
+    if (event.type !== 'approval/asked' && event.type !== 'approval/decided' && event.type !== 'approval/consumed') return
     const candidate = staged.get(event)
     /* v8 ignore next -- internal/dispatch stages every package-owned pair event */
     if (candidate === undefined || candidate.session !== session) return fail('approval audit event published without pre-commit validation')
     staged.delete(event)
-    applyApprovalTransition(trace.pending, candidate.transition)
+    applyApprovalTransition(trace, candidate.transition)
   }, { global: true })
   ctx.on('internal/dispatch', (_mode, eventName, args) => {
     if (eventName !== 'session/event') return

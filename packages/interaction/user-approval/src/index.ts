@@ -38,6 +38,7 @@ declare module '@deepseek-ai/dsh-session/types' {
   }
 }
 
+import { approvalFingerprint, acceptedParkedApproval } from './parked.ts'
 import { ApprovalRequestId } from './types.ts'
 import type { ApprovalOutcome, ApprovalRequestEvent } from './types.ts'
 
@@ -45,7 +46,7 @@ export { ApprovalRequestId } from './types.ts'
 export type { ApprovalOutcome } from './types.ts'
 
 /** Every {@link ApprovalOutcome}, for runtime normalization of answerer returns. */
-const OUTCOMES: readonly ApprovalOutcome[] = ['allowed-once', 'rejected', 'cancelled', 'unavailable']
+const OUTCOMES: readonly ApprovalOutcome[] = ['allowed-once', 'rejected', 'cancelled', 'unavailable', 'pending']
 
 /**
  * A session's approval policy — what happens to an {@link ApprovalService}
@@ -131,6 +132,7 @@ export interface Config {
    * (fail-closed with none); `'never'` auto-rejects every ask without
    * prompting (the deterministic CI/unattended stance).
    */
+  readonly park?: boolean
   readonly policy?: ApprovalPolicy
 }
 
@@ -141,6 +143,7 @@ export interface Config {
  */
 export class ApprovalService extends Service {
   static Config: z<Config> = z.object({
+    park: z.boolean().default(false),
     policy: z.union(['ask', 'never'] as const).default('ask'),
   })
 
@@ -148,6 +151,17 @@ export class ApprovalService extends Service {
     super(ctx, 'approval')
 
     const effective = (agent: Agent): ApprovalPolicy => this.effectivePolicy(agent.session)
+
+    // A pending permission result has no executed action to conclude. Finish
+    // its empty continuation at the native admission seam after it is saved.
+    ctx.effect(() => ctx.on('agent/pre-step', async ({ agent, turn }, next) => {
+      const decision = await next()
+      if (!this.config.park || decision.kind === 'reject' || decision.messages.length !== 0) return decision
+      const events = agent.session.snapshotEvents()
+      const start = events.findLast(event => event.type === 'turn/start' && event.data.turn === turn)
+      if (start && events.some(event => event.seq > start.seq && event.type === 'approval/decided' && event.data.outcome === 'pending')) return { kind: 'reject' }
+      return decision
+    }))
 
     // The complete current value travels after retained history, so switching
     // policy does not rewrite the stable system-prompt cache prefix.
@@ -214,13 +228,18 @@ export class ApprovalService extends Service {
       )
     }
     const id = ApprovalRequestId(randomUUID())
+    const parked = this.config.park && this.effectivePolicy(session) === 'ask' && !req.signal?.aborted
+    const fingerprint = parked && req.callId ? approvalFingerprint(session, req.callId, req.toolName) : undefined
+    const consumed = fingerprint && req.callId ? acceptedParkedApproval(session, req.callId, req.toolName, fingerprint) : undefined
     session.append('approval/asked', {
       id,
       toolName: req.toolName,
       ...req.callId !== undefined ? { callId: req.callId } : {},
       ...req.reason !== undefined ? { reason: req.reason } : {},
+      ...(fingerprint && !consumed ? { fingerprint, questions: [{ id: 'approval', question: `Allow this ${req.toolName} action once?`, ...(req.reason ? { detail: req.reason } : {}), options: [{ label: 'Allow once' }, { label: 'Reject' }] }] } : {}),
     })
-    const outcome = await this.decide(req, session)
+    if (consumed && req.callId) session.append('approval/consumed', { id: consumed, callId: req.callId })
+    const outcome = consumed ? 'allowed-once' : fingerprint ? 'pending' : await this.decide(req, session)
     session.append('approval/decided', { id, outcome })
     return outcome
   }
