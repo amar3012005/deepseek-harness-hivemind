@@ -22,6 +22,7 @@ import type { TypertClientEventListener } from '@deepseek-ai/dsh-typert-protocol
 // Type-only: pulls the locale plugin's Context merge (ctx.locale).
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-api-session-controller/client'
+import { ContinuedQuestionDock } from './ContinuedQuestionDock.tsx'
 import { PendingQuestion } from './contract/slots.ts'
 import { createQuestionDraftStore } from './draft-store.ts'
 import { QuestionComposer } from './QuestionComposer.tsx'
@@ -107,6 +108,16 @@ export function apply(ctx: ClientContext): void {
     },
     QuestionComposer,
   ))
+  ctx.slots.inject('conversation.input.dock', () => ctx.slots.register({
+    name: 'conversation.input.dock',
+    id: 'continued-user-questions',
+    order: -10,
+    locale: NS,
+    store: questionDraftStore,
+    inject: sessionId => ({
+      onAnswer: (callId, answer) => ctx.remote.userQuestions.answer(sessionId, callId, { answers: answer.answers }),
+    }),
+  }, ContinuedQuestionDock))
   ctx.remote.$on('user-questions/request', function (request, next) {
     return answerQuestion(ctx, this, request, next, registerPendingInteraction)
   })

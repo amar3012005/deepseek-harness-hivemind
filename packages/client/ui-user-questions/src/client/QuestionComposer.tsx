@@ -10,7 +10,7 @@ import {
   planReviewOf,
   type QuestionAnswer, type QuestionComposerProps,
 } from './contract/slots.ts'
-import type { PendingQuestion } from './contract/slots.ts'
+import type { QuestionWait } from './contract/slots.ts'
 import type { QuestionDraftAnswer, QuestionDraftProgress } from './draft-store.ts'
 import { DestinationApprovalPanel } from './DestinationApprovalPanel.tsx'
 import { PlanReviewPanel } from './PlanReviewPanel.tsx'
@@ -112,7 +112,7 @@ function AnswerField(props: AnswerFieldProps) {
  * @param props - the selector-matched pending question carrier plus the framework standard kit.
  * @returns The question flow, or the intent's own surface, for this request.
  */
-export function QuestionComposer(props: QuestionComposerProps) {
+export function QuestionComposer(props: Pick<QuestionComposerProps, 'matched' | 't' | 'useStore' | 'actions'>) {
   const question = props.matched
   const review = useMemo(() => planReviewOf(question.questions), [question])
   const destination = useMemo(() => memorySaveDestinationOf(question.questions), [question])
@@ -134,7 +134,7 @@ export function QuestionComposer(props: QuestionComposerProps) {
 }
 
 type QuestionFlowProps =
-  { pending: PendingQuestion } & Pick<QuestionComposerProps, 't' | 'useStore' | 'actions'>
+  { pending: QuestionWait } & Pick<QuestionComposerProps, 't' | 'useStore' | 'actions'>
 
 function QuestionFlow({ pending, t, useStore, actions }: QuestionFlowProps) {
   const questions = pending.questions
@@ -392,7 +392,7 @@ function QuestionFlow({ pending, t, useStore, actions }: QuestionFlowProps) {
                   )
                   : (
                     <AnswerField
-                      autoFocus={!focusedQuestions.current.has(index)}
+                      autoFocus={pending.autoFocus !== false && !focusedQuestions.current.has(index)}
                       variant="block"
                       value={draft.custom}
                       disabled={busy !== null}

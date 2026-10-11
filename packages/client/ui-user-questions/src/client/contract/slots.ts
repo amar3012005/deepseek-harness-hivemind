@@ -240,7 +240,13 @@ export class PendingQuestion {
 }
 
 /** Pending value returned by the composer-chain selector. */
-export type QuestionWait = PendingQuestion
+export interface QuestionWait {
+  readonly key: string
+  readonly questions: readonly AskUserQuestionItem[]
+  readonly autoFocus?: boolean
+  answer(answer: QuestionAnswer): Promise<void>
+  cancel(): Promise<void>
+}
 
 /**
  * Full component props: the framework runtime share (chain currency +

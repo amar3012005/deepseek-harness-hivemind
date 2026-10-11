@@ -1,10 +1,10 @@
 import { useState } from 'react'
 import { Button } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { MemorySaveDestination, PendingQuestion, QuestionComposerProps } from './contract/slots.ts'
+import type { MemorySaveDestination, QuestionWait, QuestionComposerProps } from './contract/slots.ts'
 import css from './PlanReviewPanel.module.css'
 
 export type DestinationApprovalPanelProps =
-  { pending: PendingQuestion; destination: MemorySaveDestination } & Pick<QuestionComposerProps, 't'>
+  { pending: QuestionWait; destination: MemorySaveDestination } & Pick<QuestionComposerProps, 't'>
 
 export function DestinationApprovalPanel({ pending, destination, t }: DestinationApprovalPanelProps) {
   const [busy, setBusy] = useState(false)
