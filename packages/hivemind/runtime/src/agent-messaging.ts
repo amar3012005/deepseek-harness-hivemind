@@ -5,6 +5,7 @@ import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import { sessionOwner } from './continuity.ts'
+import { currentNightlyOccurrence } from './nightly-routine-guidance.ts'
 import type {} from '@deepseek-ai/dsh-hivemind-employee-directory'
 import type {} from '@deepseek-ai/dsh-agent-presets'
 
@@ -262,7 +263,10 @@ export function installAgentMessaging(ctx: Context): void {
         return rooms.deliverAgentMessage(agent, {
           key: input.message_key, target: targetProfile?.id ?? input.recipient,
           kind: explicitEmployeeMessageKind(preset, targetProfile !== undefined, input.kind,
-            queued === undefined ? undefined : (queued.data as { kind?: string }).kind, input.request_reply), text: input.message,
+            queued === undefined ? undefined : (queued.data as { kind?: string }).kind, input.request_reply), text: queued === undefined
+            ? nightlyReviewRequestText(input.message, preset === 'hivemind-hq' && target !== undefined && input.kind === 'question'
+              ? currentNightlyOccurrence(agent) : undefined, directory.profiles.findIndex(profile => profile['id'] === target?.['id']) + 1)
+            : (queued.data as { text: string }).text,
           ...(input.summary === undefined ? {} : { summary: input.summary }),
           ...(targetProfile === undefined ? {} : { targetProfile }),
           ...(input.task_id === undefined ? {} : { taskId: input.task_id }),
@@ -281,4 +285,17 @@ export function explicitEmployeeMessageKind(preset: string | undefined, employee
   if (savedKind === 'question') return 'question'
   // A delivered historical notice is not silently replayed as a new request.
   return savedKind === 'update' || requestReply === false ? 'update' : 'question'
+}
+
+/** Native occurrence metadata belongs to the saved message, not model formatting. */
+export function nightlyReviewRequestText(text: string, occurrence: string | undefined, agentIndex: number): string {
+  if (occurrence === undefined) return text
+  if (!Number.isSafeInteger(agentIndex) || agentIndex < 1) throw new Error('nightly_authorized_recipient_required')
+  const marker = text.split('\n').find(line => line.startsWith('NIGHTLY_REVIEW_REQUEST='))
+  if (marker) {
+    const value = JSON.parse(marker.slice('NIGHTLY_REVIEW_REQUEST='.length))
+    if (value.occurrence !== occurrence || value.agent_index !== agentIndex) throw new Error('nightly_request_occurrence_or_recipient_conflict')
+    return text
+  }
+  return `${text}\nNIGHTLY_REVIEW_REQUEST=${JSON.stringify({ occurrence, agent_index: agentIndex })}\nReply using hivemind_agent_message recipient runtime, kind reply, reply_to the exact received request ID. Keep the visible summary short. Put the detailed daily findings in the saved message on a line NIGHTLY_REVIEW_REPLY={"occurrence":"${occurrence}","findings":[{"functional_area":"other","task_context":"affected technical work and blockage","impact":"evidenced impact","proposed_fix":"proposed improvement","expected":"expected behavior","observed":"observed behavior","recovery":"attempted recovery","prevention":"prevention recommendation"}]}. Use only actual findings, your actual functional area and sanitized technical details. If no failures are evidenced, use findings: [] and explain available and missing coverage in the saved message. Do not create a task or report artifact. End your turn after sending the reply.`
 }

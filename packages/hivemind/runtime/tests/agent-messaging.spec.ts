@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
-import { authorizedRecipient, messageDirectory, installAgentMessaging, explicitEmployeeMessageKind, reconcileRoomMessages } from '../src/agent-messaging.ts'
+import { nightlyReviewRequestText, authorizedRecipient, messageDirectory, installAgentMessaging, explicitEmployeeMessageKind, reconcileRoomMessages } from '../src/agent-messaging.ts'
 
 it('resolves authenticated unique slugs without accepting missing or ambiguous recipients', () => {
   const row = { id: 'employee-id', slug: 'ravi-patel' }
@@ -237,4 +237,16 @@ describe('company packet recovery independent of native Team retries', () => {
     expect(f.rooms.deliverAgentMessage).toHaveBeenCalledTimes(8)
     expect(f.events).toHaveLength(20)
   })
+})
+
+it('adds native scheduled occurrence and authenticated roster ordinal to a nightly request', () => {
+  const text = nightlyReviewRequestText('Review available receipts.', '2026-10-11T04:00:00.000Z', 2)
+  expect(text).toContain('NIGHTLY_REVIEW_REQUEST={"occurrence":"2026-10-11T04:00:00.000Z","agent_index":2}')
+  expect(text).toContain('NIGHTLY_REVIEW_REPLY=')
+  expect(text).toContain('reply_to the exact received request ID')
+  expect(nightlyReviewRequestText(text, '2026-10-11T04:00:00.000Z', 2)).toBe(text)
+  expect(nightlyReviewRequestText('Ordinary colleague request.', undefined, 0)).toBe('Ordinary colleague request.')
+  expect(() => nightlyReviewRequestText(text, '2026-10-11T05:00:00.000Z', 2)).toThrow('conflict')
+  expect(() => nightlyReviewRequestText(text, '2026-10-11T04:00:00.000Z', 3)).toThrow('conflict')
+  expect(() => nightlyReviewRequestText('Review.', '2026-10-11T04:00:00.000Z', 0)).toThrow('authorized_recipient')
 })
