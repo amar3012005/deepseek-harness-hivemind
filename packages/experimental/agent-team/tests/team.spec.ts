@@ -26,6 +26,7 @@ import type { TeamMemberSnapshot, TeamMessageSnapshot, TeamTaskSnapshot } from '
 import { TestSessionQuery } from './test-session-query.ts'
 import HqControl from '../../../hivemind/hq-runtime/src/control.ts'
 import HqOwnership from '../../../hivemind/hq-runtime/src/ownership.ts'
+import PermissionPresetService from '../../../interaction/permission-presets/src/index.ts'
 import HivemindExecutionScope from '../../../hivemind/execution-scope/src/index.ts'
 import { RoomMessaging } from '../../../api/session-controller/src/room-messaging.ts'
 
@@ -111,6 +112,14 @@ function mountEmployeeRooms(ctx: Context, lead: Agent, provideControl = true): v
   if (provideControl) ctx.provide('hivemindHq', {} as never)
   lead.session.append('agent-preset/selected', { agentPreset: 'hivemind-hq' })
   lead.session.append('hivemind/hq-mode', { enabled: true, revision: 1, changedAt: Date.now() })
+}
+
+/** Mount the actual native permission service required by HQ control.
+ * Shell/approval defaults stay confined and approval-required in this fixture. */
+async function mountHqPermissions(ctx: Context): Promise<void> {
+  ctx.provide('shell', { sandboxMode: 'workspace-write' } as never)
+  ctx.provide('approval', { config: { policy: 'ask' } } as never)
+  await ctx.plugin(PermissionPresetService)
 }
 
 interface TeamServiceInternals {
@@ -278,13 +287,25 @@ describe('Team identity and provisioning', () => {
       expect((await execute({ action: 'review', task_id: task.id })).isError).not.toBe(true)
       expect(provider).toHaveBeenCalledTimes(1)
       expect(JSON.parse(String(provider.mock.calls[0]?.[1]?.body)).input.state.documents[0].text).toContain('Decision: review public evidence')
+      // Advisory scoring cannot certify task completion. Inspect actual saved evidence
+      // and use the registered evidence-bound Runtime decision, never a forged event.
+      await expect(ctx.agentTeams.updateTask(lead, { taskId: task.id, expectedRevision: revision, action: 'complete' })).rejects.toThrow('accepted review')
+      const inspection = await execute({ action: 'inspect', task_id: task.id })
+      expect(inspection.isError).toBe(false)
+      if (inspection.isError) throw new Error('fixture evidence inspection failed')
+      const inspected = inspection.value as { task_revision: number; evidence_hash: string; documents: { text: string }[] }
+      expect(inspected.documents[0]?.text).toContain('Decision: review public evidence')
+      expect((await execute({ action: 'decide', task_id: task.id, decision: 'accepted',
+        rationale: 'Inspected the saved Markdown report: its explicit decision satisfies the immutable report criterion.',
+        task_revision: inspected.task_revision, evidence_hash: inspected.evidence_hash })).isError).toBe(false)
       await ctx.agentTeams.updateTask(lead, { taskId: task.id, expectedRevision: revision, action: 'complete' })
       await ctx.sessions.flush(lead.session)
       const replay = await storedEvents(ctx, lead.id)
       let projection = teamProjectionDefinition.init(lead.session.header)
       for (const event of replay) projection = teamProjectionDefinition.apply(projection, event)
       expect(projection.tasks.find(value => value.id === task.id)?.status).toBe('completed')
-      expect(replay.filter(event => event.type === 'hivemind/hq-task-review')).toHaveLength(1)
+      expect(replay.filter(event => event.type === 'hivemind/hq-task-review')).toHaveLength(2)
+      expect(replay.filter(event => event.type === 'hivemind/hq-task-review' && event.data.reviewer === 'runtime')).toHaveLength(1)
       expect((await execute({ action: 'artifacts', task_id: task.id, artifact_ids: [artifact.data.artifactId] })).isError).toBe(true)
     } finally { provider.mockRestore(); vi.unstubAllEnvs(); await fiber.dispose(); await teamFiber.dispose() }
   })
@@ -297,6 +318,7 @@ describe('Team identity and provisioning', () => {
     const ensure = vi.fn().mockRejectedValueOnce(new Error('native schedule temporarily unavailable')).mockResolvedValueOnce({ id: 'wake-1' }).mockResolvedValueOnce({ id: 'wake-2' })
     const remove = vi.fn().mockResolvedValue({ deleted: true })
     ctx.provide('schedule', { ensure, delete: remove, guardDelivery: () => () => {}, reconsiderDelivery: () => {}, catalog: vi.fn().mockResolvedValue([{ id: 'wake-1', sessionId: 'employee-ravi', status: 'active' }]) } as never)
+    await mountHqPermissions(ctx)
     const control = await ctx.plugin(HqControl)
     try {
       const task = await ctx.agentTeams.createTask(lead, { subject: 'Research', description: 'Save report.' })
@@ -347,6 +369,7 @@ describe('Team identity and provisioning', () => {
     const ensure = vi.fn().mockResolvedValue(undefined)
     ctx.provide('sessionController', {} as never)
     ctx.provide('schedule', { ensure, guardDelivery: () => () => {}, reconsiderDelivery: () => {} } as never)
+    await mountHqPermissions(ctx)
     const fiber = await ctx.plugin(HqControl)
     try {
       expect(ctx.hivemindHq.mode(lead).enabled).toBe(false)
