@@ -627,7 +627,7 @@ export const InputBar = memo(function InputBar({
                   onClick={stop}
                 >
                   <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden>
-                    <rect x="3" y="3" width="10" height="10" rx="3" fill="currentColor" />
+                    <path d="m4 4 8 8M12 4l-8 8" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
                   </svg>
                 </button>
               </Tooltip>
@@ -645,7 +645,7 @@ export const InputBar = memo(function InputBar({
               >
                 {primaryStops ? (
                   <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden>
-                    <rect x="3" y="3" width="10" height="10" rx="3" fill="currentColor" />
+                    <path d="m4 4 8 8M12 4l-8 8" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
                   </svg>
                 ) : (
                   <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden>

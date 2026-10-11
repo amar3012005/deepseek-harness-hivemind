@@ -178,7 +178,7 @@ export function HiveLiveVoiceButton({ sessionId, useInput, t }: Props) {
   return <div ref={control} className={css.control} data-hivemind-live-voice data-voice-active={state !== 'idle' || undefined}>
     <Tooltip label={label} side="top" delayMs={300}>
       <button type="button" className={css.button} aria-label={label} aria-pressed={state === 'live'} onClick={() => { void toggle() }}>
-        {state !== 'idle' ? <svg width="20" height="20" viewBox="0 0 20 20" aria-hidden><path d="m5 5 10 10M15 5 5 15" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /></svg> : <svg width="20" height="20" viewBox="0 0 20 20" aria-hidden><path d="M3 8v4m3-7v10m4-13v16m4-13v10m3-7v4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" /></svg>}
+        {state !== 'idle' ? <svg width="20" height="20" viewBox="0 0 20 20" aria-hidden><path d="m5 5 10 10M15 5 5 15" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /></svg> : <svg width="20" height="20" viewBox="0 0 20 20" aria-hidden><path d="M3 7h3l4-3v12l-4-3H3V7Z" fill="currentColor" /><path d="M13 7c2 2 2 4 0 6m3-9c4 4 4 8 0 12" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /></svg>}
       </button>
     </Tooltip>
     {state === 'idle' && <details className={css.options}>
