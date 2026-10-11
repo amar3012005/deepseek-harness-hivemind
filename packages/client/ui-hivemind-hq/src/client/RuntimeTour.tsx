@@ -119,7 +119,7 @@ export function RuntimeTour({ sessionId, load, checkpoint, wake, resume, subscri
       : state.awakening === 'blocked' ? t('tour.blocked')
         : state.running ? t('tour.exploring')
           : t('tour.unfinished')
-  return <section className={css.container} data-runtime-tour="" aria-label={t('tour.label')}>
+  return <section className={css.container} data-runtime-tour="" data-runtime-tour-expanded={expanded || undefined} data-runtime-tour-awakening={state.awakening} aria-label={t('tour.label')}>
     {expanded ? <section className={css.card} ref={card} tabIndex={-1} aria-label={t('tour.walkthrough')}
       onKeyDown={(event) => { if (event.key === 'Escape') { event.stopPropagation(); void save(state.step, 'dismissed') } }}>
       <div className={css.art} data-pose={step.image}><img src={tourAssets[step.image]} alt={t('tour.alt')} /></div>
