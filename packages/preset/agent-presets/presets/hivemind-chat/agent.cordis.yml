@@ -181,6 +181,9 @@
     - id: compaction-basic
       name: '@deepseek-ai/dsh-compaction-basic'
       config:
+        # Routine turns use the bounded working projection without extra summaries.
+        # Keep native actual-overflow recovery and manual /compact available.
+        pressureAuto: false
         # Bound model replay independently of large advertised model windows.
         # The full immutable chat and tool evidence remain in session storage.
         thresholdRatio: 0.65

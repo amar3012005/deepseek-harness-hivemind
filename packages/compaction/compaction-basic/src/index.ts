@@ -122,6 +122,7 @@ export class BasicCompactionEngine extends CompactionEngine {
     maxOverflowRetries: maxOverflowRetriesSchema,
     modelPolicies: z.array(modelPolicy),
     auto: z.boolean(),
+    pressureAuto: z.boolean(),
   })
 
   /** Resolved and validated compaction configuration. */
@@ -157,7 +158,7 @@ export class BasicCompactionEngine extends CompactionEngine {
       { agent, signal },
       next,
     ): Promise<PreStepDecision> => {
-      if (!signal.aborted && !this.failedPressureTurns.has(agent)) {
+      if (this.config.pressureAuto && !signal.aborted && !this.failedPressureTurns.has(agent)) {
         try {
           const result = await this.compactIfNeeded(agent, 'pressure', signal)
           if (result !== null) logResult(result, 'step pressure')

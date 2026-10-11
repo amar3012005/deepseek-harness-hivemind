@@ -31,6 +31,8 @@ Mount this package to get automatic conversation condensation in a composition t
 
 With the default settings you get four behaviors: automatic condensation as the conversation grows toward the model's context limit; recovery after a confirmed context-overflow error, where the conversation condenses and the request retries; on-demand condensation through the `/compact` command; and — when the pruner is mounted — trimming of oversized tool outputs before condensation.
 
+Set `pressureAuto: false` to skip routine between-step summary requests while keeping native confirmed-context-overflow recovery and manual `/compact`. This differs from `auto: false`, which disables both automatic listeners. Use a bounded working-context projection and bounded tool/recall payloads when routine summaries are disabled; a genuinely oversized indivisible request may still fail if native overflow recovery cannot reduce it. Other compositions keep the default `pressureAuto: true`.
+
 ### Smallest working composition
 
 Mount session storage, token measurement, the optional pruner, this backend, and optionally the on-demand command:
