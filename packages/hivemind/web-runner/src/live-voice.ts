@@ -105,6 +105,13 @@ function textOf(value: unknown): string {
   const content = (value as { content?: unknown }).content
   return Array.isArray(content) ? content.flatMap(item => item?.type === 'text' && typeof item.text === 'string' ? [item.text] : []).join('\n') : ''
 }
+/** Preserve the already authenticated speaker on a raw spoken user request.
+ * Native admission and tool-time persistence still validate its exact message. */
+export function voiceDelegationMessage(text: string, authenticatedActor?: import('@deepseek-ai/dsh-hivemind-execution-scope').AuthenticatedActor) {
+  return createUserMessage({ content: [{ type: 'text', text }],
+    source: { kind: 'user', ...(authenticatedActor === undefined ? {} : { authenticatedActor }) } })
+}
+
 function appendContext(agent: Agent, text: string, authenticatedActor?: import('@deepseek-ai/dsh-hivemind-execution-scope').AuthenticatedActor): void {
   agent.session.append('user/message', createUserMessage({ content: [{ type: 'text', text }],
     source: { kind: 'plugin', plugin: 'hivemind-live-voice', form: 'recall', ...(authenticatedActor === undefined ? {} : { authenticatedActor }) } }), { surfaceOp: 'append' })
@@ -484,7 +491,7 @@ export function liveVoicePlugin(config: LiveVoiceConfig,
                       })
                       lifetime.signal.addEventListener('abort', aborted, { once: true })
                       if (closed) { aborted(); return }
-                      agent.followup(createUserMessage({ content: [{ type: 'text', text: request }], source: { kind: 'user' } }))
+                      agent.followup(voiceDelegationMessage(request, p.authenticatedActor))
                     })
                   } catch (error) {
                     send(error instanceof Error && error.message === 'voice_query_unavailable'

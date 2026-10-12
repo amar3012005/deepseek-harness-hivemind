@@ -1,6 +1,7 @@
+import { admittedUserConfirmationRef } from '../src/organization-agent-access.ts'
 import { describe, expect, it } from 'vitest'
 import { Config } from '../src/index.ts'
-import { codexAccountId, voiceContextChunks, voiceSession, VoiceQueryBuffer, VOICE_INSTRUCTIONS, VOICE_TASK_INSTRUCTIONS } from '../src/live-voice.ts'
+import { codexAccountId, voiceContextChunks, voiceSession, VoiceQueryBuffer, voiceDelegationMessage, VOICE_INSTRUCTIONS, VOICE_TASK_INSTRUCTIONS } from '../src/live-voice.ts'
 
 describe('HIVEMIND live voice configuration', () => {
   it('uses native client delegation and keeps authenticated context separate from instructions', () => {
@@ -61,4 +62,13 @@ describe('raw spoken query handoff', () => {
     queries.record('user', 'Find our latest contract in Gmail.')
     await expect(result).resolves.toBe('Find our latest contract in Gmail.')
   })
+})
+
+it('keeps the authenticated voice speaker as an exact native user confirmation witness', () => {
+  const actor = { userId: '64f5568b-4d6a-4ae1-9a33-48cb2909d59b', orgId: '67503d34-97e9-49a8-8c52-8ee30cc7603e', role: 'owner' as const, name: 'User' }
+  const message = voiceDelegationMessage('Focus on new-market expansion.', actor)
+  const event = { type: 'user/message', seq: 41, data: message }
+  expect(admittedUserConfirmationRef([event], message.id, actor)).toBe('event:41')
+  expect(admittedUserConfirmationRef([event], message.id, { ...actor, orgId: '77503d34-97e9-49a8-8c52-8ee30cc7603e' })).toBeUndefined()
+  expect(admittedUserConfirmationRef([{ ...event, data: voiceDelegationMessage('unverified') }], message.id, actor)).toBeUndefined()
 })
