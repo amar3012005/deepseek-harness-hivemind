@@ -62,7 +62,8 @@ export async function awakeningContext(ctx: Context, agent: Agent, turn: number,
     || /^\s*(?:please\s+)?(?:continue|resume|finish|complete|orient)\b.{0,80}\b(?:awakening|orientation|onboarding)\b/iu.test(request))
   const operatingInput = inputs.some(message => ['agent-message', 'hivemind-agent-message', 'team-message', 'hivemind-runtime-event', 'schedule'].includes(message.source.kind))
   // An unfinished orientation is saved work, not a competing objective for an
-  // unrelated current human request. Native answer/result wakes can still resume it.
+  // unrelated human request or ordinary operating return. Explicit orientation
+  // commands and saved native answer continuations can still resume it.
   if (start?.type === 'hivemind/hq-awakening-start' && start.data.turn !== turn
     && !orientationRequested && (request !== undefined || operatingInput)) return ''
   const checkpoints = events.flatMap(event => event.type === 'hivemind/hq-awakening-checkpoint' ? [event.data] : [])
