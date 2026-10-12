@@ -278,7 +278,19 @@ export function liveVoicePlugin(config: LiveVoiceConfig,
               const resolved = await ctx.sessionController.resolveAgent(id)
               if ('error' in resolved) throw new Error('session_unavailable')
               const agent = resolved.agent
-              const compact = await agentEvents(ctx, agent).serial('hivemind/voice-context', { signal })
+              let compact: string
+              try {
+                compact = await agentEvents(ctx, agent).serial('hivemind/voice-context', {
+                  signal: AbortSignal.any([signal, AbortSignal.timeout(5000)]),
+                })
+              } catch (error) {
+                const timeout = error instanceof Error && (['AbortError', 'TimeoutError'].includes(error.name)
+                  || ('code' in error && error.code === 'request_timeout'))
+                if (!timeout || signal.aborted) throw error
+                // Identity and room admission are already checked above. Remote
+                // enrichment is optional; delegated tools retain their own checks.
+                compact = 'Fresh company context could not be loaded before this call. Use only the authenticated room identity and saved conversation below; treat current company facts as unverified and retrieve them through authorized tools when needed.'
+              }
               if (!compact) throw new Error('profile_unavailable')
               const assembly = await ctx.systemPrompt.assemble(assembleContextFor(agent, signal))
               const persona = renderPrompt({ ...assembly, sections: assembly.sections.filter(section => section.name === 'deployment:persona-prefix') })
