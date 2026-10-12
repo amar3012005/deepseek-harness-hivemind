@@ -590,7 +590,7 @@ Source: [`packages/hivemind/connected-apps/src/index.ts:44`](../packages/hivemin
 }
 ```
 
-Source: [`packages/hivemind/runtime/src/index.ts:79`](../packages/hivemind/runtime/src/index.ts)
+Source: [`packages/hivemind/runtime/src/index.ts:83`](../packages/hivemind/runtime/src/index.ts)
 
 <a id="hiveminddesign-reference-selected--log-only"></a>
 
@@ -665,7 +665,7 @@ Source: [`packages/hivemind/employee-delegation/src/index.ts:121`](../packages/h
 'hivemind/employee-selection': { id: string | null; name?: string; role?: string; avatarUrl?: string; appearance?: JsonValue; joining?: { at: string; creationHash: string; profileRevision: number } }
 ```
 
-Source: [`packages/hivemind/runtime/src/index.ts:75`](../packages/hivemind/runtime/src/index.ts)
+Source: [`packages/hivemind/runtime/src/index.ts:79`](../packages/hivemind/runtime/src/index.ts)
 
 <a id="hivemindemployee-task-snapshot--log-only"></a>
 
@@ -699,6 +699,39 @@ Source: [`packages/hivemind/hq-runtime/src/employee-work-origin.ts:15`](../packa
 ```
 
 Source: [`packages/hivemind/operating-workstreams/src/index.ts:94`](../packages/hivemind/operating-workstreams/src/index.ts)
+
+<a id="hivemindexternal-artifact-created--log-only"></a>
+
+#### `hivemind/external-artifact-created` — log-only
+
+```ts persistence-catalog
+/** Imported bytes and native attachment reference for a verified Open Dot artifact. */
+'hivemind/external-artifact-created': { artifactId: string; title: string; mediaType: string; provider: 'open-dot-owned'; path: null; file: FileAttachmentRef; sha256: string; size: number; dotId: string; dispatchMessageId: string }
+```
+
+Source: [`packages/api/session-controller/src/room-messaging.ts:125`](../packages/api/session-controller/src/room-messaging.ts)
+
+<a id="hivemindexternal-delivery-accepted--log-only"></a>
+
+#### `hivemind/external-delivery-accepted` — log-only
+
+```ts persistence-catalog
+/** Durable external queue receipt; written only after the provider confirms acceptance. */
+'hivemind/external-delivery-accepted': { id: string; employeeId: string; targetSessionId: SessionId; receiptId: string; status: 'accepted' | 'recorded' }
+```
+
+Source: [`packages/api/session-controller/src/room-messaging.ts:117`](../packages/api/session-controller/src/room-messaging.ts)
+
+<a id="hivemindexternal-employee-room--log-only"></a>
+
+#### `hivemind/external-employee-room` — log-only
+
+```ts persistence-catalog
+/** Canonical ownership metadata for an Open Dot employee's durable proxy room. */
+'hivemind/external-employee-room': { employeeId: string; backend: 'open-dot'; dotId?: string; organizationId?: string; userId?: string }
+```
+
+Source: [`packages/api/session-controller/src/room-messaging.ts:119`](../packages/api/session-controller/src/room-messaging.ts)
 
 <a id="hivemindgeneration-created--log-only"></a>
 
@@ -744,7 +777,7 @@ Source: [`packages/hivemind/hq-runtime/src/awakening.ts:31`](../packages/hivemin
 'hivemind/hq-blocker-recovery-hold': { turn: number; callId: string; rootId: string; taskId: string; checkpointId: string }
 ```
 
-Source: [`packages/hivemind/hq-runtime/src/delegated-blocker.ts:45`](../packages/hivemind/hq-runtime/src/delegated-blocker.ts)
+Source: [`packages/hivemind/hq-runtime/src/delegated-blocker.ts:46`](../packages/hivemind/hq-runtime/src/delegated-blocker.ts)
 
 <a id="hivemindhq-calendar-item--log-only"></a>
 
@@ -779,7 +812,7 @@ Source: [`packages/hivemind/hq-runtime/src/control.ts:53`](../packages/hivemind/
 'hivemind/hq-delegated-blocker': DelegatedBlocker
 ```
 
-Source: [`packages/hivemind/hq-runtime/src/delegated-blocker.ts:41`](../packages/hivemind/hq-runtime/src/delegated-blocker.ts)
+Source: [`packages/hivemind/hq-runtime/src/delegated-blocker.ts:42`](../packages/hivemind/hq-runtime/src/delegated-blocker.ts)
 
 <a id="hivemindhq-employee-assignment--log-only"></a>
 
@@ -799,7 +832,7 @@ Source: [`packages/hivemind/hq-runtime/src/delegated-blocker.ts:41`](../packages
 }
 ```
 
-Source: [`packages/hivemind/hq-runtime/src/index.ts:67`](../packages/hivemind/hq-runtime/src/index.ts)
+Source: [`packages/hivemind/hq-runtime/src/index.ts:70`](../packages/hivemind/hq-runtime/src/index.ts)
 
 <a id="hivemindhq-employee-blocked--log-only"></a>
 
@@ -810,7 +843,7 @@ Source: [`packages/hivemind/hq-runtime/src/index.ts:67`](../packages/hivemind/hq
 'hivemind/hq-employee-blocked': { turn: number; taskId: string; checkpointId: string }
 ```
 
-Source: [`packages/hivemind/hq-runtime/src/delegated-blocker.ts:47`](../packages/hivemind/hq-runtime/src/delegated-blocker.ts)
+Source: [`packages/hivemind/hq-runtime/src/delegated-blocker.ts:48`](../packages/hivemind/hq-runtime/src/delegated-blocker.ts)
 
 <a id="hivemindhq-mode--log-only"></a>
 
@@ -843,7 +876,7 @@ Source: [`packages/hivemind/hq-runtime/src/control.ts:49`](../packages/hivemind/
 'hivemind/hq-rest-confirmed': RestWake
 ```
 
-Source: [`packages/hivemind/hq-runtime/src/rest.ts:75`](../packages/hivemind/hq-runtime/src/rest.ts)
+Source: [`packages/hivemind/hq-runtime/src/rest.ts:86`](../packages/hivemind/hq-runtime/src/rest.ts)
 
 <a id="hivemindhq-rest-intent--log-only"></a>
 
@@ -854,7 +887,7 @@ Source: [`packages/hivemind/hq-runtime/src/rest.ts:75`](../packages/hivemind/hq-
 'hivemind/hq-rest-intent': RestIntent
 ```
 
-Source: [`packages/hivemind/hq-runtime/src/rest.ts:69`](../packages/hivemind/hq-runtime/src/rest.ts)
+Source: [`packages/hivemind/hq-runtime/src/rest.ts:80`](../packages/hivemind/hq-runtime/src/rest.ts)
 
 <a id="hivemindhq-rest-note--log-only"></a>
 
@@ -865,7 +898,7 @@ Source: [`packages/hivemind/hq-runtime/src/rest.ts:69`](../packages/hivemind/hq-
 'hivemind/hq-rest-note': QuietNote
 ```
 
-Source: [`packages/hivemind/hq-runtime/src/rest.ts:73`](../packages/hivemind/hq-runtime/src/rest.ts)
+Source: [`packages/hivemind/hq-runtime/src/rest.ts:84`](../packages/hivemind/hq-runtime/src/rest.ts)
 
 <a id="hivemindhq-rest-notes-presented--log-only"></a>
 
@@ -876,7 +909,7 @@ Source: [`packages/hivemind/hq-runtime/src/rest.ts:73`](../packages/hivemind/hq-
 'hivemind/hq-rest-notes-presented': { readonly noteIds: readonly string[]; readonly messageSeq: number; readonly presentedAt: string }
 ```
 
-Source: [`packages/hivemind/hq-runtime/src/rest.ts:77`](../packages/hivemind/hq-runtime/src/rest.ts)
+Source: [`packages/hivemind/hq-runtime/src/rest.ts:88`](../packages/hivemind/hq-runtime/src/rest.ts)
 
 <a id="hivemindhq-rest-wake--log-only"></a>
 
@@ -887,7 +920,7 @@ Source: [`packages/hivemind/hq-runtime/src/rest.ts:77`](../packages/hivemind/hq-
 'hivemind/hq-rest-wake': RestWake
 ```
 
-Source: [`packages/hivemind/hq-runtime/src/rest.ts:71`](../packages/hivemind/hq-runtime/src/rest.ts)
+Source: [`packages/hivemind/hq-runtime/src/rest.ts:82`](../packages/hivemind/hq-runtime/src/rest.ts)
 
 <a id="hivemindhq-task-artifacts--log-only"></a>
 
@@ -898,7 +931,7 @@ Source: [`packages/hivemind/hq-runtime/src/rest.ts:71`](../packages/hivemind/hq-
 'hivemind/hq-task-artifacts': TaskArtifactLinks
 ```
 
-Source: [`packages/hivemind/hq-runtime/src/index.ts:65`](../packages/hivemind/hq-runtime/src/index.ts)
+Source: [`packages/hivemind/hq-runtime/src/index.ts:68`](../packages/hivemind/hq-runtime/src/index.ts)
 
 <a id="hivemindhq-task-contract--log-only"></a>
 
@@ -909,7 +942,7 @@ Source: [`packages/hivemind/hq-runtime/src/index.ts:65`](../packages/hivemind/hq
 'hivemind/hq-task-contract': CompanyTaskContract
 ```
 
-Source: [`packages/hivemind/hq-runtime/src/index.ts:61`](../packages/hivemind/hq-runtime/src/index.ts)
+Source: [`packages/hivemind/hq-runtime/src/index.ts:64`](../packages/hivemind/hq-runtime/src/index.ts)
 
 <a id="hivemindhq-task-review--log-only"></a>
 
@@ -920,7 +953,7 @@ Source: [`packages/hivemind/hq-runtime/src/index.ts:61`](../packages/hivemind/hq
 'hivemind/hq-task-review': HqTaskReview
 ```
 
-Source: [`packages/hivemind/hq-runtime/src/index.ts:63`](../packages/hivemind/hq-runtime/src/index.ts)
+Source: [`packages/hivemind/hq-runtime/src/index.ts:66`](../packages/hivemind/hq-runtime/src/index.ts)
 
 <a id="hivemindhq-tour--log-only"></a>
 
@@ -971,6 +1004,108 @@ Source: [`packages/hivemind/artifact-renderer/src/media-workflow.ts:55`](../pack
 
 Source: [`packages/hivemind/memory/src/index.ts:78`](../packages/hivemind/memory/src/index.ts)
 
+<a id="hivemindopen-dot-runtime-dispatch-receipt--log-only"></a>
+
+#### `hivemind/open-dot-runtime-dispatch-receipt` — log-only
+
+```ts persistence-catalog
+/** Immutable acknowledgement that Core durably accepted one Open Dot Runtime dispatch. */
+'hivemind/open-dot-runtime-dispatch-receipt': {
+  version: 1; dispatchMessageId: string; nativePacketId: string; digest: string
+  organizationId: string; userId: string; employeeId: string; dotId: string; rootSessionId: string
+  taskId?: string; taskRevision?: number; artifactIds: string[]; receiptId: string; deliveryState: 'accepted' | 'recorded'; actor: ExternalActor
+}
+```
+
+Source: [`packages/api/session-controller/src/external-room.ts:45`](../packages/api/session-controller/src/external-room.ts)
+
+<a id="hivemindopen-dot-runtime-operation-intent--log-only"></a>
+
+#### `hivemind/open-dot-runtime-operation-intent` — log-only
+
+```ts persistence-catalog
+/** Durable idempotency intent written before forwarding an external employee operation. */
+'hivemind/open-dot-runtime-operation-intent': { messageId: string; digest: string; dispatchMessageId: string; rootSessionId: string; artifactIds: string[] }
+```
+
+Source: [`packages/api/session-controller/src/external-room.ts:145`](../packages/api/session-controller/src/external-room.ts)
+
+<a id="hivemindopen-dot-runtime-operation-queued--log-only"></a>
+
+#### `hivemind/open-dot-runtime-operation-queued` — log-only
+
+```ts persistence-catalog
+/** Exact Dot-to-Runtime operation queued for durable native delivery. */
+'hivemind/open-dot-runtime-operation-queued': { messageId: string; digest: string; dispatchMessageId: string; rootSessionId: string; message: RoomMessage }
+```
+
+Source: [`packages/api/session-controller/src/room-messaging.ts:121`](../packages/api/session-controller/src/room-messaging.ts)
+
+<a id="hivemindopen-dot-runtime-operation-receipt--log-only"></a>
+
+#### `hivemind/open-dot-runtime-operation-receipt` — log-only
+
+```ts persistence-catalog
+/** Acknowledges one durably accepted Dot-to-Runtime operation. */
+'hivemind/open-dot-runtime-operation-receipt': { messageId: string; digest: string; dispatchMessageId: string; rootSessionId: string; deliveryState: 'accepted' | 'recorded' }
+```
+
+Source: [`packages/api/session-controller/src/room-messaging.ts:123`](../packages/api/session-controller/src/room-messaging.ts)
+
+<a id="hivemindopen-dot-runtime-reconcile-wake--log-only"></a>
+
+#### `hivemind/open-dot-runtime-reconcile-wake` — log-only
+
+```ts persistence-catalog
+/** Durable Schedule wake binding for one pending dispatch and its original Runtime root. */
+'hivemind/open-dot-runtime-reconcile-wake': RuntimeWakeBinding
+```
+
+Source: [`packages/hivemind/web-runner/src/open-dot-runtime.ts:285`](../packages/hivemind/web-runner/src/open-dot-runtime.ts)
+
+<a id="hivemindopen-dot-runtime-status-observed--log-only"></a>
+
+#### `hivemind/open-dot-runtime-status-observed` — log-only
+
+```ts persistence-catalog
+/** Bounded latest status observation retained for restart recovery and Runtime review. */
+'hivemind/open-dot-runtime-status-observed': {
+  dispatchMessageId: string; rootSessionId: string; observedAt: string
+  state: string; jobResult: Record<string, unknown> | null
+  outputs: { messageId: string; role: string; text: string; createdAt: string }[]
+  attachments: { id: string; name: string; mime: string; size: number }[]
+}
+```
+
+Source: [`packages/api/session-controller/src/external-room.ts:51`](../packages/api/session-controller/src/external-room.ts)
+
+<a id="hivemindopen-dot-runtime-terminal-outbox--log-only"></a>
+
+#### `hivemind/open-dot-runtime-terminal-outbox` — log-only
+
+```ts persistence-catalog
+/** Once-only native message awaiting delivery to the saved Runtime root. */
+'hivemind/open-dot-runtime-terminal-outbox': {
+  dispatchMessageId: string; rootSessionId: string; taskId?: string; taskRevision?: number
+  messageKey: string; digest: string; text: string; artifactIds: string[]; state: string
+}
+```
+
+Source: [`packages/api/session-controller/src/external-room.ts:58`](../packages/api/session-controller/src/external-room.ts)
+
+<a id="hivemindopen-dot-runtime-terminal-receipt--log-only"></a>
+
+#### `hivemind/open-dot-runtime-terminal-receipt` — log-only
+
+```ts persistence-catalog
+/** Confirms that the corresponding terminal result was persisted to the Runtime root inbox. */
+'hivemind/open-dot-runtime-terminal-receipt': {
+  dispatchMessageId: string; rootSessionId: string; messageId: string; digest: string; state: string
+}
+```
+
+Source: [`packages/api/session-controller/src/external-room.ts:63`](../packages/api/session-controller/src/external-room.ts)
+
 <a id="hivemindoperating-context--log-only"></a>
 
 #### `hivemind/operating-context` — log-only
@@ -1013,7 +1148,7 @@ Source: [`packages/hivemind/playbooks/src/index.ts:198`](../packages/hivemind/pl
 'hivemind/read-scope': { scope: 'full' | 'personal' | 'organization' | 'project'; project?: string }
 ```
 
-Source: [`packages/hivemind/runtime/src/index.ts:71`](../packages/hivemind/runtime/src/index.ts)
+Source: [`packages/hivemind/runtime/src/index.ts:75`](../packages/hivemind/runtime/src/index.ts)
 
 <a id="hivemindreply-language--log-only"></a>
 
@@ -1024,7 +1159,7 @@ Source: [`packages/hivemind/runtime/src/index.ts:71`](../packages/hivemind/runti
 'hivemind/reply-language': { language: string }
 ```
 
-Source: [`packages/hivemind/runtime/src/index.ts:77`](../packages/hivemind/runtime/src/index.ts)
+Source: [`packages/hivemind/runtime/src/index.ts:81`](../packages/hivemind/runtime/src/index.ts)
 
 <a id="hivemindrequest-assembly-budget--log-only"></a>
 
@@ -1112,7 +1247,7 @@ Source: [`packages/hivemind/research/src/index.ts:176`](../packages/hivemind/res
 'hivemind/room-message-delivered': { id: string; targetId: SessionId }
 ```
 
-Source: [`packages/api/session-controller/src/room-messaging.ts:66`](../packages/api/session-controller/src/room-messaging.ts)
+Source: [`packages/api/session-controller/src/room-messaging.ts:115`](../packages/api/session-controller/src/room-messaging.ts)
 
 <a id="hivemindroom-message-queued--log-only"></a>
 
@@ -1125,7 +1260,7 @@ Source: [`packages/api/session-controller/src/room-messaging.ts:66`](../packages
 
 Types: [MessageSource](subsystems/core.md)
 
-Source: [`packages/api/session-controller/src/room-messaging.ts:62`](../packages/api/session-controller/src/room-messaging.ts)
+Source: [`packages/api/session-controller/src/room-messaging.ts:111`](../packages/api/session-controller/src/room-messaging.ts)
 
 <a id="hivemindroom-message-received--log-only"></a>
 
@@ -1136,7 +1271,7 @@ Source: [`packages/api/session-controller/src/room-messaging.ts:62`](../packages
 'hivemind/room-message-received': RoomMessage
 ```
 
-Source: [`packages/api/session-controller/src/room-messaging.ts:64`](../packages/api/session-controller/src/room-messaging.ts)
+Source: [`packages/api/session-controller/src/room-messaging.ts:113`](../packages/api/session-controller/src/room-messaging.ts)
 
 <a id="hivemindrun-evaluation--log-only"></a>
 
@@ -1235,7 +1370,7 @@ Source: [`packages/hivemind/runtime/src/voice-outcome.ts:10`](../packages/hivemi
 'hivemind/web-search-route': { provider: 'native' | 'existing'; fallback: boolean }
 ```
 
-Source: [`packages/hivemind/runtime/src/index.ts:73`](../packages/hivemind/runtime/src/index.ts)
+Source: [`packages/hivemind/runtime/src/index.ts:77`](../packages/hivemind/runtime/src/index.ts)
 
 <a id="hivemindworkstream-approval--log-only"></a>
 
@@ -1504,7 +1639,7 @@ Source: [`packages/sandbox/sandbox-policy/src/session-mode.ts:33`](../packages/s
 
 Types: [ScheduleChange](subsystems/schedule.md)
 
-Source: [`packages/schedule/schedule/src/types.ts:365`](../packages/schedule/schedule/src/types.ts)
+Source: [`packages/schedule/schedule/src/types.ts:370`](../packages/schedule/schedule/src/types.ts)
 
 ### `session/*`
 
@@ -1727,7 +1862,7 @@ Source: [`packages/experimental/agent-team/src/types.ts:237`](../packages/experi
 #### `team/message/queued` — log-only
 
 ```ts persistence-catalog
-/** Durable mailbox enqueue, stored before delivery is attempted. */
+/** Historical pre-upgrade mailbox enqueue; new sends use native Inbox delivery. */
 'team/message/queued': { version: 2; teamId: TeamId; message: TeamMessageSnapshot }
 ```
 
@@ -1759,7 +1894,7 @@ Source: [`packages/experimental/agent-team/src/types.ts:233`](../packages/experi
 
 Types: [ToolCallId](subsystems/core.md)
 
-Source: [`packages/experimental/tool-agent-team/src/parked-wait.ts:17`](../packages/experimental/tool-agent-team/src/parked-wait.ts)
+Source: [`packages/experimental/tool-agent-team/src/parked-wait.ts:18`](../packages/experimental/tool-agent-team/src/parked-wait.ts)
 
 <a id="teamwaitparked--log-only"></a>
 
@@ -1770,7 +1905,7 @@ Source: [`packages/experimental/tool-agent-team/src/parked-wait.ts:17`](../packa
 'team/wait/parked': ParkedTeamWait
 ```
 
-Source: [`packages/experimental/tool-agent-team/src/parked-wait.ts:15`](../packages/experimental/tool-agent-team/src/parked-wait.ts)
+Source: [`packages/experimental/tool-agent-team/src/parked-wait.ts:16`](../packages/experimental/tool-agent-team/src/parked-wait.ts)
 
 ### `todo/*`
 

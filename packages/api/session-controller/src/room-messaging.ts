@@ -107,7 +107,6 @@ export function registerExternalEmployeeRoomProvider(ctx: Context, provider: Ext
 }
 declare module '@deepseek-ai/dsh-session/types' {
   interface SessionEventMap {
-    'hivemind/session-owner': { id: string | null; slug: string; name?: string; role?: string }
     /** Sender outbox packet committed before delivery; stable id binds its exact room and payload. */
     'hivemind/room-message-queued': RoomMessage & { delivery?: { key: string; target: string; authenticatedActor?: Extract<import('@deepseek-ai/dsh-llm').MessageSource, { kind: 'user' }>['authenticatedActor'] } }
     /** Receiver acknowledgement of one admitted question/reply or quietly saved update. */
@@ -116,10 +115,13 @@ declare module '@deepseek-ai/dsh-session/types' {
     'hivemind/room-message-delivered': { id: string; targetId: SessionId }
     /** Durable external queue receipt; written only after the provider confirms acceptance. */
     'hivemind/external-delivery-accepted': { id: string; employeeId: string; targetSessionId: SessionId; receiptId: string; status: 'accepted' | 'recorded' }
+    /** Canonical ownership metadata for an Open Dot employee's durable proxy room. */
     'hivemind/external-employee-room': { employeeId: string; backend: 'open-dot'; dotId?: string; organizationId?: string; userId?: string }
-    'hivemind/open-dot-runtime-operation-intent': { messageId: string; digest: string; dispatchMessageId: string; rootSessionId: string; artifactIds: string[] }
+    /** Exact Dot-to-Runtime operation queued for durable native delivery. */
     'hivemind/open-dot-runtime-operation-queued': { messageId: string; digest: string; dispatchMessageId: string; rootSessionId: string; message: RoomMessage }
+    /** Acknowledges one durably accepted Dot-to-Runtime operation. */
     'hivemind/open-dot-runtime-operation-receipt': { messageId: string; digest: string; dispatchMessageId: string; rootSessionId: string; deliveryState: 'accepted' | 'recorded' }
+    /** Imported bytes and native attachment reference for a verified Open Dot artifact. */
     'hivemind/external-artifact-created': { artifactId: string; title: string; mediaType: string; provider: 'open-dot-owned'; path: null; file: FileAttachmentRef; sha256: string; size: number; dotId: string; dispatchMessageId: string }
   }
 }

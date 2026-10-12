@@ -281,6 +281,7 @@ interface RuntimeWakeBinding {
 }
 declare module '@deepseek-ai/dsh-session/types' {
   interface SessionEventMap {
+    /** Durable Schedule wake binding for one pending dispatch and its original Runtime root. */
     'hivemind/open-dot-runtime-reconcile-wake': RuntimeWakeBinding
   }
 }
