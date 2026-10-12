@@ -439,6 +439,69 @@ describe('HIVE progressive context', () => {
     expect(Session.create(SessionId('aggregate-restored'), session.snapshotEvents()).deriveMessages()).toEqual(messages)
   })
 
+  it('bounds text across mixed successful receipts while retaining exact media, outcome and original event', async () => {
+    const session = Session.create(SessionId('mixed-success-results'))
+    session.append('turn/start', { turn: 1 })
+    const image = { type: 'image', url: 'https://example.invalid/saved-image.png', mimeType: 'image/png' } as const
+    const original = session.append('tool/result', { turn: 1, step: 1, message: createToolResultMessage({ callId: 'mixed-receipt' as never,
+      content: [{ type: 'text', text: 'Exact saved HTML '.repeat(4000) }, image,
+        { type: 'text', text: 'Additional saved evidence '.repeat(1000) }] as never, isError: false }) }, { surfaceOp: 'append' })
+    const harness = mount()
+    const decision = await harness.preStep({ agent: { session }, turn: 1, signal: new AbortController().signal } as never,
+      async () => ({ kind: 'enter', messages: [] })) as { startsRequestSeries?: boolean }
+    expect(decision.startsRequestSeries).toBe(true)
+    const projected = session.deriveMessages()[0]!
+    expect(projected.id).toBe(original.data.message.id)
+    const block = projected.content[0]!
+    expect(block).toMatchObject({ type: 'tool-result', toolCallId: 'mixed-receipt', isError: false })
+    if (block.type !== 'tool-result') throw new Error('result missing')
+    expect(block.content.filter(part => part.type === 'image')).toEqual([image])
+    expect(block.content.filter(part => part.type === 'text').map(part => part.text).join('').length).toBeLessThanOrEqual(3000)
+    expect(JSON.stringify(block.content)).toContain('hyperagents_history')
+    expect(session.eventAt(original.seq)).toEqual(original)
+    expect(Session.create(SessionId('mixed-restored'), session.snapshotEvents()).deriveMessages()).toEqual(session.deriveMessages())
+  })
+
+  it('shares one visible receipt-evidence budget across successive active steps without losing originals or current requests', async () => {
+    const session = Session.create(SessionId('receipt-batches'))
+    session.append('turn/start', { turn: 1 })
+    const harness = mount(), agent = { session }
+    for (let step = 0; step < 6; step++) {
+      const request = user(`Current exact request ${step}`)
+      const receipts = Array.from({ length: 2 }, (_, index) => createUserMessage({
+        source: { kind: 'plugin', plugin: 'dsh-hivemind-connected-apps/receipt', form: 'recall' },
+        content: [{ type: 'text', text: `Original batch ${step}-${index} ` + 'Evidence '.repeat(800) }],
+      }))
+      const decision = await harness.preStep({ agent, turn: 1, signal: new AbortController().signal } as never,
+        async () => ({ kind: 'enter', messages: [...receipts, request] })) as { messages: ReturnType<typeof user>[] }
+      expect(decision.messages).toContainEqual(request)
+      for (const message of decision.messages) session.append('user/message', message, { surfaceOp: 'append' })
+      const visible = session.deriveMessages().filter(message => message.role === 'user' && message.source.kind === 'plugin'
+        && message.source.plugin === 'dsh-hivemind-connected-apps/receipt')
+      expect(visible.flatMap(message => message.content.flatMap(part => part.type === 'text' ? [part.text] : [])).join('').length)
+        .toBeLessThanOrEqual(3000)
+      for (const receipt of receipts) expect(session.snapshotEvents().some(event => event.type === 'user/message'
+        && event.data.id === receipt.id && event.data.content[0]?.type === 'text'
+        && event.data.content[0].text === receipt.content[0]?.text)).toBe(true)
+    }
+    expect(Session.create(SessionId('receipt-batches-restored'), session.snapshotEvents()).deriveMessages()).toEqual(session.deriveMessages())
+  })
+
+  it('retains the complete trusted awakening method while paging accompanying recalled evidence', async () => {
+    const session = Session.create(SessionId('method-with-recall'))
+    const harness = mount()
+    const body = '<skill_content name="runtime-company-awakening">'+ 'Full method '.repeat(3000)+'</skill_content>'
+    const method = createUserMessage({ source: { kind: 'plugin', plugin: 'hivemind-hq/awakening-method', form: 'recall' },
+      content: [{ type: 'text', text: body }] })
+    const evidence = createUserMessage({ source: { kind: 'plugin', plugin: 'hivemind-hq/private-recall', form: 'recall' },
+      content: [{ type: 'text', text: 'Evidence '.repeat(4000) }] })
+    const decision = await harness.preStep({ agent: { session }, turn: 1, signal: new AbortController().signal } as never,
+      async () => ({ kind: 'enter', messages: [method, evidence, user('Current exact direction')] })) as { messages: ReturnType<typeof user>[] }
+    expect(decision.messages).toContainEqual(method)
+    expect(JSON.stringify(decision.messages)).toContain(JSON.stringify(body).slice(1,-1))
+    expect(decision.messages).not.toContainEqual(evidence)
+  })
+
   it('retains complete loaded skill instructions instead of paging them as evidence', async () => {
     const session = Session.create(SessionId('active-skill-body'))
     session.append('turn/start', { turn: 1 })

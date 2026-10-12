@@ -213,7 +213,7 @@ function projectHistory(ctx: Context, agent: Agent, config: ContextConfig): bool
   return changed
 }
 
-/** Keep full receipts in the log and expose text-only results in bounded pages. */
+/** Keep complete receipts/media in the log and page their model-facing text. */
 function boundToolResults(agent: Agent, maxChars: number): boolean {
   let changed = false
   const entries = [...agent.session.surface.nodes].flatMap((seq) => {
@@ -224,8 +224,10 @@ function boundToolResults(agent: Agent, maxChars: number): boolean {
     // Loaded native skills are active instructions, not pageable evidence.
     if (blocks.some(block => block.type === 'tool-result' && calls.some(call =>
       call.type === 'tool/call' && call.data.callId === block.toolCallId && call.data.name === 'skill'))) return []
-    // Native images and pending/error results keep their original representation.
-    if (!blocks.every(block => block.type === 'tool-result' && !block.isError && block.content.every(part => part.type === 'text'))) return []
+    // Preserve native media and pending/error outcome semantics. Mixed success
+    // receipts still contain pageable text; one image must not exempt 50k HTML.
+    if (!blocks.every(block => block.type === 'tool-result' && !block.isError)
+      || !blocks.some(block => block.type === 'tool-result' && block.content.some(part => part.type === 'text'))) return []
     return [{ seq, event, blocks }]
   })
   const count = entries.reduce((sum, entry) => sum + entry.blocks.length, 0)
@@ -246,7 +248,14 @@ function boundToolResults(agent: Agent, maxChars: number): boolean {
         original = previous
       }
       const reference = `\n[Excerpt. Full saved receipt: sequence ${original.seq}; read hyperagents_history with offset pages before relying on omitted details. Tool identity and outcome are unchanged.]`
-      return { ...block, content: [{ type: 'text' as const, text: text.slice(0, Math.max(0, perResult - reference.length)) + reference }] }
+      let inserted = false
+      const excerpt = text.slice(0, Math.max(0, perResult - reference.length)) + reference
+      return { ...block, content: block.content.flatMap<ContentBlock>((part) => {
+        if (part.type !== 'text') return [part]
+        if (inserted) return []
+        inserted = true
+        return [{ ...part, text: excerpt }]
+      }) }
     })
     if (content.every((block, index) => block === blocks[index])) continue
     const first = content[0]
@@ -257,9 +266,47 @@ function boundToolResults(agent: Agent, maxChars: number): boolean {
   }
   return changed
 }
+/** Receipt views are evidence, not policy. Budget their entire visible surface,
+ * including batches admitted by earlier steps of this still-active turn.
+ */
+function boundReceiptEvidence(agent: Agent, messages: readonly UserMessage[], maxChars: number): {
+  messages: readonly UserMessage[]
+  changed: boolean
+} {
+  const isReceipt = (message: UserMessage) => message.source.kind === 'plugin'
+    && message.source.plugin === 'dsh-hivemind-connected-apps/receipt'
+    && message.content.every(part => part.type === 'text')
+  const pending = messages.filter(isReceipt)
+  for (const message of pending) agent.session.append('user/message', message, { surfaceOp: 'append' })
+  const nodes = agent.session.surface.nodes.flatMap((seq) => {
+    const event = agent.session.eventAt(seq)
+    return event?.type === 'user/message' && isReceipt(event.data) ? [event] : []
+  })
+  const budget = Math.max(1, Math.floor(maxChars / Math.max(1, nodes.length)))
+  let changed = false
+  for (const event of nodes) {
+    if (textOf(event.data).length <= budget) continue
+    let original = event
+    while (isReplacementSurfaceEvent(original) && original.sourceEventSeqs?.length === 1) {
+      const priorSeq = original.sourceEventSeqs[0]
+      if (priorSeq === undefined) break
+      const prior = agent.session.eventAt(priorSeq)
+      if (prior?.type !== 'user/message' || !isReceipt(prior.data)) break
+      original = prior
+    }
+    const reference = `\n[Receipt excerpt; original sequence ${original.seq}. Read hyperagents_history before relying on omitted evidence.]`
+    agent.session.append('user/message', { ...event.data, content: [{ type: 'text',
+      text: textOf(event.data).slice(0, Math.max(0, budget - reference.length)) + reference,
+    }] }, { surfaceOp: { op: 'replace', startSeq: event.seq, endSeq: event.seq }, sourceEventSeqs: [event.seq] })
+    changed = true
+  }
+  return { messages: messages.filter(message => !isReceipt(message)), changed }
+}
+
 /** Save complete recalled inputs before exposing bounded excerpts to the model. */
 function boundRecallInputs(agent: Agent, messages: readonly UserMessage[], maxChars: number): readonly UserMessage[] {
   const recalled = messages.filter(message => message.source.kind === 'plugin' && message.source.form === 'recall'
+    && message.source.plugin !== 'hivemind-hq/awakening-method'
     && message.content.every(part => part.type === 'text'))
   if (recalled.reduce((sum, message) => sum + textOf(message).length, 0) <= maxChars) return messages
   const budget = Math.max(256, Math.floor(maxChars / recalled.length))
@@ -300,7 +347,7 @@ export function contextPlugin(config: ContextConfig): Plugin.Object<void> {
         if (first) projected.set(agent, turn)
         const projectedHistory = first && projectHistory(ctx, agent, config)
         const boundedResults = boundToolResults(agent, config.historyMaxChars)
-        const changed = projectedHistory || boundedResults
+        let changed = projectedHistory || boundedResults
         const showCatalog = capabilityCatalogRequested(
           agent.session.snapshotEvents(),
           turn,
@@ -329,7 +376,9 @@ export function contextPlugin(config: ContextConfig): Plugin.Object<void> {
             // missing optional brief must not prevent the user's turn.
           }
         }
-        messages = [...boundRecallInputs(agent, messages, config.historyMaxChars)]
+        const receipts = boundReceiptEvidence(agent, messages, config.historyMaxChars)
+        changed ||= receipts.changed
+        messages = [...boundRecallInputs(agent, receipts.messages, config.historyMaxChars)]
         return changed
           ? { ...decision, messages, startsRequestSeries: true }
           : { ...decision, messages }
