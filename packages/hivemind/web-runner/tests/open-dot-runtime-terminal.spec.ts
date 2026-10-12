@@ -1,9 +1,11 @@
 import { createHash } from 'node:crypto'
 import type { Context } from '@deepseek-ai/cordis'
+import type { Agent } from '@deepseek-ai/dsh-agent'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import { afterEach, expect, it, vi } from 'vitest'
 import type { ExternalEmployeeOperation, ExternalEmployeeRoom, ExternalRuntimeDispatchStatus } from '@deepseek-ai/dsh-api-session-controller'
-import { reconcileTerminalRuntimeResult, startOpenDotRuntimeMonitor } from '../src/open-dot-runtime.ts'
+import type { ScheduleDeliveryGuardResult, ScheduleTask } from '@deepseek-ai/dsh-schedule'
+import { installOpenDotRuntimeScheduleWake, reconcileTerminalRuntimeResult, startOpenDotRuntimeMonitor } from '../src/open-dot-runtime.ts'
 
 const employeeId = '67503d34-97e9-49a8-8c52-8ee30cc7603e'
 const orgId = '54f5568b-4d6a-4ae1-9a33-48cb2909d59b'
@@ -20,7 +22,7 @@ const checksum = 'sha256:' + createHash('sha256').update(content).digest('hex')
 function fixture(assignment = { employeeId, sessionId: roomId }) {
   const events: Array<{ type: string; data: Record<string, unknown> }> = []
   const rootEvents = [{ type: 'hivemind/hq-employee-assignment', data: { taskId, ...assignment } }]
-  const root = { id: rootId, session: { header: { parentSession: undefined }, snapshotEvents: () => rootEvents } }
+  const root = { id: rootId, session: { header: { parentSession: undefined }, ownEvents: () => rootEvents, snapshotEvents: () => rootEvents } }
   const room = {
     kind: 'external-persistent-assignee', id: roomId, employeeId, dotId: 'dot_canary', organizationId: orgId,
     userId, name: 'Alex', role: 'Research',
@@ -65,6 +67,29 @@ function fixture(assignment = { employeeId, sessionId: roomId }) {
   return { ctx, room, receipt, result, receive, saveFile, events, fetchImpl, getJobSpec: () => jobSpec }
 }
 afterEach(() => vi.restoreAllMocks())
+
+it('does not cancel an ordinary user reminder that only contains a dispatch marker', async () => {
+  const f = fixture()
+  type Guard = (target: Agent, task: ScheduleTask) => Promise<ScheduleDeliveryGuardResult>
+  let guard: Guard | undefined
+  const ctx = Object.assign(f.ctx, {
+    schedule: { guardDelivery: (value: Guard) => {
+      guard = value
+      return () => {}
+    } },
+    effect: (install: () => unknown) => install(),
+  }) as unknown as Context
+  installOpenDotRuntimeScheduleWake(ctx, new URL('https://core.example'), secret)
+  const target = ctx.agents.get(rootId)!
+  const decision = await guard!(target, {
+    sessionId: rootId,
+    status: 'active',
+    record: { id: 'user-schedule-id', title: 'Reminder', prompt:
+      'OPEN_DOT_RUNTIME_DISPATCH=12345678-1234-4234-8234-123456789abc\nInternal recovery signal. Reconcile only the exact saved dispatch receipt. Do not create or resend a task. A recovery signal is not evidence of completion or approval.',
+      scheduledAt: new Date().toISOString() },
+  } as ScheduleTask)
+  expect(decision).toBe(true)
+})
 
 it('reconciles one terminal result as a persisted Runtime review submission with verified owned bytes', async () => {
   const f = fixture()

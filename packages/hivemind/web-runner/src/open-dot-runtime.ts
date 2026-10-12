@@ -5,6 +5,9 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
 import type {} from '@deepseek-ai/dsh-jobs'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
+import type {} from '@deepseek-ai/dsh-session/types'
+import { ScheduleId } from '@deepseek-ai/dsh-schedule'
+import type { ScheduleTask, ScheduleDeliveryGuardResult } from '@deepseek-ai/dsh-schedule'
 import { TeamTaskId } from '@deepseek-ai/dsh-experimental-agent-team'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import { employeeExternalDispatchAllowed, projectHyperagentProfiles } from '@deepseek-ai/dsh-hivemind-employee-directory'
@@ -261,6 +264,164 @@ declare module '@deepseek-ai/dsh-jobs' {
 
 const runtimeMonitors = new WeakMap<Context, Map<string, string>>()
 function monitorKey(rootSessionId: string, dispatchMessageId: string): string { return `${rootSessionId}:${dispatchMessageId}` }
+const runtimeWakeEvent = 'hivemind/open-dot-runtime-reconcile-wake'
+const runtimeWakeIntervalSeconds = 60
+interface RuntimeWakeBinding {
+  version: 1
+  scheduleId: string
+  dispatchMessageId: string
+  rootSessionId: string
+  employeeId: string
+  dotId: string
+  roomSessionId: string
+  organizationId: string
+  userId: string
+  taskId?: string
+  taskRevision?: number
+}
+declare module '@deepseek-ai/dsh-session/types' {
+  interface SessionEventMap {
+    'hivemind/open-dot-runtime-reconcile-wake': RuntimeWakeBinding
+  }
+}
+function runtimeWakePrompt(dispatchMessageId: string): string {
+  return `OPEN_DOT_RUNTIME_DISPATCH=${dispatchMessageId}\n` +
+    'Internal recovery signal. Reconcile only the exact saved dispatch receipt. Do not create or resend a task. ' +
+    'A recovery signal is not evidence of completion or approval.'
+}
+function runtimeWakeScheduleId(rootSessionId: string, dispatchMessageId: string) {
+  const sessionId = SessionId(rootSessionId)
+  const key = `open-dot-runtime-${dispatchMessageId}`
+  return ScheduleId(`schedule-${createHash('sha256').update(`${sessionId}\0${key}`).digest('hex')}`)
+}
+function isRuntimeWakeBinding(value: unknown): value is RuntimeWakeBinding {
+  if (!isRecord(value)) return false
+  return value['version'] === 1 && typeof value['scheduleId'] === 'string'
+    && typeof value['dispatchMessageId'] === 'string' && typeof value['rootSessionId'] === 'string'
+    && typeof value['employeeId'] === 'string' && typeof value['dotId'] === 'string'
+    && typeof value['roomSessionId'] === 'string' && typeof value['organizationId'] === 'string'
+    && typeof value['userId'] === 'string'
+    && (value['taskId'] === undefined || typeof value['taskId'] === 'string')
+    && (value['taskRevision'] === undefined || Number.isSafeInteger(value['taskRevision']))
+}
+
+/** Persist a cold-start recovery wake before asking Core to admit the dispatch. */
+async function ensureRuntimeWake(ctx: Context, root: Agent, binding: Omit<RuntimeWakeBinding, 'scheduleId' | 'version'>): Promise<RuntimeWakeBinding> {
+  const sessionId = SessionId(binding.rootSessionId)
+  const key = `open-dot-runtime-${binding.dispatchMessageId}`
+  const id = runtimeWakeScheduleId(binding.rootSessionId, binding.dispatchMessageId)
+  const prompt = runtimeWakePrompt(binding.dispatchMessageId)
+  const existing = (await ctx.schedule.catalog()).find(record => record.id === id)
+  if (existing && (String(existing.sessionId) !== String(sessionId) || existing.title !== 'Open Dot Runtime recovery'
+    || existing.prompt !== prompt)) throw new Error('open_dot_runtime_wake_schedule_conflict')
+  if (existing?.status === 'inactive') await ctx.schedule.delete({ sessionId, id })
+  const record = existing?.status === 'active' ? existing : await ctx.schedule.ensure(sessionId, key, {
+    title: 'Open Dot Runtime recovery', after_seconds: runtimeWakeIntervalSeconds, prompt,
+  })
+  const saved: RuntimeWakeBinding = { ...binding, version: 1, scheduleId: String(record.id) }
+  const prior = root.session.ownEvents().findLast(event => event.type === runtimeWakeEvent
+    && isRuntimeWakeBinding(event.data) && event.data.dispatchMessageId === binding.dispatchMessageId)
+  if (prior?.type === runtimeWakeEvent) {
+    if (!isRuntimeWakeBinding(prior.data) || JSON.stringify(prior.data) !== JSON.stringify(saved)) {
+      throw new Error('open_dot_runtime_wake_binding_conflict')
+    }
+  } else {
+    root.session.append(runtimeWakeEvent, saved)
+    if (!await ctx.sessions.flush(root.session)) throw new Error('open_dot_runtime_wake_persistence_required')
+  }
+  ctx.schedule.reconsiderDelivery()
+  return saved
+}
+
+async function readPersistedRoomEvents(ctx: Context, roomSessionId: string): Promise<readonly SessionEvent[]> {
+  const reader = await ctx.sessionPersistence.open(SessionId(roomSessionId), 'read')
+  try { return (await reader.read()).events } finally { await reader.close() }
+}
+
+async function deleteRuntimeWake(ctx: Context, binding: RuntimeWakeBinding): Promise<void> {
+  await ctx.schedule.delete({ sessionId: SessionId(binding.rootSessionId), id: ScheduleId(binding.scheduleId) })
+}
+
+/** Authenticate a reserved Schedule reminder against the bridge's persisted native receipt. */
+async function authorizeRuntimeWake(ctx: Context, target: Agent, task: ScheduleTask, base: URL, secret: string): Promise<ScheduleDeliveryGuardResult> {
+  const prompt = task.record.prompt
+  const savedWake = target.session.ownEvents().findLast(event => event.type === runtimeWakeEvent
+    && isRuntimeWakeBinding(event.data) && event.data.scheduleId === String(task.record.id))
+  if (savedWake?.type !== runtimeWakeEvent || !isRuntimeWakeBinding(savedWake.data)) {
+    const dispatchMessageId = /^OPEN_DOT_RUNTIME_DISPATCH=([0-9a-f-]{36})\n/u.exec(prompt)?.[1]
+    const isOwnedOrphan = dispatchMessageId !== undefined
+      && prompt === runtimeWakePrompt(dispatchMessageId)
+      && runtimeWakeScheduleId(String(target.id), dispatchMessageId) === task.record.id
+    return isOwnedOrphan ? { kind: 'cancel' } : true
+  }
+  const wake = savedWake.data
+  const owner = target.session.snapshotEvents().findLast(event => event.type === 'hivemind/session-owner')?.data as { slug?: string } | undefined
+  if (wake.rootSessionId !== String(target.id) || target.session.header.parentSession !== undefined
+    || !['hivemind-hq', 'hivemind-hyperagents'].includes(target.session.header.agentPreset ?? '')
+    || owner?.slug !== 'runtime' || prompt !== runtimeWakePrompt(wake.dispatchMessageId)) {
+    return { kind: 'cancel' }
+  }
+  let events: readonly SessionEvent[]
+  try { events = await readPersistedRoomEvents(ctx, wake.roomSessionId) }
+  catch (error) {
+    ctx.logger.warn(`Open Dot recovery receipt read deferred for ${wake.dispatchMessageId}: ${String(error).slice(0, 200)}`)
+    return { kind: 'defer', afterSeconds: runtimeWakeIntervalSeconds }
+  }
+  const bindingEvent = events.find(event => event.type === 'hivemind/external-employee-room')
+  const roomBinding = bindingEvent?.data as { employeeId?: string; dotId?: string; organizationId?: string; userId?: string } | undefined
+  const dispatchEvent = events.findLast(event => event.type === 'hivemind/open-dot-runtime-dispatch-receipt'
+    && (event.data as DispatchReceipt).dispatchMessageId === wake.dispatchMessageId)
+  if (!roomBinding || roomBinding.employeeId !== wake.employeeId || roomBinding.dotId !== wake.dotId
+    || roomBinding.organizationId !== wake.organizationId || roomBinding.userId !== wake.userId
+    || dispatchEvent?.type !== 'hivemind/open-dot-runtime-dispatch-receipt') {
+    return { kind: 'cancel' }
+  }
+  const receipt = dispatchEvent.data as DispatchReceipt
+  if (receipt.rootSessionId !== wake.rootSessionId || receipt.employeeId !== wake.employeeId || receipt.dotId !== wake.dotId
+    || receipt.organizationId !== wake.organizationId || receipt.userId !== wake.userId
+    || receipt.taskId !== wake.taskId || receipt.taskRevision !== wake.taskRevision) {
+    return { kind: 'cancel' }
+  }
+  if (events.some(event => event.type === 'hivemind/open-dot-runtime-terminal-receipt'
+    && event.data.dispatchMessageId === wake.dispatchMessageId)) {
+    return { kind: 'cancel' }
+  }
+  const principal: HivemindPrincipal = { orgId: wake.organizationId, userId: wake.userId,
+    profile: 'hivemind-chat', variation: 'harness' }
+  try {
+    await ctx.hivemindExecutionScope.run(principal, async () => {
+      const profile = await loadCanonicalOpenDotProfile(ctx, base, secret, wake.employeeId, new AbortController().signal)
+      if (profileDot(profile) !== wake.dotId) throw new Error('open_dot_runtime_binding_changed')
+    })
+    const room = await openExternalEmployeeRoom(ctx, { organizationId: wake.organizationId, userId: wake.userId,
+      employeeId: wake.employeeId, dotId: wake.dotId, name: wake.employeeId, role: 'HIVE-MIND employee' })
+    if (!ctx.agentTeams.listMembers(target).some(member => member.id === room.id && member.ownership === 'persistent')) {
+      return { kind: 'cancel' }
+    }
+    requireCurrentDispatchTask(ctx, room, receipt)
+    if (receipt.taskId !== undefined && ctx.agentTeams.getTask(target, TeamTaskId(receipt.taskId)).status !== 'in_progress') {
+      return { kind: 'cancel' }
+    }
+    startOpenDotRuntimeMonitor(ctx, base, secret, principal, room, receipt, target)
+  } catch (error) {
+    // Rebinding, assignment changes and terminal native tasks fail closed. Transient Core
+    // or persistence failures keep a single retry wake and never produce a model turn.
+    const text = String(error)
+    if (/binding_changed|assignment_changed|task_changed|root_unavailable|root_session|task_revision_required/u.test(text)) {
+      return { kind: 'cancel' }
+    } else {
+      ctx.logger.warn(`Open Dot recovery wake deferred for ${wake.dispatchMessageId}: ${text.slice(0, 200)}`)
+      return { kind: 'defer', afterSeconds: runtimeWakeIntervalSeconds }
+    }
+  }
+  return { kind: 'defer', afterSeconds: runtimeWakeIntervalSeconds }
+}
+
+export function installOpenDotRuntimeScheduleWake(ctx: Context, base: URL, secret: string): void {
+  ctx.effect(() => ctx.schedule.guardDelivery((target, task) => authorizeRuntimeWake(ctx, target, task, base, secret)),
+    'Open Dot Runtime schedule recovery guard')
+}
+
 function delay(signal: AbortSignal, milliseconds: number): Promise<void> {
   return new Promise((resolve, reject) => {
     if (signal.aborted) { reject(signal.reason); return }
@@ -349,6 +510,11 @@ export function installOpenDotRuntimeMonitorRecovery(ctx: Context, base: URL, se
             employeeId: binding.employeeId, dotId: binding.dotId, name: binding.employeeId, role: 'HIVE-MIND employee' })
           const principal: HivemindPrincipal = { orgId: binding.organizationId, userId: binding.userId,
             profile: 'hivemind-chat', variation: 'harness' }
+          await ensureRuntimeWake(ctx, agent, { dispatchMessageId: receipt.dispatchMessageId,
+            rootSessionId: String(agent.id), employeeId: binding.employeeId, dotId: binding.dotId,
+            roomSessionId: String(room.id), organizationId: binding.organizationId, userId: binding.userId,
+            ...(receipt.taskId === undefined ? {} : { taskId: receipt.taskId }),
+            ...(receipt.taskRevision === undefined ? {} : { taskRevision: receipt.taskRevision }) })
           startOpenDotRuntimeMonitor(ctx, base, secret, principal, room, receipt, agent)
         }
       }
@@ -462,6 +628,13 @@ export async function reconcileTerminalRuntimeResult(
     messageId: admitted.messageId, digest, state: result.state,
   })
   if (!await ctx.sessions.flush(room.session)) throw new Error('open_dot_runtime_terminal_receipt_persistence_required')
+  const root = ctx.agents.get(SessionId(receipt.rootSessionId))
+  const wakeEvent = root?.session.ownEvents().findLast(event => event.type === runtimeWakeEvent
+    && isRuntimeWakeBinding(event.data) && event.data.dispatchMessageId === receipt.dispatchMessageId)
+  if (wakeEvent?.type === runtimeWakeEvent && isRuntimeWakeBinding(wakeEvent.data)) {
+    try { await deleteRuntimeWake(ctx, wakeEvent.data) }
+    catch (error) { ctx.logger.warn(`Open Dot terminal wake cleanup deferred for ${receipt.dispatchMessageId}: ${String(error).slice(0, 200)}`) }
+  }
 }
 
 /** Resolve authenticated current profiles and install the native persistent-room provider. */
@@ -559,9 +732,18 @@ export function createOpenDotRoomProvider(ctx: Context, base: URL, secret: strin
         if (prior.digest !== digest || prior.nativePacketId !== message.id || prior.rootSessionId !== String(runtime.id)
           || prior.employeeId !== employeeId || prior.dotId !== dotId || prior.organizationId !== principal.orgId
           || prior.userId !== principal.userId) throw new Error('open_dot_runtime_idempotency_conflict')
+        await ensureRuntimeWake(ctx, runtime, { dispatchMessageId, rootSessionId: String(runtime.id), employeeId, dotId,
+          roomSessionId: String(room.id), organizationId: principal.orgId, userId: principal.userId,
+          ...(prior.taskId === undefined ? {} : { taskId: prior.taskId }),
+          ...(prior.taskRevision === undefined ? {} : { taskRevision: prior.taskRevision }) })
+        startOpenDotRuntimeMonitor(ctx, base, secret, principal, room, prior, runtime, fetchImpl)
         return { receiptId: prior.receiptId, status: prior.deliveryState }
       }
       if (!idempotencyKey || idempotencyKey !== message.id) throw new Error('open_dot_runtime_native_packet_key_invalid')
+      await ensureRuntimeWake(ctx, runtime, { dispatchMessageId, rootSessionId: String(runtime.id), employeeId, dotId,
+        roomSessionId: String(room.id), organizationId: principal.orgId, userId: principal.userId,
+        ...(message.taskId === undefined ? {} : { taskId: message.taskId }),
+        ...(taskRevision === undefined ? {} : { taskRevision }) })
 
       const response = await fetchImpl(new URL('/internal/v1/harness-chat/core/open-dot/runtime/dispatch', base), {
         method: 'POST',
@@ -582,6 +764,10 @@ export function createOpenDotRoomProvider(ctx: Context, base: URL, secret: strin
         deliveryState: result['delivery_state'] === 'recorded' ? 'recorded' : 'accepted', actor: authenticatedActor }
       room.session.append('hivemind/open-dot-runtime-dispatch-receipt', receipt)
       if (!await ctx.sessions.flush(room.session)) throw new Error('open_dot_runtime_receipt_persistence_required')
+      await ensureRuntimeWake(ctx, runtime, { dispatchMessageId, rootSessionId: String(runtime.id), employeeId, dotId,
+        roomSessionId: String(room.id), organizationId: principal.orgId, userId: principal.userId,
+        ...(receipt.taskId === undefined ? {} : { taskId: receipt.taskId }),
+        ...(receipt.taskRevision === undefined ? {} : { taskRevision: receipt.taskRevision }) })
       startOpenDotRuntimeMonitor(ctx, base, secret, principal, room, receipt, runtime, fetchImpl)
       return { receiptId: receipt.receiptId, status: receipt.deliveryState }
     },

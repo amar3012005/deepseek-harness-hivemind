@@ -61,8 +61,15 @@ export function delegatedBlockers(agent: Agent): DelegatedBlocker[] {
   for (const event of agent.session.ownEvents()) if (event.type === 'hivemind/hq-delegated-blocker') saved.set(event.data.id, event.data)
   return [...saved.values()]
 }
+type DelegatedAnswerCandidate = {
+  answer_event_ref: string
+  verifiedAuthenticatedActor: { readonly userId: string; readonly orgId: string; readonly name: string; readonly role: string }
+  text: string
+  text_truncated: boolean
+  candidate_only: true
+}
 /** Candidate evidence only: listing never answers a question or grants approval. */
-export function delegatedAnswerCandidates(agent: Agent, blocker: DelegatedBlocker, orgId: string) {
+export function delegatedAnswerCandidates(agent: Agent, blocker: DelegatedBlocker, orgId: string): DelegatedAnswerCandidate[] {
   if (blocker.kind !== 'human_input' || blocker.state !== 'blocked' || blocker.rootId !== String(agent.id)) return []
   const events = agent.session.ownEvents()
   const saved = events.findLast(event => event.type === 'hivemind/hq-delegated-blocker' && event.data.id === blocker.id)
@@ -74,7 +81,7 @@ export function delegatedAnswerCandidates(agent: Agent, blocker: DelegatedBlocke
     const text = event.data.content.flatMap(block => block.type === 'text' ? [block.text] : []).join('\n').trim()
     if (!text) return []
     return [{ answer_event_ref: `event:${event.seq}`, verifiedAuthenticatedActor: actor,
-      text: text.slice(0, 6000), text_truncated: text.length > 6000, candidate_only: true }]
+      text: text.slice(0, 6000), text_truncated: text.length > 6000, candidate_only: true as const }]
   }).slice(-8).reverse()
 }
 const answerEvidenceHelp = 'List this blocker to inspect authenticated answer_candidates. Use the relevant exact answer_event_ref event:<sequence>; artifact UUIDs are not event references. Candidates are evidence, never permission grants.'
