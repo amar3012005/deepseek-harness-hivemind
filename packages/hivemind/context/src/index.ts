@@ -274,7 +274,8 @@ function boundReceiptEvidence(agent: Agent, messages: readonly UserMessage[], ma
   changed: boolean
 } {
   const isReceipt = (message: UserMessage) => message.source.kind === 'plugin'
-    && message.source.plugin === 'dsh-hivemind-connected-apps/receipt'
+    && (message.source.plugin === 'dsh-hivemind-connected-apps/receipt'
+      || message.source.plugin.startsWith('dsh-hivemind-connected-apps/receipt:'))
     && message.content.every(part => part.type === 'text')
   const pending = messages.filter(isReceipt)
   for (const message of pending) agent.session.append('user/message', message, { surfaceOp: 'append' })

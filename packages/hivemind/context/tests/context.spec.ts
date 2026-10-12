@@ -462,14 +462,14 @@ describe('HIVE progressive context', () => {
     expect(Session.create(SessionId('mixed-restored'), session.snapshotEvents()).deriveMessages()).toEqual(session.deriveMessages())
   })
 
-  it('shares one visible receipt-evidence budget across successive active steps without losing originals or current requests', async () => {
+  it.each(['', ':producer-digest'])('shares one visible receipt-evidence budget across successive active steps without losing originals or current requests (%s)', async (suffix) => {
     const session = Session.create(SessionId('receipt-batches'))
     session.append('turn/start', { turn: 1 })
     const harness = mount(), agent = { session }
     for (let step = 0; step < 6; step++) {
       const request = user(`Current exact request ${step}`)
       const receipts = Array.from({ length: 2 }, (_, index) => createUserMessage({
-        source: { kind: 'plugin', plugin: 'dsh-hivemind-connected-apps/receipt', form: 'recall' },
+        source: { kind: 'plugin', plugin: `dsh-hivemind-connected-apps/receipt${suffix}`, form: 'recall' },
         content: [{ type: 'text', text: `Original batch ${step}-${index} ` + 'Evidence '.repeat(800) }],
       }))
       const decision = await harness.preStep({ agent, turn: 1, signal: new AbortController().signal } as never,
@@ -477,7 +477,7 @@ describe('HIVE progressive context', () => {
       expect(decision.messages).toContainEqual(request)
       for (const message of decision.messages) session.append('user/message', message, { surfaceOp: 'append' })
       const visible = session.deriveMessages().filter(message => message.role === 'user' && message.source.kind === 'plugin'
-        && message.source.plugin === 'dsh-hivemind-connected-apps/receipt')
+        && message.source.plugin === `dsh-hivemind-connected-apps/receipt${suffix}`)
       expect(visible.flatMap(message => message.content.flatMap(part => part.type === 'text' ? [part.text] : [])).join('').length)
         .toBeLessThanOrEqual(3000)
       for (const receipt of receipts) expect(session.snapshotEvents().some(event => event.type === 'user/message'
