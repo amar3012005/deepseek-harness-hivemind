@@ -23,7 +23,7 @@ function fixture() {
   const ctx = {
     serial: async () => undefined,
     agents: { get: (id: string) => agents.get(id) },
-    sessions: { flush: vi.fn(() => Promise.resolve(true)) },
+    sessions: { get: (id: string) => [...agents.values()].find(value => value.id === id)?.session, flush: vi.fn(() => Promise.resolve(true)) },
   } as unknown as Context
   const open = vi.fn((key: string) => Promise.resolve(key === 'runtime' ? caller : ravi))
   const messaging = new RoomMessaging(ctx, open)
@@ -72,8 +72,17 @@ describe('Persistent agent room messaging', () => {
     let accept!: () => void
     const acceptance = new Promise<void>(resolve => { accept = resolve })
     const delivered = vi.fn(async () => { await acceptance; return { receiptId: 'dot-job-42', status: 'accepted' as const } })
+    proxy.session.append('hivemind/session-owner', { id: 'employee-dot', slug: 'open-dot-employee' } as never)
+    proxy.session.append('hivemind/external-employee-room', {
+      employeeId: 'employee-dot', dotId: 'dot-canonical-7', organizationId: 'org', userId: 'user', backend: 'open-dot',
+    } as never)
+    const proxyRoom = {
+      kind: 'external-persistent-assignee' as const, id: proxy.id as never, session: proxy.session as never,
+      status: 'idle' as const, employeeId: 'employee-dot', dotId: 'dot-canonical-7',
+      organizationId: 'org', userId: 'user', name: 'Ravi', role: 'Research',
+    }
     const provider: ExternalEmployeeRoomProvider = {
-      resolve: async employeeId => employeeId === 'employee-dot' ? { agent: proxy, driverless: true } : undefined,
+      resolve: async employeeId => employeeId === 'employee-dot' ? { room: proxyRoom, driverless: true } : undefined,
       deliver: delivered,
     }
     const messaging = new RoomMessaging(ctx, open, provider)

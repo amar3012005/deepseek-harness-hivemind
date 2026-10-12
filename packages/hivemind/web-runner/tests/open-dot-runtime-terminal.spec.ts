@@ -29,7 +29,7 @@ function fixture(assignment = { employeeId, sessionId: roomId }) {
       append: (type: string, data: Record<string, unknown>) => { events.push({ type, data }) },
     },
   } as unknown as ExternalEmployeeRoom
-  const receive = vi.fn(async () => ({ messageId: 'native-message-1', rootSessionId: rootId }))
+  const receive = vi.fn(async (_room: ExternalEmployeeRoom, _input: ExternalEmployeeOperation, _signal: AbortSignal) => ({ messageId: 'native-message-1', rootSessionId: rootId }))
   let jobSpec: { run(): { done: Promise<{ status: string }>; cancel(reason?: string): void } } | undefined
   const saveFile = vi.fn(async () => ({ id: 'file_runtime_owned', name: 'result.txt' }))
   const ctx = {
@@ -43,7 +43,7 @@ function fixture(assignment = { employeeId, sessionId: roomId }) {
     logger: { warn: vi.fn() },
   } as unknown as Context
   const receipt = {
-    version: 1, dispatchMessageId: dispatchId, nativePacketId: 'native-packet-1', digest: 'd'.repeat(64),
+    version: 1 as const, dispatchMessageId: dispatchId, nativePacketId: 'native-packet-1', digest: 'd'.repeat(64),
     organizationId: orgId, userId, employeeId, dotId: 'dot_canary', rootSessionId: String(rootId),
     taskId, taskRevision: 2, artifactIds: [], receiptId: 'dot-receipt-1', deliveryState: 'accepted' as const,
     actor: { userId, orgId, name: 'Admin', role: 'administrator' },
