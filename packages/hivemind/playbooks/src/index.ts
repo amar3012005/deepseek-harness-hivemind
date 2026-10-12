@@ -217,6 +217,7 @@ const CORE_TOOLS = [
   'hivemind_meta',
   'hyperagents_memory',
   'hyperagents_session_diagnostics',
+  'hyperagents_history',
   'runtime_user_agenda', 'runtime_uncertainties', 'runtime_support_report', 'hivemind_employee_blocker',
   'hivemind_agent_message',
   'hivemind_employee_profile',
