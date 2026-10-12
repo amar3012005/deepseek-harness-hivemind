@@ -219,6 +219,6 @@ export function apply(ctx:Context,config:Config):void {
         }
         reply(res,200,{ status:'ready',employeeId:input.employeeId,revision:proof.revision })
       })
-    } catch {reply(res,503,{ error:'employee_lifecycle_activation_unavailable' })}
+    } catch(error) {ctx.logger.warn('Employee lifecycle activation failed: '+String(error));reply(res,503,{ error:'employee_lifecycle_activation_unavailable' })}
   } }),'employee-lifecycle.host')
 }
