@@ -286,10 +286,10 @@ export class RoomMessaging {
     })
   }
   private async resolveTarget(key: string, profile: EmployeeRoomProfile | undefined, signal: AbortSignal): Promise<Agent> {
-    if (profile?.id !== undefined && profile.id !== key) throw new Error('agent_message_target_identity_conflict')
     if (profile?.executionBackend !== undefined && profile.executionBackend !== 'open-dot') throw new Error('agent_message_external_backend_conflict')
     if (profile?.executionBackend === 'open-dot' && !this.external) throw new Error('agent_message_external_provider_required')
     if (profile?.executionBackend === 'open-dot') {
+      if (profile.id !== key) throw new Error('agent_message_target_identity_conflict')
       const principal = this.externalPrincipal()
       const resolution = await this.external!.resolve(key, profile, principal, signal)
       signal.throwIfAborted()

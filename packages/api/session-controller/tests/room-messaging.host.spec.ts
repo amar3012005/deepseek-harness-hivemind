@@ -102,7 +102,8 @@ describe('Persistent agent room messaging', () => {
     const controller = new AbortController()
     vi.mocked(ctx.sessions.flush).mockImplementation(async session => {
       const events = (session as unknown as { snapshotEvents?: () => SessionEvent[] }).snapshotEvents?.() ?? []
-      if (session.id === proxy.id && events.some(event => event.type === 'hivemind/external-delivery-accepted')) controller.abort()
+      const headerId = (session as unknown as { header?: { id?: string } }).header?.id
+      if (headerId === proxy.id && events.some(event => event.type === 'hivemind/external-delivery-accepted')) controller.abort()
       return true
     })
     await expect(messaging.send(caller, input, controller.signal)).rejects.toThrow()
