@@ -115,7 +115,9 @@ export function HiveLiveVoiceButton({ sessionId, useInput, t }: Props) {
       activity.current = observeVoiceActivity(stream, (value) => {
         levels.current = value
         if (value.agent > 0 && generation.current === ticket) stopRingback()
-      })
+      }, typeof location !== 'undefined' && location.protocol === 'capacitor:')
+      // Keep one audible output; the native Web Audio speaker owns mute.
+      audio.muted = activity.current.playsThroughWebAudio
       if (alternate) {
         if (!await recover()) throw new Error('voice_fallback_unavailable')
         return
@@ -199,7 +201,11 @@ export function HiveLiveVoiceButton({ sessionId, useInput, t }: Props) {
         <div className={css.callMenu}>
           <button type="button" aria-pressed={speakerMuted} onClick={() => {
             const audio = connection.current?.audio
-            if (audio) { audio.muted = !speakerMuted; setSpeakerMuted(!speakerMuted) }
+            if (audio) {
+              if (activity.current?.playsThroughWebAudio) activity.current.setSpeakerMuted(!speakerMuted)
+              else audio.muted = !speakerMuted
+              setSpeakerMuted(!speakerMuted)
+            }
           }}>{t(speakerMuted ? 'voice.unmuteSpeaker' : 'voice.muteSpeaker')}</button>
           <button type="button" aria-pressed={micMuted} disabled={micClosing} onClick={() => {
             connection.current?.stream.getAudioTracks().forEach((track) => { track.enabled = micMuted })

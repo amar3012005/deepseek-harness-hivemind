@@ -10,18 +10,27 @@ export function voiceLevel(samples: Uint8Array): number {
 }
 
 /** Tap the existing microphone and replaceable provider output stream. */
-export function observeVoiceActivity(input: MediaStream, onLevels: (levels: VoiceLevels) => void) {
+export function observeVoiceActivity(input: MediaStream, onLevels: (levels: VoiceLevels) => void, nativePlayback = false) {
+  const unavailable = {
+    playsThroughWebAudio: false,
+    remote: (_stream: MediaStream) => {}, setSpeakerMuted: (_muted: boolean) => {}, stop: () => {},
+  }
   let context: AudioContext
-  try { context = new AudioContext() } catch { return { remote: (_stream: MediaStream) => {}, stop: () => {} } }
+  try { context = new AudioContext() } catch { return unavailable }
   let microphone: MediaStreamAudioSourceNode
   let user: AnalyserNode
+  let speaker: GainNode | undefined
   try {
     microphone = context.createMediaStreamSource(input)
     user = context.createAnalyser(); user.fftSize = 256
     microphone.connect(user)
+    // WKWebView can receive nonzero WebRTC audio while its MediaStream-backed
+    // HTMLAudioElement remains inaudible. Native calls use this existing running
+    // context for output. Microphone analysis never connects to the speaker.
+    if (nativePlayback) { speaker = context.createGain(); speaker.connect(context.destination) }
   } catch {
     void context.close().catch(() => {})
-    return { remote: (_stream: MediaStream) => {}, stop: () => {} }
+    return unavailable
   }
   let output: MediaStreamAudioSourceNode | undefined
   let agent: AnalyserNode | undefined
@@ -43,6 +52,8 @@ export function observeVoiceActivity(input: MediaStream, onLevels: (levels: Voic
   void context.resume().catch(() => {})
   frame = requestAnimationFrame(tick)
   return {
+    playsThroughWebAudio: Boolean(speaker),
+    setSpeakerMuted(muted: boolean) { if (speaker) speaker.gain.value = muted ? 0 : 1 },
     remote(stream: MediaStream) {
       if (stopped) return
       output?.disconnect(); agent?.disconnect()
@@ -51,12 +62,14 @@ export function observeVoiceActivity(input: MediaStream, onLevels: (levels: Voic
         output = context.createMediaStreamSource(stream)
         agent = context.createAnalyser(); agent.fftSize = 256
         output.connect(agent)
+        if (speaker) output.connect(speaker)
       } catch { output?.disconnect(); output = undefined; agent = undefined }
     },
     stop() {
       if (stopped) return
       stopped = true; cancelAnimationFrame(frame)
       microphone.disconnect(); user.disconnect(); output?.disconnect(); agent?.disconnect()
+      speaker?.disconnect()
       void context.close().catch(() => {})
       onLevels({ user: 0, agent: 0 })
     },
