@@ -1,4 +1,4 @@
-import { roomNeedsInput } from './room-activity.ts'
+import { roomNeedsInput, roomWaitingForResponse, roomCallActive } from './room-activity.ts'
 import { ChatgptPlanConnection } from './ChatgptPlanConnection.tsx'
 import { createAuthenticationProbe } from './auth-recovery.ts'
 import { probeBoot, saveNativeArtifact } from './native-transport.ts'
@@ -465,6 +465,7 @@ export function apply(ctx: ClientContext): void {
           throw error
         } finally { delete document.documentElement.dataset.agentRoomOpening }
       }
+      const activeCalls = new Set<string>()
       let scheduledRooms = new Set<string>()
       let scheduleRead = 0
       let disposed = false
@@ -486,7 +487,8 @@ export function apply(ctx: ClientContext): void {
           try { preview = message ? (JSON.parse(message) as { text: string }).text : '' } catch { /* Missing legacy projection. */ }
           const pending = ctx.uiSession.pendingInteractions.getSnapshot().get(id)
           return [{ id: employee?.id ?? 'runtime', sessionId: id, preview, running: row.running, unread: row.completed === true,
-            actionRequired: roomNeedsInput(pending), waitingForAnswer: pending?.kind === 'question',
+            actionRequired: roomNeedsInput(pending), waitingForAnswer: roomWaitingForResponse(pending),
+            activeCall: activeCalls.has(id),
             scheduled: scheduledRooms.has(id), updatedAt: row.updatedAt }]
         })
         ;(window as unknown as { __HIVEMIND_AGENT_ROOMS__: unknown }).__HIVEMIND_AGENT_ROOMS__ = rooms
@@ -505,6 +507,14 @@ export function apply(ctx: ClientContext): void {
         }
         publish()
       }
+      const callStatus = (event: Event): void => {
+        const detail = (event as CustomEvent<{ sessionId?: unknown; state?: unknown; error?: unknown; busy?: unknown }>).detail
+        if (!detail || typeof detail.sessionId !== 'string' || !ctx.sessions.list.getSnapshot().ids.some(id => id === detail.sessionId)) return
+        if (roomCallActive(detail)) activeCalls.add(detail.sessionId)
+        else activeCalls.delete(detail.sessionId)
+        publish()
+      }
+      window.addEventListener('hivemind:room-call-status', callStatus)
       const stopApproval = ctx.uiSession.pendingInteractions.subscribe(publish)
       const stopSchedule = ctx.remote.$on('schedule/changed', () => { void refreshSchedules() })
       const stopReset = ctx.on('connection/reset', () => { scheduledRooms = new Set(); publish(); void refreshSchedules() })
@@ -518,12 +528,15 @@ export function apply(ctx: ClientContext): void {
       const stop = ctx.sessions.list.subscribe(publish)
       window.addEventListener('hivemind:request-agent-rooms', publish)
       publish()
+      for (const sessionId of ctx.sessions.list.getSnapshot().ids)
+        window.dispatchEvent(new CustomEvent('hivemind:room-call-status-request', { detail: { sessionId } }))
       const host = window as unknown as { __HIVEMIND_SELECT_AGENT__?: typeof bridge; __HIVEMIND_START_AGENT__?: typeof start }
       host.__HIVEMIND_SELECT_AGENT__ = bridge
       host.__HIVEMIND_START_AGENT__ = start
       return () => {
         disposed = true
         stopApproval()
+        window.removeEventListener('hivemind:room-call-status', callStatus)
         stopSchedule()
         stopReset()
         stopConnection()

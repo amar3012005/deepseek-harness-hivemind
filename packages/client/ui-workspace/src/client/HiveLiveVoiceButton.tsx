@@ -70,6 +70,7 @@ export function HiveLiveVoiceButton({ sessionId, useInput, t }: Props) {
     return () => {
       window.removeEventListener('hivemind:start-room-call', start)
       window.removeEventListener('hivemind:room-call-status-request', request)
+      window.dispatchEvent(new CustomEvent('hivemind:room-call-status', { detail: { sessionId, state: 'idle', error: false, busy: false } }))
     }
   }, [sessionId])
   const toggle = async (alternate = false) => {

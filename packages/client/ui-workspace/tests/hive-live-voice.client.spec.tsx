@@ -76,6 +76,9 @@ describe('native HIVEMIND live voice composer', () => {
     expect(screen.queryByRole('button')).toBeNull()
   })
   it('releases microphone and remote room on navigation', async () => {
+    const statuses: Array<{ state: string }> = []
+    const onStatus = (event: Event) => statuses.push((event as CustomEvent).detail)
+    window.addEventListener('hivemind:room-call-status', onStatus)
     const stop = vi.fn()
     Object.defineProperty(navigator, 'mediaDevices', { configurable: true, value: { getUserMedia: vi.fn(async () => ({ getTracks: () => [{ stop }] })) } })
     vi.stubGlobal('RTCPeerConnection', Peer)
@@ -85,7 +88,11 @@ describe('native HIVEMIND live voice composer', () => {
     const view = render(<HiveLiveVoiceButton sessionId={'session-1' as never} useInput={input()} t={t} />)
     fireEvent.click(screen.getByRole('button', { name: 'voice.start' }))
     await waitFor(() => { expect(Peer.instance.setRemoteDescription).toHaveBeenCalled() })
+    fireEvent(window, new CustomEvent('hivemind:room-call-status-request', { detail: { sessionId: 'session-1' } }))
+    expect(statuses.at(-1)?.state).toBe('connecting')
     view.unmount()
+    expect(statuses.at(-1)?.state).toBe('idle')
+    window.removeEventListener('hivemind:room-call-status', onStatus)
     expect(stop).toHaveBeenCalledOnce()
     expect(Peer.instance.close).toHaveBeenCalledOnce()
     expect(fetcher.mock.calls.at(-1)?.[0]).toBe('/api/hivemind/voice/stop')
