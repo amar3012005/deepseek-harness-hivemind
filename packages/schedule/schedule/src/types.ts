@@ -20,6 +20,11 @@ import type {} from '@deepseek-ai/dsh-workspace/types'
 /** Stable globally unique reminder identity. */
 export type ScheduleId = Branded<'ScheduleId'>
 
+/** Host-only guard outcomes; deferral and cancellation commit within the active Schedule transaction. */
+export type ScheduleDeliveryGuardResult = boolean
+  | { readonly kind: 'defer'; readonly afterSeconds: number }
+  | { readonly kind: 'cancel' }
+
 /** Durable one-shot reminder created from a positive delay. */
 export interface AfterScheduleRecord {
   /** Globally unique task identity. */
