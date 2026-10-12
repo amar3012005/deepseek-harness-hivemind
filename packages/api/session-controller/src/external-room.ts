@@ -116,6 +116,10 @@ export async function openExternalEmployeeRoom(
       session = stored.events.length === 0
         ? Session.create(id, undefined, writer.header)
         : Session.fromRestore(id, stored.events, writer.header, writer.inheritedEventCount, stored.eventState)
+      // Native restore creates an unpublished session/end-seed marker.
+      // Persist that suffix before entering the live event firehose, as AgentLoop does.
+      const restoredSuffix = session.snapshotEvents().slice(stored.events.length)
+      if (restoredSuffix.length) await writer.append(restoredSuffix)
       detach = ctx.sessions.enter(session)
       if (stored.events.length === 0) {
         Reflect.apply(session.append, session, ['hivemind/session-owner', { id: input.employeeId, slug: 'open-dot-employee', name: input.name, role: input.role }])

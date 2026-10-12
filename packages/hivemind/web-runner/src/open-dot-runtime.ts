@@ -1,3 +1,4 @@
+import { isDeepStrictEqual } from 'node:util'
 /** Authenticated Core dispatch for canonical Open Dot Runtime employees. */
 import { createHash, createHmac, randomUUID } from 'node:crypto'
 import type { Context } from '@deepseek-ai/cordis'
@@ -335,7 +336,7 @@ async function ensureRuntimeWake(ctx: Context, root: Agent, binding: Omit<Runtim
   const prior = root.session.ownEvents().findLast(event => event.type === runtimeWakeEvent
     && isRuntimeWakeBinding(event.data) && event.data.dispatchMessageId === binding.dispatchMessageId)
   if (prior?.type === runtimeWakeEvent) {
-    if (!isRuntimeWakeBinding(prior.data) || JSON.stringify(prior.data) !== JSON.stringify(saved)) {
+    if (!isRuntimeWakeBinding(prior.data) || !isDeepStrictEqual(prior.data, saved)) {
       throw new Error('open_dot_runtime_wake_binding_conflict')
     }
   } else {
