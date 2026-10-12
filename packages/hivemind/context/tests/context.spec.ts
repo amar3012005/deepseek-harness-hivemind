@@ -284,10 +284,15 @@ describe('HIVE progressive context', () => {
     const recent = recentConversationText(Array.from({ length: 30 }, (_, turn) => ({
       turn, user: `request-${turn}`, assistant: `answer-${turn}`,
     })), 15, 16_000)
-    expect(recent).not.toContain('request-14\n')
-    expect(recent).toContain('request-15\n')
-    expect(recent).toContain('request-29\n')
+    expect(recent).not.toContain('request-14')
+    expect(recent).toContain('request-15')
+    expect(recent).toContain('request-29')
     expect(recent.length).toBeLessThanOrEqual(16_000)
+    expect(recent).toContain('END OF SAVED CONVERSATION RECORDS.')
+    const huge = recentConversationText([{ turn: 99, user: 'quoted request'.repeat(1000), assistant: 'old answer' }], 15, 600)
+    expect(huge.length).toBeLessThanOrEqual(600)
+    expect(huge).toContain('END OF SAVED CONVERSATION RECORDS.')
+    expect(huge).toContain('pastTurn')
   })
 
   it('keeps a real pending approval from the native projection after denied tool output and cold replay', async () => {
