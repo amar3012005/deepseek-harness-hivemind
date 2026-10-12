@@ -1,12 +1,14 @@
 /** Authenticated Core dispatch for canonical Open Dot Runtime employees. */
 import { createHash, createHmac, randomUUID } from 'node:crypto'
 import type { Context } from '@deepseek-ai/cordis'
+import type { Agent } from '@deepseek-ai/dsh-agent'
 import { SessionId } from '@deepseek-ai/dsh-session'
+import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import { TeamTaskId } from '@deepseek-ai/dsh-experimental-agent-team'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import { employeeExternalDispatchAllowed, projectHyperagentProfiles } from '@deepseek-ai/dsh-hivemind-employee-directory'
 import { openExternalEmployeeRoom, roomMessageId, stableRoomDispatchId } from '@deepseek-ai/dsh-api-session-controller'
-import type { ExternalEmployeeRoomProvider, ExternalRuntimeDispatchStatus } from '@deepseek-ai/dsh-api-session-controller'
+import type { ExternalEmployeeOperation, ExternalEmployeeRoom, ExternalEmployeeRoomProvider, ExternalRuntimeDispatchStatus } from '@deepseek-ai/dsh-api-session-controller'
 import type { AuthenticatedActor, HivemindPrincipal } from '@deepseek-ai/dsh-hivemind-execution-scope'
 import type { OpenDotRuntimeOperationInput, OpenDotRuntimeOperationService } from './open-dot-runtime-operation.ts'
 import { recordExternalEmployeeBlocker } from '@deepseek-ai/dsh-hivemind-hq-runtime'
@@ -55,7 +57,7 @@ function serviceToken(principal: HivemindPrincipal, secret: string, rootSessionI
   return input + '.' + createHmac('sha256', secret).update(input).digest('base64url')
 }
 
-function requireCurrentDispatchTask(ctx: Context, room: import('@deepseek-ai/dsh-api-session-controller').ExternalEmployeeRoom, receipt: DispatchReceipt): void {
+function requireCurrentDispatchTask(ctx: Context, room: ExternalEmployeeRoom, receipt: DispatchReceipt): void {
   if (receipt.taskId === undefined) return
   if (receipt.taskRevision === undefined) throw new Error('open_dot_runtime_task_revision_required')
   const root = ctx.agents.get(SessionId(receipt.rootSessionId))
@@ -176,7 +178,7 @@ async function loadCanonicalOpenDotProfile(ctx: Context, base: URL, secret: stri
 }
 
 async function pollDispatchStatus(
-  ctx: Context, base: URL, secret: string, principal: HivemindPrincipal, room: import('@deepseek-ai/dsh-api-session-controller').ExternalEmployeeRoom,
+  ctx: Context, base: URL, secret: string, principal: HivemindPrincipal, room: ExternalEmployeeRoom,
   receipt: DispatchReceipt, signal: AbortSignal, fetchImpl: typeof fetch = fetch,
 ): Promise<ExternalRuntimeDispatchStatus> {
   const response = await fetchImpl(new URL('/internal/v1/harness-chat/core/open-dot/runtime/status', base), {
@@ -246,7 +248,218 @@ async function pollDispatchStatus(
       rootSessionId: receipt.rootSessionId, observedAt: new Date().toISOString(), ...result, outputs: [...result.outputs], attachments: [...result.attachments] })
     if (!await ctx.sessions.flush(room.session)) throw new Error('open_dot_runtime_status_persistence_required')
   }
+  await reconcileTerminalRuntimeResult(ctx, base, secret, principal, room, receipt, result, signal, fetchImpl)
   return result
+}
+
+const terminalRuntimeStates = new Set(['completed', 'failed', 'killed'])
+
+declare module '@deepseek-ai/dsh-jobs' {
+  interface JobKindMap { 'open-dot-runtime': 'open-dot-runtime' }
+}
+
+const runtimeMonitors = new WeakMap<Context, Map<string, string>>()
+function monitorKey(rootSessionId: string, dispatchMessageId: string): string { return `${rootSessionId}:${dispatchMessageId}` }
+function delay(signal: AbortSignal, milliseconds: number): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal.aborted) { reject(signal.reason); return }
+    const timer = setTimeout(() => { signal.removeEventListener('abort', abort); resolve() }, milliseconds)
+    const abort = () => { clearTimeout(timer); reject(signal.reason) }
+    signal.addEventListener('abort', abort, { once: true })
+  })
+}
+
+/** Poll a persisted dispatch with one native background job; retry after process restart from its room receipt. */
+export function startOpenDotRuntimeMonitor(
+  ctx: Context, base: URL, secret: string, principal: HivemindPrincipal,
+  room: ExternalEmployeeRoom,
+  receipt: DispatchReceipt, root: Agent, fetchImpl: typeof fetch = fetch,
+): string | undefined {
+  const key = monitorKey(receipt.rootSessionId, receipt.dispatchMessageId)
+  const monitors = runtimeMonitors.get(ctx) ?? new Map<string, string>()
+  runtimeMonitors.set(ctx, monitors)
+  if (monitors.has(key)) return monitors.get(key) === 'starting' ? undefined : monitors.get(key)
+  if (room.session.snapshotEvents().some(event => event.type === 'hivemind/open-dot-runtime-terminal-receipt'
+    && event.data.dispatchMessageId === receipt.dispatchMessageId)) return undefined
+  monitors.set(key, 'starting')
+  let controller: AbortController | undefined
+  let jobId: string | undefined
+  try {
+    jobId = String(ctx.jobs.start({ kind: 'open-dot-runtime', label: `Open Dot result ${receipt.employeeId}`, owner: root,
+      outputLimitBytes: 1024, run: () => {
+        controller = new AbortController()
+        const done = (async () => {
+          const deadline = Date.now() + 7 * 24 * 60 * 60 * 1000
+          let attempt = 0
+          while (!controller!.signal.aborted && Date.now() < deadline) {
+            try {
+              const status = await ctx.hivemindExecutionScope.run(principal,
+                () => pollDispatchStatus(ctx, base, secret, principal, room, receipt, controller!.signal, fetchImpl))
+              if (terminalRuntimeStates.has(status.state)) {
+                await ctx.hivemindExecutionScope.run(principal, () => reconcileTerminalRuntimeResult(
+                  ctx, base, secret, principal, room, receipt, status, controller!.signal, fetchImpl))
+                return { status: 'completed' as const, detail: `Runtime review received for ${receipt.dispatchMessageId}` }
+              }
+            } catch (error) {
+              if (controller!.signal.aborted) break
+              ctx.logger.warn(`Open Dot result monitor retry for ${receipt.dispatchMessageId}: ${String(error).slice(0, 200)}`)
+            }
+            attempt += 1
+            try { await delay(controller!.signal, attempt < 2 ? 10_000 : attempt < 4 ? 30_000 : 60_000) } catch { break }
+          }
+          return { status: 'killed' as const, detail: 'Open Dot result monitor stopped or expired; persisted dispatch receipt remains recoverable.' }
+        })().finally(() => { if (monitors.get(key) === jobId || monitors.get(key) === 'starting') monitors.delete(key) })
+        return { cancel: (reason?: string) => controller?.abort(reason), done }
+      } }))
+    monitors.set(key, jobId)
+    return jobId
+  } catch (error) {
+    monitors.delete(key)
+    ctx.logger.warn(`Open Dot result monitor could not start for ${receipt.dispatchMessageId}: ${String(error).slice(0, 200)}`)
+    return undefined
+  }
+}
+
+/** Reattach persisted pending receipts when their Runtime root is resumed after restart. */
+export function installOpenDotRuntimeMonitorRecovery(ctx: Context, base: URL, secret: string): void {
+  ctx.effect(() => ctx.on('agent/created', async ({ agent }) => {
+    if (agent.session.header.parentSession !== undefined || !['hivemind-hq','hivemind-hyperagents'].includes(agent.session.header.agentPreset ?? '')) return
+    const owner = agent.session.snapshotEvents().findLast(event => event.type === 'hivemind/session-owner')?.data as { slug?: string } | undefined
+    if (owner?.slug !== 'runtime') return
+    try {
+      const snapshots = await ctx.sessionPersistence.list()
+      for (const snapshot of snapshots) {
+        const id = String(snapshot.header.id)
+        if (!id.startsWith('session-open-dot-')) continue
+        const reader = await ctx.sessionPersistence.open(snapshot.header.id, 'read')
+        let events: readonly SessionEvent[]
+        try { events = (await reader.read()).events } finally { await reader.close() }
+        const bindingEvent = events.find(event => event.type === 'hivemind/external-employee-room')
+        if (!bindingEvent) continue
+        const binding = bindingEvent.data as { employeeId?: string; dotId?: string; organizationId?: string; userId?: string }
+        if (!binding.employeeId || !binding.dotId || !binding.organizationId || !binding.userId) continue
+        const receipts = events.filter(event => event.type === 'hivemind/open-dot-runtime-dispatch-receipt')
+        for (const event of receipts) {
+          const receipt = event.data as DispatchReceipt
+          if (receipt.rootSessionId !== String(agent.id)) continue
+          if (events.some(candidate => candidate.type === 'hivemind/open-dot-runtime-terminal-receipt'
+            && candidate.data.dispatchMessageId === receipt.dispatchMessageId)) continue
+          const room = await openExternalEmployeeRoom(ctx, { organizationId: binding.organizationId, userId: binding.userId,
+            employeeId: binding.employeeId, dotId: binding.dotId, name: binding.employeeId, role: 'HIVE-MIND employee' })
+          const principal: HivemindPrincipal = { orgId: binding.organizationId, userId: binding.userId,
+            profile: 'hivemind-chat', variation: 'harness' }
+          startOpenDotRuntimeMonitor(ctx, base, secret, principal, room, receipt, agent)
+        }
+      }
+    } catch (error) {
+      ctx.logger.warn(`Open Dot result monitor recovery deferred for ${String(agent.id)}: ${String(error).slice(0, 200)}`)
+    }
+  }), 'Open Dot Runtime result monitor recovery')
+}
+
+
+export async function reconcileTerminalRuntimeResult(
+  ctx: Context, base: URL, secret: string, principal: HivemindPrincipal,
+  room: ExternalEmployeeRoom,
+  receipt: DispatchReceipt, result: ExternalRuntimeDispatchStatus, signal: AbortSignal, fetchImpl: typeof fetch,
+): Promise<void> {
+  if (!terminalRuntimeStates.has(result.state)) return
+  const priorReceipt = room.session.snapshotEvents().findLast(event => event.type === 'hivemind/open-dot-runtime-terminal-receipt'
+    && event.data.dispatchMessageId === receipt.dispatchMessageId)
+  if (priorReceipt?.type === 'hivemind/open-dot-runtime-terminal-receipt') {
+    if (priorReceipt.data.rootSessionId !== receipt.rootSessionId) throw new Error('open_dot_runtime_terminal_receipt_conflict')
+    return
+  }
+  requireCurrentDispatchTask(ctx, room, receipt)
+  if (result.attachments.reduce((sum, item) => sum + item.size, 0) > 10 * 1024 * 1024) {
+    throw new Error('open_dot_runtime_terminal_artifact_limit_exceeded')
+  }
+  const key = `runtime-result-${receipt.dispatchMessageId}`
+  const artifacts: NonNullable<ExternalEmployeeOperation['artifacts']> = []
+  for (const item of result.attachments) {
+    const artifactId = `open-dot:${receipt.dispatchMessageId}:${item.id}`
+    const previous = room.session.snapshotEvents().findLast(event => event.type === 'hivemind/external-artifact-created'
+      && event.data.artifactId === artifactId)
+    if (previous?.type === 'hivemind/external-artifact-created') {
+      if (previous.data.title !== item.name || previous.data.mediaType !== item.mime || previous.data.size !== item.size) {
+        throw new Error('open_dot_runtime_terminal_artifact_conflict')
+      }
+      artifacts.push({ artifactId, title: item.name, mediaType: item.mime, file: previous.data.file,
+        producerSessionId: room.id, producerName: room.name })
+      continue
+    }
+    const response = await fetchImpl(new URL('/internal/v1/harness-chat/core/open-dot/runtime/artifact', base), {
+      method: 'POST', headers: { accept: 'application/json', 'content-type': 'application/json',
+        authorization: 'Bearer ' + serviceToken(principal, secret, receipt.rootSessionId) },
+      body: JSON.stringify({ employee_id: receipt.employeeId, dot_id: receipt.dotId,
+        dispatch_message_id: receipt.dispatchMessageId, artifact_id: item.id, root_session_id: receipt.rootSessionId }),
+      redirect: 'error', signal: AbortSignal.any([signal, AbortSignal.timeout(15_000)]),
+    })
+    const artifact = await response.json().catch(() => undefined) as Record<string, unknown> | undefined
+    if (!response.ok || !isRecord(artifact) || artifact['id'] !== item.id || artifact['name'] !== item.name
+      || artifact['mime'] !== item.mime || artifact['size'] !== item.size || typeof artifact['checksum'] !== 'string'
+      || !/^sha256:[a-f0-9]{64}$/u.test(artifact['checksum']) || typeof artifact['dataBase64'] !== 'string'
+      || artifact['dataBase64'].length > Math.ceil(10 * 1024 * 1024 / 3) * 4) {
+      throw new Error('open_dot_runtime_terminal_artifact_unverified')
+    }
+    const bytes = Buffer.from(artifact['dataBase64'], 'base64')
+    if (bytes.toString('base64') !== artifact['dataBase64'] || bytes.byteLength !== item.size) {
+      throw new Error('open_dot_runtime_terminal_artifact_size_invalid')
+    }
+    const checksum = createHash('sha256').update(bytes).digest('hex')
+    if (artifact['checksum'] !== 'sha256:' + checksum) throw new Error('open_dot_runtime_terminal_artifact_checksum_invalid')
+    const file = await ctx.attachments.saveFile({ data: bytes, name: item.name })
+    room.session.append('hivemind/external-artifact-created', { artifactId, title: item.name, mediaType: item.mime,
+      provider: 'open-dot-owned', path: null, file, sha256: checksum, size: bytes.byteLength,
+      dotId: receipt.dotId, dispatchMessageId: receipt.dispatchMessageId })
+    if (!await ctx.sessions.flush(room.session)) throw new Error('open_dot_runtime_terminal_artifact_persistence_required')
+    artifacts.push({ artifactId, title: item.name, mediaType: item.mime, file,
+      producerSessionId: room.id, producerName: room.name })
+  }
+  const output = result.outputs.map(item => `[${item.role}] ${item.text}`).join('\n\n').slice(0, 9000)
+  const taskIdentity = receipt.taskId === undefined ? 'No HQ task id was saved.' :
+    `Saved Runtime task ${receipt.taskId} revision ${receipt.taskRevision ?? 'unknown'}.`
+  const text = [
+    `Open Dot execution reached terminal state: ${result.state}.`,
+    taskIdentity,
+    result.state === 'completed'
+      ? 'This is a result submission for Runtime review. Inspect the actual saved output and attached files, then record acceptance or specific corrections through the existing HQ task review. Do not mark this complete based on delivery alone.'
+      : 'This execution did not complete successfully. Inspect the saved output and task state before deciding whether to resume or revise the assignment.',
+    output ? `Saved execution output:\n${output}` : 'No text output was saved.',
+    artifacts.length ? `Saved artifact references: ${artifacts.map(item => item.artifactId).join(', ')}.` : 'No output artifacts were saved.',
+    `Dispatch receipt: ${receipt.dispatchMessageId}.`,
+  ].join('\n\n')
+  const artifactIds = artifacts.map(item => item.artifactId)
+  const digest = createHash('sha256').update(JSON.stringify({
+    dispatchMessageId: receipt.dispatchMessageId, rootSessionId: receipt.rootSessionId,
+    taskId: receipt.taskId ?? null, taskRevision: receipt.taskRevision ?? null,
+    state: result.state, jobResult: result.jobResult, outputs: result.outputs,
+    artifactIds,
+  })).digest('hex')
+  const priorOutbox = room.session.snapshotEvents().findLast(event => event.type === 'hivemind/open-dot-runtime-terminal-outbox'
+    && event.data.dispatchMessageId === receipt.dispatchMessageId)
+  if (priorOutbox?.type === 'hivemind/open-dot-runtime-terminal-outbox') {
+    if (priorOutbox.data.digest !== digest || priorOutbox.data.messageKey !== key) {
+      throw new Error('open_dot_runtime_terminal_idempotency_conflict')
+    }
+  } else {
+    room.session.append('hivemind/open-dot-runtime-terminal-outbox', {
+      dispatchMessageId: receipt.dispatchMessageId, rootSessionId: receipt.rootSessionId,
+      taskId: receipt.taskId, taskRevision: receipt.taskRevision, messageKey: key, digest, text,
+      artifactIds, state: result.state,
+    })
+    if (!await ctx.sessions.flush(room.session)) throw new Error('open_dot_runtime_terminal_outbox_persistence_required')
+  }
+  const admitted = await ctx.sessionController.receiveExternalEmployeeMessage(room, {
+    dispatchMessageId: receipt.dispatchMessageId, messageKey: key, kind: 'question',
+    text, summary: `Open Dot result ${result.state}; Runtime review required.`,
+    ...(artifacts.length ? { artifacts } : {}),
+  }, signal)
+  room.session.append('hivemind/open-dot-runtime-terminal-receipt', {
+    dispatchMessageId: receipt.dispatchMessageId, rootSessionId: String(admitted.rootSessionId),
+    messageId: admitted.messageId, digest, state: result.state,
+  })
+  if (!await ctx.sessions.flush(room.session)) throw new Error('open_dot_runtime_terminal_receipt_persistence_required')
 }
 
 /** Resolve authenticated current profiles and install the native persistent-room provider. */
@@ -367,6 +580,7 @@ export function createOpenDotRoomProvider(ctx: Context, base: URL, secret: strin
         deliveryState: result['delivery_state'] === 'recorded' ? 'recorded' : 'accepted', actor: authenticatedActor }
       room.session.append('hivemind/open-dot-runtime-dispatch-receipt', receipt)
       if (!await ctx.sessions.flush(room.session)) throw new Error('open_dot_runtime_receipt_persistence_required')
+      startOpenDotRuntimeMonitor(ctx, base, secret, principal, room, receipt, runtime, fetchImpl)
       return { receiptId: receipt.receiptId, status: receipt.deliveryState }
     },
   }

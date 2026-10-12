@@ -52,6 +52,13 @@ declare module '@deepseek-ai/dsh-session/types' {
       outputs: { messageId: string; role: string; text: string; createdAt: string }[]
       attachments: { id: string; name: string; mime: string; size: number }[]
     }
+    'hivemind/open-dot-runtime-terminal-outbox': {
+      dispatchMessageId: string; rootSessionId: string; taskId?: string; taskRevision?: number
+      messageKey: string; digest: string; text: string; artifactIds: string[]; state: string
+    }
+    'hivemind/open-dot-runtime-terminal-receipt': {
+      dispatchMessageId: string; rootSessionId: string; messageId: string; digest: string; state: string
+    }
   }
 }
 
