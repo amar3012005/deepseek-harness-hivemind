@@ -12,11 +12,25 @@ afterEach(cleanup)
 
 const t = (key: string) => key
 const useApprovalEvents = ((select: (window: { entries: never[] }) => unknown) => select({ entries: [] })) as never
+type DockRuntimeProps = PropsRuntime<'conversation.input.dock'>
 const runtimeProps = {
   session: {} as SessionSnapshot,
   input: {} as InputState,
   sessionId: 'session-1' as SessionId,
-} satisfies PropsRuntime<'conversation.input.dock'>
+  useSession: vi.fn() as unknown as DockRuntimeProps['useSession'],
+  useProjection: vi.fn() as unknown as DockRuntimeProps['useProjection'],
+  useConversation: vi.fn() as unknown as DockRuntimeProps['useConversation'],
+  useInput: vi.fn() as unknown as DockRuntimeProps['useInput'],
+  inputActions: {} as DockRuntimeProps['inputActions'],
+  useChat: vi.fn() as unknown as DockRuntimeProps['useChat'],
+  useTrajectory: vi.fn() as unknown as DockRuntimeProps['useTrajectory'],
+  useSessions: vi.fn() as unknown as DockRuntimeProps['useSessions'],
+  useSessionStatus: vi.fn() as unknown as DockRuntimeProps['useSessionStatus'],
+  useSessionRetainInfo: vi.fn() as unknown as DockRuntimeProps['useSessionRetainInfo'],
+  useWorkspaces: vi.fn() as unknown as DockRuntimeProps['useWorkspaces'],
+  usePanelInfo: vi.fn() as unknown as DockRuntimeProps['usePanelInfo'],
+  useResource: vi.fn() as unknown as DockRuntimeProps['useResource'],
+} satisfies DockRuntimeProps
 
 describe('HIVE approval input docks', () => {
   it('persists explicit memory decline with the exact save operation identity', async () => {
