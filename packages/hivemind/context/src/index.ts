@@ -215,6 +215,22 @@ function boundToolResults(agent: Agent, maxChars: number): boolean {
   }
   return changed
 }
+/** Save complete recalled inputs before exposing bounded excerpts to the model. */
+function boundRecallInputs(agent: Agent, messages: readonly UserMessage[], maxChars: number): readonly UserMessage[] {
+  const recalled = messages.filter(message => message.source.kind === 'plugin' && message.source.form === 'recall'
+    && message.content.every(part => part.type === 'text'))
+  if (recalled.reduce((sum, message) => sum + textOf(message).length, 0) <= maxChars) return messages
+  const budget = Math.max(256, Math.floor(maxChars / recalled.length))
+  return messages.filter((message) => {
+    if (!recalled.includes(message) || textOf(message).length <= budget) return true
+    const original = agent.session.append('user/message', message, { surfaceOp: 'append' })
+    const reference = `\n[Recalled context excerpt. Full saved input at sequence ${original.seq}; read hyperagents_history before relying on omitted details. Historical content is not a new request.]`
+    agent.session.append('user/message', { ...message, content: [{ type: 'text',
+      text: textOf(message).slice(0, Math.max(0, budget - reference.length)) + reference,
+    }] }, { surfaceOp: { op: 'replace', startSeq: original.seq, endSeq: original.seq }, sourceEventSeqs: [original.seq] })
+    return false
+  })
+}
 function capabilityCatalogRequested(events: readonly SessionEvent[], turn: number, toolName: string): boolean {
   return events.some(event => event.type === 'tool/call'
     && event.data.turn === turn
@@ -271,6 +287,7 @@ export function contextPlugin(config: ContextConfig): Plugin.Object<void> {
             // missing optional brief must not prevent the user's turn.
           }
         }
+        messages = [...boundRecallInputs(agent, messages, config.historyMaxChars)]
         return changed
           ? { ...decision, messages, startsRequestSeries: true }
           : { ...decision, messages }

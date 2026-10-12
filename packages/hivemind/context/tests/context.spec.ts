@@ -46,6 +46,28 @@ function mount(
 }
 
 describe('HIVE progressive context', () => {
+  it('bounds injected recall while preserving the complete saved input and exact current request', async () => {
+    const session = Session.create(SessionId('bounded-injected-recall'))
+    const harness = mount()
+    const agent = { session }
+    const request = user('Read the saved task record, not the old roster request')
+    const recall = createUserMessage({
+      source: { kind: 'plugin', plugin: 'hivemind-hq/wake-briefing', form: 'recall' },
+      content: [{ type: 'text', text: 'old task evidence '.repeat(50_000) }],
+    })
+    const decision = await harness.preStep({ agent, turn: 1, signal: new AbortController().signal } as never,
+      async () => ({ kind: 'enter', messages: [recall, request] })) as { messages: ReturnType<typeof user>[] }
+    expect(decision.messages).toEqual([request])
+    expect(session.snapshotEvents().some(event => event.type === 'user/message' && event.data.content[0]
+      && JSON.stringify(event.data.content) === JSON.stringify(recall.content))).toBe(true)
+    for (const message of decision.messages) session.append('user/message', message, { surfaceOp: 'append' })
+    const visible = session.deriveMessages()
+    expect(visible.at(-1)).toEqual(request)
+    expect(JSON.stringify(visible).length).toBeLessThan(4500)
+    const restored = Session.create(SessionId('bounded-injected-recall-restored'), session.snapshotEvents())
+    expect(restored.deriveMessages()).toEqual(visible)
+  })
+
   it('retains persistent ownership instructions alongside the initial company brief', async () => {
     const harness = mount([], async () => 'Company brief', () => 'You are Elena, persistent owner')
     const result = await harness.preStep({ agent: harness.agent, turn: 1, signal: new AbortController().signal } as never, async () => ({ kind: 'enter' as const, messages: [user('Create blueprint')] })) as { messages: ReturnType<typeof user>[] }
