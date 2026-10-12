@@ -1,3 +1,8 @@
+import { Context } from '@deepseek-ai/cordis'
+import AgentLoop from '../../../core/agent-loop/src/index.ts'
+import { mountAgentLoopTestDependencies } from '../../../test-support/agent-loop-testkit/src/index.ts'
+import { defineTool } from '../../../core/tools/src/index.ts'
+import { MockAdapter, textResponse, toolCallResponse } from '../../../core/agent-loop/tests/mock-adapter.ts'
 import { describe, expect, it, vi } from 'vitest'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { createUserMessage, createAssistantMessage, createToolResultMessage } from '@deepseek-ai/dsh-llm'
@@ -627,4 +632,34 @@ describe('HIVE progressive context', () => {
     expect(decision.messages).toHaveLength(2)
     expect(decision.messages).toEqual([request, catalog])
   })
+})
+
+
+it('native prepared model request sees the replaced mixed receipt, not the full old HTML or a cached duplicate', async () => {
+  const ctx = new Context()
+  const adapter = new MockAdapter([toolCallResponse('prepared-mixed', 'fixture_saved_receipt', {}), textResponse('Inspected bounded receipt.')])
+  try {
+    await mountAgentLoopTestDependencies(ctx)
+    await ctx.plugin(AgentLoop, { agents: [] })
+    await ctx.plugin(contextPlugin({ historyTurns:3,historyMaxChars:3000,capabilityToolName:'hivemind_capabilities' }))
+    ctx.get('llm')!.registerAdapter(['mock'],adapter)
+    const image={ type:'image',url:'https://example.invalid/native-saved-image.png',mimeType:'image/png' } as const
+    ctx.get('tools')!.register(defineTool({ name:'fixture_saved_receipt',description:'Saved source receipt fixture.',parameters:{},
+      output:{ schema:{ type:'object',properties:{},additionalProperties:true },
+        render:()=>[{ type:'text',text:'Original saved HTML '.repeat(3000) },image] },
+      isConcurrencySafe:()=>true,execute:async()=>({ status:'saved' }),
+    }))
+    const agent=await ctx.get('agentLoop')!.create(SessionId('prepared-mixed-request'),{ provider:'mock',model:'mock' })
+    agent.send(user('Inspect this exact saved source.'),'next-turn',true)
+    await vi.waitFor(()=>expect(adapter.requests).toHaveLength(2))
+    await vi.waitFor(()=>expect(agent.status).toBe('idle'))
+    const request=adapter.requests[1]
+    expect(JSON.stringify(request)).toContain(image.url)
+    expect(JSON.stringify(request)).not.toContain('Original saved HTML '.repeat(1000))
+    expect(JSON.stringify(request)).toContain('hyperagents_history')
+    const originals=agent.session.snapshotEvents().filter(event=>event.type==='tool/result'
+      && event.surfaceOp==='append')
+    expect(originals).toHaveLength(1)
+    expect(JSON.stringify(originals[0])).toContain('Original saved HTML '.repeat(1000))
+  } finally { await ctx.fiber.dispose() }
 })
