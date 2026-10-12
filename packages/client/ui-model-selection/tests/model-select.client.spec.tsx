@@ -69,10 +69,24 @@ describe('ModelSelect reasoning effort', () => {
       t={t}
     />)
 
-    expect(screen.getByLabelText('Model: Default').textContent).toBe('Default')
+    expect(screen.getByLabelText('Model: GPT-6').textContent).toBe('GPT-6')
     expect(screen.queryByRole('button')).toBeNull()
     expect(screen.queryByText('DeepSeek-V4-Flash')).toBeNull()
     expect(load).not.toHaveBeenCalled()
+  })
+
+  it('exposes native model recovery when a saved HIVE model is unavailable', () => {
+    document.documentElement.dataset.dshMode = 'hivemind-chat'
+    render(<ModelSelect
+      locked={false}
+      available
+      directory={createSnapshotStore(state({ routable: false }))}
+      load={vi.fn()}
+      select={vi.fn().mockResolvedValue(true)}
+      t={t}
+    />)
+    expect(screen.getByRole('button')).toBeTruthy()
+    expect(screen.queryByLabelText('Model: GPT-6')).toBeNull()
   })
 
   it('renders effort names without descriptions and submits the effort as part of the session selection', async () => {

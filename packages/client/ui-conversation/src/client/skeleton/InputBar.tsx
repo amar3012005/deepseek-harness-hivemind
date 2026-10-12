@@ -76,7 +76,7 @@ export const InputBar = memo(function InputBar({
   const employeeIdentity = runtimeHq ? undefined : employeeOwner ?? employeeSelection
   let roomName = 'Run Time'
   try { if (employeeIdentity) { const name = (JSON.parse(employeeIdentity) as { name?: unknown }).name; if (typeof name === 'string' && name.trim()) roomName = name } } catch { /* Legacy room. */ }
-  if (typeof window !== 'undefined' && window.location.pathname.startsWith('/hivemind/app/employee/harness')) placeholder = `Message ${roomName}…`
+  if (blocked === undefined && typeof window !== 'undefined' && window.location.pathname.startsWith('/hivemind/app/employee/harness')) placeholder = `Message ${roomName}…`
   const planActive = useProjection('plan', plan => plan !== undefined && (plan.pending ? !plan.active : plan.active))
   // Absent (undefined: no frame yet) and cleared (null) both mean no goal.
   const hasGoal = useProjection('goal', goal => goal != null)

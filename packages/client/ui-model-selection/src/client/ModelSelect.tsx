@@ -164,7 +164,7 @@ export function ModelSelect(
 
   if (!available) return null
 
-  if (hivemindMode) {
+  if (hivemindMode && state.routable !== false) {
     return <span className={css.defaultLabel} aria-label="Model: GPT-6">GPT-6</span>
   }
 
