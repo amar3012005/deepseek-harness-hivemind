@@ -47,6 +47,9 @@ it('native search/load sees a later approved version and proposal does not load 
   const later = await tool.execute({ operation: 'record_plan', playbook_ids: [method.method_id], objective: 'Repeat research' }, execution)
   expect(JSON.stringify(later)).toContain('company-2')
   expect(JSON.stringify(later)).toContain('The approved second method.')
+  const reused = await tool.execute({ operation: 'record_plan', playbook_ids: [method.method_id], objective: 'Continue the same research' }, execution)
+  expect(reused).not.toHaveProperty('loaded_playbooks')
+  expect(JSON.stringify(reused)).toContain('company-2')
   const count = events.length
   expect(await tool.execute({ operation: 'propose_revision', method_id: method.method_id, prior_version: 2,
     method_body: { ...method.body, content: 'Pending third version' }, rationale: 'Evidence', evidence_refs: ['receipt'] }, execution))

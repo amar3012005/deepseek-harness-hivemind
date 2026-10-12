@@ -19,6 +19,8 @@ Use exact registered parameter names and values from the current tool schema and
 
 Consider reusable learning separately from task acceptance. Load hivemind-completion-learning when the submission establishes a useful method or correction; a one-off result, provider outage, access failure or platform defect is not grounds to rewrite a company playbook. Evaluate the evidence, scope and limitations of any proposed local change, preserving its prior version and the existing human approval boundary. Private learning is not an approved company revision, and revise_plan only changes the task plan. Do not delay acceptance of satisfactory work merely because no new learning is useful.
 
+After deciding, recover the current task dependencies and changed user direction. Advance the next eligible authorized contribution through the existing task contract; correct the same task for a material gap rather than replaying successful work. If no dependency is eligible, retain its concrete blocker or meaningful future event and wait quietly. Acceptance does not revive cancelled work or grant authority for a new external action. Keep independent work progressing around a blocked dependency.
+
 Tell the user briefly what was delivered, what you accepted or the specific gap, and what happens next. Keep detailed analysis in the artifact and private memory. Do not expose raw technical IDs, internal reasoning or tool logs.`,
 } as const
 

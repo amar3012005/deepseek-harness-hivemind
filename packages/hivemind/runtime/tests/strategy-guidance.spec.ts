@@ -57,3 +57,22 @@ it('routes delegated blockers through Runtime without treating notification as p
   expect(text).toContain('wait asynchronously')
   expect(text).toContain('Direct human-assigned employee tasks retain')
 })
+
+it('loads workflow ownership and affected-only continuation in the progressive method', async () => {
+  const ctx = new Context()
+  await ctx.plugin(SkillRegistry)
+  installCompanyStrategyGuidance(ctx)
+  const method = await ctx.get('skills')!.get(companyStrategySkill.name)
+  expect(method?.content).toContain('Playbooks supply the company workflow and acceptance criteria')
+  expect(method?.content).toContain('A blocker pauses only its dependent actions')
+  expect(method?.content).toContain('Changed authenticated direction revises only affected work')
+  expect(method?.content).toContain('preserve independent agendas, cancelled work and completed evidence')
+})
+
+it('permits advisory employee revision without publishing or a redundant go-ahead', () => {
+  const text = readFileSync(new URL('../../../preset/agent-presets/presets/hivemind-hyperagents/agent.cordis.yml', import.meta.url), 'utf8')
+  expect(text).toContain('propose_revision operation')
+  expect(text).toContain('Runtime for inspection and publication')
+  expect(text).toContain('Do not publish methods yourself or change global doctrine')
+  expect(text).not.toContain('go-ahead')
+})
