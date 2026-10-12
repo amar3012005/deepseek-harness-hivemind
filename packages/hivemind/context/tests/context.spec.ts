@@ -439,6 +439,19 @@ describe('HIVE progressive context', () => {
     expect(Session.create(SessionId('aggregate-restored'), session.snapshotEvents()).deriveMessages()).toEqual(messages)
   })
 
+  it('retains complete loaded skill instructions instead of paging them as evidence', async () => {
+    const session = Session.create(SessionId('active-skill-body'))
+    session.append('turn/start', { turn: 1 })
+    session.append('tool/call', { name: 'skill', callId: 'loaded-method', arguments: '{"name":"method"}', turn: 1, step: 1 } as never)
+    const body = 'Complete active method '.repeat(1000)
+    session.append('tool/result', { turn: 1, step: 1, message: createToolResultMessage({ callId: 'loaded-method' as never,
+      content: [{ type: 'text', text: body }], isError: false }) }, { surfaceOp: 'append' })
+    const harness = mount()
+    await harness.preStep({ agent: { session }, turn: 1, signal: new AbortController().signal } as never,
+      async () => ({ kind: 'enter', messages: [] }))
+    expect(JSON.stringify(session.deriveMessages())).toContain(body)
+  })
+
   it('starts a greeting with no skill catalog', async () => {
     const harness = mount()
     const catalog = createUserMessage({

@@ -253,6 +253,22 @@ function serviceBase(value: string, allowedOrigins: string[]): URL {
   return new URL(target.origin)
 }
 
+/** A roster read may safely retry one transient transport/service failure.
+ * Authorization failures are returned unchanged, never reported as downtime. */
+export async function fetchEmployeeCatalog(url: URL, headers: Record<string, string>, fetcher: typeof fetch = fetch): Promise<Response> {
+  const signal = AbortSignal.timeout(10_000)
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const response = await fetcher(url, { method: 'GET', headers, redirect: 'manual', signal })
+      if (attempt === 0 && [502, 503, 504].includes(response.status)) continue
+      return response
+    } catch (error) {
+      if (attempt === 1 || signal.aborted) throw error
+    }
+  }
+  throw new Error('employee_catalog_unavailable')
+}
+
 function serviceToken(principal: Record<string, string>, secret: string): string {
   const now = Math.floor(Date.now() / 1000)
   const encode = (value: unknown): string => Buffer.from(JSON.stringify(value)).toString('base64url')
@@ -604,15 +620,13 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
         return
       }
       try {
-        const response = await fetch(new URL('/internal/v1/harness-chat/core/v1/hyperagents/profiles', projectCatalogBase), {
-          method: 'GET',
-          headers: {
-            accept: 'application/json',
-            authorization: `Bearer ${serviceToken(principal, projectCatalogSecret)}`,
-          },
-          redirect: 'manual',
-          signal: AbortSignal.timeout(10_000),
+        const response = await fetchEmployeeCatalog(new URL('/internal/v1/harness-chat/core/v1/hyperagents/profiles', projectCatalogBase), {
+          accept: 'application/json', authorization: `Bearer ${serviceToken(principal, projectCatalogSecret)}`,
         })
+        if ([401, 403].includes(response.status)) {
+          json(res, response.status, { ok: false, diagnostic: response.status === 401 ? 'authentication_required' : 'employee_catalog_access_denied' })
+          return
+        }
         if (!response.ok) throw new Error(`employee catalog status ${response.status}`)
         const projected = projectHyperagentProfiles(await response.json())
         const profiles = projected.profiles as Array<Record<string, unknown>>

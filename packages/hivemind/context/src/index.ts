@@ -225,6 +225,10 @@ function boundToolResults(agent: Agent, maxChars: number): boolean {
     const event = agent.session.eventAt(seq)
     if (event?.type !== 'tool/result') return []
     const blocks = event.data.message.content
+    const calls = agent.session.snapshotEvents()
+    // Loaded native skills are active instructions, not pageable evidence.
+    if (blocks.some(block => block.type === 'tool-result' && calls.some(call =>
+      call.type === 'tool/call' && call.data.callId === block.toolCallId && call.data.name === 'skill'))) return []
     // Native images and pending/error results keep their original representation.
     if (!blocks.every(block => block.type === 'tool-result' && !block.isError && block.content.every(part => part.type === 'text'))) return []
     return [{ seq, event, blocks }]
