@@ -1,0 +1,29 @@
+.dock {
+  display: grid;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--color-border, rgba(127, 127, 127, 0.24));
+  border-radius: 0.75rem;
+  background: var(--color-surface, rgba(127, 127, 127, 0.06));
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--color-text, inherit);
+  font-size: 0.875rem;
+}
+
+.card {
+  display: grid;
+  gap: 0.5rem;
+  min-width: 0;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--color-border, rgba(127, 127, 127, 0.18));
+}
+
+.card strong { overflow-wrap: anywhere; }
+.copy { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--color-text-muted, inherit); }
+.actions { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.error { margin: 0; color: var(--color-danger, #b42318); }

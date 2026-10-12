@@ -10,6 +10,8 @@ export type HivemindConnectKey =
   | 'composio.continue'
   | 'composio.dismiss' | 'composio.reason' | 'composio.cancelling'
   | 'composio.connected' | 'composio.connectionVerified'
+  | 'approval.title' | 'approval.approve' | 'approval.decline' | 'approval.personal' | 'approval.organization' | 'approval.project'
+  | 'approval.pending' | 'approval.approved' | 'approval.executing' | 'approval.declined' | 'approval.completed' | 'approval.failed' | 'approval.blocked' | 'approval.unavailable'
   | 'employee.joined' | 'employee.ownerLocked' | 'employee.initial' | 'employee.auto' | 'employee.autoDetail' | 'employee.label' | 'employee.loading' | 'employee.unavailable'
   | 'employee.environment' | 'employee.hide' | 'employee.working' | 'employee.ready' | 'employee.panel' | 'employee.toggle'
   | 'employee.settings' | 'employee.connectApps' | 'employee.creditsUsed'
@@ -23,6 +25,10 @@ export type HivemindConnectKey =
 
 export const en: Record<HivemindConnectKey, string> = {
   'employee.joined': '{name} joined our team',
+  'approval.title': 'Waiting for your decision', 'approval.approve': 'Approve', 'approval.decline': 'Decline',
+  'approval.personal': 'Save to personal memory', 'approval.organization': 'Save to organization memory', 'approval.project': 'Save to project memory',
+  'approval.pending': 'Waiting for your decision', 'approval.approved': 'Approved; waiting to resume', 'approval.executing': 'Resuming approved action…',
+  'approval.declined': 'Declined', 'approval.completed': 'Completed', 'approval.failed': 'Could not complete', 'approval.blocked': 'Blocked', 'approval.unavailable': 'Could not load or save this decision. Please retry.',
   'employee.roomOpenFailed': 'Could not open this employee room. Your current session is unchanged.',
   'activity.search': 'Searching public sources…', 'activity.website': 'Reading website…', 'activity.capture': 'Capturing website…', 'activity.memory': 'Working with memory…', 'activity.draft': 'Drafting an artifact…', 'activity.team': 'Coordinating with the team…',
   'workbench.filter': 'Filter', 'workbench.all': 'All files', 'workbench.grid': 'Grid view', 'workbench.stack': 'Stack view', 'workbench.lastViewed': 'Last viewed',
@@ -89,6 +95,10 @@ export const en: Record<HivemindConnectKey, string> = {
 
 export const zh: Record<HivemindConnectKey, string> = {
   'employee.joined': '{name} 已加入我们的团队',
+  'approval.title': '等待你的决定', 'approval.approve': '批准', 'approval.decline': '拒绝',
+  'approval.personal': '保存到个人记忆', 'approval.organization': '保存到组织记忆', 'approval.project': '保存到项目记忆',
+  'approval.pending': '等待你的决定', 'approval.approved': '已批准，等待恢复', 'approval.executing': '正在恢复已批准的操作…',
+  'approval.declined': '已拒绝', 'approval.completed': '已完成', 'approval.failed': '无法完成', 'approval.blocked': '已阻止', 'approval.unavailable': '无法加载或保存此决定，请重试。',
   'employee.roomOpenFailed': '无法打开此员工会话。当前会话未更改。',
   'activity.search': '正在搜索公开来源…', 'activity.website': '正在阅读网站…', 'activity.capture': '正在截取网站…', 'activity.memory': '正在处理记忆…', 'activity.draft': '正在编写成果…', 'activity.team': '正在与团队协调…',
   'workbench.filter': '筛选', 'workbench.all': '全部文件', 'workbench.grid': '网格视图', 'workbench.stack': '堆叠视图', 'workbench.lastViewed': '最近查看',

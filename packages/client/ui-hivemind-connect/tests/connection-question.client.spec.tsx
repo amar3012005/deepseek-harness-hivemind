@@ -13,6 +13,8 @@ import { zh } from '../src/client/locales.ts'
 
 const presentation = {
   version: 1,
+  workflowSessionId: 'workflow-asana',
+  requestCallId: 'call-asana',
   appLabel: 'Asana',
   toolkit: 'asana',
   redirectUrl: 'https://connect.example/asana',
@@ -96,6 +98,23 @@ describe('connection question presentation', () => {
     await first
     await result
     expect(cancelTurn).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps the pending control retryable when durable cancellation fails', async () => {
+    const cancel = vi.fn().mockRejectedValueOnce(new Error('flush failed')).mockResolvedValueOnce(undefined)
+    const pending = new PendingConnectionAuthorization(
+      'session-asana' as SessionId, connectionPresentationOf(questions())!, undefined, cancel,
+    )
+    const first = pending.cancel()
+    await expect(first).rejects.toThrow('flush failed')
+    let settled = false
+    void pending.result.then(() => { settled = true }, () => { settled = true })
+    await Promise.resolve()
+    expect(settled).toBe(false)
+    const result = expect(pending.result).rejects.toMatchObject({ name: 'UserQuestionError', code: 'ASK_CANCELLED' })
+    await pending.cancel()
+    await result
+    expect(cancel).toHaveBeenCalledTimes(2)
   })
 })
 

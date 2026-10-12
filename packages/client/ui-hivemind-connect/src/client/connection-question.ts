@@ -8,6 +8,8 @@ const MARKER = /<!--\s*hivemind-connected-app-authorization:([^\s]+)\s*-->/
 
 export interface ConnectionAuthorizationPresentation {
   readonly version: 1
+  readonly workflowSessionId: string
+  readonly requestCallId: string
   readonly appLabel: string
   readonly toolkit: string
   readonly redirectUrl: string
@@ -47,14 +49,17 @@ export function connectionPresentationOf(
     const logoUrl = safeHttpsUrl(value.logoUrl)
     const connectLabel = boundedString(value.connectLabel, 120)
     const continueLabel = boundedString(value.continueLabel, 160)
+    const workflowSessionId = boundedString(value.workflowSessionId, 512)
+    const requestCallId = boundedString(value.requestCallId, 512)
     if (value.version !== 1 || appLabel === undefined || toolkit === undefined
       || redirectUrl === undefined || logoUrl === undefined
-      || connectLabel === undefined || continueLabel === undefined) return undefined
+      || connectLabel === undefined || continueLabel === undefined
+      || workflowSessionId === undefined || requestCallId === undefined) return undefined
     const labels = new Set((question.options ?? []).map(option => option.label))
     if (labels.size !== 2 || !labels.has(connectLabel) || !labels.has(continueLabel)) return undefined
     return {
       question,
-      presentation: { version: 1, appLabel, toolkit, redirectUrl, logoUrl, connectLabel, continueLabel },
+      presentation: { version: 1, workflowSessionId, requestCallId, appLabel, toolkit, redirectUrl, logoUrl, connectLabel, continueLabel },
     }
   } catch {
     return undefined
@@ -143,20 +148,25 @@ export class PendingConnectionAuthorization {
   cancel(): Promise<void> {
     if (this.#cancelPromise !== undefined) return this.#cancelPromise
     if (this.#settled) return Promise.resolve()
-    // Mark the interaction before asking the Host to stop the exact Session.
-    // session.cancel() may abort the question signal synchronously; that abort
-    // must not win settlement or turn a successful user cancellation into a
-    // double-settle error.
+    // Suppress the pending question's abort listener while the direct Host
+    // command durably closes the exact saved receipt and then stops this turn.
     this.#cancelRequested = true
-    let cancellation: Promise<unknown> | undefined
-    try { cancellation = this.#cancelTurn?.() }
-    catch (error) { cancellation = Promise.reject(error) }
-    const settled = settle(() => {
-      this.finish(() => {
-        this.#reject(connectionQuestionError('the user cancelled connected-app authorization', 'ASK_CANCELLED'))
-      })
-    })
-    this.#cancelPromise = settled.then(async () => { await cancellation })
+    this.#cancelPromise = (async () => {
+      try {
+        if (this.#cancelTurn === undefined) throw new Error('Durable connection cancellation is unavailable')
+        await this.#cancelTurn()
+        await settle(() => {
+          this.finish(() => {
+            this.#reject(connectionQuestionError('the user cancelled connected-app authorization', 'ASK_CANCELLED'))
+          })
+        })
+      } catch (error) {
+        // A failed flush must leave the control available for a safe retry.
+        this.#cancelRequested = false
+        this.#cancelPromise = undefined
+        throw error
+      }
+    })()
     return this.#cancelPromise
   }
 

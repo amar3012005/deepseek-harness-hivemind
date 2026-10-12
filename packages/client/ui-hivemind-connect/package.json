@@ -51,7 +51,9 @@
     }
   },
   "peerDependencies": {
-    "@deepseek-ai/cordis": "workspace:^"
+    "@deepseek-ai/cordis": "workspace:^",
+    "@deepseek-ai/dsh-hivemind-memory": "workspace:^",
+    "@deepseek-ai/dsh-hivemind-runtime": "workspace:^"
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "workspace:^",
@@ -81,7 +83,9 @@
     "react-dom": "^18.2.0",
     "@deepseek-ai/dsh-client-ui-settings": "workspace:^",
     "@deepseek-ai/dsh-client-ui-schedule": "workspace:^",
-    "@deepseek-ai/dsh-client-ui-hivemind-hq": "workspace:^"
+    "@deepseek-ai/dsh-client-ui-hivemind-hq": "workspace:^",
+    "@deepseek-ai/dsh-hivemind-memory": "workspace:^",
+    "@deepseek-ai/dsh-hivemind-runtime": "workspace:^"
   },
   "dependencies": {
     "@humation/react": "1.0.1",

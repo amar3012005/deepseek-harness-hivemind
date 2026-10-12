@@ -10,7 +10,10 @@ import { createUserMessage, ToolCallId, type ContextFormed } from '@deepseek-ai/
 import type { HivemindPrincipal } from '@deepseek-ai/dsh-hivemind-execution-scope'
 import type {} from '@deepseek-ai/dsh-hivemind-execution-scope'
 import { memorySaveApprovalProjection } from './save-approval-projection.ts'
+import type { MemorySaveApprovalViewItem } from './save-approval-projection.ts'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
+
+export type { MemorySaveApprovalItem, MemorySaveApprovalViewItem } from './save-approval-projection.ts'
 
 export interface RecallRequest {
   query: string
@@ -122,7 +125,7 @@ export interface SaveCheckpoint {
   requests: SaveRequest[]
   approvalRequest?: SaveRequest
   operationId?: string
-  owner: Pick<HivemindPrincipal, 'orgId' | 'userId' | 'profile' | 'variation' | 'projectId'>
+  owner: { orgId: string; userId: string; profile: 'hivemind-chat'; variation: string; projectId?: string }
   status: 'pending' | 'approved' | 'executing' | 'declined' | 'completed' | 'failed'
   destination?: 'personal' | 'organization' | 'project'
   result?: JsonValue
@@ -162,14 +165,14 @@ export class MemoryApprovalService extends TypertRemoteService {
   constructor(ctx: Context) { super(ctx, 'hivemindMemoryApproval') }
 
   @Remote
-  pendingSaves(agent: Agent): readonly import('./save-approval-projection.ts').MemorySaveApprovalItem[] {
+  pendingSaves(agent: Agent): readonly MemorySaveApprovalViewItem[] {
     if (this.ctx.agents.get(agent.id) !== agent || !this.ctx.agents.roots().includes(agent)) throw new Error('hivemind-memory: exact live root required')
     const owner = this.ctx.hivemindExecutionScope.require()
     const snapshot = this.ctx.sessionProjections.snapshot(agent.session).values.hivemindMemorySaveApprovals
     return (snapshot?.active ?? []).filter((item) => {
       const saved = checkpointFor(agent, item.callId)
       return saved !== undefined && sameOwner(owner, saved.owner)
-    })
+    }).map(({ result: _result, ...item }) => item)
   }
 
   @Remote

@@ -1,7 +1,6 @@
 /** One model-facing tool, backed by the native Session owner, not a replacement loop. */
 import { createHash } from 'node:crypto'
 import type { Context } from '@deepseek-ai/cordis'
-import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import { sessionOwner } from './continuity.ts'
@@ -20,7 +19,7 @@ interface RoomDelivery {
     taskId?: string
     replyTo?: string
     artifactIds?: string[]
-  }, signal: AbortSignal): Promise<Record<string, JsonValue>>
+  }, signal: AbortSignal): Promise<{ messageId: string; targetSessionId: string; status: 'accepted' | 'recorded' }>
 }
 /** Resolve an exact ID, unique slug or unique name only inside the authenticated directory. */
 export function authorizedRecipient<T extends Record<string, unknown>>(profiles: readonly T[], recipient: string): T | undefined {

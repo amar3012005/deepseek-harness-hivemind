@@ -14,6 +14,7 @@ import type {} from './runtime-approval-projection.ts'
 
 export type {} from './voice-outcome.ts'
 export type {} from './runtime-decision-memory.ts'
+export type { RuntimeApprovalItem } from './runtime-approval-checkpoints.ts'
 import { installRuntimeDecisionMemory, isRuntimeRoom, freshDecisionMemoryContext } from './runtime-decision-memory.ts'
 import { normalizePrivateMemoryReferences } from './private-memory-references.ts'
 import { privateMemoryFailure } from './private-memory-errors.ts'

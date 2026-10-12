@@ -13,6 +13,10 @@ import { setupEmbedMessaging } from '../src/client/embed.ts'
 
 const nativeParent = window.parent
 
+function nativeRemote(overrides: Record<string, unknown> = {}) {
+  return { $mount: vi.fn(async () => () => {}), $on: () => () => {}, ...overrides } as never
+}
+
 afterEach(() => {
   cleanup()
   vi.restoreAllMocks()
@@ -26,12 +30,13 @@ describe('HIVE-MIND connection UI', () => {
     const ctx = new Context()
     const configureDefaultWorkspaceInitialization = vi.fn(() => () => {})
     ctx.provide('uiWorkspace', { configureDefaultWorkspaceInitialization, openSession: vi.fn() } as never)
+    ctx.provide('layout', { setExternalSidebar: vi.fn() } as never)
     await ctx.plugin(SlotRegistry).await()
     ctx.provide('locale', { register: () => () => {} } as never)
     ctx.provide('sessions', { list: {
       getSnapshot: () => ({ current: undefined, ids: [], byId: {}, phase: 'ready' }), subscribe: () => () => {},
     } } as never)
-    ctx.provide('remote', { $on: () => () => {} } as never)
+    ctx.provide('remote', nativeRemote())
     ctx.provide('uiSession', { registerPendingInteraction: () => () => () => {} } as never)
     ctx.provide('conversation', {} as never)
     const register = vi.fn(() => () => {})
@@ -46,12 +51,13 @@ describe('HIVE-MIND connection UI', () => {
   })
 
   it('activates before the generic question fallback without waiting on optional conversation services', () => {
-    expect(inject).toEqual(['sessions', 'remote', 'uiSession', 'uiWorkspace', 'slots', 'locale'])
+    expect(inject).toEqual(['sessions', 'remote', 'uiSession', 'uiWorkspace', 'slots', 'locale', 'layout'])
   })
 
   it('claims a connection question as a native pending interaction and returns into the same waterfall', async () => {
     const ctx = new Context()
     ctx.provide('uiWorkspace', { configureDefaultWorkspaceInitialization: () => () => {}, openSession: vi.fn() } as never)
+    ctx.provide('layout', { setExternalSidebar: vi.fn() } as never)
     await ctx.plugin(SlotRegistry).await()
     const slots = ctx.get('slots') as SlotRegistry
     slots.register({
@@ -93,13 +99,14 @@ describe('HIVE-MIND connection UI', () => {
       signal?: AbortSignal
     }, next: () => Promise<{ answers: never[] }>) => Promise<unknown>
     let listener: Listener | undefined
-    ctx.provide('remote', { $on: (_event: string, value: Listener) => { listener = value; return () => { listener = undefined } } } as never)
+    ctx.provide('remote', nativeRemote({ $on: (_event: string, value: Listener) => { listener = value; return () => { listener = undefined } } }))
 
     const fiber = ctx.plugin({ inject: [...inject], apply })
     await fiber.await()
     expect(listener).toBeDefined()
     const payload = encodeURIComponent(JSON.stringify({
-      version: 1, appLabel: 'Asana', toolkit: 'asana',
+      version: 1, workflowSessionId: 'workflow-asana', requestCallId: 'call-asana',
+      appLabel: 'Asana', toolkit: 'asana',
       redirectUrl: 'https://connect.example/asana', logoUrl: 'https://logos.example/asana.svg',
       connectLabel: 'Connect Asana', continueLabel: "I've connected Asana — continue",
     }))
@@ -131,6 +138,7 @@ describe('HIVE-MIND connection UI', () => {
   it('cancels the owning turn when a connection question is dismissed', async () => {
     const ctx = new Context()
     ctx.provide('uiWorkspace', { configureDefaultWorkspaceInitialization: () => () => {}, openSession: vi.fn() } as never)
+    ctx.provide('layout', { setExternalSidebar: vi.fn() } as never)
     await ctx.plugin(SlotRegistry).await()
     const slots = ctx.get('slots') as SlotRegistry
     slots.register({
@@ -145,6 +153,9 @@ describe('HIVE-MIND connection UI', () => {
     const sessionId = 'session-cancel-connection' as SessionId
     const owner = ctx.extend({ [SESSION_SCOPE]: sessionId })
     const cancel = vi.fn(async () => ({ ok: true, value: { accepted: true } }))
+    const executeCommand = vi.fn(async () => ({ ok: true, value: {
+      commandId: 'command-1', result: { kind: 'success' as const, text: 'Saved connection request cancelled.' },
+    } }))
     ctx.provide('sessions', {
       scopeOf: (candidate: Context) => (candidate as Context & { [SESSION_SCOPE]?: SessionId })[SESSION_SCOPE],
       sessionOf: () => ({ cancel }),
@@ -163,11 +174,15 @@ describe('HIVE-MIND connection UI', () => {
       questions: Array<{ id: string; question: string; detail: string; options: Array<{ label: string }> }>
     }, next: () => Promise<{ answers: never[] }>) => Promise<unknown>
     let listener: Listener | undefined
-    ctx.provide('remote', { $on: (_event: string, value: Listener) => { listener = value; return () => { listener = undefined } } } as never)
+    ctx.provide('remote', nativeRemote({
+      $on: (_event: string, value: Listener) => { listener = value; return () => { listener = undefined } },
+      commands: { execute: executeCommand },
+    }))
     const fiber = ctx.plugin({ inject: [...inject], apply })
     await fiber.await()
     const payload = encodeURIComponent(JSON.stringify({
-      version: 1, appLabel: 'Asana', toolkit: 'asana',
+      version: 1, workflowSessionId: 'workflow-asana', requestCallId: 'call-asana',
+      appLabel: 'Asana', toolkit: 'asana',
       redirectUrl: 'https://connect.example/asana', logoUrl: 'https://logos.example/asana.svg',
       connectLabel: 'Connect Asana', continueLabel: "I've connected Asana — continue",
     }))
@@ -181,9 +196,19 @@ describe('HIVE-MIND connection UI', () => {
     await Promise.resolve()
     const current = [...pending.keys()][0]!
     const rejection = expect(result).rejects.toMatchObject({ name: 'UserQuestionError', code: 'ASK_CANCELLED' })
+    executeCommand.mockImplementationOnce(async () => ({ ok: false, error: { code: 'session/flush-failed', message: 'flush failed' } } as never))
+    await expect(current.cancel()).rejects.toThrow('flush failed')
+    expect(cancel).not.toHaveBeenCalled()
+    expect(pending.size).toBe(1)
     await current.cancel()
     await rejection
     expect(cancel).toHaveBeenCalledOnce()
+    expect(executeCommand).toHaveBeenCalledWith(sessionId,
+      `/hivemind-cancel-connection ${JSON.stringify({
+        session_id: 'workflow-asana', request_call_id: 'call-asana', cancellation_reason: 'user_declined',
+      })}`,
+      [],
+    )
     expect(pending.size).toBe(0)
     await fiber.dispose()
   })
@@ -191,6 +216,7 @@ describe('HIVE-MIND connection UI', () => {
   it('keeps session projection ownership in the native workspace plugin', async () => {
     const ctx = new Context()
     ctx.provide('uiWorkspace', { configureDefaultWorkspaceInitialization: () => () => {}, openSession: vi.fn() } as never)
+    ctx.provide('layout', {} as never)
     await ctx.plugin(SlotRegistry).await()
     ctx.provide('locale', { register: () => () => {} } as never)
     ctx.provide('sessions', {
@@ -230,11 +256,11 @@ describe('HIVE-MIND connection UI', () => {
     } } as never, () => null)
     ctx.provide('locale', { register: () => () => {}, bind: () => () => '' } as never)
     ctx.provide('sessions', { list: { getSnapshot: () => ({ current: undefined, ids: [], byId: {}, phase: 'ready' }), subscribe: () => () => {} }, create: vi.fn(async () => 'session-1') } as never)
-    ctx.provide('remote', { $on: () => () => {}, session: {} } as never)
+    ctx.provide('remote', nativeRemote({ session: {} }))
     ctx.provide('remote.session', {} as never)
     ctx.provide('remote.schedule', {} as never)
     ctx.provide('uiConversation', {} as never)
-    ctx.provide('layout', { selectPanel: vi.fn() } as never)
+    ctx.provide('layout', { setExternalSidebar: vi.fn(), selectPanel: vi.fn() } as never)
     ctx.provide('uiSession', { registerPendingInteraction: () => () => () => {} } as never)
     const registerTab = vi.fn(() => () => {})
     const fiber = ctx.plugin({ inject: [...inject], apply })

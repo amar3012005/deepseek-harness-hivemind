@@ -14,6 +14,9 @@ export interface MemorySaveApprovalItem {
   readonly result?: unknown | undefined
 }
 
+/** Client-safe approval descriptor that omits internal save results. */
+export type MemorySaveApprovalViewItem = Omit<MemorySaveApprovalItem, 'result'>
+
 export interface MemorySaveApprovalProjectionState {
   readonly items: readonly MemorySaveApprovalItem[]
 }

@@ -67,6 +67,9 @@ import { loadArtifactCatalog } from './artifact-catalog.ts'
 import { workbenchSnapshot, HyperagentWorkbench, PdfReceipt, TextReceipt, ReceiptImage } from './HyperagentWorkbench.tsx'
 import { HiveLiveVoiceButton } from './HiveLiveVoiceButton.tsx'
 import { setupExternalEmployeeSidebar } from './external-sidebar.ts'
+import memoryApprovalRemote from '@deepseek-ai/dsh-hivemind-memory/remote'
+import runtimeApprovalRemote from '@deepseek-ai/dsh-hivemind-runtime/remote'
+import { MemoryApprovalDock, RuntimeApprovalDock, type MemoryApprovalInjection, type RuntimeApprovalInjection } from './ApprovalDocks.tsx'
 
 declare module '@deepseek-ai/dsh-client-ui-chat/client' {
   interface ChatNodeDataMap { 'hivemind-employee-joining': EmployeeJoining; 'hivemind-website-source': WebsiteRead; 'hivemind-scheduled-work': ScheduledWork; 'runtime-awakening-stage': { turn: number; seq: number } }
@@ -138,7 +141,12 @@ async function answerConnectionQuestion(
     sessionId,
     recognized,
     request.signal,
-    session === undefined ? undefined : async () => { await session.cancel() },
+    async () => {
+      await cancelSavedConnectionRequest(ctx, sessionId, recognized.presentation.workflowSessionId,
+        recognized.presentation.requestCallId)
+      if (session === undefined) throw new Error('The connection request was saved, but its active session could not be stopped')
+      await session.cancel()
+    },
   )
   const completed = Promise.withResolvers<void>()
   const remove = publish(pending, async () => {
@@ -158,8 +166,34 @@ async function answerConnectionQuestion(
   }
 }
 
+async function cancelSavedConnectionRequest(
+  ctx: ClientContext,
+  sessionId: SessionId,
+  workflow: string,
+  callId: string,
+): Promise<void> {
+  const result = await ctx.remote.commands.execute(sessionId,
+    `/hivemind-cancel-connection ${JSON.stringify({
+      session_id: workflow,
+      request_call_id: callId,
+      cancellation_reason: 'user_declined',
+    })}`,
+    [])
+  if (!result.ok) throw new Error(`Connection cancellation failed: ${result.error.code}: ${result.error.message}`)
+  if (result.value === undefined) throw new Error('Connection cancellation command is not available in this session')
+  if (result.value.result.kind === 'error') throw new Error(result.value.result.text)
+}
+
 /** Register the localized HIVE-MIND connection control above sidebar Settings. */
-export function apply(ctx: ClientContext): void {
+export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
+  const disposeMemoryApprovalRemote = await ctx.remote.$mount(memoryApprovalRemote)
+  let disposeRuntimeApprovalRemote: (() => void | Promise<void>) | undefined
+  try {
+    disposeRuntimeApprovalRemote = await ctx.remote.$mount(runtimeApprovalRemote)
+  } catch (error) {
+    await disposeMemoryApprovalRemote()
+    throw error
+  }
   ctx.effect(() => setupExternalEmployeeSidebar(ctx.layout), 'ui-hivemind-connect: external employee sidebar')
   // HIVE sessions are filesystem-free. Keep the native Workspace adapter's
   // session navigation, but do not let its first-run recovery create a local
@@ -343,6 +377,11 @@ export function apply(ctx: ClientContext): void {
   const employeeEvents = (sessionId: SessionId) => {
     const binding = ctx.sessions.binding(sessionId)
     if (binding === undefined) throw new Error('HIVE-MIND employee selection requires an open session')
+    return binding.eventSource
+  }
+  const approvalEvents = (sessionId: SessionId) => {
+    const binding = ctx.sessions.binding(sessionId)
+    if (binding === undefined) throw new Error('HIVE-MIND approval dock requires an open session')
     return binding.eventSource
   }
   const listEmployees = async (): Promise<EmployeeOption[]> => {
@@ -781,9 +820,42 @@ export function apply(ctx: ClientContext): void {
   })
   ctx.inject(['conversation'], () => {
     ctx.slots.inject('conversation.input.dock', () => ctx.slots.register({
+      name: 'conversation.input.dock', id: 'hivemind-memory-save-approval', order: -30, locale: NS,
+      inject: (sessionId): MemoryApprovalInjection => ({
+        hooks: { approvalEvents: approvalEvents(sessionId) },
+        load: async (id: SessionId) => {
+          const result = await ctx.remote.hivemindMemoryApproval.pendingSaves(id)
+          if (!result.ok) throw new Error('Memory approvals unavailable')
+          return result.value
+        },
+        decide: async (id: SessionId, callId: string, operationId: string, decision: 'decline' | 'personal' | 'organization' | 'project') => {
+          const result = await ctx.remote.hivemindMemoryApproval.decideSave(id, callId as never, operationId, decision)
+          if (!result.ok) throw new Error('Memory approval decision unavailable')
+          return result.value
+        },
+      }),
+    }, MemoryApprovalDock))
+    ctx.slots.inject('conversation.input.dock', () => ctx.slots.register({
+      name: 'conversation.input.dock', id: 'hivemind-runtime-approval', order: -29, locale: NS,
+      inject: (sessionId): RuntimeApprovalInjection => ({
+        hooks: { approvalEvents: approvalEvents(sessionId) },
+        load: async (id: SessionId) => {
+          const result = await ctx.remote.hivemindRuntimeApproval.pending(id)
+          if (!result.ok) throw new Error('Runtime approvals unavailable')
+          return result.value
+        },
+        decide: async (id: SessionId, callId: string, approvalId: string, decision: 'approve' | 'decline') => {
+          const result = await ctx.remote.hivemindRuntimeApproval.decide(id, callId, approvalId, decision)
+          if (!result.ok) throw new Error('Runtime approval decision unavailable')
+          return result.value
+        },
+      }),
+    }, RuntimeApprovalDock))
+    ctx.slots.inject('conversation.input.dock', () => ctx.slots.register({
       name: 'conversation.input.dock', id: 'hivemind-saved-connection', order: -20, locale: NS,
       inject: sessionId => ({
         hooks: { employeeEvents: employeeEvents(sessionId) },
+        cancelRequest: (workflow: string, callId: string) => cancelSavedConnectionRequest(ctx, sessionId, workflow, callId),
         resume: async (prompt: string) => {
           const conversation = ctx.sessions.scope(sessionId)?.get('conversation')
           if (conversation === undefined) throw new Error('Connection request is unavailable')
@@ -962,4 +1034,7 @@ export function apply(ctx: ClientContext): void {
       stop()
     }
   }, 'ui-hivemind-connect: filesystem-free native session bootstrap')
+  return async () => {
+    await Promise.all([disposeMemoryApprovalRemote(), disposeRuntimeApprovalRemote?.()])
+  }
 }

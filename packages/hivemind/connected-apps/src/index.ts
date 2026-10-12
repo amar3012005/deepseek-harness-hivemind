@@ -1441,6 +1441,88 @@ function appendConnectedReceipt(
   })
 }
 
+type ConnectionCancellationReason = 'user_declined' | 'no_longer_needed'
+
+function savedConnectionAuthorization(
+  agent: Agent,
+  workflow: string,
+  callId: string,
+): Record<string, unknown> | undefined {
+  const authorization = agent.session.snapshotEvents().findLast(event => event.type === 'hivemind/connected-receipt'
+    && event.data.tool === 'connection_authorization'
+    && event.data.workflowSessionId === workflow
+    && record(event.data.receipt)
+    && event.data.receipt['request_call_id'] === callId)
+  return authorization?.type === 'hivemind/connected-receipt' && record(authorization.data.receipt)
+    ? authorization.data.receipt : undefined
+}
+
+/** Close only the exact saved authorization in the receiving agent's session. */
+async function cancelSavedConnectionRequest(
+  agent: Agent,
+  workflow: string,
+  callId: string,
+  reason: ConnectionCancellationReason,
+  signal: AbortSignal,
+  flush: (session: Agent['session']) => Promise<boolean>,
+): Promise<void> {
+  signal.throwIfAborted()
+  const saved = savedConnectionAuthorization(agent, workflow, callId)
+  const savedStatus = saved === undefined ? undefined : stringValue(saved['status'])
+  if (saved === undefined || (savedStatus !== 'connection_required' && savedStatus !== 'cancelled')) {
+    throw new TypeError('Connection cancellation requires an unresolved exact saved request')
+  }
+  // There has been no await since the snapshot, so this synchronous check/append makes
+  // concurrent command and model-tool ingress idempotent in one session.
+  signal.throwIfAborted()
+  if (savedStatus !== 'cancelled') {
+    agent.session.append('hivemind/connected-receipt', {
+      version: 1,
+      tool: 'connection_authorization',
+      workflowSessionId: workflow,
+      receipt: { ...saved, status: 'cancelled', cancellation_reason: reason },
+    })
+  }
+  if (!await flush(agent.session)) throw new Error('Connection cancellation was not durably saved')
+}
+
+interface ConnectedAppCommandContext {
+  commands: {
+    register(spec: {
+      name: string
+      description: string
+      input: { hint: string }
+      recordInput?: boolean
+      handler(input: { agent: Agent; rawInput: string; signal: AbortSignal }):
+        { kind: 'success' | 'error'; text: string } | Promise<{ kind: 'success' | 'error'; text: string }>
+    }): () => void
+  }
+}
+
+function parseCancellationInput(rawInput: string): {
+  workflow: string
+  callId: string
+  reason: ConnectionCancellationReason
+} {
+  if (rawInput.length > 2048) throw new TypeError('Connection cancellation input is too long')
+  let value: unknown
+  try { value = JSON.parse(rawInput) as unknown }
+  catch { throw new TypeError('Connection cancellation input must be valid JSON') }
+  if (!record(value) || Object.keys(value).some(key => !['session_id', 'request_call_id', 'cancellation_reason'].includes(key))) {
+    throw new TypeError('Connection cancellation input has an invalid shape')
+  }
+  const workflow = stringValue(value['session_id'])
+  const callId = stringValue(value['request_call_id'])
+  const rawReason = value['cancellation_reason']
+  if (workflow === undefined || workflow.length > 512 || callId === undefined || callId.length > 512) {
+    throw new TypeError('Connection cancellation requires exact saved request identities')
+  }
+  if (rawReason !== 'user_declined' && rawReason !== 'no_longer_needed') {
+    throw new TypeError('Connection cancellation requires an allowed reason')
+  }
+  return { workflow, callId, reason: rawReason }
+}
+
 function latestConnectedReceipt(agent: ToolExecution['agent']): ConnectedReceiptEventData | undefined {
   const events = agent?.session.snapshotEvents()
   if (events === undefined) return undefined
@@ -1573,6 +1655,26 @@ async function saveReceipt(
 
 /** Register the compact progressive Composio router and its policy guards. */
 export function apply(ctx: Context, config: Config = {}): void {
+  const injectCommands = (ctx as unknown as {
+    inject?: (services: readonly string[], callback: (value: unknown) => void) => void
+  }).inject
+  if (typeof injectCommands === 'function') {
+    injectCommands.call(ctx, ['commands'], (commandCtx) => {
+      const commands = commandCtx as ConnectedAppCommandContext
+      ctx.effect(() => commands.commands.register({
+        name: 'hivemind-cancel-connection',
+        description: 'Close one exact saved connected-app authorization request.',
+        input: { hint: '{"session_id":"...","request_call_id":"...","cancellation_reason":"user_declined|no_longer_needed"}' },
+        recordInput: false,
+        handler: async ({ agent, rawInput, signal }) => {
+          const input = parseCancellationInput(rawInput.trim())
+          await cancelSavedConnectionRequest(agent, input.workflow, input.callId, input.reason, signal,
+            session => ctx.sessions.flush(session))
+          return { kind: 'success', text: 'Saved connection request cancelled.' }
+        },
+      }))
+    })
+  }
   const turns = new WeakMap<object, {
     turn: number
     signal?: AbortSignal
@@ -1754,6 +1856,25 @@ export function apply(ctx: Context, config: Config = {}): void {
     const questionId = `hivemind-connected-app-authorization:${input.workflowSessionId}:${input.toolkit}`
     const connect = `Connect ${input.appLabel}`
     const continueLabel = `I've connected ${input.appLabel} — continue`
+    // Save the exact request before exposing its live question. The native
+    // cancel command must be able to close this call durably before the UI
+    // settles the interaction or cancels the owning turn.
+    if (execution.agent !== undefined) {
+      appendConnectedReceipt(execution, 'connection_authorization', {
+        status: 'connection_required',
+        session_id: input.workflowSessionId,
+        request_call_id: String(execution.callId),
+        toolkit: input.toolkit,
+        toolkits: [input.toolkit],
+        app_label: input.appLabel,
+        prompt: `Connect ${input.appLabel} to continue, then return here.`,
+        redirect_url: input.redirectUrl,
+        logo_url: input.logoUrl,
+      }, input.workflowSessionId)
+      if (!await ctx.sessions.flush(execution.agent.session)) {
+        throw new Error('Connection request was not durably saved; the authorization question was not opened')
+      }
+    }
     const presentation = encodeURIComponent(JSON.stringify({
       version: 1,
       appLabel: input.appLabel,
@@ -1762,6 +1883,8 @@ export function apply(ctx: Context, config: Config = {}): void {
       logoUrl: input.logoUrl,
       connectLabel: connect,
       continueLabel,
+      workflowSessionId: input.workflowSessionId,
+      requestCallId: String(execution.callId),
     }))
     for (;;) {
       let answer
@@ -1791,7 +1914,22 @@ export function apply(ctx: Context, config: Config = {}): void {
       // Capable clients keep Connect non-settling. A generic client may return
       // it as an answer; keep the same tool call paused in that fallback.
       if (!selected.includes(continueLabel)) continue
-      if (await verifyConnection()) return true
+      if (await verifyConnection()) {
+        if (execution.agent !== undefined) {
+          const saved = savedConnectionAuthorization(execution.agent, input.workflowSessionId, String(execution.callId))
+          if (saved === undefined) throw new Error('Verified connection request lost its exact durable authorization')
+          // Verification can overlap with a human cancellation command. The
+          // cancellation receipt is terminal even while this tool is waking.
+          if (saved['status'] === 'cancelled') return false
+          if (saved['status'] === 'ready') return true
+          appendConnectedReceipt(execution, 'connection_authorization', {
+            ...saved,
+            status: 'ready',
+          }, input.workflowSessionId)
+          if (!await ctx.sessions.flush(execution.agent.session)) throw new Error('Verified connection checkpoint was not durably saved')
+        }
+        return true
+      }
     }
   }
 
@@ -1915,13 +2053,9 @@ export function apply(ctx: Context, config: Config = {}): void {
         const callId = stringValue(args.request_call_id)
         const agent = execution.agent
         if (workflow === undefined || callId === undefined || agent === undefined) throw new TypeError('Connection cancellation requires an active session and exact saved request identities')
-        const authorization = agent.session.snapshotEvents().findLast(event => event.type === 'hivemind/connected-receipt'
-          && event.data.tool === 'connection_authorization' && event.data.workflowSessionId === workflow
-          && record(event.data.receipt) && event.data.receipt['request_call_id'] === callId)
-        const saved = authorization?.type === 'hivemind/connected-receipt' && record(authorization.data.receipt) ? authorization.data.receipt : undefined
-        if (saved === undefined || !['connection_required', 'cancelled'].includes(String(saved['status']))) throw new TypeError('Connection cancellation requires an unresolved exact saved request')
-        if (saved['status'] !== 'cancelled') appendConnectedReceipt(execution, 'connection_authorization', { ...saved, status: 'cancelled', cancellation_reason: args.cancellation_reason === 'no_longer_needed' ? 'no_longer_needed' : 'user_declined' }, workflow)
-        if (!await ctx.sessions.flush(agent.session)) throw new Error('Connection cancellation was not durably saved')
+        const reason: ConnectionCancellationReason = args.cancellation_reason === 'no_longer_needed' ? 'no_longer_needed' : 'user_declined'
+        await cancelSavedConnectionRequest(agent, workflow, callId, reason, execution.signal,
+          session => ctx.sessions.flush(session))
         return { status: 'cancelled', session_id: workflow, request_call_id: callId,
           next_action_guidance: 'This saved request is closed. Do not resume it, ask for access, send another request email, or schedule a retry. A genuinely new authorized need may start a new workflow; closing this request does not authorize connecting an account.' }
       }

@@ -41,6 +41,9 @@ function harness(
       execution: { signal: AbortSignal; concludeTurn: () => void },
     ): Promise<unknown>
   } | undefined
+  let cancelCommand: {
+    handler(input: { agent: unknown; rawInput: string; signal: AbortSignal }): Promise<unknown>
+  } | undefined
   const listeners = new Map<string, (...args: never[]) => unknown>()
   let registeredAgent: unknown
   const ctx = {
@@ -48,6 +51,13 @@ function harness(
     tools: { register(value: typeof tool) { tool = value } },
     sessions: { flush },
     effect<T>(callback: () => T) { return callback() },
+    inject(_services: readonly string[], callback: (value: unknown) => void) {
+      if (!_services.includes('commands')) return
+      callback({ commands: { register(spec: typeof cancelCommand) {
+        cancelCommand = spec ?? undefined
+        return () => { cancelCommand = undefined }
+      } } })
+    },
     hivemindIdentity: { resolve: vi.fn(async () => identity) },
     userQuestions: { ask },
     on(name: string, listener: (...args: never[]) => unknown) { listeners.set(name, listener) },
@@ -71,6 +81,7 @@ function harness(
       execute: (args: Record<string, unknown>, execution: { signal: AbortSignal }) =>
         tool!.execute(args, { ...execution, concludeTurn }),
     }),
+    command: () => cancelCommand!,
     listeners,
     setAgent(agent: unknown) { registeredAgent = agent },
     concludeTurn,
@@ -966,6 +977,52 @@ describe('progressive Composio bridge', () => {
     expect(toolkits).not.toHaveBeenCalled()
   })
 
+  it('registers a direct human command that durably cancels only its exact session request', async () => {
+    const app = harness()
+    const events: Array<{ type: string; data: Record<string, unknown> }> = [
+      { type: 'hivemind/connected-receipt', data: { version: 1, tool: 'connection_authorization', workflowSessionId: 'workflow-a',
+        receipt: { status: 'connection_required', request_call_id: 'call-a', toolkit: 'asana' } } },
+      { type: 'hivemind/connected-receipt', data: { version: 1, tool: 'connection_authorization', workflowSessionId: 'workflow-a',
+        receipt: { status: 'connection_required', request_call_id: 'call-b', toolkit: 'slack' } } },
+    ]
+    const agent = { session: { snapshotEvents: () => events,
+      append: vi.fn((type: string, data: Record<string, unknown>) => events.push({ type, data })) } }
+    const handler = app.command().handler
+    const input = JSON.stringify({ session_id: 'workflow-a', request_call_id: 'call-a', cancellation_reason: 'user_declined' })
+    await expect(handler({ agent, rawInput: input, signal: new AbortController().signal } as never))
+      .resolves.toEqual({ kind: 'success', text: 'Saved connection request cancelled.' })
+    await handler({ agent, rawInput: input, signal: new AbortController().signal } as never)
+    expect(agent.session.append).toHaveBeenCalledOnce()
+    expect(events.at(-1)).toMatchObject({ data: { tool: 'connection_authorization', workflowSessionId: 'workflow-a',
+      receipt: { request_call_id: 'call-a', status: 'cancelled', cancellation_reason: 'user_declined' } } })
+    expect(events[1]?.data).toMatchObject({ receipt: { request_call_id: 'call-b', status: 'connection_required' } })
+    expect(app.flush).toHaveBeenCalledTimes(2)
+
+    const otherTenant = { session: { snapshotEvents: () => [], append: vi.fn() } }
+    const foreign = JSON.stringify({ session_id: 'workflow-a', request_call_id: 'call-b', cancellation_reason: 'user_declined' })
+    await expect(handler({ agent: otherTenant, rawInput: foreign, signal: new AbortController().signal } as never))
+      .rejects.toThrow('exact saved request')
+    expect(otherTenant.session.append).not.toHaveBeenCalled()
+  })
+
+  it('does not report human cancellation success when the exact session flush fails', async () => {
+    const app = harness()
+    const events: Array<{ type: string; data: Record<string, unknown> }> = [{ type: 'hivemind/connected-receipt', data: {
+      version: 1, tool: 'connection_authorization', workflowSessionId: 'workflow-a',
+      receipt: { status: 'connection_required', request_call_id: 'call-a', toolkit: 'asana' } } }]
+    const agent = { session: { snapshotEvents: () => events,
+      append: vi.fn((type: string, data: Record<string, unknown>) => events.push({ type, data })) } }
+    app.flush.mockResolvedValueOnce(false)
+    const input = JSON.stringify({ session_id: 'workflow-a', request_call_id: 'call-a', cancellation_reason: 'user_declined' })
+    await expect(app.command().handler({ agent, rawInput: input, signal: new AbortController().signal } as never))
+      .rejects.toThrow('not durably saved')
+    expect(events.at(-1)).toMatchObject({ data: { receipt: { status: 'cancelled' } } })
+    await expect(app.command().handler({ agent, rawInput: input, signal: new AbortController().signal } as never))
+      .resolves.toEqual({ kind: 'success', text: 'Saved connection request cancelled.' })
+    expect(agent.session.append).toHaveBeenCalledOnce()
+    expect(app.flush).toHaveBeenCalledTimes(2)
+  })
+
   it('preserves another app authorization in the same workflow after exact cancellation', async () => {
     const app = harness()
     toolkits.mockResolvedValue({ items: [{ slug: 'gmail', name: 'Gmail', connection: { isActive: true } }] })
@@ -1071,7 +1128,9 @@ describe('progressive Composio bridge', () => {
       new Error('ask_user_question was aborted before the user answered'),
       { code: 'ASK_ABORTED' },
     ))
-    const agent = { id: 'agent-1', session: { header: { id: 'conversation-1' }, snapshotEvents: () => [], append: vi.fn() } }
+    const events: Array<{ type: string; data: Record<string, unknown> }> = []
+    const agent = { id: 'agent-1', session: { header: { id: 'conversation-1' }, snapshotEvents: () => events,
+      append: vi.fn((type: string, data: Record<string, unknown>) => events.push({ type, data })) } }
 
     await expect(app.tool().execute({
       action: 'search', queries: [{ app: 'Asana', use_case: 'List current Asana tasks.' }], session: { generate_id: true },
@@ -1083,6 +1142,88 @@ describe('progressive Composio bridge', () => {
     })
     expect(execute).toHaveBeenCalledTimes(2)
     expect(app.concludeTurn).toHaveBeenCalledOnce()
+  })
+
+  it('durably saves the live request before the direct human command closes it', async () => {
+    execute
+      .mockResolvedValueOnce({ data: {
+        results: [{ primary_tool_slugs: ['ASANA_LIST_TASKS'], toolkits: ['asana'] }],
+        toolkit_connection_statuses: [{ toolkit: 'asana', has_active_connection: false }],
+        session: { id: 'workflow-asana' },
+      } })
+      .mockResolvedValueOnce({ data: { redirect_url: 'https://connect.example/asana' } })
+    const app = harness()
+    const controller = new AbortController()
+    const events: Array<{ type: string; data: Record<string, unknown> }> = []
+    const agent = { id: 'agent-1', session: { header: { id: 'conversation-1' }, snapshotEvents: () => events,
+      append: vi.fn((type: string, data: Record<string, unknown>) => events.push({ type, data })) } }
+    app.ask.mockImplementation(async () => {
+      expect(events.at(-1)).toMatchObject({ data: { tool: 'connection_authorization', workflowSessionId: 'workflow-asana',
+        receipt: { status: 'connection_required', session_id: 'workflow-asana', request_call_id: 'connection-call' } } })
+      await app.command().handler({ agent, rawInput: JSON.stringify({ session_id: 'workflow-asana',
+        request_call_id: 'connection-call', cancellation_reason: 'user_declined' }), signal: new AbortController().signal })
+      controller.abort(new Error('cancelled after durable receipt'))
+      throw Object.assign(new Error('ask_user_question was aborted before the user answered'), { code: 'ASK_ABORTED' })
+    })
+
+    await expect(app.tool().execute({
+      action: 'search', queries: [{ app: 'Asana', use_case: 'List current Asana tasks.' }], session: { generate_id: true },
+    }, { signal: controller.signal, agent, callId: 'connection-call' } as never)).resolves.toMatchObject({
+      status: 'connection_required', session_id: 'workflow-asana',
+    })
+
+    const authorizations = events.filter(event => event.type === 'hivemind/connected-receipt'
+      && event.data.tool === 'connection_authorization')
+    expect(authorizations).toHaveLength(2)
+    expect(authorizations.map(event => (event.data.receipt as Record<string, unknown>)['status']))
+      .toEqual(['connection_required', 'cancelled'])
+    expect(app.flush).toHaveBeenCalledTimes(2)
+    expect(app.concludeTurn).toHaveBeenCalledOnce()
+  })
+
+  it('keeps cancellation terminal when a concurrent connection verification finishes afterward', async () => {
+    execute
+      .mockResolvedValueOnce({ data: {
+        results: [{ primary_tool_slugs: ['ASANA_LIST_TASKS'], toolkits: ['asana'] }],
+        toolkit_connection_statuses: [{ toolkit: 'asana', has_active_connection: false }],
+        session: { id: 'workflow-asana' },
+      } })
+      .mockResolvedValueOnce({ data: { redirect_url: 'https://connect.example/asana' } })
+    let finishVerification!: (value: { data: { toolkit: string; status: string } }) => void
+    let markVerificationStarted!: () => void
+    const verificationStarted = new Promise<void>((resolve) => { markVerificationStarted = resolve })
+    const verification = new Promise<{ data: { toolkit: string; status: string } }>((resolve) => { finishVerification = resolve })
+    execute.mockImplementationOnce(async () => {
+      markVerificationStarted()
+      return await verification
+    })
+    const app = harness()
+    app.ask.mockResolvedValue({ answers: [{
+      id: 'hivemind-connected-app-authorization:workflow-asana:asana',
+      selected: ["I've connected Asana — continue"],
+    }] })
+    const controller = new AbortController()
+    const events: Array<{ type: string; data: Record<string, unknown> }> = []
+    const agent = { id: 'agent-1', session: { header: { id: 'conversation-1' }, snapshotEvents: () => events,
+      append: vi.fn((type: string, data: Record<string, unknown>) => events.push({ type, data })) } }
+    const run = app.tool().execute({
+      action: 'search', queries: [{ app: 'Asana', use_case: 'List current Asana tasks.' }], session: { generate_id: true },
+    }, { signal: controller.signal, agent, callId: 'connection-call' } as never)
+
+    await verificationStarted
+    await app.command().handler({ agent, rawInput: JSON.stringify({ session_id: 'workflow-asana',
+      request_call_id: 'connection-call', cancellation_reason: 'user_declined' }), signal: new AbortController().signal })
+    controller.abort(new Error('cancelled after durable receipt'))
+    finishVerification({ data: { toolkit: 'asana', status: 'ACTIVE' } })
+    await expect(run).resolves.toMatchObject({ status: 'connection_required', session_id: 'workflow-asana' })
+
+    const authorizations = events.filter(event => event.type === 'hivemind/connected-receipt'
+      && event.data.tool === 'connection_authorization')
+    expect(authorizations.map(event => (event.data.receipt as Record<string, unknown>)['status']))
+      .toEqual(['connection_required', 'cancelled'])
+    expect(app.flush).toHaveBeenCalledTimes(2)
+    expect(execute).toHaveBeenCalledTimes(3)
+    expect(execute.mock.calls[2]?.[0]).toBe('COMPOSIO_WAIT_FOR_CONNECTIONS')
   })
 
   it.each([
@@ -1220,7 +1361,9 @@ describe('progressive Composio bridge', () => {
       id: 'hivemind-connected-app-authorization:workflow-asana:asana',
       selected: ["I've connected Asana — continue"],
     }] })
-    const agent = { id: 'agent-1', session: { header: { id: 'conversation-1' }, snapshotEvents: () => [], append: vi.fn() } }
+    const events: Array<{ type: string; data: Record<string, unknown> }> = []
+    const agent = { id: 'agent-1', session: { header: { id: 'conversation-1' }, snapshotEvents: () => events,
+      append: vi.fn((type: string, data: Record<string, unknown>) => events.push({ type, data })) } }
     const result = await app.tool().execute({
       action: 'search',
       queries: [{ app: 'Asana', use_case: 'List current Asana tasks.' }],
@@ -1272,7 +1415,9 @@ describe('progressive Composio bridge', () => {
       id: 'hivemind-connected-app-authorization:workflow-slack:slack',
       selected: ["I've connected Slack — continue"],
     }] })
-    const agent = { id: 'agent-1', session: { header: { id: 'conversation-1' }, snapshotEvents: () => [], append: vi.fn() } }
+    const events: Array<{ type: string; data: Record<string, unknown> }> = []
+    const agent = { id: 'agent-1', session: { header: { id: 'conversation-1' }, snapshotEvents: () => events,
+      append: vi.fn((type: string, data: Record<string, unknown>) => events.push({ type, data })) } }
 
     await expect(app.tool().execute({
       action: 'search', queries: [{ app: 'Slack', use_case: 'Read Slack workspace information.' }], session: { generate_id: true },

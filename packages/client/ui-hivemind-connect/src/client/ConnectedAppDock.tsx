@@ -9,9 +9,10 @@ import { savedConnectionRequests } from './connected-app-state.ts'
 type Props = PropsRuntime<'conversation.input.dock'> & PropsLocale<'hivemind-connect'> & {
   useEmployeeEvents: SnapshotSelectorHook<SessionEventWindow>
   resume: (prompt: string) => Promise<void>
+  cancelRequest: (workflow: string, callId: string) => Promise<void>
 }
 /** A persisted request is a dock item, never a foreground interaction or an implicit user response. */
-export function ConnectedAppDock({ sessionId, useEmployeeEvents, resume, t, useSessionStatus }: Props) {
+export function ConnectedAppDock({ sessionId, useEmployeeEvents, resume, cancelRequest, t, useSessionStatus }: Props) {
   const requests = useEmployeeEvents(savedConnectionRequests)
   const active = useSessionStatus(snapshot => snapshot.get(sessionId)?.pendingInteraction)
   const requestId = typeof window === 'undefined' ? null : new URLSearchParams(window.location.search).get('request')
@@ -20,13 +21,14 @@ export function ConnectedAppDock({ sessionId, useEmployeeEvents, resume, t, useS
     key: `saved-connection-${request.callId}`,
     sessionId,
     question: { id: request.callId, question: request.reason },
-    presentation: { version: 1 as const, appLabel: request.app, toolkit: request.toolkit,
+    presentation: { version: 1 as const, workflowSessionId: request.workflow, requestCallId: request.callId,
+      appLabel: request.app, toolkit: request.toolkit,
       redirectUrl: request.redirect, logoUrl: request.logo,
       connectLabel: t('composio.connect', { app: request.app }),
       continueLabel: t('composio.continue', { app: request.app }) },
     continue: () => resume(`Check my ${request.app} connection and continue the paused request.`),
-    cancel: () => resume(`Cancel the saved ${request.app} connection request with session_id ${JSON.stringify(request.workflow)} and request_call_id ${JSON.stringify(request.callId)}. Do not disconnect the account or resume the abandoned work.`),
-  }), [request, sessionId, resume, t])
+    cancel: () => cancelRequest(request.workflow, request.callId),
+  }), [request, sessionId, resume, cancelRequest, t])
   if (matched === null || request === undefined || active instanceof PendingConnectionAuthorization) return null
   return <div data-connected-app-request={request.callId} data-request-highlighted={requestId === request.callId || undefined}>
     <ConnectionAuthorizationPanel key={matched.key} matched={matched} t={t} />

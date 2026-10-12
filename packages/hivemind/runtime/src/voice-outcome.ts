@@ -7,7 +7,7 @@ import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 declare module '@deepseek-ai/dsh-session/types' {
   interface SessionEventMap {
     /** Same-room ended call transcript retains its authenticated initiating admin. */
-    'hivemind/voice-call-ended': { authenticatedActor?:import('@deepseek-ai/dsh-hivemind-execution-scope').AuthenticatedActor; callId: string; provider: 'codex' | 'grok'; initialCheckIn: boolean; interrupted: boolean; hadUserSpeech: boolean; transcript: string }
+    'hivemind/voice-call-ended': { authenticatedActor?: { readonly userId: string; readonly orgId: string; readonly name: string; readonly role: string }; callId: string; provider: 'codex' | 'grok'; initialCheckIn: boolean; interrupted: boolean; hadUserSpeech: boolean; transcript: string }
     /** Evidence-based baseline assessment for the exact saved initial call. */
     'hivemind/voice-baseline-outcome': { callId: string; status: 'complete' | 'incomplete'; summary: string; remaining: string[] }
   }

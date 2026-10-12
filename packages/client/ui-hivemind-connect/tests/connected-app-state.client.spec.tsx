@@ -52,6 +52,19 @@ it('reloads an actionable dock; only explicit Continue sends once and never repl
   expect(resume).toHaveBeenCalledWith('Check my Slack connection and continue the paused request.')
 })
 
+it('cancels a saved request through the direct native command callback, without a model prompt', async () => {
+  const resume = vi.fn(async () => {})
+  const cancelRequest = vi.fn(async () => {})
+  const props = { sessionId: 'room', t: makeTranslate(zh, commonZh), resume, cancelRequest,
+    useEmployeeEvents: (select: (window: SessionEventWindow) => unknown) => select(windowOf(event())),
+    useSessionStatus: (select: (map: Map<unknown, unknown>) => unknown) => select(new Map()),
+  } as unknown as Parameters<typeof ConnectedAppDock>[0]
+  const view = render(<ConnectedAppDock {...props} />)
+  fireEvent.click(view.getByRole('button', { name: '取消此连接请求' }))
+  await waitFor(() => { expect(cancelRequest).toHaveBeenCalledWith('saved-workflow', 'original-call') })
+  expect(resume).not.toHaveBeenCalled()
+})
+
 it('keeps only one human action card during active authorization and removes persisted card after verified receipt', () => {
   const active = Object.create(PendingConnectionAuthorization.prototype)
   const props = { sessionId: 'room', t: makeTranslate(zh, commonZh), resume: vi.fn(),

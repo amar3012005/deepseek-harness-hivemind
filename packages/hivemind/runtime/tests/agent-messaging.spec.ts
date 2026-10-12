@@ -188,7 +188,7 @@ describe('company packet recovery independent of native Team retries', () => {
     const events = [{ type: 'hivemind/room-message-queued', data: packet }] as { type: string; data: unknown }[]
     const profiles = [{ id: 'employee', name: 'Ravi', status: 'active' }]
     const rooms = { deliverAgentMessage: vi.fn(async (_agent: Agent, _input: Record<string, unknown>, _signal: AbortSignal) => {
-      events.push({ type: 'hivemind/room-message-delivered', data: { id: 'saved' } }); return {}
+      events.push({ type: 'hivemind/room-message-delivered', data: { id: 'saved' } }); return { messageId: 'saved', targetSessionId: 'employee-room', status: 'accepted' as const }
     }) }
     const ctx = { hivemindEmployeeDirectory: { profiles: vi.fn(async () => ({ profiles })) },
       logger: { warn: vi.fn() } } as unknown as Context
