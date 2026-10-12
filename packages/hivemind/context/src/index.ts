@@ -145,16 +145,9 @@ function projectHistory(ctx: Context, agent: Agent, config: ContextConfig): bool
     historical.set(seq, result)
     return result
   }
-  // Keep the native system message outside the replacement interval, and stop
-  // at the first current-work node. Never replace a non-contiguous filtered set.
-  const pinned = nodes.findLastIndex((seq) => {
-    const event = session.eventAt(seq)
-    return event?.type === 'system/message'
-      || (event?.type === 'user/message' && isCompactCheckpointSource(event.data.source))
-  })
-  const tail = nodes.slice(pinned + 1)
-  const current = tail.findIndex(seq => !isHistorical(seq))
-  const historicalTail = current === -1 ? tail : tail.slice(0, current)
+  // Preserve every native system/checkpoint node as an island. A later empty
+  // system node must not pin the entire earlier transcript in model context.
+  const historicalTail = nodes
   // Reuse the native pending-question projection and Team checkpoint. Keep the
   // original assistant call plus every subsequent result while input is pending.
   const pending = ctx.get('sessionProjections')?.snapshot(session).values.userQuestions?.active ?? []
@@ -172,14 +165,16 @@ function projectHistory(ctx: Context, agent: Agent, config: ContextConfig): bool
   }
   const protectedNodes = new Set(historicalTail.filter((seq) => {
     const event = session.eventAt(seq)
-    return (event?.type === 'assistant/message' && event.data.message.content.some(block =>
-      block.type === 'tool-call' && protectedCalls.has(block.id)))
+    return !isHistorical(seq) || event?.type === 'system/message'
+      || (event?.type === 'user/message' && isCompactCheckpointSource(event.data.source))
+      || (event?.type === 'assistant/message' && event.data.message.content.some(block =>
+        block.type === 'tool-call' && protectedCalls.has(block.id)))
       || (event?.type === 'tool/result' && event.data.message.content.some(block =>
         block.type === 'tool-result' && protectedCalls.has(block.toolCallId)))
       || (event?.type === 'user/message' && waiting?.originalSourceMessageId === event.data.id)
       || unresolvedPeerMessage(event, events)
   }))
-  const peers = historicalTail.filter(seq => unresolvedPeerMessage(session.eventAt(seq), events))
+  const peers = historicalTail.filter(seq => isHistorical(seq) && unresolvedPeerMessage(session.eventAt(seq), events))
   const peerBudget = Math.max(256, Math.floor(config.historyMaxChars / Math.max(1, peers.length)))
   let boundedPeers = false
   for (const seq of peers) {

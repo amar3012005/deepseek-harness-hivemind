@@ -452,6 +452,29 @@ describe('HIVE progressive context', () => {
     expect(JSON.stringify(session.deriveMessages())).toContain(body)
   })
 
+  it('does not pin closed history before a later empty native system node', async () => {
+    const session = Session.create(SessionId('later-system-island'))
+    const first = session.append('system/message', { turn: 1, step: 1,
+      message: { id: 'system-one', role: 'system', source: 'fixture', content: [{ type: 'text', text: 'Current policy' }] } } as never, { surfaceOp: 'append' })
+    session.append('turn/start', { turn: 1 })
+    session.append('user/message', user('Old request'), { surfaceOp: 'append' })
+    session.append('assistant/message', { turn: 1, step: 1, stream: [], message: createAssistantMessage({
+      source: { provider: 'fixture', model: 'fixture' }, content: [{ type: 'text', text: 'OLD_PAYLOAD'.repeat(12000) }],
+    }) }, { surfaceOp: 'append' })
+    const tail = session.append('system/message', { turn: 1, step: 2,
+      message: { id: 'system-tail', role: 'system', source: 'fixture', content: [] } } as never, { surfaceOp: 'append' })
+    session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+    session.append('turn/start', { turn: 2 })
+    const current = session.append('user/message', user('Current request'), { surfaceOp: 'append' })
+    const original = session.snapshotEvents()
+    const harness = mount()
+    await harness.preStep({ agent: { session }, turn: 2, signal: new AbortController().signal } as never,
+      async () => ({ kind: 'enter', messages: [] }))
+    expect(JSON.stringify(session.deriveMessages()).length).toBeLessThan(6000)
+    expect(session.surface.nodes).toEqual(expect.arrayContaining([first.seq, tail.seq, current.seq]))
+    expect(session.snapshotEvents().slice(0, original.length)).toEqual(original)
+  })
+
   it('starts a greeting with no skill catalog', async () => {
     const harness = mount()
     const catalog = createUserMessage({

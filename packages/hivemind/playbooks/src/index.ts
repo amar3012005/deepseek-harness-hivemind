@@ -932,7 +932,7 @@ export function apply(ctx: Context, config: Partial<Config> = {}): void {
     // Ordinary employee presets retain their existing progressive boundary.
     if (nativeTeamCoordination) {
       for (const tool of [
-        'hivemind_hq_contract', 'team_task_list', 'team_task_get', 'list_agents',
+        'hivemind_hq_contract', 'team_task_list', 'team_task_get', 'team_task_create', 'team_task_update', 'list_agents',
       ]) requested.add(tool)
     }
     for (const capability of capabilities) {

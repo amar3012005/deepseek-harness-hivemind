@@ -142,7 +142,7 @@ describe('hivemind playbooks', () => {
     for (const name of coordination) tools.set(name, { name } as ToolDefinition)
     const assembly = { sections: [], contexts: [], variables: {}, tools: [...tools.values()].map(tool => ({ name: tool.name, description: '', inputSchema: { type: 'object' } })) }
     const projected = await listeners.get('system-prompt/assemble')!(assembly, { agent, scope: agent }, async () => assembly) as typeof assembly
-    expect(projected.tools.map(tool => tool.name)).toEqual(expect.arrayContaining(nativeTeamCoordination ? ['hivemind_hq_contract','team_task_list','team_task_get','list_agents'] : ['runtime_user_agenda','runtime_uncertainties','runtime_support_report']))
+    expect(projected.tools.map(tool => tool.name)).toEqual(expect.arrayContaining(nativeTeamCoordination ? ['hivemind_hq_contract','team_task_list','team_task_get','team_task_create','team_task_update','list_agents'] : ['runtime_user_agenda','runtime_uncertainties','runtime_support_report']))
     const receipt = await tools.get('hivemind_capabilities')!.execute({ operation: 'lease', capabilities: ['employees'] }, { agent, signal: new AbortController().signal } as never) as { visibleTools: string[]; suppressed_capabilities?: string[] }
     expect(projected.tools.some(tool=>tool.name==='hivemind_hq_blocker')).toBe(false)
     expect(receipt.visibleTools.includes('hivemind_hq_blocker')).toBe(nativeTeamCoordination)

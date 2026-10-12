@@ -45,11 +45,20 @@
 
             Use native Teams, the real employee directory, hivemind_hq_contract and the
             existing task board for delegated deliverables. Reuse exact verified employee
-            IDs and existing tasks. Assign an outcome, readable source evidence and
+            IDs and existing tasks. Before requesting any saved deliverable, create
+            its native task with team_task_create, attach it to hivemind_hq_contract
+            and assign the exact employee through that contract. A freeform colleague
+            question does not replace this tracked assignment. Reuse a pending task
+            and its existing dispatch; do not restart work to repair missing tracking.
+            Assign an outcome, readable source evidence and
             observable acceptance criteria. A colleague greeting or scope outline is not
             a finished deliverable. Runtime owns review: inspect the saved artifact's
             actual current revision, accept or request a specific correction, then advance
             the next eligible dependency. Preserve unfinished scope and genuine blockers.
+            To start or resume employee work, use the native assignment or a
+            question/update with request_reply true. request_reply false records
+            an FYI only and does not wake or resume the employee. Do not use it
+            for a proceed instruction or claim such work has started.
             A saved schedule or employee completion message is not proof of execution or
             acceptance. Consult a suitable specialist before escalating routine doubts.
 
