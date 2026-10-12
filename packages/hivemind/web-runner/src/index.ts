@@ -25,9 +25,12 @@ import { principalMembershipActive } from './principal-membership.ts'
 import { nativeSessionBinding, nativePrincipalAllowed } from './native-consent.ts'
 import { registerMediaAuth } from './media-auth.ts'
 import { liveVoicePlugin, type LiveVoiceConfig } from './live-voice.ts'
+import { createOpenDotRoomProvider, createOpenDotRuntimeOperationService } from './open-dot-runtime.ts'
+import { createOpenDotRuntimeOperationHandler, OPEN_DOT_RUNTIME_OPERATION_PATH } from './open-dot-runtime-operation.ts'
+import { installExternalRoomPersistence, registerExternalEmployeeRoomProvider } from '@deepseek-ai/dsh-api-session-controller'
 
 export const name = 'hivemind-web-runner'
-export const inject = ['webServer', 'connection', 'sessionPersistence', 'hivemindExecutionScope', 'agents']
+export const inject = ['webServer', 'connection', 'sessionPersistence', 'hivemindExecutionScope', 'agents', 'agentTeams', 'sessionController']
 
 const EXCHANGE_PATH = '/api/hivemind/embed/exchange'
 const ESTABLISH_PATH = '/api/hivemind/session/establish'
@@ -316,6 +319,13 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
   if (Buffer.byteLength(projectCatalogSecret, 'utf8') < 32) {
     throw new Error('hivemind-web-runner: project catalog service secret must be at least 32 bytes')
   }
+  installExternalRoomPersistence(ctx)
+  const externalRoomProvider = createOpenDotRoomProvider(ctx, projectCatalogBase, projectCatalogSecret)
+  const externalOperationService = createOpenDotRuntimeOperationService(ctx, projectCatalogBase, projectCatalogSecret)
+  ctx.effect(() => registerExternalEmployeeRoomProvider(ctx, externalRoomProvider), 'hivemind-web-runner: Open Dot external room provider')
+  ctx.effect(() => ctx.webServer.register({ kind: 'exact', path: OPEN_DOT_RUNTIME_OPERATION_PATH,
+    handler: createOpenDotRuntimeOperationHandler(externalOperationService, { secret: projectCatalogSecret }) }),
+  'hivemind-web-runner: authenticated Open Dot Runtime operation receiver')
   const resolveAccess = async (principal: import('@deepseek-ai/dsh-hivemind-execution-scope').HivemindPrincipal, signal: AbortSignal) => {
     const token = serviceToken({ user_id:principal.userId,org_id:principal.orgId,profile:principal.profile,variation:principal.variation,
       ...(principal.projectId === undefined ? {} : { project_id:principal.projectId }) },projectCatalogSecret)

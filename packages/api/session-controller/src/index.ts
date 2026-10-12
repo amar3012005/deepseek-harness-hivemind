@@ -1,5 +1,8 @@
-export { registerExternalEmployeeRoomProvider, roomMessageId } from './room-messaging.ts'
-export type { EmployeeRoomProfile, ExternalEmployeeRoomProvider } from './room-messaging.ts'
+export { registerExternalEmployeeRoomProvider, roomMessageId, stableRoomDispatchId } from './room-messaging.ts'
+export type { ExternalEmployeeOperation } from './room-messaging.ts'
+export type { EmployeeRoomProfile, ExternalEmployeeRoomProvider, ExternalRuntimeDispatchStatus, RoomMessage } from './room-messaging.ts'
+export { installExternalRoomPersistence, openExternalEmployeeRoom } from './external-room.ts'
+export type { ExternalEmployeeRoom } from './external-room.ts'
 /** Session Remote owner: cold reads, explicit Agent commands, and live control state. */
 
 import { hostname } from 'node:os'
@@ -27,6 +30,7 @@ import { ApiSessionList } from './list.ts'
 import { buildModelCatalog } from './catalog.ts'
 import { installModelSelectionProjection } from './model-selection-projection.ts'
 import { SessionSkillCatalog } from './skill-catalog.ts'
+import type { ExternalEmployeeRoomProvider } from './room-messaging.ts'
 import { SessionMediaReferences } from './media-references.ts'
 import type {
   ModelCatalog,
@@ -237,6 +241,17 @@ export class SessionController extends TypertRemoteService {
    * @param signal - cancellation for persistence reads.
    * @returns visible Session summaries ordered by activity.
    */
+  /** Install the host-owned external employee adapter after service construction. */
+  receiveExternalEmployeeMessage(room: import('./external-room.ts').ExternalEmployeeRoom, input: import('./room-messaging.ts').ExternalEmployeeOperation, signal: AbortSignal) {
+    return this.roomMessaging.receiveExternalEmployeeMessage(room, input, signal)
+  }
+  getExternalDispatchStatus(room: import('./external-room.ts').ExternalEmployeeRoom, dispatchMessageId: string, signal: AbortSignal) {
+    return this.roomMessaging.getExternalDispatchStatus(room, dispatchMessageId, signal)
+  }
+  registerExternalEmployeeRoomProvider(provider: ExternalEmployeeRoomProvider): () => void {
+    return this.roomMessaging.setExternalProvider(provider)
+  }
+
   @Remote('list')
   async list(_request: SessionListRequest, signal: AbortSignal): Promise<SessionListValue> {
     return { items: await this.listState.list(signal) }
@@ -386,7 +401,7 @@ export class SessionController extends TypertRemoteService {
    * @param signal - Cancellation before room admission.
    * @returns Exact live persistent employee Agent.
    */
-  resolvePersistentEmployeeRoom(key: string, profile: EmployeeRoomProfile, signal: AbortSignal): Promise<Agent> {
+  resolvePersistentEmployeeRoom(key: string, profile: EmployeeRoomProfile, signal: AbortSignal): Promise<Agent | import('./external-room.ts').ExternalEmployeeRoom> {
     return this.roomMessaging.resolveRoom(key, profile, signal)
   }
 

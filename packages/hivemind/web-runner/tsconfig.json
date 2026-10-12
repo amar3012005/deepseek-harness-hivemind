@@ -31,6 +31,9 @@
       "path": "../employee-directory"
     },
     {
+      "path": "../hq-runtime"
+    },
+    {
       "path": "../../core/agent"
     },
     {

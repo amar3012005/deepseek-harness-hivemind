@@ -21,7 +21,8 @@
     "src/list.ts",
     "src/media-references.ts",
     "src/model-selection-projection.ts",
-    "src/skill-catalog.ts"
+    "src/skill-catalog.ts",
+    "src/external-room.ts"
   ],
   "references": [
     { "path": "../../../vendor/cordis" },
