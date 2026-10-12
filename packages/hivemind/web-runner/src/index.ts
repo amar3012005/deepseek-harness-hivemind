@@ -1,3 +1,4 @@
+import { installLegacyCompanyModelMigration } from './legacy-company-model.ts'
 import type {} from '@deepseek-ai/dsh-agent-presets'
 import { registerPlanConnection } from './chatgpt-plan-connection.ts'
 import { registerBrainPlan, requestBrainPlan, requestBrainAccount, requestBrainRoute } from './chatgpt-plan.ts'
@@ -298,6 +299,7 @@ function compactProjects(value: unknown): Array<{ id: string; name: string; slug
 
 /** Mount the one-time ticket exchange and health routes. */
 export async function apply(ctx: Context, config: Config): Promise<void> {
+  installLegacyCompanyModelMigration(ctx)
   registerMediaAuth(ctx)
   const secret = env(config.ticketSecretEnv)
   if (Buffer.byteLength(secret, 'utf8') < 32) throw new Error('hivemind-web-runner: ticket secret must be at least 32 bytes')

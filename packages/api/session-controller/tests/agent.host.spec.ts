@@ -264,6 +264,21 @@ describe('ApiSession model selection', () => {
     expect(() => agents.selectionFor(live)).toThrow('required modelSelection projection')
   })
 
+  it('updates the captured native request selection after admission without changing deployment defaults', async () => {
+    const { ctx, agents } = await harness()
+    const live = agent(ctx, header('admitted-legacy-model'))
+    live.session.append('request/header', { header: { config: { provider: 'openai-codex', model: 'saved-model' } }, reason: 'initial' })
+    const selection = agents.selectionFor(live)
+    selection.assembled = selection.current
+    const before = ctx.agentDefaultModel.currentSelection()
+    const replacement = { provider: 'platform-route', model: 'platform-model' }
+    agents.selectForAdmittedRequest(live, replacement)
+    expect(selection.current).toEqual(replacement)
+    expect(selection.assembled).toEqual(replacement)
+    expect(ctx.agentDefaultModel.currentSelection()).toEqual(before)
+    expect(live.session.snapshotEvents().at(-1)).toMatchObject({ type: 'model/selection', data: replacement })
+  })
+
   it('reads a reasoning-free request and consumes only the exact pending selection', async () => {
     const { ctx, agents } = await harness()
     const logged = agent(ctx, header('logged-model'))

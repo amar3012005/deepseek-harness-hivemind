@@ -349,6 +349,14 @@ export class ApiSessionAgentController {
     this.selectionFor(agent).current = selection
   }
 
+  /** Apply a validated selection after step admission and before its provider request.
+   * The native loop already assembled this step, so its captured selection changes too.
+   */
+  selectForAdmittedRequest(agent: Agent, selection: AgentModelSelection): void {
+    this.selectForNextRequest(agent, selection)
+    this.selectionFor(agent).assembled = selection
+  }
+
   /**
    * Let a matching durable request header retire the execution cache.
    * @param agent - live Agent whose request was recorded.

@@ -272,6 +272,21 @@ export class SessionController extends TypertRemoteService {
     return this.commands.selectModel(request)
   }
 
+  /** Read the configured platform model without mutating its settings. */
+  currentDefaultModelSelection(): import('@deepseek-ai/dsh-agent').ModelSelection {
+    return this.ctx.agentDefaultModel.currentSelection()
+  }
+
+  /** Trusted plugin-only session-local selection; never changes deployment defaults.
+   * Callers validate the route and flush the existing Session after admission and before execution.
+   * @param agent - exact live Agent owned by this controller.
+   * @param selection - validated native selection for its admitted request.
+   */
+  selectForAdmittedRequest(agent: Agent, selection: import('@deepseek-ai/dsh-agent').ModelSelection): void {
+    if (this.ctx.agents.get(agent.id) !== agent) throw new Error('session_model_live_agent_required')
+    this.agents.selectForAdmittedRequest(agent, selection)
+  }
+
   /**
    * Describe every currently routable model for Host-generation selectors.
    * @returns provider-grouped models, the deployment default, and isolated provider failures.
