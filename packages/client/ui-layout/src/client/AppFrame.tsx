@@ -17,8 +17,9 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import type {
-  PropsLocale, PropsRenderSlots, PropsRuntime, PropsStore,
+  InjectFace, PropsLocale, PropsRenderSlots, PropsRuntime, PropsStore,
 } from '@deepseek-ai/dsh-client-ui-slots'
+import { Modal } from '@deepseek-ai/dsh-client-ui-primitives'
 import { CENTER_MIN, clampWidth, computeColumns, RIGHTBAR_DEFAULT_RATIO, RIGHTBAR_MAX_RATIO, RIGHTBAR_MIN, SIDEBAR_AUTO_COLLAPSE, SIDEBAR_COLLAPSED, SIDEBAR_DEFAULT } from './columns.ts'
 import { DocumentTitle } from './DocumentTitle.tsx'
 import type { createLayoutStore } from './stores.ts'
@@ -27,13 +28,14 @@ import css from './AppFrame.module.css'
 /** Full composed props: runtime share + child-slot render share + store share. */
 export type AppFrameProps =
   & PropsRuntime<'root'>
-  & PropsRenderSlots<'sidebar' | 'main' | 'rightbar' | 'shell.bottom' | 'shell.overlay' | 'shell.leading'>
+  & PropsRenderSlots<'sidebar' | 'main' | 'rightbar' | 'shell.bottom' | 'shell.overlay' | 'shell.leading' | 'shell.sessionRail'>
   & PropsStore<ReturnType<typeof createLayoutStore>>
+  & InjectFace<{ externalChrome: boolean; embeddedSessionRail: boolean }>
   & PropsLocale<'common'>
 
 /** Center column grid item (session-body building block). */
-function CenterColumn(props: { children?: ReactNode }) {
-  return <div className={css.centerCol}>{props.children}</div>
+function CenterColumn(props: { children?: ReactNode; column: number }) {
+  return <div className={css.centerCol} style={{ gridColumn: props.column }}>{props.children}</div>
 }
 
 /** Subscribe to the main key without subscribing the column frame to each panel id. */
@@ -47,8 +49,8 @@ function MainPanel({ usePanelInfo, renderSlot }: Pick<PropsRuntime<'root'>, 'use
  * occupant's panel is positioned against the column's right edge, which never
  * moves, so it can hang over the centre when there is no track.
  */
-function RightbarColumn(props: { children?: ReactNode }) {
-  return <div className={css.rightbarCol} data-rightbar-col>{props.children}</div>
+function RightbarColumn(props: { children?: ReactNode; column: number }) {
+  return <div className={css.rightbarCol} style={{ gridColumn: props.column }} data-rightbar-col>{props.children}</div>
 }
 
 /**
@@ -124,6 +126,8 @@ export function AppFrame({
   usePanelInfo,
   actions,
   renderSlot,
+  externalChrome: configuredExternalChrome,
+  embeddedSessionRail,
   t,
 }: AppFrameProps) {
   const layoutInfo = useStore(state => state.layoutInfo)
@@ -159,20 +163,37 @@ export function AppFrame({
 
   const narrow = viewport < SIDEBAR_AUTO_COLLAPSE
   const externalSidebar = layoutInfo.externalSidebar
-  const sidebarCollapsed = externalSidebar || (narrow ? !layoutInfo.narrowExpanded : layoutInfo.sidebar === 0)
-  const sidebarPreference = externalSidebar ? 0 : sidebarCollapsed
+  const pathname = typeof window === 'undefined' ? '' : window.location.pathname
+  const embeddedRoute = pathname === '/hivemind/app/overview' || pathname.startsWith('/hivemind/app/overview/')
+  const legacyOverviewRoute = pathname === '/hivemind/app/v1/overview'
+  const dreamingRoom = pathname === '/hivemind/app/overview/dreaming'
+    || new URLSearchParams(typeof window === 'undefined' ? '' : window.location.search).has('dreamingParent')
+  const employeeRoom = pathname === '/hivemind/app/employee/harness'
+    || pathname.startsWith('/hivemind/app/employee/harness/')
+  const embeddedChrome = configuredExternalChrome && (embeddedRoute || legacyOverviewRoute || employeeRoom)
+  const hostOwnsChrome = externalSidebar || embeddedChrome
+  const showSessionRail = embeddedSessionRail && (embeddedRoute || legacyOverviewRoute) && !dreamingRoom && !employeeRoom
+  const sidebarCollapsed = hostOwnsChrome || (narrow ? !layoutInfo.narrowExpanded : layoutInfo.sidebar === 0)
+  const sidebarPreference = hostOwnsChrome ? 0 : sidebarCollapsed
     ? 0
     : layoutInfo.sidebar === 0 ? SIDEBAR_DEFAULT : layoutInfo.sidebar
-  const rightbarPreference = layoutInfo.rightbar ?? viewport * RIGHTBAR_DEFAULT_RATIO
+  const screenWidth = embeddedChrome && typeof window !== 'undefined' ? window.innerWidth : viewport
+  const previewMax = screenWidth * 0.5
+  const rightbarPreference = embeddedChrome
+    ? Math.min(layoutInfo.rightbar ?? viewport * RIGHTBAR_DEFAULT_RATIO, previewMax)
+    : layoutInfo.rightbar ?? viewport * RIGHTBAR_DEFAULT_RATIO
   // Desktop reopen controls occupy the frame's shell.leading seat (macOS) or
   // the Windows caption row; neither platform keeps an icon rail.
   const darwin = document.documentElement.dataset.platform === 'darwin'
-  const collapsedWidth = externalSidebar || darwin
+  const collapsedWidth = hostOwnsChrome || darwin
     || document.documentElement.hasAttribute('data-windows-titlebar') ? 0 : SIDEBAR_COLLAPSED
   // Opening on a narrow frame collapses the left sidebar. Eligibility must
   // include that space before the occupant's first shown report arrives.
-  const normal = computeColumns(viewport, !layoutInfo.rightbarShown && narrow ? 0 : sidebarPreference, rightbarPreference, collapsedWidth)
-  const cols = computeColumns(viewport, sidebarPreference, layoutInfo.rightbarTrack ? rightbarPreference : 0, collapsedWidth)
+  const normalSolved = computeColumns(viewport,
+    !layoutInfo.rightbarShown && narrow ? 0 : sidebarPreference, rightbarPreference, collapsedWidth)
+  const colsSolved = computeColumns(viewport, sidebarPreference, layoutInfo.rightbarTrack ? rightbarPreference : 0, collapsedWidth)
+  const normal = hostOwnsChrome ? { ...normalSolved, sidebar: 0 } : normalSolved
+  const cols = hostOwnsChrome ? { ...colsSolved, sidebar: 0 } : colsSolved
   const colsRef = useRef(cols)
   colsRef.current = cols
   const rightbarWidth = useRef(normal.rightbar)
@@ -229,8 +250,9 @@ export function AppFrame({
   }, [actions])
   const onRightbarStart = useCallback(() => { rightbarBase.current = rightbarWidth.current; setDragging(true) }, [])
   const onRightbarDrag = useCallback((dx: number) => {
-    actions.setRightbar(rightbarBase.current - dx)
-  }, [actions])
+    actions.setRightbar(Math.min(rightbarBase.current - dx,
+      embeddedChrome ? previewMax : viewport * RIGHTBAR_MAX_RATIO))
+  }, [actions, embeddedChrome, previewMax, viewport])
   const productTitle = process.env.DSH_CLIENT_TITLE ?? t('brand.localBuild')
   // The rendered template lets the grid solve the squeeze natively: the centre
   // declares its protected minimum and the right column bids up to the clamped
@@ -239,22 +261,30 @@ export function AppFrame({
   // it priced the squeeze itself, the centre column absorbed each width change
   // whole and was corrected two frames later — visible jitter. cols keeps only
   // the discrete decisions (track present, collapse state) and the drag base.
-  const rightbarMax = cols.rightbar === 0 ? 0 : clampWidth(rightbarPreference, RIGHTBAR_MIN, viewport * RIGHTBAR_MAX_RATIO)
-  const sidebar = useMemo(() => externalSidebar ? null : renderSlot('sidebar', {
+  const rightbarMax = cols.rightbar === 0 ? 0 : clampWidth(rightbarPreference, RIGHTBAR_MIN,
+    Math.min(viewport * RIGHTBAR_MAX_RATIO, embeddedChrome ? previewMax : Number.POSITIVE_INFINITY))
+  const sidebar = useMemo(() => hostOwnsChrome ? null : renderSlot('sidebar', {
     collapsed: sidebarCollapsed,
     width: cols.sidebar,
-  }), [externalSidebar, renderSlot, sidebarCollapsed, cols.sidebar])
+  }), [hostOwnsChrome, renderSlot, sidebarCollapsed, cols.sidebar])
   const main = useMemo(() => (
     <MainPanel usePanelInfo={usePanelInfo} renderSlot={renderSlot} />
   ), [usePanelInfo, renderSlot])
   const overlays = useMemo(() => renderSlot('shell.overlay', {}), [renderSlot])
+  const [mobileHistoryOpen, setMobileHistoryOpen] = useState(false)
+  useEffect(() => {
+    if (!showSessionRail) return
+    const open = () => { setMobileHistoryOpen(true) }
+    window.addEventListener('hivemind:mobile-history', open)
+    return () => window.removeEventListener('hivemind:mobile-history', open)
+  }, [showSessionRail])
   // Window-chrome seat over the main panels' top-left corner: only a fully
   // hidden sidebar column on macOS desktop leaves window chrome without a
   // home — the Windows zero-width collapse keeps its controls in the caption
   // row (ui-sidebar). AppFrame.module.css publishes the matching
   // --dsh-frame-leading-clearance under the same collapsed condition.
   const leading = useMemo(() => renderSlot('shell.leading', {}), [renderSlot])
-  const leadingMounted = !externalSidebar && darwin && sidebarCollapsed
+  const leadingMounted = !hostOwnsChrome && darwin && sidebarCollapsed
 
   return (
     <div
@@ -263,11 +293,13 @@ export function AppFrame({
       style={{
         ...(document.documentElement.hasAttribute('data-windows-titlebar')
           ? { '--dsh-windows-sidebar-width': `${cols.sidebar}px` } : {}),
-        gridTemplateColumns:
-          `${cols.sidebar}px minmax(${cols.rightbar === 0 ? 0 : CENTER_MIN}px, 1fr) minmax(0px, ${rightbarMax}px)`,
+        gridTemplateColumns: hostOwnsChrome
+          ? `minmax(0, 1fr) minmax(0, ${rightbarMax}px)`
+          : `${cols.sidebar}px minmax(${cols.rightbar === 0 ? 0 : CENTER_MIN}px, 1fr) minmax(0px, ${rightbarMax}px)`,
       }}
       data-sidebar-collapsed={sidebarCollapsed || undefined}
       data-external-sidebar={externalSidebar || undefined}
+      data-external-chrome={embeddedChrome || undefined}
       data-rightbar-collapsed={cols.rightbar === 0 || undefined}
       data-rightbar-fullscreen={layoutInfo.rightbarFullscreen || undefined}
       data-rightbar-instant={layoutInfo.rightbarInstant || undefined}
@@ -279,12 +311,16 @@ export function AppFrame({
         useSessions={useSessions}
         usePanelInfo={usePanelInfo}
       />
-      <div className={css.sidebarCol}>
-        {sidebar}
-      </div>
+      {!hostOwnsChrome && <div className={css.sidebarCol}>{sidebar}</div>}
+      <Modal open={mobileHistoryOpen} onClose={() => { setMobileHistoryOpen(false) }} title="Recents" closeLabel="Close history" className={css.mobileHistory ?? ''}>
+        {mobileHistoryOpen && renderSlot('shell.sessionRail', {})}
+      </Modal>
+      {showSessionRail && <aside className={css.sessionRailCol} aria-label="HIVE chat sessions">
+        {renderSlot('shell.sessionRail', {})}
+      </aside>}
       <>
-        <CenterColumn>{main}</CenterColumn>
-        <RightbarColumn>
+        <CenterColumn column={hostOwnsChrome ? 1 : 2}>{main}</CenterColumn>
+        <RightbarColumn column={hostOwnsChrome ? 2 : 3}>
           {renderSlot('rightbar', { width: normal.rightbar, viewportWidth: viewport, canShow: normal.rightbar > 0 })}
         </RightbarColumn>
       </>
@@ -300,7 +336,7 @@ export function AppFrame({
         </div>
       )}
       {/* The collapsed rail is fixed-width: no resize handle while closed. */}
-      {!sidebarCollapsed && <DragHandle side="sidebar" left={cols.sidebar} onStart={onSidebarStart} onDrag={onSidebarDrag} onEnd={onDragEnd} />}
+      {!hostOwnsChrome && !sidebarCollapsed && <DragHandle side="sidebar" left={cols.sidebar} onStart={onSidebarStart} onDrag={onSidebarDrag} onEnd={onDragEnd} />}
       {layoutInfo.rightbarShown && !layoutInfo.rightbarFullscreen && normal.rightbar > 0 && (
         <DragHandle side="rightbar" left={viewport - normal.rightbar} onStart={onRightbarStart} onDrag={onRightbarDrag} onEnd={onDragEnd} />
       )}

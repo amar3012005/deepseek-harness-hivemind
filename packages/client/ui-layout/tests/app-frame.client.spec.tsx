@@ -60,7 +60,7 @@ function resize(width: number): void {
   })
 }
 
-function mountFrame(windowWidth = frameWidth) {
+function mountFrame(windowWidth = frameWidth, options: { externalChrome?: boolean; embeddedSessionRail?: boolean } = {}) {
   vi.stubGlobal('innerWidth', windowWidth)
   const instance = createLayoutStore().create()
   const slotCalls: { key: string; props: object; options: RenderOpts | undefined }[] = []
@@ -99,6 +99,8 @@ function mountFrame(windowWidth = frameWidth) {
       useSessionRetainInfo={() => undefined}
       useResource={useResource}
       useWorkspaces={sel => sel(workspaceState)}
+      externalChrome={options.externalChrome ?? false}
+      embeddedSessionRail={options.embeddedSessionRail ?? false}
       t={key => key === 'brand.localBuild' ? 'DSH Local Build' : key}
     />
   )
@@ -116,6 +118,8 @@ function mountFrame(windowWidth = frameWidth) {
    specs read the specified tracks): [sidebar px, rightbar growth limit].
    The centre's protected minimum must accompany an open right track. */
 function tracks(frame: HTMLElement): number[] {
+  const embedded = /^minmax\(0, 1fr\) minmax\(0, ([\d.]+)px\)$/.exec(frame.style.gridTemplateColumns)
+  if (embedded !== null) return [0, Number(embedded[1])]
   const match = /^([\d.]+)px minmax\((0|400)px, 1fr\) minmax\(0px, ([\d.]+)px\)$/.exec(frame.style.gridTemplateColumns)
   if (match === null) throw new Error(`unexpected template: ${frame.style.gridTemplateColumns}`)
   const rightbar = Number(match[3])
@@ -141,6 +145,7 @@ function drag(handle: Element, fromX: number, toX: number): void {
 }
 
 beforeEach(() => {
+  window.history.replaceState({}, '', '/')
   originalTitle = document.title
   frameWidth = 1920
   selectedSession = 's-test' as SessionId
@@ -176,6 +181,7 @@ afterEach(() => {
     delete document.documentElement.dataset.platform
     for (const restore of restoreProperties.splice(0).reverse()) restore()
     document.title = originalTitle
+    window.history.replaceState({}, '', '/')
     vi.restoreAllMocks()
     vi.unstubAllGlobals()
     vi.unstubAllEnvs()
@@ -183,6 +189,26 @@ afterEach(() => {
 })
 
 describe('AppFrame', () => {
+  it('uses the embedded HIVE geometry on overview routes and caps Preview at half the screen', () => {
+    window.history.replaceState({}, '', '/hivemind/app/overview')
+    const { frame, queryByTestId, instance } = mountFrame(1200, { externalChrome: true, embeddedSessionRail: true })
+    act(() => { instance.actions.openRightbar(true, false) })
+    expect(frame.dataset.externalChrome).toBe('true')
+    expect(frame.style.gridTemplateColumns).toContain('minmax(0, 1fr) minmax(0, 600px)')
+    expect(queryByTestId('sidebar-content')).toBeNull()
+    expect(queryByTestId('shell.sessionRail-content')).not.toBeNull()
+  })
+
+  it('keeps Recents out of employee and Dreaming routes while embedding their host chrome', () => {
+    for (const path of ['/hivemind/app/employee/harness', '/hivemind/app/overview/dreaming']) {
+      cleanup()
+      window.history.replaceState({}, '', path)
+      const { frame, queryByTestId } = mountFrame(1200, { externalChrome: true, embeddedSessionRail: true })
+      expect(frame.dataset.externalChrome).toBe('true')
+      expect(queryByTestId('shell.sessionRail-content')).toBeNull()
+    }
+  })
+
   it('localizes the product title without a configured build title', () => {
     mountFrame()
     expect(document.title).toBe('DSH Local Build')

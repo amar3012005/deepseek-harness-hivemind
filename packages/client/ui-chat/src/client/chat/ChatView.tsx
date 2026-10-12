@@ -12,10 +12,13 @@ import {
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ChatFlowHookContext, ChatViewSlotProps, OpenFileOptions } from '../contract/slots.ts'
 import type { ChatSnapshot } from '../contract/snapshot.ts'
+import type { ChatNode } from '../contract/chat-nodes.ts'
 import { TurnNavigator } from './TurnNavigator.tsx'
 import { mergeTurnRailItems } from './turn-rail-items.ts'
 import { useChatScroll } from './use-chat-scroll.ts'
 import { fileMediaUrl, resolveWorkspacePath } from '@deepseek-ai/dsh-util-workspace-path'
+import { pendingRuntimeSignals, runtimeSignal } from './runtime-signal.ts'
+import { RuntimeSignalRow } from './RuntimeSignalRow.tsx'
 import css from './ChatView.module.css'
 
 /** Host/OS refusal text for the file-open dialog; empty throws keep a locale fallback. */
@@ -81,6 +84,16 @@ export function ChatView({
     [turnNavigationItems, turnOutline],
   )
   const inbox = useProjection('inbox') as InboxState | undefined
+  const runtimeSignals = useMemo(() => {
+    const consumed = new Set<string>()
+    for (const key of order) {
+      const node = nodeStore.get(key)
+      if (node?.kind !== 'context') continue
+      const signal = runtimeSignal((node as ChatNode<'context'>).data.source)
+      if (signal !== null) consumed.add(signal.eventId)
+    }
+    return pendingRuntimeSignals(inbox?.['next-turn'] ?? [], consumed)
+  }, [inbox, nodeStore, order])
   // Workspace root off the session list row: path summaries display relative to it.
   const cwd = useSessions(s => s.byId[sessionId]?.cwd)
   const fileImages = useMemo(() => ({
@@ -229,6 +242,7 @@ export function ChatView({
                 cwd, openFile: requestOpenFile, openSkill, inspectCall, forkAt, loadImage, fileMentions,
               }, { hookContext: flowContext })}
             </MarkdownDelegateProvider>
+            {runtimeSignals.map(signal => <RuntimeSignalRow key={signal.eventId} signal={signal} pending />)}
             {/* No pending placeholders: questions (ui-user-questions) and approvals
                 (ApprovalPanel) both take over the composer, so a flow card would
                 double-render the same wait. */}

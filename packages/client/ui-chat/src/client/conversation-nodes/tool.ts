@@ -5,6 +5,8 @@ import type {
 } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { isAppendSurfaceEvent } from '@deepseek-ai/dsh-session/surface'
 import type {} from '@deepseek-ai/dsh-tools/types'
+import { readDreamSynthesis, type DreamSynthesis } from '../dream-synthesis.ts'
+import { hasAssistantReplyContent } from '../contract/assistant-content.ts'
 import { PartialArguments } from '@deepseek-ai/dsh-util-values'
 import type { ChatNode, ToolChatData } from '../contract/chat-nodes.ts'
 import { CHAT_SYNTHETIC_SEQ_OFFSETS, chatNode, contextLocation } from './common.ts'
@@ -13,6 +15,7 @@ declare module '../contract/chat-nodes.ts' {
   interface ChatNodeDataMap {
     /** Root Tool lifecycle with recursively nested subcalls. */
     'tool-call': ToolChatData
+    'dream-synthesis': DreamSynthesis
   }
 }
 
@@ -345,6 +348,18 @@ export const toolDefinition: ConversationNodeDefinition<ToolState> = {
     const preparing = !('kind' in projected) && projected.phase === 'preparing'
     const visibility = preparing && interruptedAt !== undefined ? 'hidden' : 'visible'
     const location = contextLocation(context)
+    if ('kind' in projected && projected.kind === 'tool-result' && !projected.isError
+      && projected.call?.name === 'dream_finish') {
+      const synthesis = readDreamSynthesis(projected.content)
+      if (synthesis !== undefined) {
+        const turn = location.kind === 'step' || location.kind === 'turn' ? location.turn : undefined
+        if (synthesis.kind === 'welcome' && turn?.steps.some((step) => {
+          const reply = step.data.get('assistant-step')
+          return reply !== undefined && hasAssistantReplyContent(reply.blocks)
+        })) return null
+        return chatNode(context, 'dream-synthesis', anchor, synthesis, { location })
+      }
+    }
     const data = current?.data.root === projected ? current.data : { root: projected } satisfies ToolChatData
     if (current?.data === data && current.anchorSeq === anchor
       && current.visibility === visibility && current.location === location) return current

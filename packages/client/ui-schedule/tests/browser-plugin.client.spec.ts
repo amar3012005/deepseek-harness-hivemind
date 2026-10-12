@@ -157,7 +157,7 @@ describe('ui-schedule browser half', () => {
     ctx.slots.register({
       name: 'conversation.session.header.utilities', id: 'job-list', order: 20,
     }, Empty)
-    expect(headerEntryIds(ctx)).toEqual(['agent-preset', 'schedule-catalog', 'job-list'])
+    expect(headerEntryIds(ctx)).toEqual(['agent-preset', 'schedule-catalog', 'schedule-manager', 'job-list'])
 
     await fiber.dispose()
     expect(headerEntryIds(ctx)).toEqual(['agent-preset', 'job-list'])

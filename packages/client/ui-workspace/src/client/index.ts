@@ -52,6 +52,7 @@ import { PinSessionMenuItem, PinSessionRowButton } from './session-actions/PinSe
 import { RenameSessionMenuItem, SessionRenameDialog } from './session-actions/RenameSession.tsx'
 import { RowActionToast } from './session-actions/RowActionToast.tsx'
 import { WorkspacePicker } from './WorkspacePicker.tsx'
+import { HiveSessionProjection } from './HiveSessionProjection.tsx'
 import { en, zh, type WorkspaceKey } from './locales.ts'
 
 export type { StartSessionOptions, UiWorkspace } from './navigation.ts'
@@ -326,6 +327,20 @@ export function apply(ctx: Context): void {
     },
     WorkspacePicker,
   ))
+  ctx.slots.inject('shell.sessionRail', () => ctx.slots.register({
+    name: 'shell.sessionRail',
+    locale: NS,
+    inject: () => ({
+      createSession: () => {
+        window.history.pushState(window.history.state, '', '/hivemind/app/overview/new')
+        window.dispatchEvent(new PopStateEvent('popstate'))
+      },
+      openSession,
+      renameSession,
+      forkSession: sessionId => uiWorkspace.forkSession(sessionId, undefined, { allowMigration: false }),
+      archiveSession: sessionId => uiWorkspace.archiveSession(sessionId),
+    }),
+  }, HiveSessionProjection))
 }
 
 /**

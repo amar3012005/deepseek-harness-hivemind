@@ -614,6 +614,20 @@ it('updates original Session navigation as metadata arrives and archive state ch
 })
 
 describe('Task manager catalog', () => {
+  it('switches to the native week projection and opens the selected catalog task', () => {
+    const thisWeek: ScheduleCatalogEntry = {
+      ...at, id: 'task-this-week' as ScheduleId, title: 'This week review',
+      scheduledAt: '2026-09-18T09:00:00.000Z',
+    }
+    mount({ records: [thisWeek] })
+    fireEvent.click(screen.getByRole('button', { name: en['view.calendar'] }))
+    const calendar = screen.getByRole('region', { name: en['calendar.label'] })
+    expect(within(calendar).getAllByRole('region')).toHaveLength(7)
+    fireEvent.click(within(calendar).getByRole('button', { name: 'This week review' }))
+    expect(screen.getByRole('complementary', { name: en['detail.label'] })).toBeTruthy()
+    expect(within(calendar).getByRole('button', { name: 'This week review' }).getAttribute('aria-expanded')).toBe('true')
+  })
+
   it('renders independently contributed external automation cards after the native heading', () => {
     const renderExternal = vi.fn<TaskManagerPageProps['renderSlot']>((_key, _owner) => (
       <aside data-testid="external-automation">Nightly Dreaming</aside>
@@ -648,9 +662,10 @@ describe('Task manager catalog', () => {
     expect(heading.querySelector('h1')?.textContent).toBe(en['title'])
     expect(heading.querySelector('p')).toBeNull()
     expect(heading.querySelector(`.${css.creationActions!}`)?.textContent).toBe(en['new.action'])
-    // The filter row carries the status group alone: the type chips are gone.
+    // The two view and status groups remain separate from the search field.
     const filters = page.querySelector<HTMLElement>(`.${css.filters!}`)!
-    expect(within(filters).getAllByRole('group')).toHaveLength(1)
+    expect(within(filters).getAllByRole('group')).toHaveLength(2)
+    expect(within(filters).getByRole('group', { name: en['view.label'] })).toBeTruthy()
     const statuses = within(filters).getByRole('group', { name: en['statusFilter.label'] })
     expect(statuses.parentElement).toBe(filters)
     expect(within(statuses).getAllByRole('button')[0]?.textContent).toBe(en['statusFilter.all'])

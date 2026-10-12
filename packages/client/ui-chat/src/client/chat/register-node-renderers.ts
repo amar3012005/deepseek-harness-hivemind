@@ -14,6 +14,7 @@ import { SystemPromptNodeView } from './SystemPromptRow.tsx'
 import { TurnProcessNodeView } from './TurnProcessNodeView.tsx'
 import { TurnTailNodeView } from './TurnTailNodeView.tsx'
 import { TurnTriggerNodeView } from './TurnTriggerNodeView.tsx'
+import { DreamFlashbackPreview, DreamSynthesisView } from './DreamSynthesisView.tsx'
 
 /**
  * Register this package's business renderers behind the keyed Chat Node seat.
@@ -28,6 +29,19 @@ export function registerChatNodeRenderers(
   performanceUsage: ObservableSnapshot<PerformanceUsageMode>,
   presentation: ObservableSnapshot<ChatPresentationPolicy>,
 ): void {
+  ctx.inject(['sidebarRightTabs'], (scoped) => {
+    scoped.sidebarRightTabs.register({
+      id: 'hivemind-dream-flashback', kind: 'dream-flashback', priority: 'builtin', title: () => 'Flashback',
+    })
+  })
+  ctx.slots.inject('sidebar.right.pane.tab', () => ctx.slots.register({
+    name: 'sidebar.right.pane.tab', key: 'hivemind-dream-flashback',
+  }, DreamFlashbackPreview))
+  ctx.slots.inject('conversation.chat.node', () => ctx.slots.register({
+    name: 'conversation.chat.node', key: 'dream-synthesis', locale: NS,
+    inject: () => ({ openPreview: (discovery: import('../dream-synthesis.ts').DreamDiscovery) =>
+      ctx.sidebarRight.openTab('dream-flashback', { params: discovery }) }),
+  }, DreamSynthesisView))
   ctx.effect(() => ctx.slots.registerFactory({
     name: 'conversation.chat.reasoning.content',
     scope: 'root',

@@ -58,6 +58,7 @@ import { TaskTabBindings } from './task-tab-bindings.ts'
 import { TaskManagerPage, type TaskManagerInjected } from './TaskManagerPage.tsx'
 import type { TaskDetailInjected } from './TaskDetail.tsx'
 import { TaskManagerIcon } from './TaskManagerIcon.tsx'
+import { ScheduleManagerAction } from './ScheduleManagerAction.tsx'
 import { sessionLinkState } from './session-link.ts'
 import { en, NS, zh, type ScheduleCatalogKey } from './locales.ts'
 import { en as managerEn, zh as managerZh, type TaskManagerKey } from './task-manager-locales.ts'
@@ -253,6 +254,13 @@ export function apply(ctx: ClientContext): void {
       },
     }, ScheduleCatalogAction),
   )
+  ctx.slots.inject('conversation.session.header.utilities', () => ctx.slots.register({
+    name: 'conversation.session.header.utilities',
+    id: 'schedule-manager',
+    order: -4,
+    locale: MANAGER_NS,
+    inject: () => ({ title: t('panel'), onOpen: () => { ctx.layout.selectPanel(PANEL_ID) } }),
+  }, ScheduleManagerAction))
   ctx.slots.inject('sidebar.session.row.leading', () => ctx.slots.register({
     name: 'sidebar.session.row.leading',
     id: 'schedule-mark',

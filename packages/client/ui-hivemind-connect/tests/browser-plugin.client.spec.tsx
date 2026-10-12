@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { Context } from '@deepseek-ai/cordis'
+import { Context, Service } from '@deepseek-ai/cordis'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
@@ -10,6 +10,12 @@ import { PendingConnectionAuthorization } from '../src/client/connection-questio
 import { ConnectionAuthorizationPanel } from '../src/client/ConnectionAuthorizationPanel.tsx'
 import { HivemindConnect } from '../src/client/HivemindConnect.tsx'
 import { setupEmbedMessaging } from '../src/client/embed.ts'
+
+declare global {
+  interface Window {
+    __HIVEMIND_START_AGENT__?: (id: string) => Promise<boolean>
+  }
+}
 
 const nativeParent = window.parent
 
@@ -273,6 +279,62 @@ describe('HIVE-MIND connection UI', () => {
     await waitFor(() => expect(registerTab).toHaveBeenCalledWith(expect.objectContaining({ kind: 'hivemind-employee' })))
     await sidebar.dispose()
     await fiber.dispose()
+  })
+
+  it('declares the Session Remote in the strict native Cordis callback scope', async () => {
+    const ctx = new Context()
+    class RemoteSurface extends Service {
+      constructor(scope: Context) { super(scope, 'remote') }
+      $mount() { return () => {} }
+      $on() { return () => {} }
+    }
+    ctx.provide('uiWorkspace', { configureDefaultWorkspaceInitialization: () => () => {}, openSession: vi.fn() } as never)
+    ctx.provide('layout', { setExternalSidebar: vi.fn(), selectPanel: vi.fn() } as never)
+    await ctx.plugin(SlotRegistry).await()
+    ctx.provide('locale', { register: () => () => {}, bind: () => () => '' } as never)
+    ctx.provide('sessions', {
+      list: {
+        getSnapshot: () => ({ current: undefined, ids: [], byId: {}, phase: 'ready' }),
+        subscribe: () => () => {},
+      },
+      binding: () => undefined,
+    } as never)
+    ctx.provide('uiSession', {
+      registerPendingInteraction: () => () => () => {},
+      sessionStatus: { getSnapshot: () => new Map(), subscribe: () => () => {} },
+    } as never)
+    const remoteFiber = ctx.plugin({ apply: (scope) => { new RemoteSurface(scope) } })
+    await remoteFiber.await()
+    const employeeRoom = vi.fn(async () => ({ ok: true as const, value: { sessionId: 'room-1' as SessionId } }))
+    const scheduleCatalog = vi.fn(async () => ({ ok: true as const, value: [] }))
+    const namespaceFiber = ctx.plugin({ apply: (scope) => {
+      scope.provide('remote.session', { employeeRoom })
+      scope.provide('remote.schedule', { catalog: scheduleCatalog })
+      scope.provide('remote.commands', { list: vi.fn(async () => ({ ok: true as const, value: [] })) })
+      scope.provide('remote.agentPresets', { select: vi.fn(async () => ({ ok: true as const, value: undefined })) })
+      scope.provide('connection', {
+        state: { getSnapshot: () => 'connected', subscribe: () => () => {} },
+      } as never)
+    } })
+    await namespaceFiber.await()
+
+    const missingSessionInjection = ctx.plugin({
+      inject: ['remote'],
+      apply: (scope) => { scope.remote.session.employeeRoom({ employeeId: 'runtime' }) },
+    })
+    await expect(missingSessionInjection).rejects.toThrow('cannot get property "remote.session" without inject')
+    await missingSessionInjection.dispose()
+
+    const app = ctx.plugin({ inject: [...inject], apply })
+    await app.await()
+    const start = window.__HIVEMIND_START_AGENT__
+    expect(start).toBeTypeOf('function')
+    await expect(start!('runtime')).resolves.toBe(false)
+    expect(employeeRoom).toHaveBeenCalledExactlyOnceWith({ employeeId: 'runtime' })
+    expect(scheduleCatalog).toHaveBeenCalled()
+    await app.dispose()
+    await namespaceFiber.dispose()
+    await remoteFiber.dispose()
   })
 
   it('shows the authenticated email after live status verification', async () => {

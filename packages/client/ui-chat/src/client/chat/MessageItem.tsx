@@ -9,7 +9,10 @@ import type { ModelRetryNode, TurnErrorNode, UserMessageNode } from '../contract
 import { CompactionItem } from './CompactionItem.tsx'
 import { ContextInjectionRow } from './ContextInjectionRow.tsx'
 import { MessageIconActions } from './MessageIconActions.tsx'
+import { RuntimeSignalDetails, RuntimeSignalRow } from './RuntimeSignalRow.tsx'
+import { runtimeSignal } from './runtime-signal.ts'
 import css from './MessageItem.module.css'
+import { hivemindFailureText, isHivemindChat, isQuestionAnswerSubmission } from './hivemind-presentation.ts'
 
 type UserImage = Extract<UserMessageNode['content'][number], { type: 'image' }>
 type UserFile = Extract<UserMessageNode['content'][number], { type: 'file' }>
@@ -53,6 +56,7 @@ function failureMessage(
   code: unknown,
   t: ChatViewSlotProps['t'],
 ): string {
+  if (isHivemindChat()) return hivemindFailureText(code)
   if (code === 'ACCOUNT_SIGNED_OUT') return t('message.failure.accountSignedOut')
   if (code === 'ACCOUNT_SIGN_IN_REQUIRED') return t('message.failure.accountSignInRequired')
   if (code === 'QUOTA' || code === 'ACCOUNT_QUOTA') return t('message.failure.quota')
@@ -139,7 +143,7 @@ function TurnErrorItem({ node, t }: {
         <span className={css.turnErrorTitle}>{node.code === 'ACCOUNT_SIGNED_OUT' ? t('message.accountStopped') : t('message.turnError')}</span>
         <span className={css.turnErrorMessage}>{failureMessage(node.message, node.code, t)}</span>
       </div>
-      {node.code !== undefined && <code className={css.turnErrorCode}>{node.code}</code>}
+      {!isHivemindChat() && node.code !== undefined && <code className={css.turnErrorCode}>{node.code}</code>}
     </div>
   )
 }
@@ -322,6 +326,7 @@ export const UserMessageNodeView = memo(function UserMessageNodeView({
   node, renderMessageImages, openFile, openSkill, t,
 }: ChatNodeViewProps<'user' | 'steering'>) {
   const data = node.data
+  if (isQuestionAnswerSubmission(data.source)) return null
   return (
     <UserStyleBubble
       content={data.content}
@@ -346,6 +351,8 @@ export const UserMessageNodeView = memo(function UserMessageNodeView({
 /** Injected-context keyed Chat renderer. */
 export const ContextMessageNodeView = memo(function ContextMessageNodeView({ node, t, renderSlot }: ChatNodeViewProps<'context'> & PropsRenderSlots<'conversation.chat.contextAvatar'>) {
   const data = node.data
+  const signal = isHivemindChat() ? runtimeSignal(data.source, data.content) : null
+  if (signal !== null) return <div><RuntimeSignalRow signal={signal} pending={false} /><RuntimeSignalDetails content={data.content} /></div>
   const message = (
     <ContextInjectionRow
       content={data.content}

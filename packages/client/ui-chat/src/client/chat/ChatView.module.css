@@ -89,6 +89,9 @@
   min-width: 0;
 }
 
+/* In employee rooms, keep each sender's avatar only on the final consecutive reply. */
+.flowItem[data-avatar-group-end='false'] :global([data-chat-agent-avatar]) { visibility: hidden; }
+
 /* Bottom room: sized by the viewport owner while rows above the reader close,
    given back only as later content grows into it. */
 .turnSpacer {

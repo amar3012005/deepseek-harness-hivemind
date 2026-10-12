@@ -62,6 +62,62 @@
   border-right: 0.5px solid var(--dsw-alias-border-l3);
 }
 
+/* In HIVE's embedded profile the outer product owns navigation. The native
+   frame therefore has only the conversation and optional Preview tracks. */
+.frame[data-external-chrome] .sidebarCol {
+  display: none;
+}
+
+.sessionRailCol {
+  position: absolute;
+  top: 18px;
+  bottom: 18px;
+  left: 18px;
+  z-index: 6;
+  width: 196px;
+  min-width: 0;
+  overflow: visible;
+  background: transparent;
+}
+
+.sessionRailCol > * {
+  height: 100%;
+}
+
+/* The rail floats beside the native centered transcript, leaving the main
+   column geometry stable when it hides for HIVE's alternate canvases. */
+@media (min-width: 1101px) {
+  .frame[data-external-chrome]:has(.sessionRailCol nav):has([data-sidebar-right-open]) .centerCol {
+    padding-left: 232px;
+    box-sizing: border-box;
+  }
+}
+
+.frame[data-external-chrome]:has([data-automation-tasks], [data-automation-task-detail], [data-company-calendar]) .sessionRailCol {
+  display: none;
+}
+
+.frame[data-external-chrome]:has([data-automation-tasks], [data-automation-task-detail], [data-company-calendar]) .centerCol {
+  padding-left: 0 !important;
+}
+
+@media (max-width: 1100px) {
+  .sessionRailCol {
+    display: none;
+  }
+}
+
+.mobileHistory {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  width: 100%;
+  max-width: none;
+  border-radius: 24px 24px 0 0;
+  max-height: calc(100dvh - 64px);
+}
+
 .centerCol {
   min-width: 0;
   display: flex;

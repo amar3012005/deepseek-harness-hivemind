@@ -29,6 +29,14 @@ import { ThemePresenter } from './theme-presenter.ts'
 export { LayoutController } from './service.ts'
 export type { ILayout, MainPanelId, PanelInfo } from './service.ts'
 
+/** Product profile composition flags for the root frame. */
+export interface LayoutConfig {
+  /** The embedding HIVE shell owns navigation and the native sidebar is hidden. */
+  externalChrome?: boolean
+  /** Keep native mode-filtered Recents in the HIVE shell. */
+  embeddedSessionRail?: boolean
+}
+
 /** Selector hook over root-scoped panel selection. */
 export type UsePanelInfo = SnapshotSelectorHook<PanelInfo>
 
@@ -103,6 +111,8 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
      * `id` is added beside the shipped entries instead of replacing them.
      */
     'shell.overlay': { kind: 'list'; scope: 'root' }
+    /** HIVE's mode-filtered native Recents surface, rendered within the embedding shell. */
+    'shell.sessionRail': { kind: 'single'; scope: 'root' }
     /**
      * Window-chrome seat at the frame's top-left, over every main panel.
      * Mounted only while the sidebar column is fully hidden (macOS desktop
@@ -155,7 +165,7 @@ export const inject = ['slots', 'theme', 'locale', 'shortcuts']
  * and the shared root instance supplying commands and the panel-info source.
  * @param ctx - client root context.
  */
-export function apply(ctx: ClientContext): void {
+export function apply(ctx: ClientContext, config: LayoutConfig = {}): void {
   ctx.effect(() => ctx.locale.register('shortcuts.layout', { zh, en }), 'layout: command labels')
   const t = ctx.locale.bind('shortcuts.layout')
 
@@ -185,8 +195,13 @@ export function apply(ctx: ClientContext): void {
         'shell.bottom': { kind: 'single', scope: 'root' },
         'shell.overlay': { kind: 'list', scope: 'root' },
         'shell.leading': { kind: 'single', scope: 'root' },
+        'shell.sessionRail': { kind: 'single', scope: 'root' },
       },
       store,
+      inject: () => ({
+        externalChrome: config.externalChrome === true,
+        embeddedSessionRail: config.embeddedSessionRail === true,
+      }),
     }, AppFrame)
     const disposeShortcut = ctx.shortcuts.register({
       id: 'sidebar.left.toggle' as ShortcutCommandId, label: () => t('toggle'), aliases: ['sidebar', 'toggle left sidebar'],

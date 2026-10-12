@@ -225,6 +225,33 @@ function toolResult(callId: string, text: string, isError = false) {
 }
 
 describe('built-in conversation node Definitions', () => {
+  it('projects only a successful durable dream_finish receipt into the Flashback presentation Node', () => {
+    const receipt = {
+      status: 'ready_to_complete', presentation: 'dream-synthesis-v1',
+      runId: '11111111-1111-4111-a111-111111111111', summary: 'One connection emerged.', next: '',
+      discoveries: [{ memoryId: '22222222-2222-4222-a222-222222222222', title: 'A useful link',
+        content: 'Both plans depend on the same milestone.', sourceIds: ['33333333-3333-4333-a333-333333333333'], saved: true }],
+    }
+    const value = assembler([
+      at(1, 'turn/start', { turn: 1 }),
+      at(2, 'step/start', { turn: 1, step: 1 }),
+      at(3, 'tool/call', { turn: 1, step: 1, callId: 'finish', name: 'dream_finish', arguments: '{}' }),
+      at(4, 'tool/result', { turn: 1, step: 1, message: { ...toolResult('finish', JSON.stringify(receipt)), source: { kind: 'tool', callId: 'finish' } } }, { surfaceOp: 'append' }),
+    ])
+    const presentation = node(snapshot(value), 'dream-synthesis')
+    expect(presentation?.data).toMatchObject({ presentation: 'dream-synthesis-v1', summary: 'One connection emerged.' })
+    expect(snapshot(value).order).toContain(presentation?.key)
+    expect(node(snapshot(value), 'tool-call')).toBeUndefined()
+
+    const failed = assembler([
+      at(1, 'turn/start', { turn: 1 }),
+      at(2, 'step/start', { turn: 1, step: 1 }),
+      at(3, 'tool/call', { turn: 1, step: 1, callId: 'finish', name: 'dream_finish', arguments: '{}' }),
+      at(4, 'tool/result', { turn: 1, step: 1, message: { ...toolResult('finish', JSON.stringify(receipt), true), source: { kind: 'tool', callId: 'finish' } } }, { surfaceOp: 'append' }),
+    ])
+    expect(node(snapshot(failed), 'dream-synthesis')).toBeUndefined()
+  })
+
   it.each(['replay', 'live', 'prepend'] as const)('keeps developer tool changes visible while hiding ordinary Context (%s)', (mode) => {
     const entries = [
       at(0, 'request/header', { reason: 'initial', header: {

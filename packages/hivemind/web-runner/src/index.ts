@@ -25,6 +25,7 @@ import { nativeSessionBinding, nativePrincipalAllowed } from './native-consent.t
 import { registerMediaAuth } from './media-auth.ts'
 import { liveVoicePlugin, type LiveVoiceConfig } from './live-voice.ts'
 import { installTenantTransport } from './tenant-transport.ts'
+import { registerHivemindIndexInjections } from './index-injections.ts'
 
 export const name = 'hivemind-web-runner'
 export const inject = ['webServer', 'connection', 'sessionPersistence', 'hivemindExecutionScope', 'agents', 'typertGateway', 'agentPresets']
@@ -564,11 +565,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
   redis.on('error', (error) => { ctx.logger.warn('hivemind-web-runner: Redis error', error) })
   await redis.connect()
   ctx.effect(() => async () => { await redis.quit() }, 'hivemind-web-runner: Redis connection')
-  ctx.on('webserver/index-inject', table => table.push({
-    kind: 'global',
-    name: '__HIVEMIND_EMBED_CONFIG__',
-    value: { version: 1, parentOrigins },
-  }))
+  registerHivemindIndexInjections(ctx, parentOrigins)
   const exchange = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
     const origin = req.headers.origin
     if (req.method !== 'POST') {

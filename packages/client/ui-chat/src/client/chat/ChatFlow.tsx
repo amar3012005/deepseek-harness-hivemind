@@ -1,13 +1,16 @@
 /** Ordered Chat rows, local echoes, and running status share the flow slot's parent. */
-import { memo, useCallback } from 'react'
+import { memo, useCallback, useMemo } from 'react'
 import type { RenderMessageImages } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { assertNever } from '@deepseek-ai/dsh-util-values'
 import type { ChatFlowSlotProps } from '../contract/slots.ts'
+import type { ChatNode } from '../contract/chat-nodes.ts'
 import { ChatNodeSeat } from './ChatNodeSeat.tsx'
 import { ChatGroupSeat } from './ChatGroupSeat.tsx'
 import { PendingSteeringBubble, PendingSubmissionBubble } from './MessageItem.tsx'
 import { chatRenderKey } from './render-entry.ts'
 import { RunningStatus } from './RunningStatus.tsx'
+import { avatarGroupEnds } from './avatar-groups.ts'
+import { hasAssistantReplyContent } from '../contract/assistant-content.ts'
 
 /** Render the flow without adding a DOM parent or changing keyed row positions. */
 export const ChatFlow = memo(function ChatFlow({
@@ -17,6 +20,26 @@ export const ChatFlow = memo(function ChatFlow({
   cwd, openFile, openSkill, inspectCall, forkAt, loadImage, fileMentions,
 }: ChatFlowSlotProps) {
   const nodeStore = useChat(snapshot => snapshot.nodes)
+  const order = useChat(snapshot => snapshot.order)
+  const groupedAvatarEnds = useMemo(() => {
+    const isEmployeeRoom = typeof window !== 'undefined' && /^\/hivemind\/app\/employee\/harness(?:\/|$)/u.test(window.location.pathname)
+    if (!isEmployeeRoom) return undefined
+    return avatarGroupEnds(order.map((key) => {
+      const node = nodeStore.get(key) as ChatNode | undefined
+      if (node?.kind === 'assistant-step' && hasAssistantReplyContent(node.data.blocks)) return { key, speaker: 'runtime' }
+      if (node?.kind === 'context' && typeof node.data.source === 'object' && node.data.source !== null
+        && 'kind' in node.data.source && node.data.source.kind === 'hivemind-agent-message') {
+        try {
+          const text = node.data.content.filter(block => block.type === 'text').map(block => block.text).join('')
+          const envelope = JSON.parse(text) as { senderEmployee?: unknown; senderName?: unknown }
+          const speaker = typeof envelope.senderEmployee === 'string' ? envelope.senderEmployee
+            : typeof envelope.senderName === 'string' ? envelope.senderName : key
+          return { key, speaker }
+        } catch { return { key, boundary: true } }
+      }
+      return { key, boundary: node?.kind === 'user' || node?.kind === 'steering' }
+    }))
+  }, [nodeStore, order])
   const running = useSession(snapshot => snapshot.running)
   const latestTurnAnchor = useChat(snapshot => snapshot.navigation.items().at(-1)?.anchorKey)
   const runningStartTime = useChatNode(latestTurnAnchor ?? '', (node) => {
@@ -30,6 +53,7 @@ export const ChatFlow = memo(function ChatFlow({
     [loadImage, renderSlot],
   )
   const seatProps = {
+    ...(groupedAvatarEnds === undefined ? {} : { avatarGroupEnds: groupedAvatarEnds }),
     nodeStore, useChatNode, useChatNodeBottom, useChatNodeProcess, usePresentation,
     useStore, actions, renderSlot, t, useGroupAction, deferCollapse,
     cwd, openFile, openSkill, inspectCall, forkAt, loadImage, renderMessageImages, fileMentions,
