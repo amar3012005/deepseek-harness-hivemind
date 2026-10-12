@@ -89,6 +89,7 @@ function install(f: ReturnType<typeof fixture>): void {
   disposers.push(setupHivemindSessionRouting(
     f.sessions, f.uiWorkspace as never, f.remote as never, window,
     (error: unknown) => { f.failed(error) },
+    (error: unknown) => { f.failed(error) },
   ))
 }
 
@@ -146,6 +147,16 @@ describe('HIVE native session routes', () => {
     expect(push).not.toHaveBeenCalled()
   })
 
+  it('bootstraps Brain from an empty authenticated Session catalog without selecting a Workspace', async () => {
+    const harness = fixture({ ...state(), ids: [], byId: {} })
+    install(harness)
+
+    await vi.waitFor(() => { expect(harness.open).toHaveBeenCalledExactlyOnceWith(sid('session-created')) })
+    expect(harness.create).toHaveBeenCalledExactlyOnceWith({ agentPreset: 'hivemind-chat' })
+    expect(harness.refresh).toHaveBeenCalledOnce()
+    expect(window.location.pathname).toBe(hivemindSessionPath(sid('session-created')))
+  })
+
   it('keeps the employee Harness URL when opening a linked session and selecting another', () => {
     window.history.replaceState(null, '', `${HIVE_EMPLOYEE_HARNESS_PATH}/session/session-older`)
     const harness = fixture(hyperagentState())
@@ -189,6 +200,20 @@ describe('HIVE native session routes', () => {
     expect(harness.create).toHaveBeenCalledTimes(1)
     expect(harness.create).toHaveBeenCalledWith({ agentPreset: 'hivemind-chat' })
     expect(window.location.pathname).toBe(hivemindSessionPath(sid('session-created')))
+  })
+
+  it('reports a failed Brain bootstrap on the native empty route without creating a workspace or retrying', async () => {
+    window.history.replaceState(null, '', `${HIVE_OVERVIEW_PATH}/new`)
+    const harness = fixture({ ...state(), ids: [], byId: {} })
+    harness.create.mockResolvedValueOnce({ ok: false, error: { code: 'auth/forbidden', message: 'Session unavailable', details: {} } } as never)
+    install(harness)
+
+    await vi.waitFor(() => { expect(harness.failed).toHaveBeenCalledExactlyOnceWith(expect.any(Error)) })
+    expect(harness.create).toHaveBeenCalledExactlyOnceWith({ agentPreset: 'hivemind-chat' })
+    expect(harness.open).not.toHaveBeenCalled()
+    expect(window.location.pathname).toBe(HIVE_OVERVIEW_PATH)
+    harness.set({ ...state(), ids: [], byId: {} })
+    expect(harness.create).toHaveBeenCalledOnce()
   })
 
   it('resolves the canonical Runtime room from the employee /new route', async () => {

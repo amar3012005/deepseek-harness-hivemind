@@ -16,6 +16,7 @@ export type HivemindConnectKey =
   | 'employee.environment' | 'employee.hide' | 'employee.working' | 'employee.ready' | 'employee.panel' | 'employee.toggle'
   | 'employee.settings' | 'employee.connectApps' | 'employee.creditsUsed'
   | 'employee.roomOpenFailed'
+  | 'brain.sessionOpenFailed'
   | 'workbench.filter' | 'workbench.all' | 'workbench.grid' | 'workbench.stack' | 'workbench.lastViewed'
   | 'workbench.preview' | 'workbench.artifacts' | 'workbench.computer' | 'workbench.sources'
   | 'website.select' | 'website.open' | 'website.title' | 'website.embedding' | 'website.failed' | 'website.preview'
@@ -30,6 +31,7 @@ export const en: Record<HivemindConnectKey, string> = {
   'approval.pending': 'Waiting for your decision', 'approval.approved': 'Approved; waiting to resume', 'approval.executing': 'Resuming approved action…',
   'approval.declined': 'Declined', 'approval.completed': 'Completed', 'approval.failed': 'Could not complete', 'approval.blocked': 'Blocked', 'approval.unavailable': 'Could not load or save this decision. Please retry.',
   'employee.roomOpenFailed': 'Could not open this employee room. Your current session is unchanged.',
+  'brain.sessionOpenFailed': 'Could not start Brain. Choose New session to try again.',
   'activity.search': 'Searching public sources…', 'activity.website': 'Reading website…', 'activity.capture': 'Capturing website…', 'activity.memory': 'Working with memory…', 'activity.draft': 'Drafting an artifact…', 'activity.team': 'Coordinating with the team…',
   'workbench.filter': 'Filter', 'workbench.all': 'All files', 'workbench.grid': 'Grid view', 'workbench.stack': 'Stack view', 'workbench.lastViewed': 'Last viewed',
   connect: 'Connect HIVE-MIND',
@@ -100,6 +102,7 @@ export const zh: Record<HivemindConnectKey, string> = {
   'approval.pending': '等待你的决定', 'approval.approved': '已批准，等待恢复', 'approval.executing': '正在恢复已批准的操作…',
   'approval.declined': '已拒绝', 'approval.completed': '已完成', 'approval.failed': '无法完成', 'approval.blocked': '已阻止', 'approval.unavailable': '无法加载或保存此决定，请重试。',
   'employee.roomOpenFailed': '无法打开此员工会话。当前会话未更改。',
+  'brain.sessionOpenFailed': '无法启动 Brain。请选择“新建会话”重试。',
   'activity.search': '正在搜索公开来源…', 'activity.website': '正在阅读网站…', 'activity.capture': '正在截取网站…', 'activity.memory': '正在处理记忆…', 'activity.draft': '正在编写成果…', 'activity.team': '正在与团队协调…',
   'workbench.filter': '筛选', 'workbench.all': '全部文件', 'workbench.grid': '网格视图', 'workbench.stack': '堆叠视图', 'workbench.lastViewed': '最近查看',
   connect: '连接 HIVE-MIND',

@@ -283,21 +283,25 @@ describe('HIVE-MIND connection UI', () => {
 
   it('declares the Session Remote in the strict native Cordis callback scope', async () => {
     const ctx = new Context()
+    window.history.replaceState(null, '', '/hivemind/app/overview/new')
     class RemoteSurface extends Service {
       constructor(scope: Context) { super(scope, 'remote') }
       $mount() { return () => {} }
       $on() { return () => {} }
     }
-    ctx.provide('uiWorkspace', { configureDefaultWorkspaceInitialization: () => () => {}, openSession: vi.fn() } as never)
+    const openSession = vi.fn()
+    ctx.provide('uiWorkspace', { configureDefaultWorkspaceInitialization: () => () => {}, openSession } as never)
     ctx.provide('layout', { setExternalSidebar: vi.fn(), selectPanel: vi.fn() } as never)
     await ctx.plugin(SlotRegistry).await()
     ctx.provide('locale', { register: () => () => {}, bind: () => () => '' } as never)
+    const refresh = vi.fn(async () => {})
     ctx.provide('sessions', {
       list: {
-        getSnapshot: () => ({ current: undefined, ids: [], byId: {}, phase: 'ready' }),
+        getSnapshot: () => ({ current: undefined, ids: [], byId: {}, projectionsBySession: {}, phase: 'ready' }),
         subscribe: () => () => {},
       },
       binding: () => undefined,
+      refresh,
     } as never)
     ctx.provide('uiSession', {
       registerPendingInteraction: () => () => () => {},
@@ -305,10 +309,11 @@ describe('HIVE-MIND connection UI', () => {
     } as never)
     const remoteFiber = ctx.plugin({ apply: (scope) => { new RemoteSurface(scope) } })
     await remoteFiber.await()
+    const createSession = vi.fn(async () => ({ ok: true as const, value: { sessionId: 'brain-1' as SessionId } }))
     const employeeRoom = vi.fn(async () => ({ ok: true as const, value: { sessionId: 'room-1' as SessionId } }))
     const scheduleCatalog = vi.fn(async () => ({ ok: true as const, value: [] }))
     const namespaceFiber = ctx.plugin({ apply: (scope) => {
-      scope.provide('remote.session', { employeeRoom })
+      scope.provide('remote.session', { create: createSession, employeeRoom })
       scope.provide('remote.schedule', { catalog: scheduleCatalog })
       scope.provide('remote.commands', { list: vi.fn(async () => ({ ok: true as const, value: [] })) })
       scope.provide('remote.agentPresets', { select: vi.fn(async () => ({ ok: true as const, value: undefined })) })
@@ -327,6 +332,9 @@ describe('HIVE-MIND connection UI', () => {
 
     const app = ctx.plugin({ inject: [...inject], apply })
     await app.await()
+    await waitFor(() => { expect(openSession).toHaveBeenCalledExactlyOnceWith('brain-1') })
+    expect(createSession).toHaveBeenCalledExactlyOnceWith({ agentPreset: 'hivemind-chat' })
+    expect(refresh).toHaveBeenCalledOnce()
     const start = window.__HIVEMIND_START_AGENT__
     expect(start).toBeTypeOf('function')
     await expect(start!('runtime')).resolves.toBe(false)

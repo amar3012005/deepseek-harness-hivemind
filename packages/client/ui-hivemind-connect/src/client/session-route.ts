@@ -104,6 +104,7 @@ export function setupHivemindSessionRouting(
   remote: ClientRemote,
   browser: BrowserRoute = window,
   onEmployeeRoomFailure: (error: unknown) => void = () => undefined,
+  onBrainSessionFailure: (error: unknown) => void = () => undefined,
 ): () => void {
   let disposed = false
   let applyingRoute = false
@@ -165,7 +166,10 @@ export function setupHivemindSessionRouting(
         // Session could duplicate a request already accepted by the Host.
         initialized = true
         if (creatingBase === HIVE_EMPLOYEE_HARNESS_PATH) onEmployeeRoomFailure(error)
-        else replace(currentBase)
+        else {
+          replace(currentBase)
+          onBrainSessionFailure(error)
+        }
       }
     }).finally(() => { creating = false })
   }

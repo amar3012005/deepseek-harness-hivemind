@@ -47,7 +47,7 @@ import {
 import { setupSingulanceHeadline, RoomHeroMark } from './SingulanceMark.tsx'
 import { isHivemindRoute, setupHivemindSessionRouting } from './session-route.ts'
 import { setupConnectionCallbackReturn } from './connection-callback.ts'
-import { EMPLOYEE_ROOM_OPEN_FAILED, EmployeeRoomOpenToast } from './EmployeeRoomOpenToast.tsx'
+import { BRAIN_SESSION_OPEN_FAILED, EMPLOYEE_ROOM_OPEN_FAILED, EmployeeRoomOpenToast } from './EmployeeRoomOpenToast.tsx'
 import type {} from '@deepseek-ai/dsh-client-ui-tool/client'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
@@ -142,7 +142,7 @@ async function answerConnectionQuestion(
     recognized,
     request.signal,
     async () => {
-      await cancelSavedConnectionRequest(ctx, sessionId, recognized.presentation.workflowSessionId,
+      await cancelSavedConnectionRequest(owner.remote.commands, sessionId, recognized.presentation.workflowSessionId,
         recognized.presentation.requestCallId)
       if (session === undefined) throw new Error('The connection request was saved, but its active session could not be stopped')
       await session.cancel()
@@ -167,12 +167,12 @@ async function answerConnectionQuestion(
 }
 
 async function cancelSavedConnectionRequest(
-  ctx: ClientContext,
+  commands: ClientContext['remote']['commands'],
   sessionId: SessionId,
   workflow: string,
   callId: string,
 ): Promise<void> {
-  const result = await ctx.remote.commands.execute(sessionId,
+  const result = await commands.execute(sessionId,
     `/hivemind-cancel-connection ${JSON.stringify({
       session_id: workflow,
       request_call_id: callId,
@@ -818,18 +818,18 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
       }, HyperagentEmployeePanel))
     }
   })
-  ctx.inject(['conversation'], () => {
+  ctx.inject(['conversation', 'remote.commands', 'remote.hivemindMemoryApproval', 'remote.hivemindRuntimeApproval'], (scope: ClientContext) => {
     ctx.slots.inject('conversation.input.dock', () => ctx.slots.register({
       name: 'conversation.input.dock', id: 'hivemind-memory-save-approval', order: -30, locale: NS,
       inject: (sessionId): MemoryApprovalInjection => ({
         hooks: { approvalEvents: approvalEvents(sessionId) },
         load: async (id: SessionId) => {
-          const result = await ctx.remote.hivemindMemoryApproval.pendingSaves(id)
+          const result = await scope.remote.hivemindMemoryApproval.pendingSaves(id)
           if (!result.ok) throw new Error('Memory approvals unavailable')
           return result.value
         },
         decide: async (id: SessionId, callId: string, operationId: string, decision: 'decline' | 'personal' | 'organization' | 'project') => {
-          const result = await ctx.remote.hivemindMemoryApproval.decideSave(id, callId as never, operationId, decision)
+          const result = await scope.remote.hivemindMemoryApproval.decideSave(id, callId as never, operationId, decision)
           if (!result.ok) throw new Error('Memory approval decision unavailable')
           return result.value
         },
@@ -840,12 +840,12 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
       inject: (sessionId): RuntimeApprovalInjection => ({
         hooks: { approvalEvents: approvalEvents(sessionId) },
         load: async (id: SessionId) => {
-          const result = await ctx.remote.hivemindRuntimeApproval.pending(id)
+          const result = await scope.remote.hivemindRuntimeApproval.pending(id)
           if (!result.ok) throw new Error('Runtime approvals unavailable')
           return result.value
         },
         decide: async (id: SessionId, callId: string, approvalId: string, decision: 'approve' | 'decline') => {
-          const result = await ctx.remote.hivemindRuntimeApproval.decide(id, callId, approvalId, decision)
+          const result = await scope.remote.hivemindRuntimeApproval.decide(id, callId, approvalId, decision)
           if (!result.ok) throw new Error('Runtime approval decision unavailable')
           return result.value
         },
@@ -855,7 +855,8 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
       name: 'conversation.input.dock', id: 'hivemind-saved-connection', order: -20, locale: NS,
       inject: sessionId => ({
         hooks: { employeeEvents: employeeEvents(sessionId) },
-        cancelRequest: (workflow: string, callId: string) => cancelSavedConnectionRequest(ctx, sessionId, workflow, callId),
+        cancelRequest: (workflow: string, callId: string) =>
+          cancelSavedConnectionRequest(scope.remote.commands, sessionId, workflow, callId),
         resume: async (prompt: string) => {
           const conversation = ctx.sessions.scope(sessionId)?.get('conversation')
           if (conversation === undefined) throw new Error('Connection request is unavailable')
@@ -992,10 +993,12 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
     },
     refresh => ctx.sessions.list.subscribe(refresh), currentRoomIdentity,
   ), 'ui-hivemind-connect: Singulance hero headline')
-  ctx.effect(() => {
+  ctx.inject(['remote.session'], (scope: ClientContext) => scope.effect(() => {
     if (document.documentElement.dataset.dshMode === 'hivemind-chat' || isHivemindRoute(window.location.pathname)) {
-      return setupHivemindSessionRouting(ctx.sessions, ctx.uiWorkspace, ctx.remote, window, () => {
+      return setupHivemindSessionRouting(ctx.sessions, ctx.uiWorkspace, scope.remote, window, () => {
         window.dispatchEvent(new Event(EMPLOYEE_ROOM_OPEN_FAILED))
+      }, () => {
+        window.dispatchEvent(new Event(BRAIN_SESSION_OPEN_FAILED))
       })
     }
     let creating = false
@@ -1033,7 +1036,7 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
       if (pending !== undefined) clearTimeout(pending)
       stop()
     }
-  }, 'ui-hivemind-connect: filesystem-free native session bootstrap')
+  }, 'ui-hivemind-connect: filesystem-free native session bootstrap'))
   return async () => {
     await Promise.all([disposeMemoryApprovalRemote(), disposeRuntimeApprovalRemote?.()])
   }
