@@ -99,3 +99,15 @@ describe('Runtime operator voice context', () => {
     expect(result).toContain('Missing business metrics remain unknown')
   })
 })
+
+
+it('uses one conditional clarification and preserves explicit user requests during a conversational awakening call', () => {
+  expect(RUNTIME_VOICE_INSTRUCTIONS).toContain('Explicit authenticated user direction does not need a second confirmation')
+  expect(RUNTIME_VOICE_INSTRUCTIONS).toContain('Never ask the user to repeat or reconfirm clear wording because storage failed')
+  expect(RUNTIME_VOICE_INSTRUCTIONS).not.toContain('Ask the administrator to confirm or correct that understanding')
+  expect(RUNTIME_AWAKENING_CALL_AGENDA).toContain('Do not turn ordinary baseline answers into unsolicited backend actions')
+  expect(RUNTIME_AWAKENING_CALL_AGENDA).toContain('existing call-close transcript handoff')
+  expect(RUNTIME_AWAKENING_CALL_AGENDA).toContain('authenticated user explicitly requests a save, task or other action')
+  expect(RUNTIME_AWAKENING_CALL_AGENDA).toContain('normal authority checks')
+  expect(RUNTIME_AWAKENING_CALL_AGENDA).not.toContain('Do not dispatch requests to the chat backend')
+})
