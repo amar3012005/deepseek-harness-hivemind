@@ -467,7 +467,9 @@ export function liveVoicePlugin(config: LiveVoiceConfig,
         } catch (error) {
           const safeCodes = ['voice_connection_failed', 'voice_authorization_unavailable', 'session_unavailable', 'profile_unavailable', 'employee_voice_identity_unavailable', 'runtime_decision_memory_unavailable', 'voice_handoff_persistence_required']
           const code = error instanceof Error && safeCodes.includes(error.message) ? error.message : 'startup_failed'
-          console.warn('hivemind voice startup failed', startupStage, code)
+          const category = error instanceof Error && 'code' in error && typeof error.code === 'string' && /^[a-z_]{1,60}$/.test(error.code) ? error.code : 'unknown'
+          const cause = error instanceof Error && error.cause instanceof Error ? error.cause.name : 'none'
+          console.warn('hivemind voice startup failed', startupStage, code, category, cause)
           reply(res, 503, { error: error instanceof Error && error.message === 'runtime_decision_memory_unavailable' ? 'runtime_decision_memory_unavailable' : 'voice_unavailable', fallbackAllowed: error instanceof Error && ['voice_connection_failed', 'voice_authorization_unavailable'].includes(error.message) }) }
       } }))
     } }
