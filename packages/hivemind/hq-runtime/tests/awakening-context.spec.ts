@@ -4,8 +4,35 @@ import type { ToolDefinition } from '@deepseek-ai/dsh-tools'
 import { Session, SessionId, SessionLogOffset, deriveEventMessage } from '@deepseek-ai/dsh-session'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { awakeningContext, awakeningMethod, installAwakening } from '../src/awakening.ts'
+import { createUserMessage } from '@deepseek-ai/dsh-llm'
 
 vi.mock('../src/rest.ts', () => ({ isHqLead: () => true }))
+
+it('keeps unfinished orientation saved without displacing an unrelated current human task', async () => {
+  const events = [
+    { seq: 0, type: 'hivemind/hq-awakening-start', data: { version: 1, turn: 1 } },
+    { seq: 1, type: 'hivemind/hq-awakening-checkpoint', data: { stage: 'company', blocked: false, summary: 'Known company' } },
+    { seq: 2, type: 'turn/start', data: { turn: 9 } },
+  ]
+  const agent = { session: { snapshotEvents: () => events } } as unknown as Agent
+  const message = createUserMessage({ source: { kind: 'user' }, content: [{ type: 'text', text: 'Recover the internal release verification only.' }] })
+  expect(await awakeningContext({} as Context, agent, 9, [message])).toBe('')
+  expect(await awakeningContext({} as Context, agent, 9, [])).toContain('Current unfinished checkpoint: evidence')
+  expect(events).toHaveLength(3)
+})
+
+it('bounds latest checkpoint findings while keeping exact history references', async () => {
+  const events = [
+    { seq: 0, type: 'hivemind/hq-awakening-start', data: { version: 1, turn: 1 } },
+    ...Array.from({ length: 20 }, (_, index) => ({ seq: index + 1, type: 'hivemind/hq-awakening-checkpoint', data: { stage: 'company', blocked: false, summary: `Finding ${index}: ${'old detail '.repeat(2000)}` } })),
+  ]
+  const agent = { session: { snapshotEvents: () => events } } as unknown as Agent
+  const text = await awakeningContext({} as Context, agent, 2, [])
+  expect(text).toContain('Finding 19:')
+  expect(text).not.toContain('Finding 18:')
+  expect(text).toContain('"sequence":20')
+  expect(text.length).toBeLessThan(1500)
+})
 
 it('keeps an unfinished awakening briefing compact and points to native loaded guidance', async () => {
   const events = [

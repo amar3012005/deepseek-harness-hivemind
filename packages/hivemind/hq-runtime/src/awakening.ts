@@ -52,7 +52,18 @@ export async function awakeningContext(ctx: Context, agent: Agent, turn: number,
     started = true
   }
   if (!started) return ''
-  const checkpoints = agent.session.snapshotEvents().flatMap(event => event.type === 'hivemind/hq-awakening-checkpoint' ? [event.data] : [])
+  const events = agent.session.snapshotEvents()
+  const start = events.findLast(event => event.type === 'hivemind/hq-awakening-start')
+  const boundary = events.findLast(event => event.type === 'turn/start')?.seq ?? -1
+  const currentHuman = [...events.flatMap(event => event.seq > boundary && event.type === 'user/message' ? [event.data] : []), ...messages]
+    .filter(message => message.source.kind === 'user')
+  const request = currentHuman.at(-1)?.content.flatMap(block => block.type === 'text' ? [block.text] : []).join('').trim()
+  // An unfinished orientation is saved work, not a competing objective for an
+  // unrelated current human request. Native answer/result wakes can still resume it.
+  if (start?.type === 'hivemind/hq-awakening-start' && start.data.turn !== turn
+    && request !== undefined && !trigger.test(request)
+    && !/^\s*(?:please\s+)?(?:continue|resume|finish|complete|orient)\b.{0,80}\b(?:awakening|orientation|onboarding)\b/iu.test(request)) return ''
+  const checkpoints = events.flatMap(event => event.type === 'hivemind/hq-awakening-checkpoint' ? [event.data] : [])
   const stages = ['company', 'evidence', 'team', 'strategy', 'conversation'] as const
   // An invitation is not completion of orientation. Recover the latest stage
   // state, including a later blocked correction to previously accepted findings.
@@ -61,8 +72,13 @@ export async function awakeningContext(ctx: Context, agent: Agent, turn: number,
     return !latest || latest.blocked
   })
   if (!next) return ''
+  const findings = awakeningStages.flatMap((stage) => {
+    const event = events.findLast(event => event.type === 'hivemind/hq-awakening-checkpoint' && event.data.stage === stage)
+    return event?.type === 'hivemind/hq-awakening-checkpoint'
+      ? [{ stage, blocked: event.data.blocked, summary: (event.data.summary ?? '').slice(0, 240), sequence: event.seq }] : []
+  })
   return `First awakening is active. You remain Runtime, the AI Chief of Staff. Load runtime-company-awakening through the native skill loader for its five flexible outcomes; detailed guidance belongs in the loaded skill, not the human chat bubble. Current unfinished checkpoint: ${next}. Reuse saved findings and receipts, choose only justified work, and do not create an ongoing goal for scheduled waiting. Normal permissions, Pause and sleep rules remain in force.
-Saved findings: ${JSON.stringify(checkpoints.slice(-20))}`
+Saved latest findings (read the original sequence with hyperagents_history when needed): ${JSON.stringify(findings)}`
 
 }
 /** Load the current complete method through the agent-scoped native registry.
