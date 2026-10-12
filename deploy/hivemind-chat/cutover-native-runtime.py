@@ -105,6 +105,8 @@ def main():
     if len(patch_mounts) != 1 or patch_mounts[0].get('read_only') is not True:
         raise RuntimeError('Expected exactly one existing read-only profile patch bind mount')
     patch_mount = patch_mounts[0]
+    candidate_mount = copy.deepcopy(patch_mount)
+    candidate_mount['source'] = str(profile_candidate)
     patch_target = patch_mount.get('target')
     live_patch_mounts = [mount for mount in info.get('Mounts', []) if mount.get('Destination') == patch_target]
     if len(live_patch_mounts) != 1 or live_patch_mounts[0].get('Type') != 'bind' or pathlib.Path(live_patch_mounts[0].get('Source', '')).resolve() != profile_source or live_patch_mounts[0].get('RW') is not False:
@@ -115,14 +117,14 @@ def main():
     override.write_text(yaml_json({'services': {service: {
         'image': args.image,
         'environment': {'NARB_DISABLE_NATIVE_CACHE': '1', 'HIVE_HARNESS_STEP_FALLBACK_ROUTES': routes_env},
-        'volumes': [{'type': 'bind', 'source': str(profile_candidate), 'target': patch_target, 'read_only': True}],
+        'volumes': [candidate_mount],
     }}}))
     previous_cache = old['services'][service].get('environment', {}).get('NARB_DISABLE_NATIVE_CACHE')
     previous_routes = old['services'][service].get('environment', {}).get('HIVE_HARNESS_STEP_FALLBACK_ROUTES')
     (root / 'rollback.yml').write_text(yaml_json({'services': {service: {
         'image': args.expected_image,
         'environment': {'NARB_DISABLE_NATIVE_CACHE': previous_cache, 'HIVE_HARNESS_STEP_FALLBACK_ROUTES': previous_routes},
-        'volumes': [{'type': 'bind', 'source': patch_mount['source'], 'target': patch_target, 'read_only': True}],
+        'volumes': [copy.deepcopy(patch_mount)],
     }}}))
     candidate = base + ['-f', str(override)]
     new = json.loads(capture(candidate + ['config', '--format', 'json']))
