@@ -189,8 +189,16 @@ export async function dispatchEmployee(ctx: Context, root: Agent, taskId: string
   resumeRevision?: number,
 ): Promise<Record<string, JsonValue>> {
   const assignment = await prepareEmployee(ctx, root, taskId, employeeId, signal)
-  const target = ctx.agents.get(SessionId(assignment.sessionId))
-  if (!target || !(await allowsEmployeeWork(ctx, target, { rootId: root.id, taskId }, signal))) throw new Error('hq_assignment_not_ready')
+  const directoryService = ctx.get('agentPresets')?.serviceFor(root, 'hivemindEmployeeDirectory')
+    ?? ctx.get('hivemindEmployeeDirectory')
+  if (!directoryService) throw new Error('hq_employee_directory_required')
+  const directory = await directoryService.profiles(signal)
+  const raw = directory.profiles.find(profile => profile['id'] === employeeId)
+  if (!raw || (!employeeDispatchAllowed(raw) && !employeeExternalDispatchAllowed(raw))) throw new Error('hq_employee_not_authorized')
+  const profile = profileSnapshot(raw)
+  const target = await rooms(ctx).resolvePersistentEmployeeRoom(employeeId,
+    employeeRoomProfile(raw, employeeId, profile.name, profile.role), signal)
+  if (target.id !== assignment.sessionId || !(await allowsEmployeeWork(ctx, target, { rootId: root.id, taskId }, signal))) throw new Error('hq_assignment_not_ready')
   const task = ctx.agentTeams.getTask(root, TeamTaskId(taskId))
   if (task.status === 'pending') await ctx.agentTeams.updateTask(root, {
     taskId: task.id, expectedRevision: task.revision, action: 'reassign', owner: assignment.memberName })
