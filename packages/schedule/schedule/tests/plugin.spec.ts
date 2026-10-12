@@ -21,6 +21,31 @@ function scheduleEvent(data: unknown, seq: number): SessionEvent {
 }
 
 describe('shared Schedule management', () => {
+  it('commits a host guard deferral and cancellation without reentering Schedule management', async () => {
+    const test = await setup()
+    const agent = agentFor(test.ctx)
+    test.resolve.mockResolvedValue({ agent })
+    const followup = vi.spyOn(agent, 'followup')
+    const changed = vi.fn()
+    test.ctx.on('schedule/changed', changed)
+    const record = await test.service.create(agent.id, {
+      prompt: 'internal recovery', title: 'Recovery', after_seconds: 1,
+    })
+    let decision: boolean | { kind: 'defer'; afterSeconds: number } | { kind: 'cancel' } =
+      { kind: 'defer', afterSeconds: 60 }
+    const removeGuard = test.service.guardDelivery(async () => decision)
+    await vi.advanceTimersByTimeAsync(1_000)
+    expect(followup).not.toHaveBeenCalled()
+    const deferred = (await test.service.catalog()).find(value => value.id === record.id)
+    expect(deferred?.status).toBe('active')
+    expect(Date.parse(deferred?.scheduledAt ?? '')).toBe(Date.now() + 60_000)
+    decision = { kind: 'cancel' }
+    await vi.advanceTimersByTimeAsync(60_000)
+    expect(followup).not.toHaveBeenCalled()
+    expect((await test.service.catalog()).some(value => value.id === record.id)).toBe(false)
+    expect(changed).toHaveBeenCalled()
+    removeGuard()
+  })
   it('requires its configured host guard before cold-start delivery and removes the guard on disposal', async () => {
     const test = await harness({ config: { deliveryPolicyRequired: true } })
     tests.push(test)

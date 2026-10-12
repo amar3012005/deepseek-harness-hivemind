@@ -203,7 +203,7 @@ export function runtimeReviewAccepts(review: HqTaskReview | undefined, revision:
 
 /** Discover only immutable attachment metadata on the exact committed producer receipt. */
 export function savedArtifactAttachment(events: readonly LedgerEvent[], artifactId: string): { file: { attachmentId: string; name: string; bytes: number }; mediaType: string; modality: 'image' | 'video' | 'pdf' | 'file'; path: string | null } | undefined {
-  const event = events.findLast(e => ['hivemind/generation-created', 'hivemind/artifact-created'].includes(e.type) && object(e.data)?.['artifactId'] === artifactId)
+  const event = events.findLast(e => ['hivemind/generation-created', 'hivemind/artifact-created', 'hivemind/external-artifact-created'].includes(e.type) && object(e.data)?.['artifactId'] === artifactId)
   const data = object(event?.data), file = object(data?.['file'] ?? data?.['pdf'])
   if (!file || typeof file['attachmentId'] !== 'string' || !/^sha256:[a-f0-9]{64}$/.test(file['attachmentId']) || typeof file['name'] !== 'string' || typeof file['bytes'] !== 'number' || !Number.isSafeInteger(file['bytes']) || file['bytes'] < 0) return undefined
   const mediaType = typeof data?.['mediaType'] === 'string' ? data['mediaType'] : data?.['pdf'] ? 'application/pdf' : 'application/octet-stream'

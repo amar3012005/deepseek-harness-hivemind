@@ -5,7 +5,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type {} from '@deepseek-ai/dsh-api-session-controller'
 import { isRecurringScheduleRecord, renderReminderFraming, renderRecurringReminderBatchFraming, resolveRecurringOccurrence } from './domain.ts'
-import type { DeliveryRetentionBounds, RecurringScheduleRecord } from './types.ts'
+import type { DeliveryRetentionBounds, RecurringScheduleRecord, ScheduleDeliveryGuardResult } from './types.ts'
 import type { ScheduleTask } from './storage.ts'
 import { appendDelivery } from './delivery-history.ts'
 
@@ -32,7 +32,8 @@ export class ScheduleRuntime {
     private readonly commit: (task: ScheduleTask) => Promise<void>,
     private readonly retention: DeliveryRetentionBounds,
     private readonly timers = true,
-    private readonly allowsDelivery: (agent: Agent, task: ScheduleTask) => Promise<boolean> = async () => true,
+    private readonly allowsDelivery: (agent: Agent, task: ScheduleTask) => Promise<ScheduleDeliveryGuardResult> = async () => true,
+    private readonly removeTask?: (task: ScheduleTask) => Promise<unknown>,
   ) {}
 
   /**
@@ -103,8 +104,25 @@ export class ScheduleRuntime {
         if ('error' in resolved) throw resolved.error
         const allowed: ScheduleTask[] = []
         for (const member of group) {
-          if (await this.allowsDelivery(resolved.agent, member)) allowed.push(member)
-          else failed.add(member.record.id)
+          const decision = await this.allowsDelivery(resolved.agent, member)
+          if (decision === true) { allowed.push(member); continue }
+          if (decision === false) { failed.add(member.record.id); continue }
+          if (decision.kind === 'defer') {
+            if (!Number.isSafeInteger(decision.afterSeconds) || decision.afterSeconds < 1 || decision.afterSeconds > 86_400
+              || isRecurringScheduleRecord(member.record)) throw new Error('schedule_guard_defer_invalid')
+            await this.commit({ ...member, record: {
+              ...member.record, scheduledAt: new Date(Date.now() + decision.afterSeconds * 1000).toISOString(),
+            } })
+            committed.add(member.record.id)
+            continue
+          }
+          if (decision.kind === 'cancel') {
+            if (this.removeTask) await this.removeTask(member)
+            else await this.commit({ ...member, status: 'inactive' })
+            committed.add(member.record.id)
+            continue
+          }
+          failed.add(member.record.id)
         }
         if (allowed.length === 0) continue
         if (this.stopping) return

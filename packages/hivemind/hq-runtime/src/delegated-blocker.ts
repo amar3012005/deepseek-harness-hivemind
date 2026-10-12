@@ -2,11 +2,12 @@
 import { createHash } from 'node:crypto'
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
+import type { Session } from '@deepseek-ai/dsh-session'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import { TeamTaskId } from '@deepseek-ai/dsh-experimental-agent-team'
 import { authenticatedActorFromSource } from '@deepseek-ai/dsh-hivemind-execution-scope'
 import { defineTool } from '@deepseek-ai/dsh-tools'
-import type { DelegatedConnectionRequest, DelegatedConnectionReceipt } from '@deepseek-ai/dsh-hivemind-connected-apps/src/delegated-blocker.ts'
+import type { DelegatedConnectionRequest, DelegatedConnectionReceipt } from '@deepseek-ai/dsh-hivemind-connected-apps'
 import type {} from '@deepseek-ai/dsh-hivemind-connected-apps'
 import { installEmployeeReportRepair } from './employee-report-repair.ts'
 import { admittedEmployeeWork } from './employee-work-origin.ts'
@@ -60,8 +61,15 @@ export function delegatedBlockers(agent: Agent): DelegatedBlocker[] {
   for (const event of agent.session.ownEvents()) if (event.type === 'hivemind/hq-delegated-blocker') saved.set(event.data.id, event.data)
   return [...saved.values()]
 }
+type DelegatedAnswerCandidate = {
+  answer_event_ref: string
+  verifiedAuthenticatedActor: { readonly userId: string; readonly orgId: string; readonly name: string; readonly role: string }
+  text: string
+  text_truncated: boolean
+  candidate_only: true
+}
 /** Candidate evidence only: listing never answers a question or grants approval. */
-export function delegatedAnswerCandidates(agent: Agent, blocker: DelegatedBlocker, orgId: string) {
+export function delegatedAnswerCandidates(agent: Agent, blocker: DelegatedBlocker, orgId: string): DelegatedAnswerCandidate[] {
   if (blocker.kind !== 'human_input' || blocker.state !== 'blocked' || blocker.rootId !== String(agent.id)) return []
   const events = agent.session.ownEvents()
   const saved = events.findLast(event => event.type === 'hivemind/hq-delegated-blocker' && event.data.id === blocker.id)
@@ -73,11 +81,11 @@ export function delegatedAnswerCandidates(agent: Agent, blocker: DelegatedBlocke
     const text = event.data.content.flatMap(block => block.type === 'text' ? [block.text] : []).join('\n').trim()
     if (!text) return []
     return [{ answer_event_ref: `event:${event.seq}`, verifiedAuthenticatedActor: actor,
-      text: text.slice(0, 6000), text_truncated: text.length > 6000, candidate_only: true }]
+      text: text.slice(0, 6000), text_truncated: text.length > 6000, candidate_only: true as const }]
   }).slice(-8).reverse()
 }
 const answerEvidenceHelp = 'List this blocker to inspect authenticated answer_candidates. Use the relevant exact answer_event_ref event:<sequence>; artifact UUIDs are not event references. Candidates are evidence, never permission grants.'
-async function flush(ctx: Context, agent: Agent): Promise<void> {
+async function flush(ctx: Context, agent: { session: Session }): Promise<void> {
   if (!await ctx.sessions.flush(agent.session)) throw new Error('hq_blocker_persistence_required')
 }
 
@@ -132,6 +140,45 @@ async function record(ctx: Context, employee: Agent, signal: AbortSignal, fields
     }, signal)
     return { status: 'blocked_reported', blocker_id: id, task_id: origin.taskId, checkpoint_id: id, message_id: delivery.messageId }
   })
+}
+
+/** Record a blocker reported by a bound external assignee without manufacturing a model/tool turn. */
+export async function recordExternalEmployeeBlocker(ctx: Context, room: import('@deepseek-ai/dsh-api-session-controller').ExternalEmployeeRoom,
+  input: { dispatchMessageId: string; blockerKey: string; question: string; summary?: string }, signal: AbortSignal): Promise<{ blockerId: string; messageId: string }> {
+  const dispatch = room.session.snapshotEvents().findLast(event => event.type === 'hivemind/open-dot-runtime-dispatch-receipt'
+    && event.data.dispatchMessageId === input.dispatchMessageId)
+  if (dispatch?.type !== 'hivemind/open-dot-runtime-dispatch-receipt' || dispatch.data.employeeId !== room.employeeId
+    || dispatch.data.dotId !== room.dotId || dispatch.data.organizationId !== room.organizationId || dispatch.data.userId !== room.userId
+    || !dispatch.data.taskId) throw new Error('hq_external_blocker_dispatch_required')
+  const root = await authenticatedRoot(ctx, dispatch.data.rootSessionId, signal)
+  const allowed = await allowsEmployeeWork(ctx, room, { rootId: String(root.id), taskId: dispatch.data.taskId }, signal)
+  if (!allowed) throw new Error('hq_external_blocker_assignment_not_authorized')
+  const assignment = root.session.ownEvents().findLast(event => event.type === 'hivemind/hq-employee-assignment'
+    && event.data.taskId === dispatch.data.taskId)
+  if (assignment?.type !== 'hivemind/hq-employee-assignment' || assignment.data.employeeId !== room.employeeId
+    || assignment.data.sessionId !== room.id) throw new Error('hq_external_blocker_assignment_changed')
+  const task = ctx.agentTeams.getTask(root, TeamTaskId(dispatch.data.taskId))
+  if (['completed', 'deleted'].includes(task.status)) throw new Error('hq_external_blocker_task_not_active')
+  const id = 'hq-blocker-' + createHash('sha256').update(JSON.stringify([String(root.id), dispatch.data.taskId, room.employeeId, input.blockerKey])).digest('hex')
+  const current = delegatedBlockers(root).find(value => value.id === id)
+  if (current && (current.employeeSessionId !== String(room.id) || current.taskId !== dispatch.data.taskId)) throw new Error('hq_external_blocker_key_conflict')
+  const blocker: DelegatedBlocker = current ?? { id, kind: 'human_input', rootId: String(root.id), taskId: dispatch.data.taskId,
+    taskRevision: task.revision, employeeId: room.employeeId, employeeSessionId: String(room.id), memberName: assignment.data.memberName,
+    checkpointId: id, callId: input.blockerKey, state: 'blocked', createdAt: new Date().toISOString(), question: input.question }
+  if (!current) {
+    room.session.append('hivemind/connected-receipt', { version: 1, tool: 'workflow_checkpoint',
+      receipt: { status: 'checkpoint_saved', checkpoint_state: 'blocked', checkpoint_id: id,
+        checkpoint: JSON.stringify({ blocker_id: id, task_id: dispatch.data.taskId, blocked_call_id: input.blockerKey,
+          next_step: 'Runtime must resolve the required input before this same task continues. Keep independent authorized work moving.' }) } })
+    await flush(ctx, room)
+    root.session.append('hivemind/hq-delegated-blocker', blocker)
+    await flush(ctx, root)
+  }
+  const delivered = await ctx.sessionController.receiveExternalEmployeeMessage(room, { dispatchMessageId: input.dispatchMessageId,
+    messageKey: input.blockerKey, kind: 'question', text: 'HQ_DELEGATED_BLOCKER=' + JSON.stringify(blocker)
+      + '\nThis assigned task is blocked on required human input. Resolve the exact blocker through the existing Runtime workflow; do not treat it as complete.',
+    ...(input.summary === undefined ? {} : { summary: input.summary }) }, signal)
+  return { blockerId: id, messageId: delivered.messageId }
 }
 
 /** Host-only legacy migration: save a checkpoint before any operator cancellation.

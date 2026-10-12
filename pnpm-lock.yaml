@@ -7517,9 +7517,15 @@ importers:
       '@deepseek-ai/dsh-hivemind-execution-scope':
         specifier: workspace:^
         version: link:../execution-scope
+      '@deepseek-ai/dsh-hivemind-hq-runtime':
+        specifier: workspace:^
+        version: link:../hq-runtime
       '@deepseek-ai/dsh-llm-pi-ai':
         specifier: workspace:^
         version: link:../../llm/llm-pi-ai
+      '@deepseek-ai/dsh-schedule':
+        specifier: workspace:^
+        version: link:../../schedule/schedule
       '@deepseek-ai/schemastery':
         specifier: link:../../../vendor/schemastery
         version: link:../../../vendor/schemastery
@@ -7563,6 +7569,9 @@ importers:
       '@deepseek-ai/dsh-host-webserver':
         specifier: workspace:^
         version: link:../../host/webserver
+      '@deepseek-ai/dsh-jobs':
+        specifier: workspace:^
+        version: link:../../jobs/jobs
       '@deepseek-ai/dsh-llm':
         specifier: workspace:^
         version: link:../../llm/llm

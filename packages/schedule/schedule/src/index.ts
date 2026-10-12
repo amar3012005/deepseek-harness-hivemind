@@ -26,7 +26,7 @@ import {
 import type {
   DeliveryRetentionBounds, ScheduleCatalogEntry, ScheduleCreateRequest, ScheduleDeleteRequest, ScheduleDeleteResult,
   ScheduleDeliveryHistoryRequest, ScheduleDeliveryHistoryResult, ScheduleListRequest, ScheduleRecord,
-  ScheduleUpdateRequest, ScheduleUpdateResult,
+  ScheduleUpdateRequest, ScheduleUpdateResult, ScheduleDeliveryGuardResult,
 } from './types.ts'
 
 export type * from './types.ts'
@@ -109,13 +109,13 @@ const DEFAULT_DELIVERY_HISTORY_RECORDS = 200
  * service is the plugin that registers that listener.
  */
 export class ScheduleService extends TypertRemoteService {
-  private readonly deliveryGuards = new Set<(agent: Agent, task: ScheduleTask) => Promise<boolean>>()
+  private readonly deliveryGuards = new Set<(agent: Agent, task: ScheduleTask) => Promise<ScheduleDeliveryGuardResult>>()
 
   /** Register a host-only monotonic delivery policy.
    * @param guard - Authorization before inbox insertion; denial retains the active occurrence.
    * @returns Disposer removing this exact policy.
    */
-  guardDelivery(guard: (agent: Agent, task: ScheduleTask) => Promise<boolean>): () => void {
+  guardDelivery(guard: (agent: Agent, task: ScheduleTask) => Promise<ScheduleDeliveryGuardResult>): () => void {
     this.deliveryGuards.add(guard)
     this.reconsiderDelivery()
     return () => { this.deliveryGuards.delete(guard) }
@@ -124,9 +124,12 @@ export class ScheduleService extends TypertRemoteService {
   /** Reconsider locally retained occurrences when host delivery policy changes. */
   reconsiderDelivery(): void { this.runtime?.requestDrive() }
 
-  private async allowsDelivery(agent: Agent, task: ScheduleTask): Promise<boolean> {
+  private async allowsDelivery(agent: Agent, task: ScheduleTask): Promise<ScheduleDeliveryGuardResult> {
     if (this.deliveryPolicyRequired && this.deliveryGuards.size === 0) return false
-    for (const guard of this.deliveryGuards) if (!(await guard(agent, task))) return false
+    for (const guard of this.deliveryGuards) {
+      const decision = await guard(agent, task)
+      if (decision !== true) return decision
+    }
     return true
   }
   static inject = ['agents', 'sessions', 'tools', 'storageDomain', 'sessionController', 'sessionPersistence']
@@ -187,7 +190,8 @@ export class ScheduleService extends TypertRemoteService {
           void this.serialize(() => ctx.agents.withoutInitiator(() => backend.dispatch(async (tasks) => {
             const runtime = new ScheduleRuntime(ctx, () => [...tasks.entries()].map(([, task]) => task),
               work => work(), task => tasks.put(task.record.id, task), this.retention, false,
-              (agent, task) => this.allowsDelivery(agent, task))
+              (agent, task) => this.allowsDelivery(agent, task),
+              task => tasks.delete(task.record.id))
             await runtime.driveOnce()
           }))).then((changed) => { if (changed) this.emitChanged() }).catch((error: unknown) => {
             ctx.logger.warn(`schedule: tenant dispatch failed (${error instanceof Error ? error.name : 'unknown error'})`)
@@ -218,7 +222,11 @@ export class ScheduleService extends TypertRemoteService {
           await tasks.put(task.record.id, task)
           this.emitChanged()
         },
-        this.retention, true, (agent, task) => this.allowsDelivery(agent, task))
+        this.retention, true, (agent, task) => this.allowsDelivery(agent, task),
+        async task => {
+          await tasks.delete(task.record.id)
+          this.emitChanged()
+        })
       this.runtime.requestDrive()
       return cleanup
     })

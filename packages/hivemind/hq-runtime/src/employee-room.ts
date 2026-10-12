@@ -2,13 +2,14 @@
 import { createHash } from 'node:crypto'
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
+import type { ExternalEmployeeRoom } from '@deepseek-ai/dsh-api-session-controller'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import { TeamTaskId } from '@deepseek-ai/dsh-experimental-agent-team'
 import { ScheduleId } from '@deepseek-ai/dsh-schedule'
 import type { UserMessage } from '@deepseek-ai/dsh-llm'
 import type {} from '@deepseek-ai/dsh-api-session-controller'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
-import { employeeDispatchAllowed } from '@deepseek-ai/dsh-hivemind-employee-directory'
+import { employeeDispatchAllowed, employeeExternalDispatchAllowed } from '@deepseek-ai/dsh-hivemind-employee-directory'
 import { employeePersona, profileSnapshot } from '@deepseek-ai/dsh-hivemind-employee-delegation'
 import type {} from './index.ts'
 import { calendarItems } from './calendar.ts'
@@ -17,9 +18,9 @@ import { taskContracts, verifiedArtifactLinks, sameArtifactLinks } from './ledge
 import { admittedEmployeeWork } from './employee-work-origin.ts'
 
 interface Rooms {
-  resolvePersistentEmployeeRoom(key: string, profile: { id: string; name: string; role: string }, signal: AbortSignal): Promise<Agent>
+  resolvePersistentEmployeeRoom(key: string, profile: { id: string; name: string; role: string; executionBackend?: 'open-dot'; dotId?: string }, signal: AbortSignal): Promise<Agent | ExternalEmployeeRoom>
   resolveAgent(id: SessionId): Promise<{ agent: Agent } | { error: Error }>
-  deliverAgentMessage(caller: Agent, input: { key: string; target: string; kind: 'question' | 'update'; text: string; taskId: string }, signal: AbortSignal): Promise<{ messageId: string; targetSessionId: SessionId }>
+  deliverAgentMessage(caller: Agent, input: { key: string; target: string; targetProfile?: { id: string; name: string; role: string; executionBackend?: 'open-dot'; dotId?: string }; kind: 'question' | 'update'; text: string; taskId: string }, signal: AbortSignal): Promise<{ messageId: string; targetSessionId: SessionId }>
 }
 export function rooms(ctx: Context): Rooms { return Reflect.get(ctx, 'sessionController') as Rooms }
 interface WorkReference { rootId: string; taskId: string; itemId?: string; revision?: number }
@@ -52,6 +53,16 @@ export async function authenticatedRoot(ctx: Context, id: string, signal: AbortS
   return resolved.agent
 }
 
+function employeeRoomProfile(raw: Record<string, JsonValue>, id: string, name: string, role: string) {
+  if (!employeeExternalDispatchAllowed(raw)) return { id, name, role }
+  const rules = raw['policy_rules'] ?? raw['policyRules']
+  const marker = typeof rules === 'object' && rules !== null && !Array.isArray(rules)
+    ? rules['open_dot_employee'] ?? rules['openDotEmployee'] : undefined
+  const dotId = typeof marker === 'object' && marker !== null && !Array.isArray(marker) ? marker['dot_id'] ?? marker['dotId'] : undefined
+  if (typeof dotId !== 'string' || !dotId) throw new Error('hq_external_employee_binding_invalid')
+  return { id, name, role, executionBackend: 'open-dot' as const, dotId }
+}
+
 /** Refresh the native roster from the current authenticated company directory.
  * Room admission/binding does not send a message, create a task or start work.
  * Re-read on every explicit roster request so newly created employees are included.
@@ -64,7 +75,7 @@ export async function reconcileEmployeeRoster(ctx: Context, root: Agent, signal:
   const members = ctx.agentTeams.listMembers(root)
   for (const raw of directory.profiles) {
     signal.throwIfAborted()
-    if (!employeeDispatchAllowed(raw)) continue
+    if (!employeeDispatchAllowed(raw) && !employeeExternalDispatchAllowed(raw)) continue
     const name = raw['name']
     const role = typeof raw['role_archetype'] === 'string' ? raw['role_archetype'] : 'HIVE-MIND employee'
     const employeeId = raw['id']
@@ -73,7 +84,7 @@ export async function reconcileEmployeeRoster(ctx: Context, root: Agent, signal:
       || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/u.test(slug)) throw new Error('hq_employee_slug_invalid')
     // Resolve the canonical room, rather than guessing a session from a display name.
     const target = await rooms(ctx).resolvePersistentEmployeeRoom(employeeId,
-      { id: employeeId, name, role }, signal)
+      employeeRoomProfile(raw, employeeId, name, role), signal)
     if (members.some(member => member.id === target.id && member.ownership === 'persistent')) continue
     await ctx.agentTeams.bindPersistentAssignee(root, target, slug, name)
   }
@@ -94,12 +105,12 @@ export async function prepareEmployee(ctx: Context, root: Agent, taskId: string,
   if (!service) throw new Error('hq_employee_directory_required')
   const directory = await service.profiles(signal)
   const raw = directory.profiles.find(profile => profile['id'] === employeeId)
-  if (!employeeDispatchAllowed(raw)) throw new Error('hq_employee_not_authorized')
+  if (!employeeDispatchAllowed(raw) && !employeeExternalDispatchAllowed(raw)) throw new Error('hq_employee_not_authorized')
   if (!raw) throw new Error('hq_employee_not_authorized')
   const profile = profileSnapshot(raw)
   const slug = raw['slug']
   if (typeof slug !== 'string' || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/u.test(slug)) throw new Error('hq_employee_slug_invalid')
-  const target = await rooms(ctx).resolvePersistentEmployeeRoom(employeeId, { id: employeeId, name: profile.name, role: profile.role },
+  const target = await rooms(ctx).resolvePersistentEmployeeRoom(employeeId, employeeRoomProfile(raw, employeeId, profile.name, profile.role),
     signal)
   const prior = root.session.ownEvents().findLast(event => event.type === 'hivemind/hq-employee-assignment' && event.data.taskId === taskId)
   if (prior?.type === 'hivemind/hq-employee-assignment') {
@@ -136,7 +147,7 @@ export function employeeWorkPrompt(ctx: Context, root: Agent, taskId: string, pl
  * @param signal - Cancellation during scoped reads.
  * @returns Whether the saved work is currently authorized and due.
  */
-export async function allowsEmployeeWork(ctx: Context, target: Agent, ref: WorkReference, signal: AbortSignal): Promise<boolean> {
+export async function allowsEmployeeWork(ctx: Context, target: Agent | ExternalEmployeeRoom, ref: WorkReference, signal: AbortSignal): Promise<boolean> {
   const root = await authenticatedRoot(ctx, ref.rootId, signal)
   const events = root.session.snapshotEvents()
   const assignment = events.findLast(event => event.type === 'hivemind/hq-employee-assignment' && event.data.taskId === ref.taskId)
@@ -152,7 +163,7 @@ export async function allowsEmployeeWork(ctx: Context, target: Agent, ref: WorkR
   if (!directoryService) throw new Error('hq_employee_directory_required')
   const directory = await directoryService.profiles(signal)
   const profile = directory.profiles.find(value => value['id'] === assignment.data.employeeId)
-  if (!employeeDispatchAllowed(profile)) return false
+  if (!employeeDispatchAllowed(profile) && !employeeExternalDispatchAllowed(profile)) return false
   const task = ctx.agentTeams.getTask(root, TeamTaskId(ref.taskId))
   if (!hqMode(events).enabled || (task.status === 'pending' && !task.ready) || ['completed', 'deleted'].includes(task.status)) return false
   const currentPlan = calendarItems(events).find(item => item.taskId === ref.taskId)
@@ -178,12 +189,20 @@ export async function dispatchEmployee(ctx: Context, root: Agent, taskId: string
   resumeRevision?: number,
 ): Promise<Record<string, JsonValue>> {
   const assignment = await prepareEmployee(ctx, root, taskId, employeeId, signal)
-  const target = ctx.agents.get(SessionId(assignment.sessionId))
-  if (!target || !(await allowsEmployeeWork(ctx, target, { rootId: root.id, taskId }, signal))) throw new Error('hq_assignment_not_ready')
+  const directoryService = ctx.get('agentPresets')?.serviceFor(root, 'hivemindEmployeeDirectory')
+    ?? ctx.get('hivemindEmployeeDirectory')
+  if (!directoryService) throw new Error('hq_employee_directory_required')
+  const directory = await directoryService.profiles(signal)
+  const raw = directory.profiles.find(profile => profile['id'] === employeeId)
+  if (!raw || (!employeeDispatchAllowed(raw) && !employeeExternalDispatchAllowed(raw))) throw new Error('hq_employee_not_authorized')
+  const profile = profileSnapshot(raw)
+  const target = await rooms(ctx).resolvePersistentEmployeeRoom(employeeId,
+    employeeRoomProfile(raw, employeeId, profile.name, profile.role), signal)
+  if (target.id !== assignment.sessionId || !(await allowsEmployeeWork(ctx, target, { rootId: root.id, taskId }, signal))) throw new Error('hq_assignment_not_ready')
   const task = ctx.agentTeams.getTask(root, TeamTaskId(taskId))
   if (task.status === 'pending') await ctx.agentTeams.updateTask(root, {
     taskId: task.id, expectedRevision: task.revision, action: 'reassign', owner: assignment.memberName })
-  const receipt = await rooms(ctx).deliverAgentMessage(root, { key: `hq-task-${taskId}${resumeRevision === undefined ? '' : `-resume-${resumeRevision}`}`, target: employeeId, kind: 'question', taskId, text: employeeWorkPrompt(ctx, root, taskId) + (resumeRevision === undefined ? '' : '\nThe human resumed HQ. Read your existing progress and saved receipts first; continue unfinished work without repeating completed research or artifacts.') }, signal)
+  const receipt = await rooms(ctx).deliverAgentMessage(root, { key: `hq-task-${taskId}${resumeRevision === undefined ? '' : `-resume-${resumeRevision}`}`, target: employeeId, targetProfile: employeeRoomProfile(raw, employeeId, profile.name, profile.role), kind: 'question', taskId, text: employeeWorkPrompt(ctx, root, taskId) + (resumeRevision === undefined ? '' : '\nThe human resumed HQ. Read your existing progress and saved receipts first; continue unfinished work without repeating completed research or artifacts.') }, signal)
   const itemIds = new Set(calendarItems(root.session.snapshotEvents()).filter(item => item.taskId === taskId).map(item => item.id))
   const bindings = root.session.ownEvents().filter(event => event.type === 'hivemind/hq-calendar-wake' && itemIds.has(event.data.itemId))
   if (bindings.length > 0) {

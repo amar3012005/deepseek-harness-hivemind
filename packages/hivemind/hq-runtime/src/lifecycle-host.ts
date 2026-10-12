@@ -5,6 +5,7 @@ import { installQuestionRecoveryHost } from './question-recovery-host.ts'
 import { createHash, createHmac, timingSafeEqual } from 'node:crypto'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { Context } from '@deepseek-ai/cordis'
+import type { Agent } from '@deepseek-ai/dsh-agent'
 import Schema from '@deepseek-ai/schemastery'
 import { z } from 'zod'
 import { SessionId } from '@deepseek-ai/dsh-session'
@@ -59,6 +60,32 @@ async function readBody(req:IncomingMessage) {
   return JSON.parse(Buffer.concat(chunks).toString('utf8')) as unknown
 }
 const reply=(res:ServerResponse,status:number,value:unknown)=>{res.writeHead(status,{ 'content-type':'application/json','cache-control':'no-store' });res.end(JSON.stringify(value))}
+async function lifecycleEmployeeTargetProfile(ctx: Context, chief: Agent, employeeId: string, name: string, role: string, signal: AbortSignal) {
+  const directoryService = ctx.get('agentPresets')?.serviceFor(chief, 'hivemindEmployeeDirectory') ?? ctx.get('hivemindEmployeeDirectory')
+  if (!directoryService) throw Error('employee_directory_required')
+  const directory = await directoryService.profiles(signal)
+  const raw = directory.profiles.find(profile => profile['id'] === employeeId)
+  const currentRole = typeof raw?.['role_archetype'] === 'string' ? raw['role_archetype'] : 'HIVE-MIND employee'
+  if (!raw || raw['name'] !== name || currentRole !== role) throw Error('employee_lifecycle_profile_changed')
+  const rules = raw['policy_rules'] ?? raw['policyRules']
+  const marker = typeof rules === 'object' && rules !== null && !Array.isArray(rules)
+    ? rules['open_dot_employee'] ?? rules['openDotEmployee'] : undefined
+  const archived = raw['archived_at'] ?? raw['archivedAt']
+  if (raw['status'] === 'paused' || raw['status'] === 'archived' || archived != null
+    || typeof marker !== 'object' || marker === null || Array.isArray(marker)
+    || marker['version'] !== 1 || marker['execution_backend'] !== 'open-dot' || marker['state'] !== 'bound') {
+    return { id: employeeId, name, role }
+  }
+  const dotId = typeof marker === 'object' && marker !== null && !Array.isArray(marker)
+    ? marker['dot_id'] ?? marker['dotId'] : undefined
+  if (typeof dotId !== 'string' || !dotId) throw Error('employee_lifecycle_open_dot_binding_invalid')
+  const lifecycle = typeof rules === 'object' && rules !== null && !Array.isArray(rules)
+    ? rules['native_lifecycle'] ?? rules['nativeLifecycle'] : undefined
+  if (lifecycle !== undefined && (typeof lifecycle !== 'object' || lifecycle === null || Array.isArray(lifecycle)
+    || lifecycle['version'] !== 1 || lifecycle['phase'] !== 'active'
+    || !['durable', 'temporary'].includes(String(lifecycle['kind'])))) throw Error('employee_lifecycle_open_dot_binding_invalid')
+  return { id: employeeId, name, role, executionBackend: 'open-dot' as const, dotId }
+}
 export function apply(ctx:Context,config:Config):void {
   if(!config.enabled) return
   const secret=process.env[config.serviceSecretEnv]
@@ -102,9 +129,9 @@ export function apply(ctx:Context,config:Config):void {
           const signal = AbortSignal.timeout(15000)
           const chief = await ctx.sessionController.resolveAgent(SessionId(proof.chief.sessionId))
           if ('error' in chief) throw chief.error
-          await ctx.sessionController.resolvePersistentEmployeeRoom(input.employeeId, {
-            id: input.employeeId, name: proof.onboarding.name, role: proof.onboarding.role,
-          }, signal)
+          const onboardingTarget = await lifecycleEmployeeTargetProfile(ctx, chief.agent, input.employeeId,
+            proof.onboarding.name, proof.onboarding.role, signal)
+          await ctx.sessionController.resolvePersistentEmployeeRoom(input.employeeId, onboardingTarget, signal)
           // Binding a room is not permission to start it after a concurrent closeout.
           const current = proofSchema.parse(await ctx.serial('hivemind/employee-lifecycle-proof', {
             employeeId: input.employeeId, signal,
@@ -115,8 +142,8 @@ export function apply(ctx:Context,config:Config):void {
           await ctx.sessionController.deliverAgentMessage(chief.agent, {
             key: `employee-setup-${input.employeeId}-${proof.onboarding.creationHash}`,
             target: input.employeeId, kind: 'question',
-            targetProfile: { id: input.employeeId, name: proof.onboarding.name, role: proof.onboarding.role },
-            text: 'Welcome to our team. Please introduce yourself and ask our administrator which responsibilities they want you to own. Once they answer, confirm and save what you agreed. Your existing permissions stay the same.',
+            targetProfile: onboardingTarget,
+            text: 'Welcome to our team. Please introduce yourself and ask our administrator which responsibilities they want you to own. Once they answer, confirm the agreed responsibilities and send them to Runtime. Runtime will save the canonical profile after checking it. Your existing permissions stay the same.',
           }, signal)
         }
         const profile = proof.profileReview ?? proof.joined
@@ -126,9 +153,8 @@ export function apply(ctx:Context,config:Config):void {
           const signal = AbortSignal.timeout(15000)
           const chief = await ctx.sessionController.resolveAgent(SessionId(proof.chief.sessionId))
           if ('error' in chief) throw chief.error
-          const employee = await ctx.sessionController.resolvePersistentEmployeeRoom(input.employeeId, {
-            id: input.employeeId, name: profile.name, role: profile.role,
-          }, signal)
+          const profileTarget = await lifecycleEmployeeTargetProfile(ctx, chief.agent, input.employeeId, profile.name, profile.role, signal)
+          const employee = await ctx.sessionController.resolvePersistentEmployeeRoom(input.employeeId, profileTarget, signal)
           const current = proofSchema.parse(await ctx.serial('hivemind/employee-lifecycle-proof', { employeeId:input.employeeId,signal }))
           const currentProfile = proof.profileReview !== undefined ? current.profileReview : current.joined
           if (current.phase !== 'active' || current.revision !== proof.revision
@@ -136,11 +162,19 @@ export function apply(ctx:Context,config:Config):void {
             || currentProfile?.profileRevision !== profile.profileRevision
             || currentProfile.creationHash !== profile.creationHash) throw Error('employee_lifecycle_changed')
           if (proof.profileReview !== undefined) {
-            await ctx.sessionController.deliverAgentMessage(employee, {
-              key: `employee-profile-review-${input.employeeId}-${profile.profileRevision}`,
-              target:'runtime',kind:'question',
-              text: `Our administrator has chosen my responsibilities: ${profile.role}. Please complete my company-relevant biography and operating instructions using our actual context and existing permitted capabilities, then confirm the saved profile. My agreed responsibility notes are: ${proof.profileReview.persona}. Employee: ${input.employeeId}; current profile revision: ${profile.profileRevision}. Do not expand tools, connectors, permissions or company-memory authority.`,
-            }, signal)
+            if ('kind' in employee && employee.kind === 'external-persistent-assignee') {
+              await ctx.sessionController.deliverAgentMessage(chief.agent, {
+                key: `employee-profile-review-${input.employeeId}-${profile.profileRevision}`,
+                target: input.employeeId, kind: 'question', targetProfile: profileTarget,
+                text: `The administrator has chosen my responsibilities: ${profile.role}. Using actual company context and existing permitted capabilities, draft a complete company-relevant biography and operating instructions for my canonical profile. Send your proposed full persona to Runtime through your employee message operation so Runtime can review and save it using the current profile revision. Do not claim it was saved, and do not expand tools, connectors, permissions or company-memory authority. My agreed responsibility notes are: ${proof.profileReview.persona}. Employee: ${input.employeeId}; current profile revision: ${profile.profileRevision}.`,
+              }, signal)
+            } else {
+              await ctx.sessionController.deliverAgentMessage(employee as Agent, {
+                key: `employee-profile-review-${input.employeeId}-${profile.profileRevision}`,
+                target:'runtime',kind:'question',
+                text: `Our administrator has chosen my responsibilities: ${profile.role}. Please complete my company-relevant biography and operating instructions using our actual context and existing permitted capabilities, then confirm the saved profile. My agreed responsibility notes are: ${proof.profileReview.persona}. Employee: ${input.employeeId}; current profile revision: ${profile.profileRevision}. Do not expand tools, connectors, permissions or company-memory authority.`,
+              }, signal)
+            }
           } else if (proof.joined !== undefined) {
             const alreadyJoined = employee.session.ownEvents().some(event => String(event.type)==='hivemind/employee-selection'
               && (event.data as { joining?:{ creationHash?:string } }).joining?.creationHash===profile.creationHash)
@@ -149,7 +183,7 @@ export function apply(ctx:Context,config:Config):void {
             if (!alreadyJoined) await ctx.sessionController.deliverAgentMessage(chief.agent, {
               key,
               target:input.employeeId,kind:'question',
-              targetProfile:{ id:input.employeeId,name:profile.name,role:profile.role },
+              targetProfile: profileTarget,
               text:saved?.type === 'hivemind/room-message-queued' ? saved.data.text : `Welcome to our team, ${profile.name}. Your responsibilities as ${profile.role} are confirmed. For your first check-in, recall your saved profile and private handoff, inspect our actual company context and relevant current saved artifacts using existing permitted skills and tools, and propose one concrete useful next step to our administrator. Tell me what you learned and what you recommend through our native agent messages. Do not begin business work, contact anyone, change company memory, or expand permissions without the existing authority. Keep your introduction and proposal concise and natural.`,
             },signal)
             // This presentation receipt is not agent input. Once per durable creation,
@@ -185,6 +219,6 @@ export function apply(ctx:Context,config:Config):void {
         }
         reply(res,200,{ status:'ready',employeeId:input.employeeId,revision:proof.revision })
       })
-    } catch {reply(res,503,{ error:'employee_lifecycle_activation_unavailable' })}
+    } catch(error) {ctx.logger.warn('Employee lifecycle activation failed: '+String(error));reply(res,503,{ error:'employee_lifecycle_activation_unavailable' })}
   } }),'employee-lifecycle.host')
 }
