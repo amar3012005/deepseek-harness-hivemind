@@ -11,7 +11,7 @@ import {
   type HqTaskReview,
 } from './review.ts'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
-import { installRest, recoverRest, acknowledgeRestNotes, restBriefing, restState, isNightlyScheduledTurn, isHqLead, greetingOnly, socialTurnOnly } from './rest.ts'
+import { installRest, recoverRest, acknowledgeRestNotes, restBriefing, isNightlyScheduledTurn, isHqLead, greetingOnly, socialTurnOnly } from './rest.ts'
 import { installAwakening, awakeningContext } from './awakening.ts'
 import { installDelegatedBlockerTool, unresolvedDelegatedTask } from './delegated-blocker.ts'
 import { investigationExpired } from './investigation.ts'
@@ -160,7 +160,9 @@ export function apply(ctx: Context): void {
         content: [{ type: 'text', text: guidance }],
       }), ...decision.messages] }
     }
-    await recoverRest(ctx, agent, signal)
+    const scheduledRestWake = decision.messages.some(message => message.content.some(block =>
+      block.type === 'text' && block.text.includes('HQ_REST_WAKE[')))
+    if (scheduledRestWake) await recoverRest(ctx, agent, signal)
     await acknowledgeRestNotes(ctx, agent)
     // The admitted message is durable native context: inject once per turn,
     // and reread on cold restoration rather than adding a copy per tool step.
@@ -168,10 +170,11 @@ export function apply(ctx: Context): void {
     briefed.set(agent, turn)
     stageBriefed.set(agent, guidance)
     const rest = restBriefing(agent, decision.messages)
-    const currentRest = await restState(ctx, agent)
+    const committedWake = agent.session.snapshotEvents().findLast(event => event.type === 'hivemind/hq-rest-wake')
+    const currentRest = { latest: committedWake?.type === 'hivemind/hq-rest-wake' ? committedWake.data : null }
     const briefing = createUserMessage({
       source: { kind: 'plugin', plugin: 'hivemind-hq/wake-briefing', form: 'recall', sections: [rest.section] },
-      content: [{ type: 'text', text: `${guidance}\n${wakeBriefing(workspace, agent.session.snapshotEvents(), agent.id)}\n${rest.text}\nCurrent native rest state: ${JSON.stringify(currentRest.latest)}. A missing wake is not confirmed sleep; choose a new justified handoff when needed, without restoring a deleted timer.` }],
+      content: [{ type: 'text', text: `${guidance}\n${wakeBriefing(workspace, agent.session.snapshotEvents(), agent.id)}\n${rest.text}\nSaved rest receipt (not a fresh schedule-status probe): ${JSON.stringify(currentRest.latest)}. A missing wake is not confirmed sleep; choose a new justified handoff when needed, without restoring a deleted timer.` }],
     })
     if (awakening) return { ...decision, messages: [briefing, ...decision.messages, createUserMessage({
       source: { kind: 'plugin', plugin: 'hivemind-hq/first-awakening', form: 'snapshot', sections: [{ name: 'hq-first-awakening', text: awakening }] },

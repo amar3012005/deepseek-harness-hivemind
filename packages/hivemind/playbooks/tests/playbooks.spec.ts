@@ -142,13 +142,13 @@ describe('hivemind playbooks', () => {
     for (const name of coordination) tools.set(name, { name } as ToolDefinition)
     const assembly = { sections: [], contexts: [], variables: {}, tools: [...tools.values()].map(tool => ({ name: tool.name, description: '', inputSchema: { type: 'object' } })) }
     const projected = await listeners.get('system-prompt/assemble')!(assembly, { agent, scope: agent }, async () => assembly) as typeof assembly
-    expect(projected.tools.map(tool => tool.name)).toEqual(expect.arrayContaining(nativeTeamCoordination ? coordination : ['runtime_user_agenda','runtime_uncertainties','runtime_support_report']))
+    expect(projected.tools.map(tool => tool.name)).toEqual(expect.arrayContaining(nativeTeamCoordination ? ['hivemind_hq_contract','team_task_list','team_task_get','list_agents'] : ['runtime_user_agenda','runtime_uncertainties','runtime_support_report']))
     const receipt = await tools.get('hivemind_capabilities')!.execute({ operation: 'lease', capabilities: ['employees'] }, { agent, signal: new AbortController().signal } as never) as { visibleTools: string[]; suppressed_capabilities?: string[] }
-    expect(projected.tools.some(tool=>tool.name==='hivemind_hq_blocker')).toBe(nativeTeamCoordination)
+    expect(projected.tools.some(tool=>tool.name==='hivemind_hq_blocker')).toBe(false)
     expect(receipt.visibleTools.includes('hivemind_hq_blocker')).toBe(nativeTeamCoordination)
     if(nativeTeamCoordination) expect(receipt.suppressed_capabilities).toBeUndefined()
     else expect(receipt.suppressed_capabilities).toEqual(['employees'])
-    expect(receipt.visibleTools).toEqual(expect.arrayContaining(nativeTeamCoordination ? coordination : ['runtime_user_agenda','runtime_uncertainties','runtime_support_report']))
+    expect(receipt.visibleTools).toEqual(expect.arrayContaining(nativeTeamCoordination ? coordination.filter(name => name !== 'hivemind_hq_rest' && !name.startsWith('schedule_')) : ['runtime_user_agenda','runtime_uncertainties','runtime_support_report']))
   })
 
   it('projects a compact initial tool surface and progressively restores native tools by lease', async () => {
@@ -243,7 +243,6 @@ describe('hivemind playbooks', () => {
     )) as typeof assembly
     expect(projected.tools.map(tool => tool.name).sort()).toEqual([
       'ask_user_question',
-      'hivemind_browser_capture',
       'hivemind_capabilities',
       'hivemind_meta',
       'hivemind_operating_context',
@@ -258,7 +257,7 @@ describe('hivemind playbooks', () => {
         .schemas()
         .map(tool => tool.name)
         .sort(),
-    ).toEqual(['ask_user_question', 'hivemind_browser_capture', 'hivemind_capabilities', 'hivemind_meta', 'hivemind_operating_context', 'hivemind_operating_plan', 'hivemind_research_answer', 'hyperagents_history', 'hyperagents_session_diagnostics', 'schedule_create', 'schedule_delete', 'schedule_list', 'schedule_update'])
+    ).toEqual(['ask_user_question', 'hivemind_capabilities', 'hivemind_meta', 'hivemind_operating_context', 'hivemind_operating_plan', 'hivemind_research_answer', 'hyperagents_history', 'hyperagents_session_diagnostics', 'schedule_create', 'schedule_delete', 'schedule_list', 'schedule_update'])
     events.push({
       type: 'hivemind/operating-context',
       data: { runId: 'run-1', objective: 'Assess risk.', employeeCandidates: [], retrieval: {} },

@@ -126,6 +126,24 @@ function texts(value: unknown, name: string): string[] {
   if (!Array.isArray(value) || value.length > 20) throw new Error(`hq_rest_invalid_${name}`)
   return value.map(item => bounded(item, name, 1000))
 }
+/** Whether a turn changed business work rather than only reading saved evidence. */
+export function requiresRestHandoff(events: readonly SessionEvent[]): boolean {
+  const reads = new Set(['hyperagents_history','hyperagents_session_diagnostics','read','glob','grep','web_search','web_fetch','hivemind_web_search','hivemind_read_attachment','hivemind_operating_context','hivemind_research_answer','team_task_list','team_task_get','list_agents','job_list','job_output','inspect_image','read_image','hivemind_hq_rest_state'])
+  const readActions: Record<string, readonly string[]> = {
+    hivemind_meta: ['recall'], hyperagents_memory: ['recall'],
+    runtime_user_agenda: ['recall'], runtime_uncertainties: ['recall'],
+    hivemind_capabilities: ['list','lease','reset'], hivemind_hq_contract: ['list','get'],
+    hivemind_connected_task: ['list_connections','connection_status','search','list','get','status'],
+  }
+  return events.some((event) => {
+    if (event.type !== 'tool/call') return false
+    if (reads.has(event.data.name)) return false
+    try {
+      const args = JSON.parse(event.data.arguments) as { action?: string; operation?: string }
+      return !readActions[event.data.name]?.includes(args.action ?? args.operation ?? '')
+    } catch { return true }
+  })
+}
 export function restIntents(events: readonly SessionEvent[]): RestIntent[] {
   return events.flatMap(event => event.type === 'hivemind/hq-rest-intent' ? [event.data] : [])
 }
@@ -308,10 +326,11 @@ export function installRest(ctx: Context): void {
     if ((investigation?.data as { enabled?: boolean } | undefined)?.enabled) return
     const start = events.findLast(event => event.type === 'turn/start')?.seq ?? -1
     const current = events.filter(event => event.seq > start)
-    const toolWork = current.some(event => event.type === 'tool/call')
+    const toolWork = requiresRestHandoff(current)
     // A social reply is not a voluntary sleep transition. Never manufacture
     // extra model turns just to rebuild the existing operational handoff.
     if (socialTurnOnly(current) || isNightlyScheduledTurn(agent)) return
+    if (!toolWork) return
     const latest = restIntents(events).at(-1)
     const priorBinding = latest && events.findLast(event => event.type === 'hivemind/hq-rest-wake' && event.data.handoffId === latest.id)
     if (!toolWork && priorBinding?.type === 'hivemind/hq-rest-wake') {

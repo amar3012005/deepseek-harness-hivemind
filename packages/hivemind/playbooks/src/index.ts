@@ -224,9 +224,7 @@ const CORE_TOOLS = [
   'hivemind_operating_context',
   'hivemind_operating_plan',
   'hivemind_research_answer',
-  'hivemind_browser_capture',
   'hivemind_read_attachment',
-  'hivemind_media_generate',
   'job_output',
   'job_list',
   'job_kill',
@@ -249,7 +247,10 @@ const CAPABILITY_TOOLS: Readonly<Record<CapabilityLane, readonly string[]>> = {
   browser: ['hivemind_browser_capture', 'hivemind_browser_discover'],
   workspace: ['bash', 'read', 'write', 'edit', 'glob', 'grep', 'job_list', 'job_output', 'job_kill'],
   employees: [
-    'hivemind_employee_panel',
+    'team_task_list', 'team_task_get', 'team_task_create', 'team_task_update', 'wait_agent',
+    'hivemind_employee_panel', 'hivemind_hq_contract', 'hivemind_hq_blocker',
+    'hivemind_hq_awakening', 'hivemind_onboarding', 'hivemind_employee_lifecycle',
+    'hivemind_administrator_message', 'hivemind_voice_baseline',
     'hivemind_delegate_employee',
     'spawn_teammate',
     'list_agents',
@@ -265,6 +266,7 @@ const CAPABILITY_TOOLS: Readonly<Record<CapabilityLane, readonly string[]>> = {
     'todo_write',
   ],
   automation: [
+    'hivemind_hq_rest', 'hivemind_hq_rest_state',
     'schedule_create',
     'schedule_list',
     'schedule_update',
@@ -289,9 +291,9 @@ const CAPABILITY_DESCRIPTIONS: Readonly<Record<CapabilityLane, string>> = {
   web: 'Quick public-web discovery and direct text retrieval when a governed research job is unnecessary.',
   browser: 'Progressive browser discovery, navigation, extraction and capture.',
   workspace: 'Filesystem, shell and background job work.',
-  employees: 'Employee delegation and native child-agent collaboration.',
+  employees: 'Durable HQ contracts, employee lifecycle, delegation, review, administrator delivery and native team collaboration.',
   orchestration: 'Playbooks, operating plans, inline workstreams, and session todo tracking.',
-  automation: 'Tenant-scoped scheduled tasks, durable workflows, goals, and autonomous Ralph execution.',
+  automation: 'Runtime rest handoffs and tenant-scoped schedules. Lease only when a new handoff or scheduled action is required.',
   skills: 'Search and load exact specialized instructions progressively without mounting the full skill catalog.',
   artifact:
     'Inspect saved artifacts and admitted owner-uploaded HTML/Markdown/plain-text/PDF source files by their exact attachment receipts, without filesystem access. Discover configured PDF, presentation, spreadsheet, image, video and web generators, then produce stored files. Load document design or Brand DNA when useful. Calculate financial totals with the deterministic calculator.',
@@ -930,11 +932,7 @@ export function apply(ctx: Context, config: Partial<Config> = {}): void {
     // Ordinary employee presets retain their existing progressive boundary.
     if (nativeTeamCoordination) {
       for (const tool of [
-        'hivemind_voice_baseline', 'hivemind_hq_contract', 'hivemind_hq_blocker', 'hivemind_hq_rest', 'hivemind_hq_rest_state', 'hivemind_employee_panel',
-        'hivemind_hq_awakening', 'hivemind_onboarding', 'hivemind_administrator_message', 'hivemind_employee_lifecycle',
-        'team_task_list', 'team_task_get', 'team_task_create', 'team_task_update', 'list_agents',
-        'spawn_teammate', 'send_message', 'wait_agent', 'interrupt_agent',
-        'schedule_create', 'schedule_list', 'schedule_update', 'schedule_delete',
+        'hivemind_hq_contract', 'team_task_list', 'team_task_get', 'list_agents',
       ]) requested.add(tool)
     }
     for (const capability of capabilities) {
@@ -960,6 +958,7 @@ export function apply(ctx: Context, config: Partial<Config> = {}): void {
     return receipt
   }
 
+  const leasedTurnByAgent = new WeakMap<Agent, number>()
   ctx.on('system-prompt/assemble', async (_assembly, context, next) => {
     let assembled = await next()
     const agent = context.agent
@@ -970,6 +969,15 @@ export function apply(ctx: Context, config: Partial<Config> = {}): void {
       // the exact same projection to request one; later assemblies are already
       // filtered by the registry itself.
       let state = capabilityStateByAgent.get(agent)
+      const currentTurn = agent.session.snapshotEvents().findLast(event => event.type === 'turn/start')?.data.turn
+      if (state && currentTurn !== undefined && leasedTurnByAgent.get(agent) !== currentTurn) {
+        const pending = ctx.get('sessionProjections')?.snapshot(agent.session).values.userQuestions?.active ?? []
+        if (pending.length === 0) {
+          replaceCapabilityLease(agent, hasUnfinishedPlanWorkstreams(agent) ? new Set<CapabilityLane>(['orchestration']) : new Set(), 'reset')
+          state = capabilityStateByAgent.get(agent)
+        }
+      }
+      if (currentTurn !== undefined) leasedTurnByAgent.set(agent, currentTurn)
       if (state === undefined) {
         replaceCapabilityLease(
           agent,

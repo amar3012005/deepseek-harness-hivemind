@@ -7,7 +7,7 @@ import type { ToolDefinition } from '@deepseek-ai/dsh-tools'
 import { createBrowserTimeZoneConfirmation } from '@deepseek-ai/dsh-time-context'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { HqControl } from '../src/control.ts'
-import { installRest, recoverRest, restState, restScheduleId, restBriefing, acknowledgeRestNotes, leaveRestNote, restWakeDisplay, greetingOnly, socialTurnOnly, isNightlyScheduledTurn } from '../src/rest.ts'
+import { requiresRestHandoff, installRest, recoverRest, restState, restScheduleId, restBriefing, acknowledgeRestNotes, leaveRestNote, restWakeDisplay, greetingOnly, socialTurnOnly, isNightlyScheduledTurn } from '../src/rest.ts'
 
 const request = { handoff_id: 'rest-test', wake_at: '2030-01-01T01:00:00Z', summary: 'Review the existing task', next_steps: ['Inspect current receipts'], blockers: ['Waiting for evidence'] }
 function fixture() {
@@ -422,4 +422,12 @@ it('preserves the nightly occurrence in a native mixed recurring batch and rejec
   expect(isNightlyScheduledTurn(f.agent, [scheduled])).toBe(true)
   expect(isNightlyScheduledTurn(f.agent, [createUserMessage({ content: scheduled.content,
     source: { kind: 'schedule', occurrenceAt: '2030-01-03T00:00:00Z' } })])).toBe(false)
+})
+
+it('does not manufacture rest work after historical or memory reads', () => {
+  const calls = (name: string, arguments_: string) => [{ type: 'tool/call', data: { name, arguments: arguments_ } }] as SessionEvent[]
+  expect(requiresRestHandoff(calls('hyperagents_history', '{}'))).toBe(false)
+  expect(requiresRestHandoff(calls('hivemind_meta', '{"action":"recall"}'))).toBe(false)
+  expect(requiresRestHandoff(calls('hivemind_hq_contract', '{"operation":"list"}'))).toBe(false)
+  expect(requiresRestHandoff(calls('team_task_create', '{}'))).toBe(true)
 })

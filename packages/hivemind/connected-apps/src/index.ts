@@ -1823,7 +1823,7 @@ export function apply(ctx: Context, config: Config = {}): void {
     name: BRIDGE_TOOL,
     description: 'Tenant-scoped connected-app gateway. Start external-app work with atomic search queries, explicit outcomes, exact result limits, all concrete search filters in known_fields, and a top-level session: { generate_id: true }. Follow recommended_plan_steps: for an explicitly planned read tool, call schemas with its exact slug in the same session, then execute using that contract. Never execute a plan hint directly or guess tools. External writes follow native permission policy. For dependent tasks save a checkpoint with the canonical report, sources, confirmed steps and next step; read_checkpoint restores it. Reuse operation_id on write retries. outcome_unknown requires destination reconciliation, never blind resend. Each successful execution completes only that step, not the whole task. When result_fields were requested, report projection_status and every missing_result_fields entry; never claim requested evidence was returned when projection_status is incomplete. For writes, request the stable resource identifier needed for later verification or follow-up when its exact field is known from the selected contract.',
     parameters: {
-      action: { type: 'string', required: true, enum: ['connection_status', 'search', 'schemas', 'manage_connection', 'wait_connection', 'cancel_connection', 'execute', 'checkpoint', 'read_checkpoint', 'read_receipt'], description: 'Use connection_status only for a pure status check of explicitly named apps. Use search for real app work. When the user declines or abandons a saved request, or you establish it is no longer necessary, use cancel_connection with its exact session_id and request_call_id; it cancels only that local request, not the connected account.' },
+      action: { type: 'string', required: true, enum: ['list_connections', 'connection_status', 'search', 'schemas', 'manage_connection', 'wait_connection', 'cancel_connection', 'execute', 'checkpoint', 'read_checkpoint', 'read_receipt'], description: 'Use list_connections to list authenticated active apps without authorizing anything. Use connection_status only for a pure status check of explicitly named apps. Use search for real app work. When the user declines or abandons a saved request, or you establish it is no longer necessary, use cancel_connection with its exact session_id and request_call_id; it cancels only that local request, not the connected account.' },
       cancellation_reason: { type: 'string', enum: ['user_declined', 'no_longer_needed'], description: 'For cancel_connection: user_declined for an explicit decline; no_longer_needed only when current evidence establishes this saved request is unnecessary. Do not treat unrelated topic changes as a decline.' },
       apps: { type: 'array', items: { type: 'string' }, description: 'One to four explicit app names for connection_status. Resolved against authenticated toolkit metadata, never semantic tool search.' },
       queries: {
@@ -1872,6 +1872,16 @@ export function apply(ctx: Context, config: Config = {}): void {
     async execute(args, execution) {
       if (!connectedAppsEnabled(ctx, config.enabledByDefault === true)) throw new Error('Connected tools are disabled for this turn. Enable Tools and retry.')
       const identity = await ctx.hivemindIdentity.resolve(execution.signal)
+      if (args.action === 'list_connections') {
+        const session = await getSession(identity, {})
+        const result = await session.toolkits({ isConnected: true, limit: 16 })
+        const apps = catalogToolkits(result).filter(item => item.connected).slice(0, 16)
+          .map(item => ({ app: item.slug, name: item.name, connected: true }))
+        const receipt = { status: 'active_connections', apps,
+          complete: !result.cursor, next_action_guidance: 'Search only relevant returned active app names. No new authorization has been started; an empty list means answer from saved evidence.' }
+        appendConnectedReceipt(execution, 'connection_inventory', receipt)
+        return receipt
+      }
       if (args.action === 'checkpoint' || args.action === 'read_checkpoint') {
         const id = stringValue(args.checkpoint_id)
         if (id === undefined || id.length > 120 || execution.agent === undefined) throw new Error('Checkpoint requires a task identifier and active session')

@@ -1767,3 +1767,15 @@ describe('progressive Composio bridge', () => {
     expect(app.ask).not.toHaveBeenCalled()
   })
 })
+
+it('lists only authenticated active connections without asking for authorization', async () => {
+  toolkits.mockResolvedValueOnce({ items: [
+    { slug: 'gmail', name: 'Gmail', connection: { isActive: true } },
+    { slug: 'outlook', name: 'Outlook', connection: { isActive: false } },
+  ] })
+  const fixture = harness()
+  const result = await fixture.tool().execute({ action: 'list_connections' }, { signal: new AbortController().signal, concludeTurn: vi.fn() } as never)
+  expect(result).toMatchObject({ status: 'active_connections', apps: [{ app: 'gmail', name: 'Gmail', connected: true }] })
+  expect(fixture.ask).not.toHaveBeenCalled()
+  expect(execute).not.toHaveBeenCalled()
+})

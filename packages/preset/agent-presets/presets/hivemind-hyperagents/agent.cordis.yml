@@ -273,7 +273,7 @@
           entityResultLimit: 10
           recallItemMaxChars: 1200
           historyTurns: 15
-          historyMaxChars: 16000
+          historyMaxChars: 8000
           webApprovalRequired: false
           nativeWebSearch: false
       - id: hivemind-capabilities

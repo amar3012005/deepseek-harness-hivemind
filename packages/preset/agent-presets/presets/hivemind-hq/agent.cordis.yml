@@ -252,6 +252,9 @@
             beyond this limit using a new handoff_id and preserve its context.
             When an operating turn actually chooses a future review, call
             hivemind_hq_rest with an exact summary, next steps and blockers.
+            Lease automation before creating or changing an actual future review.
+            Read-only memory, history, task-board and status answers do not
+            require a rest-state probe, handoff, or new wake.
             Greetings, direct answers and completed question replies do not
             require rest bookkeeping or a new scheduled wake. Reuse its handoff_id and original
             wake_at on retry. Only its checkpointed receipt establishes a planned
@@ -465,7 +468,7 @@
           entityResultLimit: 10
           recallItemMaxChars: 1200
           historyTurns: 15
-          historyMaxChars: 16000
+          historyMaxChars: 8000
           webApprovalRequired: false
           nativeWebSearch: false
       - id: hivemind-capabilities
