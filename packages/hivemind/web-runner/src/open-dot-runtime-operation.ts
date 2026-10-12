@@ -32,7 +32,9 @@ export function verifyOpenDotRuntimeOperation(raw: string, authorization: string
   if (Buffer.byteLength(secret) < 32) reject(503, 'open_dot_runtime_bridge_unavailable')
   const token = /^Bearer ([A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+)$/.exec(authorization)?.[1]
   if (!token || token.length > 8192) reject(401, 'invalid_open_dot_runtime_authorization')
-  const [h, p, sig] = token.split('.')
+  const parts = token.split('.')
+  // The token pattern above proves exactly three nonempty components.
+  const h = parts[0]!, p = parts[1]!, sig = parts[2]!
   if (Buffer.from(sig, 'base64url').toString('base64url') !== sig) reject(401, 'invalid_open_dot_runtime_authorization')
   if (!equal(createHmac('sha256', secret).update(`${h}.${p}`).digest(), Buffer.from(sig, 'base64url'))) reject(401, 'invalid_open_dot_runtime_authorization')
   const header = decode(h), claims = decode(p)
