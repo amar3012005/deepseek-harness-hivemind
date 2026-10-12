@@ -30,6 +30,30 @@ function fixture() {
   const request = { key: 'test-1', target: 'employee-ravi', targetProfile: { id: 'employee-ravi', name: 'Ravi', role: 'Research' }, kind: 'question' as const, text: 'What is the requested title?' }
   return { ctx, caller, ravi, messaging, request, open }
 }
+function externalFixture(deliver: ExternalEmployeeRoomProvider['deliver'] = async () => ({ receiptId: 'dot-job-42', status: 'accepted' })) {
+  const base = fixture()
+  const events: SessionEvent[] = []
+  const proxy = {
+    id: 'session-opaque-9f31',
+    session: { header: { id: 'session-opaque-9f31', agentPreset: 'hivemind-hyperagents' }, ownEvents: () => events, snapshotEvents: () => events, append: (type: string, data: unknown) => events.push({ type, data } as SessionEvent) },
+    inbox: { nextTurn: [], nextStep: [] }, steer: vi.fn(),
+  } as unknown as Agent
+  const agents = (base.ctx as unknown as { agents: { get: (id: string) => Agent | undefined } }).agents
+  const originalGet = agents.get.bind(agents)
+  vi.spyOn(agents, 'get').mockImplementation(id => id === proxy.id ? proxy : originalGet(id))
+  const principal = { orgId: 'org-1', userId: 'user-1', profile: 'hivemind-chat' as const, variation: 'test', authenticatedActor: { orgId: 'org-1', userId: 'user-1', name: 'Admin', role: 'admin' } }
+  Object.assign(base.ctx, { hivemindExecutionScope: { require: () => principal } })
+  const provider: ExternalEmployeeRoomProvider = {
+    resolve: async employeeId => {
+      if (employeeId !== 'employee-dot') throw new Error('canonical_directory_employee_not_found')
+      return { agent: proxy, driverless: true }
+    },
+    deliver,
+  }
+  const messaging = new RoomMessaging(base.ctx, base.open, provider)
+  const input = { key: 'external-1', target: 'employee-dot', targetProfile: { id: 'employee-dot', name: 'Ravi', role: 'Research', executionBackend: 'open-dot' as const, dotId: 'dot-canonical-7' }, kind: 'question' as const, text: 'Prepare the requested report.' }
+  return { ...base, proxy, provider, messaging, input, principal }
+}
 const signal = new AbortController().signal
 
 describe('Persistent agent room messaging', () => {
@@ -57,40 +81,81 @@ describe('Persistent agent room messaging', () => {
     await expect(messaging.resolveRoom('different', request.targetProfile, signal)).rejects.toThrow('identity_conflict')
   })
   it('routes a marked external employee through durable provider acceptance without steering a DSH turn', async () => {
-    const { ctx, caller, open } = fixture()
-    const proxy = (() => {
-      const events: SessionEvent[] = []
-      return {
-        id: 'session-opaque-9f31',
-        session: { header: { id: 'session-opaque-9f31', agentPreset: 'hivemind-hyperagents' }, ownEvents: () => events, snapshotEvents: () => events, append: (type: string, data: unknown) => events.push({ type, data } as SessionEvent) },
-        inbox: { nextTurn: [], nextStep: [] }, steer: vi.fn(),
-      } as unknown as Agent
-    })()
-    const agents = (ctx as unknown as { agents: { get: (id: string) => Agent | undefined } }).agents
-    const originalGet = agents.get.bind(agents)
-    vi.spyOn(agents, 'get').mockImplementation(id => id === proxy.id ? proxy : originalGet(id))
-    let accept!: () => void
-    const acceptance = new Promise<void>(resolve => { accept = resolve })
-    const delivered = vi.fn(async () => { await acceptance; return { receiptId: 'dot-job-42', status: 'accepted' as const } })
-    const provider: ExternalEmployeeRoomProvider = {
-      resolve: async employeeId => employeeId === 'employee-dot' ? { agent: proxy, driverless: true } : undefined,
-      deliver: delivered,
-    }
-    const messaging = new RoomMessaging(ctx, open, provider)
-    const input = { key: 'external-1', target: 'employee-dot', targetProfile: { id: 'employee-dot', name: 'Ravi', role: 'Research', executionBackend: 'open-dot' as const, dotId: 'dot-canonical-7' }, kind: 'question' as const, text: 'Prepare the requested report.' }
+    let resolveAcceptance!: () => void
+    const acceptance = new Promise<void>(resolve => { resolveAcceptance = resolve })
+    const delivered = vi.fn(async (_input: Parameters<ExternalEmployeeRoomProvider['deliver']>[0]) => { await acceptance; return { receiptId: 'dot-job-42', status: 'accepted' as const } })
+    const { caller, open, proxy, messaging, input, principal } = externalFixture(delivered)
     const sending = messaging.send(caller, input, signal)
     await vi.waitFor(() => expect(delivered).toHaveBeenCalledOnce())
     expect(proxy.steer).not.toHaveBeenCalled()
     expect(proxy.session.snapshotEvents().some(event => event.type === 'hivemind/room-message-received')).toBe(false)
     expect(open).not.toHaveBeenCalled()
-    accept()
+    resolveAcceptance()
     await sending
     expect(proxy.session.snapshotEvents().find(event => event.type === 'hivemind/room-message-received')?.data).toMatchObject({ targetId: proxy.id })
+    expect(proxy.session.snapshotEvents().find(event => event.type === 'hivemind/external-delivery-accepted')?.data).toMatchObject({ receiptId: 'dot-job-42', employeeId: 'employee-dot' })
+    expect(delivered.mock.calls[0]?.[0]).toMatchObject({ callerSessionId: caller.id, principal, authenticatedActor: principal.authenticatedActor })
+  })
+  it('retains durable backend acceptance when canceled after queue acceptance and recovers without duplicate delivery', async () => {
+    const delivered = vi.fn(async () => ({ receiptId: 'dot-job-42', status: 'accepted' as const }))
+    const { ctx, caller, proxy, messaging, input } = externalFixture(delivered)
+    const controller = new AbortController()
+    vi.mocked(ctx.sessions.flush).mockImplementation(async session => {
+      const events = (session as unknown as { snapshotEvents?: () => SessionEvent[] }).snapshotEvents?.() ?? []
+      if (session.id === proxy.id && events.some(event => event.type === 'hivemind/external-delivery-accepted')) controller.abort()
+      return true
+    })
+    await expect(messaging.send(caller, input, controller.signal)).rejects.toThrow()
+    expect(proxy.session.snapshotEvents().find(event => event.type === 'hivemind/external-delivery-accepted')?.data).toMatchObject({ receiptId: 'dot-job-42' })
+    expect(proxy.session.snapshotEvents().some(event => event.type === 'hivemind/room-message-received')).toBe(false)
+    expect(delivered).toHaveBeenCalledOnce()
+    vi.mocked(ctx.sessions.flush).mockResolvedValue(true)
+    await messaging.send(caller, input, signal)
+    expect(delivered).toHaveBeenCalledOnce()
+    expect(proxy.session.snapshotEvents().filter(event => event.type === 'hivemind/room-message-received')).toHaveLength(1)
+  })
+  it('rejects malformed backend receipts before writing acceptance or delivery receipts', async () => {
+    const malformed = vi.fn(async () => ({ receiptId: 'dot-job-bad', status: 'done' } as unknown as { receiptId: string; status: 'accepted' | 'recorded' }))
+    const { caller, proxy, messaging, input } = externalFixture(malformed)
+    await expect(messaging.send(caller, input, signal)).rejects.toThrow('external_receipt_invalid')
+    expect(proxy.session.snapshotEvents().some(event => event.type === 'hivemind/external-delivery-accepted')).toBe(false)
+    expect(proxy.session.snapshotEvents().some(event => event.type === 'hivemind/room-message-received')).toBe(false)
+  })
+  it('does not bind a proxy room when cancellation arrives during external resolution', async () => {
+    const { open, proxy, provider, messaging, input } = externalFixture()
+    const controller = new AbortController()
+    vi.spyOn(provider, 'resolve').mockImplementation(async () => {
+      controller.abort()
+      return { agent: proxy, driverless: true }
+    })
+    await expect(messaging.resolveRoom(input.target, input.targetProfile, controller.signal)).rejects.toThrow()
+    expect(proxy.session.snapshotEvents().some(event => event.type === 'hivemind/external-employee-room')).toBe(false)
+    expect(open).not.toHaveBeenCalled()
   })
   it('fails closed for an explicitly external profile when no provider is registered', async () => {
     const { messaging, open, request } = fixture()
     await expect(messaging.resolveRoom(request.target, { ...request.targetProfile, executionBackend: 'open-dot', dotId: 'dot-canonical' }, signal)).rejects.toThrow('external_provider_required')
     expect(open).not.toHaveBeenCalled()
+  })
+  it('fails closed when the trusted HIVE principal is unavailable', async () => {
+    const { ctx, messaging, open, request } = fixture()
+    Object.assign(ctx, { hivemindExecutionScope: undefined })
+    const profile = { ...request.targetProfile, executionBackend: 'open-dot' as const, dotId: 'dot-canonical' }
+    const provider: ExternalEmployeeRoomProvider = {
+      resolve: async () => { throw new Error('must not resolve without principal') },
+      deliver: async () => ({ receiptId: 'unused', status: 'accepted' }),
+    }
+    const withProvider = new RoomMessaging(ctx, open, provider)
+    await expect(withProvider.resolveRoom(request.target, profile, signal)).rejects.toThrow('external_principal_required')
+    expect(open).not.toHaveBeenCalled()
+  })
+  it('rejects an authored actor that conflicts with the scoped principal', async () => {
+    const { ctx, caller, proxy, messaging, input } = externalFixture()
+    const wrongActor = { orgId: 'other-org', userId: 'other-user', name: 'Other', role: 'member' }
+    ;(ctx as unknown as { serial: (...args: unknown[]) => Promise<unknown> }).serial = async () => wrongActor
+    await expect(messaging.send(caller, input, signal)).rejects.toThrow('external_actor_conflict')
+    expect(caller.session.snapshotEvents().some(event => event.type === 'hivemind/room-message-queued')).toBe(false)
+    expect(proxy.session.snapshotEvents().some(event => event.type === 'hivemind/external-delivery-accepted')).toBe(false)
   })
   it('admits a question once and pins the trusted recipient selection', async () => {
     const { caller, ravi, messaging, request } = fixture()
