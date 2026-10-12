@@ -218,6 +218,7 @@ export function liveVoicePlugin(config: LiveVoiceConfig,
           reply(res, 403, { error: 'invalid_request' }); return
         }
         const owner = p.orgId
+        let startupStage = 'context'
         try {
           const input = await body(req)
           if (resolveActor && typeof input.sessionId==='string') {
@@ -321,10 +322,12 @@ export function liveVoicePlugin(config: LiveVoiceConfig,
                 if (!(await ctx.sessions.flush(agent.session))) throw new Error('voice_handoff_persistence_required')
                 reply(res, 200, result); return
               }
+              startupStage = 'authorization'
               const grant = await models.getAuth('openai-codex', { signal })
               const token = grant?.auth.apiKey
               if (!token) throw new Error('voice_authorization_unavailable')
               const headers = { authorization: `Bearer ${token}`, 'ChatGPT-Account-Id': codexAccountId(token), originator: 'hivemind', 'OpenAI-Alpha': 'quicksilver=v2', 'content-type': 'application/json' }
+              startupStage = 'provider'
               const response = await fetch('https://chatgpt.com/backend-api/codex/realtime/calls?intent=quicksilver&architecture=avas', {
                 method: 'POST', headers, body: JSON.stringify({ sdp: input.sdp, session: voiceSession(config.model, config.voice, prompt, context) }), signal, redirect: 'error',
               })
@@ -461,7 +464,11 @@ export function liveVoicePlugin(config: LiveVoiceConfig,
               reply(res, 200, { id: roomId, sdp, ...(initialCheckIn ? { closingAfterMs: Math.max(0, closingAt - Date.now()) } : {}) })
             })
           } finally { starting.delete(owner) }
-        } catch (error) { reply(res, 503, { error: error instanceof Error && error.message === 'runtime_decision_memory_unavailable' ? 'runtime_decision_memory_unavailable' : 'voice_unavailable', fallbackAllowed: error instanceof Error && ['voice_connection_failed', 'voice_authorization_unavailable'].includes(error.message) }) }
+        } catch (error) {
+          const safeCodes = ['voice_connection_failed', 'voice_authorization_unavailable', 'session_unavailable', 'profile_unavailable', 'employee_voice_identity_unavailable', 'runtime_decision_memory_unavailable', 'voice_handoff_persistence_required']
+          const code = error instanceof Error && safeCodes.includes(error.message) ? error.message : 'startup_failed'
+          console.warn('hivemind voice startup failed', startupStage, code)
+          reply(res, 503, { error: error instanceof Error && error.message === 'runtime_decision_memory_unavailable' ? 'runtime_decision_memory_unavailable' : 'voice_unavailable', fallbackAllowed: error instanceof Error && ['voice_connection_failed', 'voice_authorization_unavailable'].includes(error.message) }) }
       } }))
     } }
 }
