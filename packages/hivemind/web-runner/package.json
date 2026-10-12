@@ -21,6 +21,7 @@
   "dependencies": {
     "@deepseek-ai/schemastery": "workspace:^",
     "@deepseek-ai/dsh-hivemind-employee-directory": "workspace:^",
+    "@deepseek-ai/dsh-hivemind-hq-runtime": "workspace:^",
     "@deepseek-ai/dsh-hivemind-execution-scope": "workspace:^",
     "redis": "^5.8.2",
     "@earendil-works/pi-ai": "^0.85.1",

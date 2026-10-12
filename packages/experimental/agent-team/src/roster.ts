@@ -21,6 +21,7 @@ import type {
   SpawnTeammateResult,
   TeamMemberSnapshot,
   TeamMemberView,
+  ExternalPersistentAssignee,
 } from './types.ts'
 import { requiredText } from './validation.ts'
 
@@ -217,17 +218,32 @@ export class TeamRoster {
    * @param description - Employee responsibility.
    * @returns Persisted assignee view.
    */
-  async bindPersistent(caller: Agent, target: Agent, rawName: string, description: string): Promise<TeamMemberView> {
+  async bindPersistent(caller: Agent, target: Agent | ExternalPersistentAssignee, rawName: string, description: string): Promise<TeamMemberView> {
     if (this.lifecycle.disposed) throw new TeamError('Agent Teams service is disposing', 'TEAM_DISPOSED')
     const operation = this.bindPersistentAdmitted(caller, target, rawName, description)
     this.inFlightCreations.add(operation)
     try { return await operation } finally { this.inFlightCreations.delete(operation) }
   }
 
-  private async bindPersistentAdmitted(caller: Agent, target: Agent, rawName: string, description: string): Promise<TeamMemberView> {
+  private async bindPersistentAdmitted(caller: Agent, target: Agent | ExternalPersistentAssignee, rawName: string, description: string): Promise<TeamMemberView> {
     const membership = this.membership(caller)
     if (membership.role !== 'lead' || caller !== membership.root) throw new TeamError('only the Team Lead can bind assignees', 'TEAM_LEAD_REQUIRED')
-    if (this.ctx.agents.get(target.id) !== target || target === caller || target.session.header.parentSession !== undefined) throw new TeamError('persistent assignee must be an exact independent live root', 'TEAM_INVALID_TARGET')
+    const validTarget = (): boolean => {
+      if ('kind' in target && target.kind === 'external-persistent-assignee') {
+        if (this.ctx.sessions.get(target.id) !== target.session || target.session.header.id !== target.id
+          || target.session.header.parentSession !== undefined) return false
+        const events = target.session.snapshotEvents()
+        const owner = events.find(event => String(event.type) === 'hivemind/session-owner')?.data as { id?: string } | undefined
+        const binding = events.find(event => String(event.type) === 'hivemind/external-employee-room')?.data as
+          { employeeId?: string; dotId?: string; backend?: string } | undefined
+        return owner?.id === target.employeeId && binding?.employeeId === target.employeeId
+          && binding.dotId === target.dotId && binding.backend === 'open-dot'
+      }
+      return this.ctx.agents.get(target.id) === target
+    }
+    if (!validTarget() || target.id === caller.id || target.session.header.parentSession !== undefined) {
+      throw new TeamError('persistent assignee must be an exact independent live root', 'TEAM_INVALID_TARGET')
+    }
     // The persistence provider authenticates both reads under the same current scope.
     // A process-global live Agent reference cannot bypass tenant authorization.
     for (const id of [caller.id, target.id]) {
@@ -236,7 +252,7 @@ export class TeamRoster {
     }
     const name = this.memberName(rawName)
     await this.journal.transact(caller.id, async () => {
-      if (this.lifecycle.disposed || this.ctx.agents.get(caller.id) !== caller || this.ctx.agents.get(target.id) !== target) throw new TeamError('persistent assignee admission ended', 'TEAM_DISPOSED')
+      if (this.lifecycle.disposed || this.ctx.agents.get(caller.id) !== caller || !validTarget()) throw new TeamError('persistent assignee admission ended', 'TEAM_DISPOSED')
       const state = this.journal.state(caller)
       const existing = state.members.find(member => member.id === target.id || member.name === name)
       if (existing !== undefined) {

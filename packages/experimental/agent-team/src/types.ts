@@ -3,7 +3,7 @@
 import type { Branded } from '@deepseek-ai/dsh-brand'
 import type { MessageId } from '@deepseek-ai/dsh-llm/brand'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm/types'
-import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import type { Session, SessionId } from '@deepseek-ai/dsh-session'
 
 /** Identifies the implicit team rooted at one top-level Session. */
 export type TeamId = Branded<'TeamId'>
@@ -241,4 +241,14 @@ declare module '@deepseek-ai/dsh-session/types' {
       targetId: SessionId
     }
   }
+}
+
+/** Durable session identity for externally executed persistent assignees. */
+export interface ExternalPersistentAssignee {
+  readonly kind: 'external-persistent-assignee'
+  readonly id: SessionId
+  readonly session: Session
+  readonly status: 'idle'
+  readonly employeeId: string
+  readonly dotId: string
 }

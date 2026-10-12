@@ -8,7 +8,7 @@ export interface ProducerArtifactReceipt {
   readonly artifactId: string
   readonly sessionId: string
   readonly sourceSeq: number
-  readonly sourceType: 'hivemind/artifact-created' | 'hivemind/generation-created'
+  readonly sourceType: 'hivemind/artifact-created' | 'hivemind/generation-created' | 'hivemind/external-artifact-created'
 }
 /** A task correlation; producer evidence is attached by the runtime, never tool input. */
 export interface TaskArtifactLinks {
@@ -30,7 +30,7 @@ export function verifiedArtifactLinks(
 ): TaskArtifactLinks {
   if (!sessionId || !artifactIds.length || artifactIds.some(id => typeof id !== 'string' || !id)) throw new Error('hq_artifact_receipt_required')
   const producerReceipts = artifactIds.map((artifactId) => {
-    const event = events.findLast(item => (item.type === 'hivemind/artifact-created' || item.type === 'hivemind/generation-created')
+    const event = events.findLast(item => (item.type === 'hivemind/artifact-created' || item.type === 'hivemind/generation-created' || item.type === 'hivemind/external-artifact-created')
       && typeof item.data === 'object' && item.data !== null && (item.data as { artifactId?: unknown }).artifactId === artifactId)
     if (!event || typeof event.seq !== 'number' || !Number.isSafeInteger(event.seq) || event.seq < 0) {
       throw new Error('hq_artifact_receipt_required')
@@ -62,7 +62,7 @@ export function taskContracts(events: readonly LedgerEvent[]): readonly CompanyT
 }
 export function requireArtifactReceipts(events: readonly LedgerEvent[], taskId: string): void {
   const savedIds = new Set(events.flatMap((event) => {
-    if (event.type !== 'hivemind/artifact-created' && event.type !== 'hivemind/generation-created') return []
+    if (event.type !== 'hivemind/artifact-created' && event.type !== 'hivemind/generation-created' && event.type !== 'hivemind/external-artifact-created') return []
     if (typeof event.data !== 'object' || event.data === null) return []
     const data = event.data as { artifactId?: unknown }
     return typeof data.artifactId === 'string' ? [data.artifactId] : []
@@ -77,7 +77,7 @@ export function requireArtifactReceipts(events: readonly LedgerEvent[], taskId: 
     const receipt = value as Partial<ProducerArtifactReceipt>
     if (typeof receipt.artifactId === 'string' && typeof receipt.sessionId === 'string' && receipt.sessionId
       && typeof receipt.sourceSeq === 'number' && Number.isSafeInteger(receipt.sourceSeq) && receipt.sourceSeq >= 0
-      && (receipt.sourceType === 'hivemind/artifact-created' || receipt.sourceType === 'hivemind/generation-created')) savedIds.add(receipt.artifactId)
+      && (receipt.sourceType === 'hivemind/artifact-created' || receipt.sourceType === 'hivemind/generation-created' || receipt.sourceType === 'hivemind/external-artifact-created')) savedIds.add(receipt.artifactId)
   }
   if (!Array.isArray(ids) || !ids.length || ids.some(id => typeof id !== 'string' || !savedIds.has(id))) throw new Error('hq_artifact_receipt_required')
 }
@@ -88,7 +88,7 @@ export function admissionFailedBeforeWork(events: readonly LedgerEvent[]): boole
   let failedAdmission = false
   for (const event of events) {
     if (event.type === 'user/message' || event.type === 'assistant/message' || event.type === 'tool/call'
-      || event.type === 'tool/result' || event.type === 'hivemind/artifact-created' || event.type === 'hivemind/generation-created') return false
+      || event.type === 'tool/result' || event.type === 'hivemind/artifact-created' || event.type === 'hivemind/generation-created' || event.type === 'hivemind/external-artifact-created') return false
     if (typeof event.data !== 'object' || event.data === null) continue
     const data = event.data as Record<string, unknown>
     if (event.type === 'agent/inbox/spliced') {
