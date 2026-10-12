@@ -139,7 +139,7 @@ describe('Persistent agent room messaging', () => {
     const { caller, messaging, request } = fixture()
     await messaging.send(caller, request, signal)
     await expect(messaging.send(caller, { ...request, text: 'different' }, signal)).rejects.toThrow('key_conflict')
-    await expect(messaging.send(caller, { ...request, key: 'self', target: 'runtime', targetProfile: undefined }, signal)).rejects.toThrow('self_target')
+    await expect(messaging.send(caller, { key: 'self', target: 'runtime', kind: request.kind, text: request.text }, signal)).rejects.toThrow('self_target')
     await expect(messaging.send(caller, { ...request, key: 'reply', kind: 'reply' }, signal)).rejects.toThrow('reply_reference')
   })
   it('correlates a reply to its original room and rejects runaway exchanges', async () => {
