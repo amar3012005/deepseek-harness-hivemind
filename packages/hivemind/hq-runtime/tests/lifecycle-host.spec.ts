@@ -16,6 +16,53 @@ function token(body:unknown,extra:Record<string,unknown>={}) {
   const unsigned=`${encode({ alg:'HS256',typ:'JWT' })}.${encode(value)}`
   return `Bearer ${unsigned}.${createHmac('sha256',secret).update(unsigned).digest('base64url')}`
 }
+it('routes Open Dot creation welcome and full-profile proposal through the exact bound room',async()=>{
+  const fixture=await harness();contexts.push(fixture.ctx);new ExecutionScope(fixture.ctx)
+  const chief=agentFor(fixture.ctx,'dot-lifecycle-chief'),roomAgent=agentFor(fixture.ctx,'dot-lifecycle-room')
+  fixture.resolve.mockResolvedValue({ agent:chief })
+  const targetProfiles:Array<Record<string,unknown>>=[]
+  const deliveries:Array<{ caller:unknown;message:Record<string,unknown> }>=[]
+  const external={ kind:'external-persistent-assignee',id:SessionId('session-open-dot-fixture'),session:roomAgent.session,
+    status:'idle',employeeId:input.employeeId,dotId:'dot_canary',organizationId:input.orgId,userId:input.userId,name:'Alex',role:'Research' }
+  const profile={ id:input.employeeId,name:'Alex',slug:'alex',role_archetype:'Research',status:'active',
+    policy_rules:{ open_dot_employee:{version:1,execution_backend:'open-dot',state:'bound',dot_id:'dot_canary'},
+      native_lifecycle:{version:1,phase:'active',kind:'durable'} } }
+  fixture.ctx.provide('hivemindEmployeeDirectory',{ profiles:async()=>({status:'ready',contract:'hivemind.hyperagent-profiles.v1',count:1,profiles:[profile]}) } as never)
+  Object.assign(fixture.ctx.sessionController,{
+    resolvePersistentEmployeeRoom:async(_id:string,target:Record<string,unknown>)=>{targetProfiles.push(target);return external},
+    deliverAgentMessage:async(caller:unknown,message:Record<string,unknown>)=>{
+      deliveries.push({caller,message});return {messageId:String(message['key']),targetSessionId:external.id,status:'accepted'}
+    },
+  })
+  let step:'onboarding'|'profile'='onboarding'
+  fixture.ctx.on('hivemind/employee-lifecycle-proof',async()=>({
+    employeeId:input.employeeId,revision:1,kind:'durable',phase:'active',expiresAt:null,
+    chief:{sessionId:chief.id,userId:input.userId},chiefs:[{sessionId:chief.id,userId:input.userId}],rooms:[],
+    ...(step==='onboarding'
+      ? {onboarding:{name:'Alex',role:'Research',creationHash:'c'.repeat(64)}}
+      : {profileReview:{name:'Alex',role:'Research',persona:'Agreed to assess market evidence.',profileRevision:3,creationHash:'d'.repeat(64)}}),
+  }))
+  const server=createServer();servers.push(server)
+  fixture.ctx.provide('webServer',{register:({handler,path}:{handler:RequestListener;path:string})=>{server.on('request',(req,res)=>{if(req.url===path)handler(req,res)});return()=>{}}} as never)
+  process.env['EMPLOYEE_FIXTURE_SECRET']=secret;apply(fixture.ctx,{enabled:true,serviceSecretEnv:'EMPLOYEE_FIXTURE_SECRET'})
+  await new Promise<void>(resolve=>server.listen(0,'127.0.0.1',resolve))
+  const address=server.address();if(!address||typeof address==='string')throw Error('missing server')
+  const call=()=>fetch('http://127.0.0.1:'+address.port+'/internal/hivemind/employee-lifecycle',{
+    method:'POST',headers:{authorization:token(input),'content-type':'application/json'},body:JSON.stringify(input),
+  })
+  expect((await call()).status).toBe(200)
+  expect(targetProfiles[0]).toMatchObject({id:input.employeeId,executionBackend:'open-dot',dotId:'dot_canary'})
+  expect(deliveries[0]?.caller).toBe(chief)
+  expect(deliveries[0]?.message).toMatchObject({target:input.employeeId,kind:'question',targetProfile:{executionBackend:'open-dot',dotId:'dot_canary'}})
+  expect(String(deliveries[0]?.message['text'])).toContain('Runtime will save the canonical profile')
+  step='profile'
+  expect((await call()).status).toBe(200)
+  expect(targetProfiles[1]).toMatchObject({id:input.employeeId,executionBackend:'open-dot',dotId:'dot_canary'})
+  expect(deliveries[1]?.caller).toBe(chief)
+  expect(deliveries[1]?.message).toMatchObject({target:input.employeeId,kind:'question'})
+  expect(String(deliveries[1]?.message['text'])).toContain('Send your proposed full persona to Runtime')
+  expect(String(deliveries[1]?.message['text'])).toContain('Do not claim it was saved')
+})
 it('binds lifecycle callbacks to exact body, purpose, administrator and short validity',()=>{
   expect(authorizeLifecycleCallback(token(input),secret,input)).toBe(true)
   expect(authorizeLifecycleCallback(token(input),secret,{ ...input,employeeId:input.userId })).toBe(false)
@@ -60,6 +107,7 @@ it('admits setup through the attested Chief and rechecks closeout before deliver
   const fixture=await harness();contexts.push(fixture.ctx)
   new ExecutionScope(fixture.ctx)
   const chief=agentFor(fixture.ctx,'setup-chief'),employee=agentFor(fixture.ctx,'setup-employee')
+  fixture.ctx.provide('hivemindEmployeeDirectory',{ profiles:async()=>({status:'ready',contract:'hivemind.hyperagent-profiles.v1',count:1,profiles:[{id:input.employeeId,name:'Alex',role_archetype:'Specialist',status:'active',policy_rules:{native_lifecycle:{version:1,phase:'active',kind:'durable'}}}]}) } as never)
   fixture.resolve.mockResolvedValue({ agent:chief })
   const deliveries: Array<{ key:string;target:string;kind:string;text:string }> = []
   Object.assign(fixture.ctx.sessionController, {
@@ -98,6 +146,7 @@ it('admits setup through the attested Chief and rechecks closeout before deliver
 it('asks Chief to confirm responsibilities before one welcome and persisted joining milestone',async()=>{
   const fixture=await harness();contexts.push(fixture.ctx);new ExecutionScope(fixture.ctx)
   const chief=agentFor(fixture.ctx,'profile-chief'),employee=agentFor(fixture.ctx,'profile-employee')
+  fixture.ctx.provide('hivemindEmployeeDirectory',{ profiles:async()=>({status:'ready',contract:'hivemind.hyperagent-profiles.v1',count:1,profiles:[{id:input.employeeId,name:'Alex',role_archetype:'Research',status:'active',policy_rules:{native_lifecycle:{version:1,phase:'active',kind:'durable'}}}]}) } as never)
   fixture.resolve.mockResolvedValue({ agent:chief })
   const deliveries:Array<{ caller:unknown;key:string;text:string;target:string }>=[]
   Object.assign(fixture.ctx.sessionController,{
