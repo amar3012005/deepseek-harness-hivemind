@@ -225,7 +225,7 @@ async function approveSaveDestination(
   execution: ToolExecution,
   request: SaveRequest,
   fullAccessAllowed: ((agent: Agent, signal: AbortSignal) => Promise<boolean>) | undefined,
-): Promise<SaveRequest | PendingSave | undefined> {
+): Promise<(SaveRequest & { scope: NonNullable<SaveRequest['scope']> }) | PendingSave | undefined> {
   if (execution.agent === undefined) throw new TypeError('hivemind-memory: active agent required')
   const operationId = saveOperationId(execution, request)
   const prior = latestSaveEvent(execution.agent, operationId)
@@ -532,17 +532,18 @@ export function memoryPlugin(config: MemoryPluginConfig, provider: MemoryProvide
         output,
         isConcurrencySafe: () => false,
         async execute(args, execution) {
-          if (execution.agent === undefined) throw new TypeError('hivemind-memory: active agent required')
+          const agent = execution.agent
+          if (agent === undefined) throw new TypeError('hivemind-memory: active agent required')
           const normalized = saveRequest(args)
           const owner = ctx.hivemindExecutionScope.require()
-          const [prepared] = prepareCheckpoint(execution, [provider.prepareSave?.(execution.agent, normalized) ?? normalized], owner)
+          const [prepared] = prepareCheckpoint(execution, [provider.prepareSave?.(agent, normalized) ?? normalized], owner)
           if (prepared === undefined) throw new Error('hivemind-memory: prepared save is unavailable')
           const approved = await approveSaveDestination(ctx, execution, prepared, hqFullAccessAllowed)
           if (approved !== undefined && 'pending' in approved) return approved as unknown as Record<string, JsonValue>
           return approved === undefined
             ? { operation: 'save', status: 'cancelled' }
             : runCheckpointedSave(ctx, execution, approved.scope, () =>
-              provider.save(execution.agent, approved, execution.signal, execution))
+              provider.save(agent, approved, execution.signal, execution))
         },
       })))
       ctx.effect(() => ctx.tools.register(defineTool({
@@ -689,6 +690,7 @@ export function memoryPlugin(config: MemoryPluginConfig, provider: MemoryProvide
           }
           if (operation === 'save') {
             if (execution.agent === undefined) throw new TypeError('hivemind-memory: active agent required')
+            const agent = execution.agent
             // Accept the historical flat form once and normalize it into the canonical
             // nested contract. This prevents a model formatting slip from causing a
             // second inference/search loop while retaining strict field validation.
@@ -698,7 +700,7 @@ export function memoryPlugin(config: MemoryPluginConfig, provider: MemoryProvide
             const normalized = saveRequest(rawSave)
             const owner = ctx.hivemindExecutionScope.require()
             const [prepared] = prepareCheckpoint(
-              execution, [provider.prepareSave?.(execution.agent, normalized) ?? normalized], owner,
+              execution, [provider.prepareSave?.(agent, normalized) ?? normalized], owner,
             )
             if (prepared === undefined) throw new Error('hivemind-memory: prepared save is unavailable')
             const approved = await approveSaveDestination(ctx, execution, prepared, hqFullAccessAllowed)
@@ -706,7 +708,7 @@ export function memoryPlugin(config: MemoryPluginConfig, provider: MemoryProvide
             return approved === undefined
               ? { operation: 'save', status: 'cancelled' }
               : runCheckpointedSave(ctx, execution, approved.scope, () =>
-                provider.save(execution.agent, approved, execution.signal, execution))
+                provider.save(agent, approved, execution.signal, execution))
           }
           if (operation === 'save_status') {
             const input = object(args.save_status, 'save_status')
