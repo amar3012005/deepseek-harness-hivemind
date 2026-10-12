@@ -120,3 +120,20 @@ it('pins the original receipt, actor and provider across retries', async () => {
     f.agent.inbox.clear()
   } finally { await f.finish() }
 })
+
+
+it('cold restoration retains the complete long call wording and rejects a changed authenticated owner', async () => {
+  const original = await fixture()
+  const transcript = 'user:  first words\n' + 'unchanged wording '.repeat(4000) + '\nuser: last words  '
+  const longReceipt = { ...receipt, transcript }
+  try {
+    await persistVoiceCall(original.ctx, original.agent, longReceipt, 'Bounded call pointer only.', false)
+    const restored = await fixture(original.agent.session.snapshotEvents())
+    try {
+      const saved = restored.agent.session.snapshotEvents().find(event => event.type === 'hivemind/voice-call-ended')
+      expect(saved?.type === 'hivemind/voice-call-ended' && saved.data.transcript).toBe(transcript)
+      await expect(persistVoiceCall(restored.ctx, restored.agent, { ...longReceipt,
+        authenticatedActor:{ ...actor,orgId:'foreign-company' } }, 'Foreign replay', false)).rejects.toThrow('voice_receipt_identity_conflict')
+    } finally { await restored.finish(); await restored.ctx.fiber.dispose() }
+  } finally { await original.finish(); await original.ctx.fiber.dispose() }
+})

@@ -2,7 +2,8 @@
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
-import type { UserMessage } from '@deepseek-ai/dsh-llm'
+import { createUserMessage, type UserMessage } from '@deepseek-ai/dsh-llm'
+import type {} from '@deepseek-ai/dsh-skill'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import { isHqLead } from './rest.ts'
 
@@ -52,12 +53,32 @@ export async function awakeningContext(ctx: Context, agent: Agent, turn: number,
   }
   if (!started) return ''
   const checkpoints = agent.session.snapshotEvents().flatMap(event => event.type === 'hivemind/hq-awakening-checkpoint' ? [event.data] : [])
-  if (checkpoints.some(item => (item.stage === 'conversation' || item.stage === 'remembered') && !item.blocked)) return ''
   const stages = ['company', 'evidence', 'team', 'strategy', 'conversation'] as const
-  const next = stages.find(stage => !checkpoints.some(item => item.stage === stage && !item.blocked))
+  // An invitation is not completion of orientation. Recover the latest stage
+  // state, including a later blocked correction to previously accepted findings.
+  const next = stages.find((stage) => {
+    const latest = checkpoints.findLast(item => item.stage === stage)
+    return !latest || latest.blocked
+  })
+  if (!next) return ''
   return `First awakening is active. You remain Runtime, the AI Chief of Staff. Load runtime-company-awakening through the native skill loader for its five flexible outcomes; detailed guidance belongs in the loaded skill, not the human chat bubble. Current unfinished checkpoint: ${next}. Reuse saved findings and receipts, choose only justified work, and do not create an ongoing goal for scheduled waiting. Normal permissions, Pause and sleep rules remain in force.
 Saved findings: ${JSON.stringify(checkpoints.slice(-20))}`
 
+}
+/** Load the current complete method through the agent-scoped native registry.
+ * This request projection is not a new journal or competing skill catalog.
+ */
+export async function awakeningMethod(ctx: Context, agent: Agent, messages: readonly UserMessage[],
+  signal: AbortSignal): Promise<UserMessage[]> {
+  const skills = ctx.get('skills')
+  if (!skills) throw new Error('hq_awakening_skill_unavailable')
+  const method = await skills.get('runtime-company-awakening', { scope: agent, cwd: agent.session.header.cwd, signal })
+  if (!method?.invocation.modelInvocable || !method.content.trim()) throw new Error('hq_awakening_skill_unavailable')
+  const text = `<skill_content name="${method.name}">\n${method.content}\n</skill_content>`
+  // Reuse the complete current body if already visible; a changed provider body
+  // is reread at admission and replaces only this ephemeral method projection.
+  if (messages.some(message => message.content.some(block => block.type === 'text' && block.text.includes(method.content)))) return []
+  return [createUserMessage({ source: { kind: 'plugin', plugin: 'hivemind-hq/awakening-method', form: 'recall' }, content: [{ type: 'text', text }] })]
 }
 function safeImage(value: unknown): string | undefined {
   // Only the existing authenticated same-origin artifact surface; never arbitrary remote pixels or credential URLs.

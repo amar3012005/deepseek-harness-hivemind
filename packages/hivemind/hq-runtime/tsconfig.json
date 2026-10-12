@@ -74,6 +74,9 @@
     },
     {
       "path": "../context"
+    },
+    {
+      "path": "../../skill/skill"
     }
   ]
 }

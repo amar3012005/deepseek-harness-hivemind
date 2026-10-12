@@ -18,6 +18,8 @@ import { defineTool } from '@deepseek-ai/dsh-tools'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { ToolCallId } from '@deepseek-ai/dsh-llm/brand'
 import * as Persona from '@deepseek-ai/dsh-persona'
+import SkillRegistry from '@deepseek-ai/dsh-skill'
+import { companyAwakeningSkill } from '../../runtime/src/awakening-guidance.ts'
 import * as Hq from '../src/index.ts'
 import ExecutionScope from '@deepseek-ai/dsh-hivemind-execution-scope'
 import { TestSessionQuery } from '../../../experimental/agent-team/tests/test-session-query.ts'
@@ -32,10 +34,12 @@ it('admits current stage before the first model request, saves full history and 
   const adapter = new MockAdapter([textResponse('I will inspect the current deployment evidence.'), textResponse('Hello!'), textResponse('I will continue our authorized preparation.'),
     toolCallResponse('receive-current-result', 'fixture_employee_result', {}),
     toolCallResponse('inspect-current-result', 'fixture_inspection', {}), textResponse('I reviewed the saved contribution.'),
-    textResponse('I will request the current daily evidence.'), textResponse('I will reconcile the saved daily reply.')])
+    textResponse('I will request the current daily evidence.'), textResponse('I will reconcile the saved daily reply.'), textResponse('I will orient using the complete awakening method.')])
   const dependencies = { name: 'stage-fixture', async apply(scope: Context) {
     await mountAgentLoopTestDependencies(scope)
     await scope.plugin(ExecutionScope)
+    await scope.plugin(SkillRegistry)
+    scope.get('skills')!.register(companyAwakeningSkill)
     await scope.plugin(JsonlSessionPersistence, { root: join(dir, 'sessions') })
     await scope.plugin(TestSessionQuery)
     await scope.plugin(AgentLoop, { agents: [] })
@@ -146,6 +150,12 @@ it('admits current stage before the first model request, saves full history and 
     expect(JSON.stringify(adapter.requests[7])).toContain('Current Nightly report:')
     expect(JSON.stringify(adapter.requests[7])).toContain('ordinary detailed email')
     expect(boardReads).toBe(5)
+    agent.session.append('hivemind/hq-awakening-start', { version:1, turn:7, startedAt:new Date().toISOString() })
+    agent.send(createUserMessage({ source:{ kind:'user' },content:[{ type:'text',text:'Orient us using the unfinished awakening.' }] }), 'next-turn', true)
+    await vi.waitFor(() => expect(adapter.requests).toHaveLength(9))
+    await vi.waitFor(() => expect(agent.status).toBe('idle'))
+    expect(JSON.stringify(adapter.requests[8])).toContain(JSON.stringify(companyAwakeningSkill.content).slice(1,-1))
+    expect(JSON.stringify(adapter.requests[8])).toContain('Initial orientation:')
     expect(ctx.tools.get('hivemind_hq_rest')).toBeDefined()
     await ctx.fiber.dispose()
     expect(ctx.get('tools')).toBeUndefined()
