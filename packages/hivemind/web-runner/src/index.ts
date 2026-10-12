@@ -30,7 +30,7 @@ import { createOpenDotRuntimeOperationHandler, OPEN_DOT_RUNTIME_OPERATION_PATH }
 import { installExternalRoomPersistence, registerExternalEmployeeRoomProvider } from '@deepseek-ai/dsh-api-session-controller'
 
 export const name = 'hivemind-web-runner'
-export const inject = ['webServer', 'connection', 'sessionPersistence', 'hivemindExecutionScope', 'agents', 'agentTeams', 'sessionController']
+export const inject = ['webServer', 'connection', 'sessionPersistence', 'hivemindExecutionScope', 'agents', 'agentTeams', 'sessionController', 'sessions', 'schedule', 'jobs', 'attachments']
 
 const EXCHANGE_PATH = '/api/hivemind/embed/exchange'
 const ESTABLISH_PATH = '/api/hivemind/session/establish'

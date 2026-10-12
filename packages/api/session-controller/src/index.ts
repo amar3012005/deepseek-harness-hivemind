@@ -138,7 +138,7 @@ export class SessionController extends TypertRemoteService {
       const agent = ctx.agents.get(room.sessionId)
       if (!agent) throw new Error('agent_message_room_unavailable')
       return agent
-    }, ctx.externalEmployeeRoomProvider)
+    })
     ctx.effect(() => ctx.fileUploads.registerAgentResolver(async (sessionId) => {
       const result = await this.agents.resolveAgent(sessionId)
       if ('error' in result) throw result.error
