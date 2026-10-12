@@ -19,7 +19,7 @@
       "default": "./lib/index.js"
     },
     "./src/*": "./src/*",
-    "./events": { "types": "./lib/client-types/events.d.ts" },
+    "./events": { "types": "./lib/types/events.d.ts" },
     "./package.json": "./package.json"
   },
   "files": [
