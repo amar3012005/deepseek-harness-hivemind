@@ -1,12 +1,15 @@
 import type { ILayout } from '@deepseek-ai/dsh-client-ui-layout/client'
 
 const EMPLOYEE_HARNESS_PATH = '/hivemind/app/employee/harness'
+const OUTER_BRAIN_SELECTOR = 'a[href="/hivemind/app/connectors"]'
 const OUTER_ROOMS_ATTRIBUTE = 'data-os-harness-rooms'
 
 /** The product shell owns navigation only while its employee Harness host is mounted. */
 export function isExternalEmployeeHarness(pathname: string, documentRoot: ParentNode): boolean {
   const route = pathname === EMPLOYEE_HARNESS_PATH || pathname.startsWith(`${EMPLOYEE_HARNESS_PATH}/`)
-  return route && documentRoot.querySelector(`[${OUTER_ROOMS_ATTRIBUTE}]`) !== null
+  const brain = pathname === '/hivemind/app/overview' || pathname.startsWith('/hivemind/app/overview/')
+  return (route && documentRoot.querySelector(`[${OUTER_ROOMS_ATTRIBUTE}]`) !== null)
+    || (brain && documentRoot.querySelector(OUTER_BRAIN_SELECTOR) !== null)
 }
 
 function recordTouchesOuterRooms(record: MutationRecord): boolean {
@@ -15,7 +18,8 @@ function recordTouchesOuterRooms(record: MutationRecord): boolean {
   for (const node of [...record.addedNodes, ...record.removedNodes]) {
     if (node.nodeType !== Node.ELEMENT_NODE) continue
     const element = node as Element
-    if (element.matches(`[${OUTER_ROOMS_ATTRIBUTE}]`) || element.querySelector(`[${OUTER_ROOMS_ATTRIBUTE}]`) !== null) return true
+    if (element.matches(`[${OUTER_ROOMS_ATTRIBUTE}], ${OUTER_BRAIN_SELECTOR}`)
+      || element.querySelector(`[${OUTER_ROOMS_ATTRIBUTE}], ${OUTER_BRAIN_SELECTOR}`) !== null) return true
   }
   return false
 }

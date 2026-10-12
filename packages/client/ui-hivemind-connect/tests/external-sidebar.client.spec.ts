@@ -4,12 +4,24 @@ import { isExternalEmployeeHarness, setupExternalEmployeeSidebar } from '../src/
 
 afterEach(() => {
   document.querySelector('[data-os-harness-rooms]')?.remove()
+  document.querySelector('a[href="/hivemind/app/connectors"]')?.remove()
   delete document.documentElement.dataset.dshEmbedded
   window.history.replaceState({}, '', '/')
   vi.restoreAllMocks()
 })
 
 describe('outer-owned employee sidebar', () => {
+  it('uses the native external-sidebar input for Brain when its outer navigation exists', () => {
+    window.history.replaceState({}, '', '/hivemind/app/overview/new')
+    const outer = document.createElement('a')
+    outer.href = '/hivemind/app/connectors'
+    document.body.append(outer)
+    const setExternalSidebar = vi.fn()
+    const dispose = setupExternalEmployeeSidebar({ setExternalSidebar })
+    expect(setExternalSidebar).toHaveBeenLastCalledWith(true)
+    dispose()
+    expect(setExternalSidebar).toHaveBeenLastCalledWith(false)
+  })
   it('requires both the employee Harness route and the outer Rooms host marker', () => {
     const outer = document.createElement('div')
     outer.setAttribute('data-os-harness-rooms', '')

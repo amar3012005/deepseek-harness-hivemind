@@ -33,6 +33,14 @@ const runtimeProps = {
 } satisfies DockRuntimeProps
 
 describe('HIVE approval input docks', () => {
+  it('does not query Agent approvals or claim a pending decision for a blank native session', () => {
+    const load = vi.fn(async () => [])
+    const view = render(<ApprovalDock {...runtimeProps} kind="memory"
+      useSessions={vi.fn(() => true) as unknown as DockRuntimeProps['useSessions']}
+      useApprovalEvents={useApprovalEvents} t={t as never} load={load} decide={vi.fn(async () => true)} />)
+    expect(load).not.toHaveBeenCalled()
+    expect(view.container.querySelector('[data-hivemind-approvals]')).toBeNull()
+  })
   it('persists explicit memory decline with the exact save operation identity', async () => {
     let item: MemorySaveItem | undefined = {
       callId: 'call-memory-1', operationId: 'op-memory-1', tool: 'hivemind_meta', status: 'pending',

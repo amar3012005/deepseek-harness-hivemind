@@ -170,9 +170,10 @@ export function AppFrame({
     || new URLSearchParams(typeof window === 'undefined' ? '' : window.location.search).has('dreamingParent')
   const employeeRoom = pathname === '/hivemind/app/employee/harness'
     || pathname.startsWith('/hivemind/app/employee/harness/')
-  const embeddedChrome = configuredExternalChrome && (embeddedRoute || legacyOverviewRoute || employeeRoom)
+  const embeddedChrome = (configuredExternalChrome || externalSidebar) && (embeddedRoute || legacyOverviewRoute || employeeRoom)
   const hostOwnsChrome = externalSidebar || embeddedChrome
-  const showSessionRail = embeddedSessionRail && (embeddedRoute || legacyOverviewRoute) && !dreamingRoom && !employeeRoom
+  const showSessionRail = (embeddedSessionRail || externalSidebar)
+    && (embeddedRoute || legacyOverviewRoute) && !dreamingRoom && !employeeRoom
   const sidebarCollapsed = hostOwnsChrome || (narrow ? !layoutInfo.narrowExpanded : layoutInfo.sidebar === 0)
   const sidebarPreference = hostOwnsChrome ? 0 : sidebarCollapsed
     ? 0

@@ -64,6 +64,7 @@ export function RuntimeApprovalDock(props: PropsRuntime<'conversation.input.dock
 
 /** Durable HIVE approval decisions in the native composer dock. */
 export function ApprovalDock(props: Props) {
+  const blank = props.useSessions(state => state.byId[props.sessionId]?.blank === true)
   const revision = props.useApprovalEvents(window => window.entries
     .filter(entry => entry.type === 'event'
       && ['hivemind/runtime-approval-checkpoint', 'hivemind/memory-save-checkpoint'].includes(String(entry.event.type)))
@@ -77,13 +78,14 @@ export function ApprovalDock(props: Props) {
   useEffect(() => {
     const generation = ++request.current
     setError(null)
+    if (blank) { setItems([]); return }
     void props.load(props.sessionId).then((value) => {
       if (generation === request.current) setItems(value as readonly (MemorySaveItem | RuntimeApprovalItem)[])
     }).catch(() => {
       if (generation === request.current) setError(props.t('approval.unavailable'))
     })
     return () => { request.current++ }
-  }, [props.sessionId, props.load, revision, props.t])
+  }, [props.sessionId, props.load, revision, props.t, blank])
 
   const settle = async (key: string, action: () => Promise<boolean>) => {
     if (decisionPending.current) return
