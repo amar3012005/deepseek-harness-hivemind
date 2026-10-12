@@ -440,11 +440,11 @@ export function liveVoicePlugin(config: LiveVoiceConfig,
                 const greeting = opening(event.type)
                 if (greeting && !closed && socket.readyState === WebSocket.OPEN)
                   socket.send(JSON.stringify(greeting))
-                if ((!closing || event.turn?.role === 'assistant') && event.type === 'turn.done' && ['user', 'assistant'].includes(event.turn?.role ?? '') && typeof event.turn?.transcript === 'string') {
-                  queries.record(event.turn.role ?? '', event.turn.transcript)
+                if (event.type === 'turn.done' && ['user', 'assistant'].includes(event.turn?.role ?? '') && typeof event.turn?.transcript === 'string') {
+                  if (!closing || event.turn.role === 'assistant') queries.record(event.turn.role ?? '', event.turn.transcript)
                   transcript.push(`${event.turn.role}: ${event.turn.transcript}`)
                   if (event.turn.role === 'user' && event.turn.transcript.trim()) hadUserSpeech = true
-                  if (event.turn.role === 'user' && !refreshingContext) {
+                  if (!closing && event.turn.role === 'user' && !refreshingContext) {
                     refreshingContext = true
                     void ctx.hivemindExecutionScope.run(p, async () => {
                       try {

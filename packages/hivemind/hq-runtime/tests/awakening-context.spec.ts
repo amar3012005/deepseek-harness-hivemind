@@ -1,6 +1,7 @@
 import { expect, it, vi } from 'vitest'
 import type { Context } from '@deepseek-ai/cordis'
 import type { ToolDefinition } from '@deepseek-ai/dsh-tools'
+import { Session, SessionId, SessionLogOffset, deriveEventMessage } from '@deepseek-ai/dsh-session'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { awakeningContext, awakeningMethod, installAwakening } from '../src/awakening.ts'
 
@@ -116,11 +117,35 @@ it('does not close incomplete orientation merely because a conversation invitati
 it('loads the full native method scoped to the agent before orientation, reusing an already visible body', async () => {
   const get = vi.fn(async () => ({ name: 'runtime-company-awakening', invocation: { modelInvocable: true }, content: 'Complete current method, including its final rule.' }))
   const ctx = { get: () => ({ get }) } as unknown as Context
-  const agent = { session: { header: { cwd: '/company' } } } as unknown as Agent
+  const agent = { session: { header: { cwd: '/company' }, surface:{ nodes:[] }, snapshotEvents:()=>[] } } as unknown as Agent
   const signal = new AbortController().signal
   const method = await awakeningMethod(ctx, agent, [], signal)
   expect(get).toHaveBeenCalledWith('runtime-company-awakening', { scope: agent, cwd: '/company', signal })
   expect(JSON.stringify(method)).toContain('including its final rule.')
   expect(await awakeningMethod(ctx, agent, method, signal)).toEqual([])
   await expect(awakeningMethod({ get: () => undefined } as unknown as Context, agent, [], signal)).rejects.toThrow('hq_awakening_skill_unavailable')
+})
+
+
+it('reuses the native method surface after cold restore and replaces only its changed projection', async () => {
+  let body='Original complete method.'
+  const ctx={ get:()=>({ get:async()=>({ name:'runtime-company-awakening',invocation:{ modelInvocable:true },content:body }) }) } as unknown as Context
+  const session=Session.create(SessionId('awakening-method-cold'))
+  const agent={ session } as unknown as Agent
+  const signal=new AbortController().signal
+  const [method]=await awakeningMethod(ctx,agent,[],signal)
+  if (!method) throw new Error('method missing')
+  session.append('user/message',method,{ surfaceOp:'append' })
+  expect(await awakeningMethod(ctx,agent,[],signal)).toEqual([])
+  const history=session.snapshotEvents()
+  const restored=Session.create(session.id,history,session.header,SessionLogOffset(0))
+  const restoredAgent={ session:restored } as unknown as Agent
+  expect(await awakeningMethod(ctx,restoredAgent,[],signal)).toEqual([])
+  body='Updated complete method.'
+  expect(await awakeningMethod(ctx,restoredAgent,[],signal)).toEqual([])
+  expect(restored.snapshotEvents().slice(0,history.length)).toEqual(history)
+  const current=restored.surface.nodes.flatMap(seq=>restored.snapshotEvents().filter(event=>event.seq===seq).map(deriveEventMessage))
+  expect(JSON.stringify(current)).toContain(body)
+  expect(JSON.stringify(current)).not.toContain('Original complete method.')
+  expect(await awakeningMethod(ctx,restoredAgent,[],signal)).toEqual([])
 })
