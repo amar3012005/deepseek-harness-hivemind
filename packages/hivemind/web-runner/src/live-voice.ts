@@ -323,8 +323,16 @@ export function liveVoicePlugin(config: LiveVoiceConfig,
                   : VOICE_INSTRUCTIONS
               let decisionMemory = ''
               if (runtime) {
-                try { decisionMemory = await agentEvents(ctx, agent).serial('hivemind/runtime-call-context', { signal }) }
-                catch { throw new Error('runtime_decision_memory_unavailable') }
+                try {
+                  decisionMemory = await agentEvents(ctx, agent).serial('hivemind/runtime-call-context', {
+                    signal: AbortSignal.any([signal, AbortSignal.timeout(5000)]),
+                  })
+                } catch (error) {
+                  const timeout = error instanceof Error && (['AbortError', 'TimeoutError'].includes(error.name)
+                    || ('code' in error && error.code === 'request_timeout'))
+                  if (!timeout || signal.aborted) throw new Error('runtime_decision_memory_unavailable')
+                  decisionMemory = 'Fresh decision memory is unavailable for this call. Use saved Runtime investigation below; do not invent priorities, decisions, approvals or completed work. Retrieve current facts through authorized backend tools before acting.'
+                }
               }
               if (runtime && !decisionMemory) throw new Error('runtime_decision_memory_unavailable')
               const initialCheckIn = runtime && needsAwakeningCallAgenda(agent.session.snapshotEvents())
@@ -496,7 +504,9 @@ export function liveVoicePlugin(config: LiveVoiceConfig,
           const code = error instanceof Error && safeCodes.includes(error.message) ? error.message : 'startup_failed'
           const category = error instanceof Error && 'code' in error && typeof error.code === 'string' && /^[a-z_]{1,60}$/.test(error.code) ? error.code : 'unknown'
           const cause = error instanceof Error && error.cause instanceof Error ? error.cause.name : 'none'
-          console.warn('hivemind voice startup failed', startupStage, code, category, cause)
+          const failureText = error instanceof Error ? error.message : ''
+          const refreshStatus = failureText.match(/token refresh failed \((\d{3})\)/)?.[1] ?? 'none'
+          console.warn('hivemind voice startup failed', startupStage, code, category, cause, refreshStatus)
           reply(res, 503, { error: error instanceof Error && error.message === 'runtime_decision_memory_unavailable' ? 'runtime_decision_memory_unavailable' : 'voice_unavailable', fallbackAllowed: error instanceof Error && ['voice_connection_failed', 'voice_authorization_unavailable'].includes(error.message) }) }
       } }))
     } }
