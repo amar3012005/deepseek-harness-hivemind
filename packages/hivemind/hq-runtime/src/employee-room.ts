@@ -20,7 +20,7 @@ import { admittedEmployeeWork } from './employee-work-origin.ts'
 interface Rooms {
   resolvePersistentEmployeeRoom(key: string, profile: { id: string; name: string; role: string; executionBackend?: 'open-dot'; dotId?: string }, signal: AbortSignal): Promise<Agent | ExternalEmployeeRoom>
   resolveAgent(id: SessionId): Promise<{ agent: Agent } | { error: Error }>
-  deliverAgentMessage(caller: Agent, input: { key: string; target: string; kind: 'question' | 'update'; text: string; taskId: string }, signal: AbortSignal): Promise<{ messageId: string; targetSessionId: SessionId }>
+  deliverAgentMessage(caller: Agent, input: { key: string; target: string; targetProfile?: { id: string; name: string; role: string; executionBackend?: 'open-dot'; dotId?: string }; kind: 'question' | 'update'; text: string; taskId: string }, signal: AbortSignal): Promise<{ messageId: string; targetSessionId: SessionId }>
 }
 export function rooms(ctx: Context): Rooms { return Reflect.get(ctx, 'sessionController') as Rooms }
 interface WorkReference { rootId: string; taskId: string; itemId?: string; revision?: number }
