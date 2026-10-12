@@ -2,6 +2,7 @@
 import { createHash, createHmac, randomUUID } from 'node:crypto'
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
+import type {} from '@deepseek-ai/dsh-jobs'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import { TeamTaskId } from '@deepseek-ai/dsh-experimental-agent-team'
@@ -445,8 +446,9 @@ export async function reconcileTerminalRuntimeResult(
   } else {
     room.session.append('hivemind/open-dot-runtime-terminal-outbox', {
       dispatchMessageId: receipt.dispatchMessageId, rootSessionId: receipt.rootSessionId,
-      taskId: receipt.taskId, taskRevision: receipt.taskRevision, messageKey: key, digest, text,
-      artifactIds, state: result.state,
+      ...(receipt.taskId !== undefined ? { taskId: receipt.taskId } : {}),
+      ...(receipt.taskRevision !== undefined ? { taskRevision: receipt.taskRevision } : {}),
+      messageKey: key, digest, text, artifactIds, state: result.state,
     })
     if (!await ctx.sessions.flush(room.session)) throw new Error('open_dot_runtime_terminal_outbox_persistence_required')
   }
