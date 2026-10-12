@@ -2,8 +2,10 @@ import { expect, it, vi } from 'vitest'
 import type { Context } from '@deepseek-ai/cordis'
 import { registerSameStepFallback } from '../src/same-step-fallback.ts'
 
+type Hook = (payload: never, next: () => Promise<unknown>) => unknown
+
 it('records the native retry route and restores it only for the failed step after cold projection', async () => {
-  const hooks = new Map<string, (...args: never[]) => unknown>()
+  const hooks = new Map<string, Hook>()
   const events: { type: string; data: unknown }[] = []
   const flush = vi.fn(async () => true)
   let projection: { apply(state: unknown, event: { type: string; data: unknown }): unknown; init(): unknown } | undefined
@@ -18,7 +20,7 @@ it('records the native retry route and restores it only for the failed step afte
       }),
     },
     sessions: { flush },
-    on(name: string, hook: (...args: never[]) => unknown) { hooks.set(name, hook); return () => {} },
+    on(name: string, hook: (...args: never[]) => unknown) { hooks.set(name, hook as unknown as Hook); return () => {} },
   } as unknown as Context
 
   registerSameStepFallback(ctx, [{ fromProvider: 'primary-provider', provider: 'recovery-provider', model: 'recovery-model', maxTokens: 300 }])
@@ -64,7 +66,7 @@ it('records the native retry route and restores it only for the failed step afte
 })
 
 it('does not record recovery for an unrelated provider, unsupported failure or duplicate failed step', async () => {
-  const hooks = new Map<string, (...args: never[]) => unknown>()
+  const hooks = new Map<string, Hook>()
   const events: { type: string; data: unknown }[] = []
   const state = { turn: 1, step: 1 }
   const ctx = {
@@ -72,7 +74,7 @@ it('does not record recovery for an unrelated provider, unsupported failure or d
       register() {},
       stateOf: () => events.length ? state : null,
     },
-    on(name: string, hook: (...args: never[]) => unknown) { hooks.set(name, hook); return () => {} },
+    on(name: string, hook: (...args: never[]) => unknown) { hooks.set(name, hook as unknown as Hook); return () => {} },
   } as unknown as Context
   registerSameStepFallback(ctx, { fromProvider: 'primary-provider', provider: 'recovery-provider', model: 'recovery-model' })
   const session = {
@@ -90,12 +92,12 @@ it('does not record recovery for an unrelated provider, unsupported failure or d
 })
 
 it('does not request a native retry when the fallback checkpoint cannot be flushed', async () => {
-  const hooks = new Map<string, (...args: never[]) => unknown>()
+  const hooks = new Map<string, Hook>()
   const append = vi.fn()
   const ctx = {
     sessionProjections: { register() {}, stateOf: () => null },
     sessions: { flush: async () => false },
-    on(name: string, hook: (...args: never[]) => unknown) { hooks.set(name, hook); return () => {} },
+    on(name: string, hook: (...args: never[]) => unknown) { hooks.set(name, hook as unknown as Hook); return () => {} },
   } as unknown as Context
   registerSameStepFallback(ctx, { fromProvider: 'primary-provider', provider: 'recovery-provider', model: 'recovery-model' })
   const agent = { session: {
