@@ -326,9 +326,11 @@ export function installRest(ctx: Context): void {
     if ((investigation?.data as { enabled?: boolean } | undefined)?.enabled) return
     const start = events.findLast(event => event.type === 'turn/start')?.seq ?? -1
     const current = events.filter(event => event.seq > start)
-    const toolWork = requiresRestHandoff(current)
-    // A social reply is not a voluntary sleep transition. Never manufacture
-    // extra model turns just to rebuild the existing operational handoff.
+    const toolWork = current.some(event => event.type === 'hivemind/hq-rest-intent'
+      || (event.type === 'tool/call' && event.data.name === 'hivemind_hq_rest'))
+    // Only an explicit voluntary rest operation needs wake repair. Business
+    // writes and colleague replies already persist in their native ledgers;
+    // completing them must not force extra model steps or timer creation.
     if (socialTurnOnly(current) || isNightlyScheduledTurn(agent)) return
     if (!toolWork) return
     const latest = restIntents(events).at(-1)

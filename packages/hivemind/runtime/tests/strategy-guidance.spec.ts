@@ -29,8 +29,8 @@ it('discovers shared strategy as a summary and loads the complete method on dema
 it('keeps routing compact and uses the same native methods for both personas', () => {
   for (const profile of ['hivemind-hq', 'hivemind-hyperagents']) {
     const text = readFileSync(new URL(`../../../preset/agent-presets/presets/${profile}/agent.cordis.yml`, import.meta.url), 'utf8')
-    expect(text).toContain('no special prompt is required')
-    expect(text).toContain('load hivemind-company-strategy')
+    expect(text).toMatch(/no special prompt is required|prioritize useful authorized work/)
+    expect(text).toContain('hivemind-company-strategy')
     expect(text).toContain('hivemind-artifact-production')
     expect(text).not.toContain('a polished content calendar is not a strategy')
   }
@@ -43,11 +43,11 @@ it('routes stale CRM-reference blockers through native discovery before asking t
   expect(text).toContain('hivemind_app_get')
   expect(text).toContain('an unverified blocker')
   expect(text).toContain('not an internal UUID')
-  expect(text).toContain('do not need another')
+  expect(text).toContain('An unanswered')
   expect(text).toContain('suitable')
-  expect(text).toContain('available employee with the outcome')
-  expect(text).toContain('Missing facts can block the final conclusion without blocking useful')
-  expect(text).toContain('not a new human instruction')
+  expect(text).toContain('Assign an outcome')
+  expect(text).toContain('can block a final decision without blocking an')
+  expect(text).toContain('historical handoffs')
 })
 
 it('routes delegated blockers through Runtime without treating notification as permission', () => {

@@ -77,7 +77,7 @@ describe('native Runtime voluntary rest', () => {
     await f.execute()
     expect(f.concludeTurn).not.toHaveBeenCalled()
   })
-  it('ends a greeting without forcing sleep tools but retains the check for work', async () => {
+  it('ends greetings and durable decision writes without manufacturing rest', async () => {
     const f = fixture()
     f.ctx.hivemindHq.mode = () => ({ enabled: true }) as never
     f.agent.session.append('turn/start', { turn: 1 } as never)
@@ -87,7 +87,7 @@ describe('native Runtime voluntary rest', () => {
     expect(f.agent.steer).not.toHaveBeenCalled()
     f.agent.session.append('tool/call', { name: 'runtime_user_agenda', callId: 'save', arguments: {}, turn: 1, step: 1 } as never)
     await f.hooks.get('agent/turn-stopping')!({ agent: f.agent, turn: 1, signal: new AbortController().signal })
-    expect(f.agent.steer).toHaveBeenCalledOnce()
+    expect(f.agent.steer).not.toHaveBeenCalled()
   })
   it('ends a requested colleague greeting after directory lookup and message delivery', async () => {
     const f = fixture()
@@ -111,7 +111,7 @@ describe('native Runtime voluntary rest', () => {
     expect(socialTurnOnly(f.events, [createUserMessage({ source: { kind: 'plugin', plugin: 'runtime-attention' }, content: [{ type: 'text', text: 'New company evidence' }] })])).toBe(false)
     f.agent.session.append('tool/call', { name: 'runtime_user_agenda', callId: 'save', arguments: '{}', turn: 1, step: 4 } as never)
     await f.hooks.get('agent/turn-stopping')!({ agent: f.agent, turn: 1, signal: new AbortController().signal })
-    expect(f.agent.steer).toHaveBeenCalledOnce()
+    expect(f.agent.steer).not.toHaveBeenCalled()
   })
   it('classifies only social exchanges, never work or mixed event delivery', () => {
     const human = (text: string) => createUserMessage({ source: { kind: 'user' }, content: [{ type: 'text', text }] })
