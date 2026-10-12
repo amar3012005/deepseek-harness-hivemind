@@ -51,6 +51,7 @@ import { principalForActor } from '@deepseek-ai/dsh-hivemind-execution-scope'
 import type {} from '@deepseek-ai/dsh-attachment'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { contextPlugin, socialTurnOnly } from '@deepseek-ai/dsh-hivemind-context'
+import type { SameStepFallbackConfig } from '@deepseek-ai/dsh-hivemind-context'
 import { memoryPlugin, type EntitySearchRequest, type RecallRequest, type SaveRequest, type SaveStatusRequest } from '@deepseek-ai/dsh-hivemind-memory'
 import { employeeDispatchAllowed, employeeCloseoutAllowed, employeeCloseoutToolAllowed, hyperagentDirectory, projectHyperagentProfiles } from '@deepseek-ai/dsh-hivemind-employee-directory'
 import { completedTaskMemory, pendingTaskMemories, sessionOwner, sessionOwnerProjection, employeeSelectionProjection, employeeLatestMessageProjection, type SessionOwner } from './continuity.ts'
@@ -234,6 +235,8 @@ export interface Config {
   /** Optional advertised route for one bounded native failed-step recovery. */
   requestFallbackProvider?: string
   requestFallbackModel?: string
+  /** Explicit independent provider routes for one native failed-step retry. */
+  sameStepFallback?: SameStepFallbackConfig[]
   /** ICARUS JSON file holding the browser-issued HIVE-MIND credential. */
   icarusConfigPath: string
   /** Identity transport. Local mode uses ICARUS; scoped-service uses the authenticated request principal. */
@@ -280,6 +283,12 @@ export const Config: z<Config> = z.object({
   privateMemoryRetryMs: z.natural().min(1000).default(30000),
   requestFallbackProvider: z.string(),
   requestFallbackModel: z.string(),
+  sameStepFallback: z.array(z.object({
+    fromProvider: z.string().required(),
+    provider: z.string().required(),
+    model: z.string().required(),
+    maxTokens: z.natural().min(1),
+  })),
   icarusConfigPath: z.string().required(),
   authorityMode: z.union(['local', 'scoped-service'] as const).default('local'),
   onboardingServiceApiBase: z.string(),
@@ -1434,6 +1443,7 @@ export function apply(ctx: Context, config: Config): void {
     historyTurns: config.historyTurns,
     historyMaxChars: config.historyMaxChars,
     capabilityToolName: HIVE_CAPABILITIES_TOOL,
+    ...(config.sameStepFallback === undefined ? {} : { sameStepFallback: config.sameStepFallback }),
     pendingToolCalls(session) {
       return ctx.sessionProjections.snapshot(session).values.hivemindRuntimeApprovals?.activeCallIds ?? []
     },

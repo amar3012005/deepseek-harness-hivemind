@@ -39,6 +39,7 @@ ARG DSH_CLIENT_COMMIT_HASH
 LABEL org.opencontainers.image.revision=${DSH_CLIENT_COMMIT_HASH}
 LABEL com.singulance.service=harness-runner
 ARG DSH_CLIENT_TITLE="SINGULANCE · HIVE-MIND"
+ENV NARB_DISABLE_NATIVE_CACHE=1
 ENV NODE_ENV=production DSH_HOME=/var/lib/dsh PORT=3080 DSH_CLIENT_TITLE=${DSH_CLIENT_TITLE} PLAYWRIGHT_BROWSERS_PATH=/opt/dsh-browsers
 WORKDIR /opt/deepseek-harness
 COPY --from=build /opt/deepseek-harness /opt/deepseek-harness

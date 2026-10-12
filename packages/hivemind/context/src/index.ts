@@ -10,6 +10,9 @@ import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock, Message, UserMessage } from '@deepseek-ai/dsh-llm'
 import { isAppendSurfaceEvent, isReplacementSurfaceEvent } from '@deepseek-ai/dsh-session'
 import type { SessionEvent, SessionSeq } from '@deepseek-ai/dsh-session'
+import { registerSameStepFallback } from './same-step-fallback.ts'
+import type { SameStepFallbackConfig } from './same-step-fallback.ts'
+export type { SameStepFallbackConfig, LlmFallbackEventData } from './same-step-fallback.ts'
 /** Prompt-projection budgets and the registered on-demand capability tool. */
 export interface ContextConfig {
   historyTurns: number
@@ -21,6 +24,8 @@ export interface ContextConfig {
   turnInstruction?: (agent: Agent, turn: number) => string | undefined
   /** Product-owned durable pending calls, independent of native user questions. */
   pendingToolCalls?: (session: Agent['session']) => readonly string[]
+  /** Explicit independent provider routes for one native failed-step retry. */
+  sameStepFallback?: SameStepFallbackConfig | readonly SameStepFallbackConfig[]
 }
 interface ConversationExchange { turn: number; user: string; assistant: string }
 const HISTORY_CONTEXT_SOURCE = 'dsh-hivemind-runtime/history'
@@ -172,7 +177,9 @@ function isSkillCatalog(message: Message): boolean {
 export function contextPlugin(config: ContextConfig): Plugin.Object<void> {
   return {
     name: 'hivemind-context',
+    inject: ['sessionProjections', 'sessions'],
     apply(ctx: Context): void {
+      registerSameStepFallback(ctx, config.sameStepFallback)
       const projected = new WeakMap<Agent, number>()
       ctx.effect(() => ctx.on('agent/pre-step', async ({ agent, turn, signal }, next) => {
         const decision = await next()

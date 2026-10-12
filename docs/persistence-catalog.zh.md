@@ -117,6 +117,7 @@
 | `event:hook/invoked` | event | `8a6e1ec9e8db346b0e02f027db73c07a94f067a26d40c1aef1abd09c47ce7ba0` | [`{ type: "hook/invoked" }`](#persistence-type-sha256-8a6e1ec9e8db346b0e02f027db73c07a94f067a26d40c1aef1abd09c47ce7ba0) |
 | `event:hook/result` | event | `e75916628f3f10c2d50658bd143052a46285fbf1a9a700ba54947614603d26b4` | [`{ type: "hook/result" }`](#persistence-type-sha256-e75916628f3f10c2d50658bd143052a46285fbf1a9a700ba54947614603d26b4) |
 | `event:image/offload` | event | `b222069eea2d768065161c1147b1f2c78c1b54328c84b3586ae5c8f91b8ed35e` | [`{ type: "image/offload" }`](#persistence-type-sha256-b222069eea2d768065161c1147b1f2c78c1b54328c84b3586ae5c8f91b8ed35e) |
+| `event:llm/fallback` | event | `c0140806c2250d7dced064c8af087150824a6f22d68a361aee45d9487327a120` | [`{ type: "llm/fallback" }`](#persistence-type-sha256-c0140806c2250d7dced064c8af087150824a6f22d68a361aee45d9487327a120) |
 | `event:llm/retry` | event | `525254db03b1d1e6b74cf55aced52817568331ac1f96c0818728910b6692e336` | [`{ type: "llm/retry" }`](#persistence-type-sha256-525254db03b1d1e6b74cf55aced52817568331ac1f96c0818728910b6692e336) |
 | `event:llm/retry-started` | event | `48e5c9861f16ac07e78cb7b5ae9dabdf7bb85c58baed5a51b4ad275050ea58e3` | [`{ type: "llm/retry-started" }`](#persistence-type-sha256-48e5c9861f16ac07e78cb7b5ae9dabdf7bb85c58baed5a51b4ad275050ea58e3) |
 | `event:model/selection` | event | `35203ba7ad5ef6f97d556b85df20ae98f04f09c65748cecdf8eefdb8b6405ffc` | [`{ type: "model/selection" }`](#persistence-type-sha256-35203ba7ad5ef6f97d556b85df20ae98f04f09c65748cecdf8eefdb8b6405ffc) |
@@ -235,7 +236,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 }[T]
 ```
 
-来源：[`packages/core/session/src/types.ts:441`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:449`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:472`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:503`](../packages/core/session/src/types.ts)
+来源：[`packages/core/session/src/types.ts:446`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:454`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:477`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:508`](../packages/core/session/src/types.ts)
 
 ## 事件
 
@@ -744,7 +745,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 }
 ```
 
-来源：[`packages/hivemind/runtime/src/index.ts:83`](../packages/hivemind/runtime/src/index.ts)
+来源：[`packages/hivemind/runtime/src/index.ts:85`](../packages/hivemind/runtime/src/index.ts)
 
 <a id="hiveminddesign-reference-selected--log-only"></a>
 
@@ -788,7 +789,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 'hivemind/employee-delegation-end': EmployeeDelegationEnd
 ```
 
-来源：[`packages/hivemind/employee-delegation/src/events.ts:51`](../packages/hivemind/employee-delegation/src/events.ts)
+来源：[`packages/hivemind/employee-delegation/src/events.ts:56`](../packages/hivemind/employee-delegation/src/events.ts)
 
 <a id="hivemindemployee-delegation-start--log-only"></a>
 
@@ -799,7 +800,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 'hivemind/employee-delegation-start': EmployeeDelegationStart
 ```
 
-来源：[`packages/hivemind/employee-delegation/src/events.ts:49`](../packages/hivemind/employee-delegation/src/events.ts)
+来源：[`packages/hivemind/employee-delegation/src/events.ts:54`](../packages/hivemind/employee-delegation/src/events.ts)
 
 <a id="hivemindemployee-selection--log-only"></a>
 
@@ -810,7 +811,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 'hivemind/employee-selection': { id: string | null; name?: string; role?: string; avatarUrl?: string; appearance?: JsonValue; joining?: { at: string; creationHash: string; profileRevision: number } }
 ```
 
-来源：[`packages/hivemind/runtime/src/index.ts:79`](../packages/hivemind/runtime/src/index.ts)
+来源：[`packages/hivemind/runtime/src/index.ts:81`](../packages/hivemind/runtime/src/index.ts)
 
 <a id="hivemindemployee-task-snapshot--log-only"></a>
 
@@ -843,7 +844,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 'hivemind/evidence-gap-recorded': EvidenceGapRecorded
 ```
 
-来源：[`packages/hivemind/operating-workstreams/src/events.ts:68`](../packages/hivemind/operating-workstreams/src/events.ts)
+来源：[`packages/hivemind/operating-workstreams/src/events.ts:90`](../packages/hivemind/operating-workstreams/src/events.ts)
 
 <a id="hivemindgeneration-created--log-only"></a>
 
@@ -1114,7 +1115,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 }
 ```
 
-来源：[`packages/hivemind/memory/src/index.ts:87`](../packages/hivemind/memory/src/index.ts)
+来源：[`packages/hivemind/memory/src/index.ts:90`](../packages/hivemind/memory/src/index.ts)
 
 <a id="hivemindmemory-save-checkpoint--log-only"></a>
 
@@ -1125,7 +1126,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 'hivemind/memory-save-checkpoint': SaveCheckpoint
 ```
 
-来源：[`packages/hivemind/memory/src/index.ts:85`](../packages/hivemind/memory/src/index.ts)
+来源：[`packages/hivemind/memory/src/index.ts:88`](../packages/hivemind/memory/src/index.ts)
 
 <a id="hivemindoperating-context--log-only"></a>
 
@@ -1147,7 +1148,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 'hivemind/operating-receipt': OperatingReceipt
 ```
 
-来源：[`packages/hivemind/operating-workstreams/src/events.ts:70`](../packages/hivemind/operating-workstreams/src/events.ts)
+来源：[`packages/hivemind/operating-workstreams/src/events.ts:92`](../packages/hivemind/operating-workstreams/src/events.ts)
 
 <a id="hivemindplaybooks-loaded--log-only"></a>
 
@@ -1169,7 +1170,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 'hivemind/read-scope': { scope: 'full' | 'personal' | 'organization' | 'project'; project?: string }
 ```
 
-来源：[`packages/hivemind/runtime/src/index.ts:75`](../packages/hivemind/runtime/src/index.ts)
+来源：[`packages/hivemind/runtime/src/index.ts:77`](../packages/hivemind/runtime/src/index.ts)
 
 <a id="hivemindreply-language--log-only"></a>
 
@@ -1180,7 +1181,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 'hivemind/reply-language': { language: string }
 ```
 
-来源：[`packages/hivemind/runtime/src/index.ts:81`](../packages/hivemind/runtime/src/index.ts)
+来源：[`packages/hivemind/runtime/src/index.ts:83`](../packages/hivemind/runtime/src/index.ts)
 
 <a id="hivemindrequest-assembly-budget--log-only"></a>
 
@@ -1301,7 +1302,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 'hivemind/run-evaluation': RunEvaluation
 ```
 
-来源：[`packages/hivemind/operating-workstreams/src/events.ts:72`](../packages/hivemind/operating-workstreams/src/events.ts)
+来源：[`packages/hivemind/operating-workstreams/src/events.ts:94`](../packages/hivemind/operating-workstreams/src/events.ts)
 
 <a id="hivemindrun-plan--log-only"></a>
 
@@ -1397,7 +1398,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 
 ```ts persistence-catalog
 /** Same-room ended call transcript retains its authenticated initiating admin. */
-'hivemind/voice-call-ended': { authenticatedActor?:import('@deepseek-ai/dsh-hivemind-execution-scope').AuthenticatedActor; callId: string; provider: 'codex' | 'grok'; initialCheckIn: boolean; interrupted: boolean; hadUserSpeech: boolean; transcript: string }
+'hivemind/voice-call-ended': { authenticatedActor?: { readonly userId: string; readonly orgId: string; readonly name: string; readonly role: string }; callId: string; provider: 'codex' | 'grok'; initialCheckIn: boolean; interrupted: boolean; hadUserSpeech: boolean; transcript: string }
 ```
 
 来源：[`packages/hivemind/runtime/src/voice-outcome.ts:10`](../packages/hivemind/runtime/src/voice-outcome.ts)
@@ -1411,7 +1412,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 'hivemind/web-search-route': { provider: 'native' | 'existing'; fallback: boolean }
 ```
 
-来源：[`packages/hivemind/runtime/src/index.ts:77`](../packages/hivemind/runtime/src/index.ts)
+来源：[`packages/hivemind/runtime/src/index.ts:79`](../packages/hivemind/runtime/src/index.ts)
 
 <a id="hivemindworkstream-approval--log-only"></a>
 
@@ -1422,7 +1423,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 'hivemind/workstream-approval': WorkstreamApproval
 ```
 
-来源：[`packages/hivemind/operating-workstreams/src/events.ts:66`](../packages/hivemind/operating-workstreams/src/events.ts)
+来源：[`packages/hivemind/operating-workstreams/src/events.ts:88`](../packages/hivemind/operating-workstreams/src/events.ts)
 
 <a id="hivemindworkstream-completed--log-only"></a>
 
@@ -1433,7 +1434,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 'hivemind/workstream-completed': WorkstreamCompleted
 ```
 
-来源：[`packages/hivemind/operating-workstreams/src/events.ts:62`](../packages/hivemind/operating-workstreams/src/events.ts)
+来源：[`packages/hivemind/operating-workstreams/src/events.ts:84`](../packages/hivemind/operating-workstreams/src/events.ts)
 
 <a id="hivemindworkstream-failed--log-only"></a>
 
@@ -1444,7 +1445,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 'hivemind/workstream-failed': WorkstreamFailed
 ```
 
-来源：[`packages/hivemind/operating-workstreams/src/events.ts:64`](../packages/hivemind/operating-workstreams/src/events.ts)
+来源：[`packages/hivemind/operating-workstreams/src/events.ts:86`](../packages/hivemind/operating-workstreams/src/events.ts)
 
 <a id="hivemindworkstream-progress--log-only"></a>
 
@@ -1455,7 +1456,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 'hivemind/workstream-progress': WorkstreamProgress
 ```
 
-来源：[`packages/hivemind/operating-workstreams/src/events.ts:60`](../packages/hivemind/operating-workstreams/src/events.ts)
+来源：[`packages/hivemind/operating-workstreams/src/events.ts:82`](../packages/hivemind/operating-workstreams/src/events.ts)
 
 <a id="hivemindworkstream-started--log-only"></a>
 
@@ -1466,7 +1467,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 'hivemind/workstream-started': WorkstreamStarted
 ```
 
-来源：[`packages/hivemind/operating-workstreams/src/events.ts:58`](../packages/hivemind/operating-workstreams/src/events.ts)
+来源：[`packages/hivemind/operating-workstreams/src/events.ts:80`](../packages/hivemind/operating-workstreams/src/events.ts)
 
 ### `hook/*`
 
@@ -1538,6 +1539,17 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 来源：[`packages/compaction/compaction-image-offload/src/projection.ts:25`](../packages/compaction/compaction-image-offload/src/projection.ts)
 
 ### `llm/*`
+
+<a id="llmfallback--log-only"></a>
+
+#### `llm/fallback` — log-only
+
+```ts persistence-catalog
+/** Durable record of the independently routed retry for one failed native step. */
+'llm/fallback': LlmFallbackEventData
+```
+
+来源：[`packages/hivemind/context/src/same-step-fallback.ts:54`](../packages/hivemind/context/src/same-step-fallback.ts)
 
 <a id="llmretry--log-only"></a>
 
@@ -1628,7 +1640,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 'request/context': RequestContext
 ```
 
-来源：[`packages/core/session/src/types.ts:412`](../packages/core/session/src/types.ts)
+来源：[`packages/core/session/src/types.ts:417`](../packages/core/session/src/types.ts)
 
 <a id="requestheader--log-only"></a>
 
@@ -1647,7 +1659,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 }
 ```
 
-来源：[`packages/core/session/src/types.ts:400`](../packages/core/session/src/types.ts)
+来源：[`packages/core/session/src/types.ts:405`](../packages/core/session/src/types.ts)
 
 ### `sandbox/*`
 
@@ -1724,7 +1736,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 'session/end-seed': { inherited?: true }
 ```
 
-来源：[`packages/core/session/src/types.ts:437`](../packages/core/session/src/types.ts)
+来源：[`packages/core/session/src/types.ts:442`](../packages/core/session/src/types.ts)
 
 <a id="sessiontitle--log-only"></a>
 
@@ -2004,8 +2016,13 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
  * @messageProjection
  */
 'tool/parked': {
-  turn: number; step: number; callId: ToolCallId; rootCallId: ToolCallId; name: string
-  approvalId: string; argumentsDigest: string
+  turn: number
+  step: number
+  callId: ToolCallId
+  rootCallId: ToolCallId
+  name: string
+  approvalId: string
+  argumentsDigest: string
 }
 ```
 
@@ -2092,7 +2109,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 }
 ```
 
-来源：[`packages/core/session/src/types.ts:385`](../packages/core/session/src/types.ts)
+来源：[`packages/core/session/src/types.ts:390`](../packages/core/session/src/types.ts)
 
 ### `tool-workflow/*`
 
@@ -4236,6 +4253,14 @@ SHA-256: `a1ba797c7f1633c53d4fbd3589156300ad12ff7c6a412374835917cf8f502791`
 
 `"legal_compliance"`
 
+<a id="persistence-type-sha256-d8f1711d3fe4a5b7912bd9fbccc679427b852e6244f0338e8cd7c07df28ecb9b"></a>
+
+### `"llm/fallback"`
+
+SHA-256: `d8f1711d3fe4a5b7912bd9fbccc679427b852e6244f0338e8cd7c07df28ecb9b`
+
+`"llm/fallback"`
+
 <a id="persistence-type-sha256-611cae9a3539733aa0c42f66035a7d90f19dcbbdfb5d9e3b628b13705253942d"></a>
 
 ### `"llm/retry"`
@@ -6283,7 +6308,7 @@ SHA-256: `9d3fcdba20099ab0c5ef2358ee17de13787f51c5d18490d8f3dfac0f02355621`
 
 SHA-256: `db97b5cb8232d8267613d30d06a0766d76c0ece0bba53b504c73df0360fd3db6`
 
-来源：[`packages/hivemind/employee-delegation/src/events.ts:32`](../packages/hivemind/employee-delegation/src/events.ts)
+来源：[`packages/hivemind/employee-delegation/src/events.ts:37`](../packages/hivemind/employee-delegation/src/events.ts)
 
 | 属性 | 存在性 | 类型 |
 |---|---|---|
@@ -7149,6 +7174,26 @@ SHA-256: `5f2117d1856a5ab43c28371faa978ebfaa48f8c7d734ea3fc94842210df83dca`
 | `providerRetryAfterMs` | 可选 | `number` |
 | `requestId` | 可选 | `string` |
 | `status` | 可选 | `number` |
+
+<a id="persistence-type-sha256-6a6cc2cf78365b0d07a562bca6b2e4d5f68e1aee99deb18d777462521741415d"></a>
+
+<a id="persistence-type-llmfallbackeventdata"></a>
+
+<a id="persistence-type-packageshivemindcontextsrcsame-step-fallbacktsllmfallbackeventdata"></a>
+
+### `LlmFallbackEventData`
+
+SHA-256: `6a6cc2cf78365b0d07a562bca6b2e4d5f68e1aee99deb18d777462521741415d`
+
+来源：[`packages/hivemind/context/src/same-step-fallback.ts:19`](../packages/hivemind/context/src/same-step-fallback.ts)
+
+| 属性 | 存在性 | 类型 |
+|---|---|---|
+| `failureCode` | 必需 | `string` |
+| `fallback` | 必需 | [`LlmCallConfig`](#persistence-type-sha256-67d5f73ceae82f5265258142ad6cf172de2c1fef93ba551b7f0454e0a93bffe0) |
+| `primary` | 必需 | [`LlmCallConfig`](#persistence-type-sha256-67d5f73ceae82f5265258142ad6cf172de2c1fef93ba551b7f0454e0a93bffe0) |
+| `step` | 必需 | `number` |
+| `turn` | 必需 | `number` |
 
 <a id="persistence-type-sha256-c170da8ab7c37635b10867b2571811d9e317ac3ec394e8ff8efe53f902fc41c1"></a>
 
@@ -8273,7 +8318,7 @@ SHA-256: `fc4d81d40ea41a4c012ec7e028656254efcf84f87ada8f688f9f5098c4fdb1ac`
 
 SHA-256: `966231df8c10d527cba08e711c6a9d80b81cb272b5ab1b1eb1accda8c15cbbe9`
 
-来源：[`packages/api/session-controller/src/room-messaging.ts:67`](../packages/api/session-controller/src/room-messaging.ts) · [`packages/hivemind/execution-scope/lib/types/authenticated-actor.d.ts:2`](../packages/hivemind/execution-scope/lib/types/authenticated-actor.d.ts) · [`packages/hivemind/hq-runtime/src/types.ts:3`](../packages/hivemind/hq-runtime/src/types.ts)
+来源：[`packages/api/session-controller/src/room-messaging.ts:67`](../packages/api/session-controller/src/room-messaging.ts) · [`packages/hivemind/execution-scope/lib/types/authenticated-actor.d.ts:2`](../packages/hivemind/execution-scope/lib/types/authenticated-actor.d.ts) · [`packages/hivemind/hq-runtime/src/types.ts:3`](../packages/hivemind/hq-runtime/src/types.ts) · [`packages/hivemind/runtime/src/voice-outcome.ts:10`](../packages/hivemind/runtime/src/voice-outcome.ts)
 
 | 属性 | 存在性 | 类型 |
 |---|---|---|
@@ -8473,7 +8518,7 @@ SHA-256: `fab2bb09bc5e3b9db0685e8f5500b029af1a2b33e70bc703c1d5d0f596fbc1fd`
 
 SHA-256: `4ddfef8867229263c4d286a3ce6df291fcdf9e530b5ab60d335f21fd5c2c251e`
 
-来源：[`packages/hivemind/memory/lib/types/index.d.ts:99`](../packages/hivemind/memory/lib/types/index.d.ts)
+来源：[`packages/hivemind/memory/lib/types/index.d.ts:100`](../packages/hivemind/memory/lib/types/index.d.ts)
 
 | 属性 | 存在性 | 类型 |
 |---|---|---|
@@ -8499,7 +8544,7 @@ SHA-256: `4ddfef8867229263c4d286a3ce6df291fcdf9e530b5ab60d335f21fd5c2c251e`
 
 SHA-256: `de0911aee20b483d15b772a13ff31818c60cb153e2d14e43c230ee8f548a0949`
 
-来源：[`packages/hivemind/memory/lib/types/index.d.ts:31`](../packages/hivemind/memory/lib/types/index.d.ts)
+来源：[`packages/hivemind/memory/lib/types/index.d.ts:32`](../packages/hivemind/memory/lib/types/index.d.ts)
 
 | 属性 | 存在性 | 类型 |
 |---|---|---|
@@ -8881,7 +8926,7 @@ SHA-256: `4e97c3d85c0fc817ee58873c38c25a2474abaaa0af4839311b50b68db3b8cf1a`
 
 SHA-256: `335e242de1fcc17b6ca920fc420d71bec2d76e53e37955c00948b65ab77f05c5`
 
-来源：[`packages/core/session/src/types.ts:472`](../packages/core/session/src/types.ts)
+来源：[`packages/core/session/src/types.ts:477`](../packages/core/session/src/types.ts)
 
 以下类型之一：
 
@@ -9467,8 +9512,6 @@ SHA-256: `8465ece5e9d9007c038b357015d849c15262cb0bc25abc59e47692d87ee01a15`
 
 <a id="persistence-type-sha256-a07fdd8ba48ef0f918baa5c8b51fae713d70c3393ff86fc87d82315a33bfe951"></a>
 
-<a id="persistence-type-packageshivemindplaybookslibclient-typeseventsdtsworkstreamactorkind"></a>
-
 <a id="persistence-type-packageshivemindplaybookslibtypeseventsdtsworkstreamactorkind"></a>
 
 <a id="persistence-type-workstreamactorkind"></a>
@@ -9477,7 +9520,7 @@ SHA-256: `8465ece5e9d9007c038b357015d849c15262cb0bc25abc59e47692d87ee01a15`
 
 SHA-256: `a07fdd8ba48ef0f918baa5c8b51fae713d70c3393ff86fc87d82315a33bfe951`
 
-来源：[`packages/hivemind/playbooks/lib/client-types/events.d.ts:34`](../packages/hivemind/playbooks/lib/client-types/events.d.ts) · [`packages/hivemind/playbooks/lib/types/events.d.ts:34`](../packages/hivemind/playbooks/lib/types/events.d.ts)
+来源：[`packages/hivemind/playbooks/lib/types/events.d.ts:34`](../packages/hivemind/playbooks/lib/types/events.d.ts)
 
 以下类型之一：
 
@@ -10553,7 +10596,7 @@ SHA-256: `0d47a8f3d847243c4488e755ad4cab7a04ac5d4621b9c81865524cf3f4d8536f`
 
 SHA-256: `63d0a5e3b66afa99a41dadb175978e1344af7462157e0f57034420036852faad`
 
-来源：[`packages/hivemind/runtime/src/index.ts:79`](../packages/hivemind/runtime/src/index.ts)
+来源：[`packages/hivemind/runtime/src/index.ts:81`](../packages/hivemind/runtime/src/index.ts)
 
 | 属性 | 存在性 | 类型 |
 |---|---|---|
@@ -10693,7 +10736,7 @@ SHA-256: `c1bee6ee6d061dbf36d9f5f812857284dc346fecfd704dd2d28a5f0328c80b53`
 
 SHA-256: `d0d2998a12c71030402fbfbeb0e7056e8ebcc09404deeb0ac6a883f83ce4befe`
 
-来源：[`packages/hivemind/runtime/src/index.ts:79`](../packages/hivemind/runtime/src/index.ts)
+来源：[`packages/hivemind/runtime/src/index.ts:81`](../packages/hivemind/runtime/src/index.ts)
 
 | 属性 | 存在性 | 类型 |
 |---|---|---|
@@ -11061,7 +11104,7 @@ SHA-256: `cbbe8377ee744964537dbafd83607219e58ba79a13f6db0d0645c7ad3d5e8a09`
 
 SHA-256: `a81059ca06999da1e712414520c2c65e491d052fcf9640fae20aa38f0a5dc735`
 
-来源：[`packages/core/session/src/types.ts:393`](../packages/core/session/src/types.ts) · [`packages/core/tools/src/types.ts:27`](../packages/core/tools/src/types.ts)
+来源：[`packages/core/session/src/types.ts:398`](../packages/core/session/src/types.ts) · [`packages/core/tools/src/types.ts:27`](../packages/core/tools/src/types.ts)
 
 | 属性 | 存在性 | 类型 |
 |---|---|---|
@@ -11280,7 +11323,7 @@ SHA-256: `374fdd68aee5ff844e378c0cbdd961d247a0f22e4ade0bb03d800cd2a46a2b8b`
 
 SHA-256: `5dc7e7a277788d6f35a7287bd28899ef62556839c9151a16d2dc7c4bab43f38f`
 
-来源：[`packages/hivemind/employee-delegation/src/events.ts:26`](../packages/hivemind/employee-delegation/src/events.ts)
+来源：[`packages/hivemind/employee-delegation/src/events.ts:31`](../packages/hivemind/employee-delegation/src/events.ts)
 
 | 属性 | 存在性 | 类型 |
 |---|---|---|
@@ -11336,7 +11379,7 @@ SHA-256: `b0c24aa8c8ee6e464ea296334d20eba2a2d1686a5d390454641dad303ac03346`
 
 SHA-256: `21c8a567550dd7a7a748920824a05d16d57d40f00066f465f581e0552ad0f29a`
 
-来源：[`packages/hivemind/memory/lib/types/index.d.ts:79`](../packages/hivemind/memory/lib/types/index.d.ts)
+来源：[`packages/hivemind/memory/lib/types/index.d.ts:80`](../packages/hivemind/memory/lib/types/index.d.ts)
 
 | 属性 | 存在性 | 类型 |
 |---|---|---|
@@ -11406,7 +11449,7 @@ SHA-256: `9e41386b3a0c9572b0d63078492ebb3997da7d3a830d44e0259418bd02f4bcb2`
 
 SHA-256: `bcf0caf62d964b2fcf5404bd5c909cfa9a21c3f3c96e6b7e36d9e33565223825`
 
-来源：[`packages/core/session/src/types.ts:474`](../packages/core/session/src/types.ts)
+来源：[`packages/core/session/src/types.ts:479`](../packages/core/session/src/types.ts)
 
 | 属性 | 存在性 | 类型 |
 |---|---|---|
@@ -11457,7 +11500,7 @@ SHA-256: `248e47fb02c7574430f3889e5bc77591a62fca2dc1b424596e5c6197ec209834`
 
 SHA-256: `5302e763151277614b97e77f00e3b326694c6c1247b916a20503c344dc970777`
 
-来源：[`packages/core/session/src/types.ts:385`](../packages/core/session/src/types.ts)
+来源：[`packages/core/session/src/types.ts:390`](../packages/core/session/src/types.ts)
 
 | 属性 | 存在性 | 类型 |
 |---|---|---|
@@ -11533,7 +11576,7 @@ SHA-256: `9d9f08b4f8bbc20fa0d49230159ead451baf0630b3b5c04b36498ebd60e754a3`
 
 SHA-256: `c609b751ae5806adf84c7d6cf948ce0446017d682ef63391f2620fc6ead18642`
 
-来源：[`packages/hivemind/runtime/src/index.ts:77`](../packages/hivemind/runtime/src/index.ts)
+来源：[`packages/hivemind/runtime/src/index.ts:79`](../packages/hivemind/runtime/src/index.ts)
 
 | 属性 | 存在性 | 类型 |
 |---|---|---|
@@ -11564,7 +11607,7 @@ SHA-256: `47a60297941f4b8b1631c045497b65bcb80d698dacc464cda7168d26e6e4235b`
 
 SHA-256: `ad0c38a0adb82a94c925456df41586d9b5f9202fca18593eae2213d4445b4585`
 
-来源：[`packages/core/session/src/types.ts:400`](../packages/core/session/src/types.ts)
+来源：[`packages/core/session/src/types.ts:405`](../packages/core/session/src/types.ts)
 
 | 属性 | 存在性 | 类型 |
 |---|---|---|
@@ -11722,7 +11765,7 @@ SHA-256: `e3e77b26f0148755a505f5b8ea843a3be117827d4703bb5754d9dc8ddbef521f`
 
 SHA-256: `17d1afb770d9941936130996da00dc86782cfef731d8d6526162c301256a4ac3`
 
-来源：[`packages/core/session/src/types.ts:437`](../packages/core/session/src/types.ts)
+来源：[`packages/core/session/src/types.ts:442`](../packages/core/session/src/types.ts)
 
 | 属性 | 存在性 | 类型 |
 |---|---|---|
@@ -14434,7 +14477,7 @@ SHA-256: `2235d957bf4b7c6cf959231d480f0ba1f3a6d72d82981493fb6c7c963021d3d5`
 
 SHA-256: `f771224393d61c6589e12b4da19820a47c7703c7d3e59462818ce314694ac4e1`
 
-来源：[`packages/hivemind/runtime/src/index.ts:81`](../packages/hivemind/runtime/src/index.ts)
+来源：[`packages/hivemind/runtime/src/index.ts:83`](../packages/hivemind/runtime/src/index.ts)
 
 | 属性 | 存在性 | 类型 |
 |---|---|---|
@@ -14561,7 +14604,7 @@ SHA-256: `6629c8dd427498ee30e65e5c6d40103ae0fdf9d9e6297bf1a51b71fd9f6ae7f0`
 
 SHA-256: `471911acf2d7117e12d0f948b36435a274a85e82cb234865f40ace4db974ccdd`
 
-来源：[`packages/hivemind/runtime/src/index.ts:83`](../packages/hivemind/runtime/src/index.ts)
+来源：[`packages/hivemind/runtime/src/index.ts:85`](../packages/hivemind/runtime/src/index.ts)
 
 | 属性 | 存在性 | 类型 |
 |---|---|---|
@@ -14626,6 +14669,8 @@ SHA-256: `78c77ab1ed53f78c45db9b003ef7fe7a5faa02c34b5e913ad487b9269223bf6a`
 
 SHA-256: `851dbe5b6037f60f909143e2e8025d0593407e0ceea70fb382b2172e885c3fd8`
 
+来源：[`packages/hivemind/memory/lib/types/index.d.ts:108`](../packages/hivemind/memory/lib/types/index.d.ts)
+
 | 属性 | 存在性 | 类型 |
 |---|---|---|
 | `orgId` | 必需 | `string` |
@@ -14679,7 +14724,7 @@ SHA-256: `8a9c990773f798eac10ca8878e6bcc531ee080bc589cac956730e462cc6a09ad`
 
 SHA-256: `85dcdf478c978074c1ab6badeb4fafda0a30c5585c6c9a78e6d5ba34d5ae8e4f`
 
-来源：[`packages/hivemind/runtime/src/index.ts:75`](../packages/hivemind/runtime/src/index.ts)
+来源：[`packages/hivemind/runtime/src/index.ts:77`](../packages/hivemind/runtime/src/index.ts)
 
 | 属性 | 存在性 | 类型 |
 |---|---|---|
@@ -16390,6 +16435,22 @@ SHA-256: `b222069eea2d768065161c1147b1f2c78c1b54328c84b3586ae5c8f91b8ed35e`
 | `seq` | 必需 | `number` |
 | `time` | 必需 | `number` |
 | `type` | 必需 | `"image/offload"` |
+
+<a id="persistence-type-sha256-c0140806c2250d7dced064c8af087150824a6f22d68a361aee45d9487327a120"></a>
+
+<a id="persistence-type-eventllmfallback"></a>
+
+### `{ type: "llm/fallback" }`
+
+SHA-256: `c0140806c2250d7dced064c8af087150824a6f22d68a361aee45d9487327a120`
+
+| 属性 | 存在性 | 类型 |
+|---|---|---|
+| `data` | 必需 | [`LlmFallbackEventData`](#persistence-type-sha256-6a6cc2cf78365b0d07a562bca6b2e4d5f68e1aee99deb18d777462521741415d) |
+| `ignorable` | 可选 | `true` |
+| `seq` | 必需 | `number` |
+| `time` | 必需 | `number` |
+| `type` | 必需 | `"llm/fallback"` |
 
 <a id="persistence-type-sha256-525254db03b1d1e6b74cf55aced52817568331ac1f96c0818728910b6692e336"></a>
 

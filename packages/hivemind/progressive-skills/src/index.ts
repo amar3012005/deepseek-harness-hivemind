@@ -13,7 +13,7 @@ import type {} from '@deepseek-ai/dsh-hivemind-artifact-renderer'
 import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 
 export const name = 'hivemind-progressive-skills'
-export const inject = ['tools', 'skills', 'hivemindActionToolkits']
+export const inject = ['tools', 'skills']
 
 /** Deployment-owned progressive discovery limits. */
 export interface Config { maxSearchResults: number; maxQueryChars: number }
@@ -61,6 +61,17 @@ const output = {
 
 /** Register compact search and exact loading over all model-invocable scoped skills. */
 export function apply(ctx: Context, config: Partial<Config> = {}): void {
+  // Action toolkits are optional at bootstrap: ordinary skill discovery and
+  // loading work without Cloudflare credentials. Cordis reruns this callback
+  // when the provider appears or unloads, keeping requests fail-closed.
+  const actionToolkits: { current: Context['hivemindActionToolkits'] | undefined } = { current: undefined }
+  ctx.inject(['hivemindActionToolkits'], (actionCtx) => {
+    const provider = actionCtx.hivemindActionToolkits
+    actionToolkits.current = provider
+    actionCtx.effect(() => () => {
+      if (actionToolkits.current === provider) actionToolkits.current = undefined
+    })
+  })
   // Contribute to the existing native registry; tool-skill owns its catalog and loader.
   for (const skill of THINK_SKILLS) ctx.skills.register({ ...skill, source: 'bundled', provider: 'hivemind-action-toolkits' })
   const maxSearchResults = config.maxSearchResults ?? 6
@@ -106,8 +117,9 @@ export function apply(ctx: Context, config: Partial<Config> = {}): void {
       const skill = nativeSkill ?? THINK_SKILLS.find(candidate => candidate.name === skillName)
       if (skill === undefined || (nativeSkill !== undefined && !isModelInvocable(nativeSkill))) throw new TypeError(`hivemind-progressive-skills: unavailable skill ${skillName}`)
       if (['browser-use', 'parallel-search'].includes(skillName)) {
-        if (!ctx.hivemindActionToolkits) throw new Error('Cloudflare action toolkit is not configured; skill instructions alone do not enable these tools')
-        await ctx.hivemindActionToolkits.load(agent, skillName)
+        const provider = actionToolkits.current
+        if (!provider) throw new Error(`hivemind-progressive-skills: ${skillName} requires the Cloudflare action toolkit, which is unavailable because its account ID or browser token is not configured`)
+        await provider.load(agent, skillName)
       }
       const reference = skillName === 'design-artifact' && input.brand_dna_missing === true
         ? await ctx.serial('hivemind/design-reference', { agent, purpose: String(input.design_purpose ?? 'editorial') }) : undefined

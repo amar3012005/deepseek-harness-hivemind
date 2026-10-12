@@ -115,6 +115,7 @@ The [format references](persistence-changes/historical-formats/README.md) cover 
 | `event:hook/invoked` | event | `8a6e1ec9e8db346b0e02f027db73c07a94f067a26d40c1aef1abd09c47ce7ba0` | [`{ type: "hook/invoked" }`](#persistence-type-sha256-8a6e1ec9e8db346b0e02f027db73c07a94f067a26d40c1aef1abd09c47ce7ba0) |
 | `event:hook/result` | event | `e75916628f3f10c2d50658bd143052a46285fbf1a9a700ba54947614603d26b4` | [`{ type: "hook/result" }`](#persistence-type-sha256-e75916628f3f10c2d50658bd143052a46285fbf1a9a700ba54947614603d26b4) |
 | `event:image/offload` | event | `b222069eea2d768065161c1147b1f2c78c1b54328c84b3586ae5c8f91b8ed35e` | [`{ type: "image/offload" }`](#persistence-type-sha256-b222069eea2d768065161c1147b1f2c78c1b54328c84b3586ae5c8f91b8ed35e) |
+| `event:llm/fallback` | event | `c0140806c2250d7dced064c8af087150824a6f22d68a361aee45d9487327a120` | [`{ type: "llm/fallback" }`](#persistence-type-sha256-c0140806c2250d7dced064c8af087150824a6f22d68a361aee45d9487327a120) |
 | `event:llm/retry` | event | `525254db03b1d1e6b74cf55aced52817568331ac1f96c0818728910b6692e336` | [`{ type: "llm/retry" }`](#persistence-type-sha256-525254db03b1d1e6b74cf55aced52817568331ac1f96c0818728910b6692e336) |
 | `event:llm/retry-started` | event | `48e5c9861f16ac07e78cb7b5ae9dabdf7bb85c58baed5a51b4ad275050ea58e3` | [`{ type: "llm/retry-started" }`](#persistence-type-sha256-48e5c9861f16ac07e78cb7b5ae9dabdf7bb85c58baed5a51b4ad275050ea58e3) |
 | `event:model/selection` | event | `35203ba7ad5ef6f97d556b85df20ae98f04f09c65748cecdf8eefdb8b6405ffc` | [`{ type: "model/selection" }`](#persistence-type-sha256-35203ba7ad5ef6f97d556b85df20ae98f04f09c65748cecdf8eefdb8b6405ffc) |
@@ -233,7 +234,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 }[T]
 ```
 
-Sources: [`packages/core/session/src/types.ts:441`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:449`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:472`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:503`](../packages/core/session/src/types.ts)
+Sources: [`packages/core/session/src/types.ts:446`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:454`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:477`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:508`](../packages/core/session/src/types.ts)
 
 ## Events
 
@@ -742,7 +743,7 @@ Source: [`packages/hivemind/connected-apps/src/index.ts:44`](../packages/hivemin
 }
 ```
 
-Source: [`packages/hivemind/runtime/src/index.ts:83`](../packages/hivemind/runtime/src/index.ts)
+Source: [`packages/hivemind/runtime/src/index.ts:85`](../packages/hivemind/runtime/src/index.ts)
 
 <a id="hiveminddesign-reference-selected--log-only"></a>
 
@@ -786,7 +787,7 @@ Source: [`packages/hivemind/dreamer/src/index.ts:111`](../packages/hivemind/drea
 'hivemind/employee-delegation-end': EmployeeDelegationEnd
 ```
 
-Source: [`packages/hivemind/employee-delegation/src/events.ts:51`](../packages/hivemind/employee-delegation/src/events.ts)
+Source: [`packages/hivemind/employee-delegation/src/events.ts:56`](../packages/hivemind/employee-delegation/src/events.ts)
 
 <a id="hivemindemployee-delegation-start--log-only"></a>
 
@@ -797,7 +798,7 @@ Source: [`packages/hivemind/employee-delegation/src/events.ts:51`](../packages/h
 'hivemind/employee-delegation-start': EmployeeDelegationStart
 ```
 
-Source: [`packages/hivemind/employee-delegation/src/events.ts:49`](../packages/hivemind/employee-delegation/src/events.ts)
+Source: [`packages/hivemind/employee-delegation/src/events.ts:54`](../packages/hivemind/employee-delegation/src/events.ts)
 
 <a id="hivemindemployee-selection--log-only"></a>
 
@@ -808,7 +809,7 @@ Source: [`packages/hivemind/employee-delegation/src/events.ts:49`](../packages/h
 'hivemind/employee-selection': { id: string | null; name?: string; role?: string; avatarUrl?: string; appearance?: JsonValue; joining?: { at: string; creationHash: string; profileRevision: number } }
 ```
 
-Source: [`packages/hivemind/runtime/src/index.ts:79`](../packages/hivemind/runtime/src/index.ts)
+Source: [`packages/hivemind/runtime/src/index.ts:81`](../packages/hivemind/runtime/src/index.ts)
 
 <a id="hivemindemployee-task-snapshot--log-only"></a>
 
@@ -841,7 +842,7 @@ Source: [`packages/hivemind/hq-runtime/src/employee-work-origin.ts:15`](../packa
 'hivemind/evidence-gap-recorded': EvidenceGapRecorded
 ```
 
-Source: [`packages/hivemind/operating-workstreams/src/events.ts:68`](../packages/hivemind/operating-workstreams/src/events.ts)
+Source: [`packages/hivemind/operating-workstreams/src/events.ts:90`](../packages/hivemind/operating-workstreams/src/events.ts)
 
 <a id="hivemindgeneration-created--log-only"></a>
 
@@ -1112,7 +1113,7 @@ Source: [`packages/hivemind/artifact-renderer/src/events.ts:66`](../packages/hiv
 }
 ```
 
-Source: [`packages/hivemind/memory/src/index.ts:87`](../packages/hivemind/memory/src/index.ts)
+Source: [`packages/hivemind/memory/src/index.ts:90`](../packages/hivemind/memory/src/index.ts)
 
 <a id="hivemindmemory-save-checkpoint--log-only"></a>
 
@@ -1123,7 +1124,7 @@ Source: [`packages/hivemind/memory/src/index.ts:87`](../packages/hivemind/memory
 'hivemind/memory-save-checkpoint': SaveCheckpoint
 ```
 
-Source: [`packages/hivemind/memory/src/index.ts:85`](../packages/hivemind/memory/src/index.ts)
+Source: [`packages/hivemind/memory/src/index.ts:88`](../packages/hivemind/memory/src/index.ts)
 
 <a id="hivemindoperating-context--log-only"></a>
 
@@ -1145,7 +1146,7 @@ Source: [`packages/hivemind/playbooks/src/events.ts:63`](../packages/hivemind/pl
 'hivemind/operating-receipt': OperatingReceipt
 ```
 
-Source: [`packages/hivemind/operating-workstreams/src/events.ts:70`](../packages/hivemind/operating-workstreams/src/events.ts)
+Source: [`packages/hivemind/operating-workstreams/src/events.ts:92`](../packages/hivemind/operating-workstreams/src/events.ts)
 
 <a id="hivemindplaybooks-loaded--log-only"></a>
 
@@ -1167,7 +1168,7 @@ Source: [`packages/hivemind/playbooks/src/events.ts:65`](../packages/hivemind/pl
 'hivemind/read-scope': { scope: 'full' | 'personal' | 'organization' | 'project'; project?: string }
 ```
 
-Source: [`packages/hivemind/runtime/src/index.ts:75`](../packages/hivemind/runtime/src/index.ts)
+Source: [`packages/hivemind/runtime/src/index.ts:77`](../packages/hivemind/runtime/src/index.ts)
 
 <a id="hivemindreply-language--log-only"></a>
 
@@ -1178,7 +1179,7 @@ Source: [`packages/hivemind/runtime/src/index.ts:75`](../packages/hivemind/runti
 'hivemind/reply-language': { language: string }
 ```
 
-Source: [`packages/hivemind/runtime/src/index.ts:81`](../packages/hivemind/runtime/src/index.ts)
+Source: [`packages/hivemind/runtime/src/index.ts:83`](../packages/hivemind/runtime/src/index.ts)
 
 <a id="hivemindrequest-assembly-budget--log-only"></a>
 
@@ -1299,7 +1300,7 @@ Source: [`packages/api/session-controller/src/room-messaging.ts:78`](../packages
 'hivemind/run-evaluation': RunEvaluation
 ```
 
-Source: [`packages/hivemind/operating-workstreams/src/events.ts:72`](../packages/hivemind/operating-workstreams/src/events.ts)
+Source: [`packages/hivemind/operating-workstreams/src/events.ts:94`](../packages/hivemind/operating-workstreams/src/events.ts)
 
 <a id="hivemindrun-plan--log-only"></a>
 
@@ -1395,7 +1396,7 @@ Source: [`packages/hivemind/runtime/src/voice-outcome.ts:12`](../packages/hivemi
 
 ```ts persistence-catalog
 /** Same-room ended call transcript retains its authenticated initiating admin. */
-'hivemind/voice-call-ended': { authenticatedActor?:import('@deepseek-ai/dsh-hivemind-execution-scope').AuthenticatedActor; callId: string; provider: 'codex' | 'grok'; initialCheckIn: boolean; interrupted: boolean; hadUserSpeech: boolean; transcript: string }
+'hivemind/voice-call-ended': { authenticatedActor?: { readonly userId: string; readonly orgId: string; readonly name: string; readonly role: string }; callId: string; provider: 'codex' | 'grok'; initialCheckIn: boolean; interrupted: boolean; hadUserSpeech: boolean; transcript: string }
 ```
 
 Source: [`packages/hivemind/runtime/src/voice-outcome.ts:10`](../packages/hivemind/runtime/src/voice-outcome.ts)
@@ -1409,7 +1410,7 @@ Source: [`packages/hivemind/runtime/src/voice-outcome.ts:10`](../packages/hivemi
 'hivemind/web-search-route': { provider: 'native' | 'existing'; fallback: boolean }
 ```
 
-Source: [`packages/hivemind/runtime/src/index.ts:77`](../packages/hivemind/runtime/src/index.ts)
+Source: [`packages/hivemind/runtime/src/index.ts:79`](../packages/hivemind/runtime/src/index.ts)
 
 <a id="hivemindworkstream-approval--log-only"></a>
 
@@ -1420,7 +1421,7 @@ Source: [`packages/hivemind/runtime/src/index.ts:77`](../packages/hivemind/runti
 'hivemind/workstream-approval': WorkstreamApproval
 ```
 
-Source: [`packages/hivemind/operating-workstreams/src/events.ts:66`](../packages/hivemind/operating-workstreams/src/events.ts)
+Source: [`packages/hivemind/operating-workstreams/src/events.ts:88`](../packages/hivemind/operating-workstreams/src/events.ts)
 
 <a id="hivemindworkstream-completed--log-only"></a>
 
@@ -1431,7 +1432,7 @@ Source: [`packages/hivemind/operating-workstreams/src/events.ts:66`](../packages
 'hivemind/workstream-completed': WorkstreamCompleted
 ```
 
-Source: [`packages/hivemind/operating-workstreams/src/events.ts:62`](../packages/hivemind/operating-workstreams/src/events.ts)
+Source: [`packages/hivemind/operating-workstreams/src/events.ts:84`](../packages/hivemind/operating-workstreams/src/events.ts)
 
 <a id="hivemindworkstream-failed--log-only"></a>
 
@@ -1442,7 +1443,7 @@ Source: [`packages/hivemind/operating-workstreams/src/events.ts:62`](../packages
 'hivemind/workstream-failed': WorkstreamFailed
 ```
 
-Source: [`packages/hivemind/operating-workstreams/src/events.ts:64`](../packages/hivemind/operating-workstreams/src/events.ts)
+Source: [`packages/hivemind/operating-workstreams/src/events.ts:86`](../packages/hivemind/operating-workstreams/src/events.ts)
 
 <a id="hivemindworkstream-progress--log-only"></a>
 
@@ -1453,7 +1454,7 @@ Source: [`packages/hivemind/operating-workstreams/src/events.ts:64`](../packages
 'hivemind/workstream-progress': WorkstreamProgress
 ```
 
-Source: [`packages/hivemind/operating-workstreams/src/events.ts:60`](../packages/hivemind/operating-workstreams/src/events.ts)
+Source: [`packages/hivemind/operating-workstreams/src/events.ts:82`](../packages/hivemind/operating-workstreams/src/events.ts)
 
 <a id="hivemindworkstream-started--log-only"></a>
 
@@ -1464,7 +1465,7 @@ Source: [`packages/hivemind/operating-workstreams/src/events.ts:60`](../packages
 'hivemind/workstream-started': WorkstreamStarted
 ```
 
-Source: [`packages/hivemind/operating-workstreams/src/events.ts:58`](../packages/hivemind/operating-workstreams/src/events.ts)
+Source: [`packages/hivemind/operating-workstreams/src/events.ts:80`](../packages/hivemind/operating-workstreams/src/events.ts)
 
 ### `hook/*`
 
@@ -1536,6 +1537,17 @@ Source: [`packages/experimental/hook-protocol/src/types.ts:31`](../packages/expe
 Source: [`packages/compaction/compaction-image-offload/src/projection.ts:25`](../packages/compaction/compaction-image-offload/src/projection.ts)
 
 ### `llm/*`
+
+<a id="llmfallback--log-only"></a>
+
+#### `llm/fallback` — log-only
+
+```ts persistence-catalog
+/** Durable record of the independently routed retry for one failed native step. */
+'llm/fallback': LlmFallbackEventData
+```
+
+Source: [`packages/hivemind/context/src/same-step-fallback.ts:54`](../packages/hivemind/context/src/same-step-fallback.ts)
 
 <a id="llmretry--log-only"></a>
 
@@ -1626,7 +1638,7 @@ Source: [`packages/plan/plan-mode/src/index.ts:52`](../packages/plan/plan-mode/s
 'request/context': RequestContext
 ```
 
-Source: [`packages/core/session/src/types.ts:412`](../packages/core/session/src/types.ts)
+Source: [`packages/core/session/src/types.ts:417`](../packages/core/session/src/types.ts)
 
 <a id="requestheader--log-only"></a>
 
@@ -1645,7 +1657,7 @@ Source: [`packages/core/session/src/types.ts:412`](../packages/core/session/src/
 }
 ```
 
-Source: [`packages/core/session/src/types.ts:400`](../packages/core/session/src/types.ts)
+Source: [`packages/core/session/src/types.ts:405`](../packages/core/session/src/types.ts)
 
 ### `sandbox/*`
 
@@ -1722,7 +1734,7 @@ Source: [`packages/schedule/schedule/src/types.ts:365`](../packages/schedule/sch
 'session/end-seed': { inherited?: true }
 ```
 
-Source: [`packages/core/session/src/types.ts:437`](../packages/core/session/src/types.ts)
+Source: [`packages/core/session/src/types.ts:442`](../packages/core/session/src/types.ts)
 
 <a id="sessiontitle--log-only"></a>
 
@@ -2002,8 +2014,13 @@ Source: [`packages/core/session/src/types.ts:361`](../packages/core/session/src/
  * @messageProjection
  */
 'tool/parked': {
-  turn: number; step: number; callId: ToolCallId; rootCallId: ToolCallId; name: string
-  approvalId: string; argumentsDigest: string
+  turn: number
+  step: number
+  callId: ToolCallId
+  rootCallId: ToolCallId
+  name: string
+  approvalId: string
+  argumentsDigest: string
 }
 ```
 
@@ -2090,7 +2107,7 @@ Source: [`packages/core/tools/src/types.ts:45`](../packages/core/tools/src/types
 }
 ```
 
-Source: [`packages/core/session/src/types.ts:385`](../packages/core/session/src/types.ts)
+Source: [`packages/core/session/src/types.ts:390`](../packages/core/session/src/types.ts)
 
 ### `tool-workflow/*`
 
@@ -4234,6 +4251,14 @@ SHA-256: `a1ba797c7f1633c53d4fbd3589156300ad12ff7c6a412374835917cf8f502791`
 
 `"legal_compliance"`
 
+<a id="persistence-type-sha256-d8f1711d3fe4a5b7912bd9fbccc679427b852e6244f0338e8cd7c07df28ecb9b"></a>
+
+### `"llm/fallback"`
+
+SHA-256: `d8f1711d3fe4a5b7912bd9fbccc679427b852e6244f0338e8cd7c07df28ecb9b`
+
+`"llm/fallback"`
+
 <a id="persistence-type-sha256-611cae9a3539733aa0c42f66035a7d90f19dcbbdfb5d9e3b628b13705253942d"></a>
 
 ### `"llm/retry"`
@@ -6281,7 +6306,7 @@ Attribution-only additions: `tmux-context`, `user-question-reply`, `working-dire
 
 SHA-256: `db97b5cb8232d8267613d30d06a0766d76c0ece0bba53b504c73df0360fd3db6`
 
-Sources: [`packages/hivemind/employee-delegation/src/events.ts:32`](../packages/hivemind/employee-delegation/src/events.ts)
+Sources: [`packages/hivemind/employee-delegation/src/events.ts:37`](../packages/hivemind/employee-delegation/src/events.ts)
 
 | Property | Presence | Type |
 |---|---|---|
@@ -7147,6 +7172,26 @@ Sources: [`packages/llm/llm/src/types.ts:41`](../packages/llm/llm/src/types.ts)
 | `providerRetryAfterMs` | optional | `number` |
 | `requestId` | optional | `string` |
 | `status` | optional | `number` |
+
+<a id="persistence-type-sha256-6a6cc2cf78365b0d07a562bca6b2e4d5f68e1aee99deb18d777462521741415d"></a>
+
+<a id="persistence-type-llmfallbackeventdata"></a>
+
+<a id="persistence-type-packageshivemindcontextsrcsame-step-fallbacktsllmfallbackeventdata"></a>
+
+### `LlmFallbackEventData`
+
+SHA-256: `6a6cc2cf78365b0d07a562bca6b2e4d5f68e1aee99deb18d777462521741415d`
+
+Sources: [`packages/hivemind/context/src/same-step-fallback.ts:19`](../packages/hivemind/context/src/same-step-fallback.ts)
+
+| Property | Presence | Type |
+|---|---|---|
+| `failureCode` | required | `string` |
+| `fallback` | required | [`LlmCallConfig`](#persistence-type-sha256-67d5f73ceae82f5265258142ad6cf172de2c1fef93ba551b7f0454e0a93bffe0) |
+| `primary` | required | [`LlmCallConfig`](#persistence-type-sha256-67d5f73ceae82f5265258142ad6cf172de2c1fef93ba551b7f0454e0a93bffe0) |
+| `step` | required | `number` |
+| `turn` | required | `number` |
 
 <a id="persistence-type-sha256-c170da8ab7c37635b10867b2571811d9e317ac3ec394e8ff8efe53f902fc41c1"></a>
 
@@ -8271,7 +8316,7 @@ Sources: [`packages/hivemind/hq-runtime/src/rest.ts:58`](../packages/hivemind/hq
 
 SHA-256: `966231df8c10d527cba08e711c6a9d80b81cb272b5ab1b1eb1accda8c15cbbe9`
 
-Sources: [`packages/api/session-controller/src/room-messaging.ts:67`](../packages/api/session-controller/src/room-messaging.ts) · [`packages/hivemind/execution-scope/lib/types/authenticated-actor.d.ts:2`](../packages/hivemind/execution-scope/lib/types/authenticated-actor.d.ts) · [`packages/hivemind/hq-runtime/src/types.ts:3`](../packages/hivemind/hq-runtime/src/types.ts)
+Sources: [`packages/api/session-controller/src/room-messaging.ts:67`](../packages/api/session-controller/src/room-messaging.ts) · [`packages/hivemind/execution-scope/lib/types/authenticated-actor.d.ts:2`](../packages/hivemind/execution-scope/lib/types/authenticated-actor.d.ts) · [`packages/hivemind/hq-runtime/src/types.ts:3`](../packages/hivemind/hq-runtime/src/types.ts) · [`packages/hivemind/runtime/src/voice-outcome.ts:10`](../packages/hivemind/runtime/src/voice-outcome.ts)
 
 | Property | Presence | Type |
 |---|---|---|
@@ -8471,7 +8516,7 @@ One of:
 
 SHA-256: `4ddfef8867229263c4d286a3ce6df291fcdf9e530b5ab60d335f21fd5c2c251e`
 
-Sources: [`packages/hivemind/memory/lib/types/index.d.ts:99`](../packages/hivemind/memory/lib/types/index.d.ts)
+Sources: [`packages/hivemind/memory/lib/types/index.d.ts:100`](../packages/hivemind/memory/lib/types/index.d.ts)
 
 | Property | Presence | Type |
 |---|---|---|
@@ -8497,7 +8542,7 @@ Sources: [`packages/hivemind/memory/lib/types/index.d.ts:99`](../packages/hivemi
 
 SHA-256: `de0911aee20b483d15b772a13ff31818c60cb153e2d14e43c230ee8f548a0949`
 
-Sources: [`packages/hivemind/memory/lib/types/index.d.ts:31`](../packages/hivemind/memory/lib/types/index.d.ts)
+Sources: [`packages/hivemind/memory/lib/types/index.d.ts:32`](../packages/hivemind/memory/lib/types/index.d.ts)
 
 | Property | Presence | Type |
 |---|---|---|
@@ -8879,7 +8924,7 @@ Sources: [`packages/subagent/subagent/src/continuation-messages.ts:29`](../packa
 
 SHA-256: `335e242de1fcc17b6ca920fc420d71bec2d76e53e37955c00948b65ab77f05c5`
 
-Sources: [`packages/core/session/src/types.ts:472`](../packages/core/session/src/types.ts)
+Sources: [`packages/core/session/src/types.ts:477`](../packages/core/session/src/types.ts)
 
 One of:
 
@@ -9465,8 +9510,6 @@ One of:
 
 <a id="persistence-type-sha256-a07fdd8ba48ef0f918baa5c8b51fae713d70c3393ff86fc87d82315a33bfe951"></a>
 
-<a id="persistence-type-packageshivemindplaybookslibclient-typeseventsdtsworkstreamactorkind"></a>
-
 <a id="persistence-type-packageshivemindplaybookslibtypeseventsdtsworkstreamactorkind"></a>
 
 <a id="persistence-type-workstreamactorkind"></a>
@@ -9475,7 +9518,7 @@ One of:
 
 SHA-256: `a07fdd8ba48ef0f918baa5c8b51fae713d70c3393ff86fc87d82315a33bfe951`
 
-Sources: [`packages/hivemind/playbooks/lib/client-types/events.d.ts:34`](../packages/hivemind/playbooks/lib/client-types/events.d.ts) · [`packages/hivemind/playbooks/lib/types/events.d.ts:34`](../packages/hivemind/playbooks/lib/types/events.d.ts)
+Sources: [`packages/hivemind/playbooks/lib/types/events.d.ts:34`](../packages/hivemind/playbooks/lib/types/events.d.ts)
 
 One of:
 
@@ -10551,7 +10594,7 @@ Sources: [`packages/subagent/tool-subagent/src/model-selection-state.ts:17`](../
 
 SHA-256: `63d0a5e3b66afa99a41dadb175978e1344af7462157e0f57034420036852faad`
 
-Sources: [`packages/hivemind/runtime/src/index.ts:79`](../packages/hivemind/runtime/src/index.ts)
+Sources: [`packages/hivemind/runtime/src/index.ts:81`](../packages/hivemind/runtime/src/index.ts)
 
 | Property | Presence | Type |
 |---|---|---|
@@ -10691,7 +10734,7 @@ Array of [`{ artifactIds, id, owner, reviewStatus?, … }`](#persistence-type-sh
 
 SHA-256: `d0d2998a12c71030402fbfbeb0e7056e8ebcc09404deeb0ac6a883f83ce4befe`
 
-Sources: [`packages/hivemind/runtime/src/index.ts:79`](../packages/hivemind/runtime/src/index.ts)
+Sources: [`packages/hivemind/runtime/src/index.ts:81`](../packages/hivemind/runtime/src/index.ts)
 
 | Property | Presence | Type |
 |---|---|---|
@@ -11059,7 +11102,7 @@ SHA-256: `cbbe8377ee744964537dbafd83607219e58ba79a13f6db0d0645c7ad3d5e8a09`
 
 SHA-256: `a81059ca06999da1e712414520c2c65e491d052fcf9640fae20aa38f0a5dc735`
 
-Sources: [`packages/core/session/src/types.ts:393`](../packages/core/session/src/types.ts) · [`packages/core/tools/src/types.ts:27`](../packages/core/tools/src/types.ts)
+Sources: [`packages/core/session/src/types.ts:398`](../packages/core/session/src/types.ts) · [`packages/core/tools/src/types.ts:27`](../packages/core/tools/src/types.ts)
 
 | Property | Presence | Type |
 |---|---|---|
@@ -11278,7 +11321,7 @@ Sources: [`packages/llm/llm-retry/src/types.ts:30`](../packages/llm/llm-retry/sr
 
 SHA-256: `5dc7e7a277788d6f35a7287bd28899ef62556839c9151a16d2dc7c4bab43f38f`
 
-Sources: [`packages/hivemind/employee-delegation/src/events.ts:26`](../packages/hivemind/employee-delegation/src/events.ts)
+Sources: [`packages/hivemind/employee-delegation/src/events.ts:31`](../packages/hivemind/employee-delegation/src/events.ts)
 
 | Property | Presence | Type |
 |---|---|---|
@@ -11334,7 +11377,7 @@ Array of [`{ description, name, originalName, parameters }`](#persistence-type-s
 
 SHA-256: `21c8a567550dd7a7a748920824a05d16d57d40f00066f465f581e0552ad0f29a`
 
-Sources: [`packages/hivemind/memory/lib/types/index.d.ts:79`](../packages/hivemind/memory/lib/types/index.d.ts)
+Sources: [`packages/hivemind/memory/lib/types/index.d.ts:80`](../packages/hivemind/memory/lib/types/index.d.ts)
 
 | Property | Presence | Type |
 |---|---|---|
@@ -11404,7 +11447,7 @@ Sources: [`packages/compaction/compaction/src/types.ts:38`](../packages/compacti
 
 SHA-256: `bcf0caf62d964b2fcf5404bd5c909cfa9a21c3f3c96e6b7e36d9e33565223825`
 
-Sources: [`packages/core/session/src/types.ts:474`](../packages/core/session/src/types.ts)
+Sources: [`packages/core/session/src/types.ts:479`](../packages/core/session/src/types.ts)
 
 | Property | Presence | Type |
 |---|---|---|
@@ -11455,7 +11498,7 @@ Array of [`{ error?, evidenceState, jobId, objective, … }`](#persistence-type-
 
 SHA-256: `5302e763151277614b97e77f00e3b326694c6c1247b916a20503c344dc970777`
 
-Sources: [`packages/core/session/src/types.ts:385`](../packages/core/session/src/types.ts)
+Sources: [`packages/core/session/src/types.ts:390`](../packages/core/session/src/types.ts)
 
 | Property | Presence | Type |
 |---|---|---|
@@ -11531,7 +11574,7 @@ Sources: [`packages/hivemind/runtime/src/request-recovery.ts:10`](../packages/hi
 
 SHA-256: `c609b751ae5806adf84c7d6cf948ce0446017d682ef63391f2620fc6ead18642`
 
-Sources: [`packages/hivemind/runtime/src/index.ts:77`](../packages/hivemind/runtime/src/index.ts)
+Sources: [`packages/hivemind/runtime/src/index.ts:79`](../packages/hivemind/runtime/src/index.ts)
 
 | Property | Presence | Type |
 |---|---|---|
@@ -11562,7 +11605,7 @@ SHA-256: `47a60297941f4b8b1631c045497b65bcb80d698dacc464cda7168d26e6e4235b`
 
 SHA-256: `ad0c38a0adb82a94c925456df41586d9b5f9202fca18593eae2213d4445b4585`
 
-Sources: [`packages/core/session/src/types.ts:400`](../packages/core/session/src/types.ts)
+Sources: [`packages/core/session/src/types.ts:405`](../packages/core/session/src/types.ts)
 
 | Property | Presence | Type |
 |---|---|---|
@@ -11720,7 +11763,7 @@ SHA-256: `e3e77b26f0148755a505f5b8ea843a3be117827d4703bb5754d9dc8ddbef521f`
 
 SHA-256: `17d1afb770d9941936130996da00dc86782cfef731d8d6526162c301256a4ac3`
 
-Sources: [`packages/core/session/src/types.ts:437`](../packages/core/session/src/types.ts)
+Sources: [`packages/core/session/src/types.ts:442`](../packages/core/session/src/types.ts)
 
 | Property | Presence | Type |
 |---|---|---|
@@ -14432,7 +14475,7 @@ Sources: [`packages/session/working-directory/src/index.ts:29`](../packages/sess
 
 SHA-256: `f771224393d61c6589e12b4da19820a47c7703c7d3e59462818ce314694ac4e1`
 
-Sources: [`packages/hivemind/runtime/src/index.ts:81`](../packages/hivemind/runtime/src/index.ts)
+Sources: [`packages/hivemind/runtime/src/index.ts:83`](../packages/hivemind/runtime/src/index.ts)
 
 | Property | Presence | Type |
 |---|---|---|
@@ -14559,7 +14602,7 @@ Sources: [`packages/hivemind/hq-runtime/src/rest.ts:71`](../packages/hivemind/hq
 
 SHA-256: `471911acf2d7117e12d0f948b36435a274a85e82cb234865f40ace4db974ccdd`
 
-Sources: [`packages/hivemind/runtime/src/index.ts:83`](../packages/hivemind/runtime/src/index.ts)
+Sources: [`packages/hivemind/runtime/src/index.ts:85`](../packages/hivemind/runtime/src/index.ts)
 
 | Property | Presence | Type |
 |---|---|---|
@@ -14624,6 +14667,8 @@ Sources: [`packages/hivemind/runtime/src/administrator-messaging.ts:19`](../pack
 
 SHA-256: `851dbe5b6037f60f909143e2e8025d0593407e0ceea70fb382b2172e885c3fd8`
 
+Sources: [`packages/hivemind/memory/lib/types/index.d.ts:108`](../packages/hivemind/memory/lib/types/index.d.ts)
+
 | Property | Presence | Type |
 |---|---|---|
 | `orgId` | required | `string` |
@@ -14677,7 +14722,7 @@ Sources: [`packages/interaction/permission-presets/src/index.ts:59`](../packages
 
 SHA-256: `85dcdf478c978074c1ab6badeb4fafda0a30c5585c6c9a78e6d5ba34d5ae8e4f`
 
-Sources: [`packages/hivemind/runtime/src/index.ts:75`](../packages/hivemind/runtime/src/index.ts)
+Sources: [`packages/hivemind/runtime/src/index.ts:77`](../packages/hivemind/runtime/src/index.ts)
 
 | Property | Presence | Type |
 |---|---|---|
@@ -16388,6 +16433,22 @@ SHA-256: `b222069eea2d768065161c1147b1f2c78c1b54328c84b3586ae5c8f91b8ed35e`
 | `seq` | required | `number` |
 | `time` | required | `number` |
 | `type` | required | `"image/offload"` |
+
+<a id="persistence-type-sha256-c0140806c2250d7dced064c8af087150824a6f22d68a361aee45d9487327a120"></a>
+
+<a id="persistence-type-eventllmfallback"></a>
+
+### `{ type: "llm/fallback" }`
+
+SHA-256: `c0140806c2250d7dced064c8af087150824a6f22d68a361aee45d9487327a120`
+
+| Property | Presence | Type |
+|---|---|---|
+| `data` | required | [`LlmFallbackEventData`](#persistence-type-sha256-6a6cc2cf78365b0d07a562bca6b2e4d5f68e1aee99deb18d777462521741415d) |
+| `ignorable` | optional | `true` |
+| `seq` | required | `number` |
+| `time` | required | `number` |
+| `type` | required | `"llm/fallback"` |
 
 <a id="persistence-type-sha256-525254db03b1d1e6b74cf55aced52817568331ac1f96c0818728910b6692e336"></a>
 

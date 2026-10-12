@@ -1,11 +1,12 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { ToolDefinition } from '@deepseek-ai/dsh-tools'
-import { apply } from '../src/index.ts'
+import { apply, inject } from '../src/index.ts'
 import { THINK_SKILLS } from '../src/think-skills.ts'
 
-function setup() {
+function setup(actionToolkit?: { load(agent: Agent, skill: string): Promise<readonly string[]> }) {
   const tools = new Map<string, ToolDefinition>()
+  const injections: string[][] = []
   const summaries = [
     { name: 'presentation-design', description: 'Build and inspect investor presentations', invocation: { modelInvocable: true, userInvocable: true } },
     { name: 'private-command', description: 'Human only', invocation: { modelInvocable: false, userInvocable: true } },
@@ -18,15 +19,26 @@ function setup() {
       async snapshot() { return { complete: true, skills: summaries } },
       async get(name: string) { return name === 'presentation-design' ? { ...summaries[0], content: 'Create the deck and inspect every slide.', source: 'test', provider: 'test' } : undefined },
     },
+    inject(deps: string[], callback: (scope: {
+      hivemindActionToolkits: typeof actionToolkit
+      effect(effect: () => () => void): void
+    }) => void) {
+      injections.push(deps)
+      if (actionToolkit) callback({ hivemindActionToolkits: actionToolkit, effect() {} })
+    },
   }
   apply(ctx as never, { maxSearchResults: 5, maxQueryChars: 1000 })
   const tool = tools.get('hivemind_skills')
   if (tool === undefined) throw new Error('progressive skill tool was not registered')
   const agent = { session: { header: { cwd: '/workspace' } } } as unknown as Agent
-  return { tool, agent }
+  return { tool, agent, injections }
 }
 
 describe('hivemind progressive skills', () => {
+  it('does not make the optional action toolkit a bootstrap dependency', () => {
+    expect(inject).toEqual(['tools', 'skills'])
+  })
+
   it('returns actual native reference pixels with design guidance only when Brand DNA is missing', async () => {
     const { tool, agent } = setup()
     const execution = { agent, signal: new AbortController().signal } as never
@@ -35,8 +47,9 @@ describe('hivemind progressive skills', () => {
     expect(await tool.execute({ operation: 'load', name: 'design-artifact', brand_dna_missing: false }, execution)).not.toHaveProperty('private_reference_image')
   })
   it('returns compact model-invocable candidates and loads one exact body', async () => {
-    const { tool, agent } = setup()
+    const { tool, agent, injections } = setup()
     const execution = { agent, signal: new AbortController().signal } as never
+    expect(injections).toContainEqual(['hivemindActionToolkits'])
     await expect(tool.execute({ operation: 'search', query: 'create an investor presentation', limit: 5 }, execution)).resolves.toMatchObject({ candidates: expect.arrayContaining([expect.objectContaining({ name: 'presentation-design' })]) })
     await expect(tool.execute({ operation: 'load', name: 'presentation-design' }, execution)).resolves.toMatchObject({ skill: { name: 'presentation-design', content: 'Create the deck and inspect every slide.' } })
   })
@@ -45,6 +58,28 @@ describe('hivemind progressive skills', () => {
     const { tool, agent } = setup()
     const execution = { agent, signal: new AbortController().signal } as never
     await expect(tool.execute({ operation: 'load', name: 'private-command' }, execution)).rejects.toThrow('unavailable skill')
+  })
+
+  it('boots without optional action credentials, keeps ordinary skill loads available, and refuses action skills', async () => {
+    const { tool, agent } = setup()
+    const execution = { agent, signal: new AbortController().signal } as never
+
+    await expect(tool.execute({ operation: 'load', name: 'design-artifact' }, execution)).resolves.toMatchObject({
+      status: 'ready', operation: 'load', skill: { name: 'design-artifact' },
+    })
+    await expect(tool.execute({ operation: 'load', name: 'parallel-search' }, execution))
+      .rejects.toThrow('parallel-search requires the Cloudflare action toolkit, which is unavailable')
+  })
+
+  it('loads an action skill only through the mounted provider', async () => {
+    const load = vi.fn(async (_agent: Agent, skill: string) => [skill])
+    const { tool, agent } = setup({ load })
+    const execution = { agent, signal: new AbortController().signal } as never
+
+    await expect(tool.execute({ operation: 'load', name: 'parallel-search' }, execution)).resolves.toMatchObject({
+      status: 'ready', operation: 'load', skill: { name: 'parallel-search' },
+    })
+    expect(load).toHaveBeenCalledWith(agent, 'parallel-search')
   })
 })
 

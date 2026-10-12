@@ -19,6 +19,8 @@ function mount(
 ) {
   let preStep: ((payload: never, next: () => Promise<unknown>) => Promise<unknown>) | undefined
   const ctx = {
+    sessionProjections: { register() {}, stateOf: () => null },
+    sessions: { flush: async () => true },
     get: () => ({ snapshot: (session: Session) => ({ values: { userQuestions: nativePending
       ? foldUserQuestions(session.snapshotEvents()) : { active: pendingCalls.map(callId => ({ callId })) } } }) }),
     effect(callback: () => (() => void) | undefined) {

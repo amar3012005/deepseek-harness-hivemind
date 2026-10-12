@@ -223,6 +223,7 @@
               - id: hivemind-runtime
                 name: '@deepseek-ai/dsh-hivemind-runtime'
                 config:
+                  sameStepFallback: !!js JSON.parse(process.env.HIVE_HARNESS_STEP_FALLBACK_ROUTES ?? '[]')
                   agentFeaturesEnabled: true
                   legacyToolsEnabled: false
                   authorityMode: scoped-service

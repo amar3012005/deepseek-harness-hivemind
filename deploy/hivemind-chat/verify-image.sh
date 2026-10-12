@@ -24,7 +24,7 @@ docker run --rm --entrypoint sh "$image" -ec '
   export DSH_HOME="$profile_dir/dsh"
   mkdir -p "$DSH_HOME/profiles/hivemind-web"
   cp /opt/deepseek-harness/deploy/hivemind-chat/profile.package.json "$DSH_HOME/profiles/hivemind-web/package.json"
-  : > "$DSH_HOME/profiles/hivemind-web/cordis.patch.yml"
+  printf "[]\n" > "$DSH_HOME/profiles/hivemind-web/cordis.patch.yml"
   /usr/local/bin/hivemind-harness-prepare-profile
   node /opt/deepseek-harness/apps/cli/lib/bin.js --profile hivemind-web --dump-config > "$profile_dir/hivemind-web.yml"
   node /opt/deepseek-harness/deploy/hivemind-chat/verify-profile.mjs "$profile_dir/hivemind-web.yml"

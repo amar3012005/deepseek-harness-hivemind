@@ -26941,6 +26941,136 @@
       }
     },
     {
+      "key": "event:llm/fallback",
+      "kind": "event",
+      "event": "llm/fallback",
+      "surface": false,
+      "digest": "c0140806c2250d7dced064c8af087150824a6f22d68a361aee45d9487327a120",
+      "schema": {
+        "root": 0,
+        "nodes": [
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "data",
+                "type": 1,
+                "optional": false
+              },
+              {
+                "name": "ignorable",
+                "type": 6,
+                "optional": true
+              },
+              {
+                "name": "seq",
+                "type": 4,
+                "optional": false
+              },
+              {
+                "name": "time",
+                "type": 4,
+                "optional": false
+              },
+              {
+                "name": "type",
+                "type": 7,
+                "optional": false
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "failureCode",
+                "type": 2,
+                "optional": false
+              },
+              {
+                "name": "fallback",
+                "type": 3,
+                "optional": false
+              },
+              {
+                "name": "primary",
+                "type": 3,
+                "optional": false
+              },
+              {
+                "name": "step",
+                "type": 4,
+                "optional": false
+              },
+              {
+                "name": "turn",
+                "type": 4,
+                "optional": false
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "primitive",
+            "type": "string"
+          },
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "maxTokens",
+                "type": 4,
+                "optional": true
+              },
+              {
+                "name": "model",
+                "type": 2,
+                "optional": false
+              },
+              {
+                "name": "provider",
+                "type": 2,
+                "optional": false
+              },
+              {
+                "name": "reasoningEffort",
+                "type": 2,
+                "optional": true
+              },
+              {
+                "name": "stop",
+                "type": 5,
+                "optional": true
+              },
+              {
+                "name": "temperature",
+                "type": 4,
+                "optional": true
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "primitive",
+            "type": "number"
+          },
+          {
+            "kind": "array",
+            "element": 2
+          },
+          {
+            "kind": "literal",
+            "value": true
+          },
+          {
+            "kind": "literal",
+            "value": "llm/fallback"
+          }
+        ]
+      }
+    },
+    {
       "key": "event:llm/retry",
       "kind": "event",
       "event": "llm/retry",
@@ -45650,7 +45780,7 @@
       "digest": "17d1afb770d9941936130996da00dc86782cfef731d8d6526162c301256a4ac3",
       "names": [],
       "sources": [
-        "packages/core/session/src/types.ts:437"
+        "packages/core/session/src/types.ts:442"
       ]
     },
     {
@@ -45991,7 +46121,7 @@
       "digest": "21c8a567550dd7a7a748920824a05d16d57d40f00066f465f581e0552ad0f29a",
       "names": [],
       "sources": [
-        "packages/hivemind/memory/lib/types/index.d.ts:79"
+        "packages/hivemind/memory/lib/types/index.d.ts:80"
       ]
     },
     {
@@ -46484,7 +46614,7 @@
         "packages/core/session/src/types.ts#SurfaceOp"
       ],
       "sources": [
-        "packages/core/session/src/types.ts:472"
+        "packages/core/session/src/types.ts:477"
       ]
     },
     {
@@ -46999,7 +47129,7 @@
       "digest": "471911acf2d7117e12d0f948b36435a274a85e82cb234865f40ace4db974ccdd",
       "names": [],
       "sources": [
-        "packages/hivemind/runtime/src/index.ts:83"
+        "packages/hivemind/runtime/src/index.ts:85"
       ]
     },
     {
@@ -47266,7 +47396,7 @@
         "packages/hivemind/memory/lib/types/index.d.ts#SaveCheckpoint"
       ],
       "sources": [
-        "packages/hivemind/memory/lib/types/index.d.ts:99"
+        "packages/hivemind/memory/lib/types/index.d.ts:100"
       ]
     },
     {
@@ -47429,7 +47559,7 @@
       "digest": "5302e763151277614b97e77f00e3b326694c6c1247b916a20503c344dc970777",
       "names": [],
       "sources": [
-        "packages/core/session/src/types.ts:385"
+        "packages/core/session/src/types.ts:390"
       ]
     },
     {
@@ -47744,7 +47874,7 @@
       "digest": "5dc7e7a277788d6f35a7287bd28899ef62556839c9151a16d2dc7c4bab43f38f",
       "names": [],
       "sources": [
-        "packages/hivemind/employee-delegation/src/events.ts:26"
+        "packages/hivemind/employee-delegation/src/events.ts:31"
       ]
     },
     {
@@ -47899,7 +48029,7 @@
       "digest": "63d0a5e3b66afa99a41dadb175978e1344af7462157e0f57034420036852faad",
       "names": [],
       "sources": [
-        "packages/hivemind/runtime/src/index.ts:79"
+        "packages/hivemind/runtime/src/index.ts:81"
       ]
     },
     {
@@ -48077,6 +48207,15 @@
       "names": [],
       "sources": [
         "packages/api/session-controller/src/types.ts:430"
+      ]
+    },
+    {
+      "digest": "6a6cc2cf78365b0d07a562bca6b2e4d5f68e1aee99deb18d777462521741415d",
+      "names": [
+        "packages/hivemind/context/src/same-step-fallback.ts#LlmFallbackEventData"
+      ],
+      "sources": [
+        "packages/hivemind/context/src/same-step-fallback.ts:19"
       ]
     },
     {
@@ -48784,7 +48923,9 @@
     {
       "digest": "851dbe5b6037f60f909143e2e8025d0593407e0ceea70fb382b2172e885c3fd8",
       "names": [],
-      "sources": []
+      "sources": [
+        "packages/hivemind/memory/lib/types/index.d.ts:108"
+      ]
     },
     {
       "digest": "854db3efdfb0cd39d30953b28703e519c121f1115cebfffc40369fe86c406dd1",
@@ -48810,7 +48951,7 @@
       "digest": "85dcdf478c978074c1ab6badeb4fafda0a30c5585c6c9a78e6d5ba34d5ae8e4f",
       "names": [],
       "sources": [
-        "packages/hivemind/runtime/src/index.ts:75"
+        "packages/hivemind/runtime/src/index.ts:77"
       ]
     },
     {
@@ -49194,7 +49335,8 @@
       "sources": [
         "packages/api/session-controller/src/room-messaging.ts:67",
         "packages/hivemind/execution-scope/lib/types/authenticated-actor.d.ts:2",
-        "packages/hivemind/hq-runtime/src/types.ts:3"
+        "packages/hivemind/hq-runtime/src/types.ts:3",
+        "packages/hivemind/runtime/src/voice-outcome.ts:10"
       ]
     },
     {
@@ -49410,11 +49552,9 @@
     {
       "digest": "a07fdd8ba48ef0f918baa5c8b51fae713d70c3393ff86fc87d82315a33bfe951",
       "names": [
-        "packages/hivemind/playbooks/lib/client-types/events.d.ts#WorkstreamActorKind",
         "packages/hivemind/playbooks/lib/types/events.d.ts#WorkstreamActorKind"
       ],
       "sources": [
-        "packages/hivemind/playbooks/lib/client-types/events.d.ts:34",
         "packages/hivemind/playbooks/lib/types/events.d.ts:34"
       ]
     },
@@ -49618,7 +49758,7 @@
       "digest": "a81059ca06999da1e712414520c2c65e491d052fcf9640fae20aa38f0a5dc735",
       "names": [],
       "sources": [
-        "packages/core/session/src/types.ts:393",
+        "packages/core/session/src/types.ts:398",
         "packages/core/tools/src/types.ts:27"
       ]
     },
@@ -49781,7 +49921,7 @@
       "digest": "ad0c38a0adb82a94c925456df41586d9b5f9202fca18593eae2213d4445b4585",
       "names": [],
       "sources": [
-        "packages/core/session/src/types.ts:400"
+        "packages/core/session/src/types.ts:405"
       ]
     },
     {
@@ -50290,7 +50430,7 @@
       "digest": "bcf0caf62d964b2fcf5404bd5c909cfa9a21c3f3c96e6b7e36d9e33565223825",
       "names": [],
       "sources": [
-        "packages/core/session/src/types.ts:474"
+        "packages/core/session/src/types.ts:479"
       ]
     },
     {
@@ -50344,6 +50484,11 @@
     },
     {
       "digest": "bffc4e23593054b6424e0a3d793e9529df7dbabce9707874a653bc94793e4c75",
+      "names": [],
+      "sources": []
+    },
+    {
+      "digest": "c0140806c2250d7dced064c8af087150824a6f22d68a361aee45d9487327a120",
       "names": [],
       "sources": []
     },
@@ -50553,7 +50698,7 @@
       "digest": "c609b751ae5806adf84c7d6cf948ce0446017d682ef63391f2620fc6ead18642",
       "names": [],
       "sources": [
-        "packages/hivemind/runtime/src/index.ts:77"
+        "packages/hivemind/runtime/src/index.ts:79"
       ]
     },
     {
@@ -50798,7 +50943,7 @@
       "digest": "d0d2998a12c71030402fbfbeb0e7056e8ebcc09404deeb0ac6a883f83ce4befe",
       "names": [],
       "sources": [
-        "packages/hivemind/runtime/src/index.ts:79"
+        "packages/hivemind/runtime/src/index.ts:81"
       ]
     },
     {
@@ -50944,6 +51089,11 @@
       "sources": []
     },
     {
+      "digest": "d8f1711d3fe4a5b7912bd9fbccc679427b852e6244f0338e8cd7c07df28ecb9b",
+      "names": [],
+      "sources": []
+    },
+    {
       "digest": "d9196086e41e4dd5c2ce87f5c25529c8112a1731d258cf0728747d41a9ee3241",
       "names": [],
       "sources": []
@@ -51036,7 +51186,7 @@
         "packages/hivemind/employee-delegation/src/events.ts#EmployeeDelegationEnd"
       ],
       "sources": [
-        "packages/hivemind/employee-delegation/src/events.ts:32"
+        "packages/hivemind/employee-delegation/src/events.ts:37"
       ]
     },
     {
@@ -51128,7 +51278,7 @@
         "packages/hivemind/memory/lib/types/index.d.ts#SaveRequest"
       ],
       "sources": [
-        "packages/hivemind/memory/lib/types/index.d.ts:31"
+        "packages/hivemind/memory/lib/types/index.d.ts:32"
       ]
     },
     {
@@ -51774,7 +51924,7 @@
       "digest": "f771224393d61c6589e12b4da19820a47c7703c7d3e59462818ce314694ac4e1",
       "names": [],
       "sources": [
-        "packages/hivemind/runtime/src/index.ts:81"
+        "packages/hivemind/runtime/src/index.ts:83"
       ]
     },
     {
