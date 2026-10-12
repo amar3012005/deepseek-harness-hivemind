@@ -77,8 +77,9 @@ it('keeps saved human timing notes visible during initial awakening', async () =
     { seq: 1, type: 'hivemind/hq-rest-note', data: { id: 'test-timing', text: 'Use minute-scale schedules for this test, not tomorrow.', createdAt: '2026-10-04T00:00:00Z' } },
     { seq: 2, type: 'turn/start', data: { turn: 1 } },
   ]
-  const agent = { id: 'root', ctx: { tools: { restrict: vi.fn(() => () => {}) } }, session: { header: { agentPreset: 'hivemind-hq' }, ownEvents: () => events, snapshotEvents: () => events } }
+  const agent = { id: 'root', ctx: { tools: { restrict: vi.fn(() => () => {}) } }, session: { header: { agentPreset: 'hivemind-hq' }, surface: { nodes: [] }, ownEvents: () => events, snapshotEvents: () => events } }
   const ctx = {
+    get: () => ({ get: async () => ({ name: 'runtime-company-awakening', content: 'Complete awakening method.', invocation: { modelInvocable: true, userInvocable: true } }) }),
     effect: (callback: () => unknown) => callback(),
     on: (_name: string, callback: typeof hook) => { hook = callback; return () => {} },
     agentTeams: { guardTaskUpdates: () => () => {}, tryMembership: (subject: unknown) => ({ role: 'lead', root: subject }), membership: (subject: unknown) => ({ role: 'lead', root: subject }) },
