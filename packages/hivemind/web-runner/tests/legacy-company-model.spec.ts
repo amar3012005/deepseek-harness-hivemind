@@ -78,3 +78,33 @@ it('leaves rejected native admission unchanged and migrates only an admitted ste
   expect(await hook(input, async () => ({ kind: 'enter', messages: [] }))).toEqual({ kind: 'enter', messages: [] })
   expect(f.selected).toHaveBeenCalledOnce()
 })
+
+it('flushes migration through real Cordis declared injection instead of an unrestricted mock scope', async () => {
+  const { Context } = await import('@deepseek-ai/cordis')
+  const { default: SessionStore } = await import('@deepseek-ai/dsh-session')
+  const root = new Context()
+  await root.plugin(SessionStore)
+  const f = fixture()
+  root.provide('sessionProjections', f.ctx.sessionProjections)
+  root.provide('sessionController', f.ctx.sessionController)
+  root.provide('llm', f.ctx.llm)
+  const session = root.sessions.create(SessionId('same-native-mimi-room'))
+  session.append('request/header', { header: { config: { provider: 'openai-codex', model: 'saved-gpt' } }, reason: 'initial' } as never)
+  const agent = { session } as never
+  let flushes = 0
+  root.on('session/flush', () => { flushes++ }, { global: true })
+  try {
+    const broken = await root.plugin({ name: 'old-company-migration-scope',
+      inject: ['sessionController', 'llm', 'sessionProjections'], apply() {},
+    })
+    expect(() => broken.ctx.sessions.flush(session)).toThrow('cannot get property "sessions" without inject')
+    await broken.dispose()
+    await root.plugin({ name: 'declared-company-migration-scope', apply: installLegacyCompanyModelMigration })
+    const decision = await root.waterfall('agent/pre-step', {
+      agent, signal: new AbortController().signal, turn: 1, step: 1, messages: [],
+    } as never, async () => ({ kind: 'enter' as const, messages: [] }))
+    expect(decision.kind).toBe('enter')
+    expect(f.selected).toHaveBeenCalledOnce()
+    expect(flushes).toBe(1)
+  } finally { await root.fiber.dispose() }
+})

@@ -35,7 +35,7 @@ export async function migrateLegacyCompanyModel(ctx: Context, agent: Agent, sign
 
 /** Use the native post-admission pre-step seam before provider lookup. */
 export function installLegacyCompanyModelMigration(ctx: Context): void {
-  ctx.inject(['sessionController', 'llm', 'sessionProjections'], (scope) => {
+  ctx.inject(['sessionController', 'llm', 'sessionProjections', 'sessions'], (scope) => {
     scope.effect(() => scope.on('agent/pre-step', async ({ agent, signal }, next) => {
       const decision = await next()
       if (decision.kind !== 'reject') await migrateLegacyCompanyModel(scope, agent, signal)
