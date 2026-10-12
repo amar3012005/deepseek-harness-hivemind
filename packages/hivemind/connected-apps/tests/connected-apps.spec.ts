@@ -592,7 +592,8 @@ describe('progressive Composio bridge', () => {
       on: (_event: string, listener: typeof bound) => { bound = listener; return () => {} },
     } as never)
     await bound({ agent, turn: 1, signal: new AbortController().signal }, async () => first)
-    expect(JSON.stringify(session.deriveMessages())).toContain('Recalled context excerpt')
+    expect(JSON.stringify(session.deriveMessages())).toContain('Receipt excerpt; original sequence')
+    expect(session.deriveMessages().flatMap(message => message.content.flatMap(block => block.type === 'text' ? [block.text] : [])).join('').length).toBeLessThanOrEqual(1000)
     const repeated = await app.listeners.get('agent/pre-step')?.({ agent, turn: 1, step: 2, messages: [] } as never, next as never) as { messages: unknown[] }
     expect(repeated.messages).toEqual([])
     const restored = Session.create(SessionId('native-bounded-connected-cold'), session.snapshotEvents())
