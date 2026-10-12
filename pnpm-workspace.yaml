@@ -30,6 +30,9 @@ peerDependencyRules:
 # default and only allow scripts we need. esbuild (native binary) and lefthook
 # (git hooks) genuinely need theirs.
 allowBuilds:
+  # Published renderer package patches bundled fontkit COLR handling in place.
+  # Its source-only PDFKit build branch is absent from the pinned npm artifact.
+  '@speajus/markdown-to-pdf@1.0.23': true
   esbuild: true
   lefthook: true
   # Cross-platform boundary for the persistent PTY backend, including ConPTY on Windows.
