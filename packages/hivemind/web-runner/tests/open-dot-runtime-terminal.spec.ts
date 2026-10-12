@@ -5,7 +5,7 @@ import { SessionId } from '@deepseek-ai/dsh-session'
 import { afterEach, expect, it, vi } from 'vitest'
 import type { ExternalEmployeeOperation, ExternalEmployeeRoom, ExternalRuntimeDispatchStatus } from '@deepseek-ai/dsh-api-session-controller'
 import type { ScheduleDeliveryGuardResult, ScheduleTask } from '@deepseek-ai/dsh-schedule'
-import { installOpenDotRuntimeScheduleWake, reconcileTerminalRuntimeResult, startOpenDotRuntimeMonitor } from '../src/open-dot-runtime.ts'
+import { installOpenDotRuntimeScheduleWake, reconcileTerminalRuntimeResult, startOpenDotRuntimeMonitor, verifyOpenDotArtifactBytes } from '../src/open-dot-runtime.ts'
 
 const employeeId = '67503d34-97e9-49a8-8c52-8ee30cc7603e'
 const orgId = '54f5568b-4d6a-4ae1-9a33-48cb2909d59b'
@@ -17,7 +17,7 @@ const dispatchId = '12345678-1234-4234-8234-123456789abc'
 const secret = 'fixture-open-dot-runtime-service-secret-32'
 const sourceFileId = 'file_1234567890abcdef'
 const content = Buffer.from('saved result')
-const checksum = 'sha256:' + createHash('sha256').update(content).digest('hex')
+const checksum = createHash('sha256').update(content).digest('hex')
 
 function fixture(assignment = { employeeId, sessionId: roomId }) {
   const events: Array<{ type: string; data: Record<string, unknown> }> = []
@@ -159,4 +159,15 @@ it('runs terminal reconciliation from the native background job without a Runtim
   expect(vi.mocked(fetchImpl).mock.calls.some(([input]) => String(input).endsWith('/open-dot/runtime/status'))).toBe(true)
   expect(f.receive).toHaveBeenCalledTimes(1)
   expect(f.events.some(event => event.type === 'hivemind/open-dot-runtime-terminal-receipt')).toBe(true)
+})
+
+it.each([
+  ['terminal result import', 'open_dot_runtime_terminal_artifact'],
+  ['employee-operation import', 'open_dot_runtime_artifact'],
+] as const)('rejects same-size corrupted bytes in the %s path', (_path, prefix) => {
+  const corrupted = Buffer.from(content)
+  corrupted[0] = corrupted[0]! ^ 1
+  expect(corrupted.byteLength).toBe(content.byteLength)
+  expect(() => verifyOpenDotArtifactBytes(corrupted.toString('base64'), content.byteLength, checksum, prefix))
+    .toThrow(prefix + '_checksum_invalid')
 })

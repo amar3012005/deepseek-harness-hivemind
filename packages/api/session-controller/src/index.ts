@@ -242,10 +242,10 @@ export class SessionController extends TypertRemoteService {
    * @returns visible Session summaries ordered by activity.
    */
   /** Install the host-owned external employee adapter after service construction. */
-  receiveExternalEmployeeMessage(room: import('./external-room.ts').ExternalEmployeeRoom, input: import('./room-messaging.ts').ExternalEmployeeOperation, signal: AbortSignal) {
+  receiveExternalEmployeeMessage(room: import('./external-room.ts').ExternalEmployeeRoom, input: import('./room-messaging.ts').ExternalEmployeeOperation, signal: AbortSignal): Promise<{ messageId: string; rootSessionId: SessionId }> {
     return this.roomMessaging.receiveExternalEmployeeMessage(room, input, signal)
   }
-  getExternalDispatchStatus(room: import('./external-room.ts').ExternalEmployeeRoom, dispatchMessageId: string, signal: AbortSignal) {
+  getExternalDispatchStatus(room: import('./external-room.ts').ExternalEmployeeRoom, dispatchMessageId: string, signal: AbortSignal): Promise<import('./room-messaging.ts').ExternalRuntimeDispatchStatus> {
     return this.roomMessaging.getExternalDispatchStatus(room, dispatchMessageId, signal)
   }
   registerExternalEmployeeRoomProvider(provider: ExternalEmployeeRoomProvider): () => void {

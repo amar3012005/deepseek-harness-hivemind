@@ -3,6 +3,7 @@ import { createHash, createHmac, randomUUID } from 'node:crypto'
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type {} from '@deepseek-ai/dsh-jobs'
+import type {} from '@deepseek-ai/dsh-hivemind-runtime/src/continuity.ts'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-session/types'
@@ -37,6 +38,16 @@ interface DispatchReceipt {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+/** Decode only canonical base64 bytes whose size and SHA-256 match the trusted receipt. */
+export function verifyOpenDotArtifactBytes(dataBase64: string, size: number, checksum: string,
+  prefix: 'open_dot_runtime_artifact' | 'open_dot_runtime_terminal_artifact'): Buffer {
+  const bytes = Buffer.from(dataBase64, 'base64')
+  if (bytes.toString('base64') !== dataBase64 || bytes.byteLength !== size) throw new Error(prefix + '_size_invalid')
+  const actual = createHash('sha256').update(bytes).digest('hex')
+  if (checksum !== actual) throw new Error(prefix + '_checksum_invalid')
+  return bytes
 }
 function profileDot(profile: Record<string, unknown>): string {
   const rules = profile['policy_rules'] ?? profile['policyRules']
@@ -138,14 +149,12 @@ export function createOpenDotRuntimeOperationService(ctx: Context, base: URL, se
             if (!response.ok || !isRecord(artifact) || artifact['id'] !== sourceId || typeof artifact['name'] !== 'string'
               || typeof artifact['mime'] !== 'string' || !artifact['mime'] || artifact['mime'].length > 128
               || typeof artifact['size'] !== 'number' || !Number.isSafeInteger(artifact['size']) || artifact['size'] < 0 || artifact['size'] > 10 * 1024 * 1024
-              || typeof artifact['checksum'] !== 'string' || !/^sha256:[a-f0-9]{64}$/u.test(artifact['checksum'])
+              || typeof artifact['checksum'] !== 'string' || !/^[a-f0-9]{64}$/u.test(artifact['checksum'])
               || typeof artifact['dataBase64'] !== 'string' || artifact['dataBase64'].length > Math.ceil(10 * 1024 * 1024 / 3) * 4) throw new Error('open_dot_runtime_artifact_unverified')
-            const bytes = Buffer.from(artifact['dataBase64'], 'base64')
-            if (bytes.toString('base64') !== artifact['dataBase64'] || bytes.byteLength !== artifact['size']) throw new Error('open_dot_runtime_artifact_size_invalid')
+            const bytes = verifyOpenDotArtifactBytes(artifact['dataBase64'], artifact['size'], artifact['checksum'], 'open_dot_runtime_artifact')
             aggregate += bytes.byteLength
             if (aggregate > 10 * 1024 * 1024) throw new Error('open_dot_runtime_artifact_limit_exceeded')
             const sha256 = createHash('sha256').update(bytes).digest('hex')
-            if (artifact['checksum'] !== 'sha256:' + sha256) throw new Error('open_dot_runtime_artifact_checksum_invalid')
             const file = await ctx.attachments.saveFile({ data: bytes, name: artifact['name'] })
             const artifactId = 'open-dot:' + input.dispatchMessageId + ':' + sourceId
             room.session.append('hivemind/external-artifact-created', { artifactId, title: artifact['name'], mediaType: artifact['mime'],
@@ -566,16 +575,12 @@ export async function reconcileTerminalRuntimeResult(
     const artifact = await response.json().catch(() => undefined) as Record<string, unknown> | undefined
     if (!response.ok || !isRecord(artifact) || artifact['id'] !== item.id || artifact['name'] !== item.name
       || artifact['mime'] !== item.mime || artifact['size'] !== item.size || typeof artifact['checksum'] !== 'string'
-      || !/^sha256:[a-f0-9]{64}$/u.test(artifact['checksum']) || typeof artifact['dataBase64'] !== 'string'
+      || !/^[a-f0-9]{64}$/u.test(artifact['checksum']) || typeof artifact['dataBase64'] !== 'string'
       || artifact['dataBase64'].length > Math.ceil(10 * 1024 * 1024 / 3) * 4) {
       throw new Error('open_dot_runtime_terminal_artifact_unverified')
     }
-    const bytes = Buffer.from(artifact['dataBase64'], 'base64')
-    if (bytes.toString('base64') !== artifact['dataBase64'] || bytes.byteLength !== item.size) {
-      throw new Error('open_dot_runtime_terminal_artifact_size_invalid')
-    }
+    const bytes = verifyOpenDotArtifactBytes(artifact['dataBase64'], item.size, artifact['checksum'], 'open_dot_runtime_terminal_artifact')
     const checksum = createHash('sha256').update(bytes).digest('hex')
-    if (artifact['checksum'] !== 'sha256:' + checksum) throw new Error('open_dot_runtime_terminal_artifact_checksum_invalid')
     const file = await ctx.attachments.saveFile({ data: bytes, name: item.name })
     room.session.append('hivemind/external-artifact-created', { artifactId, title: item.name, mediaType: item.mime,
       provider: 'open-dot-owned', path: null, file, sha256: checksum, size: bytes.byteLength,
