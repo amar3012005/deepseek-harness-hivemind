@@ -4,6 +4,37 @@ import { observeVoiceActivity, voiceLevel } from '../src/client/voice-activity.t
 
 afterEach(() => vi.unstubAllGlobals())
 describe('borrowed call audio visualization', () => {
+  it('routes native provider speech to the speaker without microphone echo and preserves mute and cleanup', () => {
+    const nodes: { connect: ReturnType<typeof vi.fn>; disconnect: ReturnType<typeof vi.fn> }[] = []
+    const speaker = { gain: { value: 1 }, connect: vi.fn(), disconnect: vi.fn() }
+    const destination = {}
+    const close = vi.fn(async () => {})
+    class Context {
+      destination = destination
+      createGain = () => speaker
+      createMediaStreamSource = () => { const node = { connect: vi.fn(), disconnect: vi.fn() }; nodes.push(node); return node }
+      createAnalyser = () => ({ fftSize: 0, disconnect: vi.fn(), getByteTimeDomainData: vi.fn() })
+      resume = async () => {}
+      close = close
+    }
+    vi.stubGlobal('AudioContext', Context)
+    vi.stubGlobal('requestAnimationFrame', vi.fn(() => 1))
+    vi.stubGlobal('cancelAnimationFrame', vi.fn())
+    const stream = {} as MediaStream
+    const output = observeVoiceActivity(stream, vi.fn(), true)
+    expect(output.playsThroughWebAudio).toBe(true)
+    expect(speaker.connect).toHaveBeenCalledWith(destination)
+    expect(nodes[0]!.connect).not.toHaveBeenCalledWith(speaker)
+    output.remote(stream)
+    expect(nodes[1]!.connect).toHaveBeenCalledWith(speaker)
+    output.setSpeakerMuted(true); expect(speaker.gain.value).toBe(0)
+    output.remote(stream); expect(nodes[1]!.disconnect).toHaveBeenCalledOnce()
+    expect(speaker.gain.value).toBe(0)
+    output.setSpeakerMuted(false); expect(speaker.gain.value).toBe(1)
+    output.stop(); output.stop()
+    expect(speaker.disconnect).toHaveBeenCalledOnce()
+    expect(close).toHaveBeenCalledOnce()
+  })
   it('stays quiet for silence and room noise, responds to speech', () => {
     expect(voiceLevel(new Uint8Array([128, 128]))).toBe(0)
     expect(voiceLevel(new Uint8Array([127, 129]))).toBe(0)
