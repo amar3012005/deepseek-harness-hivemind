@@ -139,7 +139,7 @@ function SessionHoverContent({ node, now, t, timestamp }: {
 }
 export function SessionNodeItem({
   node, currentId, now, onOpen, onRename, onFork, onArchive, onDelete, onShare, onReveal, drag, flat = false,
-  showActions = true, actionsPersistent = false, visibleTitle, hoverTimestamp, hoverTitle, leading, recent = false, t,
+  showActions = true, actionsPersistent = false, visibleTitle, hoverTimestamp, hoverTitle, leading, schedule, recent = false, t,
 }: {
   node: SessionNode
   currentId: string | undefined
@@ -168,6 +168,7 @@ export function SessionNodeItem({
   /** Host projection may show an absolute timestamp while preserving the stored title for rename and share. */
   visibleTitle?: string | undefined
   leading?: ReactNode
+  schedule?: ReactNode
   hoverTitle?: string | undefined
   /** Full local date and time in the session hover card. */
   hoverTimestamp?: string | undefined
@@ -249,6 +250,7 @@ export function SessionNodeItem({
       )}
       {leading && <span className={css.identityAvatar}>{leading}</span>}
       <span className={css.title}>{title}</span>
+      {schedule}
       {/* A blank New Session row is a provisional placeholder: nothing has
           happened in it yet, so a "now" timestamp and the row verbs
           (rename/fork/archive) would all act on content that does not

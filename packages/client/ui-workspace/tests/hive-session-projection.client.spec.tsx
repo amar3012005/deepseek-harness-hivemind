@@ -87,6 +87,7 @@ function mount(path = '/hivemind/app/overview', pending = false) {
     useSessionRetainInfo={() => undefined}
     useSessions={<S,>(selector: (value: SessionListState) => S) => selector(state)}
     useWorkspaces={<S,>(selector: (value: WorkspaceSnapshot) => S) => selector(workspaceState)}
+    renderSlot={(() => null) as never}
     {...actions}
     t={t as never}
   />)
@@ -103,7 +104,19 @@ describe('HIVE native Session projection', () => {
   it('routes employee Recents to Hyperagent sessions only', () => {
     const { container } = mount('/hivemind/app/employee/harness')
     expect([...container.querySelectorAll<HTMLElement>('[role=treeitem]')]
-      .map(row => row.querySelector('span[class*=title]')?.textContent)).toEqual(['hyperagent-session'])
+      .map(row => row.querySelector('span[class*=title]')?.textContent)).toEqual(['Run Time'])
+  })
+
+  it('portals employee Recents into the existing host sidebar seat', () => {
+    const rail = document.createElement('aside')
+    rail.dataset.productSidebar = 'os'
+    rail.append(document.createElement('div'))
+    document.body.append(rail)
+    const view = mount('/hivemind/app/employee/harness')
+    expect(view.container.querySelector('[role=treeitem]')).toBeNull()
+    expect(within(rail).getByText('Run Time')).toBeTruthy()
+    view.unmount()
+    rail.remove()
   })
 
   it('renders the legacy pending dot from native session status', () => {

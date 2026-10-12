@@ -329,6 +329,7 @@ export function apply(ctx: Context): void {
   ))
   ctx.slots.inject('shell.sessionRail', () => ctx.slots.register({
     name: 'shell.sessionRail',
+    children: { 'hivemind.recents.avatar': { kind: 'single', scope: 'root' }, 'hivemind.recents.schedule': { kind: 'single', scope: 'root' } },
     locale: NS,
     inject: () => ({
       createSession: () => {

@@ -114,6 +114,8 @@ export interface SessionRowScheduleOwnerProps {
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface SlotMap {
+    'hivemind.recents.avatar': { kind: 'single'; scope: 'root'; owner: { sessionId: SessionId } }
+    'hivemind.recents.schedule': { kind: 'single'; scope: 'root'; owner: { sessionId: SessionId } }
     /** Directory-flow hole under the conversation empty-state picker (declared by the WorkspacePicker entry). */
     'conversation.hero.workspace.directoryFlow': { kind: 'single'; scope: 'root'; owner: DirectoryFlowOwnerProps }
     /** Directory-flow hole under the sidebar browsing region (declared by the WorkspaceBrowser entry). */

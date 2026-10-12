@@ -199,13 +199,15 @@ describe('AppFrame', () => {
     expect(queryByTestId('shell.sessionRail-content')).not.toBeNull()
   })
 
-  it('keeps Recents out of employee and Dreaming routes while embedding their host chrome', () => {
+  it('mounts the employee Recents portal seat but excludes Dreaming', () => {
     for (const path of ['/hivemind/app/employee/harness', '/hivemind/app/overview/dreaming']) {
       cleanup()
       window.history.replaceState({}, '', path)
       const { frame, queryByTestId } = mountFrame(1200, { externalChrome: true, embeddedSessionRail: true })
       expect(frame.dataset.externalChrome).toBe('true')
-      expect(queryByTestId('shell.sessionRail-content')).toBeNull()
+      if (path.includes('/employee/')) expect(queryByTestId('shell.sessionRail-content')).not.toBeNull()
+      else expect(queryByTestId('shell.sessionRail-content')).toBeNull()
+      expect(frame.querySelector('aside[aria-label="HIVE chat sessions"]')).toBeNull()
     }
   })
 

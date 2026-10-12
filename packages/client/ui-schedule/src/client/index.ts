@@ -261,6 +261,10 @@ export function apply(ctx: ClientContext): void {
     locale: MANAGER_NS,
     inject: () => ({ title: t('panel'), onOpen: () => { ctx.layout.selectPanel(PANEL_ID) } }),
   }, ScheduleManagerAction))
+  ctx.slots.inject('hivemind.recents.schedule', () => ctx.slots.register({
+    name: 'hivemind.recents.schedule', locale: NS,
+    inject: () => ({ hooks: { catalog: manager.hooks.catalog } }),
+  }, SessionScheduleMark))
   ctx.slots.inject('sidebar.session.row.leading', () => ctx.slots.register({
     name: 'sidebar.session.row.leading',
     id: 'schedule-mark',

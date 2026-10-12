@@ -368,6 +368,9 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
   }, ({ sessionId, locked }: { sessionId?: SessionId | undefined; locked: boolean }) => {
     return sessionId === undefined ? null : renderScopeSelect(sessionId, locked)
   }))
+  ctx.slots.inject('hivemind.recents.avatar', () => ctx.slots.register({
+    name: 'hivemind.recents.avatar',
+  }, SessionRailAvatar))
   ctx.slots.inject('sidebar.session.row.leading', () => ctx.slots.register({
     name: 'sidebar.session.row.leading', id: 'hivemind-agent-avatar', order: 0,
   }, SessionRailAvatar))

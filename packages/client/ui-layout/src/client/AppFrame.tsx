@@ -316,6 +316,7 @@ export function AppFrame({
       <Modal open={mobileHistoryOpen} onClose={() => { setMobileHistoryOpen(false) }} title="Recents" closeLabel="Close history" className={css.mobileHistory ?? ''}>
         {mobileHistoryOpen && renderSlot('shell.sessionRail', {})}
       </Modal>
+      {embeddedChrome && employeeRoom && !mobileHistoryOpen && renderSlot('shell.sessionRail', {})}
       {showSessionRail && <aside className={css.sessionRailCol} aria-label="HIVE chat sessions">
         {renderSlot('shell.sessionRail', {})}
       </aside>}

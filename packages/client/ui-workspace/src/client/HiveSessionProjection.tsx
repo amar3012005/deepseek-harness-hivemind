@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { Button, IconNewChatOutlineRegular, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
+import type { InjectFace, PropsLocale, PropsRenderSlots, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { SessionListState, SessionSummary } from '@deepseek-ai/dsh-api-session-controller/client'
@@ -19,6 +20,7 @@ export interface HiveSessionProjectionInjected {
 
 type Props = PropsRuntime<'shell.sessionRail'>
   & PropsLocale<'workspace'>
+  & PropsRenderSlots<'hivemind.recents.avatar' | 'hivemind.recents.schedule'>
   & InjectFace<HiveSessionProjectionInjected>
 
 const HYPERAGENT_PRESETS = new Set(['hivemind-hyperagents', 'hivemind-hq', 'hyperagents', 'hyperagents-compressed'])
@@ -42,13 +44,23 @@ function rowTitle(row: SessionSummary, now: number, locale: string): string {
   }).format(date)
 }
 
+function employeeName(row: SessionSummary): string | undefined {
+  const values = row.projectionValues as Readonly<Record<string, unknown>> | undefined
+  const owner = values?.hyperagentOwner ?? values?.hyperagentSelection
+  if (typeof owner !== 'string') return undefined
+  try {
+    const value: unknown = JSON.parse(owner)
+    return typeof value === 'object' && value !== null && 'name' in value && typeof value.name === 'string' ? value.name : undefined
+  } catch { return undefined }
+}
+
 function selectedSession(list: SessionListState): SessionId | undefined {
   return Object.values(list.byId).find(row => (row.retainedBy.mainView ?? 0) > 0)?.id
 }
 
 /** Native Session catalog projected as mode-filtered HIVE Recents. */
 export function HiveSessionProjection({
-  useSessions, useSessionStatus, useWorkspaces, createSession, openSession, renameSession, forkSession, archiveSession, t,
+  useSessions, useSessionStatus, useWorkspaces, createSession, openSession, renameSession, forkSession, archiveSession, renderSlot, t,
 }: Props) {
   const list = useSessions(value => value)
   const statuses = useSessionStatus(value => value)
@@ -117,17 +129,21 @@ export function HiveSessionProjection({
     void result.catch((reason) => { setActionError(reason instanceof Error ? reason.message : String(reason)) })
   }
 
-  return <section className={css.root} aria-label={t('section.sessions')}>
+  const osRail = employeeRoute ? document.querySelector<HTMLElement>('[data-product-sidebar="os"] > div') : null
+  const content = <section className={`${css.root} ${osRail === null ? '' : css.osRoot}`} aria-label={t('section.sessions')}>
     <button type="button" className={css.newSession} onClick={createSession}><IconNewChatOutlineRegular /><span>{t('session.new')}</span></button>
-    <div className={css.recentHeading}>{t('section.sessions')}</div>
+    <div className={css.recentHeading}>{employeeRoute ? 'Your agent tasks' : t('section.sessions')}</div>
     {actionError !== undefined && <p className={css.renameError} role="alert">{actionError}</p>}
     {rows.length === 0
       ? <p className={css.empty}>{t('empty.none')}</p>
       : <nav className={css.list} aria-label={t('section.sessions')}>
         {rows.map(row => <SessionNodeItem
           key={row.id} node={row} currentId={currentId} now={now}
-          visibleTitle={row.title.trim() && row.title !== 'deepseek-harness' ? row.title : rowTitle(summaryOf(row.id), now, locale)}
+          visibleTitle={employeeRoute ? employeeName(summaryOf(row.id)) ?? 'Run Time' : row.title.trim() && row.title !== 'deepseek-harness' ? row.title : rowTitle(summaryOf(row.id), now, locale)}
+          hoverTitle={employeeRoute ? row.title : undefined}
           hoverTimestamp={new Intl.DateTimeFormat(locale, { dateStyle: 'full', timeStyle: 'long' }).format(row.updatedAt)}
+          leading={employeeRoute ? renderSlot('hivemind.recents.avatar', { sessionId: row.id }, { fallback: null }) : undefined}
+          schedule={renderSlot('hivemind.recents.schedule', { sessionId: row.id }, { fallback: null })}
           recent flat t={t} onOpen={openSession}
           onRename={(id) => { beginRename(summaryOf(id)) }}
           onFork={(id) => { runAction(summaryOf(id), 'fork') }}
@@ -152,4 +168,5 @@ export function HiveSessionProjection({
       {renameError !== undefined && <div className={css.renameError} role="alert">{renameError}</div>}
     </Modal>
   </section>
+  return osRail === null ? content : createPortal(content, osRail)
 }
