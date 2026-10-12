@@ -375,6 +375,7 @@ export function liveVoicePlugin(config: LiveVoiceConfig,
               const roomId = randomUUID()
               const opening = runtimeVoiceOpening(runtime, initialCheckIn, `runtime-opening-${roomId}`)
               let lastCompact = compact
+              let refreshingContext = false
               let closed = false; let busy = false; let hadUserSpeech = false; let closing = false
               const seen = new Set<string>(); const transcript: string[] = []
               const queries = new VoiceQueryBuffer()
@@ -430,12 +431,19 @@ export function liveVoicePlugin(config: LiveVoiceConfig,
                   transcript.push(`${event.turn.role}: ${event.turn.transcript.slice(0,8000)}`)
                   if (transcript.length > 100) transcript.shift()
                   if (event.turn.role === 'user' && event.turn.transcript.trim()) hadUserSpeech = true
-                  if (event.turn.role === 'user') void ctx.hivemindExecutionScope.run(p, async () => {
-                    try {
-                      const updated = await agentEvents(ctx, agent).serial('hivemind/voice-context', { signal: AbortSignal.any([lifetime.signal, AbortSignal.timeout(config.timeoutMs)]) })
-                      if (!closed && updated && updated !== lastCompact) { lastCompact = updated; send(updated, undefined, 'commentary') }
-                    } catch { close() }
-                  })
+                  if (event.turn.role === 'user' && !refreshingContext) {
+                    refreshingContext = true
+                    void ctx.hivemindExecutionScope.run(p, async () => {
+                      try {
+                        const updated = await agentEvents(ctx, agent).serial('hivemind/voice-context', { signal: AbortSignal.any([lifetime.signal, AbortSignal.timeout(5000)]) })
+                        if (!closed && updated && updated !== lastCompact) { lastCompact = updated; send(updated, undefined, 'commentary') }
+                      } catch (error) {
+                        const timeout = error instanceof Error && (['AbortError', 'TimeoutError'].includes(error.name)
+                        || ('code' in error && error.code === 'request_timeout'))
+                        if (!timeout && !closed) close()
+                      } finally { refreshingContext = false }
+                    })
+                  }
                 }
                 if (closing || event.type !== 'delegation.created' || event.item?.target !== 'client' || typeof event.item.id !== 'string') return
                 const delegationId = event.item.id
