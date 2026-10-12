@@ -110,3 +110,15 @@ it('propagates native turn cancellation rather than caching unavailable heads', 
   abort.abort(new Error('cancelled-turn'))
   await assertion
 })
+
+it('retains original wording pointers in the bounded current agenda without copying the transcript', async () => {
+  const f=fixture()
+  f.request.mockImplementation(async (_agent,input) => ({ ok:true,memories:(input as { kind:string }).kind === 'user_agenda' ? [{
+    id:'direction',kind:'user_agenda',title:'Expansion',summary:'Confirmed direction',context:{
+      state:'confirmed',agendaKey:'expansion',sessionId:'session-canary',confirmationRef:'call:original-conversation',
+      transcript:'Not a replacement archive; this must not enter the agenda view.' },
+  }] : [] } as never))
+  const value=await f.call()
+  expect(JSON.parse(value).userAgenda.memories[0]).toMatchObject({ sessionId:'session-canary',confirmationRef:'call:original-conversation' })
+  expect(value).not.toContain('Not a replacement archive')
+})

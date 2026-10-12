@@ -1,7 +1,7 @@
 import { admittedUserConfirmationRef } from '../src/organization-agent-access.ts'
 import { describe, expect, it } from 'vitest'
 import { Config } from '../src/index.ts'
-import { codexAccountId, voiceContextChunks, voiceSession, VoiceQueryBuffer, voiceDelegationMessage, VOICE_INSTRUCTIONS, VOICE_TASK_INSTRUCTIONS } from '../src/live-voice.ts'
+import { savedVoiceTranscript, codexAccountId, voiceContextChunks, voiceSession, VoiceQueryBuffer, voiceDelegationMessage, VOICE_INSTRUCTIONS, VOICE_TASK_INSTRUCTIONS } from '../src/live-voice.ts'
 
 describe('HIVEMIND live voice configuration', () => {
   it('uses native client delegation and keeps authenticated context separate from instructions', () => {
@@ -71,4 +71,12 @@ it('keeps the authenticated voice speaker as an exact native user confirmation w
   expect(admittedUserConfirmationRef([event], message.id, actor)).toBe('event:41')
   expect(admittedUserConfirmationRef([event], message.id, { ...actor, orgId: '77503d34-97e9-49a8-8c52-8ee30cc7603e' })).toBeUndefined()
   expect(admittedUserConfirmationRef([{ ...event, data: voiceDelegationMessage('unverified') }], message.id, actor)).toBeUndefined()
+})
+
+
+it('preserves complete provider-final utterances beyond former per-utterance, turn-count and receipt caps', () => {
+  const utterances = ['user:  First exact words\n'+'long speech '.repeat(3000)+'final words  ', ...Array.from({ length:120 },(_,i)=>`user: repeated wording ${i}`)]
+  expect(savedVoiceTranscript(utterances)).toBe(utterances.join('\n'))
+  expect(savedVoiceTranscript(utterances)).toContain('First exact words')
+  expect(savedVoiceTranscript(utterances)).toContain('repeated wording 119')
 })

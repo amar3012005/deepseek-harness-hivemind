@@ -2,7 +2,7 @@ import { expect, it, vi } from 'vitest'
 import type { Context } from '@deepseek-ai/cordis'
 import type { ToolDefinition } from '@deepseek-ai/dsh-tools'
 import type { Agent } from '@deepseek-ai/dsh-agent'
-import { awakeningContext, installAwakening } from '../src/awakening.ts'
+import { awakeningContext, awakeningMethod, installAwakening } from '../src/awakening.ts'
 
 vi.mock('../src/rest.ts', () => ({ isHqLead: () => true }))
 
@@ -24,7 +24,7 @@ it('keeps an unfinished awakening briefing compact and points to native loaded g
 it('does not reinsert awakening guidance after its conversation checkpoint', async () => {
   const events = [
     { type: 'hivemind/hq-awakening-start', data: { version: 1, turn: 1 } },
-    { type: 'hivemind/hq-awakening-checkpoint', data: { stage: 'conversation', blocked: false } },
+    ...['company', 'evidence', 'team', 'strategy', 'conversation'].map(stage => ({ type: 'hivemind/hq-awakening-checkpoint', data: { stage, blocked: false } })),
   ]
   const agent = { session: { snapshotEvents: () => events } } as unknown as Agent
   expect(await awakeningContext({} as Context, agent, 2, [])).toBe('')
@@ -35,7 +35,7 @@ it.each(['Wake up, Chief! Continue our agenda.', 'Wakeup Chief'])('does not rest
   const append = vi.fn()
   const events = [
     { type: 'hivemind/hq-awakening-start', data: { version: 1, turn: 1 } },
-    { type: 'hivemind/hq-awakening-checkpoint', data: { stage: 'conversation', blocked: false } },
+    ...['company', 'evidence', 'team', 'strategy', 'conversation'].map(stage => ({ type: 'hivemind/hq-awakening-checkpoint', data: { stage, blocked: false } })),
   ]
   const agent = { session: { snapshotEvents: () => events, append } } as unknown as Agent
   const messages = [{ source: { kind: 'user' }, content: [{ type: 'text', text }] }] as never
@@ -104,4 +104,23 @@ it.each([
   expect(append).toHaveBeenCalledTimes(expected ? 1 : 0)
   expect(setMode).toHaveBeenCalledTimes(expected ? 1 : 0)
   expect(Boolean(result)).toBe(expected)
+})
+
+
+it('does not close incomplete orientation merely because a conversation invitation was saved', async () => {
+  const events = [{ type: 'hivemind/hq-awakening-start', data: {} },
+    { type: 'hivemind/hq-awakening-checkpoint', data: { stage: 'conversation', blocked: false } }]
+  expect(await awakeningContext({} as Context, { session: { snapshotEvents: () => events } } as unknown as Agent, 2, [])).toContain('Current unfinished checkpoint: company')
+})
+
+it('loads the full native method scoped to the agent before orientation, reusing an already visible body', async () => {
+  const get = vi.fn(async () => ({ name: 'runtime-company-awakening', invocation: { modelInvocable: true }, content: 'Complete current method, including its final rule.' }))
+  const ctx = { get: () => ({ get }) } as unknown as Context
+  const agent = { session: { header: { cwd: '/company' } } } as unknown as Agent
+  const signal = new AbortController().signal
+  const method = await awakeningMethod(ctx, agent, [], signal)
+  expect(get).toHaveBeenCalledWith('runtime-company-awakening', { scope: agent, cwd: '/company', signal })
+  expect(JSON.stringify(method)).toContain('including its final rule.')
+  expect(await awakeningMethod(ctx, agent, method, signal)).toEqual([])
+  await expect(awakeningMethod({ get: () => undefined } as unknown as Context, agent, [], signal)).rejects.toThrow('hq_awakening_skill_unavailable')
 })

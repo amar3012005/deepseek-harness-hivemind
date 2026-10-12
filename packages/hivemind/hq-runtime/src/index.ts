@@ -13,7 +13,7 @@ import {
 } from './review.ts'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { installRest, recoverRest, acknowledgeRestNotes, restBriefing, isNightlyScheduledTurn, isHqLead, greetingOnly, socialTurnOnly } from './rest.ts'
-import { installAwakening, awakeningContext } from './awakening.ts'
+import { installAwakening, awakeningContext, awakeningMethod } from './awakening.ts'
 import { installDelegatedBlockerTool, unresolvedDelegatedTask } from './delegated-blocker.ts'
 import { investigationExpired } from './investigation.ts'
 import { wakeBriefing } from './wake-briefing.ts'
@@ -149,14 +149,16 @@ export function apply(ctx: Context): void {
     if (greetingOnly(decision.messages)
       || socialTurnOnly(currentEvents.filter(event => event.seq > currentStart), decision.messages)) return decision
     const awakening = await awakeningContext(ctx, agent, turn, decision.messages)
+    const method = awakening ? await awakeningMethod(ctx, agent, decision.messages, signal) : []
     const guidance = runtimeStageGuidance(agent.session.snapshotEvents(), decision.messages, agent.id,
       Boolean(awakening), isNightlyScheduledTurn(agent, decision.messages))
     if (briefed.get(agent) === turn) {
-      if (stageBriefed.get(agent) === guidance) return decision
+      if (stageBriefed.get(agent) === guidance)
+        return method.length ? { ...decision, messages: [...method, ...decision.messages] } : decision
       // Newly admitted calls, colleague results and signals can steer an active
       // turn. Refresh only their stage directive, not the full company briefing.
       stageBriefed.set(agent, guidance)
-      return { ...decision, messages: [createUserMessage({
+      return { ...decision, messages: [...method, createUserMessage({
         source: { kind: 'plugin', plugin: 'hivemind-hq/stage-guidance', form: 'recall' },
         content: [{ type: 'text', text: guidance }],
       }), ...decision.messages] }
@@ -177,7 +179,7 @@ export function apply(ctx: Context): void {
       source: { kind: 'plugin', plugin: 'hivemind-hq/wake-briefing', form: 'recall', sections: [rest.section] },
       content: [{ type: 'text', text: `${guidance}\n${wakeBriefing(workspace, agent.session.snapshotEvents(), agent.id)}\n${rest.text}\nSaved rest receipt (not a fresh schedule-status probe): ${JSON.stringify(currentRest.latest)}. A missing wake is not confirmed sleep; choose a new justified handoff when needed, without restoring a deleted timer.` }],
     })
-    if (awakening) return { ...decision, messages: [briefing, ...decision.messages, createUserMessage({
+    if (awakening) return { ...decision, messages: [...method, briefing, ...decision.messages, createUserMessage({
       source: { kind: 'plugin', plugin: 'hivemind-hq/first-awakening', form: 'snapshot', sections: [{ name: 'hq-first-awakening', text: awakening }] },
       content: [{ type: 'text', text: awakening }],
     })] }

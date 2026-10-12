@@ -112,6 +112,13 @@ export function voiceDelegationMessage(text: string, authenticatedActor?: import
     source: { kind: 'user', ...(authenticatedActor === undefined ? {} : { authenticatedActor }) } })
 }
 
+/** Preserve all provider-final wording in the existing durable call receipt.
+ * Prompt excerpts are bounded separately by runtimeSavedCallEvidence.
+ */
+export function savedVoiceTranscript(utterances: readonly string[]): string {
+  return utterances.join('\n')
+}
+
 function appendContext(agent: Agent, text: string, authenticatedActor?: import('@deepseek-ai/dsh-hivemind-execution-scope').AuthenticatedActor): void {
   agent.session.append('user/message', createUserMessage({ content: [{ type: 'text', text }],
     source: { kind: 'plugin', plugin: 'hivemind-live-voice', form: 'recall', ...(authenticatedActor === undefined ? {} : { authenticatedActor }) } }), { surfaceOp: 'append' })
@@ -275,7 +282,7 @@ export function liveVoicePlugin(config: LiveVoiceConfig,
               if (result.status === 'pending') { reply(res, 202, { status: 'pending' }); return }
               if (result.session_id !== id || result.call_id !== input.callId || !['completed', 'failed'].includes(result.status ?? '')) throw new Error('voice_receipt_invalid')
               const marker = `Saved Grok Runtime conversation (${result.call_id}):`
-              const transcript = (result.turns ?? []).slice(0, 100).flatMap(turn => [turn.user_text ? `user: ${turn.user_text.slice(0,8000)}` : '', turn.agent_text ? `assistant: ${turn.agent_text.slice(0,8000)}` : '']).filter(Boolean).join('\n').slice(-20000)
+              const transcript = savedVoiceTranscript((result.turns ?? []).flatMap(turn => [turn.user_text ? `user: ${turn.user_text}` : '', turn.agent_text ? `assistant: ${turn.agent_text}` : '']).filter(Boolean))
               const receipt = { ...(p.authenticatedActor === undefined ? {} : { authenticatedActor:p.authenticatedActor }), callId: input.callId as string, provider: 'grok' as const, initialCheckIn: result.initial_check_in === true, interrupted: result.interrupted !== false, hadUserSpeech: result.had_user_speech === true, transcript }
               await persistVoiceCall(ctx, agent, receipt, `${marker}\nTerminal status: ${result.status}. This call alone does not confirm a complete baseline or authorize external actions.\n${runtimeSavedCallEvidence(receipt)}`)
               rooms.delete(input.callId as string)
@@ -400,7 +407,7 @@ export function liveVoicePlugin(config: LiveVoiceConfig,
                 if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: 'session.close' }))
                 socket.close(); setTimeout(() =>{  socket.terminate() }, 1000).unref()
                 if (transcript.length) void ctx.hivemindExecutionScope.run(p, async () => {
-                  const savedTranscript = transcript.join('\n').slice(-20000)
+                  const savedTranscript = savedVoiceTranscript(transcript)
                   const receipt = { ...(p.authenticatedActor === undefined ? {} : { authenticatedActor:p.authenticatedActor }), callId: roomId, provider: 'codex' as const, initialCheckIn, interrupted: reason === 'interrupted', hadUserSpeech, transcript: savedTranscript }
                   await persistVoiceCall(ctx, agent, receipt, `Completed live voice conversation:\n${runtimeSavedCallEvidence(receipt)}`, runtime)
                 }).catch(() => { /* Session persistence retains the unflushed prefix for recovery. */ })
@@ -435,8 +442,7 @@ export function liveVoicePlugin(config: LiveVoiceConfig,
                   socket.send(JSON.stringify(greeting))
                 if ((!closing || event.turn?.role === 'assistant') && event.type === 'turn.done' && ['user', 'assistant'].includes(event.turn?.role ?? '') && typeof event.turn?.transcript === 'string') {
                   queries.record(event.turn.role ?? '', event.turn.transcript)
-                  transcript.push(`${event.turn.role}: ${event.turn.transcript.slice(0,8000)}`)
-                  if (transcript.length > 100) transcript.shift()
+                  transcript.push(`${event.turn.role}: ${event.turn.transcript}`)
                   if (event.turn.role === 'user' && event.turn.transcript.trim()) hadUserSpeech = true
                   if (event.turn.role === 'user' && !refreshingContext) {
                     refreshingContext = true
