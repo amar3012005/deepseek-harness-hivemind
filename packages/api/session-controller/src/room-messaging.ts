@@ -8,6 +8,13 @@ import type { FileAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import type { ContentBlock, ContextFormed } from '@deepseek-ai/dsh-llm'
 import type { SessionId } from '@deepseek-ai/dsh-session'
 
+declare module '@deepseek-ai/cordis' {
+  interface Context {
+    /** Optional host adapter for identities whose execution backend is external. */
+    externalEmployeeRoomProvider?: ExternalEmployeeRoomProvider
+  }
+}
+
 export interface RoomMessage {
   id: string
   senderId: SessionId
@@ -47,7 +54,7 @@ export function requestsAssignmentReview(
 export interface RoomMessageRequest {
   key: string
   target: string
-  targetProfile?: { id: string; name: string; role: string }
+  targetProfile?: EmployeeRoomProfile
   kind: RoomMessage['kind']
   text: string
   /** Brief display copy; full text remains the durable model-facing message. */
@@ -55,6 +62,25 @@ export interface RoomMessageRequest {
   taskId?: string
   replyTo?: string
   artifactIds?: string[]
+}
+/** A trusted directory profile. Open Dot identities must be explicit and retain
+ * their canonical Dot id separately from the DSH Session id. */
+export interface EmployeeRoomProfile {
+  id: string
+  name: string
+  role: string
+  executionBackend?: 'open-dot'
+  dotId?: string
+}
+export interface ExternalEmployeeRoomProvider {
+  /** Return undefined for native employees. The Agent must wrap a real opaque DSH Session and have no model-loop driver. */
+  resolve(employeeId: string, profile: EmployeeRoomProfile | undefined, signal: AbortSignal): Promise<{ agent: Agent; driverless: true } | undefined>
+  /** Resolve one message into the external backend and return only after durable, idempotent acceptance. */
+  deliver(input: { employeeId: string; room: Agent; message: RoomMessage; idempotencyKey: string }, signal: AbortSignal): Promise<{ receiptId: string; status: 'accepted' | 'recorded' }>
+}
+/** Register before SessionController starts. The host owns provider auth and backend-specific checks. */
+export function registerExternalEmployeeRoomProvider(ctx: Context, provider: ExternalEmployeeRoomProvider): () => void {
+  return ctx.provide('externalEmployeeRoomProvider', provider)
 }
 declare module '@deepseek-ai/dsh-session/types' {
   interface SessionEventMap {
@@ -64,6 +90,8 @@ declare module '@deepseek-ai/dsh-session/types' {
     'hivemind/room-message-received': RoomMessage
     /** Sender acknowledgement linking its message id to the confirmed receiver room. */
     'hivemind/room-message-delivered': { id: string; targetId: SessionId }
+    /** Durable external queue receipt; written only after the provider confirms acceptance. */
+    'hivemind/external-delivery-accepted': { id: string; employeeId: string; targetSessionId: SessionId; receiptId: string; status: 'accepted' | 'recorded' }
   }
 }
 declare module '@deepseek-ai/dsh-llm' {
@@ -78,7 +106,7 @@ export function roomMessageId(senderId: string, key: string): string {
 /** One controller instance serializes room writes; native leases arbitrate processes. */
 export class RoomMessaging {
   private readonly tails = new Map<string, Promise<unknown>>()
-  constructor(private readonly ctx: Context, private readonly open: (key: string) => Promise<Agent>) {}
+  constructor(private readonly ctx: Context, private readonly open: (key: string) => Promise<Agent>, private readonly external?: ExternalEmployeeRoomProvider) {}
   private async serialized<T>(id: string, work: () => Promise<T>): Promise<T> {
     const before = this.tails.get(id) ?? Promise.resolve()
     const run = before.catch(() => undefined).then(work)
@@ -94,11 +122,23 @@ export class RoomMessaging {
    * @param signal - Cancellation before room admission.
    * @returns Exact live persistent room Agent.
    */
-  async resolveRoom(key: string, profile: { id: string; name: string; role: string }, signal: AbortSignal): Promise<Agent> {
+  async resolveRoom(key: string, profile: EmployeeRoomProfile, signal: AbortSignal): Promise<Agent> {
     signal.throwIfAborted()
     if (key !== profile.id) throw new Error('agent_message_target_identity_conflict')
-    const target = await this.open(key)
+    const target = await this.resolveTarget(key, profile, signal)
     const events = target.session.snapshotEvents()
+    const externalMarker = events.find(event => event.type === 'hivemind/external-employee-room')?.data as { employeeId?: string; backend?: string } | undefined
+    if (profile.executionBackend === 'open-dot' || externalMarker !== undefined) {
+      if (!this.external) throw new Error('agent_message_external_provider_required')
+      if (externalMarker && (externalMarker.employeeId !== profile.id || externalMarker.backend !== 'open-dot')) throw new Error('agent_message_target_identity_conflict')
+      if (target.id === profile.id || (profile.dotId !== undefined && target.id === profile.dotId)) throw new Error('agent_message_external_session_identity_conflict')
+      if (this.ctx.agents.get(target.id) !== target || target.session.header.id !== target.id || target.session.header.parentSession !== undefined) throw new Error('agent_message_external_proxy_agent_required')
+      if (!externalMarker) {
+        target.session.append('hivemind/external-employee-room', { employeeId: profile.id, backend: 'open-dot' })
+        await this.persist(target)
+      }
+      return target
+    }
     const owner = events.find(event => String(event.type) === 'hivemind/session-owner')?.data as { id?: string } | undefined
     if (owner && owner.id !== profile.id) throw new Error('agent_message_target_identity_conflict')
     if (!owner) {
@@ -121,7 +161,7 @@ export class RoomMessaging {
     const id = roomMessageId(caller.id, input.key)
     return this.serialized('rooms', async () => {
       signal.throwIfAborted()
-      const target = await this.open(input.target)
+      const target = await this.resolveTarget(input.target, input.targetProfile, signal)
       if (target.id === caller.id) throw new Error('agent_message_self_target')
       const events = caller.session.snapshotEvents()
       const parent = input.replyTo === undefined ? undefined : events.findLast(e => e.type === 'hivemind/room-message-received' && e.data.id === input.replyTo)
@@ -145,6 +185,10 @@ export class RoomMessaging {
         ? old.data.delivery?.authenticatedActor : await this.ctx.serial('api-session/user-authorship', caller)
       if (old === undefined) caller.session.append('hivemind/room-message-queued', { ...message, delivery: { key: input.key, target: input.target, ...(authenticatedActor === undefined ? {} : { authenticatedActor }) } })
       await this.persist(caller)
+      const external = target.session.snapshotEvents().some(e => e.type === 'hivemind/external-employee-room')
+      if (external && !this.external) throw new Error('agent_message_external_provider_required')
+      if (external && (input.targetProfile?.executionBackend !== 'open-dot' || input.targetProfile.id !== input.target)) throw new Error('agent_message_external_profile_required')
+      let externalStatus: 'accepted' | 'recorded' = 'accepted'
       return await (async () => {
         signal.throwIfAborted()
         const targetEvents = target.session.snapshotEvents()
@@ -154,7 +198,7 @@ export class RoomMessaging {
         const quiet = input.kind === 'update' && !chiefNotified
         const receipt = targetEvents.find(e => e.type === 'hivemind/room-message-received' && e.data.id === id)
         if (receipt === undefined) {
-          if (input.target !== 'runtime' && input.targetProfile !== undefined) {
+          if (!external && input.target !== 'runtime' && input.targetProfile !== undefined) {
             const owner = targetEvents.find(e => String(e.type) === 'hivemind/session-owner')?.data as { id?: string } | undefined
             if (owner && owner.id !== input.targetProfile.id) throw new Error('agent_message_target_identity_conflict')
             if (!owner && !targetEvents.some(e => e.type === 'turn/start')) {
@@ -169,11 +213,23 @@ export class RoomMessaging {
             ...(authenticatedActor === undefined ? {} : { authenticatedActor }) }
           const inputMessage = createUserMessage({ content, source: quiet ? { ...source, form: 'notice', summary: `${message.senderName}: ${message.summary ?? message.text}`.slice(0, 120) } : { ...source, form: 'relay' } })
           const accepted = targetEvents.some(e => e.type === 'user/message' && e.data.source.kind === 'hivemind-agent-message' && e.data.source.messageId === id) || [...target.inbox.nextTurn, ...target.inbox.nextStep].some(m => m.source.kind === 'hivemind-agent-message' && m.source.messageId === id)
-          if (!accepted) {
+          if (external) {
+            const prior = targetEvents.find(e => e.type === 'hivemind/external-delivery-accepted' && e.data.id === id)
+            if (prior?.type === 'hivemind/external-delivery-accepted') {
+              if (prior.data.employeeId !== input.target || prior.data.targetSessionId !== target.id) throw new Error('agent_message_external_receipt_conflict')
+              externalStatus = prior.data.status
+            } else {
+              const result = await this.external!.deliver({ employeeId: input.target, room: target, message, idempotencyKey: id }, signal)
+              if (!result.receiptId || result.receiptId.length > 200) throw new Error('agent_message_external_receipt_invalid')
+              target.session.append('hivemind/external-delivery-accepted', { id, employeeId: input.target, targetSessionId: target.id, receiptId: result.receiptId, status: result.status })
+              await this.persist(target)
+              externalStatus = result.status
+            }
+          } else if (!accepted) {
             if (quiet) target.session.append('user/message', inputMessage, { surfaceOp: 'append' })
             else target.steer(inputMessage)
           }
-          await this.persist(target)
+          if (!external) await this.persist(target)
           target.session.append('hivemind/room-message-received', message)
           await this.persist(target)
         }
@@ -182,8 +238,31 @@ export class RoomMessaging {
           caller.session.append('hivemind/room-message-delivered', { id, targetId: target.id })
         }
         await this.persist(caller)
-        return { messageId: id, targetSessionId: target.id, status: quiet ? 'recorded' as const : 'accepted' as const }
+        return { messageId: id, targetSessionId: target.id, status: external ? externalStatus : quiet ? 'recorded' as const : 'accepted' as const }
       })()
     })
+  }
+  private async resolveTarget(key: string, profile: EmployeeRoomProfile | undefined, signal: AbortSignal): Promise<Agent> {
+    if (profile?.id !== undefined && profile.id !== key) throw new Error('agent_message_target_identity_conflict')
+    if (profile?.executionBackend === 'open-dot' && !this.external) throw new Error('agent_message_external_provider_required')
+    const resolution = await this.external?.resolve(key, profile, signal)
+    if (resolution !== undefined) {
+      if (resolution.driverless !== true) throw new Error('agent_message_external_proxy_must_be_driverless')
+      const external = resolution.agent
+      if (external.id === key || (profile?.dotId !== undefined && external.id === profile.dotId)) throw new Error('agent_message_external_session_identity_conflict')
+      if (this.ctx.agents.get(external.id) !== external || external.session.header.id !== external.id || external.session.header.parentSession !== undefined) throw new Error('agent_message_external_proxy_agent_required')
+      if (profile?.executionBackend !== undefined && profile.executionBackend !== 'open-dot') throw new Error('agent_message_external_backend_conflict')
+      if (profile?.executionBackend === 'open-dot' && external.id === profile.id) throw new Error('agent_message_external_session_identity_conflict')
+      const events = external.session.snapshotEvents()
+      const marker = events.find(event => event.type === 'hivemind/external-employee-room')?.data as { employeeId?: string; backend?: string } | undefined
+      if (marker && (marker.employeeId !== key || marker.backend !== 'open-dot')) throw new Error('agent_message_target_identity_conflict')
+      if (!marker) {
+        external.session.append('hivemind/external-employee-room', { employeeId: key, backend: 'open-dot' })
+        await this.persist(external)
+      }
+      return external
+    }
+    if (profile?.executionBackend === 'open-dot') throw new Error('agent_message_external_room_unavailable')
+    return this.open(key)
   }
 }
