@@ -221,19 +221,39 @@ function projectHistory(ctx: Context, agent: Agent, config: ContextConfig): bool
 /** Keep full receipts in the log and expose text-only results in bounded pages. */
 function boundToolResults(agent: Agent, maxChars: number): boolean {
   let changed = false
-  for (const seq of [...agent.session.surface.nodes]) {
+  const entries = [...agent.session.surface.nodes].flatMap((seq) => {
     const event = agent.session.eventAt(seq)
-    if (event?.type !== 'tool/result') continue
+    if (event?.type !== 'tool/result') return []
     const blocks = event.data.message.content
-    // Image/file payloads require their native attachment readers, not text conversion.
-    if (!blocks.every(block => block.type === 'tool-result' && block.content.every(part => part.type === 'text'))) continue
-    const text = blocks.flatMap(block => block.type === 'tool-result' ? block.content.flatMap(part => part.type === 'text' ? [part.text] : []) : []).join('\n')
-    if (text.length <= maxChars) continue
-    const reference = `\n[Excerpt only. Full original tool receipt: sequence ${seq}. Read hyperagents_history with sequence ${seq} and offset pages before relying on omitted details. This does not change the saved tool outcome.]`
-    const budget = Math.max(0, Math.floor((maxChars - reference.length * blocks.length) / blocks.length))
-    agent.session.append('tool/result', { ...event.data, message: { ...event.data.message,
-      content: [{ ...blocks[0], content: [{ type: 'text' as const, text: text.slice(0, budget) + reference }] }],
-    } }, { surfaceOp: { op: 'replace', startSeq: seq, endSeq: seq }, sourceEventSeqs: [seq] })
+    // Native images and pending/error results keep their original representation.
+    if (!blocks.every(block => block.type === 'tool-result' && !block.isError && block.content.every(part => part.type === 'text'))) return []
+    return [{ seq, event, blocks }]
+  })
+  const count = entries.reduce((sum, entry) => sum + entry.blocks.length, 0)
+  if (!count) return false
+  // One aggregate result budget, not a fresh allowance for every tool step.
+  const perResult = Math.max(1, Math.floor(maxChars / count))
+  for (const { seq, event, blocks } of entries) {
+    const content = blocks.map((block) => {
+      if (block.type !== 'tool-result') return block
+      const text = block.content.flatMap(part => part.type === 'text' ? [part.text] : []).join('\n')
+      if (text.length <= perResult) return block
+      let original = event
+      while (isReplacementSurfaceEvent(original) && original.sourceEventSeqs?.length === 1) {
+        const previousSeq = original.sourceEventSeqs[0]
+        if (previousSeq === undefined) break
+        const previous = agent.session.eventAt(previousSeq)
+        if (previous?.type !== 'tool/result' || previous.seq === original.seq) break
+        original = previous
+      }
+      const reference = `\n[Excerpt. Full saved receipt: sequence ${original.seq}; read hyperagents_history with offset pages before relying on omitted details. Tool identity and outcome are unchanged.]`
+      return { ...block, content: [{ type: 'text' as const, text: text.slice(0, Math.max(0, perResult - reference.length)) + reference }] }
+    })
+    if (content.every((block, index) => block === blocks[index])) continue
+    const first = content[0]
+    if (first === undefined) continue
+    agent.session.append('tool/result', { ...event.data, message: { ...event.data.message, content: [first] } },
+      { surfaceOp: { op: 'replace', startSeq: seq, endSeq: seq }, sourceEventSeqs: [seq] })
     changed = true
   }
   return changed

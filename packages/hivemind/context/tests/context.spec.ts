@@ -422,6 +422,23 @@ describe('HIVE progressive context', () => {
     expect(Session.create(SessionId('large-result-restored'), session.snapshotEvents()).deriveMessages()).toEqual(session.deriveMessages())
   })
 
+  it('shares one result budget across a long active turn while retaining every saved original', async () => {
+    const session = Session.create(SessionId('aggregate-current-results'))
+    session.append('turn/start', { turn: 1 })
+    const originals = Array.from({ length: 12 }, (_, index) => session.append('tool/result', {
+      turn: 1, step: index + 1, message: createToolResultMessage({ callId: `saved-${index}` as never,
+        content: [{ type: 'text', text: 'Stored evidence '.repeat(400) }], isError: false }),
+    }, { surfaceOp: 'append' }))
+    const harness = mount()
+    await harness.preStep({ agent: { session }, turn: 1, signal: new AbortController().signal } as never,
+      async () => ({ kind: 'enter', messages: [] }))
+    const messages = session.deriveMessages()
+    expect(messages).toHaveLength(12)
+    expect(JSON.stringify(messages).length).toBeLessThan(8000)
+    for (const original of originals) expect(session.eventAt(original.seq)).toEqual(original)
+    expect(Session.create(SessionId('aggregate-restored'), session.snapshotEvents()).deriveMessages()).toEqual(messages)
+  })
+
   it('starts a greeting with no skill catalog', async () => {
     const harness = mount()
     const catalog = createUserMessage({
