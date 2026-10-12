@@ -7517,6 +7517,9 @@ importers:
       '@deepseek-ai/dsh-hivemind-execution-scope':
         specifier: workspace:^
         version: link:../execution-scope
+      '@deepseek-ai/dsh-hivemind-hq-runtime':
+        specifier: workspace:^
+        version: link:../hq-runtime
       '@deepseek-ai/dsh-llm-pi-ai':
         specifier: workspace:^
         version: link:../../llm/llm-pi-ai
