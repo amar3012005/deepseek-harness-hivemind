@@ -315,7 +315,7 @@ export class RoomMessaging {
       const rootEvents = root.session.snapshotEvents()
       const original = rootEvents.findLast(event => String(event.type) === 'hivemind/room-message-queued' && (event.data as { id?: string }).id === dispatch.data.nativePacketId)
       const originalData = original?.data as { targetId?: string; senderEmployee?: string; delivery?: { target?: string; authenticatedActor?: unknown } } | undefined
-      if (String(original?.type) !== 'hivemind/room-message-queued' || originalData?.targetId !== room.employeeId
+      if (String(original?.type) !== 'hivemind/room-message-queued' || originalData?.targetId !== room.id
         || originalData.senderEmployee !== 'runtime' || originalData.delivery?.target !== room.employeeId
         || !originalData.delivery.authenticatedActor || !isDeepStrictEqual(originalData.delivery.authenticatedActor, dispatch.data.actor)) throw new Error('open_dot_runtime_original_dispatch_authority_invalid')
       if (input.kind === 'reply' && input.replyTo !== dispatch.data.nativePacketId) throw new Error('open_dot_runtime_reply_reference_invalid')

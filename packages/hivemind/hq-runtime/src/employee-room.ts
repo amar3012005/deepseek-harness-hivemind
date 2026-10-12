@@ -202,7 +202,7 @@ export async function dispatchEmployee(ctx: Context, root: Agent, taskId: string
   const task = ctx.agentTeams.getTask(root, TeamTaskId(taskId))
   if (task.status === 'pending') await ctx.agentTeams.updateTask(root, {
     taskId: task.id, expectedRevision: task.revision, action: 'reassign', owner: assignment.memberName })
-  const receipt = await rooms(ctx).deliverAgentMessage(root, { key: `hq-task-${taskId}${resumeRevision === undefined ? '' : `-resume-${resumeRevision}`}`, target: employeeId, kind: 'question', taskId, text: employeeWorkPrompt(ctx, root, taskId) + (resumeRevision === undefined ? '' : '\nThe human resumed HQ. Read your existing progress and saved receipts first; continue unfinished work without repeating completed research or artifacts.') }, signal)
+  const receipt = await rooms(ctx).deliverAgentMessage(root, { key: `hq-task-${taskId}${resumeRevision === undefined ? '' : `-resume-${resumeRevision}`}`, target: employeeId, targetProfile: employeeRoomProfile(raw, employeeId, profile.name, profile.role), kind: 'question', taskId, text: employeeWorkPrompt(ctx, root, taskId) + (resumeRevision === undefined ? '' : '\nThe human resumed HQ. Read your existing progress and saved receipts first; continue unfinished work without repeating completed research or artifacts.') }, signal)
   const itemIds = new Set(calendarItems(root.session.snapshotEvents()).filter(item => item.taskId === taskId).map(item => item.id))
   const bindings = root.session.ownEvents().filter(event => event.type === 'hivemind/hq-calendar-wake' && itemIds.has(event.data.itemId))
   if (bindings.length > 0) {

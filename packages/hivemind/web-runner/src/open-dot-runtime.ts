@@ -239,8 +239,11 @@ async function pollDispatchStatus(
   const outputs = value['outputs'].map(item => {
     if (!isRecord(item) || typeof item['messageId'] !== 'string' || !item['messageId'] || item['messageId'].length > 180
       || typeof item['role'] !== 'string' || item['role'].length > 40 || typeof item['text'] !== 'string' || item['text'].length > 2000
-      || typeof item['createdAt'] !== 'string' || item['createdAt'].length > 80) throw new Error('open_dot_runtime_status_unverified')
-    return { messageId: item['messageId'], role: item['role'], text: item['text'], createdAt: item['createdAt'] }
+      || !(typeof item['createdAt'] === 'string' && item['createdAt'].length <= 80
+        || typeof item['createdAt'] === 'number' && Number.isSafeInteger(item['createdAt']) && item['createdAt'] >= 0)) throw new Error('open_dot_runtime_status_unverified')
+    const date = new Date(item['createdAt'] as string | number)
+    if (!Number.isFinite(date.getTime())) throw new Error('open_dot_runtime_status_unverified')
+    return { messageId: item['messageId'], role: item['role'], text: item['text'], createdAt: date.toISOString() }
   })
   const attachments = value['attachments'].map(item => {
     if (!isRecord(item) || typeof item['id'] !== 'string' || !item['id'] || item['id'].length > 180
@@ -760,14 +763,16 @@ export function createOpenDotRoomProvider(ctx: Context, base: URL, secret: strin
       })
       const result = await response.json().catch(() => undefined) as Record<string, unknown> | undefined
       if (!response.ok || !isRecord(result) || result['accepted'] !== true
-        || typeof result['receipt_id'] !== 'string' || typeof result['delivery_state'] !== 'string') {
+        || result['receiptId'] !== dispatchMessageId || result['messageId'] !== dispatchMessageId
+        || result['employeeId'] !== employeeId || result['dotId'] !== dotId
+        || result['rootSessionId'] !== String(runtime.id) || typeof result['jobId'] !== 'string' || !result['jobId']) {
         throw new Error('open_dot_runtime_dispatch_unconfirmed')
       }
       const receipt: DispatchReceipt = { version: 1, dispatchMessageId, nativePacketId: message.id, digest,
         organizationId: principal.orgId, userId: principal.userId, employeeId, dotId,
         rootSessionId: String(runtime.id), ...(message.taskId === undefined ? {} : { taskId: message.taskId }),
-        ...(taskRevision === undefined ? {} : { taskRevision }), artifactIds: [...message.artifactIds], receiptId: result['receipt_id'],
-        deliveryState: result['delivery_state'] === 'recorded' ? 'recorded' : 'accepted', actor: authenticatedActor }
+        ...(taskRevision === undefined ? {} : { taskRevision }), artifactIds: [...message.artifactIds], receiptId: dispatchMessageId,
+        deliveryState: 'accepted', actor: authenticatedActor }
       room.session.append('hivemind/open-dot-runtime-dispatch-receipt', receipt)
       if (!await ctx.sessions.flush(room.session)) throw new Error('open_dot_runtime_receipt_persistence_required')
       await ensureRuntimeWake(ctx, runtime, { dispatchMessageId, rootSessionId: String(runtime.id), employeeId, dotId,
