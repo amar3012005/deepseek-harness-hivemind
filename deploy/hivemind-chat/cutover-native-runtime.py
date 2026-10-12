@@ -8,6 +8,7 @@ import json
 import os
 import pathlib
 import re
+import shlex
 import subprocess
 import time
 import urllib.request
@@ -54,8 +55,7 @@ def migration_inputs(path):
     return receipt, source, candidate, routes, json.dumps(routes, ensure_ascii=False, separators=(',', ':'))
 
 
-def yaml_json(value):
-    # JSON is a YAML subset and quotes paths, env strings, and release values safely.
+def escape_dollars(value):
     def escape_interpolation(item):
         if isinstance(item, str):
             return item.replace('$', '$$')
@@ -64,7 +64,39 @@ def yaml_json(value):
         if isinstance(item, dict):
             return {key: escape_interpolation(child) for key, child in item.items()}
         return item
-    return json.dumps(escape_interpolation(value), ensure_ascii=False, indent=2) + '\n'
+    return escape_interpolation(value)
+
+
+def yaml_json(value):
+    # JSON is a YAML subset and quotes paths, env strings, and release values safely.
+    # Compose preserves escaped dollars in `config` and unescapes them in container argv.
+    return json.dumps(escape_dollars(value), ensure_ascii=False, indent=2) + '\n'
+
+
+def interface_entrypoint(original):
+    if not isinstance(original, list) or len(original) < 2 or original[:2] != ['node', '/opt/deepseek-harness/apps/cli/lib/bin.js'] or '--host' in original:
+        raise RuntimeError('Unexpected live runner entrypoint; refusing to replace its arguments')
+    command = 'exec ' + ' '.join(shlex.quote(value) for value in original) + ' --host "$bind_host"'
+    script = '''set -eu
+ip_list=$(hostname -i) || { echo "Unable to determine runner interface address" >&2; exit 78; }
+set -f
+set -- $ip_list
+set +f
+if [ "$#" -ne 1 ]; then echo "Expected exactly one runner interface address" >&2; exit 78; fi
+bind_host=$1
+if ! node -e 'const net=require("node:net");const a=process.argv[1];if(!net.isIPv4(a)||a==="0.0.0.0"||a.startsWith("127."))process.exit(1)' "$bind_host"; then
+  echo "Runner interface address must be one concrete non-loopback IPv4 address" >&2
+  exit 78
+fi
+''' + command + '\n'
+    return ['/bin/sh', '-ec', script]
+
+
+def interface_healthcheck():
+    probe = ("const os=require('node:os');const a=(os.networkInterfaces().eth0||[]).filter(v=>v.family==='IPv4'&&!v.internal).map(v=>v.address);"
+             "if(a.length!==1||a[0]==='0.0.0.0'||a[0].startsWith('127.'))process.exit(1);"
+             "fetch('http://'+a[0]+':'+(process.env.PORT||'3080')+'/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))")
+    return ['CMD', 'node', '-e', probe]
 
 
 def main():
@@ -105,6 +137,12 @@ def main():
     if len(patch_mounts) != 1 or patch_mounts[0].get('read_only') is not True:
         raise RuntimeError('Expected exactly one existing read-only profile patch bind mount')
     patch_mount = patch_mounts[0]
+    old_entrypoint = old['services'][service].get('entrypoint')
+    new_entrypoint = interface_entrypoint(old_entrypoint)
+    old_healthcheck = old['services'][service].get('healthcheck')
+    if not isinstance(old_healthcheck, dict) or not isinstance(old_healthcheck.get('test'), list):
+        raise RuntimeError('Expected an existing runner healthcheck')
+    new_healthcheck_test = interface_healthcheck()
     candidate_mount = copy.deepcopy(patch_mount)
     candidate_mount['source'] = str(profile_candidate)
     patch_target = patch_mount.get('target')
@@ -118,6 +156,8 @@ def main():
         'image': args.image,
         'environment': {'NARB_DISABLE_NATIVE_CACHE': '1', 'HIVE_HARNESS_STEP_FALLBACK_ROUTES': routes_env},
         'volumes': [candidate_mount],
+        'entrypoint': new_entrypoint,
+        'healthcheck': {'test': new_healthcheck_test},
     }}}))
     previous_cache = old['services'][service].get('environment', {}).get('NARB_DISABLE_NATIVE_CACHE')
     previous_routes = old['services'][service].get('environment', {}).get('HIVE_HARNESS_STEP_FALLBACK_ROUTES')
@@ -125,6 +165,8 @@ def main():
         'image': args.expected_image,
         'environment': {'NARB_DISABLE_NATIVE_CACHE': previous_cache, 'HIVE_HARNESS_STEP_FALLBACK_ROUTES': previous_routes},
         'volumes': [copy.deepcopy(patch_mount)],
+        'entrypoint': copy.deepcopy(old_entrypoint),
+        'healthcheck': {'test': copy.deepcopy(old_healthcheck['test'])},
     }}}))
     candidate = base + ['-f', str(override)]
     new = json.loads(capture(candidate + ['config', '--format', 'json']))
@@ -133,8 +175,10 @@ def main():
     allowed['services'][service].setdefault('environment', {})['NARB_DISABLE_NATIVE_CACHE'] = '1'
     allowed['services'][service]['environment']['HIVE_HARNESS_STEP_FALLBACK_ROUTES'] = routes_env
     allowed['services'][service]['volumes'][volumes.index(patch_mount)]['source'] = str(profile_candidate)
+    allowed['services'][service]['entrypoint'] = escape_dollars(new_entrypoint)
+    allowed['services'][service]['healthcheck']['test'] = new_healthcheck_test
     if allowed != new:
-        raise RuntimeError('Candidate changes more than image/cache/routes and the existing read-only profile mount source')
+        raise RuntimeError('Candidate changes more than image/cache/routes, existing read-only profile source, runner entrypoint, and health probe')
     ids = capture(['docker', 'ps', '-q']).split()
     before = {item['Name']: item['Id'] for item in json.loads(capture(['docker', 'inspect', *ids]))}
     record = dict(sourceSha=args.source_sha, image=args.image, imageId=artifact['Id'], previousImage=args.expected_image,
@@ -142,7 +186,7 @@ def main():
                   profileMigration=dict(sourcePath=str(profile_source), candidatePath=str(profile_candidate), sourceSha256=migration['sourceSha256'], candidateSha256=migration['candidateSha256'], routes=routes),
                   previousProfileSource=patch_mount['source'], profileMountTarget=patch_target,
                   previousFallbackRoutesEnv=previous_routes,
-                  changedFields=['harness-runner.image', 'harness-runner.environment.NARB_DISABLE_NATIVE_CACHE', 'harness-runner.environment.HIVE_HARNESS_STEP_FALLBACK_ROUTES', 'harness-runner.volumes[' + patch_target + '].source'],
+                  changedFields=['harness-runner.image', 'harness-runner.environment.NARB_DISABLE_NATIVE_CACHE', 'harness-runner.environment.HIVE_HARNESS_STEP_FALLBACK_ROUTES', 'harness-runner.volumes[' + patch_target + '].source', 'harness-runner.entrypoint', 'harness-runner.healthcheck.test'],
                   preservesNoexec=True, preservesDots=True)
     receipt = root / 'release.json'
     receipt.write_text(json.dumps(record, indent=2) + '\n')
@@ -169,6 +213,12 @@ def main():
     for name, identity in before.items():
         if name != info['Name'] and after.get(name) != identity:
             raise RuntimeError('Sibling changed: ' + name)
+    live_config = json.loads(capture(['docker', 'inspect', container]))[0]['Config']
+    if live_config.get('Entrypoint') != new_entrypoint:
+        raise RuntimeError('Live runner entrypoint differs from the intended native CLI argv')
+    live_healthcheck = live_config.get('Healthcheck', {})
+    if live_healthcheck.get('Test') != new_healthcheck_test:
+        raise RuntimeError('Live runner healthcheck differs from the intended interface probe')
     print('Runner cutover complete; all sibling identities unchanged', flush=True)
     for attempt in range(45):
         live = json.loads(capture(['docker', 'inspect', container]))[0]
