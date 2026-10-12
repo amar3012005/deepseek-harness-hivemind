@@ -41,21 +41,25 @@ export interface ExternalEmployeeRoom {
 
 declare module '@deepseek-ai/dsh-session/types' {
   interface SessionEventMap {
+    /** Immutable acknowledgement that Core durably accepted one Open Dot Runtime dispatch. */
     'hivemind/open-dot-runtime-dispatch-receipt': {
       version: 1; dispatchMessageId: string; nativePacketId: string; digest: string
       organizationId: string; userId: string; employeeId: string; dotId: string; rootSessionId: string
       taskId?: string; taskRevision?: number; artifactIds: string[]; receiptId: string; deliveryState: 'accepted' | 'recorded'; actor: ExternalActor
     }
+    /** Bounded latest status observation retained for restart recovery and Runtime review. */
     'hivemind/open-dot-runtime-status-observed': {
       dispatchMessageId: string; rootSessionId: string; observedAt: string
       state: string; jobResult: Record<string, unknown> | null
       outputs: { messageId: string; role: string; text: string; createdAt: string }[]
       attachments: { id: string; name: string; mime: string; size: number }[]
     }
+    /** Once-only native message awaiting delivery to the saved Runtime root. */
     'hivemind/open-dot-runtime-terminal-outbox': {
       dispatchMessageId: string; rootSessionId: string; taskId?: string; taskRevision?: number
       messageKey: string; digest: string; text: string; artifactIds: string[]; state: string
     }
+    /** Confirms that the corresponding terminal result was persisted to the Runtime root inbox. */
     'hivemind/open-dot-runtime-terminal-receipt': {
       dispatchMessageId: string; rootSessionId: string; messageId: string; digest: string; state: string
     }
@@ -137,6 +141,7 @@ export async function openExternalEmployeeRoom(
 
 declare module '@deepseek-ai/dsh-session/types' {
   interface SessionEventMap {
+    /** Durable idempotency intent written before forwarding an external employee operation. */
     'hivemind/open-dot-runtime-operation-intent': { messageId: string; digest: string; dispatchMessageId: string; rootSessionId: string; artifactIds: string[] }
   }
 }
