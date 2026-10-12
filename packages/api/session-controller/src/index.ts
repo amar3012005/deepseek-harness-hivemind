@@ -1,5 +1,5 @@
 export { registerExternalEmployeeRoomProvider, roomMessageId } from './room-messaging.ts'
-export type { EmployeeRoomProfile, ExternalEmployeeRoomProvider } from './room-messaging.ts'
+export type { EmployeeRoomProfile, ExternalEmployeePrincipal, ExternalEmployeeRoomProvider } from './room-messaging.ts'
 /** Session Remote owner: cold reads, explicit Agent commands, and live control state. */
 
 import { hostname } from 'node:os'
