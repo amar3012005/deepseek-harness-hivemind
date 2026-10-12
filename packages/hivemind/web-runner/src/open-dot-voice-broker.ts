@@ -118,7 +118,8 @@ export function createOpenDotVoiceBroker(options: OpenDotVoiceBrokerOptions): Op
     if (!bounded(context.organizationId, 256) || !bounded(context.userId, 256) || !bounded(context.dotId, 256)
       || !bounded(context.conversationId, 256) || typeof context.instructions !== 'string' || context.instructions.length > 12_000
       || typeof context.context !== 'string' || context.context.length > MAX_CONTEXT) throw new Error('voice_context_invalid')
-    return context as BrokerContext
+    return { organizationId: context.organizationId, userId: context.userId, dotId: context.dotId,
+      conversationId: context.conversationId, instructions: context.instructions, context: context.context }
   }
   const callback = async (room: BrokerRoom, payload: Record<string, unknown>, signal: AbortSignal): Promise<Record<string, unknown>> => {
     const current = await requestContext(room.callId, room.cookie, signal)
@@ -153,7 +154,8 @@ export function createOpenDotVoiceBroker(options: OpenDotVoiceBrokerOptions): Op
     if (req.headers['content-type']?.split(';')[0] !== 'application/json') { json(res, 415, { error: 'invalid_request' }); return true }
     let input: Record<string, unknown>
     try { input = await readBody(req) } catch { json(res, 400, { error: 'invalid_request' }); return true }
-    const sessionCookie = cookie(req)!
+    const sessionCookie = cookie(req)
+    if (!sessionCookie) { json(res, 401, { error: 'authentication_required' }); return true }
     if (path === STOP || path === UPDATE) {
       if (!bounded(input.callId, 256)) { json(res, 400, { error: 'invalid_request' }); return true }
       try {
@@ -190,7 +192,8 @@ export function createOpenDotVoiceBroker(options: OpenDotVoiceBrokerOptions): Op
         const headers = { authorization: `Bearer ${token}`, 'ChatGPT-Account-Id': options.accountId(token), originator: 'hivemind', 'OpenAI-Alpha': 'quicksilver=v2', 'content-type': 'application/json' }
         const provider = await options.withPrincipal(context.organizationId, context.userId, () => fetch('https://chatgpt.com/backend-api/codex/realtime/calls?intent=quicksilver&architecture=avas', {
           method: 'POST', headers, redirect: 'error', signal,
-          body: JSON.stringify({ sdp: input.sdp, session: options.makeSession(options.model, options.voice, context.instructions, context.context) }),
+          body: JSON.stringify({ sdp: input.sdp,
+            session: options.makeSession(options.model, options.voice, context.instructions, context.context) }),
         }))
         if (!provider.ok) throw new Error('voice_provider_rejected')
         const location = provider.headers.get('location') ?? ''
@@ -207,11 +210,13 @@ export function createOpenDotVoiceBroker(options: OpenDotVoiceBrokerOptions): Op
           })
           signal.throwIfAborted()
         } finally { signal.removeEventListener('abort', closeOnAbort) }
-        const room: BrokerRoom = { callId: input.callId, owner, dotId: context.dotId, conversationId: context.conversationId, cookie: sessionCookie, socket, closed: false, seen: new Set(), timer: setTimeout(() => close(room), MAX_CALL_MS) }
+        const room: BrokerRoom = { callId: input.callId, owner, dotId: context.dotId,
+          conversationId: context.conversationId, cookie: sessionCookie, socket, closed: false,
+          seen: new Set(), timer: setTimeout(() => close(room), MAX_CALL_MS) }
         const queries = options.createQueryBuffer()
         room.timer.unref(); rooms.set(room.callId, room)
         socket.on('close', () => close(room)); socket.on('error', () => close(room))
-        socket.on('message', raw => {
+        socket.on('message', (raw) => {
           let event: Record<string, unknown>
           try { const value: unknown = JSON.parse(raw.toString()); if (!value || typeof value !== 'object') return; event = value as Record<string, unknown> } catch { return }
           const type = event.type
@@ -228,7 +233,7 @@ export function createOpenDotVoiceBroker(options: OpenDotVoiceBrokerOptions): Op
             if (item?.target !== 'client' || typeof item.id !== 'string' || room.seen.has(item.id) || item.id.length > 256) return
             room.seen.add(item.id)
             const eventId = randomUUID()
-            void queries.take(AbortSignal.timeout(REQUEST_MS)).then(request => callback(room, { callId: room.callId, eventId, type: 'task', request }, AbortSignal.timeout(REQUEST_MS))).then(result => {
+            void queries.take(AbortSignal.timeout(REQUEST_MS)).then(request => callback(room, { callId: room.callId, eventId, type: 'task', request }, AbortSignal.timeout(REQUEST_MS))).then((result) => {
               const text = result.status === 'completed' && typeof result.text === 'string'
                 ? result.text.slice(0, 4000) : 'I have sent that request to your Dot. I will wait for its result.'
               if (!room.closed && socket.readyState === WebSocket.OPEN) for (const chunk of options.contextChunks(text)) socket.send(JSON.stringify({ type: 'delegation.context.append', delegation_item_id: item.id, channel: 'speakable', content: [{ type: 'input_text', text: chunk }] }))
