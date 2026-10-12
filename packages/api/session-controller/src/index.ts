@@ -1,4 +1,5 @@
-export { roomMessageId } from './room-messaging.ts'
+export { registerExternalEmployeeRoomProvider, roomMessageId } from './room-messaging.ts'
+export type { EmployeeRoomProfile, ExternalEmployeeRoomProvider } from './room-messaging.ts'
 /** Session Remote owner: cold reads, explicit Agent commands, and live control state. */
 
 import { hostname } from 'node:os'
@@ -17,7 +18,7 @@ import {
   type ApiSessionAgentResult,
 } from './agent.ts'
 import { SessionCommandController } from './commands.ts'
-import { RoomMessaging, type RoomMessageRequest } from './room-messaging.ts'
+import { RoomMessaging, type EmployeeRoomProfile, type RoomMessageRequest } from './room-messaging.ts'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { SessionControlController } from './control.ts'
 import { SessionHistoryController } from './history.ts'
@@ -133,7 +134,7 @@ export class SessionController extends TypertRemoteService {
       const agent = ctx.agents.get(room.sessionId)
       if (!agent) throw new Error('agent_message_room_unavailable')
       return agent
-    })
+    }, ctx.externalEmployeeRoomProvider)
     ctx.effect(() => ctx.fileUploads.registerAgentResolver(async (sessionId) => {
       const result = await this.agents.resolveAgent(sessionId)
       if ('error' in result) throw result.error
@@ -385,7 +386,7 @@ export class SessionController extends TypertRemoteService {
    * @param signal - Cancellation before room admission.
    * @returns Exact live persistent employee Agent.
    */
-  resolvePersistentEmployeeRoom(key: string, profile: { id: string; name: string; role: string }, signal: AbortSignal): Promise<Agent> {
+  resolvePersistentEmployeeRoom(key: string, profile: EmployeeRoomProfile, signal: AbortSignal): Promise<Agent> {
     return this.roomMessaging.resolveRoom(key, profile, signal)
   }
 
