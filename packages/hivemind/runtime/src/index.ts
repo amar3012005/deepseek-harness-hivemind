@@ -1,3 +1,5 @@
+import { installHistoryTool } from './history-tool.ts'
+import { workingStateDefinition, workingStateText } from './working-state.ts'
 import { privateRecallPreview } from './private-recall-preview.ts'
 import { installSessionDiagnostics } from './session-diagnostics.ts'
 import { installRuntimeSupportReport } from './nightly-support.ts'
@@ -1426,7 +1428,14 @@ export function apply(ctx: Context, config: Config): void {
   })
   ctx.on('hivemind/voice-context', async ({ agent, signal }) =>
     (await snapshotFor(agent, signal, undefined, true)).initialContext)
+  ctx.effect(() => ctx.sessionProjections.register(workingStateDefinition))
   ctx.plugin(contextPlugin({
+    workingState(agent) {
+      if (!config.privateMemoryEnabled) return undefined
+      const state = ctx.sessionProjections.stateOf(agent.session, 'hivemindWorkingState')
+      if (!state) throw new Error('working_state_projection_unavailable')
+      return workingStateText(state, config.historyMaxChars)
+    },
     historyTurns: config.historyTurns,
     historyMaxChars: config.historyMaxChars,
     capabilityToolName: HIVE_CAPABILITIES_TOOL,
@@ -1921,6 +1930,7 @@ export function apply(ctx: Context, config: Config): void {
       return Object.fromEntries(Object.entries(result).filter((entry): entry is [string, JsonValue] => entry[1] !== undefined))
     })
     installSessionDiagnostics(ctx)
+    installHistoryTool(ctx, config.historyMaxChars)
     const principals = new Map<Agent, ReturnType<typeof ctx.hivemindExecutionScope.require>>()
     const draining = new Map<Agent, Promise<void>>()
     const lifetime = new AbortController()

@@ -12,6 +12,7 @@ import { isAppendSurfaceEvent, isReplacementSurfaceEvent } from '@deepseek-ai/ds
 import type { SessionEvent, SessionSeq } from '@deepseek-ai/dsh-session'
 /** Prompt-projection budgets and the registered on-demand capability tool. */
 export interface ContextConfig {
+  workingState?: (agent: Agent) => string | undefined
   historyTurns: number
   historyMaxChars: number
   capabilityToolName: string
@@ -66,6 +67,13 @@ function record(value: unknown): Record<string, unknown> | undefined {
 /** Keep admitted peer evidence until its correlated response or actual task review. */
 function unresolvedPeerMessage(event: SessionEvent | undefined, events: readonly SessionEvent[]): boolean {
   if (event?.type !== 'user/message') return false
+  // A bounded replacement keeps the message identity; review ordering belongs
+  // to its original admission, not the later excerpt event.
+  if (isReplacementSurfaceEvent(event)) {
+    const id = event.data.id
+    event = events.find(item => item.type === 'user/message' && isAppendSurfaceEvent(item) && item.data.id === id) ?? event
+  }
+  if (event.type !== 'user/message') return false
   const source = record(event.data.source)
   if (source?.kind === 'agent-message' && source.form === 'relay') return true // Native direct Team messages have no reply-to identity.
   if (source?.kind === 'team-message') return true // Native Team messages lack a reply-to identity; do not guess completion.
@@ -130,25 +138,82 @@ function projectHistory(ctx: Context, agent: Agent, config: ContextConfig): bool
   const calls = new Set(pending.map(question => question.callId))
   const waiting = activeTeamWait(events)
   if (waiting !== undefined) calls.add(waiting.callId)
-  const protectedFrom = historicalTail.findIndex((seq) => {
+  // Protect exact pending islands, not the entire suffix after the oldest one.
+  // Include every sibling call/result in the assistant message to preserve pairs.
+  const protectedCalls = new Set(calls)
+  for (const seq of historicalTail) {
+    const event = session.eventAt(seq)
+    if (event?.type !== 'assistant/message') continue
+    const blocks = event.data.message.content.filter(block => block.type === 'tool-call')
+    if (blocks.some(block => calls.has(block.id))) for (const block of blocks) protectedCalls.add(block.id)
+  }
+  const protectedNodes = new Set(historicalTail.filter((seq) => {
     const event = session.eventAt(seq)
     return (event?.type === 'assistant/message' && event.data.message.content.some(block =>
-      block.type === 'tool-call' && calls.has(block.id)))
+      block.type === 'tool-call' && protectedCalls.has(block.id)))
+      || (event?.type === 'tool/result' && event.data.message.content.some(block =>
+        block.type === 'tool-result' && protectedCalls.has(block.toolCallId)))
       || (event?.type === 'user/message' && waiting?.originalSourceMessageId === event.data.id)
       || unresolvedPeerMessage(event, events)
-  })
-  const shadowed = protectedFrom === -1 ? historicalTail : historicalTail.slice(0, protectedFrom)
-  const start = shadowed[0], end = shadowed.at(-1)
-  if (start === undefined || end === undefined) return false
+  }))
+  const peers = historicalTail.filter(seq => unresolvedPeerMessage(session.eventAt(seq), events))
+  const peerBudget = Math.max(256, Math.floor(config.historyMaxChars / Math.max(1, peers.length)))
+  let boundedPeers = false
+  for (const seq of peers) {
+    const event = session.eventAt(seq)
+    if (event?.type !== 'user/message' || textOf(event.data).length <= peerBudget) continue
+    const original = events.find(item => item.type === 'user/message' && isAppendSurfaceEvent(item) && item.data.id === event.data.id) ?? event
+    const reference = `\n[Peer evidence excerpt. Read original sequence ${original.seq} with hyperagents_history before review or acceptance.]`
+    session.append('user/message', { ...event.data, content: [{ type: 'text', text: textOf(event.data).slice(0, Math.max(0, peerBudget - reference.length)) + reference }] },
+      { surfaceOp: { op: 'replace', startSeq: seq, endSeq: seq }, sourceEventSeqs: [seq] })
+    boundedPeers = true
+  }
+  const ranges: SessionSeq[][] = []
+  let range: SessionSeq[] = []
+  for (const seq of historicalTail) {
+    if (protectedNodes.has(seq)) {
+      if (range.length) ranges.push(range)
+      range = []
+    } else range.push(seq)
+  }
+  if (range.length) ranges.push(range)
   const text = recentConversationText(exchanges, config.historyTurns, config.historyMaxChars)
-  const previous = shadowed.length === 1 ? session.eventAt(start) : undefined
-  if (previous?.type === 'user/message' && previous.data.source.kind === 'plugin'
-    && previous.data.source.plugin === HISTORY_CONTEXT_SOURCE && textOf(previous.data) === text.trim()) return false
-  session.append('user/message', createUserMessage({
-    content: [{ type: 'text', text }],
-    source: { kind: 'plugin', plugin: HISTORY_CONTEXT_SOURCE, form: 'recall' },
-  }), { surfaceOp: { op: 'replace', startSeq: start, endSeq: end }, sourceEventSeqs: shadowed })
-  return true
+  let changed = boundedPeers
+  for (const [index, shadowed] of ranges.entries()) {
+    const start = shadowed[0], end = shadowed.at(-1)
+    if (start === undefined || end === undefined) continue
+    const value = index === 0 ? text : 'Earlier conversation remains in the saved session history.'
+    const previous = shadowed.length === 1 ? session.eventAt(start) : undefined
+    if (previous?.type === 'user/message' && previous.data.source.kind === 'plugin'
+      && previous.data.source.plugin === HISTORY_CONTEXT_SOURCE && textOf(previous.data) === value.trim()) continue
+    session.append('user/message', createUserMessage({
+      content: [{ type: 'text', text: value }],
+      source: { kind: 'plugin', plugin: HISTORY_CONTEXT_SOURCE, form: 'recall' },
+    }), { surfaceOp: { op: 'replace', startSeq: start, endSeq: end }, sourceEventSeqs: shadowed })
+    changed = true
+  }
+  return changed
+}
+
+/** Keep full receipts in the log and expose text-only results in bounded pages. */
+function boundToolResults(agent: Agent, maxChars: number): boolean {
+  let changed = false
+  for (const seq of [...agent.session.surface.nodes]) {
+    const event = agent.session.eventAt(seq)
+    if (event?.type !== 'tool/result') continue
+    const blocks = event.data.message.content
+    // Image/file payloads require their native attachment readers, not text conversion.
+    if (!blocks.every(block => block.type === 'tool-result' && block.content.every(part => part.type === 'text'))) continue
+    const text = blocks.flatMap(block => block.type === 'tool-result' ? block.content.flatMap(part => part.type === 'text' ? [part.text] : []) : []).join('\n')
+    if (text.length <= maxChars) continue
+    const reference = `\n[Excerpt only. Full original tool receipt: sequence ${seq}. Read hyperagents_history with sequence ${seq} and offset pages before relying on omitted details. This does not change the saved tool outcome.]`
+    const budget = Math.max(0, Math.floor((maxChars - reference.length * blocks.length) / blocks.length))
+    agent.session.append('tool/result', { ...event.data, message: { ...event.data.message,
+      content: [{ ...blocks[0], content: [{ type: 'text' as const, text: text.slice(0, budget) + reference }] }],
+    } }, { surfaceOp: { op: 'replace', startSeq: seq, endSeq: seq }, sourceEventSeqs: [seq] })
+    changed = true
+  }
+  return changed
 }
 function capabilityCatalogRequested(events: readonly SessionEvent[], turn: number, toolName: string): boolean {
   return events.some(event => event.type === 'tool/call'
@@ -175,7 +240,9 @@ export function contextPlugin(config: ContextConfig): Plugin.Object<void> {
 
         const first = projected.get(agent) !== turn
         if (first) projected.set(agent, turn)
-        const changed = first && projectHistory(ctx, agent, config)
+        const projectedHistory = first && projectHistory(ctx, agent, config)
+        const boundedResults = boundToolResults(agent, config.historyMaxChars)
+        const changed = projectedHistory || boundedResults
         const showCatalog = capabilityCatalogRequested(
           agent.session.snapshotEvents(),
           turn,
@@ -185,6 +252,10 @@ export function contextPlugin(config: ContextConfig): Plugin.Object<void> {
           ? decision.messages
           : decision.messages.filter(message => !isSkillCatalog(message))
         let messages = withoutCatalog
+        if (first && config.workingState !== undefined) {
+          const state = config.workingState(agent)
+          if (state) messages = [turnInstructionMessage(state), ...messages]
+        }
         if (first && config.turnInstruction !== undefined) {
           const instruction = config.turnInstruction(agent, turn)
           if (instruction !== undefined && instruction.trim() !== '') {

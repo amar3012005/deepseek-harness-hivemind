@@ -64,6 +64,9 @@
     },
     {
       "path": "../../schedule/schedule"
+    },
+    {
+      "path": "../../session-query/session-query"
     }
   ]
 }

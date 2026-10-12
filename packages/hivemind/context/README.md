@@ -23,3 +23,9 @@ The stable system and tool prefix remains unchanged. Capability discovery append
 ## Known Limitations and Deferred Work
 
 The plugin filters only messages whose native source kind is `skill-catalog`. It does not alter tool registration, tool execution, session events, or the agent loop.
+
+## Bounded continuity
+
+Pending native calls and matching results remain individual surface islands; they no longer pin every later unrelated exchange. Full append-origin history remains in persistence. Oversized text-only tool receipts become excerpts with original sequence references, retaining call identity and error status. Runtime supplies a native cached projection of current task, contract, review, artifact and handoff records. No model is invoked to summarize.
+
+The configured history character budget applies separately to recent conversation, saved work pointers and individual text receipts. It is not a provider token guarantee: current requests, pending calls, images, prompt sections and tool schemas also contribute. The owning Runtime registers an own-session native query reader for exact omitted evidence.

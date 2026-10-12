@@ -1,3 +1,4 @@
+import { foldWorkingState } from '../src/working-state.ts'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { chmod, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -108,7 +109,7 @@ function mount(pluginConfig: Config, withSpill = false, web?: Pick<WebRuntime, '
       return cleanup
     },
     sessions: { flush: harness.flush },
-    sessionProjections: { register: () => () => {} },
+    sessionProjections: { register: () => () => {}, stateOf: (session: Agent['session']) => session.snapshotEvents().reduce(foldWorkingState, { records: {} }) },
     on(event: string, listener: (payload: unknown, next: () => Promise<unknown>) => Promise<unknown>) {
       if (event === 'agent/turn-ended') harness.turnEnded = listener as unknown as NonNullable<HarnessMock['turnEnded']>
       if (event === 'agent/pre-step') harness.preStep = listener

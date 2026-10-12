@@ -350,6 +350,51 @@ describe('HIVE progressive context', () => {
     expect(session.snapshotEvents().find(event => event.seq === relay.seq)).toEqual(relay)
   })
 
+  it('bounds a megabyte after an old pending approval while preserving exact replay and pairs', async () => {
+    const session = Session.create(SessionId('long-pending-approval'))
+    session.append('turn/start', { turn: 1 })
+    session.append('user/message', user('Approval remains pending'), { surfaceOp: 'append' })
+    const call = session.append('assistant/message', { turn: 1, step: 1, stream: [], message: createAssistantMessage({
+      source: { provider: 'fixture', model: 'fixture' }, content: [{ type: 'tool-call', id: 'pending' as never, name: 'question', arguments: '{"operation":"exact-original"}' }],
+    }) }, { surfaceOp: 'append' })
+    const result = session.append('tool/result', { turn: 1, step: 1, message: createToolResultMessage({ callId: 'pending' as never,
+      content: [{ type: 'text', text: 'Waiting for authenticated approval' }], isError: true }) }, { surfaceOp: 'append' })
+    session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+    for (let turn = 2; turn <= 40; turn++) {
+      session.append('turn/start', { turn })
+      session.append('user/message', user('Unrelated historical request ' + 'x'.repeat(30_000)), { surfaceOp: 'append' })
+      session.append('assistant/message', { turn, step: 1, stream: [], message: createAssistantMessage({ source: { provider: 'fixture', model: 'fixture' }, content: [{ type: 'text', text: 'Recorded answer' }] }) }, { surfaceOp: 'append' })
+      session.append('turn/end', { turn, reason: { kind: 'completed' } })
+    }
+    const original = session.snapshotEvents()
+    const harness = mount([], undefined, undefined, ['pending'])
+    await harness.preStep({ agent: { session }, turn: 41, signal: new AbortController().signal } as never, async () => ({ kind: 'enter', messages: [user('Current question')] }))
+    expect(JSON.stringify(session.deriveMessages()).length).toBeLessThan(10_000)
+    expect(session.surface.nodes).toContain(call.seq)
+    expect(session.surface.nodes).toContain(result.seq)
+    expect(session.snapshotEvents().slice(0, original.length)).toEqual(original)
+    const restored = Session.create(SessionId('long-pending-restored'), session.snapshotEvents())
+    expect(restored.deriveMessages()).toEqual(session.deriveMessages())
+    expect(restored.eventAt(call.seq)).toEqual(call)
+    expect(restored.snapshotEvents().some(event => event.type === 'compaction/start')).toBe(false)
+  })
+
+  it('pages a large text tool receipt without changing its identity, outcome or saved original', async () => {
+    const session = Session.create(SessionId('large-current-result'))
+    session.append('turn/start', { turn: 1 })
+    const receipt = session.append('tool/result', { turn: 1, step: 1, message: createToolResultMessage({ callId: 'read-original' as never,
+      content: [{ type: 'text', text: 'Exact evidence '.repeat(10_000) }], isError: false }) }, { surfaceOp: 'append' })
+    const harness = mount()
+    await harness.preStep({ agent: { session }, turn: 1, signal: new AbortController().signal } as never, async () => ({ kind: 'enter', messages: [] }))
+    expect(session.eventAt(receipt.seq)).toEqual(receipt)
+    const projected = session.deriveMessages()[0]!
+    expect(projected.id).toEqual(receipt.data.message.id)
+    expect(JSON.stringify(projected.content).length).toBeLessThan(3300)
+    expect(JSON.stringify(projected.content)).toContain('hyperagents_history')
+    expect(projected.content[0]).toMatchObject({ type: 'tool-result', toolCallId: 'read-original', isError: false })
+    expect(Session.create(SessionId('large-result-restored'), session.snapshotEvents()).deriveMessages()).toEqual(session.deriveMessages())
+  })
+
   it('starts a greeting with no skill catalog', async () => {
     const harness = mount()
     const catalog = createUserMessage({
