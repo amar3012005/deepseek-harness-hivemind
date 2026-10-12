@@ -16,6 +16,7 @@ import type { HivemindPrincipal } from '@deepseek-ai/dsh-hivemind-execution-scop
 import type {} from '@deepseek-ai/dsh-hivemind-runtime'
 import type {} from '@deepseek-ai/dsh-host-webserver'
 import type {} from '@deepseek-ai/dsh-client-connection'
+import { createOpenDotVoiceBroker } from './open-dot-voice-broker.ts'
 
 /** Deployment settings shared by every authenticated tenant. */
 export interface LiveVoiceConfig {
@@ -205,8 +206,22 @@ export function liveVoicePlugin(config: LiveVoiceConfig,
       const starting = new Set<string>()
       const models = createModels({ credentials: credentialStoreFrom(ctx), authContext: authContextFrom(ctx) })
       models.setProvider(openaiCodexProvider())
-      ctx.effect(() => () => { for (const room of rooms.values()) room.close() })
+      const openDotBroker = createOpenDotVoiceBroker({
+        token: process.env.OPEN_DOT_VOICE_BROKER_TOKEN,
+        model: config.model,
+        voice: config.voice,
+        getAuth: async signal => (await models.getAuth('openai-codex', { signal }))?.auth.apiKey,
+        accountId: codexAccountId,
+        makeSession: voiceSession,
+        contextChunks: voiceContextChunks,
+        createQueryBuffer: () => new VoiceQueryBuffer(),
+        withPrincipal: (organizationId, userId, operation) => ctx.hivemindExecutionScope.run({
+          orgId: organizationId, userId, profile: 'hivemind-chat', variation: 'open-dot',
+        }, operation),
+      })
+      ctx.effect(() => () => { openDotBroker.dispose(); for (const room of rooms.values()) room.close() })
       ctx.effect(() => ctx.webServer.register({ kind: 'prefix', path: '/api/hivemind/voice', handler: async (req, res) => {
+        if (await openDotBroker(req, res)) return
         let authenticated: HivemindPrincipal | undefined
         try { authenticated = authenticate(req) } catch { reply(res, 401, { error: 'authentication_required' }); return }
         if (!authenticated) { reply(res, 401, { error: 'authentication_required' }); return }
