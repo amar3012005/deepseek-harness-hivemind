@@ -33,7 +33,7 @@ function summary(id: SessionId, preset?: string, overrides: Record<string, unkno
   } as SessionSummary
 }
 
-function mount(path = '/hivemind/app/overview') {
+function mount(path = '/hivemind/app/overview', pending = false) {
   window.history.replaceState({}, '', path)
   const ordinary = summary(ordinaryId)
   const hyperagent = summary(agentId, 'hivemind-hyperagents')
@@ -71,6 +71,10 @@ function mount(path = '/hivemind/app/overview') {
     'session.untitled': 'Untitled',
     'actions.session.aria': `Actions for ${values?.name ?? ''}`,
     'rename': 'Rename',
+    'menu.shareSession': 'Share',
+    'menu.fork': 'Fork',
+    'delete.session': 'Delete',
+    'status.waitingAnswer': 'Waiting for answer',
     'menu.archiveSession': 'Archive',
     'rename.session.title': 'Rename chat',
     'cancel': 'Cancel',
@@ -79,7 +83,7 @@ function mount(path = '/hivemind/app/overview') {
   const view = render(<HiveSessionProjection
     useResource={(() => ({ status: 'none', value: undefined, failure: undefined, reload: () => {} })) as GlobalStandardProps['useResource']}
     usePanelInfo={selector => selector({ activePanelId: null })}
-    useSessionStatus={selector => selector(new Map())}
+    useSessionStatus={selector => selector(new Map(pending ? [[ordinaryId, { pendingInteraction: { kind: 'question' } } as never]] : []))}
     useSessionRetainInfo={() => undefined}
     useSessions={<S,>(selector: (value: SessionListState) => S) => selector(state)}
     useWorkspaces={<S,>(selector: (value: WorkspaceSnapshot) => S) => selector(workspaceState)}
@@ -92,15 +96,31 @@ function mount(path = '/hivemind/app/overview') {
 describe('HIVE native Session projection', () => {
   it('filters archived and subagent rows, and orders pinned sessions first', () => {
     const { container } = mount()
-    const rows = [...container.querySelectorAll<HTMLElement>('[data-session-owner-preset]')]
-    expect(rows.map(row => row.querySelector('span')?.textContent)).toEqual(['second-ordinary-session', 'ordinary-session'])
-    expect(rows[0]?.dataset.sessionOwnerPreset).toBe('default')
+    const rows = [...container.querySelectorAll<HTMLElement>('[role=treeitem]')]
+    expect(rows.map(row => row.querySelector('span[class*=title]')?.textContent)).toEqual(['second-ordinary-session', 'ordinary-session'])
   })
 
   it('routes employee Recents to Hyperagent sessions only', () => {
     const { container } = mount('/hivemind/app/employee/harness')
-    expect([...container.querySelectorAll<HTMLElement>('[data-session-owner-preset]')]
-      .map(row => row.querySelector('span')?.textContent)).toEqual(['hyperagent-session'])
+    expect([...container.querySelectorAll<HTMLElement>('[role=treeitem]')]
+      .map(row => row.querySelector('span[class*=title]')?.textContent)).toEqual(['hyperagent-session'])
+  })
+
+  it('renders the legacy pending dot from native session status', () => {
+    mount('/hivemind/app/overview', true)
+    expect(screen.getByText('Waiting for answer')).toBeTruthy()
+  })
+
+  it('reuses the existing external delete bridge when available', async () => {
+    const remove = vi.fn(async () => {})
+    Object.defineProperty(window, '__HIVEMIND_DELETE_SESSION__', { configurable: true, value: remove })
+    const { actions } = mount()
+    const row = screen.getByText('ordinary-session').closest('[role=treeitem]') as HTMLElement
+    fireEvent.click(within(row).getByRole('button', { name: 'Actions for ordinary-session' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Delete' }))
+    await waitFor(() => expect(remove).toHaveBeenCalledWith(ordinaryId))
+    await waitFor(() => expect(actions.archiveSession).toHaveBeenCalledWith(ordinaryId))
+    Reflect.deleteProperty(window, '__HIVEMIND_DELETE_SESSION__')
   })
 
   it('wires create, open, rename, fork and archive actions to native session operations', async () => {
@@ -110,27 +130,27 @@ describe('HIVE native Session projection', () => {
     fireEvent.click(screen.getByRole('button', { name: 'New chat' }))
     expect(actions.createSession).toHaveBeenCalledOnce()
 
-    fireEvent.click(screen.getByText('ordinary-session').closest('button')!)
+    fireEvent.click(screen.getByText('ordinary-session').closest('[role=treeitem]')!)
     expect(actions.openSession).toHaveBeenCalledWith(ordinaryId)
 
-    const row = screen.getByText('ordinary-session').closest('[data-session-owner-preset]') as HTMLElement
+    const row = screen.getByText('ordinary-session').closest('[role=treeitem]') as HTMLElement
     fireEvent.click(within(row).getByRole('button', { name: 'Actions for ordinary-session' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Share' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Share' }))
     expect(share).toHaveBeenCalledWith(expect.objectContaining({
       title: 'ordinary-session',
       url: expect.stringContaining('/hivemind/app/overview/session/ordinary-session'),
     }))
 
     fireEvent.click(within(row).getByRole('button', { name: 'Actions for ordinary-session' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Fork' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Fork' }))
     expect(actions.forkSession).toHaveBeenCalledWith(ordinaryId)
 
     fireEvent.click(within(row).getByRole('button', { name: 'Actions for ordinary-session' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Archive' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Archive' }))
     expect(actions.archiveSession).toHaveBeenCalledWith(ordinaryId)
 
     fireEvent.click(within(row).getByRole('button', { name: 'Actions for ordinary-session' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Rename' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Rename' }))
     fireEvent.change(screen.getByRole('textbox', { name: 'Chat name' }), { target: { value: 'Renamed chat' } })
     fireEvent.click(screen.getByRole('button', { name: 'Rename' }))
     await waitFor(() => expect(actions.renameSession).toHaveBeenCalledWith(ordinaryId, 'Renamed chat'))

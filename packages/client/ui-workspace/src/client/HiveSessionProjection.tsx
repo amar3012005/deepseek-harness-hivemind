@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Button, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button, IconNewChatOutlineRegular, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { SessionListState, SessionSummary } from '@deepseek-ai/dsh-api-session-controller/client'
+import { deriveFlat } from './tree.ts'
+import { SessionNodeItem } from './RecentsRows.tsx'
 import css from './HiveSessionProjection.module.css'
 
 export interface HiveSessionProjectionInjected {
@@ -46,9 +48,10 @@ function selectedSession(list: SessionListState): SessionId | undefined {
 
 /** Native Session catalog projected as mode-filtered HIVE Recents. */
 export function HiveSessionProjection({
-  useSessions, useWorkspaces, createSession, openSession, renameSession, forkSession, archiveSession, t,
+  useSessions, useSessionStatus, useWorkspaces, createSession, openSession, renameSession, forkSession, archiveSession, t,
 }: Props) {
   const list = useSessions(value => value)
+  const statuses = useSessionStatus(value => value)
   const pinnedSessionIds = useWorkspaces(value => value.pinnedSessionIds)
   const archivedSessionIds = useWorkspaces(value => value.archivedSessionIds)
   const [pathname, setPathname] = useState(() => window.location.pathname)
@@ -57,7 +60,6 @@ export function HiveSessionProjection({
   const [renameBusy, setRenameBusy] = useState(false)
   const [renameError, setRenameError] = useState<string>()
   const [actionError, setActionError] = useState<string>()
-  const [menuSession, setMenuSession] = useState<SessionId>()
 
   useEffect(() => {
     const update = () => { setPathname(window.location.pathname) }
@@ -67,16 +69,17 @@ export function HiveSessionProjection({
 
   const employeeRoute = pathname === '/hivemind/app/employee/harness'
     || pathname.startsWith('/hivemind/app/employee/harness/')
-  const rows = useMemo(() => list.ids
-    .map(id => list.byId[id])
-    .filter((row): row is SessionSummary => row !== undefined && !row.blank && row.origin !== 'subagent'
-      && !archivedSessionIds.includes(row.id))
-    .filter(row => isHyperagent(list, row) === employeeRoute)
-    .toSorted((left, right) => {
-      const leftPinned = pinnedSessionIds.includes(left.id)
-      const rightPinned = pinnedSessionIds.includes(right.id)
-      return leftPinned === rightPinned ? 0 : leftPinned ? -1 : 1
-    }), [list, employeeRoute, pinnedSessionIds, archivedSessionIds])
+  const rows = useMemo(() => deriveFlat(list, list.ids, {
+    pinnedSessionIds, archivedSessionIds, archivedFilter: 'default',
+  }, statuses).filter(row => !row.blank && list.byId[row.id]?.origin !== 'subagent')
+    .filter((row) => { const summary = list.byId[row.id]; return summary !== undefined && isHyperagent(list, summary) === employeeRoute }),
+  [list, employeeRoute, pinnedSessionIds, archivedSessionIds, statuses])
+  const deleteBridge = (window as Window & { __HIVEMIND_DELETE_SESSION__?: (id: SessionId) => Promise<void> }).__HIVEMIND_DELETE_SESSION__
+  const summaryOf = (id: SessionId): SessionSummary => {
+    const summary = list.byId[id]
+    if (summary === undefined) throw new Error(`Session unavailable: ${id}`)
+    return summary
+  }
   const currentId = selectedSession(list)
   const now = Date.now()
   const locale = document.documentElement.lang || navigator.language || 'en'
@@ -86,7 +89,6 @@ export function HiveSessionProjection({
     setRenameDraft(row.title ?? '')
     setRenameError(undefined)
     setActionError(undefined)
-    setMenuSession(undefined)
   }
   const confirmRename = (): void => {
     const target = renameTarget
@@ -108,39 +110,36 @@ export function HiveSessionProjection({
     const result = navigator.share?.({ title: row.displayTitle, url: url.toString() })
       ?? navigator.clipboard?.writeText(url.toString())
     void result?.catch((reason) => { console.warn('session share rejected:', reason) })
-    setMenuSession(undefined)
   }
   const runAction = (row: SessionSummary, action: 'fork' | 'archive'): void => {
     setActionError(undefined)
-    setMenuSession(undefined)
     const result = action === 'fork' ? forkSession(row.id) : archiveSession(row.id)
     void result.catch((reason) => { setActionError(reason instanceof Error ? reason.message : String(reason)) })
   }
 
   return <section className={css.root} aria-label={t('section.sessions')}>
-    <button type="button" className={css.create} onClick={createSession}>{t('session.new')}</button>
-    <div className={css.heading}>{t('section.sessions')}</div>
-    {actionError !== undefined && <p className={css.error} role="alert">{actionError}</p>}
+    <button type="button" className={css.newSession} onClick={createSession}><IconNewChatOutlineRegular /><span>{t('session.new')}</span></button>
+    <div className={css.recentHeading}>{t('section.sessions')}</div>
+    {actionError !== undefined && <p className={css.renameError} role="alert">{actionError}</p>}
     {rows.length === 0
       ? <p className={css.empty}>{t('empty.none')}</p>
       : <nav className={css.list} aria-label={t('section.sessions')}>
-        {rows.map((row) => {
-          const title = rowTitle(row, now, locale) || t('session.untitled')
-          const active = currentId === row.id
-          return <div key={row.id} className={css.rowWrap} data-session-owner-preset={presetOf(list, row) ?? 'default'}>
-            <button type="button" className={css.row} data-selected={active || undefined} onClick={() => { openSession(row.id) }}>
-              <span className={css.rowTitle}>{title}</span>
-              <time className={css.time} dateTime={new Date(row.updatedAt).toISOString()}>{new Intl.DateTimeFormat(locale, { month: 'short', day: 'numeric' }).format(row.updatedAt)}</time>
-            </button>
-            <button type="button" className={css.more} aria-label={t('actions.session.aria', { name: title })} aria-expanded={menuSession === row.id} onClick={() => { setMenuSession(value => value === row.id ? undefined : row.id) }}>⋯</button>
-            {menuSession === row.id && <div className={css.menu} role="group" aria-label={title}>
-              <button type="button" onClick={() => { beginRename(row) }}>{t('rename')}</button>
-              <button type="button" onClick={() => { runAction(row, 'fork') }}>Fork</button>
-              <button type="button" onClick={() => { shareSession(row) }}>Share</button>
-              <button type="button" onClick={() => { runAction(row, 'archive') }}>{t('menu.archiveSession')}</button>
-            </div>}
-          </div>
-        })}
+        {rows.map(row => <SessionNodeItem
+          key={row.id} node={row} currentId={currentId} now={now}
+          visibleTitle={row.title.trim() && row.title !== 'deepseek-harness' ? row.title : rowTitle(summaryOf(row.id), now, locale)}
+          hoverTimestamp={new Intl.DateTimeFormat(locale, { dateStyle: 'full', timeStyle: 'long' }).format(row.updatedAt)}
+          recent flat t={t} onOpen={openSession}
+          onRename={(id) => { beginRename(summaryOf(id)) }}
+          onFork={(id) => { runAction(summaryOf(id), 'fork') }}
+          onArchive={(id) => { runAction(summaryOf(id), 'archive') }}
+          onDelete={deleteBridge === undefined ? undefined : (id) => {
+            setActionError(undefined)
+            void deleteBridge(id).then(() => archiveSession(id)).catch((reason) => {
+              setActionError(reason instanceof Error ? reason.message : String(reason))
+            })
+          }}
+          onShare={(id) => { shareSession(summaryOf(id)) }}
+        />)}
       </nav>}
     <Modal open={renameTarget !== undefined} onClose={() => { if (!renameBusy) setRenameTarget(undefined) }}
       title={t('rename.session.title')} closeLabel={t('cancel')} footer={<>
@@ -150,7 +149,7 @@ export function HiveSessionProjection({
       <input className={css.renameInput} value={renameDraft} aria-label={t('field.sessionName')}
         autoFocus disabled={renameBusy} onChange={(event) => { setRenameDraft(event.target.value); setRenameError(undefined) }}
         onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); confirmRename() } }} />
-      {renameError !== undefined && <div className={css.error} role="alert">{renameError}</div>}
+      {renameError !== undefined && <div className={css.renameError} role="alert">{renameError}</div>}
     </Modal>
   </section>
 }
