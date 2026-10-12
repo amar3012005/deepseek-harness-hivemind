@@ -17,6 +17,12 @@ describe('current employee dispatch authority', () => {
     expect(employeeDispatchAllowed({ ...profile, policy_rules: { native_lifecycle: 'invalid' } }, 0)).toBe(false)
     expect(employeeDispatchAllowed({ ...profile, policy_rules: { native_lifecycle: { version: 1, phase: 'active', kind: 'unknown' } } }, 0)).toBe(false)
   })
+  it('keeps a bound, ready Open Dot profile out of the native DSH dispatch loop', () => {
+    expect(employeeDispatchAllowed({ ...profile, policy_rules: {
+      open_dot_employee: { version: 1, execution_backend: 'open-dot', state: 'bound', execution_state: 'ready', dot_id: 'dot-canonical' },
+      native_lifecycle: { version: 1, phase: 'active', kind: 'employee' },
+    } }, 0)).toBe(false)
+  })
 })
 
 it('closing preserves evidence tools but denies business dispatch and research', () => {
