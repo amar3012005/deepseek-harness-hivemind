@@ -178,7 +178,7 @@ export function apply(ctx: Context): void {
       content: [{ type: 'text', text: awakening }],
     })] }
     return { ...decision, messages: [briefing, ...decision.messages] }
-  }, { prepend: true }))
+  })) // Keep the context projection outermost so this admitted briefing is budgeted too.
   ctx.effect(() =>
     ctx.agentTeams.guardTaskUpdates((caller, request) => {
       if (request.action !== 'complete') return
