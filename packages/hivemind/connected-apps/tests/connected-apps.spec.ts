@@ -575,6 +575,48 @@ describe('progressive Composio bridge', () => {
     expect(repeated.messages).toEqual([])
   })
 
+  it('deduplicates producer-owned receipt identity after native bounded replacement and cold restore', async () => {
+    const { Session, SessionId } = await import('@deepseek-ai/dsh-session')
+    const { contextPlugin } = await import('@deepseek-ai/dsh-hivemind-context')
+    const session = Session.create(SessionId('native-bounded-connected'))
+    session.append('hivemind/connected-receipt', { version: 1, tool: 'READ', receipt: { status: 'ready', data: 'evidence '.repeat(5000) } })
+    const agent = { session }
+    const app = harness()
+    const next = vi.fn(async () => ({ kind: 'enter', messages: [] }))
+    const first = await app.listeners.get('agent/pre-step')?.({ agent, turn: 1, messages: [] } as never, next as never) as { kind: 'enter'; messages: unknown[] }
+    expect(first.messages).toHaveLength(1)
+    let bound!: (input: unknown, next: () => Promise<unknown>) => Promise<unknown>
+    contextPlugin({ historyTurns: 3, historyMaxChars: 1000 }).apply({
+      get: () => undefined,
+      effect: (effect: () => unknown) => effect(),
+      on: (_event: string, listener: typeof bound) => { bound = listener; return () => {} },
+    } as never)
+    await bound({ agent, turn: 1, signal: new AbortController().signal }, async () => first)
+    expect(JSON.stringify(session.deriveMessages())).toContain('Recalled context excerpt')
+    const repeated = await app.listeners.get('agent/pre-step')?.({ agent, turn: 1, step: 2, messages: [] } as never, next as never) as { messages: unknown[] }
+    expect(repeated.messages).toEqual([])
+    const restored = Session.create(SessionId('native-bounded-connected-cold'), session.snapshotEvents())
+    const cold = harness()
+    const recovered = await cold.listeners.get('agent/pre-step')?.({ agent: { session: restored }, turn: 2, messages: [] } as never, next as never) as { messages: unknown[] }
+    expect(recovered.messages).toEqual([])
+  })
+
+  it('uses the actual admitted new request after downstream middleware, not incidental continuation wording', async () => {
+    const events = [{ type: 'hivemind/connected-receipt', data: { version: 1, tool: 'connection_authorization', receipt: {
+      status: 'connection_required', session_id: 'old-vercel', request_call_id: 'old-call', toolkits: ['vercel'],
+    } } }]
+    const agent = { session: { header: { id: 'admitted-new-objective' }, snapshotEvents: () => events, append: vi.fn() } }
+    const app = harness()
+    const admitted = { role: 'user', source: { kind: 'user', authenticatedActor: { userId: 'user-a', orgId: 'org-a', name: 'User', role: 'admin' } },
+      content: [{ type: 'text', text: 'Recover the internal release verification and continue by reporting the actual artifact.' }] }
+    const result = await app.listeners.get('agent/pre-step')?.({ agent, turn: 2, messages: [] } as never,
+      (async () => ({ kind: 'enter', messages: [admitted] })) as never) as { messages: unknown[] }
+    expect(result.messages).toEqual([admitted])
+    const repeated = await app.listeners.get('agent/pre-step')?.({ agent, turn: 2, step: 2, messages: [] } as never,
+      (async () => ({ kind: 'enter', messages: [] })) as never) as { messages: unknown[] }
+    expect(repeated.messages).toEqual([])
+  })
+
   it('injects a connected receipt only when its evidence is absent from the visible session', async () => {
     const events: unknown[] = [{ type: 'hivemind/connected-receipt', data: {
       version: 1, tool: 'GMAIL_FETCH_EMAILS', receipt: {
@@ -713,6 +755,19 @@ describe('progressive Composio bridge', () => {
     } as never, next as never) as { messages: unknown[] }
 
     expect(JSON.stringify(decision.messages)).toContain('workflow-continue')
+  })
+
+  it.each([['vercel', true], ['outlook', false]])('correlates connected return to the pending toolkit %s', async (appName, expected) => {
+    const events = [{ type: 'hivemind/connected-receipt', data: { version: 1, workflowSessionId: 'pending-vercel', tool: 'connection_authorization', receipt: {
+      status: 'connection_required', session_id: 'pending-vercel', request_call_id: 'saved-call', toolkit: 'vercel', toolkits: ['vercel'],
+    } } }]
+    const agent = { session: { header: { id: 'connected-return' }, snapshotEvents: () => events, append: vi.fn() } }
+    const app = harness()
+    const request = { role: 'user', source: { kind: 'user' }, content: [{ type: 'text', text: `I've connected ${appName} — continue` }] }
+    const result = await app.listeners.get('agent/pre-step')?.({ agent, turn: 2, messages: [] } as never,
+      (async () => ({ kind: 'enter', messages: [request] })) as never) as { messages: unknown[] }
+    expect(JSON.stringify(result.messages).includes('pending-vercel')).toBe(expected)
+    expect(execute).not.toHaveBeenCalled()
   })
 
   it('does not project a workflow after its native approval was rejected', async () => {

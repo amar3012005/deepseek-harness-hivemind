@@ -965,16 +965,18 @@ function workflowContextMessage(state: UnfinishedWorkflowProjection) {
       type: 'text',
       text: `## Unfinished connected-app workflow\nThis state is reconstructed from durable receipts in this conversation. If the current request continues it, follow its next_action in this session. For wait_connection, pass the exact projected toolkits for one bounded access check. Do not repeat search, check status separately, or using HIVE memory for connected-app evidence. If the user merely changed tasks, leave it pending. If the user explicitly says no, leave it, or stop this request, or evidence establishes the request is no longer necessary, use cancel_connection with the exact saved session_id and request_call_id; do not cancel other requests or disconnect the account.\n${JSON.stringify(projection)}`,
     }],
-    source: { kind: 'plugin', plugin: WORKFLOW_CONTEXT_SOURCE, form: 'recall' },
+    source: { kind: 'plugin', plugin: `${WORKFLOW_CONTEXT_SOURCE}:${discoveryKey(projection)}`, form: 'recall' },
   })
 }
 
+// A continuation must be the request itself, not an incidental verb in a new objective.
 const WORKFLOW_CONTINUATION_REQUEST = new RegExp(
-  String.raw`\b(?:continue|resume|retry|try again|next page|more results|show more|keep going|proceed|`
-    + String.raw`finish (?:it|that)|complete (?:it|that)|same (?:task|request|search|workflow)|`
-    + String.raw`i (?:connected|authorized)|connection (?:is )?(?:done|ready))\b`,
+  String.raw`^(?:please\s+)?(?:continue|resume|retry|try again|next page|more results|show more|keep going|proceed|`
+    + String.raw`finish (?:it|that)|complete (?:it|that))`
+    + String.raw`(?:\s+(?:with\s+)?(?:the\s+)?(?:same|previous|pending)\s+(?:task|request|search|workflow))?[.!?\s]*$`,
   'iu',
 )
+const CONNECTION_RETURN_REQUEST = /^(?:i(?:'ve| have)?\s+(?:connected|authorized)\b|connection (?:is )?(?:done|ready)\b)/iu
 
 /** Return only the current human-authored request, never a plugin projection. */
 function latestUserRequest(messages: readonly unknown[] | undefined): string | undefined {
@@ -996,11 +998,13 @@ function latestUserRequest(messages: readonly unknown[] | undefined): string | u
  * read exposed pagination. Automatic auth-return turns have no human message
  * and still resume; human-authored turns require an explicit continuation.
  */
-function shouldProjectWorkflow(messages: readonly unknown[] | undefined): boolean {
+function shouldProjectWorkflow(messages: readonly unknown[] | undefined, toolkits: readonly string[] = []): boolean {
   if (messages?.some(message => record(message) && record(message['source'])
     && message['source']['kind'] === 'hivemind-runtime-event')) return false
   const request = latestUserRequest(messages)
   return request === undefined || WORKFLOW_CONTINUATION_REQUEST.test(request)
+    || (CONNECTION_RETURN_REQUEST.test(request) && toolkits.some(toolkit =>
+      request.toLocaleLowerCase().includes(toolkit.toLocaleLowerCase())))
 }
 
 function discoveryKey(value: unknown): string {
@@ -1464,7 +1468,7 @@ function connectedReceiptContextMessage(receipt: ConnectedReceiptEventData) {
       type: 'text',
       text: `## Most recent connected-app receipt\nThis record was durably retained. Its status distinguishes a working checkpoint, pending intent, failure, or confirmed result; never treat a pending record as success. Use it when the current request refers to those results; do not repeat the provider read merely to reconstruct context.\n${JSON.stringify(receipt)}`,
     }],
-    source: { kind: 'plugin', plugin: RECEIPT_CONTEXT_SOURCE, form: 'recall' },
+    source: { kind: 'plugin', plugin: `${RECEIPT_CONTEXT_SOURCE}:${discoveryKey(receipt)}`, form: 'recall' },
   })
 }
 
@@ -1489,7 +1493,9 @@ function hasVisiblePluginContext(messages: readonly unknown[], expected: ReturnT
     && record(message['source'])
     && message['source']['kind'] === 'plugin'
     && message['source']['plugin'] === source.plugin
-    && messageText(message) === text)
+    // Producer-owned digest survives model-facing bounded content replacements.
+    && (source.plugin.startsWith(`${WORKFLOW_CONTEXT_SOURCE}:`)
+      || source.plugin.startsWith(`${RECEIPT_CONTEXT_SOURCE}:`) || messageText(message) === text))
 }
 
 function hasVisibleReceipt(messages: readonly unknown[], receipt: ConnectedReceiptEventData): boolean {
@@ -1571,6 +1577,7 @@ export function apply(ctx: Context, config: Config = {}): void {
     billableCalls: number
     workflowId?: string
     projectWorkflow: boolean
+    admissionResolved: boolean
     initialReceiptSignature: string
   }>()
   const apiKey = config.apiKey?.trim()
@@ -2486,7 +2493,8 @@ export function apply(ctx: Context, config: Config = {}): void {
         enabled: connectedAppsEnabled(ctx, config.enabledByDefault === true),
         searchFingerprints: new Set(),
         billableCalls: 0,
-        projectWorkflow: shouldProjectWorkflow(messages),
+        projectWorkflow: false,
+        admissionResolved: false,
         initialReceiptSignature: JSON.stringify(latestConnectedReceipt(agent)) ?? '',
       })
     }
@@ -2503,8 +2511,18 @@ export function apply(ctx: Context, config: Config = {}): void {
     }
     const state = turns.get(agent)
     if (state === undefined) return decision
-    const projectWorkflow = state.projectWorkflow
     const unfinished = unfinishedWorkflow(agent.session.snapshotEvents(), turn)
+    if (!state.admissionResolved) {
+      const pending = pendingConnectionReceipt(agent)
+      const payload = pending !== undefined && record(pending.receipt) ? pending.receipt : undefined
+      const toolkits = unfinished?.toolkits ?? (payload === undefined ? [] : [
+        ...stringArray(payload['toolkits']),
+        ...(typeof payload['toolkit'] === 'string' ? [payload['toolkit']] : []),
+      ])
+      state.projectWorkflow = shouldProjectWorkflow([...(messages ?? []), ...decision.messages], toolkits)
+      state.admissionResolved = true
+    }
+    const projectWorkflow = state.projectWorkflow
     const visibleMessages = [...visibleSessionMessages(agent.session), ...messages]
     const projections: ReturnType<typeof createUserMessage>[] = []
     if (unfinished !== undefined && projectWorkflow) {
