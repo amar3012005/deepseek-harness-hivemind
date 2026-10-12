@@ -6,7 +6,7 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import { sessionOwner } from './continuity.ts'
 import { currentNightlyOccurrence } from './nightly-routine-guidance.ts'
-import type {} from '@deepseek-ai/dsh-hivemind-employee-directory'
+import { employeeDispatchAllowed } from '@deepseek-ai/dsh-hivemind-employee-directory'
 import type {} from '@deepseek-ai/dsh-agent-presets'
 
 interface RoomDelivery {
@@ -99,7 +99,7 @@ export async function reconcileRoomMessages(ctx: Context, rooms: RoomDelivery, a
     }
     // Never infer an identity or change a saved target when permissions or the roster changed.
     const profile = delivery.target === 'runtime' ? undefined : authorizedRecipient(directory.profiles, delivery.target)
-    if (delivery.target !== 'runtime' && (profile === undefined || profile['status'] === 'paused'
+    if (delivery.target !== 'runtime' && (profile === undefined || !employeeDispatchAllowed(profile) || profile['status'] === 'paused'
       || profile['status'] === 'archived' || profile['archived_at'] || profile['archivedAt'])) continue
     try {
       await rooms.deliverAgentMessage(agent, { key: delivery.key, target: delivery.target, kind: packet.kind, text: packet.text,
@@ -246,6 +246,7 @@ export function installAgentMessaging(ctx: Context): void {
         const target = input.recipient === 'runtime' ? undefined : authorizedRecipient(directory.profiles, input.recipient)
         if (input.recipient !== 'runtime' && !target) throw new Error('agent_message_recipient_not_authorized: no exact ID, unique slug or unique name matches the authenticated employee directory. Read hivemind_hq_contract action list for employee IDs; delegated child teammates use native Team send_message. Do not guess session IDs or retry an unauthorized recipient.')
         if (target !== undefined && (target['status'] === 'paused' || target['status'] === 'archived' || target['archived_at'] || target['archivedAt'])) throw new Error('agent_message_recipient_unavailable')
+        if (target !== undefined && !employeeDispatchAllowed(target)) throw new Error('employee_native_dispatch_unavailable: choose a nativeDispatchAvailable employee from hivemind_hq_contract; external employee providers require their own authenticated dispatch route.')
         const targetProfile = target === undefined ? undefined : { id: String(target['id']), name: String(target['name']), role: typeof target['role_archetype'] === 'string' ? target['role_archetype'] : 'HIVE-MIND employee' }
         const events = agent.session.snapshotEvents()
         const messageId = `agent-message-${createHash('sha256').update(JSON.stringify([agent.id, input.message_key])).digest('hex')}`

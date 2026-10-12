@@ -202,6 +202,12 @@ describe('company packet recovery independent of native Team retries', () => {
     expect(f.rooms.deliverAgentMessage).toHaveBeenCalledTimes(1)
     expect(f.rooms.deliverAgentMessage.mock.calls[0]?.[1]).toMatchObject({ key: 'same-key', target: 'employee', text: f.packet.text })
   })
+  it('does not recover a native packet into an external-provider employee', async () => {
+    const f = recoveryFixture()
+    Reflect.set(f.profiles[0] ?? {}, 'policy_rules', { open_dot_employee: { version: 1 } })
+    await reconcileRoomMessages(f.ctx, f.rooms, f.agent, new AbortController().signal)
+    expect(f.rooms.deliverAgentMessage).not.toHaveBeenCalled()
+  })
   it('recovers legacy packets only when an actual saved tool call supplies the matching stable key', async () => {
     const { createHash } = await import('node:crypto')
     const f = recoveryFixture()

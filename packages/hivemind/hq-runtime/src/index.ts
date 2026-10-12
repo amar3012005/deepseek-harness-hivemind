@@ -1,3 +1,4 @@
+import { employeeDispatchAllowed } from '@deepseek-ai/dsh-hivemind-employee-directory'
 import { savedOperatingEvidence } from './review-operating-evidence.ts'
 /** HQ policy extends native Team tasks instead of maintaining a competing board. */
 import {
@@ -285,6 +286,7 @@ export function apply(ctx: Context): void {
             employees: directory.profiles.map(profile => ({
               id: profile['id'] ?? null, name: profile['name'] ?? null, slug: profile['slug'] ?? null,
               role: profile['role_archetype'] ?? profile['role'] ?? 'HIVE-MIND employee',
+              nativeDispatchAvailable: employeeDispatchAllowed(profile),
             })),
             contracts: contracts.map(contract => ({
               ...contract,
