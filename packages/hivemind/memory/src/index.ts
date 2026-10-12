@@ -172,7 +172,7 @@ export class MemoryApprovalService extends TypertRemoteService {
     return (snapshot?.active ?? []).filter((item) => {
       const saved = checkpointFor(agent, item.callId)
       return saved !== undefined && sameOwner(owner, saved.owner)
-    }).map(({ result: _result, ...item }) => item)
+    })
   }
 
   @Remote

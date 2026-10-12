@@ -22,8 +22,8 @@ export interface MemorySaveApprovalProjectionState {
 }
 
 export interface MemorySaveApprovalProjectionView {
-  readonly active: readonly MemorySaveApprovalItem[]
-  readonly settled: readonly MemorySaveApprovalItem[]
+  readonly active: readonly MemorySaveApprovalViewItem[]
+  readonly settled: readonly MemorySaveApprovalViewItem[]
 }
 
 declare module '@deepseek-ai/dsh-session-projection/types' {
@@ -35,7 +35,7 @@ declare module '@deepseek-ai/dsh-session-projection/types' {
   }
 }
 
-const itemSchema: z.ZodType<MemorySaveApprovalItem> = z.object({
+const itemSchema = z.object({
   callId: z.string().min(1),
   operationId: z.string().optional(),
   tool: z.string().min(1),
@@ -49,9 +49,10 @@ const stateSchema: z.ZodType<MemorySaveApprovalProjectionState> = z.object({
   items: z.array(itemSchema),
 }).strict()
 
+const viewItemSchema: z.ZodType<MemorySaveApprovalViewItem> = itemSchema.omit({ result: true })
 const viewSchema: z.ZodType<MemorySaveApprovalProjectionView> = z.object({
-  active: z.array(itemSchema),
-  settled: z.array(itemSchema),
+  active: z.array(viewItemSchema),
+  settled: z.array(viewItemSchema),
 }).strict()
 
 function fromCheckpoint(checkpoint: SaveCheckpoint): MemorySaveApprovalItem {
@@ -85,10 +86,13 @@ export const memorySaveApprovalProjection = {
   },
   wire: {
     viewSchema,
-    view: (state: MemorySaveApprovalProjectionState): MemorySaveApprovalProjectionView => ({
-      active: state.items.filter(item => item.status === 'pending' || item.status === 'approved' || item.status === 'executing'),
-      settled: state.items.filter(item => item.status === 'declined' || item.status === 'completed' || item.status === 'failed'),
-    }),
+    view: (state: MemorySaveApprovalProjectionState): MemorySaveApprovalProjectionView => {
+      const publicItem = ({ result: _result, ...item }: MemorySaveApprovalItem): MemorySaveApprovalViewItem => item
+      return {
+        active: state.items.filter(item => item.status === 'pending' || item.status === 'approved' || item.status === 'executing').map(publicItem),
+        settled: state.items.filter(item => item.status === 'declined' || item.status === 'completed' || item.status === 'failed').map(publicItem),
+      }
+    },
   },
   stateVersion: 1,
 } satisfies ProjectionDefinition<'hivemindMemorySaveApprovals', MemorySaveApprovalProjectionState>
