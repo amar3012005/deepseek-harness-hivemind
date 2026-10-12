@@ -2629,3 +2629,5 @@ export function createDreamConnectorService(
 }
 export type { DreamAccount, DreamGrant, DreamContract, DreamContractCache } from './dream-connectors.ts'
 export { validateDreamArguments, isDreamReadTool } from './dream-connectors.ts'
+
+export type { DelegatedConnectionRequest, DelegatedConnectionReceipt } from './delegated-blocker.ts'

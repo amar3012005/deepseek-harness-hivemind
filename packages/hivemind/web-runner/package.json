@@ -29,6 +29,7 @@
     "ws": "^8.18.3"
   },
   "peerDependencies": {
+    "@deepseek-ai/dsh-jobs": "workspace:^",
     "@deepseek-ai/cordis": "workspace:^",
     "@deepseek-ai/dsh-client-connection": "workspace:^",
     "@deepseek-ai/dsh-host-webserver": "workspace:^",
@@ -48,6 +49,7 @@
     "@deepseek-ai/dsh-user-questions": "workspace:^"
   },
   "devDependencies": {
+    "@deepseek-ai/dsh-jobs": "workspace:^",
     "@deepseek-ai/cordis": "workspace:^",
     "@deepseek-ai/dsh-client-connection": "workspace:^",
     "@deepseek-ai/dsh-host-webserver": "workspace:^",
