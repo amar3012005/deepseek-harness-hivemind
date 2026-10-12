@@ -9,14 +9,18 @@ describe('HIVE-MIND saved approval projection', () => {
       callId: 'save-call-1', rootCallId: 'root-1', tool: 'hivemind_meta', arguments: { operation: 'save' },
       requests: [{ title: 'Decision', content: 'Keep private memory approval gated.', sourceType: 'decision' }],
       operationId: 'saveop:exact', approvalRequest: { title: 'Decision', content: 'Keep private memory approval gated.', sourceType: 'decision' },
-      owner: { orgId: 'org-1', userId: 'user-1', profile: 'hivemind-chat', variation: 'test' }, status: 'pending',
+      owner: { orgId: 'org-1', userId: 'user-1', profile: 'hivemind-chat', variation: 'test' }, status: 'pending', result: { saved: 'private-result' },
     }
     const event = (status: SaveCheckpoint['status']) => ({ type: 'hivemind/memory-save-checkpoint', data: { ...checkpoint, status } }) as never
     let state: MemorySaveApprovalProjectionState = memorySaveApprovalProjection.init()
     state = memorySaveApprovalProjection.apply(state, event('pending'))
+    expect(state.items[0]?.result).toEqual({ saved: 'private-result' })
     expect(memorySaveApprovalProjection.wire.view(state)).toMatchObject({ active: [{ callId: 'save-call-1', operationId: 'saveop:exact' }], settled: [] })
+    expect(memorySaveApprovalProjection.wire.view(state).active[0]).not.toHaveProperty('result')
     state = memorySaveApprovalProjection.apply(state, event('declined'))
+    expect(state.items[0]?.result).toEqual({ saved: 'private-result' })
     expect(memorySaveApprovalProjection.wire.view(state)).toMatchObject({ active: [], settled: [{ callId: 'save-call-1', status: 'declined' }] })
+    expect(memorySaveApprovalProjection.wire.view(state).settled[0]).not.toHaveProperty('result')
     expect(JSON.stringify(memorySaveApprovalProjection.wire.view(state))).not.toContain('user-1')
 
     // Session projections are pure folds, so the durable log alone is enough
