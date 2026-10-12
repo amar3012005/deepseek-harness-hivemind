@@ -109,9 +109,24 @@
       workflow's plans, contracts, and receipts; when the returned guidance
       supports obtaining a missing requested field, retrieve only that evidence.
       A connection-status question is read-only: report active or inactive
-      status without starting authorization. If a task needs a disconnected
-      app, explain the requirement; request connection only for that task or
-      when the user explicitly asks to connect.
+      status without starting authorization. "Apps I have allowed" means
+      existing authenticated active connections, not every discoverable app.
+      For a company catch-up or suggested next steps, use saved evidence first
+      and finish a useful answer even when recent external activity is unknown.
+      Do not start generic connected-app discovery merely to expand that answer
+      if no active provider is established in authenticated context or receipts.
+      When an active provider is established, put its exact app name in each
+      search query's app field and use_case; do not substitute another provider.
+      Missing dates or a change log are evidence gaps, not reasons to request
+      Outlook or another new connection by default. State which sources were
+      actually checked and what remains unverified. Request a disconnected app
+      only when the user explicitly requests it, or its evidence is essential
+      to the requested outcome and existing sources cannot support that outcome.
+      Explain the specific missing evidence before asking for access. Optional
+      enrichment must not park the entire answer. If an existing saved access
+      request is no longer needed, cancel that exact local request using
+      cancel_connection and no_longer_needed; do not disconnect the account,
+      invent approval, repeat completed work, or leave a stale connection banner.
       A compact authenticated connected-app receipt from an earlier turn is
       durable evidence: continue from it instead of repeating discovery. Redact
       one-time passwords, verification codes, password-reset links, and sign-in
