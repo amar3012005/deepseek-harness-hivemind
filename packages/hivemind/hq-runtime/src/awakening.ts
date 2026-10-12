@@ -75,10 +75,33 @@ export async function awakeningMethod(ctx: Context, agent: Agent, messages: read
   const method = await skills.get('runtime-company-awakening', { scope: agent, cwd: agent.session.header.cwd, signal })
   if (!method?.invocation.modelInvocable || !method.content.trim()) throw new Error('hq_awakening_skill_unavailable')
   const text = `<skill_content name="${method.name}">\n${method.content}\n</skill_content>`
-  // Reuse the complete current body if already visible; a changed provider body
-  // is reread at admission and replaces only this ephemeral method projection.
-  if (messages.some(message => message.content.some(block => block.type === 'text' && block.text.includes(method.content)))) return []
-  return [createUserMessage({ source: { kind: 'plugin', plugin: 'hivemind-hq/awakening-method', form: 'recall' }, content: [{ type: 'text', text }] })]
+  // pre-step decisions contain newly claimed input, not existing model history.
+  // Read the native surface so reuse survives later steps and cold restoration.
+  const visible = new Set(agent.session.surface.nodes)
+  const owned = agent.session.snapshotEvents().filter(event => visible.has(event.seq)
+    && event.type === 'user/message' && event.data.source.kind === 'plugin'
+    && event.data.source.plugin === 'hivemind-hq/awakening-method')
+  const matches = (message: UserMessage) => message.source.kind === 'plugin'
+    && message.source.plugin === 'hivemind-hq/awakening-method'
+    && message.content.some(block => block.type === 'text' && block.text === text)
+  if (owned.length === 1 && owned[0]?.type === 'user/message' && matches(owned[0].data)) return []
+  if (owned.length) {
+    // Only our method projection is replaced. Raw versions and every unrelated
+    // message, task and approval remain untouched in the append-only journal.
+    owned.forEach((event, index) => {
+      const message = createUserMessage({ source: { kind: 'plugin',
+        plugin: index === 0 ? 'hivemind-hq/awakening-method' : 'hivemind-hq/awakening-method-superseded', form: 'recall' },
+      content: [{ type: 'text', text: index === 0 ? text : 'Duplicate awakening method superseded; use the current method.' }] })
+      agent.session.append('user/message', message, {
+        surfaceOp: { op: 'replace', startSeq: event.seq, endSeq: event.seq }, sourceEventSeqs: [event.seq],
+      })
+    })
+    return []
+  }
+  if (messages.some(matches)) return []
+  return [createUserMessage({ source: { kind: 'plugin', plugin: 'hivemind-hq/awakening-method', form: 'recall' },
+    content: [{ type: 'text', text }] })]
+
 }
 function safeImage(value: unknown): string | undefined {
   // Only the existing authenticated same-origin artifact surface; never arbitrary remote pixels or credential URLs.

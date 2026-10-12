@@ -31,15 +31,21 @@ it('admits current stage before the first model request, saves full history and 
   const dir = await mkdtemp(join(tmpdir(), 'runtime-stage-loader-'))
   const ctx = new Context()
   let boardReads = 0
+  let awakeningBody: string = companyAwakeningSkill.content
   const adapter = new MockAdapter([textResponse('I will inspect the current deployment evidence.'), textResponse('Hello!'), textResponse('I will continue our authorized preparation.'),
     toolCallResponse('receive-current-result', 'fixture_employee_result', {}),
     toolCallResponse('inspect-current-result', 'fixture_inspection', {}), textResponse('I reviewed the saved contribution.'),
-    textResponse('I will request the current daily evidence.'), textResponse('I will reconcile the saved daily reply.'), textResponse('I will orient using the complete awakening method.')])
+    textResponse('I will request the current daily evidence.'), textResponse('I will reconcile the saved daily reply.'), toolCallResponse('awakening-first-read', 'fixture_inspection', {}),
+    toolCallResponse('awakening-second-read', 'fixture_inspection', {}), textResponse('I will orient using the complete awakening method.'),
+    textResponse('I will continue the same method.'), textResponse('I will use the updated method.')])
   const dependencies = { name: 'stage-fixture', async apply(scope: Context) {
     await mountAgentLoopTestDependencies(scope)
     await scope.plugin(ExecutionScope)
     await scope.plugin(SkillRegistry)
-    scope.get('skills')!.register(companyAwakeningSkill)
+    scope.get('skills')!.registerProvider(() => ({ name:'awakening-fixture-provider',
+      list:async()=>[{ ...companyAwakeningSkill, provider:'awakening-fixture-provider', rank:1, locator:null }],
+      get:async()=>({ ...companyAwakeningSkill,provider:'awakening-fixture-provider',content:awakeningBody }),
+    }))
     await scope.plugin(JsonlSessionPersistence, { root: join(dir, 'sessions') })
     await scope.plugin(TestSessionQuery)
     await scope.plugin(AgentLoop, { agents: [] })
@@ -152,10 +158,26 @@ it('admits current stage before the first model request, saves full history and 
     expect(boardReads).toBe(5)
     agent.session.append('hivemind/hq-awakening-start', { version:1, turn:7, startedAt:new Date().toISOString() })
     agent.send(createUserMessage({ source:{ kind:'user' },content:[{ type:'text',text:'Orient us using the unfinished awakening.' }] }), 'next-turn', true)
-    await vi.waitFor(() => expect(adapter.requests).toHaveLength(9))
+    await vi.waitFor(() => expect(adapter.requests).toHaveLength(11))
     await vi.waitFor(() => expect(agent.status).toBe('idle'))
     expect(JSON.stringify(adapter.requests[8])).toContain(JSON.stringify(companyAwakeningSkill.content).slice(1,-1))
     expect(JSON.stringify(adapter.requests[8])).toContain('Initial orientation:')
+    const copies = (request: unknown, body: string) => JSON.stringify(request).split(JSON.stringify(`<skill_content name="runtime-company-awakening">\n${body}\n</skill_content>`).slice(1,-1)).length - 1
+    for (const request of adapter.requests.slice(8,11)) expect(copies(request,awakeningBody)).toBe(1)
+    agent.send(createUserMessage({ source:{ kind:'user' },content:[{ type:'text',text:'Continue this unfinished orientation.' }] }), 'next-turn', true)
+    await vi.waitFor(() => expect(adapter.requests).toHaveLength(12))
+    await vi.waitFor(() => expect(agent.status).toBe('idle'))
+    expect(copies(adapter.requests[11],awakeningBody)).toBe(1)
+    const originalBody=awakeningBody
+    awakeningBody += '\nNew current method revision.'
+    const before=agent.session.snapshotEvents()
+    agent.send(createUserMessage({ source:{ kind:'user' },content:[{ type:'text',text:'Continue with the revised orientation method.' }] }), 'next-turn', true)
+    await vi.waitFor(() => expect(adapter.requests).toHaveLength(13))
+    await vi.waitFor(() => expect(agent.status).toBe('idle'))
+    expect(copies(adapter.requests[12],awakeningBody)).toBe(1)
+    expect(copies(adapter.requests[12],originalBody)).toBe(0)
+    expect(agent.session.snapshotEvents().slice(0,before.length)).toEqual(before)
+
     expect(ctx.tools.get('hivemind_hq_rest')).toBeDefined()
     await ctx.fiber.dispose()
     expect(ctx.get('tools')).toBeUndefined()
