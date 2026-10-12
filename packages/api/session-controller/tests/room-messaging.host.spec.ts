@@ -23,7 +23,9 @@ function fixture() {
   const ctx = {
     serial: async () => undefined,
     agents: { get: (id: string) => agents.get(id) },
-    sessions: { get: (id: string) => [...agents.values()].find(value => value.id === id)?.session, flush: vi.fn(() => Promise.resolve(true)) },
+    sessions: { get: (id: string) => [...agents.values()].find(value => value.id === id)?.session,
+      flush: vi.fn(() => Promise.resolve(true)),
+    },
   } as unknown as Context
   const open = vi.fn((key: string) => Promise.resolve(key === 'runtime' ? caller : ravi))
   const messaging = new RoomMessaging(ctx, open)
@@ -69,8 +71,10 @@ describe('Persistent agent room messaging', () => {
     const agents = (ctx as unknown as { agents: { get: (id: string) => Agent | undefined } }).agents
     const originalGet = agents.get.bind(agents)
     vi.spyOn(agents, 'get').mockImplementation(id => id === proxy.id ? proxy : originalGet(id))
+    const originalSessionGet = ctx.sessions.get.bind(ctx.sessions)
+    vi.spyOn(ctx.sessions, 'get').mockImplementation(id => id === proxy.id ? proxy.session : originalSessionGet(id))
     let accept!: () => void
-    const acceptance = new Promise<void>(resolve => { accept = resolve })
+    const acceptance = new Promise<void>((resolve) => { accept = resolve })
     const delivered = vi.fn(async () => { await acceptance; return { receiptId: 'dot-job-42', status: 'accepted' as const } })
     proxy.session.append('hivemind/session-owner', { id: 'employee-dot', slug: 'open-dot-employee' } as never)
     proxy.session.append('hivemind/external-employee-room', {
@@ -135,7 +139,7 @@ describe('Persistent agent room messaging', () => {
     const { caller, messaging, request } = fixture()
     await messaging.send(caller, request, signal)
     await expect(messaging.send(caller, { ...request, text: 'different' }, signal)).rejects.toThrow('key_conflict')
-    await expect(messaging.send(caller, { ...request, key: 'self', target: 'runtime' }, signal)).rejects.toThrow('self_target')
+    await expect(messaging.send(caller, { ...request, key: 'self', target: 'runtime', targetProfile: undefined }, signal)).rejects.toThrow('self_target')
     await expect(messaging.send(caller, { ...request, key: 'reply', kind: 'reply' }, signal)).rejects.toThrow('reply_reference')
   })
   it('correlates a reply to its original room and rejects runaway exchanges', async () => {

@@ -71,7 +71,7 @@ it('reattaches a saved Open Dot receipt when a real AgentLoop resumes its persis
   const schedulePool = new MemoryMediaPool()
   const first = await mount(join(dataRoot, 'sessions'), schedulePool)
   const rootSession = first.sessions.prepare(rootId, { meta: { agentPreset: 'hivemind-hq' } })
-  rootSession.append('hivemind/session-owner', { id: 'runtime-owner', slug: 'runtime', name: 'Runtime' })
+  rootSession.append('hivemind/session-owner', { id: 'runtime-owner', slug: 'runtime', name: 'Runtime', role: 'AI Chief of Staff' })
   rootSession.append('turn/start', { turn: 1 })
   rootSession.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
   const rootWriter = await first.sessionPersistence.create(rootSession.header)
@@ -120,7 +120,7 @@ it('reattaches a saved Open Dot receipt when a real AgentLoop resumes its persis
   expect(resumed.agent.session.ownEvents().filter(event => event.type === 'hivemind/open-dot-runtime-reconcile-wake')).toHaveLength(1)
   await expect.poll(async () => (await second.schedule.catalog()).filter(item => item.sessionId === rootId))
     .toMatchObject([{
-      sessionId: rootId, title: "Open Dot Runtime recovery", prompt: expect.stringContaining(dispatchMessageId),
+      sessionId: rootId, title: 'Open Dot Runtime recovery', prompt: expect.stringContaining(dispatchMessageId),
     }])
   await expect.poll(() => startJob).toHaveBeenCalledOnce()
   expect(resumed.agent.session.ownEvents().filter(event => event.type === 'turn/start')).toHaveLength(1)
