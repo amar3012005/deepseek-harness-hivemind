@@ -4,6 +4,10 @@ import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 export function employeeDispatchAllowed(profile: Record<string, JsonValue> | undefined, now = Date.now()): boolean {
   if (profile === undefined || profile['status'] === 'paused' || profile['archived_at']) return false
   const rules = profile['policy_rules']
+  // Canonical roster visibility does not authorize a native DSH execution loop.
+  // External employee dispatch needs its own authenticated provider admission.
+  if (typeof rules === 'object' && rules !== null && !Array.isArray(rules)
+    && Object.hasOwn(rules, 'open_dot_employee')) return false
   const lifecycle = typeof rules === 'object' && rules !== null && !Array.isArray(rules) ? rules['native_lifecycle'] : undefined
   if (lifecycle === undefined) return true
   if (typeof lifecycle !== 'object' || lifecycle === null || Array.isArray(lifecycle)) return false
