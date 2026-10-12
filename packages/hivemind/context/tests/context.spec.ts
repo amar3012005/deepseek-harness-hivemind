@@ -643,7 +643,10 @@ it('native prepared model request sees the replaced mixed receipt, not the full 
     await ctx.plugin(AgentLoop, { agents: [] })
     await ctx.plugin(contextPlugin({ historyTurns:3,historyMaxChars:3000,capabilityToolName:'hivemind_capabilities' }))
     ctx.get('llm')!.registerAdapter(['mock'],adapter)
-    const image={ type:'image',url:'https://example.invalid/native-saved-image.png',mimeType:'image/png' } as const
+    const image = { type: 'image', attachment: {
+      attachmentId: `sha256:${'a'.repeat(64)}` as never,
+      mediaType: 'image/png', bytes: 32, width: 1, height: 1,
+    } } as const
     ctx.get('tools')!.register(defineTool({ name:'fixture_saved_receipt',description:'Saved source receipt fixture.',parameters:{},
       output:{ schema:{ type:'object',properties:{},additionalProperties:true },
         render:()=>[{ type:'text',text:'Original saved HTML '.repeat(3000) },image] },
@@ -654,7 +657,7 @@ it('native prepared model request sees the replaced mixed receipt, not the full 
     await vi.waitFor(()=>expect(adapter.requests).toHaveLength(2))
     await vi.waitFor(()=>expect(agent.status).toBe('idle'))
     const request=adapter.requests[1]
-    expect(JSON.stringify(request)).toContain(image.url)
+    expect(JSON.stringify(request)).toContain(image.attachment.attachmentId)
     expect(JSON.stringify(request)).not.toContain('Original saved HTML '.repeat(1000))
     expect(JSON.stringify(request)).toContain('hyperagents_history')
     const originals=agent.session.snapshotEvents().filter(event=>event.type==='tool/result'

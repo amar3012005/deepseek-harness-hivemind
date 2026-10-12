@@ -586,7 +586,7 @@ describe('progressive Composio bridge', () => {
     const first = await app.listeners.get('agent/pre-step')?.({ agent, turn: 1, messages: [] } as never, next as never) as { kind: 'enter'; messages: unknown[] }
     expect(first.messages).toHaveLength(1)
     let bound!: (input: unknown, next: () => Promise<unknown>) => Promise<unknown>
-    contextPlugin({ historyTurns: 3, historyMaxChars: 1000 }).apply({
+    contextPlugin({ historyTurns: 3, historyMaxChars: 1000, capabilityToolName: 'hivemind_capabilities' }).apply({
       get: () => undefined,
       effect: (effect: () => unknown) => effect(),
       on: (_event: string, listener: typeof bound) => { bound = listener; return () => {} },
