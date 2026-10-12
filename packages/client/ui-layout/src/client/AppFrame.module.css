@@ -87,7 +87,7 @@
 /* The rail floats beside the native centered transcript, leaving the main
    column geometry stable when it hides for HIVE's alternate canvases. */
 @media (min-width: 1101px) {
-  .frame[data-external-chrome]:has(.sessionRailCol nav):has([data-sidebar-right-open]) .centerCol {
+  .frame[data-external-chrome]:has(.sessionRailCol nav) .centerCol {
     padding-left: 232px;
     box-sizing: border-box;
   }

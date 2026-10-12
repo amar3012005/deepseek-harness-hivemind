@@ -5,10 +5,7 @@
   height: 100%;
   padding: 10px;
   box-sizing: border-box;
-  border: 1px solid var(--dsw-alias-border-l3);
-  border-radius: 14px;
-  background: var(--dsw-alias-bg-base);
-  box-shadow: 0 6px 24px rgb(0 0 0 / 8%);
+  color: var(--dsw-alias-label-primary);
 }
 
 .create {
