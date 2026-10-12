@@ -412,6 +412,8 @@ export interface ScheduleUpdateContent {
   readonly title?: string
   /** Reminder instruction, non-empty after trimming; omitted keeps the stored instruction. */
   readonly prompt?: string
+  /** Keep or pause the existing task identity without deleting its receipts. */
+  readonly enabled?: boolean
 }
 
 /** Compare-and-update request within the original Session binding. */

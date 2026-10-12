@@ -554,6 +554,9 @@ export function createRunCodeTool(registry: ToolRuntime, options: RunCodeBridgeO
           schema,
           arguments: normalized.dispatched,
           ...exec.agent ? { agent: exec.agent } : {},
+          ...exec.turn === undefined ? {} : { turn: exec.turn },
+          ...exec.step === undefined ? {} : { step: exec.step },
+          allowParking: true as const,
           parent: exec.token,
           signal: runController.signal,
         }
@@ -563,6 +566,7 @@ export function createRunCodeTool(registry: ToolRuntime, options: RunCodeBridgeO
           // Set by the dispatch stage (or start() for a pre-settled result): what commit() finalizes in submission order.
           let parked:
             | { kind: 'post-result' | 'final-result'; exec: ToolRunContext; result: ToolExecutionResult }
+            | { kind: 'parked'; exec: ToolRunContext; approvalId: string; argumentsDigest: string }
             | undefined
           const settle = (result: ToolExecutionResult): void => {
             // The program gets its value NOW: the log-content listener (for
@@ -632,15 +636,29 @@ export function createRunCodeTool(registry: ToolRuntime, options: RunCodeBridgeO
                 })
                 return
               }
+              if (prepared.kind === 'parked') {
+                parked = prepared
+                this.settled = true
+                return
+              }
               parked = { kind: prepared.kind, exec: prepared.exec, result: prepared.result }
               this.settled = true
             },
             async commit(): Promise<void> {
               /* v8 ignore next -- commit() runs only after `settled` flipped, which set parked. */
               if (parked === undefined) return
-              const result = parked.kind === 'post-result'
-                ? await scheduler.finalize(parked.exec, parked.result)
-                : scheduler.finish(parked.exec, parked.result)
+              const settled = parked
+              if (settled.kind === 'parked') {
+                const savedPark = exec.agent?.session.snapshotEvents().some(event => event.type === 'tool/parked'
+                  && event.data.callId === subCallId && event.data.rootCallId === exec.rootCallId
+                  && event.data.approvalId === settled.approvalId && event.data.argumentsDigest === settled.argumentsDigest)
+                if (!savedPark) throw new Error('PTC tool scheduler returned a park without its durable session event')
+                reject(new Error(`tool call ${name} is suspended for authenticated approval ${settled.approvalId}`))
+                return
+              }
+              const result = settled.kind === 'post-result'
+                ? await scheduler.finalize(settled.exec, settled.result)
+                : scheduler.finish(settled.exec, settled.result)
               if (!result.isError && result.content.some(block => block.type === 'image')) {
                 exec.deferContext(createUserMessage({
                   content: result.content,

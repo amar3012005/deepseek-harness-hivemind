@@ -521,6 +521,7 @@ export const InputBar = memo(function InputBar({
         {variant === 'composer' && input !== undefined && sessionId !== undefined
           ? renderSlot('conversation.composer.dock', {})
           : null}
+        {renderSlot('conversation.composer.footer', {})}
         {activity ? null : <ContextMeter useProjection={useProjection} t={t} />}
       </div>
     </div>

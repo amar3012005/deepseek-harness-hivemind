@@ -1,0 +1,28 @@
+# Bilingual-pair consistency record for README.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write packages/client/ui-hivemind-connect/README.md
+/:
+  en: 24c2308523fc28a9
+  zh: 85e3c9b52e121100
+/deepseek-ai-dsh-client-ui-hivemind-connect:
+  en: d0d2b9a8541047da
+  zh: 3bd8d30a42fb3f8b
+/deepseek-ai-dsh-client-ui-hivemind-connect/summary:
+  en: 71a7a967d61778d5
+  zh: cd69e7d841347007
+/deepseek-ai-dsh-client-ui-hivemind-connect/use-this-package:
+  en: f985ad31a05f501a
+  zh: 925a1708220c69f2
+/deepseek-ai-dsh-client-ui-hivemind-connect/semantics:
+  en: c716bd0c7f4194a5
+  zh: 8a6cbaf7c690975d
+/deepseek-ai-dsh-client-ui-hivemind-connect/model-experience:
+  en: 34b35727dc0e49ef
+  zh: 5f04d709c1a21b38
+/deepseek-ai-dsh-client-ui-hivemind-connect/known-limitations-and-deferred-work:
+  en: 742713dca5eb9db5
+  zh: 096508f313de17e4
+/deepseek-ai-dsh-client-ui-hivemind-connect/dev-note:
+  en: 6093bf806f74b8e8
+  zh: f71f9d72a16e1554

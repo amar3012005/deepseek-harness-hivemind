@@ -1,0 +1,11 @@
+.list { display: grid; gap: 10px; margin-block: 12px; }
+.banner { display: flex; gap: 12px; align-items: flex-start; padding: 16px 18px; border: 1px solid color-mix(in srgb, #b9441b 20%, transparent); border-radius: 12px; background: color-mix(in srgb, #e8bd83 10%, var(--dsw-alias-background-primary, transparent)); }
+.mark { flex: 0 0 28px; display: grid; place-items: center; width: 28px; height: 28px; border-radius: 8px; color: #b9441b; background: color-mix(in srgb, #b9441b 10%, transparent); font-size: 16px; }
+.copy { flex: 1; min-width: 0; }
+.heading { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 12px; }
+.heading strong { font-size: 14px; line-height: 1.5; }
+.heading time { font-size: 11px; opacity: .6; margin-left: auto; }
+.subject { margin: 4px 0; font-size: 13px; line-height: 1.5; overflow-wrap: anywhere; }
+.detail { margin: 3px 0 0; font-size: 12px; line-height: 1.5; opacity: .7; }
+.banner[data-email-status="failed"], .banner[data-email-status="delivery-failed"] { border-color: color-mix(in srgb, var(--dsw-alias-state-error-primary, #c33) 25%, transparent); }
+@media (max-width: 520px) { .banner { padding: 12px; gap: 9px; } .heading time { margin-left: 0; } .heading { display: grid; } .heading strong { font-size: 13px; } .subject { font-size: 12px; } .detail { font-size: 11px; } }

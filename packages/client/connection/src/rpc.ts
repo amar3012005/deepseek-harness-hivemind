@@ -131,6 +131,29 @@ export type ConnectionRpcHandler = (
   peer: PeerScope,
 ) => Promise<ConnectionRpcHandlerResult>
 
+/** Fully decoded authenticated RPC request presented before dispatch. */
+export interface ConnectionRpcAdmissionRequest {
+  /** Fetch request whose envelope was decoded; headers remain available for product authentication. */
+  readonly request: Request
+  /** Validated channel-relative endpoint. */
+  readonly endpoint: string
+  /** Decoded endpoint payload. */
+  readonly payload: unknown
+  /** Carrier cancellation. */
+  readonly signal: AbortSignal
+  /** Peer selected by Connection admission for this request. */
+  readonly peer: PeerScope
+}
+
+/** Wrap one decoded RPC dispatch with product-owned authorization and scope. */
+export type ConnectionRpcAdmission = (
+  request: ConnectionRpcAdmissionRequest,
+  next: () => Promise<ConnectionRpcHandlerResult>,
+) => Promise<ConnectionRpcHandlerResult>
+
+/** Resolve one authenticated non-operator request to its own Peer scope. */
+export type ConnectionPeerAuthenticator = (request: ConnectionTrustRequest) => PeerScope | undefined
+
 /** Synchronous ownership test for one endpoint on a shared RPC channel. */
 export type ConnectionRpcEndpointMatcher = (endpoint: string) => boolean
 
@@ -187,6 +210,13 @@ export interface HostConnectionRpc {
     matches: ConnectionRpcEndpointMatcher,
     handler: ConnectionRpcHandler,
   ): () => Promise<void>
+
+  /**
+   * Wrap every decoded `/api` RPC before its owning Gateway handler.
+   * @param admission - product authorization/scope wrapper.
+   * @returns asynchronous disposer removing this admission layer.
+   */
+  registerAdmission(admission: ConnectionRpcAdmission): () => Promise<void>
 }
 
 /** Host `ctx.connection` members consumed by transport-independent adapters. */
@@ -197,6 +227,14 @@ export interface HostConnectionHandle {
   readonly fetch: HostConnectionFetch
   /** The operator Peer every admitted request speaks for; its scope lives as long as Connection. */
   readonly operator: PeerScope
+
+  /**
+   * Register a product-authenticated Peer alongside the native operator cookie.
+   * Host and Origin trust checks always run before this resolver.
+   * @param authenticate - synchronous authenticator for one trusted request.
+   * @returns asynchronous disposer removing this resolver.
+   */
+  registerPeerAuthenticator(authenticate: ConnectionPeerAuthenticator): () => Promise<void>
 
   /**
    * Whether this deployment accepts authorities beyond loopback: true only

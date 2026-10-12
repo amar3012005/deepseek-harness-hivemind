@@ -2,7 +2,7 @@
 import type { NativeFileApplication } from '@deepseek-ai/dsh-native-command/types'
 
 import type {
-  AttachmentIdType, ImageAttachmentLimits, ImageAttachmentRef, ImageMediaType,
+  AttachmentIdType, FileAttachmentRef, ImageAttachmentLimits, ImageAttachmentRef, ImageMediaType,
 } from '@deepseek-ai/dsh-attachment'
 import type { Branded } from '@deepseek-ai/dsh-brand'
 import type { LlmAttemptId, MessageId } from '@deepseek-ai/dsh-llm/brand'
@@ -298,6 +298,16 @@ export interface SessionCreateValue {
   readonly agentPreset?: string
 }
 
+/** Resolve the authenticated tenant member's canonical employee Session. */
+export interface SessionEmployeeRoomRequest {
+  readonly employeeId: string
+}
+
+/** Canonical employee Session identity returned after Host admission. */
+export interface SessionEmployeeRoomValue {
+  readonly sessionId: SessionId
+}
+
 /** Session model-selection request. */
 export interface SessionSelectModelRequest extends ModelSelection {
   readonly sessionId: SessionId
@@ -360,6 +370,18 @@ export interface SessionAttachmentRequest {
 export interface SessionAttachmentValue {
   readonly attachment: ImageAttachmentRef
   readonly data: string
+}
+
+/** Request to read a durable generic file already referenced by this Session. */
+export interface SessionFileAttachmentRequest {
+  readonly sessionId: SessionId
+  readonly attachmentId: AttachmentIdType
+}
+
+/** Verified file bytes and reference returned through Connection's binary Remote transport. */
+export interface SessionFileAttachmentValue {
+  readonly attachment: FileAttachmentRef
+  readonly data: Uint8Array
 }
 
 /** Pending queue mutation request. */

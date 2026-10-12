@@ -1,11 +1,13 @@
 /** Host timer over stored tasks; Session activation is a delivery operation. */
+import { createHash } from 'node:crypto'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { ContextFormed } from '@deepseek-ai/dsh-llm'
 declare module '@deepseek-ai/dsh-llm' {
   interface MessageSourceMap {
-    'schedule': { kind: 'schedule' } & ContextFormed
+    'schedule': { kind: 'schedule'; deliveryKey?: string; deliveryKeys?: string[] } & ContextFormed
   }
 }
+import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-api-session-controller'
 import { isRecurringScheduleRecord, renderReminderFraming, renderRecurringReminderBatchFraming, resolveRecurringOccurrence } from './domain.ts'
@@ -35,6 +37,8 @@ export class ScheduleRuntime {
     private readonly transact: (work: () => Promise<void>) => Promise<void>,
     private readonly commit: (task: ScheduleTask) => Promise<void>,
     private readonly retention: DeliveryRetentionBounds,
+    private readonly admit: (agent: Agent, task: ScheduleTask) => Promise<boolean> = async () => true,
+    private readonly runAsOwner?: <T>(task: ScheduleTask, work: () => Promise<T>) => Promise<T>,
   ) {}
 
   /**
@@ -98,48 +102,67 @@ export class ScheduleRuntime {
       let admitted = group
       const committed = new Set<ScheduleTask['record']['id']>()
       try {
-        const resolved = await this.ctx.sessionController.resolveAgent(task.sessionId)
-        if ('error' in resolved) throw resolved.error
-        // oxlint-disable-next-line typescript/no-unnecessary-condition -- Disposal can run while Session restoration is awaited.
-        if (this.stopping) return
-        const now = Date.now()
-        // Session restoration can span a wall-clock rollback; future members keep their timer obligation.
-        admitted = group.filter(member => Date.parse(member.record.scheduledAt) <= now)
-        if (admitted.length === 0) continue
-        const recurring = admitted.filter((member): member is ScheduleTask & { record: RecurringScheduleRecord } =>
-          isRecurringScheduleRecord(member.record))
-        const occurrences = recurring.map(member => ({
-          task: member, occurrence: resolveRecurringOccurrence(member.record, now),
-        }))
-        const text = isRecurringScheduleRecord(task.record)
-          ? renderRecurringReminderBatchFraming(occurrences.map(({ task: member, occurrence }) => ({
-            record: member.record, occurrenceAt: occurrence.occurrenceAt,
-          })))
-          : renderReminderFraming(task.record)
-        const message = createUserMessage({
-          content: [{ type: 'text', text }], source: { kind: 'schedule' },
-        })
-        // followup synchronously appends the inbox splice before flush observes the Session.
-        resolved.agent.followup(message)
-        const flushed = await this.ctx.sessions.flush(resolved.agent.session)
-        if (!flushed) throw new Error('Session persistence did not acknowledge the reminder')
-        const deliveredAt = new Date(Date.now()).toISOString()
-        if (!isRecurringScheduleRecord(task.record)) {
-          await this.commit({
-            ...task, status: 'inactive',
-            ...appendDelivery(task, { scheduledAt: task.record.scheduledAt, deliveredAt, messageId: message.id }, this.retention),
+        const deliver = async () => {
+          const resolved = await this.ctx.sessionController.resolveAgent(task.sessionId)
+          if ('error' in resolved) throw resolved.error
+          // oxlint-disable-next-line typescript/no-unnecessary-condition -- Disposal can run while Session restoration is awaited.
+          if (this.stopping) return
+          const now = Date.now()
+          // Session restoration can span a wall-clock rollback; future members keep their timer obligation.
+          admitted = group.filter(member => Date.parse(member.record.scheduledAt) <= now)
+          const allowed: ScheduleTask[] = []
+          for (const member of admitted) {
+            if (await this.admit(resolved.agent, member)) allowed.push(member)
+            else failed.add(member.record.id)
+          }
+          admitted = allowed
+          if (admitted.length === 0) return
+          const recurring = admitted.filter((member): member is ScheduleTask & { record: RecurringScheduleRecord } =>
+            isRecurringScheduleRecord(member.record))
+          const occurrences = recurring.map(member => ({
+            task: member, occurrence: resolveRecurringOccurrence(member.record, now),
+          }))
+          const text = isRecurringScheduleRecord(task.record)
+            ? renderRecurringReminderBatchFraming(occurrences.map(({ task: member, occurrence }) => ({
+              record: member.record, occurrenceAt: occurrence.occurrenceAt,
+            })))
+            : renderReminderFraming(task.record)
+          const deliveryKeys = admitted.map(member => createHash('sha256')
+            .update(`${member.record.id}:${member.record.scheduledAt}`).digest('hex'))
+          const existing = resolved.agent.session.ownEvents().flatMap(event =>
+            event.type === 'agent/inbox/spliced' ? event.data.inserted : event.type === 'user/message' ? [event.data] : [])
+            .find(value => value.source.kind === 'schedule' && value.source.deliveryKey === deliveryKeys[0]
+            && JSON.stringify(value.source.deliveryKeys) === JSON.stringify(deliveryKeys)
+            && value.content.some(block => block.type === 'text' && block.text === text))
+          const deliveryKey = deliveryKeys[0]
+          if (deliveryKey === undefined) throw new Error('Admitted schedule delivery has no idempotency key')
+          const message = existing ?? createUserMessage({
+            content: [{ type: 'text', text }], source: { kind: 'schedule', deliveryKey, deliveryKeys },
           })
-          committed.add(task.record.id)
+          // A durable inbox splice survives a crash before the Schedule domain write.
+          if (!existing) resolved.agent.followup(message)
+          const flushed = await this.ctx.sessions.flush(resolved.agent.session)
+          if (!flushed) throw new Error('Session persistence did not acknowledge the reminder')
+          const deliveredAt = new Date(Date.now()).toISOString()
+          if (!isRecurringScheduleRecord(task.record)) {
+            await this.commit({
+              ...task, status: 'inactive',
+              ...appendDelivery(task, { scheduledAt: task.record.scheduledAt, deliveredAt, messageId: message.id }, this.retention),
+            })
+            committed.add(task.record.id)
+          }
+          for (const { task: member, occurrence } of occurrences) {
+            await this.commit({
+              ...member,
+              record: { ...member.record, scheduledAt: occurrence.nextScheduledAt ?? occurrence.occurrenceAt },
+              status: occurrence.nextScheduledAt === undefined ? 'inactive' : 'active',
+              ...appendDelivery(member, { scheduledAt: occurrence.occurrenceAt, deliveredAt, messageId: message.id }, this.retention),
+            })
+            committed.add(member.record.id)
+          }
         }
-        for (const { task: member, occurrence } of occurrences) {
-          await this.commit({
-            ...member,
-            record: { ...member.record, scheduledAt: occurrence.nextScheduledAt ?? occurrence.occurrenceAt },
-            status: occurrence.nextScheduledAt === undefined ? 'inactive' : 'active',
-            ...appendDelivery(member, { scheduledAt: occurrence.occurrenceAt, deliveredAt, messageId: message.id }, this.retention),
-          })
-          committed.add(member.record.id)
-        }
+        if (this.runAsOwner === undefined) await deliver()
+        else await this.runAsOwner(task, deliver)
       } catch (error: unknown) {
         // Successful commits and targets made future by clock rollback keep their timer obligation.
         const pending = admitted.filter(member => !committed.has(member.record.id))

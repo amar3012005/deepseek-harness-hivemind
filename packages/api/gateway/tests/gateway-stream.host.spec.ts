@@ -388,6 +388,39 @@ describe('Typert Remote streams', () => {
     }
   })
 
+  it('filters forwarded Remote event frames by the authenticated stream peer', async () => {
+    const { ctx } = await setup(false)
+    const source = new RemoteEventSourceProbe()
+    const unregisterEvents = ctx.effect(() => ctx.typertGateway.registerRemoteEvents(source.source, REMOTE_HOST))
+    const foreignPeer = { id: 'foreign-peer', ctx, async dispose() {} } as unknown as PeerScope
+    const ownerPeer = { id: 'owner-peer', ctx, async dispose() {} } as unknown as PeerScope
+    const unregisterAdmission = ctx.effect(() => ctx.typertGateway.registerAdmission(async (request, next) =>
+      request.kind === 'event' && request.peer === foreignPeer ? false : next()))
+    const empty = (async function* () {})()
+    const ownerAbort = new AbortController()
+    const foreignAbort = new AbortController()
+    const ownerEvents = await ctx.typertGateway.wireStream.open('$events', { args: {} }, empty, ownerPeer, ownerAbort.signal)
+    const foreignEvents = await ctx.typertGateway.wireStream.open('$events', { args: {} }, empty, foreignPeer, foreignAbort.signal)
+    const owner = ownerEvents[Symbol.asyncIterator]()
+    const foreign = foreignEvents[Symbol.asyncIterator]()
+    try {
+      await expect(owner.next()).resolves.toMatchObject({ value: { type: 'ready' } })
+      await expect(foreign.next()).resolves.toMatchObject({ value: { type: 'ready' } })
+      source.push({ event: 'session/event', args: [{ agentId: 'session-owned', event: 'private' }] })
+      await expect(owner.next()).resolves.toMatchObject({ value: {
+        type: 'emit', event: 'session/event', args: [{ agentId: 'session-owned', event: 'private' }],
+      } })
+      foreignAbort.abort()
+      await expect(foreign.next()).resolves.toMatchObject({ done: true })
+    } finally {
+      ownerAbort.abort()
+      await owner.return?.()
+      await foreign.return?.()
+      await unregisterAdmission()
+      await unregisterEvents()
+    }
+  })
+
   it.each([false, true])('accepts WebSockets only after application readiness (already ready: %s)', async (alreadyReady) => {
     const startup = new StartupProbe()
     if (alreadyReady) startup.commit()

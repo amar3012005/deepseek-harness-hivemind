@@ -1,5 +1,6 @@
 import { Fragment, memo, useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
+import type { PropsRenderSlots } from '@deepseek-ai/dsh-client-ui-slots'
 import type { PendingSubmission } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { MessageImageSource } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { fileExtension, FileTypeIcon, fileSizeText, JsonBlock, projectUserText, StateDot, TextShimmer } from '@deepseek-ai/dsh-client-ui-primitives'
@@ -343,9 +344,9 @@ export const UserMessageNodeView = memo(function UserMessageNodeView({
 })
 
 /** Injected-context keyed Chat renderer. */
-export const ContextMessageNodeView = memo(function ContextMessageNodeView({ node, t }: ChatNodeViewProps<'context'>) {
+export const ContextMessageNodeView = memo(function ContextMessageNodeView({ node, t, renderSlot }: ChatNodeViewProps<'context'> & PropsRenderSlots<'conversation.chat.contextAvatar'>) {
   const data = node.data
-  return (
+  const message = (
     <ContextInjectionRow
       content={data.content}
       source={data.source}
@@ -354,6 +355,16 @@ export const ContextMessageNodeView = memo(function ContextMessageNodeView({ nod
       t={t}
     />
   )
+  const source = typeof data.source === 'object' && data.source !== null ? data.source : {}
+  const name = 'senderName' in source && typeof source.senderName === 'string' ? source.senderName : undefined
+  const employeeId = 'senderEmployee' in source && typeof source.senderEmployee === 'string' ? source.senderEmployee : undefined
+  if (name === undefined && employeeId === undefined) return message
+  const avatar = renderSlot('conversation.chat.contextAvatar', {
+    ...(name === undefined ? {} : { name }), ...(employeeId === undefined ? {} : { employeeId }),
+  })
+  return avatar == null ? message : <div data-context-message-identity style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+    {avatar}<div style={{ minWidth: 0, flex: 1 }}>{message}</div>
+  </div>
 })
 
 /** Automatic compaction keyed Chat renderer. */

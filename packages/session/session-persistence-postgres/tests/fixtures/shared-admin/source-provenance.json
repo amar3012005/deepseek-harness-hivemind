@@ -1,0 +1,22 @@
+{
+  "sourceRepository": "/Users/amar/Documents/ChatGPT/HIVEMIND-core-native-answer-recognition-20261011",
+  "sourceRevision": "ce26aec4531abf0fb27e0da40553c9cd79d71be8",
+  "migrations": {
+    "session-baseline.sql": {
+      "source": "core/prisma/migrations/20260908150000_harness_chat_sessions/migration.sql",
+      "sha256": "a83f8f5f52d97c8e426775b30c1b8e5be1311d3e7973c350d6ec8b55dceca106"
+    },
+    "session-hardening.sql": {
+      "source": "core/prisma/migrations/20260914220000_harness_session_hardening/migration.sql",
+      "sha256": "8e75d6b12d2d4b287959553c3316ec330905d3ae667608f14ff90e23a4387f47"
+    },
+    "shared.sql": {
+      "source": "core/prisma/migrations/20261008013000_organization_agent_storage_scope/migration.sql",
+      "sha256": "b3fee6642d158604743ff1670079cae58f86866fc49c65287d52f6bd1257e03a"
+    },
+    "reservation.sql": {
+      "source": "core/prisma/migrations/20261008020000_organization_agent_initial_reservation/migration.sql",
+      "sha256": "408d751fcaa42a1d10e23d72cce43553032ca48ee139f5256d5d148b1582a812"
+    }
+  }
+}

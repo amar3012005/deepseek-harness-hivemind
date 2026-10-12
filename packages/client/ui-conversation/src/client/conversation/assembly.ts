@@ -184,6 +184,8 @@ interface BindingRecord {
 
 /** Root service owning Conversation registries and per-Session bindings. */
 export class UiConversation extends Service {
+  /** Whether a blank Session must belong to a Workspace before composing. */
+  readonly workspaceRequired: SnapshotStore<boolean> = createSnapshotStore(true)
   /** Registry of event matchers and target snapshot builders. */
   readonly events: ConversationEventRegistry
   /** Registry of target View definitions. */
@@ -226,6 +228,19 @@ export class UiConversation extends Service {
         for (const record of [...this.bindings.values]) this.drop(record, true)
       }
     }, 'ui-conversation assembly')
+  }
+
+  /**
+   * Configure the Workspace prerequisite for this Client service scope.
+   * @param required - whether a blank Session must have a Workspace chip.
+   * @returns disposer restoring the default prerequisite when still current.
+   */
+  configureWorkspaceRequirement(required: boolean): () => void {
+    const previous = this.workspaceRequired.getSnapshot()
+    this.workspaceRequired.set(required)
+    return () => {
+      if (this.workspaceRequired.getSnapshot() === required) this.workspaceRequired.set(previous)
+    }
   }
 
   /**

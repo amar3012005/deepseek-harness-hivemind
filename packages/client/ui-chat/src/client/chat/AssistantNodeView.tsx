@@ -1,10 +1,11 @@
 import { memo, useCallback, useMemo } from 'react'
+import type { ReactNode } from 'react'
 import type { InjectFace, PropsRenderSlots } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ChatNodeViewProps, PresentationInjected, TurnTailOwnerProps } from '../contract/slots.ts'
 import { AssistantMarkdown } from './AssistantMarkdown.tsx'
 
 type AssistantNodeViewProps = ChatNodeViewProps<'assistant-step'> & InjectFace<PresentationInjected>
-  & PropsRenderSlots<'conversation.chat.reasoning.body'>
+  & PropsRenderSlots<'conversation.chat.reasoning.body' | 'conversation.chat.assistantAvatar'>
 
 /** Streaming, settled, and interrupted Assistant states share one keyed renderer instance. */
 export const AssistantNodeView = memo(function AssistantNodeView({
@@ -31,7 +32,7 @@ export const AssistantNodeView = memo(function AssistantNodeView({
     && turnProcess.spec.inlineReasoning
     && !turnProcess.open
   const revealProcess = useCallback(() => { turnProcess?.setOpen(true) }, [turnProcess])
-  return (
+  const message = (
     <AssistantMarkdown
       blocks={data.blocks}
       groupPart={groupPart}
@@ -48,4 +49,13 @@ export const AssistantNodeView = memo(function AssistantNodeView({
       t={t}
     />
   )
+  const avatar = renderSlot('conversation.chat.assistantAvatar', {})
+  return <AssistantIdentityLayout avatar={avatar}>{message}</AssistantIdentityLayout>
 })
+
+/** Optional identity chrome leaves unextended native markup untouched. */
+export function AssistantIdentityLayout({ avatar, children }: { avatar?: ReactNode; children: ReactNode }) {
+  return avatar == null ? children : <div data-assistant-message style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+    {avatar}<div style={{ minWidth: 0, flex: 1 }}>{children}</div>
+  </div>
+}

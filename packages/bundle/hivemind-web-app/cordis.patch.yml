@@ -1,0 +1,419 @@
+# HIVE-only final layer over dsh-base + dsh-web-app. HIVE model and tenant
+# capabilities live here so the shipped Web, Standard, Minimal, PTC, and
+# Creator compositions remain unchanged.
+- id: system-prompt
+  config:
+    includeHarnessIdentity: false
+    includeRuntimeContext: false
+
+# The session service already provides an immediate deterministic fallback
+# title. A second model request competes with the answer on some OpenRouter
+# routes and delays the first visible response chunk.
+- id: session-title-llm
+  disabled: true
+
+- id: web-runtime
+  config:
+    openBrowser: !!js ctx.webStartup.openBrowser
+    printUrl: true
+    surfaceContext: false
+    trustedHosts: !!js ctx.webStartup.trustedHosts
+
+- id: llm-pi-ai
+  config:
+    providers:
+      # Retain this provider/model identity for existing persisted sessions.
+      cloudflare-openrouter:
+        displayName: Cloudflare AI Gateway / OpenRouter (legacy sessions)
+        apiKeyEnv: CLOUDFLARE_API_KEY
+        api: openai-completions
+        reasoning: off
+        # Cloudflare forwards this route to OpenRouter. Declare the protocol
+        # dialect so every reasoning-capable model uses OpenRouter's unified
+        # `reasoning: { effort }` request contract instead of the OpenAI-only
+        # `reasoning_effort` field.
+        compat:
+          thinkingFormat: openrouter
+          supportsStrictMode: true
+        baseURL: https://gateway.ai.cloudflare.com/v1/0dc6b9186b5a9b8985613b10c1c59f4f/hivemind-prod/compat
+        headers:
+          cf-aig-byok-alias: first-bundb
+        defaultContextWindow: 131072
+        defaultMaxTokens: 32768
+        defaultInput: [text]
+        retryPolicy:
+          mode: normal
+          maxRetries: 3
+        models:
+          - id: openrouter/deepseek/deepseek-v4-flash-0731
+            name: DeepSeek V4 Flash 0731 (legacy sessions)
+            contextWindow: 1310720
+            maxTokens: 32768
+            input: [text]
+            reasoningEfforts:
+              off: none
+              low: low
+              high: high
+              max: max
+
+      # New HIVE sessions use the native provider adapter against Cloudflare's
+      # OpenRouter route. The adapter emits ordinary Harness text deltas; no
+      # profile-specific streaming loop or UI patch is involved.
+      cloudflare-openrouter-streaming:
+        displayName: Cloudflare AI Gateway / OpenRouter Streaming
+        apiKeyEnv: CLOUDFLARE_API_KEY
+        api: openai-completions
+        reasoning: low
+        compat:
+          thinkingFormat: openrouter
+          supportsStrictMode: true
+        baseURL: https://gateway.ai.cloudflare.com/v1/0dc6b9186b5a9b8985613b10c1c59f4f/hivemind-prod/openrouter/v1
+        headers:
+          cf-aig-byok-alias: first-bundb
+        defaultContextWindow: 131072
+        defaultMaxTokens: 32768
+        defaultInput: [text]
+        retryPolicy:
+          mode: normal
+          maxRetries: 3
+        models:
+          - id: openrouter/openai/gpt-oss-120b
+            name: GPT OSS 120B via Cloudflare
+            contextWindow: 131072
+            maxTokens: 32768
+            input: [text]
+            reasoningEfforts:
+              off:
+              low: low
+              medium: medium
+              high: high
+          # Economical OpenRouter catalogue entries. The gateway keeps the
+          # provider route stable while the picker exposes these alternatives.
+          - id: openrouter/nvidia/nemotron-3-nano-omni:free
+            name: NVIDIA Nemotron 3 Nano Omni (free)
+            contextWindow: 300000
+            maxTokens: 16384
+            # The installed Harness model schema presently exposes text/image
+            # input only. Keep Omni selectable for text/image workflows.
+            input: [text, image]
+          - id: openrouter/google/gemma-4-26b-a4b:free
+            name: Google Gemma 4 26B A4B (free)
+            contextWindow: 262144
+            maxTokens: 16384
+            input: [text, image]
+          - id: openrouter/google/gemma-4-31b:free
+            name: Google Gemma 4 31B (free)
+            contextWindow: 262144
+            maxTokens: 16384
+            input: [text, image]
+          - id: openrouter/nvidia/nemotron-3-super:free
+            name: NVIDIA Nemotron 3 Super (free)
+            contextWindow: 1048576
+            maxTokens: 32768
+            input: [text]
+          - id: openrouter/mistralai/mistral-nemo
+            name: Mistral Nemo
+            contextWindow: 131072
+            maxTokens: 16384
+            input: [text]
+          - id: openrouter/meta-llama/llama-3.1-8b-instruct
+            name: Meta Llama 3.1 8B Instruct
+            contextWindow: 131072
+            maxTokens: 16384
+            input: [text]
+          - id: openrouter/openai/gpt-oss-20b
+            name: OpenAI GPT OSS 20B
+            contextWindow: 131072
+            maxTokens: 16384
+            input: [text]
+          - id: openrouter/inception/mercury-2.5
+            name: Inception Mercury 2.5
+            contextWindow: 131072
+            maxTokens: 16384
+            input: [text]
+          - id: openrouter/google/gemma-3-4b-it
+            name: Google Gemma 3 4B IT
+            contextWindow: 131072
+            maxTokens: 8192
+            input: [text, image]
+          - id: anthropic/claude-haiku-5.5
+            name: Claude Haiku 5.5
+            contextWindow: 1000000
+            maxTokens: 32768
+            input: [text, image]
+            reasoningEfforts:
+              low: low
+          - id: openai/gpt-6-luna
+            name: GPT-6
+            contextWindow: 1050000
+            maxTokens: 32768
+            input: [text, image]
+            reasoningEfforts:
+              low: low
+              medium: medium
+              high: high
+              max: max
+          - id: z-ai/glm-5.3-flash:nitro
+            name: GLM 5.3 Flash Nitro
+            contextWindow: 131072
+            maxTokens: 32768
+            input: [text]
+            reasoningEfforts:
+              low: low
+              medium: medium
+              high: high
+              max: max
+
+- id: agent-default-model
+  config:
+    provider: cloudflare-openrouter-streaming
+    model: openai/gpt-6-luna
+
+- id: session-persistence-jsonl
+  disabled: true
+
+- id: workspace
+  disabled: true
+- id: workspace-files
+  disabled: true
+- id: file-reference-local
+  disabled: true
+- id: directory-picker
+  disabled: true
+- id: plugin-inventory
+  disabled: true
+- id: open-in-app
+  disabled: true
+
+# Keep the complete native deliverables package in the image and browser bundle,
+# but do not activate its privileged host half when HIVE filesystem services are
+# policy-disabled. Native mode still activates the stock plugin unchanged.
+- id: ui-deliverables
+  disabled: true
+
+# Da-vinci owns browser navigation; keep the native Harness conversation,
+# tool, trajectory, and replay surfaces without a second shell/sidebar track.
+- id: ui-theme
+  config:
+    lockToLight: true
+
+- id: ui-layout
+  config:
+    externalChrome: true
+    embeddedSessionRail: true
+
+- id: webserver
+  inject: [webStartup]
+  config:
+    host: !!js ctx.webStartup.host ?? '127.0.0.1'
+    port: !!js ctx.webStartup.port ?? Number(process.env.PORT ?? 3080)
+    tls: !!js ctx.webStartup.tls
+    compression: gzip
+    compressionLevel: 1
+    compressionThresholdBytes: 1024
+
+# Preview requests arrive through the existing private edge authority. Keep
+# the established admission trust list while replacing only browser UI.
+- id: connection
+  inject: [webStartup]
+  config:
+    trustedHosts: !!js ctx.webStartup.trustedHosts.concat((process.env.HIVEMIND_HARNESS_TRUSTED_HOSTS ?? '').split(',').map(value => value.trim()).filter(Boolean))
+    trustedProxyHosts: !!js (process.env.HIVEMIND_HARNESS_TRUSTED_PROXY_HOSTS ?? '').split(',').map(value => value.trim()).filter(Boolean)
+
+- id: agent-preset-registry
+  config:
+    default: hivemind-chat
+
+- insert:
+    - id: ui-hivemind-connect
+      name: '@deepseek-ai/dsh-client-ui-hivemind-connect'
+
+- insert:
+    # Native Agent Teams coordinate persistent employee rooms and retain
+    # tenant-owned task identity. Product UI uses the matching native
+    # roster and task-board adapter for Runtime and HyperAgent roots.
+    - id: agent-team
+      name: '@deepseek-ai/dsh-experimental-agent-team'
+      config:
+        allowedRootPresets: [hivemind-hyperagents, hivemind-hq]
+        maxMembers: 8
+        maxTasks: 256
+        maxPendingMessagesPerMember: 64
+        maxMessageBytes: 65536
+        disposalTimeoutMs: 5000
+
+    - id: tool-agent-team
+      name: '@deepseek-ai/dsh-experimental-tool-agent-team'
+      config:
+        freshProvider: spawn
+        forkProvider: fork
+
+    - id: ui-agent-team
+      name: '@deepseek-ai/dsh-experimental-client-ui-agent-team'
+
+    - id: hivemind-hq-control
+      name: '@deepseek-ai/dsh-hivemind-hq-runtime/control'
+
+    - id: hivemind-hq-ownership
+      name: '@deepseek-ai/dsh-hivemind-hq-runtime/ownership'
+
+    - id: hivemind-hq-ownership-postgres
+      name: '@deepseek-ai/dsh-hivemind-hq-runtime/ownership-postgres'
+      config:
+        sharedOrganizationAgents: !!js process.env.HIVE_SHARED_ORGANIZATION_AGENTS_ENABLED === 'true'
+        connectionStringEnv: DATABASE_URL
+        schema: hivemind
+        maxConnections: 4
+        statementTimeoutMs: 15000
+
+    # Optional server-to-server attention seam; no subscriptions or wakes until explicitly enabled.
+    - id: hivemind-employee-lifecycle-host
+      name: '@deepseek-ai/dsh-hivemind-hq-runtime/lifecycle-host'
+      config:
+        enabled: true
+        sharedOrganizationAgents: !!js process.env.HIVE_SHARED_ORGANIZATION_AGENTS_ENABLED === 'true'
+        serviceSecretEnv: HIVE_HARNESS_RUNNER_SERVICE_SECRET
+
+    - id: hivemind-decision
+      name: '@deepseek-ai/dsh-hivemind-decision'
+      config:
+        enabled: !!js process.env.HIVEMIND_DECISION_ENABLED === '1'
+        endpoint: !!js process.env.HIVEMIND_DECISION_ENDPOINT || undefined
+        apiKeyRef: !!js process.env.HIVEMIND_DECISION_API_KEY_REF || undefined
+        gatewayTokenRef: !!js process.env.HIVEMIND_DECISION_GATEWAY_TOKEN_REF || undefined
+        gatewayByokAlias: !!js process.env.HIVEMIND_DECISION_GATEWAY_BYOK_ALIAS || undefined
+        model: !!js process.env.HIVEMIND_DECISION_MODEL || 'inception/mercury-decide'
+        fallbackModel: typesafe/jev-1.13
+        primaryTimeoutMs: 6000
+        timeoutMs: 8000
+
+    - id: hivemind-runtime-attention
+      name: '@deepseek-ai/dsh-hivemind-hq-runtime/attention'
+      config:
+        sharedOrganizationAgents: !!js process.env.HIVE_SHARED_ORGANIZATION_AGENTS_ENABLED === 'true'
+        enabled: !!js process.env.HIVEMIND_RUNTIME_ATTENTION_ENABLED === '1'
+        admitEventsAfter: !!js process.env.HIVEMIND_RUNTIME_ATTENTION_NOT_BEFORE || ''
+        allowedOrgIds: !!js (process.env.HIVEMIND_RUNTIME_ATTENTION_ORGS || '').split(',').map(value => value.trim()).filter(Boolean)
+        serviceSecretEnv: HIVE_HARNESS_RUNNER_SERVICE_SECRET
+        connectionStringEnv: DATABASE_URL
+        schema: hivemind
+        triggerSchema: hivemind
+        maxConnections: 4
+        statementTimeoutMs: 15000
+
+    # Native speech capability and its supported dictation UI contribution.
+    - id: speech-to-text
+      name: '@deepseek-ai/dsh-experimental-speech-to-text'
+      config:
+        defaultProvider: sensevoice-local
+    - id: speech-to-text-sensevoice
+      name: '@deepseek-ai/dsh-experimental-speech-to-text-sensevoice'
+      config:
+        dataRoot: !!js dshHomePath('speech-to-text', 'sensevoice')
+    - id: api-speech-to-text
+      name: '@deepseek-ai/dsh-experimental-api-speech-to-text'
+
+    - id: ui-voice-input
+      name: '@deepseek-ai/dsh-experimental-client-ui-voice-input'
+
+    - id: ui-hivemind-operating-run
+      name: '@deepseek-ai/dsh-client-ui-hivemind-operating-run'
+
+    - id: ui-hivemind-hq
+      name: '@deepseek-ai/dsh-client-ui-hivemind-hq'
+
+    - id: hivemind-execution-scope
+      name: '@deepseek-ai/dsh-hivemind-execution-scope'
+
+    - id: hivemind-virtual-workspace
+      name: '@deepseek-ai/dsh-hivemind-virtual-workspace'
+
+    - id: session-persistence-postgres
+      name: '@deepseek-ai/dsh-session-persistence-postgres'
+      config:
+        sharedOrganizationAgents: !!js process.env.HIVE_SHARED_ORGANIZATION_AGENTS_ENABLED === 'true'
+        connectionStringEnv: DATABASE_URL
+        schema: hivemind
+        leaseTtlMs: 30000
+        maxConnections: 10
+
+    - id: hivemind-web-runner
+      name: '@deepseek-ai/dsh-hivemind-web-runner'
+      config:
+        sharedOrganizationAgents: !!js process.env.HIVE_SHARED_ORGANIZATION_AGENTS_ENABLED === 'true'
+        parentOrigins: !!js (process.env.HIVEMIND_PARENT_ORIGINS ?? '').split(',').map(value => value.trim()).filter(Boolean)
+        ticketSecretEnv: HIVE_HARNESS_TICKET_SECRET
+        redisUrlEnv: REDIS_URL
+        redisJtiPrefix: 'hive:harness-ticket:'
+        # The native Harness application replaces the Da-vinci route after
+        # admission, so there is no shell component left to refresh a
+        # short-lived runner cookie. Keep the signed runner grant bounded by
+        # the plugin's one-day maximum; Core/Control Plane still exclusively
+        # mint the one-time admission ticket and tenant principal.
+        sessionMaxAgeSeconds: 86400
+        onboardingServiceApiBase: !!js process.env.HIVEMIND_ONBOARDING_SERVICE_URL ?? 'http://core:3000'
+        serviceApiBase: !!js process.env.HIVEMIND_CONNECTED_RECEIPT_SERVICE_URL
+        serviceHttpOrigins: !!js >-
+          [...(process.env.HIVEMIND_SERVICE_HTTP_ORIGINS ?? '').split(',').map(value => value.trim()).filter(Boolean),
+          process.env.HIVEMIND_ONBOARDING_SERVICE_URL ?? 'http://core:3000']
+        serviceSecretEnv: HIVE_HARNESS_RUNNER_SERVICE_SECRET
+        databaseUrlEnv: DATABASE_URL
+
+# Host scheduling is tenant-scoped for BRAIN and HyperAgents roots.
+- id: web-fetch-http
+  config:
+    # Modern company pages can place article content after a large navigation
+    # and style preamble. Keep the existing byte, timeout and network bounds.
+    maxBodyChars: 500000
+
+- id: ui-schedule
+  disabled: false
+
+- id: storage-domain
+  config:
+    backend: json
+    routes:
+      schedule: hivemind-schedule-postgres
+
+- insert:
+    - id: hivemind-schedule-postgres
+      name: '@deepseek-ai/dsh-hivemind-schedule-postgres'
+      config:
+        sharedOrganizationAgents: !!js process.env.HIVE_SHARED_ORGANIZATION_AGENTS_ENABLED === 'true'
+        connectionStringEnv: DATABASE_URL
+        schema: hivemind
+        maxConnections: 4
+        statementTimeoutMs: 15000
+        maxTasksPerUser: 100
+
+    - id: schedule
+      name: '@deepseek-ai/dsh-schedule'
+      inject: [scheduleOwnership]
+      config:
+        ownershipRequired: true
+        deliveryHistoryDays: 30
+        deliveryHistoryRecords: 200
+
+# Tenant opt-in stays off until an administrator enables Dreaming in Settings.
+- insert:
+    - id: hivemind-dreamer
+      name: '@deepseek-ai/dsh-hivemind-dreamer'
+      config:
+        connectionStringEnv: DATABASE_URL
+        schema: hivemind
+        cron: '0 2 * * *'
+        timezone: Europe/Berlin
+        maxConcurrentRuns: 2
+        provider: spawn
+        model: !!js process.env.HIVEMIND_DREAM_MODEL
+        modelProvider: !!js process.env.HIVEMIND_DREAM_MODEL_PROVIDER
+
+# Available for future activation; preserve existing search routing.
+- insert:
+    - id: web-search-openai
+      name: '@deepseek-ai/dsh-web-search-openai'
+      disabled: true
+      config:
+        transport: codex
+        model: gpt-6-luna
+        timeoutMs: 12000

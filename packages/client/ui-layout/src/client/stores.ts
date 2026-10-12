@@ -23,6 +23,8 @@ type LayoutState = {
 
 type LayoutInfo = {
   sidebar: number
+  /** The current product shell owns the left column; hide its native track. */
+  externalSidebar: boolean
   /** Last positive frame measurement; window width bootstraps the first render. */
   viewportWidth: number
   narrowExpanded: boolean
@@ -60,6 +62,7 @@ type LayoutActions = {
   retainMainPanels: (draft: LayoutState, panelIds: readonly string[]) => void
   setSidebar: (draft: LayoutState, px: number) => void
   toggleSidebar: (draft: LayoutState) => void
+  setExternalSidebar: (draft: LayoutState, enabled: boolean) => void
   setViewportWidth: (draft: LayoutState, width: number) => void
   setRightbar: (draft: LayoutState, px: number) => void
   openRightbar: (draft: LayoutState, track: boolean, fullscreen: boolean) => void
@@ -81,6 +84,7 @@ export function createLayoutStore(): EngineStoreHandle<LayoutState, LayoutAction
       panelInfo: { activePanelId: null },
       layoutInfo: {
         sidebar: SIDEBAR_DEFAULT,
+        externalSidebar: false,
         viewportWidth: window.innerWidth,
         narrowExpanded: false,
         rightbar: null,
@@ -109,6 +113,11 @@ export function createLayoutStore(): EngineStoreHandle<LayoutState, LayoutAction
         d.layoutInfo.rightbarInstant = false
         if (d.layoutInfo.viewportWidth < SIDEBAR_AUTO_COLLAPSE) d.layoutInfo.narrowExpanded = !d.layoutInfo.narrowExpanded
         else d.layoutInfo.sidebar = d.layoutInfo.sidebar === 0 ? SIDEBAR_DEFAULT : 0
+      },
+      setExternalSidebar: (d, enabled: boolean) => {
+        if (d.layoutInfo.externalSidebar === enabled) return
+        d.layoutInfo.rightbarInstant = false
+        d.layoutInfo.externalSidebar = enabled
       },
       // Crossing the breakpoint in either direction drops the override: the
       // narrow default is auto-collapsed, the wide state is the preference.

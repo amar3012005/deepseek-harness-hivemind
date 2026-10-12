@@ -244,6 +244,11 @@ export class ApprovalService extends Service {
     return this.overrideOf(session) ?? this.config.policy ?? 'ask'
   }
 
+  /** The live effective policy, exposed to native schedulers before alternate admission paths. */
+  policyFor(session: Session): ApprovalPolicy {
+    return this.effectivePolicy(session)
+  }
+
   /**
    * Read the session override without applying the configured default.
    * @param session - session whose log supplies the override.

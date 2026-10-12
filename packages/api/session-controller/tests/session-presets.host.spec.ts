@@ -10,8 +10,8 @@ import { agentPresetProjectionDefinition } from '@deepseek-ai/dsh-agent-preset-r
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import type { Session } from '@deepseek-ai/dsh-session'
 import { RemoteError } from '@deepseek-ai/dsh-typert-protocol'
-import { afterEach, describe, expect, it } from 'vitest'
-import { createSessionTestRemote } from './test-remote.ts'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { createSessionTestController, createSessionTestRemote } from './test-remote.ts'
 
 /** Booted contexts and their temp roots, torn down after each test. */
 const contexts: Context[] = []
@@ -47,13 +47,14 @@ function roster(ids: readonly string[]): unknown {
   }
 }
 
-async function harness(presets?: readonly string[]) {
+async function harness(presets?: readonly string[], withHivemindScope = false) {
   const cwd = realpathSync(mkdtempSync(join(tmpdir(), 'dsh-session-preset-')))
   tempDirs.push(cwd)
   const ctx = new Context()
   contexts.push(ctx)
   await ctx.plugin(SessionStore)
   await ctx.plugin(AgentRegistry)
+  if (withHivemindScope) ctx.provide('hivemindExecutionScope', { require: () => ({ orgId: 'org-a', userId: 'user-a' }) } as never)
   if (presets !== undefined) {
     ctx.provide('agentPresets', roster(presets) as never)
   }
@@ -178,5 +179,79 @@ describe('session.create Agent preset identity', () => {
     if (response.ok) throw new Error('unreachable')
     expect('existingPreset' in response.error.details).toBe(false)
     expect(response.error.message).toContain('records no agent preset')
+  })
+
+  it('releases only Session lifecycles whose AgentHandle this API owns', async () => {
+    const { ctx, remote } = await harness(['standard'])
+    const id = SessionId('fresh-owned')
+    const controller = createSessionTestController(ctx, {
+      defaultModelSelection: () => ({ provider: 'test', model: 'test-model' }),
+      cwd: process.cwd(),
+    })
+
+    await expect(remote.create({ sessionId: id, agentPreset: 'standard' })).resolves.toMatchObject({ ok: true })
+    await controller.releaseOwnedSessions([id])
+
+    expect(ctx.agents.get(id)).toBeUndefined()
+  })
+
+  it('rejects a foreign lifecycle before disposing any requested owned lifecycle', async () => {
+    const { ctx, remote } = await harness(['standard'])
+    const ownedId = SessionId('fresh-owned-preflight')
+    const foreignId = SessionId('fresh-foreign')
+    const controller = createSessionTestController(ctx, {
+      defaultModelSelection: () => ({ provider: 'test', model: 'test-model' }),
+      cwd: process.cwd(),
+    })
+    await remote.create({ sessionId: ownedId, agentPreset: 'standard' })
+    const foreign = await ctx.agents.create({
+      sessionId: foreignId,
+      agentOptions: { provider: 'test', model: 'test-model' },
+      meta: { cwd: process.cwd() },
+    })
+
+    await expect(controller.releaseOwnedSessions([ownedId, foreignId]))
+      .rejects.toThrow('session_lifecycle_not_owned_by_api')
+
+    expect(ctx.agents.get(ownedId)).toBeDefined()
+    expect(ctx.agents.get(foreignId)).toBe(foreign.agent)
+    await foreign.dispose()
+  })
+})
+
+describe('session.employeeRoom HIVE service scopes', () => {
+  it('opens the authenticated Runtime before looking up the preset-isolated employee directory', async () => {
+    const { ctx } = await harness(['hivemind-hq'], true)
+    const controller = createSessionTestController(ctx, {
+      defaultModelSelection: () => ({ provider: 'test', model: 'test-model' }),
+      cwd: process.cwd(),
+    })
+    const runtime = { session: { id: SessionId('runtime-root') } } as unknown as Agent
+    const resolveRuntimeRoom = vi.spyOn(controller as unknown as { resolveRuntimeRoom(signal: AbortSignal): Promise<Agent> }, 'resolveRuntimeRoom')
+      .mockResolvedValue(runtime)
+    const serviceFor = vi.fn(() => undefined)
+    Object.assign(ctx.agentPresets, { serviceFor })
+
+    await expect(controller.employeeRoom({ employeeId: 'runtime' }, new AbortController().signal))
+      .resolves.toEqual({ sessionId: runtime.session.id })
+    expect(resolveRuntimeRoom).toHaveBeenCalledOnce()
+    expect(serviceFor).not.toHaveBeenCalled()
+  })
+
+  it('requires the employee directory from the authenticated Runtime preset for employee rooms', async () => {
+    const { ctx } = await harness(['hivemind-hq'], true)
+    const controller = createSessionTestController(ctx, {
+      defaultModelSelection: () => ({ provider: 'test', model: 'test-model' }),
+      cwd: process.cwd(),
+    })
+    const runtime = { session: { id: SessionId('runtime-root') } } as unknown as Agent
+    vi.spyOn(controller as unknown as { resolveRuntimeRoom(signal: AbortSignal): Promise<Agent> }, 'resolveRuntimeRoom')
+      .mockResolvedValue(runtime)
+    const serviceFor = vi.fn(() => undefined)
+    Object.assign(ctx.agentPresets, { serviceFor })
+
+    await expect(controller.employeeRoom({ employeeId: 'employee-7' }, new AbortController().signal))
+      .rejects.toMatchObject({ code: 'gateway/internal', message: 'employee room is unavailable' })
+    expect(serviceFor).toHaveBeenCalledWith(runtime, 'hivemindEmployeeDirectory')
   })
 })

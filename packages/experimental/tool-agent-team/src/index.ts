@@ -48,6 +48,7 @@ const MEMBER_VIEW_SCHEMA = {
   type: 'object',
   additionalProperties: false,
   properties: {
+    ownership: { type: 'string', enum: ['persistent'] },
     target: { type: 'string', required: true },
     role: { type: 'string', required: true, enum: ['lead', 'teammate'] },
     status: { type: 'string', required: true, enum: ['running', 'inactive', 'provisioning', 'failed'] },
@@ -213,7 +214,7 @@ To message another teammate, use send_message({ target: "<teammate name>", messa
 
     register(scoped.tools.register(defineTool({
       name: 'send_message',
-      description: 'Send one message to another Team member. A running target receives it at the nearest step boundary; an inactive target starts or resumes a turn.',
+      description: 'Send one message to another Lead or delegated child Team member. A running target receives it at the nearest step boundary; an inactive target starts or resumes a turn. A roster member with ownership=persistent is a host-owned employee room; use the deployment’s authenticated room-mailbox tool for that recipient, not Team send_message.',
       parameters: {
         target: { type: 'string', required: true, description: 'Member target returned by spawn_teammate or list_agents, including lead.' },
         message: { type: 'string', required: true, description: 'Self-contained message for the target.' },

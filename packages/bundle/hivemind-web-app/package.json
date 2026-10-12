@@ -1,0 +1,84 @@
+{
+  "name": "@deepseek-ai/dsh-hivemind-web-app",
+  "description": "HIVE-MIND chat-only Web profile layer",
+  "version": "0.1.3-alpha.2",
+  "type": "module",
+  "main": "lib/index.js",
+  "types": "lib/types/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/types/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./src/*": "./src/*",
+    "./package.json": "./package.json",
+    "./presets/*.patch.yml": "./presets/*.patch.yml",
+    "./presets/*.agent.yml": "./presets/*.agent.yml"
+  },
+  "files": [
+    "lib/index.js",
+    "cordis.patch.yml",
+    "lib/types/**/*.d.ts",
+    "presets/*.patch.yml",
+    "presets/*.agent.yml"
+  ],
+  "license": "MIT",
+  "dsh": {
+    "bundle": {
+      "patch": [
+        "./cordis.patch.yml",
+        "./presets/hivemind-chat.patch.yml",
+        "./presets/hivemind-hq.patch.yml",
+        "./presets/hivemind-hyperagents.patch.yml"
+      ]
+    }
+  },
+  "dependencies": {
+    "@deepseek-ai/dsh-hivemind-employee-delegation": "workspace:^",
+    "@deepseek-ai/dsh-http-proxy": "workspace:^",
+    "@deepseek-ai/dsh-experimental-agent-team": "workspace:^",
+    "@deepseek-ai/dsh-experimental-tool-agent-team": "workspace:^",
+    "@deepseek-ai/dsh-experimental-client-ui-agent-team": "workspace:^",
+    "@deepseek-ai/dsh-client-ui-hivemind-connect": "workspace:^",
+    "@deepseek-ai/dsh-hivemind-execution-scope": "workspace:^",
+    "@deepseek-ai/dsh-hivemind-web-runner": "workspace:^",
+    "@deepseek-ai/dsh-hivemind-virtual-workspace": "workspace:^",
+    "@deepseek-ai/dsh-session-persistence-postgres": "workspace:^",
+    "@deepseek-ai/dsh-hivemind-schedule-postgres": "workspace:^",
+    "@deepseek-ai/dsh-schedule": "workspace:^",
+    "@deepseek-ai/dsh-client-ui-schedule": "workspace:^",
+    "@deepseek-ai/dsh-hivemind-dreamer": "workspace:^",
+    "@deepseek-ai/dsh-hivemind-connected-apps": "workspace:^",
+    "@deepseek-ai/dsh-hivemind-progressive-skills": "workspace:^",
+    "@deepseek-ai/dsh-client-ui-hivemind-hq": "workspace:^",
+    "@deepseek-ai/dsh-hivemind-hq-runtime": "workspace:^",
+    "@deepseek-ai/dsh-web-search-openai": "workspace:^",
+    "@deepseek-ai/dsh-hivemind-decision": "workspace:^",
+    "@deepseek-ai/dsh-agent-preset": "workspace:*",
+    "@deepseek-ai/dsh-client-ui-hivemind-operating-run": "workspace:^",
+    "@deepseek-ai/dsh-experimental-speech-to-text": "workspace:*",
+    "@deepseek-ai/dsh-experimental-speech-to-text-sensevoice": "workspace:*",
+    "@deepseek-ai/dsh-experimental-api-speech-to-text": "workspace:*",
+    "@deepseek-ai/dsh-experimental-client-ui-voice-input": "workspace:*",
+    "@deepseek-ai/dsh-hivemind-app-builder": "workspace:^",
+    "@deepseek-ai/dsh-hivemind-artifact-renderer": "workspace:^",
+    "@deepseek-ai/dsh-hivemind-context": "workspace:^",
+    "@deepseek-ai/dsh-hivemind-employee-directory": "workspace:^",
+    "@deepseek-ai/dsh-hivemind-identity": "workspace:^",
+    "@deepseek-ai/dsh-hivemind-operating-workstreams": "workspace:^",
+    "@deepseek-ai/dsh-hivemind-playbooks": "workspace:^",
+    "@deepseek-ai/dsh-hivemind-progressive-browser": "workspace:^",
+    "@deepseek-ai/dsh-hivemind-research": "workspace:^",
+    "@deepseek-ai/dsh-hivemind-runtime": "workspace:^",
+    "@deepseek-ai/dsh-scope": "workspace:^",
+    "@deepseek-ai/dsh-session": "workspace:^",
+    "@deepseek-ai/dsh-tools": "workspace:^"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "workspace:^"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "workspace:^"
+  }
+}

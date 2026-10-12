@@ -1,0 +1,254 @@
+import { websiteSources } from './website-sources.ts'
+import { hasNativeArtifactSaver, saveNativeArtifact } from './native-transport.ts'
+import { WebsitePreview } from './WebsitePreview.tsx'
+import { useEffect, useRef, useState } from 'react'
+import type { FileAttachmentRef, ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
+import type { SessionEventWindow } from '@deepseek-ai/dsh-api-session-controller/client'
+import type { SnapshotSelectorHook } from '@deepseek-ai/dsh-client-store'
+import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
+import { IconDownloadOutlineRegular, MarkdownText } from '@deepseek-ai/dsh-client-ui-primitives'
+import css from './HyperagentEmployee.module.css'
+
+declare module '@deepseek-ai/dsh-client-ui-sidebar-right/client' {
+  interface SidebarRightTabParamsMap {
+    'hivemind-workbench-preview': { artifactId?: string; sourceUrl?: string }
+  }
+}
+const lastViewedArtifacts = new Map<string, string>()
+const agentPreview = () => /^\/hivemind\/app\/employee\/harness(?:\/|$)/u.test(window.location.pathname)
+function DownloadLabel({ label }: { label: string }) {
+  return agentPreview() ? <IconDownloadOutlineRegular size={16} /> : <>{label}</>
+}
+
+type Kind = 'preview' | 'artifacts' | 'computer' | 'sources'
+
+export interface Artifact {
+  id: string
+  title: string
+  mediaType: string
+  path: string
+  file: FileAttachmentRef | undefined
+  preview: ImageAttachmentRef | undefined
+  producerName?: string
+}
+interface Capture { id: string; title: string; url: string; status?: number; preview: ImageAttachmentRef | undefined }
+interface Source { url: string; title: string; visited?: boolean }
+interface Workbench { artifacts: Artifact[]; captures: Capture[]; sources: Source[] }
+
+function object(value: unknown): Record<string, unknown> | undefined {
+  return value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : undefined
+}
+
+function image(value: unknown): ImageAttachmentRef | undefined {
+  const ref = object(value)
+  return typeof ref?.attachmentId === 'string' && typeof ref.mediaType === 'string' ? ref as unknown as ImageAttachmentRef : undefined
+}
+
+function file(value: unknown): FileAttachmentRef | undefined {
+  const ref = object(value)
+  return typeof ref?.attachmentId === 'string' && typeof ref.name === 'string' && typeof ref.bytes === 'number'
+    ? ref as unknown as FileAttachmentRef : undefined
+}
+
+/** Only terminal, durable receipts populate preview. No provider payloads or speculative outputs. */
+export function workbenchSnapshot(window: SessionEventWindow): Workbench {
+  const artifacts: Artifact[] = []
+  const captures: Capture[] = []
+  const sources: Source[] = websiteSources(window)
+  const seenSources = new Set(sources.map(source => source.url))
+  for (const entry of window.entries) {
+    if (entry.type !== 'event') continue
+    const event = entry.event
+    const data = object(event.data)
+    if (data === undefined) continue
+    const type = String(event.type)
+    if (type === 'hivemind/room-message-received') {
+      const message = data
+      const delivered = message?.artifacts
+      if (!Array.isArray(delivered)) continue
+      for (const value of delivered) {
+        const receipt = object(value)
+        const attachment = file(receipt?.file)
+        if (receipt === undefined || typeof receipt.artifactId !== 'string' || attachment === undefined
+          || typeof receipt.producerSessionId !== 'string') continue
+        artifacts.push({ id: receipt.artifactId, title: typeof receipt.title === 'string' ? receipt.title : attachment.name,
+          path: typeof receipt.path === 'string' ? receipt.path : attachment.name,
+          mediaType: typeof receipt.mediaType === 'string' ? receipt.mediaType : 'application/octet-stream',
+          file: attachment, preview: image(receipt.preview),
+          ...(typeof message?.senderName === 'string' ? { producerName: message.senderName } : {}),
+        })
+      }
+    } else if (type === 'hivemind/artifact-created' || type === 'hivemind/generation-created') {
+      if (typeof data.artifactId !== 'string' || typeof data.path !== 'string') continue
+      artifacts.push({ id: data.artifactId, title: typeof data.title === 'string' ? data.title : 'Artifact', path: data.path,
+        mediaType: typeof data.mediaType === 'string' ? data.mediaType : 'application/octet-stream',
+        file: file(data.pdf ?? data.file), preview: image(data.preview) })
+    } else if (type === 'hivemind/browser-capture') {
+      if (typeof data.captureId !== 'string' || typeof data.url !== 'string') continue
+      if (image(data.preview)) artifacts.push({ id: data.captureId, title: typeof data.title === 'string' ? data.title : 'Website screenshot', path: typeof object(data.file)?.name === 'string' ? String(object(data.file)?.name) : 'Website screenshot.png', mediaType: 'image/png', file: file(data.file), preview: image(data.preview) })
+      captures.push({ id: data.captureId, url: data.url, title: typeof data.title === 'string' ? data.title : data.url,
+        ...(typeof data.status === 'number' ? { status: data.status } : {}), preview: image(data.preview) })
+    } else if (type === 'hivemind/research-receipt') {
+      for (const row of Array.isArray(data.sources) ? data.sources : []) {
+        const source = object(row)
+        if (typeof source?.url !== 'string' || !/^https?:\/\//i.test(source.url) || seenSources.has(source.url)) continue
+        seenSources.add(source.url)
+        sources.push({ url: source.url, title: typeof source.title === 'string' ? source.title : source.url })
+      }
+    }
+  }
+  return {
+    artifacts: artifacts.filter((item, index, all) => all.findLastIndex(other => other.id === item.id) === index),
+    captures: captures.filter((item, index, all) => all.findLastIndex(other => other.id === item.id) === index),
+    sources,
+  }
+}
+
+type WorkbenchProps = PropsRuntime<'sidebar.right.pane.tab'> & PropsLocale<'hivemind-connect'> & {
+  kind: Kind
+  useEmployeeEvents: SnapshotSelectorHook<SessionEventWindow>
+  loadImage: (ref: ImageAttachmentRef) => Promise<string>
+  loadPdf: (ref: FileAttachmentRef) => Promise<Blob>
+  loadText: (ref: FileAttachmentRef) => Promise<string>
+  openArtifact: (artifact: Artifact, disposition?: 'open' | 'download') => void
+  openWorkbench: (kind: Kind) => void
+  selectArtifact: (id: string) => void
+}
+
+export function ReceiptImage({ attachment, loadImage }: { attachment: ImageAttachmentRef | undefined; loadImage: WorkbenchProps['loadImage'] }) {
+  const [url, setUrl] = useState<string>()
+  const [failed, setFailed] = useState(false)
+  const load = useRef(loadImage)
+  load.current = loadImage
+  useEffect(() => {
+    let active = true
+    setUrl(undefined)
+    setFailed(false)
+    if (attachment !== undefined) void load.current(attachment).then(
+      (value) => { if (active) setUrl(value) }, () => { if (active) setFailed(true) },
+    )
+    return () => { active = false }
+  }, [attachment?.attachmentId])
+  if (attachment === undefined) return null
+  if (failed) return <p role="alert" className={css.workbenchPath}>Image preview could not be loaded.</p>
+  if (url === undefined) return <div role="status" className={css.previewLoading}>Loading image preview…</div>
+  return <img className={css.workbenchImage} src={url} alt="Generated preview" />
+}
+
+export function PdfReceipt({ artifact, loadPdf, loadImage, t }: { artifact: Artifact; loadPdf: WorkbenchProps['loadPdf']; loadImage: WorkbenchProps['loadImage']; t: WorkbenchProps['t'] }) {
+  const [url, setUrl] = useState<string>()
+  const [failed, setFailed] = useState(false)
+  const pdfBlob = useRef<Blob>()
+  const loadPdfRef = useRef(loadPdf)
+  loadPdfRef.current = loadPdf
+  useEffect(() => {
+    let active = true
+    let createdUrl: string | undefined
+    setUrl(undefined)
+    pdfBlob.current = undefined
+    setFailed(false)
+    if (artifact.file !== undefined) {
+      void loadPdfRef.current(artifact.file).then((blob) => {
+        if (!active) return
+        pdfBlob.current = blob
+        createdUrl = URL.createObjectURL(blob)
+        setUrl(createdUrl)
+      }, () => { if (active) setFailed(true) })
+    }
+    return () => {
+      active = false
+      if (createdUrl !== undefined) URL.revokeObjectURL(createdUrl)
+    }
+  }, [artifact.file?.attachmentId])
+  return url === undefined
+    ? <>{failed && <p className={css.workbenchPath} role="status">{t('workbench.pdfUnavailable')}</p>}<ReceiptImage attachment={artifact.preview} loadImage={loadImage} /></>
+    : <><a className={css.workbenchOpen} href={url} download={artifact.file?.name} onClick={(event) => {
+      if (!hasNativeArtifactSaver()) return
+      event.preventDefault()
+      if (pdfBlob.current !== undefined) void saveNativeArtifact(pdfBlob.current, artifact.file?.name ?? 'document.pdf')
+        .catch(() => { setFailed(true) })
+    }} aria-label={t('workbench.downloadPdf')} title={t('workbench.downloadPdf')} data-icon-download={agentPreview() || undefined}><DownloadLabel label={t('workbench.downloadPdf')} /></a><iframe className={css.workbenchPdf} src={url} title={artifact.title} /></>
+}
+
+/** Render authenticated receipt contents with the shared native Markdown primitive. */
+export function TextReceipt({ file, loadText, mediaType, t }: {
+  file: FileAttachmentRef
+  loadText: WorkbenchProps['loadText']
+  mediaType?: string
+  t: WorkbenchProps['t']
+}) {
+  const [text, setText] = useState<string>()
+  const [failed, setFailed] = useState(false)
+  const load = useRef(loadText)
+  load.current = loadText
+  useEffect(() => {
+    let active = true
+    setText(undefined)
+    setFailed(false)
+    void load.current(file).then((value) => { if (active) setText(value) }, () => { if (active) setFailed(true) })
+    return () => { active = false }
+  }, [file.attachmentId])
+  if (failed) return <p role="alert">{t('workbench.textUnavailable')}</p>
+  if (text === undefined) return <p role="status">{t('workbench.loading')}</p>
+  if (mediaType === 'text/html' || /\.html?$/i.test(file.name)) {
+    return <iframe className={css.workbenchPdf} title={file.name} srcDoc={text} sandbox="" />
+  }
+  return <div data-artifact-markdown><MarkdownText text={text} labels={{
+    code: { copyLabel: t('workbench.copy'), copiedLabel: t('workbench.copied') }, footnotes: t('workbench.footnotes'),
+  }} /></div>
+}
+
+/** Shared native workbench backed by the current session log. */
+export function HyperagentWorkbench({
+  kind, sessionId, useTabInfo, useEmployeeEvents, loadImage, loadPdf, loadText, openArtifact, selectArtifact, t,
+}: WorkbenchProps) {
+  const data = useEmployeeEvents(workbenchSnapshot)
+  const info = useTabInfo()
+  const params = info.tab.navigation.params as { artifactId?: string; sourceUrl?: string } | undefined
+  const requested = params?.artifactId
+  const [view, setView] = useState<'stack' | 'grid'>('stack')
+  const [filter, setFilter] = useState('all')
+  const [latestViewed, setLatestViewed] = useState(lastViewedArtifacts.get(sessionId))
+  const choose = (artifact: Artifact) => {
+    lastViewedArtifacts.set(sessionId, artifact.id)
+    setLatestViewed(artifact.id)
+    selectArtifact(artifact.id)
+  }
+  const [selectedSource, setSelectedSource] = useState<Source | null>(null)
+  useEffect(() => { setSelectedSource(null) }, [sessionId, params?.sourceUrl, params?.artifactId])
+  const lastArtifact = data.artifacts.find(artifact => artifact.id === requested) ?? data.artifacts.at(-1)
+  const lastCapture = data.captures.at(-1)
+  const website = data.sources.find(source => source.url === (selectedSource?.url ?? params?.sourceUrl))
+    ?? (lastArtifact === undefined ? data.sources.at(-1) : undefined)
+  const textPreview = lastArtifact !== undefined && (lastArtifact.mediaType.startsWith('text/') || /\.(md|markdown|txt)$/i.test(lastArtifact.path))
+  const imagePreview = kind === 'preview' && website === undefined && lastArtifact?.mediaType.startsWith('image/') === true
+  const fillPreview = kind === 'preview' && (imagePreview || website !== undefined || lastArtifact?.mediaType === 'application/pdf' || lastArtifact?.mediaType === 'text/html')
+  return <div className={css.workbench} data-preview-fill={fillPreview || undefined} data-preview-image={imagePreview || undefined} data-hivemind-workbench={kind} data-preview-alignment={kind === 'preview' ? website !== undefined || textPreview ? 'top' : 'center' : undefined}>
+    {kind === 'preview' && (website !== undefined
+      ? <WebsitePreview sources={data.sources.map(source => ({ ...source, seq: 0 }))}
+        selected={{ ...website, seq: 0 }}
+        select={url => setSelectedSource(data.sources.find(source => source.url === url) ?? null)} t={t} />
+      : lastArtifact === undefined
+        ? <p className={css.workbenchEmpty}>{t('workbench.emptyPreview')}</p>
+        : <article>{imagePreview ? <>
+          <header className={css.imagePreviewToolbar}><h2 title={lastArtifact.title}>{lastArtifact.title}</h2><button type="button" className={css.workbenchOpen} disabled={lastArtifact.file === undefined} aria-label={t('workbench.download')} title={t('workbench.download')} data-icon-download={agentPreview() || undefined} onClick={() => { openArtifact(lastArtifact, 'download') }}><DownloadLabel label={t('workbench.download')} /></button></header>
+          <div className={css.imagePreviewCanvas}><ReceiptImage attachment={lastArtifact.preview} loadImage={loadImage} /></div>
+        </> : <>{!fillPreview && <><span className={css.workbenchEyebrow}>{lastArtifact.mediaType}</span><h2>{lastArtifact.title}</h2>{lastArtifact.producerName !== undefined && <p>From {lastArtifact.producerName}</p>}</>}{lastArtifact.mediaType === 'application/pdf' && lastArtifact.file !== undefined
+          ? <PdfReceipt artifact={lastArtifact} loadPdf={loadPdf} loadImage={loadImage} t={t} />
+          : <><div className={css.workbenchActions}><button type="button" className={css.workbenchOpen} disabled={lastArtifact.file === undefined} aria-label={t('workbench.download')} title={t('workbench.download')} data-icon-download={agentPreview() || undefined} onClick={() => { openArtifact(lastArtifact, 'download') }}><DownloadLabel label={t('workbench.download')} /></button></div>{lastArtifact.file !== undefined && (lastArtifact.mediaType.startsWith('text/') || /\.(md|markdown|txt)$/i.test(lastArtifact.path))
+            ? <TextReceipt file={lastArtifact.file} mediaType={lastArtifact.mediaType} loadText={loadText} t={t} />
+            : <ReceiptImage attachment={lastArtifact.preview} loadImage={loadImage} />}</>}</>}</article>)}
+    {kind === 'artifacts' && <>
+      <header className={css.galleryHeader}><strong>{t('workbench.artifacts')}</strong><select aria-label={t('workbench.filter')} value={filter} onChange={(event) => { setFilter(event.target.value) }}><option value="all">{t('workbench.all')}</option>{[...new Set(data.artifacts.map(artifact => artifact.mediaType))].map(type => <option key={type} value={type}>{type}</option>)}</select><button type="button" onClick={() => { setView(view === 'stack' ? 'grid' : 'stack') }}>{t(view === 'stack' ? 'workbench.grid' : 'workbench.stack')}</button></header>
+      {data.artifacts.length === 0 ? <p className={css.workbenchEmpty}>{t('workbench.emptyArtifacts')}</p> : <div className={css.artifactGallery} data-view={view}>{[...data.artifacts].reverse().filter(artifact => filter === 'all' || artifact.mediaType === filter).map((artifact, index) => <button key={artifact.id} type="button" className={css.artifactCard} style={{ zIndex: data.artifacts.length - index }} onClick={() => { choose(artifact) }} aria-label={`${t('workbench.open')}: ${artifact.title}`}>
+        <div className={css.artifactCover}>{artifact.preview ? <ReceiptImage attachment={artifact.preview} loadImage={loadImage} /> : <span className={css.artifactFormat}>{artifact.mediaType === 'application/pdf' ? 'PDF' : /\.pptx?$/i.test(artifact.path) ? 'PPTX' : /\.docx?$/i.test(artifact.path) ? 'DOC' : artifact.mediaType === 'text/markdown' ? 'MD' : artifact.mediaType.split('/').at(-1)?.toUpperCase()}</span>}{latestViewed === artifact.id && <span className={css.lastViewed}>{t('workbench.lastViewed')}</span>}</div><span className={css.artifactCaption}><strong>{artifact.title}</strong><small>{artifact.path.split('/').at(-1)}</small></span>
+      </button>)}</div>}
+    </>}
+    {kind === 'computer' && (lastCapture === undefined
+      ? <p className={css.workbenchEmpty}>{t('workbench.emptyComputer')}</p>
+      : <article><span className={css.workbenchEyebrow}>{t('workbench.browserCapture')} {lastCapture.status ?? ''}</span><h2>{lastCapture.title}</h2><ReceiptImage attachment={lastCapture.preview} loadImage={loadImage} /><a href={lastCapture.url} target="_blank" rel="noopener noreferrer">{lastCapture.url}</a></article>)}
+    {kind === 'sources' && (data.sources.length === 0
+      ? <p className={css.workbenchEmpty}>{t('workbench.emptySources')}</p>
+      : <><ul className={css.workbenchList}>{data.sources.map(source => <li key={source.url}><button type="button" onClick={() => { setSelectedSource(source) }}>{source.title}</button><small>{source.url}</small></li>)}</ul>{selectedSource !== null && <article><h2>{selectedSource.title}</h2><a href={selectedSource.url} target="_blank" rel="noopener noreferrer">{selectedSource.url}</a><iframe className={css.workbenchPdf} title={selectedSource.title} src={selectedSource.url} sandbox="allow-scripts" referrerPolicy="no-referrer" /></article>}</>)}
+  </div>
+}

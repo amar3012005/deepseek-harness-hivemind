@@ -181,6 +181,7 @@ export default defineConfig({
     rollupOptions: {
       input: {
         index: src('./index.html'),
+        'harness-shell': src('./src/hivemind-embedded.ts'),
         // Standalone entry, not an index.html script tag: Vite folds every
         // module tag of one page into a single synthetic entry, and only a
         // separate input keeps the shared page chunks bootstrap-free.
@@ -191,6 +192,7 @@ export default defineConfig({
         // itself stays at dist/preview.html), so the published payload can
         // exclude it as one directory.
         entryFileNames(chunk): string {
+          if (chunk.name === 'harness-shell') return 'assets/harness-shell.js'
           return chunk.name === 'bootstrap' ? 'preview/[name]-[hash].js' : 'assets/[name]-[hash].js'
         },
         // Output layout: the two main chunks stay at assets/ root; lazy

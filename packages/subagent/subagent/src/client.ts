@@ -5,4 +5,5 @@
  */
 
 export type * from './control-types.ts'
+export type { SubagentStopReason, SubagentStopReasonMap } from './stop-reason.ts'
 export type { SubagentCatalogEntry, SubagentIdentityProjection, SubagentTimingProjection } from './projection-types.ts'

@@ -34,6 +34,7 @@ import type {
   SessionWireEvent,
 } from './types.ts'
 import { SessionAssistantStreamAccumulator } from './assistant-stream.ts'
+import { readColdHistorySource, type ColdHistorySource } from './cold-history.ts'
 
 const DEFAULT_MAX_MESSAGES = 50
 const MESSAGE_TYPES = new Set(['user/message', 'assistant/message'])
@@ -82,6 +83,19 @@ export class SessionHistoryController {
     const beforeSeq = request.beforeSeq === undefined
       ? undefined
       : SessionLogOffset(request.beforeSeq)
+    if (request.address.kind !== 'subagent') {
+      using window = await readColdHistorySource(this.ctx, addressId(request.address), signal, {
+        maxMessages: request.maxMessages ?? DEFAULT_MAX_MESSAGES,
+        ...(beforeSeq === undefined ? {} : { beforeSeq }),
+        ...(request.turnWindow === undefined ? {} : { turnWindow: request.turnWindow }),
+        throughSeq, withProjections: false,
+      })
+      if (window !== undefined) {
+        validateAddress(request.address, window.header, window.inheritedEventCount, undefined)
+        const page = paginate(window.events, beforeSeq, request.maxMessages ?? DEFAULT_MAX_MESSAGES, throughSeq, request.turnWindow)
+        return { records: pageRecords(page.events), hasMore: page.hasMore }
+      }
+    }
     using source = await this.sourceFor(request.address, signal, false)
     signal.throwIfAborted()
     const sourceLog = source.events
@@ -176,7 +190,7 @@ export class SessionHistoryController {
     const onAbort = (): void => { notify() }
     signal.addEventListener('abort', onAbort, { once: true })
     try {
-      using source = await this.sourceFor(address, signal, true)
+      using source = await this.followSource(request, signal)
       const events = source.events
       signal.throwIfAborted()
       const cursor = source.cursor
@@ -209,6 +223,21 @@ export class SessionHistoryController {
           promotion[Symbol.dispose]()
           throw error
         }
+      } else if (address.kind === 'session' && source.source === 'window') {
+        // Publish the accurate checkpoint-backed presentation first. Ordinary
+        // complete observation remains the only authority for Agent activation.
+        void this.sourceFor(address, signal, true).then((observation) => {
+          if (signal.aborted || follower.closed) {
+            observation[Symbol.dispose]()
+            return
+          }
+          try { this.promote(observation) } catch (error: unknown) {
+            observation[Symbol.dispose]()
+            throw error
+          }
+        }).catch((error: unknown) => {
+          if (!signal.aborted) this.ctx.logger.warn(`cold history promotion failed: ${String(error)}`)
+        })
       }
       let nextOffset = SessionLogOffset(cursor + 1)
       while (!follower.closed && !signal.aborted) {
@@ -272,6 +301,26 @@ export class SessionHistoryController {
         && error.code === 'SESSION_QUERY_SESSION_NOT_FOUND') rejectNotFound(address)
       throw error
     }
+  }
+
+  private async followSource(request: SessionFollowRequest, signal: AbortSignal): Promise<SessionObservation | ColdHistorySource> {
+    if (request.address.kind === 'session') {
+      const window = await readColdHistorySource(this.ctx, addressId(request.address), signal, {
+        maxMessages: request.maxMessages ?? DEFAULT_MAX_MESSAGES,
+        ...(request.turnWindow === undefined ? {} : { turnWindow: request.turnWindow }),
+        withProjections: true,
+      })
+      if (window !== undefined) {
+        try {
+          validateAddress(request.address, window.header, window.inheritedEventCount, window.projections)
+          return window
+        } catch (error: unknown) {
+          window[Symbol.dispose]()
+          throw error
+        }
+      }
+    }
+    return this.sourceFor(request.address, signal, true)
   }
 
 }
@@ -396,7 +445,9 @@ function paginate(
   throughSeq: SessionSeqCursor,
   turnWindow?: SessionPageRequest['turnWindow'],
 ): { readonly events: SessionEvent[]; readonly hasMore: boolean } {
-  const end = SessionLogOffset(Math.min(throughSeq + 1, beforeSeq ?? throughSeq + 1))
+  const firstSeq = events[0]?.seq ?? 0
+  const end = Math.max(0, Math.min(events.length, Math.min(throughSeq + 1 - firstSeq,
+    (beforeSeq ?? throughSeq + 1) - firstSeq)))
   let count = 0
   let turns = 0
   let cut = SessionLogOffset(0)
@@ -419,11 +470,11 @@ function paginate(
       }
     }
     if (count >= maxMessages) {
-      cut = SessionLogOffset(groupStart)
+      cut = SessionLogOffset(Math.max(0, groupStart - firstSeq))
       break
     }
   }
-  return { events: events.slice(cut, end), hasMore: cut > 0 }
+  return { events: events.slice(cut, end), hasMore: firstSeq + cut > 0 }
 }
 
 /** Translate current logical Session metadata to the browser wire. */

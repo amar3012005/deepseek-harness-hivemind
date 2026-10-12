@@ -23,6 +23,7 @@ import type {
 import { requiredText } from './validation.ts'
 
 const MEMBER_NAME = /^[a-z0-9]+(?:-[a-z0-9]+)*$/u
+const PERSISTENT_ROOM_PROVIDER = 'persistent-room'
 
 /** Caller identity inside one implicit Team. */
 export interface TeamMembership {
@@ -66,6 +67,7 @@ export class TeamRoster {
     private readonly journal: TeamJournal,
     private readonly lifecycle: TeamRuntimeLifecycle,
     private readonly maxMembers: number,
+    private readonly maxPersistentAssignees: number,
   ) {}
 
   /**
@@ -138,6 +140,7 @@ export class TeamRoster {
       const live = this.ctx.agents.get(member.id)
       const model = live?.options.model ?? root.options.model
       result.push({
+        ...(member.provider === PERSISTENT_ROOM_PROVIDER ? { ownership: 'persistent' as const } : {}),
         id: member.id,
         name: member.name,
         role: 'teammate',
@@ -167,6 +170,81 @@ export class TeamRoster {
     return await this.lifecycle.track(this.spawnAdmitted(caller, request))
   }
 
+  /** Bind an independent persistent root as a task assignee without adopting its lifecycle. */
+  async bindPersistent(caller: Agent, target: Agent, rawName: string, description: string): Promise<TeamMemberView> {
+    if (this.lifecycle.disposed) throw new TeamError('Agent Teams service is disposing', 'TEAM_DISPOSED')
+    return await this.lifecycle.track(this.bindPersistentAdmitted(caller, target, rawName, description))
+  }
+
+  private async bindPersistentAdmitted(
+    caller: Agent,
+    target: Agent,
+    rawName: string,
+    description: string,
+  ): Promise<TeamMemberView> {
+    const membership = this.membership(caller)
+    if (membership.role !== 'lead' || membership.root !== caller) {
+      throw new TeamError('only the Team Lead can bind persistent assignees', 'TEAM_LEAD_REQUIRED')
+    }
+    if (this.ctx.agents.get(target.id) !== target || target === caller
+      || target.session.header.parentSession !== undefined
+      || target.session.header.origin === 'subagent') {
+      throw new TeamError('persistent assignee must be an exact independent live root', 'TEAM_INVALID_TARGET')
+    }
+
+    // Live Agent references are not tenant authority. Both durable reads must
+    // pass the current persistence provider's authenticated visibility fence.
+    for (const id of [caller.id, target.id]) {
+      const handle = await this.ctx.sessionPersistence.open(id, 'read')
+      try {
+        await handle.read()
+      } finally {
+        await handle.close()
+      }
+    }
+
+    const name = this.memberName(rawName)
+    const normalizedDescription = requiredText(description, 'description', 200)
+    await this.journal.transact(caller.id, async () => {
+      if (this.lifecycle.disposed || this.ctx.agents.get(caller.id) !== caller
+        || this.ctx.agents.get(target.id) !== target) {
+        throw new TeamError('persistent assignee admission ended', 'TEAM_DISPOSED')
+      }
+      const state = this.journal.state(caller)
+      const existing = state.members.find(member => member.id === target.id || member.name === name)
+      if (existing !== undefined) {
+        if (existing.id !== target.id || existing.name !== name || existing.provider !== PERSISTENT_ROOM_PROVIDER) {
+          throw new TeamError('persistent assignee identity conflicts', 'TEAM_MEMBER_NAME_TAKEN')
+        }
+        return
+      }
+      if (state.members.filter(member => member.provider === PERSISTENT_ROOM_PROVIDER).length >= this.maxPersistentAssignees) {
+        throw new TeamError('persistent assignee limit reached', 'TEAM_MEMBER_LIMIT')
+      }
+      const member: TeamMemberSnapshot = {
+        id: target.id,
+        name,
+        description: normalizedDescription,
+        provider: PERSISTENT_ROOM_PROVIDER,
+        context: 'fresh',
+        phase: 'provisioning',
+      }
+      await this.journal.appendAndFlush(caller, 'team/member', {
+        version: 2,
+        teamId: TeamId(caller.id),
+        member,
+      })
+      await this.journal.appendAndFlush(caller, 'team/member', {
+        version: 2,
+        teamId: TeamId(caller.id),
+        member: { ...member, phase: 'active' },
+      })
+    })
+    const bound = this.list(membership).find(member => member.id === target.id)
+    if (bound === undefined) throw new TeamError('persistent binding missing after commit', 'TEAM_MEMBER_NOT_FOUND')
+    return bound
+  }
+
   /**
    * Reconcile provisioning state when one Team member Session starts.
    * @param agent - newly started exact live Agent.
@@ -190,6 +268,9 @@ export class TeamRoster {
     const state = this.journal.state(membership.root)
     const target = resolveActiveMember(membership.root, state, targetName)
     if (target.id === membership.root.id) throw new TeamError('the Team Lead cannot interrupt itself', 'TEAM_INVALID_TARGET')
+    if (state.members.some(member => member.id === target.id && member.provider === PERSISTENT_ROOM_PROVIDER)) {
+      throw new TeamError('persistent assignees are owned by their room lifecycle', 'TEAM_PERSISTENT_ROOM_OWNER')
+    }
     const live = this.ctx.agents.get(target.id)
     if (live === undefined) return { previousStatus: 'inactive' }
     const previousStatus = availability(live)
@@ -254,7 +335,7 @@ export class TeamRoster {
       if (state.members.some(member => member.name === name)) {
         throw new TeamError(`teammate name "${name}" was already used in this Team`, 'TEAM_MEMBER_NAME_TAKEN')
       }
-      if (state.members.length >= this.maxMembers) {
+      if (state.members.filter(member => member.provider !== PERSISTENT_ROOM_PROVIDER).length >= this.maxMembers) {
         throw new TeamError(`Team member limit ${this.maxMembers} reached`, 'TEAM_MEMBER_LIMIT')
       }
       await this.journal.appendAndFlush(root, 'team/member', { version: 2, teamId: TeamId(root.id), member })
@@ -386,7 +467,11 @@ export class TeamRoster {
         const suffix = loaded.events.slice(loaded.inheritedEventCount)
         const descriptor = foldSubagentDescriptor(suffix)
         const acceptedInitialPrompt = messageAccepted(suffix, message => message.source.kind === 'user')
-        if (loaded.header.parentSession === root.id
+        if (member.provider === PERSISTENT_ROOM_PROVIDER
+          && loaded.header.parentSession === undefined
+          && loaded.header.origin !== 'subagent') {
+          phase = 'active'
+        } else if (loaded.header.parentSession === root.id
           && descriptor?.mode === 'continuable'
           && descriptor.provider === member.provider
           && acceptedInitialPrompt) {
@@ -420,6 +505,7 @@ export class TeamRoster {
   private memberView(member: TeamMemberSnapshot & { readonly phase: 'active' }): TeamMemberView {
     const live = this.ctx.agents.get(member.id)
     return {
+      ...(member.provider === PERSISTENT_ROOM_PROVIDER ? { ownership: 'persistent' as const } : {}),
       id: member.id,
       name: member.name,
       role: 'teammate',

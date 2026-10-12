@@ -1,0 +1,9 @@
+{
+  "extends": "../../../tsconfig.base.client.json",
+  "compilerOptions": { "rootDir": "src", "outDir": "lib/client-types", "paths": { "@deepseek-ai/dsh-session/types": ["../../core/session/lib/client-types/types.d.ts"] } },
+  "include": ["src/events.ts"],
+  "references": [
+    { "path": "../../core/session/tsconfig.types.json" },
+    { "path": "../../util/values" }
+  ]
+}

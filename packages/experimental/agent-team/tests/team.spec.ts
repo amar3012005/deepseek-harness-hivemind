@@ -141,6 +141,60 @@ async function waitRunning(ctx: Context, id: SessionId): Promise<Agent> {
 }
 
 describe('Team identity and provisioning', () => {
+  it('binds an authorized independent root idempotently for task assignment without adopting its Team or lifecycle', async () => {
+    const { ctx, lead, teamFiber } = await setup([])
+    const employee = await ctx.agentLoop.create(SessionId('persistent-employee'), { provider: 'mock', model: 'mock' })
+    await ctx.sessions.flush(lead.session)
+    await ctx.sessions.flush(employee.session)
+    const member = await ctx.agentTeams.bindPersistentAssignee(lead, employee, 'employee', 'Persistent employee')
+    const repeated = await ctx.agentTeams.bindPersistentAssignee(lead, employee, 'employee', 'Updated description')
+    expect(member).toMatchObject({ id: employee.id, name: 'employee', ownership: 'persistent' })
+    expect(repeated).toMatchObject({ id: employee.id, name: 'employee', ownership: 'persistent' })
+    expect(durable(lead).members).toHaveLength(1)
+    expect(durable(lead).members[0]).toMatchObject({ id: employee.id, provider: 'persistent-room' })
+    expect(ctx.agentTeams.membership(employee).root).toBe(employee)
+    expect(employee.session.header.parentSession).toBeUndefined()
+    const task = await ctx.agentTeams.createTask(lead, { subject: 'Assigned work', description: 'Save the deliverable.' })
+    await ctx.agentTeams.updateTask(lead, { taskId: task.id, expectedRevision: task.revision, action: 'reassign', owner: member.name })
+    expect(ctx.agentTeams.getTask(lead, task.id).ownerName).toBe('employee')
+    await expect(ctx.agentTeams.sendMessage(lead, { target: member.name, content: content('Hello'), signal: SIGNAL }))
+      .rejects.toMatchObject({ code: 'TEAM_PERSISTENT_ROOM_OWNER' })
+    expect(() => ctx.agentTeams.interrupt(lead, member.name)).toThrow('persistent assignees are owned by their room lifecycle')
+    await teamFiber.dispose()
+    expect(ctx.agents.get(employee.id)).toBe(employee)
+  })
+
+  it('keeps persistent assignees outside spawned-teammate capacity and rejects duplicate identity collisions', async () => {
+    const { ctx, lead } = await setup([], { maxMembers: 1, maxPersistentAssignees: 2 })
+    await ctx.sessions.flush(lead.session)
+    const first = await ctx.agentLoop.create(SessionId('persistent-one'), { provider: 'mock', model: 'mock' })
+    const second = await ctx.agentLoop.create(SessionId('persistent-two'), { provider: 'mock', model: 'mock' })
+    await ctx.sessions.flush(first.session)
+    await ctx.sessions.flush(second.session)
+    await ctx.agentTeams.bindPersistentAssignee(lead, first, 'employee-one', 'One')
+    await ctx.agentTeams.bindPersistentAssignee(lead, second, 'employee-two', 'Two')
+    expect(ctx.agentTeams.listMembers(lead)).toHaveLength(3)
+    await expect(ctx.agentTeams.bindPersistentAssignee(lead, second, 'employee-one', 'Duplicate label'))
+      .rejects.toMatchObject({ code: 'TEAM_MEMBER_NAME_TAKEN' })
+    const child = await spawn(ctx, lead, 'available-child')
+    expect(child.member.name).toBe('available-child')
+    await expect(spawn(ctx, lead, 'over-capacity')).rejects.toMatchObject({ code: 'TEAM_MEMBER_LIMIT' })
+  })
+
+  it('rejects a target whose durable Session is not visible in the current tenant', async () => {
+    const { ctx, lead } = await setup([])
+    const employee = await ctx.agentLoop.create(SessionId('foreign-root'), { provider: 'mock', model: 'mock' })
+    await ctx.sessions.flush(lead.session)
+    const open = ctx.sessionPersistence.open.bind(ctx.sessionPersistence)
+    vi.spyOn(ctx.sessionPersistence, 'open').mockImplementation((id, mode, options) => {
+      if (id === employee.id) return Promise.reject(new Error('tenant denied'))
+      return open(id, mode, options)
+    })
+    await expect(ctx.agentTeams.bindPersistentAssignee(lead, employee, 'foreign', 'Foreign'))
+      .rejects.toThrow('tenant denied')
+    expect(durable(lead).members).toHaveLength(0)
+  })
+
   it('rejects missing and failed authoritative Team projections', async () => {
     const first = await setup([])
     const journal = teamInternals(first.ctx).journal
@@ -159,6 +213,7 @@ describe('Team identity and provisioning', () => {
   it('rejects deployment limits that are not positive safe integers', async () => {
     const fields = [
       'maxMembers',
+      'maxPersistentAssignees',
       'maxTasks',
       'maxMessageBytes',
       'disposalTimeoutMs',
@@ -561,6 +616,42 @@ describe('Team identity and provisioning', () => {
 })
 
 describe('Team shared task DAG', () => {
+  it('applies live dispatch guards to spawn, messages and task claims, then restores them on disposal', async () => {
+    const { ctx, lead } = await setup(['hang'])
+    const child = await spawn(ctx, lead, 'dispatch-peer')
+    await waitRunning(ctx, child.member.id)
+    const task = await ctx.agentTeams.createTask(lead, { subject: 'paused work', description: 'must remain pending' })
+    const dispose = ctx.agentTeams.guardDispatch(caller => caller.id === lead.id ? 'HQ autonomous activity is paused by the human.' : undefined)
+
+    await expect(spawn(ctx, lead, 'blocked-child')).rejects.toMatchObject({ code: 'TEAM_DISPATCH_POLICY_DENIED' })
+    await expect(ctx.agentTeams.sendMessage(lead, { target: 'dispatch-peer', content: content('dispatch'), signal: SIGNAL }))
+      .rejects.toMatchObject({ code: 'TEAM_DISPATCH_POLICY_DENIED' })
+    await expect(ctx.agentTeams.updateTask(lead, { taskId: task.id, expectedRevision: task.revision, action: 'claim' }))
+      .rejects.toMatchObject({ code: 'TEAM_DISPATCH_POLICY_DENIED' })
+    expect(ctx.agentTeams.getTask(lead, task.id).status).toBe('pending')
+
+    dispose()
+    expect((await ctx.agentTeams.updateTask(lead, { taskId: task.id, expectedRevision: task.revision, action: 'claim' })).status).toBe('in_progress')
+  })
+
+  it('keeps task policies monotonic across direct service updates and independently disposable', async () => {
+    const { ctx, lead } = await setup([])
+    const task = await ctx.agentTeams.createTask(lead, { subject: 'review', description: 'retain receipts' })
+    const claimed = await ctx.agentTeams.updateTask(lead, { taskId: task.id, expectedRevision: task.revision, action: 'claim' })
+    const disposeAll = ctx.agentTeams.guardTaskUpdates((_caller, request) => request.action === 'edit' ? 'task is frozen' : undefined)
+    const disposeCompletion = ctx.agentTeams.guardTaskUpdates((_caller, request) => request.action === 'complete' ? 'artifact missing' : undefined)
+
+    await expect(ctx.agentTeams.updateTask(lead, { taskId: task.id, expectedRevision: claimed.revision, action: 'edit', subject: 'changed' }))
+      .rejects.toMatchObject({ code: 'TEAM_TASK_POLICY_DENIED' })
+    await expect(ctx.agentTeams.updateTask(lead, { taskId: task.id, expectedRevision: claimed.revision, action: 'complete' }))
+      .rejects.toMatchObject({ code: 'TEAM_TASK_POLICY_DENIED' })
+    disposeAll()
+    await expect(ctx.agentTeams.updateTask(lead, { taskId: task.id, expectedRevision: claimed.revision, action: 'complete' }))
+      .rejects.toMatchObject({ code: 'TEAM_TASK_POLICY_DENIED' })
+    disposeCompletion()
+    expect((await ctx.agentTeams.updateTask(lead, { taskId: task.id, expectedRevision: claimed.revision, action: 'complete' })).status).toBe('completed')
+  })
+
   it('fails loudly when the durable numeric task id space is exhausted', async () => {
     const { ctx, lead } = await setup([])
     const id = TeamTaskId(`task-${Number.MAX_SAFE_INTEGER}`)

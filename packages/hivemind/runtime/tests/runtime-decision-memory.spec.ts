@@ -1,0 +1,112 @@
+import { describe, it, expect, vi } from 'vitest'
+import type { Context } from '@deepseek-ai/cordis'
+import type { Agent } from '@deepseek-ai/dsh-agent'
+import type { SessionEvent } from '@deepseek-ai/dsh-session'
+import type { ToolDefinition } from '@deepseek-ai/dsh-tools'
+import { installRuntimeDecisionMemory, freshDecisionMemoryContext } from '../src/runtime-decision-memory.ts'
+function fixture(runtime = true) {
+  const tools = new Map<string, ToolDefinition>()
+  const events = [{ type:'hivemind/session-owner',data:{ id:runtime ? null : 'employee-id',slug:runtime ? 'runtime':'sofia',name:'Name',role:'Role' } }] as unknown as SessionEvent[]
+  const agent = { id:'session-canary',session:{ header:{ agentPreset:runtime ? 'hivemind-hq':'hivemind-hyperagents' },snapshotEvents:()=>events },ctx:{ effect:(run:()=>void)=>{ run() },tools:{ register:(tool:ToolDefinition)=>{tools.set(tool.name,tool);return ()=>{}} } } } as unknown as Agent
+  let handler:((input:{ agent:Agent;signal:AbortSignal })=>Promise<string>) | undefined
+  const request=vi.fn(async (_agent: Agent, _input: unknown, _signal: AbortSignal)=>({ ok:true,memories:[] }))
+  const ctx={ get:()=>undefined,effect:(run:()=>void)=>{ run() },on:(_name:string,value:typeof handler)=>{handler=value
+    return ()=>{}} } as unknown as Context
+  const install=installRuntimeDecisionMemory(ctx,request,async()=>{})
+  install(agent)
+  return { agent,events,tools,request,call:()=>handler!({ agent,signal:new AbortController().signal }) }
+}
+describe('Runtime decision memory',()=>{
+  it('uses two scoped tools, fresh query-free reads and no employee access',async()=>{
+    const f=fixture();expect([...f.tools.keys()]).toEqual(['runtime_user_agenda','runtime_uncertainties'])
+    expect(JSON.parse(await f.call())).toEqual({ uncertainties:{ available:true,memories:[] },userAgenda:{ available:true,memories:[] } })
+    expect(f.request.mock.calls[0]).toEqual([f.agent,{ action:'recall',kind:'uncertainty',agent_slug:'runtime',state:'open',limit:8 },expect.any(AbortSignal)])
+    const employee=fixture(false);expect(employee.tools.size).toBe(0)
+    await expect(employee.call()).rejects.toThrow('runtime_voice_room_required')
+  })
+  it('fails a missing read rather than treating it as an empty agenda',async()=>{
+    const f=fixture();f.request.mockRejectedValueOnce(new Error('offline'))
+    await expect(f.call()).rejects.toThrow('runtime_decision_memory_unavailable')
+  })
+  it('saves minimal private notes and automatically uses the latest actual user source',async()=>{
+    const f=fixture()
+    f.events.push({ type:'user/message',seq:7,data:{ source:{ kind:'user' } } } as unknown as SessionEvent)
+    f.events.push({ type:'hivemind/voice-call-ended',seq:8,data:{ callId:'latest-call',hadUserSpeech:true,transcript:'Focus on existing customers.' } } as unknown as SessionEvent)
+    const execution={ agent:f.agent,signal:new AbortController().signal } as Parameters<ToolDefinition['execute']>[1]
+    const args={ action:'save',title:'Customer focus',summary:'User wants to focus on existing customers.',priority:80,impact:'Guides research.' }
+    await f.tools.get('runtime_user_agenda')!.execute(args,execution)
+    expect(f.request.mock.calls.at(-1)?.[1]).toMatchObject({ action:'save',kind:'user_agenda',context:{ confirmationRef:'call:latest-call',evidence:[] } })
+    await f.tools.get('runtime_uncertainties')!.execute({ action:'save',title:'Which segment?',summary:'Need user input.' },execution)
+    expect(f.request.mock.calls.at(-1)?.[1]).toMatchObject({ kind:'uncertainty',context:{ evidence:[],impact:'' } })
+    f.events.push({ type:'user/message',seq:9,data:{ source:{ kind:'user' } } } as unknown as SessionEvent)
+    await f.tools.get('runtime_user_agenda')!.execute(args,execution)
+    expect(f.request.mock.calls.at(-1)?.[1]).toMatchObject({ context:{ confirmationRef:'event:9' } })
+  })
+  it('rejects omitted superseding uncertainty state before any backend save',async()=>{
+    const f=fixture(),execution={ agent:f.agent,signal:new AbortController().signal } as Parameters<ToolDefinition['execute']>[1]
+    await expect(f.tools.get('runtime_uncertainties')!.execute({ action:'save',title:'Audience',summary:'Resolved: admins only.',supersedes_id:'existing-question' },execution)).rejects.toThrow('uncertainty_state_required')
+    expect(f.request).not.toHaveBeenCalled()
+    await f.tools.get('runtime_uncertainties')!.execute({ action:'save',title:'Audience',summary:'Admins only.',supersedes_id:'existing-question',state:'resolved' },execution)
+    expect(f.request.mock.calls.at(-1)?.[1]).toMatchObject({ action:'save',kind:'uncertainty',supersedes_id:'existing-question',context:{ state:'resolved' } })
+  })
+  it('preserves explicit open successors and their exact backend receipt',async()=>{
+    const f=fixture(),execution={ agent:f.agent,signal:new AbortController().signal } as Parameters<ToolDefinition['execute']>[1]
+    const receipt={ ok:true,memory:{ context:{ state:'open' } } }
+    f.request.mockResolvedValueOnce(receipt as never)
+    expect(await f.tools.get('runtime_uncertainties')!.execute({ action:'save',title:'Audience',summary:'Still unresolved.',supersedes_id:'existing-question',state:'open' },execution)).toBe(receipt)
+    expect(f.request.mock.calls.at(-1)?.[1]).toMatchObject({ context:{ state:'open' } })
+  })
+  it('does not invent confirmation from employee or empty-call chatter',async()=>{
+    const f=fixture()
+    const execution={ agent:f.agent,signal:new AbortController().signal } as Parameters<ToolDefinition['execute']>[1]
+    await expect(f.tools.get('runtime_user_agenda')!.execute({ action:'save',title:'Goal',summary:'Inferred goal' },execution)).rejects.toThrow('No saved user direction')
+    expect(f.request).not.toHaveBeenCalled()
+  })
+
+  it('accepts a reconstructed scoped handle only for the same canonical Runtime room',async()=>{
+    const f=fixture()
+    const scoped={ ...f.agent } as Agent
+    expect(scoped).not.toBe(f.agent)
+    await f.tools.get('runtime_uncertainties')!.execute({ action:'recall' }, { agent:scoped,signal:new AbortController().signal } as never)
+    expect(f.request).toHaveBeenCalledOnce()
+    await expect(f.tools.get('runtime_uncertainties')!.execute({ action:'recall' }, { agent:{ ...scoped,id:'other-room' },signal:new AbortController().signal } as never)).rejects.toThrow('runtime_memory_required')
+    const employee=fixture(false)
+    await expect(f.tools.get('runtime_uncertainties')!.execute({ action:'recall' }, { agent:{ ...employee.agent,id:f.agent.id },signal:new AbortController().signal } as never)).rejects.toThrow('runtime_memory_required')
+  })
+
+})
+
+it('recovers independently current agendas, changed direction and uncertainty priority without history mutation', async () => {
+  const f = fixture(), original = [...f.events]
+  f.request.mockImplementation(async (_agent, args: unknown) => {
+    const kind = (args as { kind: string }).kind
+    return { ok: true, memories: kind === 'user_agenda' ? [
+      { id:'new-sales',kind,title:'Existing customers',summary:'Confirmed changed direction',context:{ agendaKey:'sales',supersedesId:'old-sales',state:'confirmed',priority:90 } },
+      { id:'ops',kind,title:'Release readiness',summary:'Independent agenda',context:{ agendaKey:'ops',state:'confirmed',priority:70 } },
+    ] : [{ id:'question',kind,title:'Missing access',summary:'Pending',context:{ state:'open',priority:80 } }] } as never
+  })
+  const result = JSON.parse(await f.call())
+  expect(result.userAgenda.memories).toMatchObject([{ id:'new-sales',agendaKey:'sales',supersedesId:'old-sales' },{ id:'ops',agendaKey:'ops' }])
+  expect(result.uncertainties.memories[0]).toMatchObject({ id:'question',state:'open',priority:80 })
+  expect(f.events).toEqual(original)
+})
+
+it('bounds a nonsettling retrieval and preserves the other kind', async () => {
+  vi.useFakeTimers()
+  try {
+    const f = fixture()
+    f.request.mockImplementationOnce(async () => new Promise<never>(() => {}))
+    const pending = freshDecisionMemoryContext(f.request, f.agent, new AbortController().signal)
+    await vi.advanceTimersByTimeAsync(2501)
+    expect(JSON.parse(await pending)).toEqual({ uncertainties:{ available:false,memories:null },userAgenda:{ available:true,memories:[] } })
+  } finally { vi.useRealTimers() }
+})
+
+it('propagates native turn cancellation rather than caching unavailable heads', async () => {
+  const f = fixture(), abort = new AbortController()
+  f.request.mockImplementation(async () => new Promise<never>(() => {}))
+  const pending = freshDecisionMemoryContext(f.request, f.agent, abort.signal)
+  const assertion = expect(pending).rejects.toThrow('cancelled-turn')
+  abort.abort(new Error('cancelled-turn'))
+  await assertion
+})

@@ -360,6 +360,21 @@ export interface SessionEventMap {
    */
   'tool/call': { turn: number; step: number; callId: ToolCallId; name: string; arguments: string }
   /**
+   * A real tool call deliberately suspended for an exact external decision; it has no tool/result.
+   * A registered pure projection removes the invocation from provider history without
+   * changing the original assistant message in the durable event log.
+   * @messageProjection
+   */
+  'tool/parked': {
+    turn: number
+    step: number
+    callId: ToolCallId
+    rootCallId: ToolCallId
+    name: string
+    approvalId: string
+    argumentsDigest: string
+  }
+  /**
    * A completed tool call's model-facing result, optional internal failure
    * identity and user-facing reason, and optional tool-private `meta`
    * presentation payload. The reason remains outside the model-facing message.

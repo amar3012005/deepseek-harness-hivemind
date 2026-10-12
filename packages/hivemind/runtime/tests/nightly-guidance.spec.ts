@@ -1,0 +1,84 @@
+import { it, expect } from 'vitest'
+import { createHash } from 'node:crypto'
+import type { Agent, PreStepDecision } from '@deepseek-ai/dsh-agent'
+import type { Context } from '@deepseek-ai/cordis'
+import type { SessionEvent } from '@deepseek-ai/dsh-session'
+import { createUserMessage } from '@deepseek-ai/dsh-llm'
+import { currentNightlyOccurrence, installNightlyRoutineGuidance, nightlyRoutineSkill } from '../src/nightly-routine-guidance.ts'
+const occurrence='2026-10-09T18:16:54.867Z'
+function fixture(kind='schedule', preset='hivemind-hq') {
+  const id='session-nightly-fixture'
+  const schedule='schedule-'+createHash('sha256').update(`${id}\0nightly-routine-check-v1`).digest('hex')
+  const events=[{ type:'hivemind/session-owner',seq:1,data:{ id:null,slug:'runtime' } },{ type:'turn/end',seq:2,data:{} },
+    { type:'user/message',seq:3,data:{ source:kind==='schedule'?{ kind,deliveryKey:'fixture-delivery',deliveryKeys:['fixture-delivery'] }:{ kind },content:[{ type:'text',text:'reminders_json: '+JSON.stringify([{ schedule_id:schedule,occurrence_at:occurrence }]) }] } }] as unknown as SessionEvent[]
+  const agent={ id,session:{ header:{ agentPreset:preset },snapshotEvents:()=>events } } as unknown as Agent
+  return { agent,events }
+}
+it('recognizes only fresh authentic canonical schedule input',()=>{
+  const f=fixture();expect(currentNightlyOccurrence(f.agent)).toBe(occurrence)
+  f.events.push({ type:'turn/end',seq:4,data:{} } as unknown as SessionEvent);expect(currentNightlyOccurrence(f.agent)).toBeUndefined()
+  expect(currentNightlyOccurrence(fixture('user').agent)).toBeUndefined()
+})
+it('rejects malformed, different-schedule and ordinary-message batches',()=>{
+  for (const text of ['reminders_json: broken','reminders_json: '+JSON.stringify([{ schedule_id:'other',occurrence_at:occurrence }])]) {
+    const f=fixture();const event=f.events[2]!;if(event.type==='user/message'&&event.data.content[0]?.type==='text')event.data.content[0].text=text;expect(currentNightlyOccurrence(f.agent)).toBeUndefined()
+  }
+  expect(currentNightlyOccurrence(fixture('user').agent)).toBeUndefined()
+})
+it('requests native progressive skill loading once per active turn without replacing the actual request',async()=>{
+  type Handler = (input: { agent: Agent; turn: number }, next: () => Promise<PreStepDecision>) => Promise<PreStepDecision>
+  let handler: Handler
+  let render: (input: { agent: Agent }) => string
+  const ctx={
+    inject:(_deps:string[],fn:(scope:Context)=>void)=>fn(ctx), effect:(fn:()=>unknown)=>fn(),
+    skills:{ register:()=>()=>{} },
+    systemPrompt:{
+      section:(section: { text: typeof render })=>{render=section.text;return()=>{}},getSectionOrder:()=>1,
+    },
+    hivemindEmployeeDirectory:{ profiles:async()=>({ profiles:[] }) }, get:()=>undefined,
+    on:(_name:string,fn:Handler)=>{handler=fn;return ()=>{}},
+  } as unknown as Context
+  installNightlyRoutineGuidance(ctx)
+  const f=fixture(), decision={ kind:'enter' as const,messages:[createUserMessage({ source:{ kind:'user' },content:[] })] }
+  const call=(agent=f.agent,turn=2)=>handler({ agent,turn },async()=>decision)
+  const result=await call()
+  if(result.kind==='reject')throw Error('unexpected reject')
+  expect(result.messages[0]).toBe(decision.messages[0])
+  expect(JSON.stringify(result.messages.at(-1)?.content)).toContain(occurrence)
+  const reminder = JSON.stringify(result.messages.at(-1)?.content)
+  expect(reminder).toContain('native skill tool with name hivemind-nightly-routine-check')
+  expect(reminder).toContain('If the skill is unavailable')
+  expect(reminder).not.toContain(nightlyRoutineSkill.content)
+  expect(reminder.length).toBeLessThan(1200)
+  expect(render!({ agent:f.agent })).toContain('Nightly report')
+  // Prompt assembly precedes pre-step: old process-local review state cannot
+  // leak into a newly admitted ordinary signal.
+  f.events.push({ type:'turn/end',seq:4,data:{} } as unknown as SessionEvent)
+  expect(render!({ agent:f.agent })).toBe('')
+  f.events.pop()
+  expect(await call()).toBe(decision)
+  expect(await call(fixture('user').agent)).toBe(decision)
+  expect(await call(fixture('schedule','hivemind-hyperagents').agent)).toBe(decision)
+  f.events.push({ type:'turn/end',seq:4,data:{} } as unknown as SessionEvent);expect(await call(f.agent,3)).toBe(decision)
+})
+
+it('activates from claimed schedule input before native persistence',()=>{
+  const f=fixture(),event=f.events.pop()!
+  if(event.type!=='user/message')throw Error('fixture missing request')
+  expect(currentNightlyOccurrence(f.agent)).toBeUndefined()
+  expect(currentNightlyOccurrence(f.agent,[event.data])).toBe(occurrence)
+})
+
+it('separates short employee chat from actual correlated persisted diagnostics',()=>{const text=nightlyRoutineSkill.content;for(const expected of ['visible chat reply is short plain-language status only','NIGHTLY_REVIEW_REQUEST=','NIGHTLY_REVIEW_REPLY=','reply_to the exact received request message id','actual saved hivemind/room-message-received','Runtime inbox reply event sequence','actual saved tool/result event sequences'])expect(text).toContain(expected)})
+
+
+it('keeps nightly review in the skill and email without a task or report artifact', () => {
+  const text = nightlyRoutineSkill.content
+  expect(text).toContain('not a saved work task')
+  expect(text).toContain('one detailed email')
+  expect(text).toContain('Lead with the issues themselves')
+  expect(text).toContain('Do not author HTML')
+  expect(text).toContain('internal tool metadata')
+  expect(text).not.toContain('Save the full report as')
+  expect(text).not.toContain('organization-authorized HTML report')
+})

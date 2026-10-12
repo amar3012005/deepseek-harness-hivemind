@@ -96,6 +96,7 @@ interface BenchOptions {
   placeholder?: string
   t?: InputBarProps['t']
   accessory?: React.ReactNode
+  composerFooter?: React.ReactNode
   overlay?: React.ReactNode
   leftItems?: React.ReactNode
   rightItems?: React.ReactNode
@@ -169,6 +170,7 @@ function bench(over?: BenchOptions) {
     if (key === 'conversation.input.left') return over?.leftItems ?? null
     if (key === 'conversation.input.right') return over?.rightItems ?? null
     if (key === 'conversation.composer.dock') return over?.footer ?? null
+    if (key === 'conversation.composer.footer') return over?.composerFooter ?? null
     if (key === 'conversation.input.plan') return over?.planEntry ?? null
     if (key === 'conversation.input.permission') return over?.permissionEntry ?? null
     if (key === 'conversation.input.model') return over?.modelEntry ?? null
@@ -1792,11 +1794,13 @@ describe('strips and variants', () => {
       leftItems: <i data-testid="li" />,
       rightItems: <i data-testid="ri" />,
       footer: <i data-testid="foot" />,
+      composerFooter: <i data-testid="composer-footer" />,
     })
     expect(view.getByTestId('ov')).toBeTruthy()
     expect(view.getByTestId('li')).toBeTruthy()
     expect(view.getByTestId('ri')).toBeTruthy()
     expect(view.getByTestId('foot')).toBeTruthy()
+    expect(view.getByTestId('composer-footer')).toBeTruthy()
   })
 })
 
@@ -1812,7 +1816,7 @@ describe('command launcher chrome and control seats', () => {
       'conversation.input.overlay', 'conversation.input.attachments',
       'conversation.input.permission', 'conversation.input.plan', 'conversation.input.left',
       'conversation.input.right', 'conversation.input.model', 'conversation.input.activity',
-      'conversation.composer.dock',
+      'conversation.composer.dock', 'conversation.composer.footer',
     ])
     expect(view.queryByLabelText('Plan mode')).toBeNull()
     expect(view.queryByLabelText('Model')).toBeNull()

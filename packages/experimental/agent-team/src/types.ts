@@ -57,6 +57,8 @@ export interface TeamMemberSnapshot {
 
 /** Current runtime-enriched roster row. */
 export interface TeamMemberView {
+  /** Host-bound independent room; it remains outside child membership/lifecycle. */
+  readonly ownership?: 'persistent'
   readonly id: SessionId
   readonly name: string
   readonly role: 'lead' | 'teammate'
@@ -153,6 +155,8 @@ declare module '@deepseek-ai/dsh-llm' {
 export interface Config {
   /** Maximum immutable teammate names retained by one Team. */
   readonly maxMembers?: number
+  /** Maximum independent persistent assignees retained by one Team. */
+  readonly maxPersistentAssignees?: number
   /** Maximum non-deleted tasks retained by one Team. */
   readonly maxTasks?: number
   /** Maximum UTF-8 bytes in one complete sender-framed delivery. */

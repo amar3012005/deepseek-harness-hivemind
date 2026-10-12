@@ -5,6 +5,14 @@ import { MessageId } from '@deepseek-ai/dsh-llm/brand'
 import { defineDomain, domainTable } from '@deepseek-ai/dsh-storage-domain'
 import { decodeScheduleRecord } from './domain.ts'
 import type { ScheduleId, ScheduleRecord } from './types.ts'
+import type { ScheduleOwnership } from './ownership.ts'
+
+const ownershipSchema = z.object({
+  orgId: z.string().min(1),
+  userId: z.string().min(1),
+  actorUserId: z.string().min(1),
+  audience: z.enum(['personal', 'team']),
+}).strict()
 
 const recordSchema = z.unknown().transform((value, context): ScheduleRecord => {
   try {
@@ -38,6 +46,10 @@ export const scheduleTaskSchema = z.object({
   sessionId: z.string().min(1).transform(SessionId),
   record: recordSchema,
   status: z.enum(['active', 'inactive']).default('active'),
+  /** Monotonic CAS token used by shared durable backends; legacy tasks start at zero. */
+  revision: z.number().int().nonnegative().optional(),
+  /** Product tenant fence; absent only for non-tenant native Schedule installations. */
+  ownership: ownershipSchema.optional(),
   lastDelivery: deliveryReceiptSchema.optional(),
   deliveryHistory: deliveryHistorySchema.optional(),
 }).strict().refine((task) => {
@@ -52,6 +64,7 @@ export const scheduleTaskSchema = z.object({
 
 /** Persistent task value; absent history retains only its legacy last receipt without a read-time rewrite. */
 export type ScheduleTask = z.infer<typeof scheduleTaskSchema>
+export type { ScheduleOwnership }
 
 /** Authoritative Schedule storage; malformed tasks reject opening the domain. */
 export const scheduleDomain = defineDomain({

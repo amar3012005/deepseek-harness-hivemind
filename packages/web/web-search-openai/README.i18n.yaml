@@ -1,0 +1,43 @@
+# Bilingual-pair consistency record for README.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write packages/web/web-search-openai/README.md
+/deepseek-ai-dsh-web-search-openai:
+  en: 3411c5226c011e69
+  zh: ba40afcf660942d6
+/deepseek-ai-dsh-web-search-openai/configuration:
+  en: 74eac0cb69108add
+  zh: 35cf1b9029ba0001
+/deepseek-ai-dsh-web-search-openai/hive-composition-and-fallback:
+  en: 7ade6ab39f1eaabf
+  zh: 25d609f510071aef
+/deepseek-ai-dsh-web-search-openai/model-experience:
+  en: 215e7ba838619b7b
+  zh: a311da3843709f90
+/deepseek-ai-dsh-web-search-openai/model-experience/auxiliary-search-request:
+  en: d016bff75c7898a3
+  zh: 2060946c5e7852ac
+/deepseek-ai-dsh-web-search-openai/model-experience/auxiliary-search-request/what-the-model-sees:
+  en: 933c4e51fde1ba54
+  zh: 0c02b78c4246278c
+/deepseek-ai-dsh-web-search-openai/model-experience/auxiliary-search-request/token-effect:
+  en: dd69b6b0f9150f42
+  zh: 2a9eb1941b0dc206
+/deepseek-ai-dsh-web-search-openai/model-experience/auxiliary-search-request/kv-cache-effect:
+  en: abefe68f13601b00
+  zh: 94ba963aab3c3537
+/deepseek-ai-dsh-web-search-openai/model-experience/conversation-result:
+  en: 6fce8fdb19d4f97e
+  zh: 8e62241f0b822494
+/deepseek-ai-dsh-web-search-openai/model-experience/conversation-result/what-the-model-sees:
+  en: e95feceea877db3f
+  zh: b77ba67135665f5d
+/deepseek-ai-dsh-web-search-openai/model-experience/conversation-result/token-effect:
+  en: 3ba9efe3d635fe28
+  zh: 25c0e41bfce888d6
+/deepseek-ai-dsh-web-search-openai/model-experience/conversation-result/kv-cache-effect:
+  en: af8dba74c87b1e83
+  zh: 06bf88c703bab64f
+/deepseek-ai-dsh-web-search-openai/known-limitations-and-deferred-work:
+  en: 7d1b23eeee135df9
+  zh: 258e710eeaf769a7

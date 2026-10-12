@@ -46,6 +46,7 @@ import { createCatalogSource, type CatalogDeleteOutcome, type CatalogInjected } 
 import { createDeleteToastSource, ScheduleDeleteToast } from './DeleteToast.tsx'
 import { SCHEDULE_TASK_ID, SCHEDULE_TASK_KIND, scheduleTaskDefinition } from './definition.ts'
 import { ScheduleCatalogAction } from './ScheduleCatalogAction.tsx'
+import { ConfirmedScheduleTasks, type ConfirmedScheduleTasksInjected } from './ConfirmedScheduleTasks.tsx'
 import { ScheduleTurnCard, type ScheduleTurnCardInjected } from './ScheduleTurnCard.tsx'
 import { scheduleTurnDefinition } from './schedule-turn.ts'
 import { ScheduleTaskTab, type ScheduleTaskBindingInjected, type ScheduleTaskCatalogInjected, type ScheduleTaskTabInjected } from './ScheduleTaskTab.tsx'
@@ -65,6 +66,14 @@ const MANAGER_NS = 'schedule.manager'
 const PANEL_ID = 'schedules' as MainPanelId
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
+  interface SlotMap {
+    /** Read-only UI projections of external automations inside the task manager. */
+    'schedule.manager.external': { kind: 'list'; scope: 'root' }
+    /** HIVE scheduled-work receipt rows composed from the authoritative Schedule catalog. */
+    'schedule.confirmed.tasks': { kind: 'single'; scope: 'session'; owner: { ids: readonly ScheduleId[]; employeeIds?: Readonly<Record<string, string>> } }
+    /** Optional employee identity presented beside a delivered Schedule task. */
+    'schedule.task.avatar': { kind: 'single'; scope: 'session'; owner: { targetSessionId: SessionId; employeeId?: string } }
+  }
   interface LocaleNamespaceMap {
     /** Active Schedule catalog copy. */
     'schedule.catalog': ScheduleCatalogKey
@@ -99,6 +108,21 @@ export function apply(ctx: ClientContext): void {
     subscribeChanged: listener => ctx.remote.$on('schedule/changed', listener),
     subscribeReset: listener => ctx.on('connection/reset', listener),
   })
+  // HIVE's scheduled-work chat node supplies durable task IDs and optional
+  // employee IDs. Resolve task details through this package's one Host catalog;
+  // this parent owns the avatar child location and therefore declares it here.
+  ctx.slots.inject('schedule.confirmed.tasks', () => ctx.slots.register({
+    name: 'schedule.confirmed.tasks',
+    locale: MANAGER_NS,
+    children: { 'schedule.task.avatar': { kind: 'single', scope: 'session' } },
+    inject: (): ConfirmedScheduleTasksInjected => ({
+      hooks: { catalog: manager.hooks.catalog },
+      onRetry: manager.onRetry,
+      openTaskDetail: (sessionId, id) => {
+        ctx.sidebarRight.openTab(SCHEDULE_TASK_KIND, { params: { sessionId, id } })
+      },
+    }),
+  }, ConfirmedScheduleTasks))
   // One outcome store behind one `shell.overlay` entry announces every deletion
   // this plugin's surfaces settle, so the notice outlives the panel, popover, or
   // tab the deletion started in.
@@ -169,6 +193,7 @@ export function apply(ctx: ClientContext): void {
     name: 'main',
     key: PANEL_ID,
     locale: MANAGER_NS,
+    children: { 'schedule.manager.external': { kind: 'list', scope: 'root' } },
     inject: (): TaskManagerInjected => ({
       ...detail,
       // The page has no creation form: a new reminder starts in a Session.

@@ -40,6 +40,7 @@ declare module '@deepseek-ai/cordis' {
 }
 
 const DEFAULT_MAX_MEMBERS = 16
+const DEFAULT_MAX_PERSISTENT_ASSIGNEES = 128
 const DEFAULT_MAX_TASKS = 256
 const DEFAULT_MAX_MESSAGE_BYTES = 65_536
 const DEFAULT_DISPOSAL_TIMEOUT_MS = 5_000
@@ -58,6 +59,7 @@ export class TeamService extends Service {
 
   static Config: z<Config> = z.object({
     maxMembers: z.number().step(1).min(1).default(DEFAULT_MAX_MEMBERS),
+    maxPersistentAssignees: z.number().step(1).min(1).default(DEFAULT_MAX_PERSISTENT_ASSIGNEES),
     maxTasks: z.number().step(1).min(1).default(DEFAULT_MAX_TASKS),
     maxMessageBytes: z.number().step(1).min(1).default(DEFAULT_MAX_MESSAGE_BYTES),
     disposalTimeoutMs: z.number().step(1).min(1).default(DEFAULT_DISPOSAL_TIMEOUT_MS),
@@ -71,11 +73,14 @@ export class TeamService extends Service {
   private readonly journal: TeamJournal
   private readonly roster: TeamRoster
   private readonly tasks: TeamTaskBoard
+  private readonly dispatchGuards = new Set<(caller: Agent) => string | undefined>()
+  private readonly taskGuards = new Set<(caller: Agent, request: UpdateTeamTaskRequest) => string | undefined>()
 
   constructor(ctx: Context, config: Config = {}) {
     super(ctx, 'agentTeams')
     this.config = {
       maxMembers: positiveLimit('maxMembers', config.maxMembers ?? DEFAULT_MAX_MEMBERS),
+      maxPersistentAssignees: positiveLimit('maxPersistentAssignees', config.maxPersistentAssignees ?? DEFAULT_MAX_PERSISTENT_ASSIGNEES),
       maxTasks: positiveLimit('maxTasks', config.maxTasks ?? DEFAULT_MAX_TASKS),
       maxMessageBytes: positiveLimit('maxMessageBytes', config.maxMessageBytes ?? DEFAULT_MAX_MESSAGE_BYTES),
       disposalTimeoutMs: positiveLimit(
@@ -87,7 +92,7 @@ export class TeamService extends Service {
     this.activity = new TeamActivity()
     this.lifecycle = new TeamRuntimeLifecycle(this.config.disposalTimeoutMs)
     this.journal = new TeamJournal(ctx, (root) => { this.activity.notify(TeamId(root.id)) })
-    this.roster = new TeamRoster(ctx, this.journal, this.lifecycle, this.config.maxMembers)
+    this.roster = new TeamRoster(ctx, this.journal, this.lifecycle, this.config.maxMembers, this.config.maxPersistentAssignees)
     this.tasks = new TeamTaskBoard(this.journal, this.config.maxTasks)
 
     ctx.on('agent/created', ({ agent }) => { this.scheduleRecovery(agent) })
@@ -133,7 +138,13 @@ export class TeamService extends Service {
    * @returns the active roster row.
    */
   async spawnTeammate(caller: Agent, request: SpawnTeammateRequest): Promise<SpawnTeammateResult> {
+    this.requireDispatch(caller)
     return await this.roster.spawn(caller, request)
+  }
+
+  /** Bind an authorized independent Session as a persistent task assignee. */
+  async bindPersistentAssignee(caller: Agent, target: Agent, name: string, description: string): Promise<TeamMemberView> {
+    return await this.roster.bindPersistent(caller, target, name, description)
   }
 
   /**
@@ -143,6 +154,7 @@ export class TeamService extends Service {
    * @returns accepted inbox identity; acceptance follows normal Agent persistence and does not await model processing.
    */
   async sendMessage(caller: Agent, request: SendTeamMessageRequest): Promise<SendTeamMessageResult> {
+    this.requireDispatch(caller)
     if (this.lifecycle.disposed) throw new TeamError('Agent Teams service is disposing', 'TEAM_DISPOSED')
     return await this.lifecycle.track(this.sendAdmitted(caller, {
       ...request,
@@ -186,7 +198,38 @@ export class TeamService extends Service {
    * @returns the committed next task revision.
    */
   async updateTask(caller: Agent, request: UpdateTeamTaskRequest): Promise<TeamTaskView> {
+    if (request.action === 'claim' || request.action === 'reassign') this.requireDispatch(caller)
+    for (const guard of this.taskGuards) {
+      const reason = guard(caller, request)
+      if (reason !== undefined) throw new TeamError(reason, 'TEAM_TASK_POLICY_DENIED')
+    }
     return await this.tasks.update(caller, this.roster.membership(caller), request)
+  }
+
+  /** Register an additional task-update policy for every service and tool caller.
+   * @param guard - Denial message or undefined to preserve native authorization.
+   * @returns Disposer for this exact registration.
+   */
+  guardTaskUpdates(guard: (caller: Agent, request: UpdateTeamTaskRequest) => string | undefined): () => void {
+    this.taskGuards.add(guard)
+    return () => { this.taskGuards.delete(guard) }
+  }
+
+  /** Register an additional dispatch policy for new claims, assignments and messages.
+   * @param guard - Denial message or undefined to preserve native authorization.
+   * @returns Disposer for this exact registration.
+   */
+  guardDispatch(guard: (caller: Agent) => string | undefined): () => void {
+    this.dispatchGuards.add(guard)
+    return () => { this.dispatchGuards.delete(guard) }
+  }
+
+  /** Fail closed when any registered policy denies this operation. */
+  private requireDispatch(caller: Agent): void {
+    for (const guard of this.dispatchGuards) {
+      const reason = guard(caller)
+      if (reason !== undefined) throw new TeamError(reason, 'TEAM_DISPATCH_POLICY_DENIED')
+    }
   }
 
   /**
@@ -227,6 +270,9 @@ export class TeamService extends Service {
     const { root } = membership
     const target = resolveActiveMember(root, this.journal.state(root), request.target)
     if (target.id === caller.id) throw new TeamError('a Team member cannot message itself', 'TEAM_SELF_MESSAGE')
+    if (this.journal.state(root).members.some(member => member.id === target.id && member.provider === 'persistent-room')) {
+      throw new TeamError('persistent assignees require their host room mailbox', 'TEAM_PERSISTENT_ROOM_OWNER')
+    }
     const content = [
       { type: 'text' as const, text: `Team message from ${membership.name}:` },
       ...structuredClone(request.content),
@@ -251,6 +297,13 @@ export class TeamService extends Service {
   private scheduleRecovery(agent: Agent): void {
     queueMicrotask(() => {
       if (this.lifecycle.disposed) return
+      try {
+        // Paused durable work remains parked instead of being reconciled or delivered.
+        for (const guard of this.dispatchGuards) if (guard(agent) !== undefined) return
+      } catch (error: unknown) {
+        this.ctx.logger.warn(`Agent Teams recovery for "${agent.id}" failed: ${errorMessage(error)}`)
+        return
+      }
       void this.roster.recoverFor(agent, this.lifecycle.signal).catch((error: unknown) => {
         if (this.lifecycle.disposed) return
         this.ctx.logger.warn(`Agent Teams recovery for "${agent.id}" failed: ${errorMessage(error)}`)

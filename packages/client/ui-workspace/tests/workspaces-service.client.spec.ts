@@ -289,7 +289,7 @@ function bench(options: BenchOptions = {}) {
   if (options.conversation !== false) ctx.provide('conversation', { input: { requestDraftInitialization } })
   const layout = new LayoutController({
     selectPanel: vi.fn(), retainMainPanels: vi.fn(),
-    setSidebar: vi.fn(), toggleSidebar: vi.fn(), setViewportWidth: vi.fn(),
+    setSidebar: vi.fn(), toggleSidebar: vi.fn(), setExternalSidebar: vi.fn(), setViewportWidth: vi.fn(),
     setRightbar: vi.fn(), openRightbar: vi.fn(), closeRightbar: vi.fn(),
   }, () => true, createSnapshotStore({ activePanelId: null }))
   const selectPanel = vi.spyOn(layout, 'selectPanel')
@@ -320,6 +320,21 @@ function lastOpening(open: MockInstance<UiWorkspaceService['openWorkspace']>): P
 }
 
 describe('UiWorkspaceService', () => {
+  it('skips default directory creation when configured filesystem-free and keeps Session navigation', async () => {
+    const b = bench()
+    b.uiWorkspace.configureDefaultWorkspaceInitialization(false)
+    b.workspaces.list.set(workspaceState())
+    b.sessions.list.set(sessionState())
+    await setImmediate()
+    expect(b.workspaces.initializeDefault).not.toHaveBeenCalled()
+    expect(b.sessions.create).not.toHaveBeenCalled()
+    expect(b.notify).not.toHaveBeenCalled()
+
+    b.uiWorkspace.openSession(sid('hive-room'))
+    expect(b.sessions.retain).toHaveBeenCalledExactlyOnceWith(sid('hive-room'), { source: 'mainView' })
+    expect(b.selectPanel).toHaveBeenCalledWith(null)
+  })
+
   it('prepares and selects the default Workspace after both startup baselines', async () => {
     const b = bench({ configureWorkspaces: (workspaces) => {
       workspaces.initializeDefault.mockImplementation(async () => {

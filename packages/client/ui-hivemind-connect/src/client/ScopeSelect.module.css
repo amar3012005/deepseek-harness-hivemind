@@ -1,0 +1,47 @@
+.root {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  color: var(--dsh-color-text-secondary, #6b7280);
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.icon { flex: 0 0 auto; }
+.select, .project {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  outline: none;
+}
+.select { cursor: pointer; max-width: 128px; }
+.project { width: 88px; border-bottom: 1px solid currentColor; }
+.select:disabled, .project:disabled { cursor: default; opacity: .65; }
+.error { color: var(--dsh-color-danger, #b45309); font-size: 11px; }
+
+:global([data-hivemind-hero-headline]) {
+  justify-content: flex-start !important;
+  gap: 2px !important;
+  padding-left: 8px;
+  font-size: 26px !important;
+  line-height: 32px !important;
+  font-weight: 600 !important;
+  letter-spacing: .04em;
+}
+
+:global([data-hivemind-hero-headline] > span:last-child > span:last-child) {
+  display: none !important;
+}
+
+:global([data-hivemind-hero-headline] > span:last-child > span:first-child) {
+  font-weight: 400 !important;
+  opacity: .58;
+}
+
+@media (max-width: 900px) {
+  :global([data-native-chat]) .root { flex-wrap: wrap; white-space: normal; }
+  :global([data-native-chat]) .select, :global([data-native-chat]) .project { min-height: 44px; font-size: 16px; }
+  :global([data-native-chat]) .select { max-width: 150px; }
+}

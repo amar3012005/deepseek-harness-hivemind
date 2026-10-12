@@ -4,7 +4,7 @@ import clsx from 'clsx'
 import {
   Button, IconClockOutlineRegular, IconCloseOutlineRegular, IconPlusOutlineRegular, IconSearchOutlineRegular, Input,
 } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { HostObservable, InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
+import type { HostObservable, InjectFace, PropsLocale, PropsRenderSlots, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import type { ScheduleCatalogEntry, ScheduleId } from '@deepseek-ai/dsh-schedule/client'
 import type { CatalogSnapshot } from './catalog-source.ts'
@@ -29,6 +29,7 @@ export interface TaskManagerInjected extends TaskDetailInjected {
 /** Root-scoped task catalog props derived from the framework and injected actions. */
 export type TaskManagerPageProps = PropsRuntime<'main'>
   & InjectFace<TaskManagerInjected>
+  & PropsRenderSlots<'schedule.manager.external'>
   & PropsLocale<'schedule.manager'>
 
 type StatusFilter = 'all' | ScheduleCatalogEntry['status']
@@ -39,7 +40,7 @@ type StatusFilter = 'all' | ScheduleCatalogEntry['status']
  * @returns the searchable task list beside the selected task's detail.
  */
 export function TaskManagerPage(props: TaskManagerPageProps) {
-  const { useCatalog, onNewTask, onRetry, t } = props
+  const { useCatalog, onNewTask, onRetry, renderSlot, t } = props
   const catalog = useCatalog(snapshot => snapshot)
   const { records, status } = catalog
   const [search, setSearch] = useState('')
@@ -120,6 +121,7 @@ export function TaskManagerPage(props: TaskManagerPageProps) {
                 <Button variant="primary" size="sm" className={css.newButton} icon={<IconPlusOutlineRegular size={13} />} onClick={onNewTask}>{t('new.action')}</Button>
               </div>
             </div>
+            {renderSlot('schedule.manager.external', {})}
             <div className={css.filters}>
               <div className={css.filterTabs} role="group" aria-label={t('statusFilter.label')}>
                 {(['all', 'active', 'inactive'] as const).map(value => (

@@ -18,6 +18,7 @@ import type { SessionEventMap } from '@deepseek-ai/dsh-session'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import SandboxPolicy from '@deepseek-ai/dsh-sandbox-policy'
 import SessionProjections from '@deepseek-ai/dsh-session-projection'
+import { createHash } from 'node:crypto'
 
 declare module '@deepseek-ai/dsh-llm' {
   interface MessageSourceMap {
@@ -111,6 +112,7 @@ function fakeAgent(): { agent: Agent; events: { type: string; data: unknown }[] 
     session: {
       header: { cwd: '/workspace' },
       append: (type: string, data: unknown) => { events.push({ type, data }) },
+      snapshotEvents: () => events,
     },
   } as unknown as Agent
   return { agent, events }
@@ -120,7 +122,7 @@ function fakeAgent(): { agent: Agent; events: { type: string; data: unknown }[] 
 async function runCode(
   ctx: Context,
   code: string,
-  extras: { agent?: Agent; signal?: AbortSignal; description?: string } = {},
+  extras: { agent?: Agent; signal?: AbortSignal; description?: string; turn?: number; step?: number } = {},
 ): Promise<ToolExecutionResult> {
   return ctx.tools.execute({
     signal: testToolSignal,
@@ -129,6 +131,8 @@ async function runCode(
     arguments: { code, description: extras.description ?? 'Run the test program' },
     ...extras.agent ? { agent: extras.agent } : {},
     ...extras.signal ? { signal: extras.signal } : {},
+    ...extras.turn === undefined ? {} : { turn: extras.turn },
+    ...extras.step === undefined ? {} : { step: extras.step },
   })
 }
 
@@ -563,6 +567,43 @@ describe('mode-aware wire contribution', () => {
 })
 
 describe('the sub-dispatch scheduler (native concurrency contract)', () => {
+  it('commits a nested parked call without fabricating a nested tool result', async () => {
+    const { ctx, runtime } = await setup({ mode: 'ptc' })
+    await ctx.plugin(ApprovalService, { policy: 'ask' })
+    registerEcho(ctx, 'sensitive')
+    const { agent, events } = fakeAgent()
+    ctx.on('tools/pre-execute', async (execution, next) => execution.name === 'sensitive'
+      ? { kind: 'ask', reason: 'Review this nested action.' }
+      : next())
+    ctx.on('tools/park', async execution => ({
+      kind: 'park', approvalId: 'nested-approval',
+      argumentsDigest: createHash('sha256').update(JSON.stringify(execution.arguments)).digest('hex'),
+    }))
+    ctx.on('tools/park-commit', async (execution, park) => {
+      if (execution.turn === undefined || execution.step === undefined) throw new Error('parked PTC call lost its turn identity')
+      execution.agent!.session.append('tool/parked', {
+        turn: execution.turn, step: execution.step, callId: execution.callId, rootCallId: execution.rootCallId,
+        name: execution.name, approvalId: park.approvalId, argumentsDigest: park.argumentsDigest,
+      })
+      return { kind: 'committed' }
+    })
+    runtime.behavior = async (request) => {
+      const rejection = await request.bindings[0]!.functions.sensitive!({ value: 'private' })
+        .then(() => 'unexpected success', error => error instanceof Error ? error.message : String(error))
+      return { logs: [], value: rejection }
+    }
+    try {
+      const result = await runCode(ctx, 'program', { agent, turn: 3, step: 2 })
+      expect(result.isError).toBe(false)
+      expect(events.filter(event => event.type === 'tool/parked')).toMatchObject([{
+        data: { turn: 3, step: 2, callId: 'call-1:ptc:1', rootCallId: 'call-1',
+          name: 'sensitive', approvalId: 'nested-approval' },
+      }])
+      expect(events.some(event => event.type === 'tool/ptc-dispatch' && (event.data as { name?: string }).name === 'sensitive')).toBe(false)
+      expect(result).toMatchObject({ isError: false, value: { result: expect.stringContaining('suspended for authenticated approval') } })
+    } finally { await ctx.fiber.dispose() }
+  })
+
   /** Register a tool whose calls resolve only when the test releases them; returns live-call telemetry. */
   function registerGated(ctx: Context, name: string, concurrencySafe: boolean) {
     const gates: (() => void)[] = []

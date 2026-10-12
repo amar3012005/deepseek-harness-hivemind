@@ -3,7 +3,7 @@
  * ACP expected outputs own transcript-facing coverage.
  */
 
-import { describe, expect, it, onTestFinished } from 'vitest'
+import { describe, expect, it, onTestFinished, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { createUserMessage, ToolCallId, StreamChunk  } from '@deepseek-ai/dsh-llm'
 import SessionStore, { SessionEvent, SessionId, TOOL_NOT_STARTED, TOOL_OUTCOME_UNKNOWN } from '@deepseek-ai/dsh-session'
@@ -17,6 +17,8 @@ import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import { MockAdapter, textResponse } from './mock-adapter.ts'
 import { PtcRuntime } from '@deepseek-ai/dsh-ptc-runtime'
 import type { PtcRunRequest, PtcRunResult } from '@deepseek-ai/dsh-ptc-runtime'
+import ApprovalService from '@deepseek-ai/dsh-user-approval'
+import { createHash } from 'node:crypto'
 
 declare module '@deepseek-ai/dsh-llm' {
   interface MessageSourceMap {
@@ -106,6 +108,55 @@ async function until(predicate: () => boolean): Promise<void> {
 }
 
 describe('tool-call scheduler: grouping and barriers', () => {
+  it('commits work before a parked sibling, leaves later calls unstarted, and records no result for the parked call', async () => {
+    const adapter = new MockAdapter([multiCall([
+      { id: 'before', name: 'p', args: { id: 'before' } },
+      { id: 'park', name: 'p', args: { id: 'park' } },
+      { id: 'after', name: 'p', args: { id: 'after' } },
+    ])])
+    const ctx = await harness(adapter, 3)
+    await ctx.plugin(ApprovalService, { policy: 'ask' })
+    vi.spyOn(ctx.sessions, 'flush').mockResolvedValue(true)
+    ctx.sessions.registerMessageProjection({ type: 'tool/parked', project: () => new Map() })
+    const executed: string[] = []
+    ctx.tools.register(defineContentToolFixture({
+      name: 'p', description: 'approval-aware action', parameters: { id: { type: 'string', required: true } },
+      isConcurrencySafe: () => true,
+      async execute(args) { executed.push(args.id); return [{ type: 'text', text: `done-${args.id}` }] },
+    }))
+    ctx.on('tools/pre-execute', async (execution, next) => (execution.arguments as { id: string }).id === 'park'
+      ? { kind: 'ask', reason: 'Review this action.' }
+      : next())
+    ctx.on('tools/park', async execution => ({
+      kind: 'park', approvalId: 'approval-park',
+      argumentsDigest: createHash('sha256').update(JSON.stringify(execution.arguments)).digest('hex'),
+    }))
+    ctx.on('tools/park-commit', async (execution, park) => {
+      execution.agent!.session.append('tool/parked', {
+        turn: execution.turn!, step: execution.step!, callId: execution.callId, rootCallId: execution.rootCallId,
+        name: execution.name, approvalId: park.approvalId, argumentsDigest: park.argumentsDigest,
+      })
+      await ctx.sessions.flush(execution.agent!.session)
+      return { kind: 'committed' }
+    })
+    const agent = await ctx.agentLoop.create(SessionId('parked-parallel'), { provider: 'mock', model: 'mock' })
+    agent.followup(createUserMessage({ content: [{ type: 'text', text: 'run these actions' }], source: { kind: 'user' } }))
+    await waitForIdle(ctx, agent)
+
+    const saved = events(agent)
+    expect(executed).toEqual(['before'])
+    expect(saved.filter(event => event.type === 'tool/result').map(event => event.data.message.toolCallId))
+      .toEqual([ToolCallId('before'), ToolCallId('after')])
+    expect(saved.filter(event => event.type === 'tool/result' && event.data.error?.code === TOOL_OUTCOME_UNKNOWN)).toHaveLength(0)
+    expect(saved.filter(event => event.type === 'tool/parked').map(event => event.data.callId)).toEqual([ToolCallId('park')])
+    const afterResult = saved.filter(event => event.type === 'tool/result')
+      .find(event => event.data.message.toolCallId === ToolCallId('after'))
+    expect(afterResult?.data.error?.code)
+      .toBe(TOOL_ABORTED_BEFORE_DISPATCH)
+    expect(adapter.requests).toHaveLength(1)
+    await ctx.fiber.dispose()
+  })
+
   it('runs parallel-safe siblings concurrently (all start before any completes)', async () => {
     const adapter = new MockAdapter([
       multiCall([{ id: 'c1', name: 'p', args: { id: '1' } }, { id: 'c2', name: 'p', args: { id: '2' } }, { id: 'c3', name: 'p', args: { id: '3' } }]),

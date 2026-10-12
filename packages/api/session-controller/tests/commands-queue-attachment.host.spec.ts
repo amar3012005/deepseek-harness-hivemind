@@ -3,7 +3,7 @@ import { Context } from '@deepseek-ai/cordis'
 import AgentRegistry from '@deepseek-ai/dsh-agent'
 import type { Agent, Inbox, ModelSelectionRef } from '@deepseek-ai/dsh-agent'
 import { AttachmentError, AttachmentId } from '@deepseek-ai/dsh-attachment'
-import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
+import type { FileAttachmentRef, ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import { createAssistantMessage, createUserMessage, MessageId } from '@deepseek-ai/dsh-llm'
 import type { ContextFormed } from '@deepseek-ai/dsh-llm'
 import SessionStore, {
@@ -323,10 +323,12 @@ function event(type: string, seq: SessionSeq, data: unknown): SessionEvent {
 async function persistedController(
   events: SessionEvent[],
   readImage: (ref: ImageAttachmentRef) => Promise<{ ref: ImageAttachmentRef; data: Uint8Array }>,
+  readFileStream: (ref: FileAttachmentRef) => AsyncIterable<Uint8Array> = async function* () {},
+  sessionName = 'cold-attachment',
 ): Promise<{ ctx: Context; controller: SessionCommandController; sessionId: SessionId }> {
   const ctx = new Context()
   await ctx.plugin(SessionStore)
-  const sessionId = SessionId('cold-attachment')
+  const sessionId = SessionId(sessionName)
   const meta: SessionHeader = {
     version: SESSION_FORMAT_VERSION,
     id: sessionId,
@@ -343,10 +345,80 @@ async function persistedController(
     }),
   }) as never)
   installSessionReadTestServices(ctx)
-  ctx.provide('attachments', { readImage } as never)
+  ctx.provide('attachments', { readImage, readFileStream } as never)
   const agents = { resolveAgent: vi.fn() } as unknown as ApiSessionAgentController
   return { ctx, controller: new SessionCommandController(ctx, agents, '/workspace'), sessionId }
 }
+
+describe('Session generic file attachment authorization', () => {
+  const fileRef = (name = 'report.pdf'): FileAttachmentRef => ({
+    attachmentId: AttachmentId('sha256:039058c6f2c0cb492c533b0a4d14ef77cc0f78abccced5287d84a1a2011cfb81'),
+    name,
+    bytes: 3,
+  })
+
+  it('returns verified file bytes for an artifact receipt in the addressed session', async () => {
+    const ref = fileRef()
+    const data = Uint8Array.of(1, 2, 3)
+    const readFileStream = vi.fn(async function* (actual: FileAttachmentRef) {
+      expect(actual).toEqual(ref)
+      yield data
+    })
+    const fixture = await persistedController([
+      event('hivemind/artifact-created', SessionSeq(0), { pdf: ref }),
+    ], async image => ({ ref: image, data: Uint8Array.of(0) }), readFileStream)
+    try {
+      await expect(fixture.controller.fileAttachment({ sessionId: fixture.sessionId, attachmentId: ref.attachmentId }))
+        .resolves.toEqual({ attachment: ref, data })
+      expect(readFileStream).toHaveBeenCalledExactlyOnceWith(ref, undefined)
+    } finally {
+      await fixture.ctx.fiber.dispose()
+    }
+  })
+
+  it('rejects an attachment referenced only by another session and never reads it', async () => {
+    const ref = fileRef()
+    const readFileStream = vi.fn(async function* () { yield Uint8Array.of(1, 2, 3) })
+    const ctx = new Context()
+    await ctx.plugin(SessionStore)
+    installSessionReadTestServices(ctx)
+    ctx.provide('attachments', { readFileStream } as never)
+    const owner = ctx.sessions.create(SessionId('tenant-a-session'))
+    const addressed = ctx.sessions.create(SessionId('tenant-b-session'))
+    owner.append('user/message', createUserMessage({
+      content: [{ type: 'file', attachment: ref }], source: { kind: 'user' },
+    }), { surfaceOp: 'append' })
+    addressed.append('user/message', createUserMessage({
+      content: [{ type: 'text', text: 'different file' }], source: { kind: 'user' },
+    }), { surfaceOp: 'append' })
+    const controller = new SessionCommandController(ctx, { resolveAgent: vi.fn() } as unknown as ApiSessionAgentController, '/workspace')
+    try {
+      await expect(controller.fileAttachment({ sessionId: addressed.id, attachmentId: ref.attachmentId }))
+        .rejects.toMatchObject({ code: 'session/attachment-invalid', details: { reason: 'ATTACHMENT_NOT_REFERENCED' } })
+      expect(readFileStream).not.toHaveBeenCalled()
+    } finally {
+      await ctx.fiber.dispose()
+    }
+  })
+
+  it('does not treat opaque nested IDs or malformed artifact refs as authority', async () => {
+    const ref = fileRef()
+    const readFileStream = vi.fn(async function* () { yield Uint8Array.of(1, 2, 3) })
+    const fixture = await persistedController([
+      event('vendor/opaque', SessionSeq(0), { file: ref, nested: [{ type: 'file', attachment: ref }] }),
+      event('hivemind/generation-created', SessionSeq(1), {
+        file: { attachmentId: ref.attachmentId, name: '', bytes: 3 },
+      }),
+    ], async image => ({ ref: image, data: Uint8Array.of(0) }), readFileStream)
+    try {
+      await expect(fixture.controller.fileAttachment({ sessionId: fixture.sessionId, attachmentId: ref.attachmentId }))
+        .rejects.toMatchObject({ code: 'session/attachment-invalid', details: { reason: 'ATTACHMENT_NOT_REFERENCED' } })
+      expect(readFileStream).not.toHaveBeenCalled()
+    } finally {
+      await fixture.ctx.fiber.dispose()
+    }
+  })
+})
 
 describe('Session attachment authorization', () => {
   it.each([

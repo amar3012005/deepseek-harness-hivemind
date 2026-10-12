@@ -39,7 +39,7 @@ it('acknowledges the real synchronous inbox splice after flush without claiming 
         expect(resolve).toHaveBeenCalledWith(agent.session.id)
         const inserted = eventsAtFlush.flatMap(event => event.type === 'agent/inbox/spliced' ? event.data.inserted : [])
         expect(inserted).toHaveLength(1)
-        expect(inserted[0]?.source).toEqual({ kind: 'schedule' })
+        expect(inserted[0]?.source).toMatchObject({ kind: 'schedule', deliveryKey: expect.any(String), deliveryKeys: [expect.any(String)] })
         expect(agent.inbox.nextTurn).toEqual(inserted)
         expect(commit).not.toHaveBeenCalled()
         expect(tasks).toEqual([{ sessionId: agent.session.id, record, status: 'active' }])
@@ -72,4 +72,24 @@ it('acknowledges the real synchronous inbox splice after flush without claiming 
     await ctx.fiber.dispose()
     vi.useRealTimers()
   }
+})
+
+it('retains a refused due task without inbox delivery or a fabricated receipt', async () => {
+  const agent = { followup: vi.fn(), session: {} }
+  const ctx = { agents: { withoutInitiator: (work: () => Promise<void>) => work() },
+    sessionController: { resolveAgent: async () => ({ agent }) },
+    sessions: { flush: vi.fn() }, logger: { warn: vi.fn() } } as unknown as Context
+  const record = createAfterScheduleRecord(ScheduleId('guarded'), 'Guarded', 1, Date.now() - 2000, 'Guarded')
+  const tasks: ScheduleTask[] = [{ sessionId: SessionId('guarded-owner'), record, status: 'active' }]
+  const commit = vi.fn(async () => {})
+  const guard = vi.fn(async () => false)
+  const runtime = new ScheduleRuntime(ctx, () => tasks, work => work(), commit, { days: 30, records: 200 }, guard)
+  runtime.requestDrive()
+  await vi.waitFor(() => expect(guard).toHaveBeenCalledOnce())
+  await runtime.dispose()
+  expect(guard).toHaveBeenCalledOnce()
+  expect(agent.followup).not.toHaveBeenCalled()
+  expect(ctx.sessions.flush).not.toHaveBeenCalled()
+  expect(commit).not.toHaveBeenCalled()
+  expect(tasks[0]?.status).toBe('active')
 })

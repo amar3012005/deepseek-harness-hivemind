@@ -22,8 +22,12 @@ import type {
   ConnectionFetchHandler,
   HostConnectionFetch,
   ConnectionRpcEndpointMatcher,
+  ConnectionPeerAuthenticator,
+  ConnectionRpcAdmission,
+  ConnectionRpcAdmissionRequest,
   ConnectionRpcFailure,
   ConnectionRpcHandler,
+  ConnectionRpcHandlerResult,
   ConnectionRpcResult,
   ConnectionRequestRejection,
   ConnectionTrustRequest,
@@ -65,6 +69,8 @@ export class HostConnectionService extends Service implements HostConnectionHand
   readonly operator: PeerScope
   private readonly interceptors = new Map<string, ConnectionRpcInterceptor>()
   private readonly fetchRoutes = new Map<string, RegisteredFetchRoute>()
+  private readonly peerAuthenticators = new Set<ConnectionPeerAuthenticator>()
+  private readonly rpcAdmissions = new Set<ConnectionRpcAdmission>()
 
   readonly allowsRemoteAuthorities: boolean
 
@@ -92,7 +98,16 @@ export class HostConnectionService extends Service implements HostConnectionHand
       handle: (channel, handler) => this.register(owner, channel, handler),
       intercept: (channel, matches, handler) =>
         this.registerInterceptor(owner, channel, matches, handler),
+      registerAdmission: admission => this.registerRpcAdmission(owner, admission),
     }
+  }
+
+  /** Register one product-owned authenticator for a distinct non-operator Peer. */
+  registerPeerAuthenticator(authenticate: ConnectionPeerAuthenticator): () => Promise<void> {
+    return this.ctx.effect(() => {
+      this.peerAuthenticators.add(authenticate)
+      return () => { this.peerAuthenticators.delete(authenticate) }
+    }, 'client-connection: peer authenticator')
   }
 
   /** Exact Fetch-route registry scoped to the Context reading this service. */
@@ -107,13 +122,17 @@ export class HostConnectionService extends Service implements HostConnectionHand
   requestRejection(request: ConnectionTrustRequest): ConnectionRequestRejection {
     const carrier = this.ctx.get('webServer')
     if (!isTrustedApiRequest(request, this.trustedHosts, carrier?.host, carrier?.protocol ?? 'http:')) return 403
-    return this.browserAuth.isAuthenticated(request, carrier?.protocol === 'https:') ? undefined : 401
+    return this.authenticatedPeer(request, carrier?.protocol === 'https:') === undefined ? 401 : undefined
   }
 
   /** A request that passes the fence and authentication speaks for the operator. */
   admit(request: ConnectionTrustRequest): PeerAdmission {
-    const rejection = this.requestRejection(request)
-    return rejection === undefined ? { peer: this.operator } : { rejection }
+    const carrier = this.ctx.get('webServer')
+    if (!isTrustedApiRequest(request, this.trustedHosts, carrier?.host, carrier?.protocol ?? 'http:')) {
+      return { rejection: 403 }
+    }
+    const peer = this.authenticatedPeer(request, carrier?.protocol === 'https:')
+    return peer === undefined ? { rejection: 401 } : { peer }
   }
 
   /**
@@ -180,7 +199,7 @@ export class HostConnectionService extends Service implements HostConnectionHand
     handler: ConnectionRpcHandler,
   ): () => Promise<void> {
     assertChannel(channel)
-    const fetchHandler = rpcFetchHandler(channel, handler, this.operator)
+    const fetchHandler = this.rpcFetchHandler(channel, handler)
     const route: WebRoute = {
       kind: 'prefix',
       path: channel,
@@ -211,7 +230,7 @@ export class HostConnectionService extends Service implements HostConnectionHand
     }
     const interceptor: ConnectionRpcInterceptor = {
       matches,
-      fetchHandler: rpcFetchHandler(channel, handler, this.operator),
+      fetchHandler: this.rpcFetchHandler(channel, handler),
     }
     return owner.effect(() => {
       if (this.interceptors.has(channel)) {
@@ -223,12 +242,66 @@ export class HostConnectionService extends Service implements HostConnectionHand
       }
     }, `client-connection: ${channel} rpc interceptor`)
   }
+
+  private rpcFetchHandler(channel: string, handler: ConnectionRpcHandler): ConnectionFetchHandler {
+    return rpcFetchHandler(channel, handler, (request) => {
+      const admission = this.admit({ headers: request.headers })
+      if ('rejection' in admission) return admission
+      return {
+        peer: admission.peer,
+        rpcRequest: {
+          request,
+          endpoint: endpointFromPath(channel, new URL(request.url).pathname) ?? '',
+          payload: undefined,
+          signal: request.signal,
+          peer: admission.peer,
+        },
+      }
+    }, (request, action) => this.dispatchRpcAdmissions(request, action))
+  }
+
+  private registerRpcAdmission(owner: Context, admission: ConnectionRpcAdmission): () => Promise<void> {
+    return owner.effect(() => {
+      this.rpcAdmissions.add(admission)
+      return () => { this.rpcAdmissions.delete(admission) }
+    }, 'client-connection: decoded RPC admission')
+  }
+
+  private dispatchRpcAdmissions(
+    request: ConnectionRpcAdmissionRequest,
+    dispatch: () => Promise<ConnectionRpcHandlerResult>,
+  ): Promise<ConnectionRpcHandlerResult> {
+    let next = dispatch
+    for (const admission of [...this.rpcAdmissions].reverse()) {
+      const downstream = next
+      next = () => admission(request, downstream)
+    }
+    return next()
+  }
+
+  private authenticatedPeer(request: ConnectionTrustRequest, secure: boolean): PeerScope | undefined {
+    for (const authenticate of this.peerAuthenticators) {
+      try {
+        const peer = authenticate(request)
+        if (peer !== undefined) return peer
+      } catch {
+        return undefined
+      }
+    }
+    return this.browserAuth.isAuthenticated(request, secure) ? this.operator : undefined
+  }
 }
 
 function rpcFetchHandler(
   channel: string,
   handler: ConnectionRpcHandler,
-  peer: PeerScope,
+  admit: (request: Request) =>
+    | { readonly rejection: 401 | 403 }
+    | { readonly peer: PeerScope; readonly rpcRequest: ConnectionRpcAdmissionRequest },
+  dispatch: (
+    request: ConnectionRpcAdmissionRequest,
+    action: () => Promise<ConnectionRpcHandlerResult>,
+  ) => Promise<ConnectionRpcHandlerResult>,
 ): ConnectionFetchHandler {
   return {
     requestBodyMode: () => 'buffered',
@@ -263,8 +336,18 @@ function rpcFetchHandler(
         })
       }
 
+      const admission = admit(request)
+      if ('rejection' in admission) {
+        return new Response(admission.rejection === 401 ? 'unauthorized' : 'forbidden', { status: admission.rejection })
+      }
+      const rpcRequest: ConnectionRpcAdmissionRequest = {
+        ...admission.rpcRequest,
+        endpoint,
+        payload: message.payload,
+      }
+
       try {
-        const result = await handler(endpoint, message.payload, request.signal, peer)
+        const result = await dispatch(rpcRequest, () => handler(endpoint, message.payload, request.signal, admission.peer))
         return fullResponse(message.rpcId, result)
       } catch (error) {
         return new Response(`handler failure: ${String(error)}`, { status: 500 })

@@ -75,7 +75,7 @@ function MessageItem({ node, t: translate, referenceLabels, skillNames }: Messag
     case 'steering':
       return <UserMessageNodeView {...props as ChatNodeViewProps<'user' | 'steering'>} />
     case 'context':
-      return <ContextMessageNodeView {...props as ChatNodeViewProps<'context'>} />
+      return <ContextMessageNodeView {...props as ChatNodeViewProps<'context'>} renderSlot={() => null} SessionProvider={({ children }) => <>{children}</>} />
     case 'compaction':
       return <CompactionNodeView {...props as ChatNodeViewProps<'compaction'>} />
     case 'model-retry':

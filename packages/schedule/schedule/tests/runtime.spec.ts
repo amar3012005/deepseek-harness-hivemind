@@ -67,7 +67,7 @@ describe('Host Schedule timer', () => {
     expect(test.resolve).not.toHaveBeenCalled()
     await vi.advanceTimersByTimeAsync(1)
     expect(test.resolve).toHaveBeenCalledWith(SessionId('original'))
-    expect(test.followup).toHaveBeenCalledWith(expect.objectContaining({ source: { kind: 'schedule' } }))
+    expect(test.followup).toHaveBeenCalledWith(expect.objectContaining({ source: expect.objectContaining({ kind: 'schedule', deliveryKey: expect.any(String) }) }))
     expect(test.flush).toHaveBeenCalled()
     expect(test.commit).toHaveBeenCalledTimes(1)
     expect(tasks).toEqual([{
@@ -350,7 +350,7 @@ describe('Schedule dispatch failures and concurrent changes', () => {
     expect(test.followup).toHaveBeenCalledTimes(1)
     expect(test.flush).toHaveBeenCalledTimes(1)
     const message = test.followup.mock.calls[0]![0]
-    expect(message.source).toEqual({ kind: 'schedule' })
+    expect(message.source).toMatchObject({ kind: 'schedule', deliveryKey: expect.any(String), deliveryKeys: expect.any(Array) })
     expect(JSON.stringify(message.content)).toContain('Daily check')
     expect(JSON.stringify(message.content)).toContain('Interval check')
     expect(records).toEqual([
@@ -747,4 +747,27 @@ describe('Schedule dispatch failures and concurrent changes', () => {
     await stopped
     expect(test.resolve).not.toHaveBeenCalled()
   })
+})
+
+it('reconciles a saved inbox occurrence after a failed task receipt write without another followup', async () => {
+  const record = createAfterScheduleRecord(ScheduleId('receipt-gap'), 'Saved once', 1, Date.now() - 2000, 'Saved once')
+  const tasks = [task(record)]
+  const test = await setup(tasks)
+  let saved: Parameters<Agent['followup']>[0] | undefined
+  test.followup.mockImplementation((message) => { saved = message })
+  vi.spyOn(test.agent.session, 'ownEvents').mockImplementation(() => saved
+    ? [{ type: 'agent/inbox/spliced', data: { inserted: [saved] } } as never] : [])
+  test.commit.mockRejectedValueOnce(Error('simulated crash before task receipt'))
+  test.runtime.requestDrive()
+  await vi.advanceTimersByTimeAsync(0)
+  expect(test.followup).toHaveBeenCalledOnce()
+  expect(tasks[0]?.status).toBe('active')
+  await test.runtime.dispose()
+  const replay = new ScheduleRuntime(test.ctx, () => tasks, work => work(), test.commit, { days: 30, records: 200 })
+  runtimes.push(replay)
+  replay.requestDrive()
+  await vi.advanceTimersByTimeAsync(0)
+  expect(test.followup).toHaveBeenCalledOnce()
+  expect(tasks[0]?.status).toBe('inactive')
+  expect(tasks[0]?.lastDelivery?.messageId).toBe(saved?.id)
 })

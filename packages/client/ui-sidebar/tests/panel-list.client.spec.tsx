@@ -41,6 +41,7 @@ async function bench(collapsed = false) {
     panelInfo: runtime.panelInfo,
     beginNavigation: vi.fn(() => new AbortController().signal),
     toggleSidebar: vi.fn(),
+    setExternalSidebar: vi.fn(),
     selectPanel: vi.fn((activePanelId: MainPanelId | null) => { runtime.panelInfo.set({ activePanelId }) }),
     openRightbar: vi.fn(),
     closeRightbar: vi.fn(),

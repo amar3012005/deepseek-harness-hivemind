@@ -21,6 +21,7 @@ import { createConversationStore } from '../src/client/stores.ts'
 import { SessionInputShell } from '../src/client/input/facade.ts'
 import { en, zh } from '../src/client/locales.ts'
 import { ConversationContent } from '../src/client/skeleton/ConversationContent.tsx'
+import { composerIsInert } from '../src/client/skeleton/composer-prerequisite.ts'
 import { ConversationHeader } from '../src/client/skeleton/ConversationHeader.tsx'
 import { ConversationMainPanel } from '../src/client/skeleton/ConversationMainPanel.tsx'
 import { ConversationSession, ConversationSessionHeader } from '../src/client/skeleton/ConversationSession.tsx'
@@ -138,6 +139,8 @@ function mount(
     nestedSubagent?: boolean
     /** A composer block another plugin raised for this session. */
     composerBlock?: { reason: string }
+    /** Workspace prerequisite used by the native composer policy. */
+    workspaceRequired?: boolean
     /** Mutable view ledger used by registration-order regressions. */
     viewTabs?: ViewTab[]
   } = {},
@@ -168,6 +171,7 @@ function mount(
     phase: 'ready', projectionsBySession: {},
   })
   const workspaces = createSnapshotStore<WorkspaceSnapshot>(workspaceState(workspaceRows))
+  const workspaceRequired = createSnapshotStore(options.workspaceRequired ?? true)
   const session = createSnapshotStore<SessionSnapshot>(snapshot)
   const useSession = bindSnapshotSelector(session)
   const conversation = createSnapshotStore<ConversationSnapshot>(EMPTY_CONVERSATION_SNAPSHOT)
@@ -193,8 +197,10 @@ function mount(
   /** Owner share handed to the two composer tool-row seats, per render. */
   const seatOwners: { key: string; owner: unknown }[] = []
   let pickerOwner: unknown
+  let heroScopeOwner: unknown
   const renderSlot = ((key: string, owner: object, opts?: { only?: string; fallback?: ReactNode }) => {
     slotCalls.push(key)
+    if (key === 'conversation.hero.scope') { heroScopeOwner = owner; return null }
     if (key === 'conversation.input.model' || key === 'conversation.input.plan') {
       seatOwners.push({ key, owner })
     }
@@ -339,6 +345,7 @@ function mount(
       useWorkspaces: bindSnapshotSelector(workspaces),
       useProjection: (() => undefined),
       useComposerBlock: select => select(options.composerBlock),
+      useWorkspaceRequired: bindSnapshotSelector(workspaceRequired),
       useInput,
       inputActions,
       renderSlot,
@@ -376,6 +383,7 @@ function mount(
   return {
     view, store, wiring, sink, retargetWorkspace, session, conversation, slotCalls, lineageOwners, seatOwners, open,
     pickerOwner: () => pickerOwner,
+    heroScopeOwner: () => heroScopeOwner,
     rerender: () => { view.rerender(<ConversationMainPanel {...props} />) },
   }
 }
@@ -681,9 +689,21 @@ describe('ConversationRoot resident composer', () => {
     const chip = b.view.getByRole('button', { name: '选择工作区' })
     expect((chip as HTMLButtonElement).disabled).toBe(false)
     expect(b.slotCalls).toContain('conversation.hero.workspace')
+    expect(b.slotCalls).toContain('conversation.hero.scope')
+    expect(b.heroScopeOwner()).toEqual({ sessionId: SID, locked: false })
     // The agent-preset chip sits in the same row, for the same reason: both
     // choices are only open before the first message.
     expect(b.slotCalls).toContain('conversation.hero.agentPreset')
+  })
+
+  it('keeps the standard workspace prerequisite and enables a scoped filesystem-free blank composer', () => {
+    expect(composerIsInert(SID, true, true, undefined)).toBe(true)
+    expect(composerIsInert(SID, true, false, undefined)).toBe(false)
+    expect(composerIsInert(undefined, true, false, undefined)).toBe(true)
+    expect(composerIsInert(SID, false, true, undefined)).toBe(false)
+    const b = mount(sessionSnapshotOf({ blank: true }), [])
+    const draft = b.store.store.getSnapshot().draft
+    expect(typeof draft === 'string' ? draft : draft.text).toBe('ordinary draft')
   })
 
   it('prompt failure renders the promptError strip (ordinary failure, no transaction UI)', () => {

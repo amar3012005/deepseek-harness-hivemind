@@ -1,0 +1,108 @@
+# HQ Runtime foundation
+
+This Cordis capability extends the native Agent Teams board with immutable company-task requirements and artifact correlations. Native Team tasks own IDs, revisions, dependencies, claims, and completion. Native session persistence owns durability and tenant authorization.
+
+`hivemind_hq_contract` attaches a deadline and acceptance criteria to an existing task, lists the native board, or links saved artifact receipts. A disposable monotonic native Team-service guard prevents contracted tasks from completing without saved artifacts. Completion additionally requires a current-revision typed Jev acceptance review over the linked saved document inputs. Missing evidence, malformed provider output, and uncertain evaluations cannot certify completion. Models cannot enable autonomy or grant authority through this tool.
+
+Attachment ensures one native Schedule deadline wake for that task. The contract commits before the wake; repeating identical attachment repairs an interrupted operation without duplicating the contract or schedule. Changed requirements are rejected rather than silently replacing them. The existing calendar projects the same committed wake. When it fires, HQ checks the native task and receipts before acting; completed work must not be repeated.
+
+The contract capability is mounted only in the new `hivemind-hq` preset; existing employee presets retain their behavior. The host control service exposes a human-only generated Typert Remote, with persisted mode revisions and compare-and-set updates. HQ starts paused. Pausing cancels live HQ-owned agents and blocks new native Team dispatch; ordinary employee roots remain independent. The PostgreSQL Schedule provider retains paused HQ occurrences without waking the model.
+
+The HIVE deployment composes `ownership` and `ownership-postgres`. Apply `migrations/company-hq.sql` in the same schema as native sessions before mounting the provider. Its unique organization key chooses exactly one canonical HQ session across competing humans and replicas. Enabling flushes the native root, verifies current membership and effective HQ preset, claims ownership atomically, then persists the mode. A second root cannot enable. Schedule admission requires that same owner. Native session leases still own exclusive execution; the company pointer is not another agent or task loop. Ownership is retained while paused or offline; implicit takeover is prohibited.
+
+Enablement first ensures one native Schedule startup wake, keyed by the root and mode revision, then commits the enabled event. An interrupted switch reuses that wake. Repeating the already-enabled switch is a no-op. HQ reviews approved work rather than inventing an objective; with no approved objective or due work it remains quiet. Future wakeups use the same native Schedule capability. Delivery remains an inbox receipt, not task acceptance.
+
+Artifact links can import committed producer receipts from an exact native Team roster member. The caller cannot supply a foreign session or invent receipt proof. The native Schedule UI projects committed occurrences onto a timezone-aware week calendar without a second schedule store.
+
+The authenticated native browser canary verifies cold Schedule delivery, human Enable/Pause, canonical ownership, and paused-state restoration after reload. It uses a deterministic model and does not prove a real company deliverable. Approval mediation, explicit human ownership transfer, cross-member company access, and a real research company-work restart verification remain required before the complete autonomous runtime can be released.
+
+No invariant companion is published: metadata and receipt checks are enforced at mutation with replay tests. Native Team coordination is experimental and does not support several processes coordinating one team. Cross-session and cross-replica guarantees require further integration and verification.
+
+## Model Experience
+
+One bounded company-contract tool supplements native Team tools. Company evidence, selected playbooks, and skills remain progressive. Contracts and artifact links persist as session events; they are not a second task board or a full prompt dump. Native Team IDs and revisions remain authoritative. The stable tool schema preserves the existing model prefix.
+
+## Shared company workspace
+
+`ui-hivemind-hq` contributes a React company calendar and execution agenda through native Cordis slots. The authenticated `workspace` Remote joins native Team tasks, immutable acceptance contracts, artifact links, task transition timestamps, and host-linked employee wakes in the native Schedule catalog. Inbox delivery remains distinct from execution completion. It subscribes to native session and Schedule changes rather than running model polls.
+
+Human planning uses `hivemind/hq-calendar-item` events and compare-and-set revisions. Meetings, source requests and owner decisions are separate from native assignment lifecycle. Assignment planning windows may change only while the native task is pending; planning cannot complete a task or interrupt a running action. Each committed planning revision ensures one native start wake. A lost acknowledgement replays the same revision and repairs an interrupted write. Rescheduling removes only older pending host-linked wakes; delivered history remains. Assignment dispatch checks the current planned start, so a stale earlier wake cannot start moved work. The selected task drawer reads its rostered employee’s durable native todo plan without dumping every employee history into the workspace query. Times are canonical explicit-zone instants, rendered in the browser’s timezone.
+
+`hivemind_hq_contract assign` resolves the authenticated directory identity into its existing persistent employee room. A host-only native Team assignee binding retains the employee room's own Team identity and lifecycle; native task ownership, dependencies and completion remain authoritative. Assignment and room-mailbox receipts deduplicate retries. Future planning sends a quiet notice immediately and binds native Schedule to the employee room at the saved start. A global host delivery policy retains paused or dependency-blocked occurrences before inbox insertion and checks the exact calendar revision. Pending older Runtime wakes are repaired without changing running or terminal work; an existing child assignment requires explicit reconciliation.
+
+`review` uses the Cloudflare Workers AI REST `typesafe/jev` model with the deployment’s account/token environment. Questions derive from the immutable criteria; documents derive from matched successful generation tool inputs and saved producer receipts. Relevant fetched page receipts carry exact matching passages. Reviews are keyed by task revision and input hash and reused on replay. The 0.95 acceptance threshold is conservative, not a proof of truth or a permission grant. Unsupported or oversized artifact inputs require explicit further review. No memory or playbook write is performed by Jev.
+
+The browser canary proves persisted human calendar entries and the real built workspace. It remains a deterministic fixture; production employee research, cross-member company sharing, recurrence-to-run correlation, and live release are not established by it. A separate native execution fixture assigns an authenticated employee persona, produces a real content-addressed Markdown attachment, imports its receipt, verifies review caching and acceptance enforcement, and reloads the completed native board. Its model and Jev answer are controlled fixtures, not a live research quality evaluation. The fixture verifies independent persistent employee execution, shared room ownership across tasks, persistence-owner tenant denial and exclusion from child teardown.
+
+## Wake continuity
+
+The HQ plugin admits a compact native context message projecting the authenticated root's current native task board,
+calendar, Schedule delivery state, artifact/review links, recent Team messages
+and persistent-room notices once at the start of each HQ turn, including a cold wake. It uses existing durable
+records and persists its briefing through native user/message admission; it adds no custom event ledger or scheduler. Quiet employee updates become visible
+on the next turn without waking Runtime. The HIVE runtime supplies one bounded
+private operating-memory read per HQ turn; failure is an explicit retrieval gap.
+Private response records and delivered schedules remain distinct from verified
+task completion. Company footprint evidence does not create objective authority.
+
+Artifact-link replay verifies the selected producer's saved receipts again,
+compares the normalized typed result with the latest task link, and reuses an
+identical link without appending another record. Root persistence is still
+required on replay. Artifact/producer changes retain their ordinary new-link
+semantics and receipt validation; array order remains significant. Contract
+replay already uses validated canonical requirements after cold restoration.
+
+## Voluntary rest and quiet human instructions
+
+When HQ chooses to wait until a future time, `hivemind_hq_rest` checkpoints an
+immutable identity, requested wake time, summary, next steps, blockers and a
+host-derived task/review/artifact snapshot. It then ensures one native Schedule
+wake and checkpoints its binding before returning `rest_ready`. This is a
+planned-rest receipt, not a forced cancellation: ordinary idle after the turn
+is actual rest. Normal replies need no rest cycle, and paused autonomy remains
+paused. Arbitrary crashes do not imply a handoff was saved.
+
+Retry uses the same handoff ID and identical normalized content. Existing wake
+lookup precedes native timing validation, so a delivered past wake is reused.
+Inactive wakes are reported inactive rather than promised as future wakes.
+Missing binding after a saved intent or committed Schedule operation repairs
+on the next admitted HQ turn; overdue unscheduled latest intents wake promptly
+and retain their original requested time. Older superseded partial intents do
+not create wakes. A deliberately removed committed wake is never recreated.
+
+Human-only `leaveRestNote` persists a quiet note without inbox insertion or
+wakeup. The Environment panel exposes this separately from normal Send. Note
+identity/content replay is stable; at most 20 pending notes of 2000 characters
+are accepted, with explicit capacity errors. On the next native turn, exact
+referenced wake handoffs are presented alongside the latest handoff, current
+work, and pending notes. Notes become `presented` only after the native briefing
+message's persistence is confirmed; this does not mean applied or fulfilled and
+grants no additional authority. Presented history is bounded with an explicit
+omitted count.
+
+## Known Limitations and Deferred Work
+
+- Existing task-specific child assignments remain frozen and require explicit receipt reconciliation before transfer; pending unassigned plans can move to persistent rooms automatically.
+- Controlled fixtures prove native delivery and receipt enforcement; research quality still requires reviewing each actual deliverable.
+
+## Runtime submission review
+
+For contracted internal tasks, Runtime uses `inspect` to read saved producer
+artifacts, private learning and returned-message receipts. It then records a
+`decide` action with `accepted` or `needs_changes`, an evidence-based rationale,
+and the exact inspected task revision and evidence hash. Changed evidence or
+revision requires a fresh inspection. Native Team completion remains guarded by
+that explicit current-revision Runtime acceptance and exact artifact identities.
+Jev `review` is an optional advisory opinion; its scores neither grant completion
+nor override Runtime’s decision. Existing Jev records remain readable and are not
+converted into Runtime acceptance. Permission and write-approval rules remain
+independent of review.
+
+`inspect` also returns committed producer attachment references and their modality
+for binary image, PDF, video, and other file submissions; it does not synthesize
+text or claim to have inspected their contents. Runtime must use available native
+readers and multimodal tools for actual content review. Missing readers or video
+frame/audio inspection remain explicit gaps. Jev’s text-only advisory path rejects
+binary-only inputs instead of judging unseen content.
+
+Automatic scheduled recovery ends at the successful native rest receipt through the tool execution’s `concludeTurn()` marker. Human, employee and mixed-source turns retain their normal outcome response. An empty automatic review with no unresolved calendar item saves its next review four hours ahead; independent task and calendar schedules remain unchanged. The returned handoff time is authoritative for retries.

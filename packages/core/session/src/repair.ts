@@ -133,6 +133,15 @@ export class ToolCallRecovery {
         if (entry) entry.callSeq = event.seq
         break
       }
+      case 'tool/parked': {
+        const entry = this.pendingCalls.get(event.data.callId)
+        if (entry && entry.turn === event.data.turn && entry.step === event.data.step
+          && entry.callSeq !== undefined && event.data.name.length > 0
+          && /^[a-f0-9]{64}$/.test(event.data.argumentsDigest) && event.data.approvalId.length > 0) {
+          this.pendingCalls.delete(event.data.callId)
+        }
+        break
+      }
       case 'tool/result': {
         const callId = event.data.message.source.callId
         const entry = this.pendingCalls.get(callId)

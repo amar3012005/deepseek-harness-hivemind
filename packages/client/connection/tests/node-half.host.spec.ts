@@ -584,7 +584,7 @@ describe('connection node half', () => {
     // A shell-owned carrier dispatches the shared handler without the bridge and speaks for the operator too.
     const direct = await connection.createSharedFetchHandler('/api').fetch(new Request('http://127.0.0.1:3080/api/goals/create', {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: { host: '127.0.0.1:3080', cookie, 'content-type': 'application/json' },
       body: JSON.stringify(request),
     }))
     expect(direct.status).toBe(200)
@@ -593,6 +593,39 @@ describe('connection node half', () => {
     // Racing disposals share one completion, and the scope goes with the Connection.
     await Promise.all([connection.operator.dispose(), connection.operator.dispose()])
     await remove()
+    await dispose()
+  })
+
+  it('wraps the decoded RPC with registered admission before endpoint dispatch', async () => {
+    const { connection, dispose } = await mounted()
+    const order: string[] = []
+    const request: ClientRequest = {
+      type: 'client-request', rpcId: RpcId('rpc-admission'), method: 'team/run', payload: { agentId: 'session-a' },
+    }
+    const removeAdmission = connection.rpc.registerAdmission(async (admitted, next) => {
+      order.push('admission:before')
+      expect(admitted.endpoint).toBe('team/run')
+      expect(admitted.payload).toEqual({ agentId: 'session-a' })
+      expect(admitted.peer).toBe(connection.operator)
+      const result = await next()
+      order.push('admission:after')
+      return result
+    })
+    const removeHandler = connection.rpc.intercept('/api', () => true, async (endpoint, payload, _signal, peer) => {
+      order.push('handler')
+      expect(endpoint).toBe('team/run')
+      expect(payload).toEqual({ agentId: 'session-a' })
+      expect(peer).toBe(connection.operator)
+      return { ok: true, value: 'done' }
+    })
+    const cookie = browserCookie(connection, '127.0.0.1:3080')
+    const response = await connection.createSharedFetchHandler('/api').fetch(new Request('http://127.0.0.1:3080/api/team/run', {
+      method: 'POST', headers: { host: '127.0.0.1:3080', cookie, 'content-type': 'application/json' }, body: JSON.stringify(request),
+    }))
+    expect(response.status).toBe(200)
+    expect(order).toEqual(['admission:before', 'handler', 'admission:after'])
+    await removeHandler()
+    await removeAdmission()
     await dispose()
   })
 

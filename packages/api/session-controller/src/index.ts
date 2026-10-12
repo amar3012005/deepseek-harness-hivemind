@@ -1,5 +1,7 @@
 /** Session Remote owner: cold reads, explicit Agent commands, and live control state. */
 
+export { roomMessageId } from './room-messaging.ts'
+
 import { hostname } from 'node:os'
 import { resolve } from 'node:path'
 import type { Agent } from '@deepseek-ai/dsh-agent'
@@ -12,6 +14,7 @@ import { canOpenNativePath, nativeFileManager, nativeFileApplications, openNativ
 import type { SessionId } from '@deepseek-ai/dsh-session'
 import type { SessionInspection } from '@deepseek-ai/dsh-session-persistence'
 import type {} from '@deepseek-ai/dsh-session-projection-cache'
+import type {} from '@deepseek-ai/dsh-agent-preset-registry'
 import { SessionQueryError, type SessionObservation } from '@deepseek-ai/dsh-session-query'
 import { Remote, RemoteError, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import {
@@ -29,16 +32,22 @@ import { installModelSelectionProjection } from './model-selection-projection.ts
 import { SessionSkillCatalog } from './skill-catalog.ts'
 import { SessionMediaReferences } from './media-references.ts'
 import { ArchivedSessionGate } from './archived-session-gate.ts'
+import { PersistentEmployeeRoomResolver, type PersistentEmployeeProfile } from './persistent-employee-room.ts'
+import { RoomMessaging, type RoomMessageRequest, type RoomMessageResult } from './room-messaging.ts'
 import type {
   ModelCatalog,
   SessionWorkspacePathApplication,
   SessionAttachmentRequest,
   SessionAttachmentValue,
+  SessionFileAttachmentRequest,
+  SessionFileAttachmentValue,
   SessionCancelRequest,
   SessionCancelValue,
   SessionControlFrame,
   SessionCreateRequest,
   SessionCreateValue,
+  SessionEmployeeRoomRequest,
+  SessionEmployeeRoomValue,
   SessionFollowFrame,
   SessionFollowRequest,
   SessionForkRequest,
@@ -76,6 +85,24 @@ declare module '@deepseek-ai/cordis' {
   }
 }
 
+/** Narrow optional product boundary; the native Session package does not own
+ * or augment the HIVE execution-scope service contract. */
+interface HivemindExecutionScopeAdapter {
+  require(): unknown
+}
+
+interface HivemindEmployeeDirectoryAdapter {
+  profiles(signal: AbortSignal): Promise<{ profiles: readonly Readonly<Record<string, unknown>>[] }>
+}
+
+interface AgentPresetServices {
+  serviceFor(agent: Agent, name: string): HivemindEmployeeDirectoryAdapter | undefined
+}
+
+type HivemindSessionControllerContext = Context & {
+  readonly hivemindExecutionScope?: HivemindExecutionScopeAdapter
+}
+
 /** Session Controller deployment policy. */
 export interface Config {
   /** Override platform desktop-opener detection. */
@@ -111,6 +138,7 @@ export class SessionController extends TypertRemoteService {
     'fs',
     'llm',
     'sessions',
+    'sessionPersistence',
     'sessionProjections',
     'sessionQuery',
     'typert',
@@ -124,6 +152,8 @@ export class SessionController extends TypertRemoteService {
 
   private readonly agents: ApiSessionAgentController
   private readonly commands: SessionCommandController
+  private readonly persistentEmployeeRooms: PersistentEmployeeRoomResolver
+  private readonly roomMessaging: RoomMessaging
   private readonly controlState: SessionControlController
   private readonly history: SessionHistoryController
   private readonly listState: ApiSessionList
@@ -133,6 +163,23 @@ export class SessionController extends TypertRemoteService {
   private readonly revealPath: (path: string, signal: AbortSignal) => Promise<void>
   private readonly canOpenPath: () => boolean
   private readonly promotions = new Set<Promise<void>>()
+  private hiveExecutionScope: HivemindExecutionScopeAdapter | undefined
+
+  private async resolveRuntimeRoom(signal: AbortSignal): Promise<Agent> {
+    const persistence = this.ctx.sessionPersistence as (
+      typeof this.ctx.sessionPersistence & { employeeRoomId?: (id: string) => Promise<SessionId> }
+    ) | undefined
+    if (typeof persistence?.employeeRoomId !== 'function') throw new Error('agent_message_runtime_identity_unavailable')
+    const sessionId = await persistence.employeeRoomId('runtime')
+    signal.throwIfAborted()
+    await this.commands.create({ sessionId, agentPreset: 'hivemind-hq' })
+    const result = await this.agents.resolveAgent(sessionId)
+    if ('error' in result) throw result.error
+    if (result.agent.session.header.parentSession !== undefined || result.agent.session.header.origin === 'subagent') {
+      throw new Error('agent_message_persistent_room_required')
+    }
+    return result.agent
+  }
 
   /**
    * @param ctx - Host context containing the Session capability assembly.
@@ -145,6 +192,20 @@ export class SessionController extends TypertRemoteService {
     installModelSelectionProjection(ctx)
     this.agents = new ApiSessionAgentController(ctx)
     this.commands = new SessionCommandController(ctx, this.agents, process.cwd())
+    this.persistentEmployeeRooms = new PersistentEmployeeRoomResolver(ctx, this.commands, this.agents)
+    ctx.inject(['hivemindExecutionScope'], (hiveCtx) => {
+      this.hiveExecutionScope = (hiveCtx as HivemindSessionControllerContext).hivemindExecutionScope
+      return () => {
+        this.hiveExecutionScope = undefined
+      }
+    })
+    this.roomMessaging = new RoomMessaging(ctx, async (key, profile, signal) => {
+      if (key !== 'runtime') {
+        if (profile === undefined) throw new Error('agent_message_target_profile_required')
+        return this.persistentEmployeeRooms.resolve(key, profile, signal ?? new AbortController().signal)
+      }
+      return this.resolveRuntimeRoom(signal ?? new AbortController().signal)
+    })
     ctx.effect(() => ctx.fileUploads.registerAgentResolver(async (sessionId) => {
       const result = await this.agents.resolveAgent(sessionId)
       if ('error' in result) throw result.error
@@ -228,6 +289,25 @@ export class SessionController extends TypertRemoteService {
     return this.agents.resolveAgent(sessionId)
   }
 
+  /** Release only live Agent handles created or resumed through this Session API. */
+  releaseOwnedSessions(ids: readonly SessionId[]): Promise<void> {
+    return this.agents.releaseOwned(ids)
+  }
+
+  /** Resolve an authenticated employee's canonical persistent root Session. */
+  resolvePersistentEmployeeRoom(
+    key: string,
+    profile: PersistentEmployeeProfile,
+    signal: AbortSignal,
+  ): Promise<Agent> {
+    return this.persistentEmployeeRooms.resolve(key, profile, signal)
+  }
+
+  /** Deliver a product room message through native Agent inbox admission and durable receipts. */
+  deliverAgentMessage(caller: Agent, input: RoomMessageRequest, signal: AbortSignal): Promise<RoomMessageResult> {
+    return this.roomMessaging.send(caller, input, signal)
+  }
+
   /**
    * Inspect one attached or persisted Session without activating its Agent.
    * @param sessionId - durable Session identity.
@@ -280,6 +360,47 @@ export class SessionController extends TypertRemoteService {
   @Remote('create')
   create(request: SessionCreateRequest): Promise<SessionCreateValue> {
     return this.commands.create(request)
+  }
+
+  /** Resolve the authenticated employee's canonical persistent root Session. */
+  @Remote('employeeRoom')
+  async employeeRoom(request: SessionEmployeeRoomRequest, signal: AbortSignal): Promise<SessionEmployeeRoomValue> {
+    if (typeof request.employeeId !== 'string' || request.employeeId.trim() !== request.employeeId
+      || request.employeeId.length === 0 || request.employeeId.length > 256) {
+      throw new RemoteError('gateway/bad-request', 'employee room identity is invalid', {})
+    }
+    const executionScope = this.hiveExecutionScope
+    if (executionScope === undefined) {
+      throw new RemoteError('gateway/internal', 'employee room is unavailable', {})
+    }
+    // Tenant transport admission establishes the scoped principal before this
+    // method runs. Resolve the authenticated Runtime first, then retrieve its
+    // preset-isolated HIVE directory through the native AgentPresetRegistry.
+    executionScope.require()
+    const runtime = await this.resolveRuntimeRoom(signal)
+    if (request.employeeId === 'runtime') {
+      return { sessionId: runtime.session.id }
+    }
+    const presetRegistry = this.ctx.get('agentPresets') as unknown as AgentPresetServices | undefined
+    const directoryService = presetRegistry?.serviceFor(runtime, 'hivemindEmployeeDirectory')
+    if (directoryService === undefined) {
+      throw new RemoteError('gateway/internal', 'employee room is unavailable', {})
+    }
+    const directory = await directoryService.profiles(signal)
+    const profile = directory.profiles.find(item => item['id'] === request.employeeId)
+    const name = profile?.['name']
+    if (profile === undefined || typeof name !== 'string' || name.trim() === '') {
+      throw new RemoteError('gateway/internal', 'employee room is unavailable', {})
+    }
+    const roleValue = profile['role']
+    const roleArchetype = profile['role_archetype']
+    const role = typeof roleValue === 'string' && roleValue.trim() !== ''
+      ? roleValue : typeof roleArchetype === 'string' && roleArchetype.trim() !== ''
+        ? roleArchetype : 'Employee'
+    const agent = await this.persistentEmployeeRooms.resolve(request.employeeId, {
+      id: request.employeeId, name, role,
+    }, signal)
+    return { sessionId: agent.session.id }
   }
 
   /**
@@ -452,6 +573,13 @@ export class SessionController extends TypertRemoteService {
   @Remote('attachment')
   attachment(request: SessionAttachmentRequest): Promise<SessionAttachmentValue> {
     return this.commands.attachment(request)
+  }
+
+  /** Read one file receipt only when that exact durable reference belongs to the addressed Session. */
+  @Remote('fileAttachment')
+  fileAttachment(request: SessionFileAttachmentRequest, signal: AbortSignal): Promise<SessionFileAttachmentValue> {
+    signal.throwIfAborted()
+    return this.commands.fileAttachment(request, signal)
   }
 
   /**

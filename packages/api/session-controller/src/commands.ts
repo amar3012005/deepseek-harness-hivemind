@@ -7,7 +7,7 @@ import { brandString } from '@deepseek-ai/dsh-brand'
 import type { Agent, ModelSelection as AgentModelSelection } from '@deepseek-ai/dsh-agent'
 import { AttachmentError } from '@deepseek-ai/dsh-attachment'
 import type {
-  AttachmentAdmissionPart, FileAttachmentRef, ImageAttachmentRef,
+  AttachmentAdmissionPart, AttachmentIdType, FileAttachmentRef, ImageAttachmentRef,
 } from '@deepseek-ai/dsh-attachment'
 import type { FileUploadReceiptId } from '@deepseek-ai/dsh-client-file-upload/types'
 import type {} from '@deepseek-ai/dsh-client-file-upload'
@@ -37,6 +37,8 @@ import {
 import type {
   SessionAttachmentRequest,
   SessionAttachmentValue,
+  SessionFileAttachmentRequest,
+  SessionFileAttachmentValue,
   SessionCancelRequest,
   SessionCancelValue,
   SessionCreateRequest,
@@ -425,6 +427,54 @@ export class SessionCommandController {
   }
 
   /**
+   * Read one durable file only after proving the exact reference occurs in the addressed Session.
+   * @param request - Session and attachment identities used for authorization.
+   * @returns the durable file reference and integrity-verified bytes.
+   */
+  async fileAttachment(request: SessionFileAttachmentRequest, signal?: AbortSignal): Promise<SessionFileAttachmentValue> {
+    signal?.throwIfAborted()
+    let source: SessionReadState
+    try {
+      source = await this.readSessionState(request.sessionId)
+    } catch (error) {
+      if (error instanceof ApiSessionNotFound) {
+        throw new RemoteError('session/not-found', error.message, { sessionId: request.sessionId })
+      }
+      throw new RemoteError(
+        'gateway/internal',
+        `attachment authorization unavailable for session "${request.sessionId}": ${String(error)}`,
+        {},
+      )
+    }
+    const ref = referencedFile(source.events, String(request.attachmentId))
+    if (ref === undefined) {
+      throw new RemoteError(
+        'session/attachment-invalid',
+        'File is not referenced by this session.',
+        { reason: 'ATTACHMENT_NOT_REFERENCED' },
+      )
+    }
+    try {
+      const chunks: Uint8Array[] = []
+      let bytes = 0
+      for await (const chunk of this.ctx.attachments.readFileStream(ref, signal)) {
+        bytes += chunk.byteLength
+        chunks.push(chunk)
+      }
+      if (bytes !== ref.bytes) throw new AttachmentError('Stored file attachment failed integrity verification.', 'ATTACHMENT_CORRUPT')
+      const data = new Uint8Array(bytes)
+      let offset = 0
+      for (const chunk of chunks) { data.set(chunk, offset); offset += chunk.byteLength }
+      return { attachment: ref, data }
+    } catch (error) {
+      if (error instanceof AttachmentError) {
+        throw new RemoteError('session/attachment-invalid', error.message, { reason: error.code })
+      }
+      throw new RemoteError('gateway/internal', 'Unable to read file attachment.', {})
+    }
+  }
+
+  /**
    * Mutate one pending Inbox occurrence, restoring an ordinary cold Agent when needed.
    * @param request - Session, queue item, and requested mutation.
    * @returns acknowledgement that the queue mutation was applied.
@@ -685,6 +735,76 @@ function referencedImage(
 ): ImageAttachmentRef | undefined {
   for (const event of events) {
     const found = imageInEvent(event, ref => String(ref.attachmentId) === attachmentId)
+    if (found !== undefined) return found
+  }
+  return undefined
+}
+
+function fileBlockIn(content: unknown, attachmentId: string): FileAttachmentRef | undefined {
+  if (!Array.isArray(content)) return undefined
+  for (const value of content) {
+    if (typeof value !== 'object' || value === null || Array.isArray(value)) continue
+    const block = value as { readonly type?: unknown; readonly attachment?: unknown }
+    if (block.type !== 'file' || typeof block.attachment !== 'object' || block.attachment === null || Array.isArray(block.attachment)) continue
+    const candidate = block.attachment as { readonly attachmentId?: unknown; readonly name?: unknown; readonly bytes?: unknown }
+    if (candidate.attachmentId !== attachmentId || typeof candidate.name !== 'string' || candidate.name.length === 0
+      || typeof candidate.bytes !== 'number' || !Number.isSafeInteger(candidate.bytes) || candidate.bytes < 0) continue
+    return {
+      attachmentId: brandString<AttachmentIdType>(attachmentId),
+      name: candidate.name,
+      bytes: candidate.bytes,
+    }
+  }
+  return undefined
+}
+
+/** Read only declared file-reference carriers; opaque plugin data grants no attachment authority. */
+function fileInEvent(event: SessionEvent, attachmentId: string): FileAttachmentRef | undefined {
+  const data = event.data as {
+    readonly content?: unknown
+    readonly message?: { readonly content?: unknown }
+    readonly inserted?: unknown
+    readonly file?: unknown
+    readonly pdf?: unknown
+  }
+  const type: string = event.type
+  switch (type) {
+    case 'user/message':
+    case 'tool/ptc-dispatch':
+      return fileBlockIn(data.content, attachmentId)
+    case 'system/message':
+    case 'developer/message':
+    case 'tool/result':
+    case 'team/message/queued':
+      return fileBlockIn(data.message?.content, attachmentId)
+    case 'agent/inbox/spliced': {
+      if (!Array.isArray(data.inserted)) return undefined
+      for (const message of data.inserted) {
+        if (typeof message !== 'object' || message === null || Array.isArray(message)) continue
+        const found = fileBlockIn((message as { readonly content?: unknown }).content, attachmentId)
+        if (found !== undefined) return found
+      }
+      return undefined
+    }
+    case 'hivemind/artifact-created':
+    case 'hivemind/generation-created':
+      for (const candidate of [data.pdf, data.file]) {
+        if (typeof candidate !== 'object' || candidate === null || Array.isArray(candidate)) continue
+        const ref = candidate as { readonly attachmentId?: unknown; readonly name?: unknown; readonly bytes?: unknown }
+        if (ref.attachmentId === attachmentId && typeof ref.name === 'string' && ref.name.length > 0
+          && typeof ref.bytes === 'number' && Number.isSafeInteger(ref.bytes) && ref.bytes >= 0) {
+          return { attachmentId: brandString<AttachmentIdType>(attachmentId), name: ref.name, bytes: ref.bytes }
+        }
+      }
+      return undefined
+    default:
+      return undefined
+  }
+}
+
+function referencedFile(events: readonly SessionEvent[], attachmentId: string): FileAttachmentRef | undefined {
+  for (const event of events) {
+    const found = fileInEvent(event, attachmentId)
     if (found !== undefined) return found
   }
   return undefined

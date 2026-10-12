@@ -41,6 +41,8 @@ export interface ILayout {
   beginNavigation(): AbortSignal
   /** Toggle the sidebar panel (closed ⟷ contract default width). */
   toggleSidebar(): void
+  /** Let an enclosing product shell own the left column until reset to false. */
+  setExternalSidebar(enabled: boolean): void
   /**
    * Report the right panel's presentation without changing its expanded state.
    * @param track - whether the normal panel width reserves a grid track,
@@ -92,6 +94,11 @@ export class LayoutController implements ILayout {
   /** Toggle the sidebar panel (closed ⟷ contract default width). */
   toggleSidebar(): void {
     this.panels.toggleSidebar()
+  }
+
+  /** Set the product-owned left-column presentation without changing its saved preference. */
+  setExternalSidebar(enabled: boolean): void {
+    this.panels.setExternalSidebar(enabled)
   }
 
   /** Report the right panel's track and fullscreen presentation. */

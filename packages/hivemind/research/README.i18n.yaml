@@ -1,0 +1,10 @@
+# Bilingual-pair consistency record for README.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write packages/hivemind/research/README.md
+/hive-mind-governed-research:
+  en: 40b413c8a3bd2c31
+  zh: acb03c5ba849d6bd
+/hive-mind-governed-research/model-experience:
+  en: e48f2cfa3f699b0a
+  zh: adbb4475876a5184

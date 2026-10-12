@@ -23,6 +23,7 @@ import type { GenerateOptions } from '@deepseek-ai/dsh-llm'
 import { MockAdapter, textResponse, toolCallResponse } from '../../../core/agent-loop/tests/mock-adapter.ts'
 import { mountWorkingDirectoryFixture } from '../../../subagent/subagent/tests/working-directory-fixture.ts'
 import TeamService from '../../agent-team/src/index.ts'
+import type { TeamMemberView } from '../../agent-team/src/types.ts'
 import * as toolTeam from '../src/index.ts'
 
 function serializeRequest(request: GenerateOptions) {
@@ -137,6 +138,34 @@ async function waitNoAgent(ctx: Context, id: SessionId): Promise<void> {
 }
 
 describe('dsh-tool-team', () => {
+  it('validates persistent roster ownership while retaining delegate rows and rejecting unknown values', async () => {
+    const { ctx, lead } = await setup([])
+    const delegate: TeamMemberView = {
+      id: SessionId('delegate-session'), name: 'reviewer', role: 'teammate',
+      status: 'inactive', diagnostics: [],
+    }
+    const persistent: TeamMemberView = {
+      id: SessionId('runtime-room'), name: 'runtime', role: 'teammate',
+      status: 'inactive', diagnostics: [], ownership: 'persistent',
+    }
+    const listMembers = vi.spyOn(ctx.agentTeams, 'listMembers').mockReturnValue([delegate, persistent])
+
+    const valid = await execute(ctx, lead, 'list_agents', {})
+    expect(valid.isError).toBe(false)
+    expect(JSON.parse(text(valid))).toEqual([
+      { target: 'reviewer', role: 'teammate', status: 'inactive', diagnostics: [] },
+      { target: 'runtime', role: 'teammate', status: 'inactive', diagnostics: [], ownership: 'persistent' },
+    ])
+
+    listMembers.mockReturnValue([{
+      ...persistent,
+      ownership: 'shared',
+    } as unknown as TeamMemberView])
+    const invalid = await execute(ctx, lead, 'list_agents', {})
+    expect(invalid.isError).toBe(true)
+    expect(invalid.error).toMatchObject({ info: { name: 'ToolOutputError', code: 'INVALID_TOOL_OUTPUT' } })
+  })
+
   it.each(['running', 'inactive', 'provisioning', 'failed'] as const)(
     'projects %s members consistently in creation, listing, and schemas', async (status) => {
       const { ctx, lead } = await setup([])

@@ -42,7 +42,9 @@ export function registerChatNodeRenderers(
   ctx.slots.inject('conversation.chat.node', () => ctx.slots.register(
     { name: 'conversation.chat.node', key: 'steering', locale: NS }, UserMessageNodeView))
   ctx.slots.inject('conversation.chat.node', () => ctx.slots.register(
-    { name: 'conversation.chat.node', key: 'context', locale: NS }, ContextMessageNodeView))
+    { name: 'conversation.chat.node', key: 'context', locale: NS, children: {
+      'conversation.chat.contextAvatar': { kind: 'single', scope: 'session' },
+    } }, ContextMessageNodeView))
   ctx.slots.inject('conversation.chat.node', () => ctx.slots.register(
     { name: 'conversation.chat.node', key: 'turn-trigger', locale: NS }, TurnTriggerNodeView))
   ctx.slots.inject('conversation.chat.node', () => ctx.slots.register(
@@ -51,7 +53,10 @@ export function registerChatNodeRenderers(
     name: 'conversation.chat.node',
     key: 'assistant-step',
     locale: NS,
-    children: { 'conversation.chat.reasoning.body': { kind: 'single', scope: 'session' } },
+    children: {
+      'conversation.chat.reasoning.body': { kind: 'single', scope: 'session' },
+      'conversation.chat.assistantAvatar': { kind: 'single', scope: 'session' },
+    },
     inject: () => ({ hooks: { presentation } }),
   }, AssistantNodeView))
   ctx.slots.inject('conversation.chat.node', () => ctx.slots.register({
@@ -70,8 +75,10 @@ export function registerChatNodeRenderers(
     { name: 'conversation.chat.node', key: 'turn-error', locale: NS }, TurnErrorNodeView))
   ctx.slots.inject('conversation.chat.node', () => ctx.slots.register(
     { name: 'conversation.chat.node', key: 'turn-max-tokens', locale: NS }, TurnMaxTokensNodeView))
-  ctx.slots.inject('conversation.chat.node', () => ctx.slots.register(
-    { name: 'conversation.chat.node', key: 'turn-process', locale: NS }, TurnProcessNodeView))
+  ctx.slots.inject('conversation.chat.node', () => ctx.slots.register({
+    name: 'conversation.chat.node', key: 'turn-process', locale: NS,
+    children: { 'conversation.chat.workUpdates': { kind: 'list', scope: 'session' } },
+  }, TurnProcessNodeView))
   ctx.slots.inject('conversation.chat.node', () => ctx.slots.register({
     name: 'conversation.chat.node',
     key: 'turn-tail',

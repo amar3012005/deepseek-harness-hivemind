@@ -24,11 +24,9 @@ interface PlannedCall {
 }
 
 /** Settled dispatch awaiting model-order finalization. */
-interface Slot {
-  exec: ToolRunContext
-  result: ToolExecutionResult
-  needsPost: boolean
-}
+type Slot =
+  | { kind: 'result'; exec: ToolRunContext; result: ToolExecutionResult; needsPost: boolean }
+  | { kind: 'parked'; exec: ToolRunContext }
 
 /** One scheduler group outcome, including a drained cancellation. */
 interface GroupOutcome {
@@ -36,6 +34,7 @@ interface GroupOutcome {
   aborted: boolean
   /** Whether any committed result carried {@link ToolExecutionResult.concludesTurn}. */
   concluded: boolean
+  parked?: boolean
 }
 
 /**
@@ -76,6 +75,9 @@ export async function executeToolCalls(
       name: block.name,
       arguments: parseArguments(block.arguments),
       agent,
+      turn,
+      step,
+      allowParking: true,
       signal,
     },
   }))
@@ -95,7 +97,7 @@ export async function executeToolCalls(
     concluded ||= outcome.concluded
     if (outcome.aborted) {
       for (const call of planned.slice(next)) appendSkippedToolCall(session, turn, step, call.block)
-      return { concluded }
+      return { concluded: concluded || outcome.parked === true }
     }
   }
   return { concluded }
@@ -138,6 +140,7 @@ async function runGroup(
   let started = 0
   let aborted: boolean = signal.aborted
   let concluded = false
+  let parked = false
   let schedulerFailure: { error: unknown } | undefined
   const throwSchedulerFailure = (): void => {
     if (schedulerFailure !== undefined) throw schedulerFailure.error
@@ -149,6 +152,10 @@ async function runGroup(
       const slot = slots[committed]
       if (slot === undefined) break
       const call = group[committed]
+      if (slot.kind === 'parked') {
+        committed++
+        continue
+      }
       const result = slot.needsPost
         ? await ctx.tools[TOOL_RUNTIME_SCHEDULER].finalize(slot.exec, slot.result)
         : ctx.tools[TOOL_RUNTIME_SCHEDULER].finish(slot.exec, slot.result)
@@ -173,7 +180,7 @@ async function runGroup(
       case 'dispatch': {
         const promise = ctx.tools[TOOL_RUNTIME_SCHEDULER].dispatch(prepared.exec).then(
           (outcome) => {
-            slots[index] = { exec: prepared.exec, result: outcome.result, needsPost: outcome.kind === 'post-result' }
+            slots[index] = { kind: 'result', exec: prepared.exec, result: outcome.result, needsPost: outcome.kind === 'post-result' }
             return index
           },
           (error: unknown) => {
@@ -185,11 +192,20 @@ async function runGroup(
         break
       }
       case 'post-result':
-        slots[index] = { exec: prepared.exec, result: prepared.result, needsPost: true }
+        slots[index] = { kind: 'result', exec: prepared.exec, result: prepared.result, needsPost: true }
         break
       case 'final-result':
-        slots[index] = { exec: prepared.exec, result: prepared.result, needsPost: false }
+        slots[index] = { kind: 'result', exec: prepared.exec, result: prepared.result, needsPost: false }
         break
+      case 'parked': {
+        const durablePark = session.snapshotEvents().some(event => event.type === 'tool/parked'
+          && event.data.callId === prepared.exec.callId && event.data.rootCallId === prepared.exec.rootCallId
+          && event.data.approvalId === prepared.approvalId && event.data.argumentsDigest === prepared.argumentsDigest)
+        if (!durablePark) throw new Error('tool scheduler returned a park without its durable session event')
+        slots[index] = { kind: 'parked', exec: prepared.exec }
+        parked = true
+        break
+      }
       /* v8 ignore next -- closed-union exhaustiveness guard */
       default:
         assertNever(prepared, 'tool-call scheduler prepare result')
@@ -197,7 +213,7 @@ async function runGroup(
   }
 
   const fillPool = async (): Promise<void> => {
-    while (!aborted && nextToStart < group.length && inFlight.size < maxParallelToolCalls) {
+    while (!aborted && !parked && nextToStart < group.length && inFlight.size < maxParallelToolCalls) {
       // Re-read later modes after ordered commits so registry changes can create a barrier.
       // oxlint-disable-next-line typescript/no-non-null-assertion -- bounded by the loop condition
       const nextCall = group[nextToStart]!
@@ -235,6 +251,10 @@ async function runGroup(
     throw schedulerFailure.error
   }
 
+  if (parked) {
+    for (const call of group.slice(nextToStart)) appendSkippedToolCall(session, turn, step, call.block)
+    return { consumed: group.length, aborted: true, concluded: true, parked: true }
+  }
   if (aborted) {
     // Started calls and accepted context settle first; every remaining model
     // call then receives an ordered synthetic result before the turn aborts.

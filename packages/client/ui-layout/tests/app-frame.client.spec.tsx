@@ -202,11 +202,43 @@ describe('AppFrame', () => {
   })
 
   it('renders owner props for the default sidebar and prospective right panel', () => {
-    const { frame, rightOwner, sidebarOwner, slotCalls } = mountFrame()
+    const { frame, rightOwner, sidebarOwner, slotCalls, instance } = mountFrame()
     expect(tracks(frame)).toEqual([280, 0])
+    expect(instance.getSnapshot().layoutInfo.externalSidebar).toBe(false)
     expect(sidebarOwner()).toEqual({ collapsed: false, width: 280 })
     expect(rightOwner()).toEqual({ width: 864, viewportWidth: 1920, canShow: true })
     expect(slotCalls.find(c => c.key === 'main')).toEqual({ key: 'main', props: {}, options: { entryKey: 'conversation' } })
+  })
+
+  it('removes only the externalized left presentation and restores the saved preference', () => {
+    document.documentElement.dataset.platform = 'darwin'
+    const { frame, instance, queryByTestId } = mountFrame()
+    act(() => { instance.actions.setExternalSidebar(true) })
+    expect(tracks(frame)).toEqual([0, 0])
+    expect(queryByTestId('sidebar-content')).toBeNull()
+    expect(queryByTestId('shell.leading-content')).toBeNull()
+    expect(frame.querySelector('[data-side="sidebar"]')).toBeNull()
+    expect(instance.getSnapshot().layoutInfo.sidebar).toBe(280)
+
+    act(() => { instance.actions.setExternalSidebar(false) })
+    expect(tracks(frame)).toEqual([280, 0])
+    expect(queryByTestId('sidebar-content')).not.toBeNull()
+    expect(instance.getSnapshot().layoutInfo.sidebar).toBe(280)
+  })
+
+  it('keeps the rightbar solve and native services available at a narrow external-sidebar width', () => {
+    frameWidth = 700
+    const { frame, instance, rightOwner, getByTestId, queryByTestId } = mountFrame(700)
+    act(() => {
+      instance.actions.openRightbar(true, false)
+      instance.actions.setExternalSidebar(true)
+    })
+    // CSS declares the 45% preference (315px); the center's 400px minimum
+    // lets the browser resolve the actual right track to 300px.
+    expect(tracks(frame)).toEqual([0, 315])
+    expect(rightOwner()).toEqual({ width: 300, viewportWidth: 700, canShow: true })
+    expect(getByTestId('rightbar-content')).toBeTruthy()
+    expect(queryByTestId('sidebar-content')).toBeNull()
   })
 
   it('renders the column and bottom outlets without a current Session', () => {

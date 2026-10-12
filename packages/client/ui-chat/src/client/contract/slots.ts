@@ -382,6 +382,8 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
       hookContext: ChatNodeHookContext
       inject: ChatNodeInjected
     }
+    /** Live, turn-scoped progress contributions anchored to the active Turn process row. */
+    'conversation.chat.workUpdates': { kind: 'list'; scope: 'session'; owner: { turn: number } }
     /**
      * Renderer for one consecutive group of durable message images. The owner
      * supplies image references, an authorized loader, and alignment. A
@@ -406,6 +408,10 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
      * adds an entry; entries without content return null.
      */
     'conversation.chat.turnTail': { kind: 'list'; scope: 'session'; owner: TurnTailOwnerProps }
+    /** Optional identity presentation; absent occupants preserve native layout. */
+    'conversation.chat.assistantAvatar': { kind: 'single'; scope: 'session'; owner: { employeeId?: string; name?: string } }
+    /** Context identity is derived from the durable producer source only. */
+    'conversation.chat.contextAvatar': { kind: 'single'; scope: 'session'; owner: { employeeId?: string; name?: string } }
     /**
      * Ordered actions for one finalized assistant message. Each entry receives
      * the durable message id; a fresh `id` adds an action and reusing one replaces

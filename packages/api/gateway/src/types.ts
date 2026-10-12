@@ -112,6 +112,24 @@ export interface TypertGatewayWireStream {
   }
 }
 
+/** Trust boundary for decoded Gateway traffic, including Remote streams and event delivery. */
+export interface TypertGatewayAdmissionRequest {
+  readonly kind: 'invoke' | 'stream' | 'event'
+  /** Canonical Remote endpoint, or native Remote event name for `event`. */
+  readonly endpoint: string
+  /** Decoded named arguments or the event's projected JSON payload. */
+  readonly payload: unknown
+  readonly signal: AbortSignal
+  /** Peer authenticated by Connection; absent only for an in-process caller. */
+  readonly peer: PeerScope | undefined
+}
+
+/** Wrap or reject one decoded Gateway operation. For event delivery, return false to suppress it. */
+export type TypertGatewayAdmission = (
+  request: TypertGatewayAdmissionRequest,
+  next: () => Promise<unknown>,
+) => Promise<unknown>
+
 /** Stable infrastructure and boundary failures emitted before or after business execution. */
 export type TypertGatewayErrorCode =
   | 'gateway/ambiguous-endpoint'
@@ -138,6 +156,9 @@ export type TypertGatewayErrorCode =
 export interface TypertGateway {
   /** Carrier adapter shared by WebSocket and in-process transports. */
   readonly wireStream: TypertGatewayWireStream
+
+  /** Register application authorization around decoded Gateway operations and per-peer event delivery. */
+  registerAdmission(admission: TypertGatewayAdmission): () => Promise<void>
 
   /**
    * Check for an active Client event stream.

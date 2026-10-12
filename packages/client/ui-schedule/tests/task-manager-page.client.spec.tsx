@@ -174,6 +174,7 @@ function mount(
     useSessionStatus: select => select(new Map()),
     useSessionRetainInfo: () => undefined,
     useResource: () => { throw new Error('The task manager does not load document resources') },
+    renderSlot: () => null,
     onDelete: vi.fn<TaskManagerPageProps['onDelete']>(async () => 'deleted'),
     onRetry: vi.fn(async () => {}),
     onNewTask: vi.fn(),
@@ -613,6 +614,19 @@ it('updates original Session navigation as metadata arrives and archive state ch
 })
 
 describe('Task manager catalog', () => {
+  it('renders independently contributed external automation cards after the native heading', () => {
+    const renderExternal = vi.fn<TaskManagerPageProps['renderSlot']>((_key, _owner) => (
+      <aside data-testid="external-automation">Nightly Dreaming</aside>
+    ))
+    mount({ records: [at] }, en, { renderSlot: renderExternal })
+    const external = screen.getByTestId('external-automation')
+    const heading = screen.getByRole('heading', { level: 1, name: en['title'] })
+    const filters = screen.getByRole('group', { name: en['statusFilter.label'] })
+    expect(renderExternal).toHaveBeenCalledWith('schedule.manager.external', {})
+    expect(heading.compareDocumentPosition(external) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(external.compareDocumentPosition(filters) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
   it('starts a new Session instead of offering a page creation form', () => {
     const h = mount({ records: [at] })
     // The heading's compact action and the empty state's named action are the

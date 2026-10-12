@@ -33,6 +33,14 @@ export type StartSessionOptions = DraftInitializationOptions
 /** Workspace archive and directory operations consumed by Client UI domains. */
 export interface UiWorkspace {
   /**
+   * Configure whether empty first-run state automatically creates a default
+   * filesystem Workspace. Products without directory-backed Workspaces can
+   * disable this while retaining Session navigation.
+   * @param enabled - whether automatic default directory creation is enabled.
+   * @returns disposer restoring the previous setting when still current.
+   */
+  configureDefaultWorkspaceInitialization(enabled: boolean): () => void
+  /**
    * Select a Session and show its Conversation as one UI navigation action.
    * @param target - known Session identity or durable direct-parent subagent address to display.
    */
@@ -142,6 +150,17 @@ class UiWorkspaceService extends Service implements UiWorkspace {
     {}, { persist: { name: 'dsh.sessions.current' } },
   )
   private mainReference: SessionReference | undefined
+  private readonly defaultWorkspaceInitialization = createSnapshotStore(true)
+
+  configureDefaultWorkspaceInitialization(enabled: boolean): () => void {
+    const previous = this.defaultWorkspaceInitialization.getSnapshot()
+    this.defaultWorkspaceInitialization.set(enabled)
+    return () => {
+      if (this.defaultWorkspaceInitialization.getSnapshot() === enabled) {
+        this.defaultWorkspaceInitialization.set(previous)
+      }
+    }
+  }
 
   /**
    * @param ctx - Client root Context.
@@ -364,11 +383,16 @@ class UiWorkspaceService extends Service implements UiWorkspace {
 
     const disposeWorkspaces = this.workspaces.list.subscribe(reconcile)
     const disposeSessions = this.sessions.list.subscribe(reconcile)
+    const disposeDefaultWorkspacePolicy = this.defaultWorkspaceInitialization.subscribe(() => {
+      if (this.mainReference === undefined) initial = 'waiting'
+      reconcile()
+    })
     reconcile()
     return () => {
       this.lifetime.abort()
       disposeSessions()
       disposeWorkspaces()
+      disposeDefaultWorkspacePolicy()
     }
   }
 
@@ -392,7 +416,8 @@ class UiWorkspaceService extends Service implements UiWorkspace {
       sessionId = await this.reuseBlank(workspace.workspaceId, summary.id)
     }
     let target = workspace?.workspaceId ?? recentWorkspace(workspaces.items, sessions.byId)
-    if (target === undefined && workspaces.items.length === 0 && sessions.ids.length === 0) {
+    if (target === undefined && workspaces.items.length === 0 && sessions.ids.length === 0
+      && this.defaultWorkspaceInitialization.getSnapshot()) {
       const prepared = await this.initializeDefaultWorkspace(navigation)
       if (navigation.aborted) return
       target = prepared?.workspaceId

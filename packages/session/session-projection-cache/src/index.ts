@@ -306,6 +306,27 @@ export class SessionProjectionCache extends Service {
   }
 
 
+  /** Identity-checked floor for the native registry's anchored suffix restore. */
+  coldReadFloor(meta: SessionHeader, inheritedEventCount: SessionLogOffset): SessionLogOffset | undefined {
+    return this.ctx.sessionProjections.restoreFloor(
+      this.recordFor(meta.id, identityOf(meta, inheritedEventCount))?.rows ?? {},
+    )
+  }
+
+  /** Read a complete projection cut from a validated checkpoint and suffix.
+   * This never publishes a partial Session or writes synthetic recovery events.
+   * Missing/version-mismatched/shrunk checkpoints throw for full-read fallback.
+   */
+  coldSnapshotSuffix(
+    meta: SessionHeader, inheritedEventCount: SessionLogOffset,
+    events: readonly SessionEvent[], baseSeq: SessionLogOffset,
+  ): ProjectionSnapshot {
+    return this.ctx.sessionProjections.restore(
+      this.recordFor(meta.id, identityOf(meta, inheritedEventCount))?.rows ?? {},
+      events, baseSeq, meta, inheritedEventCount,
+    ).snapshot
+  }
+
   // --- write-behind (throttle + mandatory points) ---
 
   private installWritePath(): void {

@@ -1,0 +1,61 @@
+# Bilingual-pair consistency record for README.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write packages/hivemind/runtime/README.md
+/:
+  en: 1d5aab25ad4f6b06
+  zh: ee5fb27f43cfc6da
+/deepseek-ai-dsh-hivemind-runtime:
+  en: 193b7947565c87f6
+  zh: d0c13c223800d047
+/deepseek-ai-dsh-hivemind-runtime/summary:
+  en: 25d79394b91b9c9a
+  zh: 809b3bb843f965c0
+/deepseek-ai-dsh-hivemind-runtime/use-this-package:
+  en: 76698ff878545997
+  zh: cb53ae26a5ad3f9d
+/deepseek-ai-dsh-hivemind-runtime/semantics:
+  en: 4dd032d51fb88c13
+  zh: 141b1645f32d486a
+/deepseek-ai-dsh-hivemind-runtime/dev-note:
+  en: 22259075f00ed7e5
+  zh: 59d768d95c5758fc
+/deepseek-ai-dsh-hivemind-runtime/native-web-search:
+  en: 55c685457bf424b0
+  zh: c19fc4d5ad29d09b
+/deepseek-ai-dsh-hivemind-runtime/model-experience:
+  en: 215e7ba838619b7b
+  zh: a311da3843709f90
+/deepseek-ai-dsh-hivemind-runtime/model-experience/progressive-hive-capability-access:
+  en: 9b62ea6f19b050f9
+  zh: b63b8b945c8a8f8f
+/deepseek-ai-dsh-hivemind-runtime/model-experience/progressive-hive-capability-access/what-the-model-sees:
+  en: fe8615d23d36e4df
+  zh: aeac2cee3b6332b4
+/deepseek-ai-dsh-hivemind-runtime/model-experience/progressive-hive-capability-access/token-effect:
+  en: 467161467d56d698
+  zh: fd88d7a87f0a183c
+/deepseek-ai-dsh-hivemind-runtime/model-experience/progressive-hive-capability-access/kv-cache-effect:
+  en: 70808cd1f3cf21a7
+  zh: 8e512a811dcd2e06
+/deepseek-ai-dsh-hivemind-runtime/known-limitations-and-deferred-work:
+  en: 77c143b571e9abf8
+  zh: 1c6a32ada60c7c6b
+/deepseek-ai-dsh-hivemind-runtime/persistent-hyperagents-session-ownership-and-task-memory:
+  en: 4fdb695d5d9daada
+  zh: 14d6dd57384a52cb
+/deepseek-ai-dsh-hivemind-runtime/finished-artifact-production:
+  en: a431748732389685
+  zh: 172cfa7614bff9bf
+/deepseek-ai-dsh-hivemind-runtime/company-strategy-guidance:
+  en: 7a03f48d94f18bfd
+  zh: d9e2dabd15217924
+/deepseek-ai-dsh-hivemind-runtime/runtime-decision-memory-and-calls:
+  en: 37d14783e80a38f9
+  zh: 71a915fd39fb328c
+/deepseek-ai-dsh-hivemind-runtime/native-nightly-review:
+  en: 2afb8306f5fc05bf
+  zh: 075faebd33c7f26a
+/deepseek-ai-dsh-hivemind-runtime/native-nightly-review/runtime-permission-request-notifications:
+  en: e80111ea99436356
+  zh: 38ddd908b8a5328b

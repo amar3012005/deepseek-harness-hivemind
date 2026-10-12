@@ -1,0 +1,57 @@
+.root { display: flex; align-items: center; gap: 8px; position: relative; font-size: 12px; line-height: 1.4; flex-shrink: 0; }
+.label { font-size: 14px; }
+.root button { font: inherit; cursor: pointer; }
+.root > button { border: 0; border-radius: 8px; background: transparent; color: var(--color-text-secondary, #666); padding: 5px 8px; white-space: nowrap; }
+.root > button:hover { background: #8881; }
+.agenda { position: absolute; right: 0; top: calc(100% + 12px); box-sizing: border-box; width: min(340px, 80vw); padding: 16px; border: 1px solid #8883; border-radius: 14px; background: var(--color-bg, white); box-shadow: 0 8px 24px #0001; z-index: 20; font-size: 13px; }
+.agenda textarea { display: block; box-sizing: border-box; width: 100%; min-height: 100px; margin-top: 8px; padding: 10px; border: 1px solid #8883; border-radius: 8px; font: inherit; color: inherit; background: transparent; resize: vertical; }
+.agenda p { font-size: 12px; color: var(--color-text-secondary, #777); }
+.agenda button { border: 1px solid #8883; border-radius: 8px; padding: 6px 10px; background: #8881; color: inherit; }
+.status { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+
+/* This dedicated room has one toolbar owner; ordinary session utilities remain
+   available in the other rooms. Use public slot markers, never bundle class names. */
+:global([data-conversation-header-corner]):has(.root) > :global([data-slot='conversation.session.header.actions']),
+:global([data-conversation-header-corner]):has(.root) > :global([data-slot='conversation.session.header.corner']),
+:global([data-conversation-header-corner]):has(.root) > :global([data-slot='conversation.session.header.utilities']) > :not(.root) {
+  display: none !important;
+}
+
+.activity { position: absolute; right: 0; top: calc(100% + 12px); width: min(380px, 85vw); max-height: min(540px, 70vh); overflow-y: auto; border-radius: 14px; background: var(--dsw-alias-bg-base, white); box-shadow: 0 8px 24px #0001; z-index: 20; }
+.activity > section { margin: 0; }
+.root > .activityButton { color: var(--dsw-alias-label-primary); }
+
+.activityButton { white-space: nowrap; color: var(--dsw-alias-label-primary); }
+@media (max-width: 1100px) {
+  .activity { max-height: 270px; }
+}
+
+/* Room activity is quiet text on the canvas, below the single control row. */
+.activity { background: transparent; box-shadow: none; border-radius: 0; }
+.activity > section { padding: 8px 12px; border: 0; border-radius: 0; background: transparent; }
+
+.root { width: 380px; box-sizing: border-box; justify-content: space-between; padding: 0 12px; min-height: 28px; }
+.activity { width: 380px; }
+.activity .goalButton { display: block; margin: 0 12px 8px; padding: 6px 0; border: 0; background: transparent; color: var(--dsw-alias-label-link, #117dff); font-size: 13px; text-align: left; }
+@media (max-width: 600px) { .root, .activity { width: min(380px, 85vw); } }
+
+.activity .agenda { position: static; width: auto; margin: 0 12px 12px; padding: 12px; box-shadow: none; }
+
+.root, .activity { width: 300px; }
+.root { padding: 0 12px; font-size: 13px; }
+.activity { max-height: min(560px, 75vh); }
+.activity > section { padding: 10px 12px; }
+@media (max-width: 600px) { .root, .activity { width: min(300px, 85vw); } }
+
+.root { width: auto; padding: 0; }
+.root > .environmentToggle { display: flex; align-items: center; padding: 8px; color: var(--dsw-alias-label-secondary); }
+.environment { position: absolute; right: 0; top: 100%; width: 300px; box-sizing: border-box; padding: 14px 4px; border: 1px solid #8882; border-radius: 18px; background: var(--dsw-alias-bg-base, white); box-shadow: 0 12px 32px #0001; }
+.environmentHeading { display: flex; align-items: center; gap: 8px; margin: 0 12px; padding-bottom: 12px; border-bottom: 1px solid #8882; color: var(--dsw-alias-label-tertiary, #777); }
+.environmentHeading button { margin-left: auto; border: 0; padding: 0; font: inherit; color: inherit; background: transparent; }
+.dots { display: flex; gap: 5px; }
+.dots i { width: 7px; height: 7px; border-radius: 50%; background: #ff6058; }
+.dots i:nth-child(2) { background: #ffbd2e; }
+.dots i:nth-child(3) { background: #28c840; }
+.identity { display: flex; align-items: center; justify-content: space-between; margin: 0 12px; padding: 14px 0; border-bottom: 1px solid #8882; font-size: 15px; font-weight: 600; }
+.activity { position: static; width: auto; max-height: min(500px, 65vh); }
+@media (max-width: 600px) { .root { width: auto; } .environment { width: min(300px, 85vw); } }

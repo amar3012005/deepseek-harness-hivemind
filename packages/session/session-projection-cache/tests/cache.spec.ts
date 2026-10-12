@@ -36,6 +36,11 @@ import {
 import SessionProjectionCache from '../src/index.ts'
 import { checkpointRecord, projectionCacheDomainSpec } from '../src/spec.ts'
 import type { CheckpointRecord } from '../src/spec.ts'
+import { createUserMessage } from '@deepseek-ai/dsh-llm'
+import { readColdHistorySource } from '../../../api/session-controller/src/cold-history.ts'
+import { SessionHistoryController } from '../../../api/session-controller/src/history.ts'
+import type { SessionObservation } from '@deepseek-ai/dsh-session-query'
+import { installSessionReadTestServices } from '../../../api/session-controller/tests/test-remote.ts'
 
 declare module '@deepseek-ai/dsh-session-projection/types' {
   interface SessionProjectionStateMap {
@@ -676,6 +681,138 @@ describe('SessionProjectionCache listing read', () => {
 })
 
 describe('SessionProjectionCache cold-read seeding', () => {
+  it('provides truthful native projections for a bounded cold presentation', async () => {
+    const { ctx, cache, root } = await harness()
+    const session = ctx.sessions.create(undefined, { meta: { cwd: '/fixture' } })
+    for (let turn = 1; turn <= 2400; turn++) {
+      session.append('user/message', createUserMessage({ content: [{ type: 'text', text: `Turn ${turn}` }],
+        source: { kind: 'user' } }), { surfaceOp: 'append' })
+      if (turn % 1200 === 0) {
+        session.append('turn/start', { turn })
+        session.append('turn/end', { turn, reason: { kind: 'completed' } })
+      }
+    }
+    mark(session, ['checkpoint'])
+    await cache.write(session)
+    mark(session, ['tail'])
+    const events = session.ownEvents()
+    const reads = vi.fn(async (offset: number, length: number) => ({ events: events.slice(offset, offset + length) }))
+    const persistence = {
+      stat: async () => ({ header: session.header, eventCount: events.length }),
+      openHistoryRead: async () => ({ header: session.header, inheritedEventCount: session.inheritedEventCount,
+        read: reads, [Symbol.asyncDispose]: async () => {} }),
+    }
+    // The medium is a deterministic slice reader; cache and projection restore
+    // are the actual mounted native services. Database isolation is covered
+    // separately by history-window.spec.ts.
+    const cold = { sessions: { get: () => undefined }, get: (name: string) =>
+      name === 'sessionPersistence' ? persistence : name === 'sessionProjectionCache' ? cache : undefined } as unknown as Context
+    const source = await readColdHistorySource(cold, session.id, new AbortController().signal,
+      { maxMessages: 50, turnWindow: { minMessages: 2, minTurns: 2 }, withProjections: true })
+    expect(source?.source).toBe('window')
+    expect(source?.cursor).toBe(events.length - 1)
+    expect(source?.projections).toEqual(ctx.sessionProjections.restore({}, events, SessionLogOffset(0),
+      session.header, session.inheritedEventCount).snapshot)
+    expect(reads.mock.calls.every(([offset]) => offset > 0)).toBe(true)
+    expect(reads.mock.calls.reduce((sum, [, length]) => sum + length, 0)).toBeLessThan(300)
+    const reopened = await harness({ root })
+    const reopenedCold = { sessions: { get: () => undefined }, get: (name: string) =>
+      name === 'sessionPersistence' ? persistence : name === 'sessionProjectionCache' ? reopened.cache : undefined } as unknown as Context
+    const restored = await readColdHistorySource(reopenedCold, session.id, new AbortController().signal,
+      { maxMessages: 50, turnWindow: { minMessages: 2, minTurns: 2 }, withProjections: true })
+    expect(restored?.source).toBe('window')
+    expect(restored?.projections).toEqual(source?.projections)
+    expect(restored?.cursor).toBe(source?.cursor)
+    restored?.[Symbol.dispose]()
+    source?.[Symbol.dispose]()
+    // Exercise the actual controller while full activation is delayed. The
+    // observation boundary is controlled here; native replay and PostgreSQL
+    // restoration have separate integration coverage.
+    ctx.provide('sessionPersistence', persistence as never)
+    const get = vi.spyOn(ctx.sessions, 'get').mockReturnValue(undefined)
+    const promote = vi.fn()
+    const controller = new SessionHistoryController(ctx, promote)
+    const activation = Promise.withResolvers<SessionObservation>()
+    const sourceFor = vi.spyOn(controller as unknown as {
+      sourceFor: (...args: unknown[]) => Promise<SessionObservation>
+    }, 'sourceFor').mockReturnValue(activation.promise)
+    const abort = new AbortController()
+    const iterator = controller.follow({ address: { kind: 'session', sessionId: session.id },
+      maxMessages: 50, turnWindow: { minMessages: 2, minTurns: 2 } }, abort.signal)[Symbol.asyncIterator]()
+    try {
+      const opening = await iterator.next()
+      expect(opening.done).toBe(false)
+      expect(opening.value).toMatchObject({ type: 'snapshot', cursor: events.length - 1,
+        projections: { asOfSeq: source!.projections!.asOfSeq, values: source!.projections!.values } })
+      expect(sourceFor).not.toHaveBeenCalled()
+      const next = iterator.next()
+      await vi.waitFor(() => expect(sourceFor).toHaveBeenCalledOnce())
+      const appended = mark(session, ['during-activation'])
+      expect((await next).value).toMatchObject({ type: 'event', event: { seq: appended.seq } })
+      // A duplicate notification at the saved cursor must not create a row.
+      ctx.emit('session/event', session, appended)
+      const following = iterator.next()
+      const fresh = mark(session, ['after-duplicate'])
+      expect((await following).value).toMatchObject({ type: 'event', event: { seq: fresh.seq } })
+      expect(promote).not.toHaveBeenCalled()
+    } finally {
+      abort.abort()
+      await iterator.return?.()
+      const dispose = vi.fn()
+      activation.resolve({ [Symbol.dispose]: dispose } as unknown as SessionObservation)
+      await vi.waitFor(() => expect(dispose).toHaveBeenCalledOnce())
+      expect(promote).not.toHaveBeenCalled()
+      sourceFor.mockRestore()
+      get.mockRestore()
+    }
+    // A compatible full native observation is the only value promoted after
+    // presentation. It retains all events, rather than the window's suffix.
+    installSessionReadTestServices(ctx)
+    const complete = await ctx.sessionQuery.observeSession(session.id, { projectionMode: 'all' })
+    expect(complete.events).toHaveLength(session.ownEvents().length)
+    const coldGet = vi.spyOn(ctx.sessions, 'get').mockReturnValue(undefined)
+    const completedActivation = vi.spyOn(controller as unknown as {
+      sourceFor: (...args: unknown[]) => Promise<SessionObservation>
+    }, 'sourceFor').mockResolvedValue(complete)
+    const nextAbort = new AbortController()
+    const nextIterator = controller.follow({ address: { kind: 'session', sessionId: session.id },
+      maxMessages: 50 }, nextAbort.signal)[Symbol.asyncIterator]()
+    try {
+      expect((await nextIterator.next()).value).toMatchObject({ type: 'snapshot' })
+      const waiting = nextIterator.next()
+      await vi.waitFor(() => expect(promote).toHaveBeenCalledWith(complete))
+      nextAbort.abort()
+      await waiting
+    } finally {
+      nextAbort.abort()
+      await nextIterator.return?.()
+      complete[Symbol.dispose]()
+      completedActivation.mockRestore()
+      coldGet.mockRestore()
+    }
+  })
+
+  it('restores an anchored suffix with the same complete values as full replay', async () => {
+    const { ctx, cache } = await harness()
+    const session = ctx.sessions.create(undefined, { meta: { cwd: '/fixture' } })
+    mark(session, ['first'])
+    mark(session, ['second'])
+    mark(session, ['checkpoint'])
+    await cache.write(session)
+    mark(session, ['tail'])
+    const events = session.ownEvents()
+    const floor = cache.coldReadFloor(session.header, session.inheritedEventCount)
+    expect(floor).toBeGreaterThan(0)
+    const suffix = events.filter(event => event.seq >= floor!)
+    const actual = cache.coldSnapshotSuffix(session.header, session.inheritedEventCount, suffix, floor!)
+    expect(actual).toEqual(ctx.sessionProjections.restore({}, events, SessionLogOffset(0),
+      session.header, session.inheritedEventCount).snapshot)
+    expect(() => cache.coldSnapshotSuffix(session.header, session.inheritedEventCount,
+      [], floor!)).toThrow()
+    expect(cache.coldReadFloor({ ...session.header, createdAt: session.header.createdAt + 1 },
+      session.inheritedEventCount)).toBe(0)
+  })
+
   /** One session's event log: turn/start, one mark per group, turn/end. */
   const storedLog = (marks: string[][]): SessionEvent[] => {
     const events: SessionEvent[] = [

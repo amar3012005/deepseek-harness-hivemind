@@ -1,0 +1,196 @@
+import type { PreStepDecision } from '@deepseek-ai/dsh-agent'
+import { createUserMessage } from '@deepseek-ai/dsh-llm'
+import { authenticatedActorFromSource, questionRespondentWitnessForReply, type AuthenticatedActor } from '@deepseek-ai/dsh-hivemind-execution-scope'
+/** Fresh server-derived organization agent authority. Never replace the human
+ * principal with storageUserId: connected accounts remain owned by the actor. */
+export interface OrganizationAgentAccess {
+  readonly actor: { readonly userId: string; readonly orgId: string; readonly role: 'owner' | 'admin'; readonly name: string }
+  readonly agent: { readonly orgId: string; readonly runtimeSessionId: string | null; readonly storageUserId: string }
+}
+const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu
+const session = /^session-[a-z0-9-]{1,120}$/u
+function record(value: unknown): value is Record<string, unknown> { return typeof value === 'object' && value !== null && !Array.isArray(value) }
+
+export async function resolveOrganizationAgentAccess(base: string, token: string,
+  expected: { readonly orgId: string; readonly userId: string }, signal: AbortSignal,
+  fetchImpl: typeof fetch = fetch): Promise<OrganizationAgentAccess> {
+  const bounded = AbortSignal.any([signal, AbortSignal.timeout(3000)])
+  const response = await fetchImpl(`${base}/internal/v1/harness-chat/core/organization-agent-access`, {
+    headers: { authorization: `Bearer ${token}` }, redirect: 'error', signal: bounded,
+  })
+  if (response.status !== 200 || response.body === null) {
+    await response.body?.cancel()
+    throw new Error('organization_agent_access_denied')
+  }
+  const reader = response.body.getReader()
+  const chunks: Uint8Array[] = []
+  let bytes = 0
+  let input: unknown
+  try {
+    while (true) {
+      bounded.throwIfAborted()
+      const chunk = await reader.read()
+      if (chunk.done) break
+      bytes += chunk.value.byteLength
+      if (bytes > 4096) throw new Error('organization_agent_access_invalid')
+      chunks.push(chunk.value)
+    }
+    input = JSON.parse(Buffer.concat(chunks).toString('utf8'))
+  } finally { await reader.cancel().catch(() => {}) }
+  if (!record(input) || input['contract'] !== 'hivemind.organization-agent-access.v1'
+    || input['access'] !== 'read-write' || !record(input['actor']) || !record(input['agent'])) throw new Error('organization_agent_access_invalid')
+  const actor = input['actor'], agent = input['agent']
+  if (actor['authority'] !== 'authenticated-profile' || actor['org_id'] !== expected.orgId
+    || actor['user_id'] !== expected.userId || agent['org_id'] !== expected.orgId
+    || !uuid.test(expected.orgId) || !uuid.test(expected.userId)
+    || !['owner', 'admin'].includes(String(actor['role'])) || typeof actor['name'] !== 'string' || actor['name'].length > 180
+    || typeof agent['storage_user_id'] !== 'string' || !uuid.test(agent['storage_user_id'])
+    || (agent['runtime_session_id'] !== null && (typeof agent['runtime_session_id'] !== 'string' || !session.test(agent['runtime_session_id'])))) throw new Error('organization_agent_access_invalid')
+  return Object.freeze({
+    actor: Object.freeze({ userId: expected.userId, orgId: expected.orgId, role: actor['role'] as 'owner' | 'admin', name: actor['name'] }),
+    agent: Object.freeze({ orgId: expected.orgId, runtimeSessionId: agent['runtime_session_id'], storageUserId: agent['storage_user_id'] }),
+  })
+}
+
+/** Native late-answer metadata is produced only by authenticated question admission. */
+type SavedEvent={ readonly type:string;readonly seq:number;readonly data:unknown }
+function questionReplyActor(source:Record<string,unknown>,events:readonly SavedEvent[]|undefined):AuthenticatedActor|undefined {
+  if(!events||source['kind']!=='user-question-reply'||typeof source['callId']!=='string')return undefined
+  const replies=events.filter(event=>event.type==='user/message'&&record(event.data)&&record(event.data['source'])
+    &&event.data['source']['kind']==='user-question-reply'&&event.data['source']['callId']===source['callId'])
+  if(replies.length!==1)return undefined
+  const reply=replies[0]
+  if(reply===undefined)return undefined
+  return questionRespondentWitnessForReply(events,reply)?.actor
+}
+export function questionReplyWitness(source:unknown,events:readonly SavedEvent[]):{ id:string;actor:AuthenticatedActor }|undefined {
+  if(!record(source))return undefined
+  const callId=source['kind']==='user-question-reply'?source['callId']
+    : source['kind']==='user'&&source['questionAnswer']===true?source['questionCallId']:undefined
+  if(typeof callId!=='string'||!callId)return undefined
+  const replies=events.filter(event=>event.type==='user/message'&&record(event.data)&&record(event.data['source'])
+    &&event.data['source']['kind']==='user-question-reply'&&event.data['source']['callId']===callId)
+  if(replies.length!==1)return undefined
+  const reply=replies[0]
+  if(reply===undefined)return undefined
+  const witness=questionRespondentWitnessForReply(events,reply)
+  return witness?{ id:witness.id,actor:witness.actor }:undefined
+}
+export function isAdmittedHumanSource(source: unknown,events?:readonly SavedEvent[]): boolean {
+  if (!record(source)) return false
+  if (source['kind'] === 'user') return true
+  return questionReplyActor(source,events)!==undefined
+}
+
+/** Answer confirmation requires the original saved native question in this room. */
+function savedQuestionMatches(
+  events: readonly { type: string; seq: number; data: unknown }[], source: Record<string, unknown>, replySeq: number,
+): boolean {
+  const callId=source['kind']==='user'&&source['questionAnswer']===true?source['questionCallId']:source['callId']
+  if(typeof callId!=='string')return false
+  const calls=events.filter(event => event.type === 'tool/call' && event.seq < replySeq
+    && record(event.data) && event.data['name'] === 'ask_user_question'
+    && event.data['callId'] === callId && record(event.data['arguments'])
+    && Array.isArray(event.data['arguments']['questions']) && event.data['arguments']['questions'].length > 0)
+  return calls.length===1
+}
+
+/** A newly admitted trigger owns its turn; continuation steps retain that actor.
+ * Never consult a later queued chat message for current-turn authority. */
+export function currentTurnActor(
+  messages:readonly { source:unknown }[], continuation:AuthenticatedActor | undefined,
+  sameTurn=messages.length===0,events:readonly SavedEvent[]=[] ,
+):AuthenticatedActor | undefined {
+  const nativeReplies=messages.filter(message=>record(message.source)&&message.source['kind']==='user-question-reply')
+  if(nativeReplies.length>0) {
+    const respondent=nativeReplies.map(message=>record(message.source)?questionReplyActor(message.source,events):undefined)
+      .filter(value=>value!==undefined).at(-1)
+    return respondent ?? (sameTurn ? continuation : undefined)
+  }
+  const direct=messages.filter(message=>isAdmittedHumanSource(message.source))
+    .map(message=>authenticatedActorFromSource(message.source)).filter(value=>value!==undefined).at(-1)
+  return direct ?? (sameTurn ? continuation : undefined)
+    ?? messages.filter(message=>!record(message.source)||message.source['kind']!=='user-question-reply'
+      ||isAdmittedHumanSource(message.source))
+      .map(message=>authenticatedActorFromSource(message.source)).filter(value=>value!==undefined).at(-1)
+}
+
+/** Only a same-turn same-actor witness survives nonhuman inbox/context updates. */
+export function retainAdmittedUserWitness(
+  previous:{ id:string;actor:AuthenticatedActor }|undefined,actor:AuthenticatedActor,sameTurn:boolean,
+):{ id:string;actor:AuthenticatedActor }|undefined {
+  return sameTurn && previous?.actor.userId===actor.userId && previous.actor.orgId===actor.orgId ? previous : undefined
+}
+
+/** Exact call/user evidence stays valid only for its admitted native turn and actor. */
+export function retainTurnConfirmationRef(
+  reference:string|undefined,previousActor:AuthenticatedActor|undefined,actor:AuthenticatedActor,sameTurn:boolean,
+):string|undefined {
+  return sameTurn && previousActor?.userId===actor.userId && previousActor.orgId===actor.orgId
+    && reference!==undefined && /^(?:event:[0-9]+|call:[a-zA-Z0-9_-]{1,120})$/.test(reference) ? reference : undefined
+}
+
+/** Session-bound RPC identifiers, including persisted workspace files. */
+export function referencedSessionIds(value: unknown, depth = 0, ids = new Set<string>()): Set<string> {
+  if (depth > 8 || value === null || typeof value !== 'object') return ids
+  if (Array.isArray(value)) {
+    for (const item of value) referencedSessionIds(item, depth + 1, ids)
+    return ids
+  }
+  for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
+    if ((key === 'agentId' || key === 'sessionId' || key === 'parentSessionId' || key === 'childSessionId' || key === 'workspaceFileScopeId')
+      && typeof item === 'string' && item.length > 0) ids.add(item)
+    else referencedSessionIds(item, depth + 1, ids)
+  }
+  return ids
+}
+
+/** Bind a call reconciliation to its exact persisted receipt, never a later call. */
+export function admittedVoiceCallRef(
+  messages:readonly { source:unknown }[],events:readonly { type:string;data:unknown }[],actor:AuthenticatedActor,
+):string|undefined {
+  const source=messages.map(message=>message.source).findLast(value=>record(value)&&value['kind']==='hivemind-live-voice'
+    &&value['form']==='recall'&&value['plugin']==='hivemind-live-voice'&&authenticatedActorFromSource(value)?.userId===actor.userId)
+  if(!record(source)||typeof source['voiceCallId']!=='string') return undefined
+  const callId=source['voiceCallId']
+  const found=events.some(event=>event.type==='hivemind/voice-call-ended'&&record(event.data)&&event.data['callId']===callId
+    &&event.data['hadUserSpeech']===true&&record(event.data['authenticatedActor'])
+    &&event.data['authenticatedActor']['userId']===actor.userId&&event.data['authenticatedActor']['orgId']===actor.orgId)
+  return found?`call:${callId}`:undefined
+}
+
+/** A native admitted user message is appended only after pre-step returns. */
+export function admittedUserConfirmationRef(
+  events:readonly { type:string;seq:number;data:unknown }[],id:string|undefined,actor:AuthenticatedActor,
+):string|undefined {
+  if(!id) return undefined
+  const event=events.find((event)=>{
+    if(event.type!=='user/message'||!record(event.data)||event.data['id']!==id) return false
+    const source=event.data['source'];const author=authenticatedActorFromSource(source)
+    const questionWitness=record(source)&&source['questionAnswer']===true
+      ? questionReplyWitness(source,events)?.id===id : false
+    return record(source)&&isAdmittedHumanSource(source)&&author?.userId===actor.userId&&author.orgId===actor.orgId
+      && (source['questionAnswer']===true ? questionWitness&&savedQuestionMatches(events,source,event.seq)
+        : source['kind']==='user' || savedQuestionMatches(events,source,event.seq))
+  })
+  return event?`event:${event.seq}`:undefined
+}
+
+/** The tool boundary flushes through native SessionStore before Core validation. */
+export const runtimeWitnessServices=['tools','sessions'] as const
+
+/** Persisted model context from the current admitted actor, never a later queued user. */
+export function authenticatedInitiatorMessage(actor: AuthenticatedActor) {
+  return createUserMessage({
+    source: { kind: 'hivemind-authenticated-initiator', plugin: 'hivemind-web-runner/authenticated-initiator', form: 'recall', authenticatedActor: actor },
+    content: [{ type: 'text', text: `Server-authenticated initiating user for this work: ${JSON.stringify(actor)}. Use this authenticated profile name when acknowledging the sender. This identifies who initiated the work; it does not grant additional permissions or change company goals.` }],
+  })
+}
+
+export function withAuthenticatedInitiator(decision: PreStepDecision, actor: AuthenticatedActor, admitted: boolean): PreStepDecision {
+  if(decision.kind==='reject' || !admitted) return decision
+  return { ...decision, messages:[authenticatedInitiatorMessage(actor),...decision.messages.filter(message=>
+    !(message.source.kind==='hivemind-authenticated-initiator' && message.source.plugin==='hivemind-web-runner/authenticated-initiator'))] }
+}
+
+declare module '@deepseek-ai/dsh-llm' { interface MessageSourceMap { 'hivemind-authenticated-initiator': { kind: 'hivemind-authenticated-initiator'; plugin: string; authenticatedActor: AuthenticatedActor } & import('@deepseek-ai/dsh-llm').ContextFormed } }

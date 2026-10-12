@@ -1,14 +1,20 @@
 /** Host-wide durable reminders and shared human/model management. */
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
+import { isDeepStrictEqual } from 'node:util'
 import z from '@deepseek-ai/schemastery'
 import { Context, Service } from '@deepseek-ai/cordis'
 import { TypertRemoteService, Remote } from '@deepseek-ai/dsh-typert-protocol'
 import type { Domain } from '@deepseek-ai/dsh-storage-domain'
 import { delegationDepthOf } from '@deepseek-ai/dsh-subagent'
+import type { Agent } from '@deepseek-ai/dsh-agent'
+import type { ScheduleTask } from './storage.ts'
 import type { SessionId } from '@deepseek-ai/dsh-session'
 import type { SessionActivity } from '@deepseek-ai/dsh-workspace'
 import { ScheduleRuntime } from './runtime.ts'
 import { scheduleDomain } from './storage.ts'
+import { scheduleOwnershipOf } from './ownership.ts'
+import type { ScheduleOwnershipPolicy } from './ownership.ts'
+import type { ScheduleOwnership } from './ownership.ts'
 import { deliveryHistoryPage } from './delivery-history.ts'
 import { resolveScheduleUpdate } from './update.ts'
 import {
@@ -25,6 +31,8 @@ import type {
 export type * from './types.ts'
 export { scheduleDomain } from './storage.ts'
 export type { ScheduleTask } from './storage.ts'
+export type { ScheduleOwnership, ScheduleOwnershipPolicy } from './ownership.ts'
+export { scheduleTaskSchema } from './storage.ts'
 export type { RecurringOccurrence } from './domain.ts'
 export {
   SCHEDULE_CHANGE_VERSION,
@@ -80,6 +88,8 @@ export interface Config {
    * cap and the window wins, and the newest records survive.
    */
   deliveryHistoryRecords?: number
+  /** Require the hosted tenant ownership provider for all management and delivery. */
+  ownershipRequired?: boolean
 }
 
 /** Retained delivery-history window applied when the deployment states none. */
@@ -87,6 +97,10 @@ const DEFAULT_DELIVERY_HISTORY_DAYS = 30
 
 /** Retained delivery-history record cap applied when the deployment states none. */
 const DEFAULT_DELIVERY_HISTORY_RECORDS = 200
+
+function sameOwner(value: ScheduleTask['ownership'], expected: ScheduleOwnership | undefined): boolean {
+  return value !== undefined && expected !== undefined && isDeepStrictEqual(value, expected)
+}
 
 /**
  * Shared management service; reads, deletion, and timing edits never activate a Session.
@@ -102,15 +116,28 @@ export class ScheduleService extends TypertRemoteService {
   static Config: z<Config> = z.object({
     deliveryHistoryDays: z.number().step(1).min(1).max(3650).default(DEFAULT_DELIVERY_HISTORY_DAYS),
     deliveryHistoryRecords: z.number().step(1).min(1).max(10_000).default(DEFAULT_DELIVERY_HISTORY_RECORDS),
+    ownershipRequired: z.boolean().default(false),
   })
 
   /** Resolved retention bounds shared with the runtime that appends acknowledgments. */
   private readonly retention: DeliveryRetentionBounds
+  private readonly ownership: ScheduleOwnershipPolicy | undefined
+  private readonly ownershipRequired: boolean
   private readonly ready: Promise<Domain<typeof scheduleDomain>>
   private readonly initialized: PromiseLike<unknown>
   private chain: Promise<unknown> = Promise.resolve()
   private runtime: ScheduleRuntime | undefined
   private stopping = false
+  private readonly deliveryGuards = new Set<(agent: Agent, task: ScheduleTask) => boolean | Promise<boolean>>()
+
+  /** Register a fail-closed host admission check; caller owns the returned cleanup. */
+  guardDelivery(guard: (agent: Agent, task: ScheduleTask) => boolean | Promise<boolean>): () => void {
+    this.deliveryGuards.add(guard)
+    return () => { this.deliveryGuards.delete(guard) }
+  }
+
+  /** Reconsider retained due tasks after an authenticated ownership/state change. */
+  reconsiderDelivery(): void { this.runtime?.requestDrive() }
 
   /**
    * @param ctx - Host services owning storage, dispatch, and Session restoration.
@@ -121,6 +148,11 @@ export class ScheduleService extends TypertRemoteService {
     this.retention = {
       days: config.deliveryHistoryDays ?? DEFAULT_DELIVERY_HISTORY_DAYS,
       records: config.deliveryHistoryRecords ?? DEFAULT_DELIVERY_HISTORY_RECORDS,
+    }
+    this.ownership = scheduleOwnershipOf(ctx)
+    this.ownershipRequired = config.ownershipRequired ?? false
+    if (this.ownershipRequired && this.ownership === undefined) {
+      throw new Error('Schedule ownership policy is required but was not installed')
     }
     this.ready = ctx.storageDomain.open(scheduleDomain).then(async (domain) => {
       for (const [key, task] of domain.table('tasks').entries()) {
@@ -152,14 +184,22 @@ export class ScheduleService extends TypertRemoteService {
         throw error
       }
       const tasks = domain.table('tasks')
+      const ownership = this.ownership
       this.runtime = new ScheduleRuntime(ctx,
         () => [...tasks.entries()].map(([, task]) => task),
         work => this.serialize(work),
         async (task) => {
-          await tasks.put(task.record.id, task)
+          const current = tasks.get(task.record.id)
+          if (current === undefined) throw new Error('schedule_task_missing_during_delivery_commit')
+          await tasks.put(task.record.id, { ...task,
+            ...(ownership === undefined ? {} : { revision: (current.revision ?? 0) + 1 }) })
           this.emitChanged()
         },
-        this.retention)
+        this.retention, async (agent, task) => {
+          if (this.ownershipRequired && (task.ownership === undefined || ownership === undefined)) return false
+          for (const guard of this.deliveryGuards) if (!await guard(agent, task)) return false
+          return true
+        }, ownership === undefined ? undefined : (task, work) => ownership.runAsOwner(task, work))
       this.runtime.requestDrive()
       return cleanup
     })
@@ -226,13 +266,36 @@ export class ScheduleService extends TypertRemoteService {
    * @returns The durably stored schedule. Cancellation does not roll back an in-flight write.
    */
   async create(sessionId: SessionId, request: ScheduleCreateRequest, signal?: AbortSignal): Promise<ScheduleRecord> {
+    return this.createRecord(sessionId, request, signal)
+  }
+
+  /**
+   * Ensure one Host-owned reminder without duplicating it when its owning action replays.
+   * The deterministic identity and lookup share the native Schedule storage queue;
+   * callers retain authorization and delivery ownership with this Schedule service.
+   * @param sessionId - Original Session receiving the reminder.
+   * @param key - Non-empty bounded action identity, scoped to this Session.
+   * @param request - Native creation selector; the first committed timing wins.
+   * @param signal - Cancellation checked before persistence begins.
+   * @returns The original committed record, including inactive delivered records.
+   */
+  async ensure(sessionId: SessionId, key: string, request: ScheduleCreateRequest, signal?: AbortSignal): Promise<ScheduleRecord> {
+    if (typeof key !== 'string' || !key.length || key.length > 180) throw new Error('schedule_invalid_ensure_key')
+    const id = ScheduleId(`schedule-${createHash('sha256').update(`${sessionId}\0${key}`).digest('hex')}`)
+    return this.createRecord(sessionId, request, signal, id)
+  }
+
+  /** Share native creation validation/storage; only Host ensure supplies a stable identity. */
+  private async createRecord(
+    sessionId: SessionId, request: ScheduleCreateRequest, signal?: AbortSignal, stableId?: ScheduleRecord['id'],
+  ): Promise<ScheduleRecord> {
     if (Number(request.at !== undefined) + Number(request.after_seconds !== undefined)
       + Number(request.every_seconds !== undefined) + Number(request.daily !== undefined)
       + Number(request.weekly !== undefined) + Number(request.cron !== undefined) > 1) {
       throw new ScheduleInputError('invalid_selector', 'Exactly one reminder selector is required.')
     }
     const title = scheduleTitle(request.title)
-    const id = ScheduleId(`schedule-${randomUUID()}`)
+    const id = stableId ?? ScheduleId(`schedule-${randomUUID()}`)
     const now = Date.now()
     let record: ScheduleRecord
     if (request.at !== undefined) {
@@ -251,10 +314,28 @@ export class ScheduleService extends TypertRemoteService {
     return this.serialize(async () => {
       const refusal = this.reminderTargetRefusal(sessionId)
       if (refusal !== undefined) throw new ScheduleInputError('subagent_session', refusal.message)
+      const ownership = this.ownership?.bind(sessionId)
       const domain = await this.getDomain()
       signal?.throwIfAborted()
+      const existing = stableId === undefined ? undefined : domain.table('tasks').get(id)
+      if (existing !== undefined) {
+        const owner = ownership === undefined ? undefined : await ownership
+        if (this.ownershipRequired && existing.ownership === undefined) throw new Error('schedule_owner_missing')
+        if (owner !== undefined && !sameOwner(existing.ownership, owner)) {
+          throw new Error('schedule_ensure_owner_conflict')
+        }
+        if (existing.sessionId !== sessionId || existing.record.prompt !== record.prompt
+          || existing.record.title !== record.title || existing.record.kind !== record.kind) {
+          throw new Error('schedule_ensure_key_conflict')
+        }
+        return existing.record
+      }
+      const owner = ownership === undefined ? undefined : await ownership
+      if (owner !== undefined) await this.ownership?.assertCanCreate(owner)
       await domain.table('tasks').put(id, {
-        sessionId, record, status: 'active', deliveryHistory: { records: [], earlierRecordsUnavailable: false },
+        sessionId, record, status: 'active', ...(this.ownership === undefined ? {} : { revision: 1 }),
+        ...(owner === undefined ? {} : { ownership: owner }),
+        deliveryHistory: { records: [], earlierRecordsUnavailable: false },
       })
       this.emitChanged()
       this.runtime?.requestDrive()
@@ -270,8 +351,10 @@ export class ScheduleService extends TypertRemoteService {
   @Remote('list')
   async list(request: ScheduleListRequest): Promise<ScheduleRecord[]> {
     const domain = await this.getDomain()
+    const boundOwner = this.ownership === undefined ? undefined : await this.ownership.bind(request.sessionId)
     return [...domain.table('tasks').entries()]
-      .filter(([, task]) => task.sessionId === request.sessionId && task.status === 'active')
+      .filter(([, task]) => task.sessionId === request.sessionId && task.status === 'active'
+        && (this.ownership === undefined || sameOwner(task.ownership, boundOwner)))
       .map(([, task]) => task.record)
   }
 
@@ -284,7 +367,10 @@ export class ScheduleService extends TypertRemoteService {
   @Remote('catalog')
   async catalog(): Promise<ScheduleCatalogEntry[]> {
     const domain = await this.getDomain()
-    return [...domain.table('tasks').entries()]
+    const all = [...domain.table('tasks').entries()]
+    const visible = this.ownership === undefined ? all : await Promise.all(all.map(async pair =>
+      await this.visibleTask(pair[1]) ? pair : undefined))
+    return visible.flatMap(entry => entry === undefined ? [] : [entry])
       .map(([, task]) => ({
         ...task.record, sessionId: task.sessionId, status: task.status,
         ...(task.lastDelivery === undefined ? {} : { lastDelivery: task.lastDelivery }),
@@ -308,6 +394,7 @@ export class ScheduleService extends TypertRemoteService {
     if (task === undefined || task.sessionId !== request.sessionId) {
       return { id: request.id, code: 'schedule_not_found' }
     }
+    if (!await this.authorizeTask(request.sessionId, task)) return { id: request.id, code: 'schedule_not_found' }
     return deliveryHistoryPage(task, request, this.retention)
   }
 
@@ -329,6 +416,9 @@ export class ScheduleService extends TypertRemoteService {
       signal?.throwIfAborted()
       const current = tasks.get(request.id)
       if (current === undefined || current.sessionId !== request.sessionId) {
+        return { id: request.id, deleted: false, code: 'schedule_not_found' }
+      }
+      if (!await this.authorizeTask(request.sessionId, current)) {
         return { id: request.id, deleted: false, code: 'schedule_not_found' }
       }
       await tasks.delete(request.id)
@@ -363,10 +453,30 @@ export class ScheduleService extends TypertRemoteService {
       if (current === undefined || current.sessionId !== request.sessionId) {
         return { id: request.id, updated: false, code: 'schedule_not_found' }
       }
+      if (!await this.authorizeTask(request.sessionId, current)) {
+        return { id: request.id, updated: false, code: 'schedule_not_found' }
+      }
+      if (request.enabled !== undefined) {
+        if (request.change !== undefined || request.title !== undefined || request.prompt !== undefined) {
+          return { code: 'invalid_rule', message: 'enabled cannot be combined with schedule content or timing changes.' }
+        }
+        if (typeof request.enabled !== 'boolean') return { code: 'invalid_rule', message: 'enabled must be boolean.' }
+        if (request.expected === undefined || JSON.stringify(request.expected) !== JSON.stringify(current.record)) {
+          return { id: request.id, updated: false, code: 'schedule_conflict' }
+        }
+        const status = request.enabled ? 'active' : 'inactive'
+        if (current.status === status) return { id: request.id, updated: false, record: current.record }
+        await tasks.put(request.id, { ...current, status,
+          ...(this.ownership === undefined ? {} : { revision: (current.revision ?? 0) + 1 }) })
+        this.emitChanged()
+        this.runtime?.requestDrive()
+        return { id: request.id, updated: true, record: current.record }
+      }
       if (current.status === 'inactive') return { id: request.id, updated: false, code: 'schedule_ended' }
       const result = resolveScheduleUpdate(current.record, request.expected, request.change, Date.now(), request)
       if (!('record' in result) || !result.updated) return result
-      await tasks.put(request.id, { ...current, record: result.record })
+      await tasks.put(request.id, { ...current, record: result.record,
+        ...(this.ownership === undefined ? {} : { revision: (current.revision ?? 0) + 1 }) })
       this.emitChanged()
       this.runtime?.requestDrive()
       return result
@@ -393,6 +503,18 @@ export class ScheduleService extends TypertRemoteService {
   private async getDomain(): Promise<Domain<typeof scheduleDomain>> {
     await this.initialized
     return this.ready
+  }
+
+  private async visibleTask(task: ScheduleTask): Promise<boolean> {
+    if (this.ownership === undefined) return !this.ownershipRequired
+    if (task.ownership === undefined) return false
+    return this.ownership.visible(task)
+  }
+
+  private async authorizeTask(sessionId: SessionId, task: ScheduleTask): Promise<boolean> {
+    if (this.ownership === undefined) return !this.ownershipRequired && task.ownership === undefined
+    if (task.ownership === undefined) return false
+    return this.ownership.authorize(sessionId, task.ownership)
   }
 
   /**

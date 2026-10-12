@@ -6,6 +6,7 @@
 
 import type {} from '@deepseek-ai/dsh-working-directory'
 import { Context, Service } from '@deepseek-ai/cordis'
+import { createHash } from 'node:crypto'
 import z from '@deepseek-ai/schemastery'
 import { AnonymousEntries, NamedEntries, ScopedLayers, scopeOf, scopeTarget } from '@deepseek-ai/dsh-scope'
 import type { ScopeKey, ScopeLayer, Scoped } from '@deepseek-ai/dsh-scope'
@@ -152,6 +153,10 @@ declare module '@deepseek-ai/cordis' {
      * @mode waterfall
      */
     'tools/pre-execute'(this: Scoped<ToolRuntime>, exec: ToolExecution, next: () => Promise<PreToolDecision>): Promise<PreToolDecision>
+    /** Persist an exact pending request after an ask gate without granting or dispatching it. */
+    'tools/park'(this: Scoped<ToolRuntime>, exec: Readonly<ToolExecution>, reason: string | undefined, next: () => Promise<ToolParkDecision>): Promise<ToolParkDecision>
+    /** Commit the scheduler-validated park identity before the loop closes the turn. */
+    'tools/park-commit'(this: Scoped<ToolRuntime>, exec: Readonly<ToolExecution>, park: Extract<ToolParkDecision, { kind: 'park' }>, next: () => Promise<ToolParkCommitDecision>): Promise<ToolParkCommitDecision>
     /**
      * Around-dispatch waterfall for timeout, retry, or metrics. `next()` returns
      * a normalized result; wrappers may change only `exec.signal`, while call
@@ -332,6 +337,10 @@ export interface ToolExecutionInput {
    */
   readonly rootCallId?: ToolCallId
   readonly name: string
+  /** Native turn coordinates and park admission, supplied only by the owning scheduler. */
+  readonly turn?: number
+  readonly step?: number
+  readonly allowParking?: true
   /** Binding-time tool schema for a PTC inner call; frozen by its producer and never logged. */
   readonly schema?: ToolSchema
   /** Losslessly JSON-serializable parsed arguments (tools validate their own schema). */
@@ -447,6 +456,11 @@ export type ScheduledToolPreparation =
   | { kind: 'dispatch'; exec: ToolRunContext }
   | { kind: 'post-result'; exec: ToolRunContext; result: ToolExecutionResult }
   | { kind: 'final-result'; exec: ToolRunContext; result: ToolExecutionResult }
+  | { kind: 'parked'; exec: ToolRunContext; approvalId: string; argumentsDigest: string }
+
+/** Durable suspension is separate from permission and tool results. */
+export type ToolParkDecision = { kind: 'continue' } | { kind: 'park'; approvalId: string; argumentsDigest: string }
+export type ToolParkCommitDecision = { kind: 'committed' } | { kind: 'unavailable' }
 
 /**
  * Scheduler-only dispatch result. A `post-result` still receives post-execute;
@@ -1388,6 +1402,8 @@ export class ToolRuntime extends Service {
         return await this.finalizeScheduledExecution(prepared.exec, prepared.result)
       case 'final-result':
         return this.finishScheduledExecution(prepared.exec, prepared.result)
+      case 'parked':
+        throw new Error('a parked tool call must be resumed by its owning agent loop')
       /* v8 ignore next -- closed-union exhaustiveness guard */
       default:
         return assertNever(prepared, 'scheduled tool preparation')
@@ -1418,6 +1434,9 @@ export class ToolRuntime extends Service {
       callId,
       rootCallId,
       name,
+      ...exec.turn === undefined ? {} : { turn: exec.turn },
+      ...exec.step === undefined ? {} : { step: exec.step },
+      ...exec.allowParking === true ? { allowParking: true as const } : {},
       signal,
       ...agent !== undefined ? { agent } : {},
       ...parent !== undefined ? { parent } : {},
@@ -1513,8 +1532,11 @@ export class ToolRuntime extends Service {
         () => Promise.resolve<PreToolDecision>({ kind: 'allow' }),
       )
       const askResolution = gate.kind === 'ask'
-        ? await this.serviceAsk(exec, gate)
+        ? await this.resolveAsk(exec, gate)
         : { decision: gate, approvalCancelled: false }
+      if ('parked' in askResolution && askResolution.parked) {
+        return await next({ kind: 'parked', exec, ...askResolution.parked })
+      }
       const { decision } = askResolution
       if (this.callerCancelled(exec) && askResolution.approvalCancelled) {
         return await next({ kind: 'post-result', exec, result: toolAbortedBeforeDispatchResult() })
@@ -1542,6 +1564,39 @@ export class ToolRuntime extends Service {
     } catch (error: unknown) {
       return next({ kind: 'final-result', exec, result: toolErrorResult(error) })
     }
+  }
+
+  private async resolveAsk(exec: ToolRunContext, gate: Extract<PreToolDecision, { kind: 'ask' }>): Promise<{
+    decision: PreToolDecision
+    approvalCancelled: boolean
+    parked?: { approvalId: string; argumentsDigest: string }
+  }> {
+    const approval = this.ctx.get('approval')
+    const policy = exec.agent && typeof approval?.policyFor === 'function' ? approval.policyFor(exec.agent.session) : undefined
+    if (exec.allowParking && exec.agent && approval && policy === 'ask') {
+      const guard = this.guardReason(exec)
+      if (guard !== undefined) return { decision: { kind: 'deny', reason: guard }, approvalCancelled: false }
+      if (this.callerCancelled(exec)) return { decision: { kind: 'cancel' }, approvalCancelled: false }
+      const park = await this.ctx.waterfall(scopeTarget(this, exec.agent), 'tools/park', exec, gate.reason,
+        () => Promise.resolve<ToolParkDecision>({ kind: 'continue' }))
+      if (park.kind === 'park') {
+        if (this.callerCancelled(exec)) return { decision: { kind: 'cancel' }, approvalCancelled: false }
+        const guardAfterAwait = this.guardReason(exec)
+        if (guardAfterAwait !== undefined) return { decision: { kind: 'deny', reason: guardAfterAwait }, approvalCancelled: false }
+        const expectedDigest = createHash('sha256').update(canonicalJson(exec.arguments)).digest('hex')
+        if (park.approvalId.length === 0 || park.argumentsDigest !== expectedDigest) {
+          throw new Error('tool park handler returned an identity inconsistent with immutable call arguments')
+        }
+        const committed = await this.ctx.waterfall(scopeTarget(this, exec.agent), 'tools/park-commit', exec, park,
+          () => Promise.resolve<ToolParkCommitDecision>({ kind: 'committed' }))
+        if (committed.kind === 'committed') {
+          return { decision: { kind: 'deny', reason: 'tool call parked' }, approvalCancelled: false,
+            parked: { approvalId: park.approvalId, argumentsDigest: park.argumentsDigest } }
+        }
+        return { decision: { kind: 'deny', reason: 'pending tool approval could not be durably saved' }, approvalCancelled: false }
+      }
+    }
+    return this.serviceAsk(exec, gate)
   }
 
   /** Whether the original caller signal is currently aborted. */
@@ -1905,6 +1960,14 @@ export class ToolRuntime extends Service {
     })
     return deepFreeze({ ...detached, value: result.value })
   }
+}
+
+function canonicalJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`
+  if (typeof value === 'object' && value !== null) {
+    return `{${Object.keys(value).sort().map(key => `${JSON.stringify(key)}:${canonicalJson((value as Record<string, unknown>)[key])}`).join(',')}}`
+  }
+  return JSON.stringify(value)
 }
 
 /** Mint a same-process correlation token whose identity is its value. */

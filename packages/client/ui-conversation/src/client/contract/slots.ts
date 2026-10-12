@@ -187,6 +187,12 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
     'conversation.composer': { kind: 'chain'; scope: 'session'; owner: ComposerChainProps }
     /** Workspace picker shown by the blank-session Hero. */
     'conversation.hero.workspace': { kind: 'single'; scope: 'root'; owner: EmptyWorkspaceOwnerProps }
+    /** Optional HIVE read-scope selector in the Hero workspace row. */
+    'conversation.hero.scope': {
+      kind: 'single'
+      scope: 'root'
+      owner: HeroScopeOwnerProps
+    }
     /** Brand mark shown before the blank-session headline. */
     'conversation.hero.brand.mark': { kind: 'single'; scope: 'root'; owner: HeroBrandMarkOwnerProps }
     /** Agent-preset control staged for a New Session. */
@@ -197,6 +203,8 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
     'conversation.input.overlay': { kind: 'list'; scope: 'session' }
     /** Ambient entries below the composer card. */
     'conversation.composer.dock': { kind: 'list'; scope: 'session' }
+    /** Session-independent footer entries below the resident composer card. */
+    'conversation.composer.footer': { kind: 'list'; scope: 'session-maybe' }
     /** Compact controls at the left of the composer tool row. */
     'conversation.input.left': { kind: 'list'; scope: 'session' }
     /** Compact controls before the composer submit action. */
@@ -235,6 +243,7 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
         'conversation.input.dock': { kind: 'list'; scope: 'session' }
         'conversation.hero.brand.mark': { kind: 'single'; scope: 'root' }
         'conversation.hero.workspace': { kind: 'single'; scope: 'root' }
+        'conversation.hero.scope': { kind: 'single'; scope: 'root' }
         'conversation.hero.agentPreset': { kind: 'single'; scope: 'session-maybe' }
       }
       inject: ConversationInjected
@@ -330,7 +339,10 @@ export interface ConversationInjected {
   /** Connect and open a blank Session in the selected Workspace. */
   selectWorkspace: (workspaceId: WorkspaceId) => Promise<void>
   /** Session-addressed composer block source, or the stable absent source. */
-  hooks: { composerBlock: ObservableSnapshot<ComposerBlock | undefined> }
+  hooks: {
+    composerBlock: ObservableSnapshot<ComposerBlock | undefined>
+    workspaceRequired: ObservableSnapshot<boolean>
+  }
 }
 
 /** Business callbacks injected into the strict Session body. */
@@ -426,7 +438,7 @@ export type ComposerBarProps =
     | 'conversation.input.permission'
     | 'conversation.input.left' | 'conversation.input.plan'
     | 'conversation.input.right' | 'conversation.input.model' | 'conversation.input.activity'
-    | 'conversation.composer.dock'
+    | 'conversation.composer.dock' | 'conversation.composer.footer'
   >
   & InjectFace<ComposerBarInjected>
   & PropsLocale<'conversation'>
@@ -520,4 +532,11 @@ export interface EmptyWorkspaceOwnerProps {
   selectedId?: WorkspaceId | undefined
   onPick: (workspaceId: WorkspaceId) => void
   onClose: () => void
+}
+
+/** Optional read-scope control placement in the blank-session Hero row. */
+export interface HeroScopeOwnerProps {
+  readonly sessionId?: SessionId | undefined
+  /** The control has no selectable Session when the Hero has not opened one. */
+  readonly locked: boolean
 }

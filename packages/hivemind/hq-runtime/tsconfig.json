@@ -1,0 +1,79 @@
+{
+  "extends": "../../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "lib/types",
+    "tsBuildInfoFile": "lib/tsconfig.tsbuildinfo"
+  },
+  "include": [
+    "src/**/*.ts"
+  ],
+  "references": [
+    {
+      "path": "../../../vendor/cordis"
+    },
+    {
+      "path": "../../core/agent"
+    },
+    {
+      "path": "../../llm/llm"
+    },
+    {
+      "path": "../../core/session"
+    },
+    {
+      "path": "../../core/tools"
+    },
+    {
+      "path": "../../util/values"
+    },
+    {
+      "path": "../../experimental/agent-team"
+    },
+    {
+      "path": "../../schedule/schedule"
+    },
+    {
+      "path": "../../preset/agent-preset-registry"
+    },
+    {
+      "path": "../../session/session-persistence"
+    },
+    {
+      "path": "../../typert/protocol"
+    },
+    {
+      "path": "../execution-scope"
+    },
+    {
+      "path": "../employee-directory"
+    },
+    {
+      "path": "../employee-delegation"
+    },
+    {
+      "path": "../../todo/tool-todo"
+    },
+    {
+      "path": "../../api/session-controller/tsconfig.host.json"
+    },
+    {
+      "path": "../../context/time-context"
+    },
+    {
+      "path": "../artifact-renderer"
+    },
+    {
+      "path": "../../host/webserver"
+    },
+    {
+      "path": "../connected-apps"
+    },
+    {
+      "path": "../decision"
+    },
+    {
+      "path": "../context"
+    }
+  ]
+}

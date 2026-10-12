@@ -16,10 +16,13 @@
     "src/control.ts",
     "src/file-references.ts",
     "src/history.ts",
+    "src/cold-history.ts",
     "src/list.ts",
     "src/media-references.ts",
     "src/model-selection-projection.ts",
     "src/archived-session-gate.ts",
+    "src/persistent-employee-room.ts",
+    "src/room-messaging.ts",
     "src/skill-catalog.ts"
   ],
   "references": [

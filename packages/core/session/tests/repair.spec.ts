@@ -51,6 +51,25 @@ function liveToolRequests(): LogicalSessionEvent<'assistant/message'> {
 }
 
 describe('ToolCallRecovery', () => {
+  it('treats a durable parked call as suspended without fabricating tool/result during crash repair', () => {
+    const call = liveToolRequests()
+    const events: SessionEvent[] = [
+      userTurnStart(3, 20),
+      call as unknown as SessionEvent,
+      { type: 'tool/call', seq: 22, time: 120, data: { turn: 3, step: 2, callId: ToolCallId('started'), name: 'bash', arguments: '{}' } },
+      { type: 'tool/parked', seq: 23, time: 121, data: {
+        turn: 3, step: 2, callId: ToolCallId('started'), rootCallId: ToolCallId('started'), name: 'bash',
+        approvalId: 'approval-1', argumentsDigest: 'a'.repeat(64),
+      } },
+    ]
+    const recovery = new ToolCallRecovery()
+    for (const event of events as unknown as LogicalSessionEvent[]) recovery.observe(event)
+    expect(recovery.results().map(event => event.data.message.toolCallId)).toEqual([ToolCallId('pending')])
+    const closers = interruptedTurnClosers(events)
+    expect(closers.filter(event => event.type === 'tool/result')).toHaveLength(1)
+    expect(closers.find(event => event.type === 'tool/result')?.data.message.toolCallId).toBe(ToolCallId('pending'))
+  })
+
   it('observes a live step without earlier history and retains repairs until their commits arrive', () => {
     const recovery = new ToolCallRecovery()
     expect(recovery.results()).toEqual([])

@@ -1,0 +1,823 @@
+/** Tenant-scoped PostgreSQL provider for the SessionPersistence service. */
+import { createHash, randomUUID } from 'node:crypto'
+import { Service, type Context } from '@deepseek-ai/cordis'
+import z from '@deepseek-ai/schemastery'
+import { Pool, type PoolClient, type QueryResult, type QueryResultRow } from 'pg'
+import { SessionLogOffset } from '@deepseek-ai/dsh-session'
+import type { Session, SessionEvent, SessionHeader, SessionId, SessionLogOffset as SessionLogOffsetType } from '@deepseek-ai/dsh-session'
+import {
+  createSessionFormatCatalogWithChildren,
+  historicalSessionFormatCatalog,
+  sessionFormatCatalog,
+} from '@deepseek-ai/dsh-session-format-catalog'
+import { historicalChildCatalogSource } from '@deepseek-ai/dsh-session-format-v3-to-v4'
+import { SessionFormatUnsupportedMigrationError } from '@deepseek-ai/dsh-session-format'
+import type { SessionFormatJsonValue } from '@deepseek-ai/dsh-session-format'
+import type HivemindExecutionScope from '@deepseek-ai/dsh-hivemind-execution-scope'
+import type { HivemindPrincipal } from '@deepseek-ai/dsh-hivemind-execution-scope'
+import { organizationAgentScope, type AgentStorageScope } from '@deepseek-ai/dsh-hivemind-execution-scope'
+import {
+  SessionAlreadyExistsError, SessionAlreadyOwnedError, SessionHandleClosedError,
+  SessionOwnershipLostError, SessionPersistence, SessionPersistenceNotFoundError,
+  SessionFormatUnsupportedError,
+  SessionPersistenceRevision, SessionReadOnlyError, assertContiguous, assertStoredId,
+  assertVersion, materializeAppendBatch, materializeCreateHeader, validateStoredEvents,
+} from '@deepseek-ai/dsh-session-persistence'
+import type {
+  SessionAccess, SessionHandle, SessionHandleAppendOptions, SessionHandleFlushOptions,
+  SessionHandleReadOptions, SessionHandleReadResult, SessionPersistenceCreateOptions,
+  SessionPersistenceListOptions, SessionPersistenceOpenOptions, SessionPersistenceSnapshot,
+  SessionPersistenceStatOptions,
+} from '@deepseek-ai/dsh-session-persistence'
+
+export interface Config {
+  sharedOrganizationAgents?: boolean
+  connectionStringEnv: string
+  schema: string
+  leaseTtlMs: number
+  maxConnections: number
+}
+export const Config: z<Config> = z.object({
+  sharedOrganizationAgents: z.boolean().default(false),
+  connectionStringEnv: z.string().required(), schema: z.string().required().pattern(/^[a-z_][a-z0-9_]*$/u),
+  leaseTtlMs: z.natural().min(1000).required(),
+  maxConnections: z.natural().min(1).required(),
+})
+interface SessionRow extends QueryResultRow {
+  header: SessionHeader & Record<string, unknown>
+  inherited_event_count: string | number
+  event_count: string | number
+  revision: string | number
+}
+interface SessionMetadataRow extends SessionRow {
+  preset: string | null
+  started: boolean
+}
+interface StoredEventRow extends QueryResultRow {
+  id: string | number
+  sequence: string | number
+  event_type: string
+  payload: SessionEvent
+  created_at: Date | string
+}
+interface RestoredLog {
+  readonly header: SessionHeader
+  readonly inheritedEventCount: SessionLogOffsetType
+  readonly events: readonly SessionEvent[]
+  readonly sourceVersion: number
+  readonly childRevisions: ReadonlyMap<SessionId, string>
+}
+interface Owner { holder: string; hash: string; fence: number }
+const LIVE_WRITE_BATCH_MAX_DELAY_MS = 200
+function connectionString(name: string): string {
+  const value = process.env[name]
+  if (value === undefined || value.length === 0) throw new Error(`session-persistence-postgres: ${name} is required`)
+  return value
+}
+function inheritedCut(header: SessionHeader, value: number | undefined): SessionLogOffsetType {
+  const cut = SessionLogOffset(value ?? 0)
+  if ((header.isSeeded && cut === 0) || (!header.isSeeded && cut !== 0)) throw new TypeError('inheritedEventCount must be positive exactly when header.isSeeded is true')
+  return cut
+}
+function checkAbort(signal?: AbortSignal): void { signal?.throwIfAborted() }
+function newOwner(): Owner {
+  const holder = randomUUID()
+  return { holder, hash: createHash('sha256').update(holder).digest('hex'), fence: 1 }
+}
+function scopeParams(scope: AgentStorageScope, id?: SessionId): unknown[] {
+  return id === undefined ? [scope.orgId, scope.userId] : [scope.orgId, scope.userId, id]
+}
+function physicalHeader(row: SessionRow): Record<string, unknown> {
+  const inherited = Number(row.inherited_event_count)
+  return {
+    type: 'session', ...row.header, version: row.header.version,
+    delegationDepth: row.header.delegationDepth ?? 0,
+    ...(row.header.isSeeded ? { seedLength: inherited } : {}),
+  }
+}
+
+class PostgresHandle implements SessionHandle {
+  private closedState = false
+  private closing?: Promise<void>
+  private chain: Promise<unknown> = Promise.resolve()
+  private buffered: SessionEvent[] = []
+  private batchTimer: ReturnType<typeof setTimeout> | undefined
+  private draining: Promise<void> | undefined
+  private drainPaused = false
+  constructor(private readonly store: PostgresSessionPersistence, private readonly scope: AgentStorageScope,
+    readonly id: SessionId, readonly header: SessionHeader, readonly inheritedEventCount: SessionLogOffsetType,
+    readonly access: SessionAccess, private readonly ownerState?: Owner,
+    private readonly preparedEvents?: readonly SessionEvent[]) {}
+  private run<T>(operation: string, action: () => Promise<T>): Promise<T> {
+    if (this.closedState) return Promise.reject(new SessionHandleClosedError(this.id, operation))
+    const result = this.chain.then(action)
+    this.chain = result.catch(() => undefined)
+    return result
+  }
+  read(offset = 0, length = Number.MAX_SAFE_INTEGER, options?: SessionHandleReadOptions): Promise<SessionHandleReadResult> {
+    return this.run('read', async () => {
+      if (!Number.isSafeInteger(offset) || offset < 0 || !Number.isSafeInteger(length) || length < 0) throw new TypeError('read offset and length must be non-negative safe integers')
+      checkAbort(options?.signal)
+      if (this.preparedEvents !== undefined) {
+        const events = this.preparedEvents.slice(offset, offset + length).map(event => structuredClone(event))
+        return { eventState: 'detached', events }
+      }
+      return this.store.read(this.scope, this.id, offset, length)
+    })
+  }
+  append(events: readonly SessionEvent[], options?: SessionHandleAppendOptions): Promise<void> {
+    if (this.access !== 'write') return Promise.reject(new SessionReadOnlyError(this.id, 'append'))
+    const batch = materializeAppendBatch(events)
+    return this.run('append', async () => {
+      checkAbort(options?.signal)
+      if (this.ownerState === undefined) throw new SessionOwnershipLostError(this.id)
+      await this.store.append(this.scope, this.id, this.ownerState, batch)
+    })
+  }
+  enqueueLive(event: SessionEvent, reportFailure: (error: unknown) => void): void {
+    if (this.closedState) return
+    this.buffered.push(structuredClone(event))
+    if (this.batchTimer !== undefined || this.drainPaused) return
+    this.batchTimer = setTimeout(() => {
+      this.batchTimer = undefined
+      this.drainLive().catch(reportFailure)
+    }, LIVE_WRITE_BATCH_MAX_DELAY_MS)
+  }
+  drainLive(): Promise<void> {
+    return this.draining ??= this.drainBuffered().finally(() => { this.draining = undefined })
+  }
+  private async drainBuffered(): Promise<void> {
+    if (this.batchTimer !== undefined) {
+      clearTimeout(this.batchTimer)
+      this.batchTimer = undefined
+    }
+    this.drainPaused = false
+    while (this.buffered.length > 0) {
+      const result = this.chain.then(async () => {
+        const batch = this.buffered.splice(0)
+        try {
+          if (this.ownerState === undefined) throw new SessionOwnershipLostError(this.id)
+          await this.store.append(this.scope, this.id, this.ownerState, materializeAppendBatch(batch))
+        } catch (error: unknown) {
+          this.buffered = batch.concat(this.buffered)
+          this.drainPaused = true
+          throw error
+        }
+      })
+      this.chain = result.catch(() => undefined)
+      await result
+    }
+  }
+  flush(options?: SessionHandleFlushOptions): Promise<void> {
+    if (this.access !== 'write') return Promise.reject(new SessionReadOnlyError(this.id, 'flush'))
+    if (this.closedState) return Promise.reject(new SessionHandleClosedError(this.id, 'flush'))
+    return this.drainLive().then(() => this.run('flush', async () => {
+      checkAbort(options?.signal)
+      if (this.ownerState === undefined) throw new SessionOwnershipLostError(this.id)
+      await this.store.renew(this.scope, this.id, this.ownerState)
+    }))
+  }
+  close(): Promise<void> {
+    if (this.closing !== undefined) return this.closing
+    this.closedState = true
+    this.closing = (async () => {
+      try {
+        await this.drainLive()
+        await this.chain
+      } finally {
+        try {
+          if (this.ownerState !== undefined) await this.store.release(this.scope, this.id, this.ownerState)
+        } finally { this.store.closed(this) }
+      }
+    })()
+    return this.closing
+  }
+  async [Symbol.asyncDispose](): Promise<void> { await this.close() }
+}
+
+/** PostgreSQL implementation using canonical HIVE tables and transaction-local RLS scope. */
+export class PostgresSessionPersistence extends SessionPersistence {
+  static Config = Config
+  static inject = ['hivemindExecutionScope']
+  override readonly name = 'session-persistence-postgres'
+  /** Compatibility hint for HIVE integrations; authorization remains enforced by scoped provider operations. */
+  readonly authoritativeVisibility: boolean = true
+  private readonly pool: Pool
+  private readonly handles = new Set<PostgresHandle>()
+  private readonly writers = new Map<SessionId, PostgresHandle>()
+  private readonly executionScope: HivemindExecutionScope
+  constructor(ctx: Context, readonly config: Config, testPool?: Pool) {
+    super(ctx)
+    if (sessionFormatCatalog.currentVersion !== 4) throw new Error('session-persistence-postgres: Session format catalog mismatch')
+    this.executionScope = ctx.hivemindExecutionScope
+    this.pool = testPool ?? new Pool({
+      connectionString: connectionString(config.connectionStringEnv),
+      max: config.maxConnections,
+      options: `-c search_path=${config.schema},public`,
+    })
+  }
+  protected async* [Service.init](): AsyncGenerator<() => Promise<void>, void, void> {
+    await this.pool.query('SELECT 1 FROM harness_sessions LIMIT 0')
+    // The package migration creates this append-only predecessor store. Never
+    // silently fall back to in-place conversion when it is absent.
+    await this.pool.query('SELECT 1 FROM harness_session_format_predecessors LIMIT 0')
+    await this.pool.query('SELECT 1 FROM harness_session_format_predecessor_events LIMIT 0')
+    this.ctx.on('session/event', (session: Session, event) => {
+      this.writers.get(session.id)?.enqueueLive(event, (error) => {
+        this.ctx.logger.warn(`session-persistence-postgres: background write for session "${session.id}" failed (buffered events retained): ${String(error)}`)
+      })
+    })
+    this.ctx.on('session/flush', (session: Session) => this.writers.get(session.id)?.flush())
+    this.ctx.on('session/disposed', (session: Session) => {
+      this.writers.get(session.id)?.close().catch((error: unknown) => {
+        this.ctx.logger.warn(`session-persistence-postgres: final drain for session "${session.id}" failed: ${String(error)}`)
+      })
+    })
+    yield async () => {
+      await Promise.allSettled([...this.handles].map(handle => handle.close()))
+      await this.pool.end()
+    }
+  }
+  /** Verify database reachability without inventing a tenant principal. */
+  async health(): Promise<void> { await this.pool.query('SELECT 1') }
+  private expiry(): Date { return new Date(Date.now() + this.config.leaseTtlMs) }
+  private capture(): HivemindPrincipal { return Object.freeze({ ...this.executionScope.require() }) }
+  private async sharedScope(scope = this.capture()): Promise<AgentStorageScope> {
+    if (!this.config.sharedOrganizationAgents) return scope
+    return this.transaction(scope, client => organizationAgentScope(client,scope))
+  }
+  /** Fresh administrator authority for a signed host recovery of the canonical Runtime. */
+  async validateAdministratorRoom(id: SessionId): Promise<void> {
+    const human=this.capture()
+    const scope=await this.transaction(human,client=>organizationAgentScope(client,human))
+    const row=await this.row(scope,id)
+    if(!row || row.header.parentSession!==undefined || row.header.agentPreset!=='hivemind-hq')throw new Error('question_recovery_administrator_room_required')
+    const canonical=await this.query<{ session_id:SessionId }>(scope,'SELECT session_id FROM harness_company_hq WHERE org_id=$1',[scope.orgId])
+    if(canonical.rows.length!==1 || canonical.rows[0]?.session_id!==id)throw new Error('question_recovery_canonical_runtime_required')
+  }
+  private async sessionScope(id: SessionId): Promise<AgentStorageScope> {
+    const human = this.capture()
+    if (!this.config.sharedOrganizationAgents) return human
+    const owned = await this.row(human,id)
+    if (owned && owned.header.parentSession === undefined) {
+      const preset = (await this.query<{ preset:string }>(human,'SELECT COALESCE((SELECT payload->\'data\'->>\'agentPreset\' FROM harness_session_events WHERE session_id=$3 AND event_type=\'agent-preset/selected\' ORDER BY sequence DESC LIMIT 1),header->>\'agentPreset\') AS preset FROM harness_sessions WHERE org_id=$1 AND user_id=$2 AND id=$3',scopeParams(human,id))).rows[0]?.preset
+      if (!['hivemind-hq','hivemind-hyperagents'].includes(preset ?? '')) return human
+    }
+    let shared: AgentStorageScope
+    try { shared = await this.sharedScope(human) } catch (error) { if (owned) throw error; return human }
+    const candidate = await this.row(shared,id)
+    if (!candidate) { if (owned) throw new SessionPersistenceNotFoundError(id); return human }
+    const roots = new Set<string>()
+    let header = candidate.header
+    while (header.parentSession !== undefined) {
+      if (roots.has(header.id)) return human
+      roots.add(header.id)
+      const parent = await this.row(shared, header.parentSession)
+      if (!parent) return human
+      header = parent.header
+    }
+    const current = (await this.query<{ preset:string }>(shared, 'SELECT COALESCE((SELECT payload->\'data\'->>\'agentPreset\' FROM harness_session_events WHERE session_id=$3 AND event_type=\'agent-preset/selected\' ORDER BY sequence DESC LIMIT 1),header->>\'agentPreset\') AS preset FROM harness_sessions WHERE org_id=$1 AND user_id=$2 AND id=$3',scopeParams(shared,header.id))).rows[0]?.preset
+    return ['hivemind-hq','hivemind-hyperagents'].includes(current ?? '') ? shared : human
+  }
+  private async transaction<T>(scope: AgentStorageScope, action: (client: PoolClient) => Promise<T>): Promise<T> {
+    const client = await this.pool.connect()
+    try {
+      await client.query('BEGIN')
+      await client.query("SELECT set_config('app.hivemind_org_id',$1,true),set_config('app.hivemind_user_id',$2,true)", [scope.orgId, scope.userId])
+      const value = await action(client)
+      await client.query('COMMIT')
+      return value
+    } catch (error) {
+      await client.query('ROLLBACK').catch(() => undefined)
+      throw error
+    } finally { client.release() }
+  }
+  private query<T extends QueryResultRow>(scope: AgentStorageScope, sql: string, values: unknown[]): Promise<QueryResult<T>> {
+    return this.transaction(scope, client => client.query<T>(sql, values))
+  }
+  async create(header: SessionHeader, options?: SessionPersistenceCreateOptions): Promise<SessionHandle> {
+    checkAbort(options?.signal)
+    const human = this.capture()
+    const meta = materializeCreateHeader(header)
+    const scope = this.config.sharedOrganizationAgents && ['hivemind-hq','hivemind-hyperagents'].includes(meta.agentPreset ?? '')
+      ? await this.sharedScope(human) : meta.parentSession === undefined ? human : await this.sessionScope(meta.parentSession)
+    const cut = inheritedCut(meta, options?.inheritedEventCount)
+    const claim = newOwner()
+    try {
+      await this.transaction(scope, async (client) => {
+        if (meta.parentSession !== undefined) {
+          await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',
+            [`${scope.orgId}:${scope.userId}:${meta.parentSession}`])
+        }
+        await client.query(`INSERT INTO harness_sessions (id,org_id,user_id,project_id,scope_kind,profile,variation,status,header,inherited_event_count,event_count,revision)
+          VALUES ($1,$2,$3,$4,$5,$6,$7,'active',$8::jsonb,$9,0,0)`, [
+          meta.id, scope.orgId, scope.userId, scope.projectId ?? null,
+          scope.projectId == null ? 'organization' : 'project',
+          scope.profile, scope.variation, JSON.stringify(meta), cut,
+        ])
+        // Reserving a company room is persistence only: it never admits a turn.
+        if (this.config.sharedOrganizationAgents && meta.agentPreset === 'hivemind-hq' && meta.parentSession === undefined) {
+          await client.query('INSERT INTO harness_company_hq(org_id,user_id,session_id) VALUES($1,$2,$3) ON CONFLICT(org_id) DO NOTHING',[scope.orgId,scope.userId,meta.id])
+          const root=await client.query<{ session_id:string }>('SELECT session_id FROM harness_company_hq WHERE org_id=$1',[scope.orgId])
+          if(root.rows[0]?.session_id!==meta.id) throw Error('hq_company_already_has_canonical_runtime')
+        }
+        await client.query(`INSERT INTO harness_session_leases (id,session_id,org_id,user_id,holder_id,token_hash,fencing_token,acquired_at,heartbeat_at,expires_at,released_at)
+          VALUES ($1,$2,$3,$4,$5,$6,1,now(),now(),$7,NULL)`, [randomUUID(),meta.id,scope.orgId,scope.userId,claim.holder,claim.hash,this.expiry()])
+      })
+    } catch (error) {
+      if ((error as { code?: string }).code === '23505') throw new SessionAlreadyExistsError(meta.id)
+      throw error
+    }
+    return this.track(new PostgresHandle(this,scope,meta.id,meta,cut,'write',claim))
+  }
+  /** Scoped read-only window; body vocabulary/envelopes validate on each slice. */
+  /** Scoped history window retained for HIVE callers; the native base no longer declares this helper. */
+  async openHistoryRead(id: SessionId, options?: SessionPersistenceOpenOptions): Promise<SessionHandle> {
+    checkAbort(options?.signal)
+    const scope = await this.sessionScope(id)
+    const row = await this.row(scope, id)
+    if (row === undefined) throw new SessionPersistenceNotFoundError(id)
+    // Presentation reads of current-format logs must not restore the entire
+    // history before requesting a bounded slice. Full Agent restoration still
+    // goes through open(), including complete replay validation. Each window
+    // read validates its stored envelopes and contiguous sequence below.
+    const classified = sessionFormatCatalog.readHeader(physicalHeader(row))
+    if (classified.status === 'unsupported') throw new SessionFormatUnsupportedError(classified.reason)
+    if (classified.status === 'malformed') throw new Error(`invalid session format header: ${classified.reason}`)
+    if (classified.storedVersion === sessionFormatCatalog.currentVersion) {
+      const header = materializeCreateHeader(classified.header as unknown as SessionHeader)
+      return this.track(new PostgresHandle(this, scope, id, header,
+        SessionLogOffset(Number(row.inherited_event_count)), 'read'))
+    }
+    const restored = await this.restoreCurrent(scope, row)
+    const observed = await this.row(scope, id)
+    if (observed === undefined || String(observed.revision) !== String(row.revision)) {
+      throw new Error(`session "${id}" changed while history was prepared; retry read`)
+    }
+    return this.track(new PostgresHandle(this, scope, id, restored.header,
+      restored.inheritedEventCount, 'read', undefined, restored.events))
+  }
+
+  async open(id: SessionId, access: SessionAccess, options?: SessionPersistenceOpenOptions): Promise<SessionHandle> {
+    checkAbort(options?.signal)
+    const scope = await this.sessionScope(id)
+    const row = await this.row(scope, id)
+    if (row === undefined) throw new SessionPersistenceNotFoundError(id)
+    let claim: Owner|undefined
+    if (access === 'write') {
+      claim = newOwner()
+      const result = await this.query<{ fencing_token: string | number }>(scope,
+        `UPDATE harness_session_leases
+          SET holder_id=$4,token_hash=$5,fencing_token=fencing_token+1,acquired_at=now(),heartbeat_at=now(),
+            expires_at=$6,released_at=NULL
+          WHERE session_id=$3 AND org_id=$1 AND user_id=$2
+            AND (released_at IS NOT NULL OR expires_at<=now())
+          RETURNING fencing_token`, [...scopeParams(scope, id), claim.holder, claim.hash, this.expiry()])
+      const fence = result.rows[0]?.fencing_token
+      if (fence === undefined) throw new SessionAlreadyOwnedError(id)
+      claim.fence = Number(fence)
+    }
+    try {
+      const restored = await this.restoreCurrent(scope, row)
+      if (restored.sourceVersion !== sessionFormatCatalog.currentVersion && access === 'write') {
+        if (claim === undefined) throw new Error('session migration requires a write lease')
+        await this.publishMigration(scope, row, restored, claim)
+      }
+      return this.track(new PostgresHandle(this, scope, id, restored.header,
+        restored.inheritedEventCount, access, claim,
+        access === 'read' ? restored.events : undefined))
+    } catch (error) {
+      if (claim !== undefined) await this.release(scope, id, claim).catch(() => undefined)
+      throw error
+    }
+  }
+  async flush(): Promise<void> {
+    const results = await Promise.allSettled([...this.handles]
+      .filter(handle => handle.access === 'write').map(handle => handle.flush()))
+    const failures: unknown[] = []
+    for (const result of results) if (result.status === 'rejected') failures.push(result.reason)
+    if (failures.length > 0) throw new AggregateError(failures, 'session persistence flush failed')
+  }
+  async stat(id: SessionId, options?: SessionPersistenceStatOptions): Promise<SessionPersistenceSnapshot | undefined> {
+    checkAbort(options?.signal)
+    const row = await this.row(await this.sessionScope(id), id)
+    return row === undefined ? undefined : this.snapshot(row)
+  }
+  async list(options?: SessionPersistenceListOptions): Promise<readonly SessionPersistenceSnapshot[]> {
+    checkAbort(options?.signal)
+    if (!this.config.sharedOrganizationAgents) {
+      const scope = this.capture()
+      const result = await this.query<SessionRow>(scope,
+        'SELECT header,inherited_event_count,event_count,revision FROM harness_sessions WHERE org_id=$1 AND user_id=$2', scopeParams(scope))
+      checkAbort(options?.signal)
+      return result.rows.map(row => this.snapshot(row))
+    }
+    const { visible } = await this.visibleMetadata(options?.signal)
+    return [...visible.values()].map(row => ({ ...this.snapshot(row), navigation: {
+      ...(row.preset == null ? {} : { agentPreset: row.preset }), started: row.started,
+    } }))
+  }
+
+  /** Resolve the same personal/shared lineage as sessionScope, with a fresh
+   * administrator proof and bounded database round trips instead of one per room.
+   * Only scoped metadata is loaded: no event bodies or reusable authority cache.
+   */
+  private async visibleMetadata(signal?: AbortSignal): Promise<{
+    visible: Map<SessionId, SessionMetadataRow>
+    denied: Map<SessionId, unknown>
+  }> {
+    checkAbort(signal)
+    const human = this.capture()
+    const metadata = async (scope: AgentStorageScope) => {
+      const result = await this.query<SessionMetadataRow>(scope, `SELECT s.header,
+        s.inherited_event_count,s.event_count,s.revision,
+        COALESCE(chosen.preset,s.header->>'agentPreset') AS preset,
+        EXISTS (SELECT 1 FROM harness_session_events e
+          WHERE e.session_id=s.id AND e.org_id=s.org_id AND e.user_id=s.user_id
+          AND (e.event_type='turn/start' OR
+            (e.event_type='user/message' AND e.payload->'data'->'source'->>'kind'='user'))) AS started
+        FROM harness_sessions s
+        LEFT JOIN (
+          SELECT DISTINCT ON (e.session_id) e.session_id,
+            e.payload->'data'->>'agentPreset' AS preset FROM harness_session_events e
+          WHERE e.org_id=$1 AND e.user_id=$2 AND e.event_type='agent-preset/selected'
+          ORDER BY e.session_id,e.sequence DESC
+        ) chosen ON chosen.session_id=s.id
+        WHERE s.org_id=$1 AND s.user_id=$2`, scopeParams(scope))
+      checkAbort(signal)
+      return new Map(result.rows.map(row => [row.header.id, row]))
+    }
+    const personal = await metadata(human)
+    const denied = new Map<SessionId, unknown>()
+    if (!this.config.sharedOrganizationAgents) return { visible: personal, denied }
+    let shared: Map<SessionId, SessionMetadataRow> | undefined
+    let authorityError: unknown
+    let sharedAuthority: AgentStorageScope | undefined
+    try { sharedAuthority = await this.sharedScope(human) }
+    catch (error) { authorityError = error }
+    if (sharedAuthority) shared = sharedAuthority.userId === human.userId ? personal : await metadata(sharedAuthority)
+    checkAbort(signal)
+    const visible = new Map<SessionId, SessionMetadataRow>()
+    const isAgent = (row: SessionMetadataRow) => ['hivemind-hq', 'hivemind-hyperagents'].includes(row.preset ?? '')
+    for (const [id] of new Map([...personal, ...shared ?? []])) {
+      const owned = personal.get(id)
+      // Personal root Brain sessions do not require organization authority.
+      if (owned && owned.header.parentSession === undefined && !isAgent(owned)) {
+        visible.set(id, owned)
+        continue
+      }
+      if (!shared) {
+        if (owned) denied.set(id, authorityError)
+        continue
+      }
+      const candidate = shared.get(id)
+      if (!candidate) {
+        if (owned) denied.set(id, new SessionPersistenceNotFoundError(id))
+        continue
+      }
+      const visited = new Set<SessionId>()
+      let root: SessionMetadataRow | undefined = candidate
+      while (root.header.parentSession !== undefined) {
+        if (visited.has(root.header.id)) { root = undefined; break }
+        visited.add(root.header.id)
+        root = shared.get(root.header.parentSession)
+        if (!root) break
+      }
+      if (root && isAgent(root)) visible.set(id, candidate)
+      else if (owned) visible.set(id, owned)
+    }
+    return { visible, denied }
+  }
+
+  /** Canonical room lookup uses authenticated scope, never browser-supplied tenant ids.
+   * Adopt the earliest owned legacy room; otherwise use a stable native identity.
+   * Existing session creation/adoption and fencing arbitrate concurrent opens.
+   */
+  async employeeRoomId(key: string): Promise<SessionId> {
+    const scope = await this.sharedScope()
+    if (key === 'runtime') {
+      const owner = await this.query<{ session_id: SessionId; user_id: string }>(scope,
+        'SELECT session_id,user_id FROM harness_company_hq WHERE org_id=$1', [scope.orgId])
+      if (owner.rows[0]) {
+        if (owner.rows[0].user_id !== scope.userId) throw new Error('HQ Runtime belongs to another company member. Ownership transfer is required.')
+        if (await this.row(scope, owner.rows[0].session_id) === undefined) throw new Error('Canonical HQ Runtime is unavailable.')
+        return owner.rows[0].session_id
+      }
+      const hq = await this.query<{ id: SessionId }>(scope, `SELECT s.id FROM harness_sessions s
+        WHERE s.org_id=$1 AND s.user_id=$2 AND s.status='active' AND s.header->>'parentSession' IS NULL
+        AND COALESCE((SELECT e.payload->'data'->>'agentPreset' FROM harness_session_events e
+          WHERE e.session_id=s.id AND e.event_type='agent-preset/selected' ORDER BY e.sequence DESC LIMIT 1),s.header->>'agentPreset')='hivemind-hq'
+        ORDER BY (s.header->>'createdAt')::bigint,s.id LIMIT 1`, scopeParams(scope))
+      if(this.config.sharedOrganizationAgents && hq.rows[0]) {
+        await this.query(scope,'INSERT INTO harness_company_hq(org_id,user_id,session_id) VALUES($1,$2,$3) ON CONFLICT(org_id) DO NOTHING',[scope.orgId,scope.userId,hq.rows[0].id])
+        const root=await this.query<{ session_id:SessionId }>(scope,'SELECT session_id FROM harness_company_hq WHERE org_id=$1',[scope.orgId])
+        if(root.rows[0]) return root.rows[0].session_id
+      }
+      return hq.rows[0]?.id ?? `session-${createHash('sha256').update(JSON.stringify([scope.orgId, scope.userId, 'hq-runtime'])).digest('hex').slice(0, 32)}` as SessionId
+    }
+    const stable = `session-${createHash('sha256').update(JSON.stringify([scope.orgId, scope.userId, key])).digest('hex').slice(0, 32)}` as SessionId
+    const existing = await this.row(scope, stable)
+    if (existing !== undefined) return stable
+    const result = await this.query<{ id: SessionId }>(scope, `SELECT s.id FROM harness_sessions s
+      WHERE s.org_id=$1 AND s.user_id=$2 AND s.status='active'
+      AND s.header->>'parentSession' IS NULL
+      AND COALESCE(s.header->>'origin','') <> 'subagent'
+      AND COALESCE((SELECT e.payload->'data'->>'agentPreset' FROM harness_session_events e
+        WHERE e.session_id=s.id AND e.event_type='agent-preset/selected' ORDER BY e.sequence DESC LIMIT 1),s.header->>'agentPreset')='hivemind-hyperagents'
+      AND (SELECT COALESCE(e.payload->'data'->>'id','runtime') FROM harness_session_events e
+        WHERE e.session_id=s.id AND e.event_type IN ('hivemind/session-owner','hivemind/employee-selection')
+        ORDER BY CASE WHEN e.event_type='hivemind/session-owner' THEN 0 ELSE 1 END,e.sequence LIMIT 1)=$3
+      ORDER BY EXISTS(SELECT 1 FROM harness_session_events owned WHERE owned.session_id=s.id AND owned.org_id=s.org_id AND owned.user_id=s.user_id AND owned.event_type='hivemind/session-owner') DESC,(s.header->>'createdAt')::bigint,s.id LIMIT 1`, [...scopeParams(scope), key])
+    return result.rows[0]?.id ?? stable
+  }
+
+  /** Current preset for tenant-visible sessions, including blank-session selection events. */
+  async effectivePresets(ids: readonly SessionId[], signal?: AbortSignal): Promise<ReadonlyMap<SessionId, string>> {
+    checkAbort(signal)
+    if (ids.length === 0) return new Map()
+    if (!this.config.sharedOrganizationAgents) {
+      const scope = this.capture()
+      const result = await this.query<{ id: SessionId; preset: string | null }>(scope,
+        `SELECT s.id, COALESCE(chosen.preset,s.header->>'agentPreset') AS preset
+         FROM harness_sessions s
+         LEFT JOIN LATERAL (
+           SELECT e.payload->'data'->>'agentPreset' AS preset
+             FROM harness_session_events e
+            WHERE e.session_id=s.id AND e.org_id=s.org_id AND e.user_id=s.user_id
+              AND e.event_type='agent-preset/selected'
+            ORDER BY e.sequence DESC LIMIT 1
+         ) chosen ON true
+        WHERE s.org_id=$1 AND s.user_id=$2 AND s.id=ANY($3::varchar[])`,
+        [...scopeParams(scope), ids])
+      checkAbort(signal)
+      return new Map(result.rows.flatMap(row => row.preset === null ? [] : [[row.id, row.preset] as const]))
+    }
+    const { visible, denied } = await this.visibleMetadata(signal)
+    const result = new Map<SessionId, string>()
+    for (const id of ids) {
+      if (denied.has(id)) throw denied.get(id)
+      const row = visible.get(id)
+      if (row?.preset != null) result.set(id, row.preset)
+    }
+    return result
+  }
+
+  /** Durable conversation starts, across authorized personal/shared scopes. */
+  async startedSessions(ids: readonly SessionId[], signal?: AbortSignal): Promise<ReadonlySet<SessionId>> {
+    checkAbort(signal)
+    if (!this.config.sharedOrganizationAgents) {
+      const scope = this.capture()
+      const result = await this.query<{ id: SessionId }>(scope,
+        `SELECT s.id FROM harness_sessions s WHERE s.org_id=$1 AND s.user_id=$2 AND s.id=ANY($3::varchar[])
+       AND EXISTS (SELECT 1 FROM harness_session_events e WHERE e.session_id=s.id AND e.org_id=s.org_id AND e.user_id=s.user_id
+         AND (e.event_type='turn/start' OR (e.event_type='user/message' AND e.payload->'data'->'source'->>'kind'='user')))`,
+        [...scopeParams(scope), ids])
+      checkAbort(signal)
+      return new Set(result.rows.map(row => row.id))
+    }
+    if (ids.length === 0) return new Set()
+    const { visible, denied } = await this.visibleMetadata(signal)
+    const result = new Set<SessionId>()
+    for (const id of ids) {
+      if (denied.has(id)) throw denied.get(id)
+      if (visible.get(id)?.started) result.add(id)
+    }
+    return result
+  }
+
+  private snapshot(row: SessionRow): SessionPersistenceSnapshot {
+    const classification = sessionFormatCatalog.readHeader(physicalHeader(row))
+    if (classification.status === 'unsupported') {
+      throw new SessionFormatUnsupportedError(`session "${row.header.id}" ${classification.reason}`)
+    }
+    if (classification.status === 'malformed') {
+      throw new Error(`session "${row.header.id}" has an invalid format header: ${classification.reason}`)
+    }
+    return {
+      header: materializeCreateHeader(classification.header as unknown as SessionHeader), eventCount: Number(row.event_count),
+      revision: SessionPersistenceRevision(String(row.revision)),
+      formatStatus: classification.status,
+    }
+  }
+
+  /** Decode stored rows through the native catalog; old physical data remains untouched here. */
+  private async restoreCurrent(scope: AgentStorageScope, row: SessionRow): Promise<RestoredLog> {
+    const classified = sessionFormatCatalog.readHeader(physicalHeader(row))
+    if (classified.status === 'unsupported') throw new SessionFormatUnsupportedError(classified.reason)
+    if (classified.status === 'malformed') throw new Error(`invalid session format header: ${classified.reason}`)
+    const sourceVersion = classified.storedVersion
+    const header = materializeCreateHeader(classified.header as unknown as SessionHeader)
+    const sourceRows = await this.eventRows(scope, row.header.id)
+    if (sourceRows.length !== Number(row.event_count)) throw new Error(`stored session "${row.header.id}" event count mismatch`)
+    for (let index = 0; index < sourceRows.length; index++) {
+      const item = sourceRows[index]
+      if (item === undefined) throw new Error(`stored session "${row.header.id}" event row is missing`)
+      if (Number(item.sequence) !== index || item.payload.seq !== index || item.payload.type !== item.event_type) {
+        throw new Error(`stored session "${row.header.id}" event projection mismatch`)
+      }
+    }
+    const children = sourceVersion < sessionFormatCatalog.currentVersion
+      ? await this.catalogChildren(scope, row.header.id)
+      : { facts: [], revisions: new Map<SessionId, string>() }
+    try {
+      const catalog = createSessionFormatCatalogWithChildren(children.facts)
+      const restore = catalog.createRestore(physicalHeader(row), {
+        recovery: 'recoverable', validation: sourceVersion === sessionFormatCatalog.currentVersion ? 'current' : 'transformed',
+      })
+      for (const item of sourceRows) restore.decodeRow(item.payload)
+      const artifact = restore.finish()
+      const events = artifact.events as unknown as SessionEvent[]
+      validateStoredEvents(header, events)
+      return {
+        header: materializeCreateHeader(artifact.header as unknown as SessionHeader),
+        inheritedEventCount: SessionLogOffset(artifact.inheritedEventCount), events,
+        sourceVersion, childRevisions: children.revisions,
+      }
+    } catch (error: unknown) {
+      if (error instanceof SessionFormatUnsupportedMigrationError) throw new SessionFormatUnsupportedError(error.message)
+      throw error
+    }
+  }
+
+  private async eventRows(scope: AgentStorageScope, id: SessionId): Promise<StoredEventRow[]> {
+    const result = await this.query<StoredEventRow>(scope,
+      `SELECT id,sequence,event_type,payload,created_at FROM harness_session_events
+        WHERE org_id=$1 AND user_id=$2 AND session_id=$3 ORDER BY sequence`, scopeParams(scope, id))
+    return result.rows
+  }
+
+  /** Gather complete direct-child descriptor facts for the v3→v4 catalog edge. */
+  private async catalogChildren(scope: AgentStorageScope, parentId: SessionId): Promise<{
+    facts: SessionFormatJsonValue[]
+    revisions: Map<SessionId, string>
+  }> {
+    const result = await this.query<SessionRow>(scope,
+      `SELECT header,inherited_event_count,event_count,revision FROM harness_sessions
+        WHERE org_id=$1 AND user_id=$2 AND header->>'parentSession'=$3 AND header->>'origin'='subagent'
+        ORDER BY id`, scopeParams(scope, parentId))
+    const facts: SessionFormatJsonValue[] = []
+    const revisions = new Map<SessionId, string>()
+    for (const child of result.rows) {
+      const childId = child.header.id
+      revisions.set(childId, String(child.revision))
+      const unavailable = { childId, childCreatedAt: child.header.createdAt, descriptorCount: 0, descriptor: null }
+      try {
+        const version = Number(child.header.version)
+        const catalog = version <= 3 ? historicalSessionFormatCatalog : sessionFormatCatalog
+        const childRestore = catalog.createRestore(physicalHeader(child), { recovery: 'recoverable', validation: 'current' })
+        const rows = await this.eventRows(scope, childId)
+        if (rows.length !== Number(child.event_count)) throw new Error('child event count mismatch')
+        for (let index = 0; index < rows.length; index++) {
+          const item = rows[index]
+          if (item === undefined) throw new Error('child event row is missing')
+          if (Number(item.sequence) !== index || item.payload.seq !== index || item.payload.type !== item.event_type) {
+            throw new Error('child event projection mismatch')
+          }
+          childRestore.decodeRow(item.payload)
+        }
+        const fact = historicalChildCatalogSource(childRestore.finish())
+        facts.push({ ...fact })
+      } catch (error: unknown) {
+        // Native catalog semantics explicitly retain an unavailable child as
+        // unknown evidence; it must not be guessed or omitted from the parent.
+        this.ctx.logger.warn(`session-persistence-postgres: child catalog evidence for "${childId}" is unavailable: ${String(error)}`)
+        facts.push(unavailable as unknown as SessionFormatJsonValue)
+      }
+    }
+    return { facts, revisions }
+  }
+
+  /** Atomically archive the exact predecessor and publish its current successor under the fence. */
+  private async publishMigration(scope: AgentStorageScope, source: SessionRow, restored: RestoredLog, claim: Owner): Promise<void> {
+    await this.transaction(scope, async (client) => {
+      const owned = await client.query(
+        `UPDATE harness_session_leases SET heartbeat_at=now(),expires_at=$6
+          WHERE org_id=$1 AND user_id=$2 AND session_id=$3 AND token_hash=$4 AND fencing_token=$5
+            AND released_at IS NULL RETURNING fencing_token`,
+        [...scopeParams(scope, source.header.id), claim.hash, claim.fence, this.expiry()])
+      if (owned.rows[0] === undefined) throw new SessionOwnershipLostError(source.header.id)
+      const locked = await client.query<SessionRow>(
+        `SELECT header,inherited_event_count,event_count,revision FROM harness_sessions
+          WHERE org_id=$1 AND user_id=$2 AND id=$3 FOR UPDATE`, scopeParams(scope, source.header.id))
+      const current = locked.rows[0]
+      if (current === undefined) throw new SessionPersistenceNotFoundError(source.header.id)
+      if (String(current.revision) !== String(source.revision) || Number(current.event_count) !== Number(source.event_count)) {
+        throw new Error(`session "${source.header.id}" changed while format migration was prepared; retry open`)
+      }
+      // Paired with create() for direct child sessions: a new child cannot
+      // appear between membership verification and atomic catalog publication.
+      await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',
+        [`${scope.orgId}:${scope.userId}:${source.header.id}`])
+      const childRows = await client.query<SessionRow>(
+        `SELECT header,inherited_event_count,event_count,revision FROM harness_sessions
+          WHERE org_id=$1 AND user_id=$2 AND header->>'parentSession'=$3 AND header->>'origin'='subagent'
+          ORDER BY id FOR SHARE`, scopeParams(scope, source.header.id))
+      if (childRows.rows.length !== restored.childRevisions.size || childRows.rows.some(child =>
+        restored.childRevisions.get(child.header.id) !== String(child.revision))) {
+        throw new Error(`session "${source.header.id}" child catalog changed while format migration was prepared; retry open`)
+      }
+      await client.query(
+        `INSERT INTO harness_session_format_predecessors
+          (session_id,org_id,user_id,source_version,source_header,source_inherited_event_count,source_event_count,source_revision)
+         VALUES($1,$2,$3,$4,$5::jsonb,$6,$7,$8)`,
+        [source.header.id, scope.orgId, scope.userId, restored.sourceVersion, JSON.stringify(source.header),
+          source.inherited_event_count, source.event_count, source.revision])
+      const archived = await client.query(
+        `INSERT INTO harness_session_format_predecessor_events
+          (session_id,org_id,user_id,source_version,source_id,source_sequence,source_event_type,source_payload,source_created_at)
+         SELECT session_id,org_id,user_id,$4,id,sequence,event_type,payload,created_at FROM harness_session_events
+          WHERE org_id=$1 AND user_id=$2 AND session_id=$3 ORDER BY sequence`,
+        [...scopeParams(scope, source.header.id), restored.sourceVersion])
+      if (archived.rowCount !== Number(source.event_count)) {
+        throw new Error(`session "${source.header.id}" event rows changed while format migration was prepared; retry open`)
+      }
+      await client.query('DELETE FROM harness_session_events WHERE org_id=$1 AND user_id=$2 AND session_id=$3', scopeParams(scope, source.header.id))
+      for (const event of restored.events) await client.query(
+        `INSERT INTO harness_session_events(session_id,org_id,user_id,sequence,event_type,payload,created_at)
+          VALUES($1,$2,$3,$4,$5,$6::jsonb,to_timestamp($7/1000.0))`,
+        [source.header.id, scope.orgId, scope.userId, event.seq, event.type, JSON.stringify(event), event.time])
+      await client.query(
+        `UPDATE harness_sessions SET header=$4::jsonb,inherited_event_count=$5,event_count=$6,
+          revision=revision+1,updated_at=now() WHERE org_id=$1 AND user_id=$2 AND id=$3`,
+        [...scopeParams(scope, source.header.id), JSON.stringify(restored.header), restored.inheritedEventCount, restored.events.length])
+    })
+  }
+  private async row(scope: AgentStorageScope, id: SessionId): Promise<SessionRow | undefined> {
+    const result = await this.query<SessionRow>(scope,
+      'SELECT header,inherited_event_count,event_count,revision FROM harness_sessions WHERE org_id=$1 AND user_id=$2 AND id=$3',
+      scopeParams(scope, id))
+    const row = result.rows[0]
+    if (row !== undefined) assertStoredId(id, row.header)
+    return row
+  }
+  async read(scope: AgentStorageScope, id: SessionId, offset: number, length: number): Promise<SessionHandleReadResult> {
+    const row = await this.row(scope, id)
+    if (row === undefined) throw new SessionPersistenceNotFoundError(id)
+    assertVersion(row.header)
+    const result = await this.query<{ sequence: string | number; event_type: string; payload: SessionEvent }>(scope,
+      `SELECT sequence,event_type,payload FROM harness_session_events
+        WHERE org_id=$1 AND user_id=$2 AND session_id=$3 AND sequence >= $4 ORDER BY sequence LIMIT $5`,
+      [...scopeParams(scope, id), offset, length])
+    const events = result.rows.map((item) => {
+      if (item.payload.seq !== Number(item.sequence) || item.payload.type !== item.event_type) {
+        throw new Error(`stored session "${id}" event projection mismatch`)
+      }
+      return item.payload
+    })
+    validateStoredEvents(row.header, events)
+    assertContiguous(id, events, offset)
+    return { eventState: 'detached', events }
+  }
+  async append(scope: AgentStorageScope, id: SessionId, claim: Owner, events: readonly SessionEvent[]): Promise<void> {
+    await this.transaction(scope, async (client) => {
+      const owned = await client.query(
+        `UPDATE harness_session_leases SET heartbeat_at=now(),expires_at=$6
+          WHERE org_id=$1 AND user_id=$2 AND session_id=$3 AND token_hash=$4 AND fencing_token=$5
+            AND released_at IS NULL RETURNING fencing_token`,
+        [...scopeParams(scope, id), claim.hash, claim.fence, this.expiry()])
+      if (owned.rows[0] === undefined) throw new SessionOwnershipLostError(id)
+      const locked = await client.query<SessionRow>(
+        `SELECT header,inherited_event_count,event_count,revision FROM harness_sessions
+          WHERE org_id=$1 AND user_id=$2 AND id=$3 FOR UPDATE`, scopeParams(scope, id))
+      const row = locked.rows[0]
+      if (row === undefined) throw new SessionPersistenceNotFoundError(id)
+      assertContiguous(id, events, Number(row.event_count))
+      for (const event of events) {
+        await client.query(
+          `INSERT INTO harness_session_events
+            (session_id,org_id,user_id,sequence,event_type,payload,created_at)
+            VALUES ($1,$2,$3,$4,$5,$6::jsonb,to_timestamp($7/1000.0))`,
+          [id, scope.orgId, scope.userId, event.seq, event.type, JSON.stringify(event), event.time])
+      }
+      if (events.length > 0) {
+        await client.query(
+          `UPDATE harness_sessions SET event_count=event_count+$4,revision=revision+1,updated_at=now()
+            WHERE org_id=$1 AND user_id=$2 AND id=$3`, [...scopeParams(scope, id), events.length])
+      }
+    })
+  }
+  async renew(scope: AgentStorageScope, id: SessionId, claim: Owner): Promise<void> {
+    const result = await this.query(scope,
+      `UPDATE harness_session_leases SET heartbeat_at=now(),expires_at=$6
+        WHERE org_id=$1 AND user_id=$2 AND session_id=$3 AND token_hash=$4 AND fencing_token=$5
+          AND released_at IS NULL RETURNING fencing_token`,
+      [...scopeParams(scope, id), claim.hash, claim.fence, this.expiry()])
+    if (result.rows[0] === undefined) throw new SessionOwnershipLostError(id)
+  }
+  async release(scope: AgentStorageScope, id: SessionId, claim: Owner): Promise<void> {
+    await this.query(scope,
+      `UPDATE harness_session_leases SET released_at=now()
+        WHERE org_id=$1 AND user_id=$2 AND session_id=$3 AND token_hash=$4 AND fencing_token=$5`,
+      [...scopeParams(scope, id), claim.hash, claim.fence])
+  }
+  closed(handle: PostgresHandle): void {
+    this.handles.delete(handle)
+    if (this.writers.get(handle.id) === handle) this.writers.delete(handle.id)
+  }
+  private track(handle: PostgresHandle): PostgresHandle {
+    this.handles.add(handle)
+    if (handle.access === 'write') this.writers.set(handle.id, handle)
+    return handle
+  }
+}
+export default PostgresSessionPersistence
