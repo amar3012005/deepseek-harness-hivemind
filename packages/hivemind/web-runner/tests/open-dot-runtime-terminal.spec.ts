@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto'
 import type { Context } from '@deepseek-ai/cordis'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import { afterEach, expect, it, vi } from 'vitest'
-import type { ExternalEmployeeRoom, ExternalRuntimeDispatchStatus } from '@deepseek-ai/dsh-api-session-controller'
+import type { ExternalEmployeeOperation, ExternalEmployeeRoom, ExternalRuntimeDispatchStatus } from '@deepseek-ai/dsh-api-session-controller'
 import { reconcileTerminalRuntimeResult, startOpenDotRuntimeMonitor } from '../src/open-dot-runtime.ts'
 
 const employeeId = '67503d34-97e9-49a8-8c52-8ee30cc7603e'
