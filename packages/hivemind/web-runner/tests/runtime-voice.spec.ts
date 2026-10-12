@@ -50,6 +50,10 @@ describe('Runtime operator voice context', () => {
   it('continues later agendas and leaves ordinary HIVEMIND calls unchanged', () => {
     expect(runtimeVoiceOpening(true, false, 'later')('session.started')?.content[0]?.text).toContain('do not restart onboarding')
     expect(runtimeVoiceOpening(false, true, 'ordinary')('session.started')).toBeUndefined()
+    const employeeOpening = runtimeVoiceOpening(false, false, 'employee', true)
+    expect(employeeOpening('session.updated')).toBeUndefined()
+    expect(employeeOpening('session.started')?.content[0]?.text).toContain('authenticated employee')
+    expect(employeeOpening('session.started')).toBeUndefined()
     expect(RUNTIME_VOICE_INSTRUCTIONS).toContain('Lead the conversation')
     expect(RUNTIME_VOICE_INSTRUCTIONS).toContain('Allow thinking pauses and interruptions')
   })

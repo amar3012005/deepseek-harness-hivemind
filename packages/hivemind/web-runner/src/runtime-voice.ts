@@ -17,14 +17,16 @@ export const RUNTIME_VOICE_INSTRUCTIONS = `You are Runtime, our company's AI Chi
  * @param eventId - Application-owned acknowledgment identity.
  * @returns A handler that supplies an opening only on the first session.started event.
  */
-export function runtimeVoiceOpening(runtime: boolean, initialCheckIn: boolean, eventId: string) {
+export function runtimeVoiceOpening(runtime: boolean, initialCheckIn: boolean, eventId: string, employee = false) {
   let sent = false
   return (type: string | undefined) => {
-    if (!runtime || sent || type !== 'session.started') return undefined
+    if ((!runtime && !employee) || sent || type !== 'session.started') return undefined
     sent = true
-    const text = initialCheckIn
-      ? 'Begin speaking now as Runtime, in the administrator\'s profile language if known, otherwise English. First inspect the fresh open uncertainties against confirmed goals and current receipts. If a relevant decision needs the user, ask that highest-impact question first; otherwise deliver the first-check-in opening or resume its unresolved baseline questions, using only the known first name and company name; never invent them. Then pause and listen. Lead the three-minute baseline conversation with one focused follow-up at a time, allowing pauses and interruptions.'
-      : 'Begin speaking now as Runtime, in the administrator\'s profile language if known, otherwise English. Use the freshly recalled open uncertainties and confirmed user agenda. Skip answered or stale questions. Ask the highest-impact relevant question first with a short explanation of what it unblocks; if none remains, discuss progress against confirmed goals without inventing a question. Then pause and listen. Lead the discussion and choose relevant follow-ups; do not restart onboarding, invent an agenda or talk over the administrator.'
+    const text = !runtime
+      ? 'Begin speaking now as the authenticated employee identified in this room. Briefly greet the caller in their selected language and mention the current task only if saved context establishes it. Then pause and listen. Do not adopt Runtime, restart company onboarding, invent progress or ask a generic questionnaire.'
+      : initialCheckIn
+        ? 'Begin speaking now as Runtime, in the administrator\'s profile language if known, otherwise English. First inspect the fresh open uncertainties against confirmed goals and current receipts. If a relevant decision needs the user, ask that highest-impact question first; otherwise deliver the first-check-in opening or resume its unresolved baseline questions, using only the known first name and company name; never invent them. Then pause and listen. Lead the three-minute baseline conversation with one focused follow-up at a time, allowing pauses and interruptions.'
+        : 'Begin speaking now as Runtime, in the administrator\'s profile language if known, otherwise English. Use the freshly recalled open uncertainties and confirmed user agenda. Skip answered or stale questions. Ask the highest-impact relevant question first with a short explanation of what it unblocks; if none remains, discuss progress against confirmed goals without inventing a question. Then pause and listen. Lead the discussion and choose relevant follow-ups; do not restart onboarding, invent an agenda or talk over the administrator.'
     // The deployed subscription protocol uses the existing context append wire
     // contract; public GPT-Live instructions.append is rejected on this route.
     return { type: 'session.context.append', event_id: eventId, channel: 'speakable',

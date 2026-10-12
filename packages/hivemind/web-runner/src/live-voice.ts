@@ -345,7 +345,7 @@ export function liveVoicePlugin(config: LiveVoiceConfig,
                 if (!runtime) { reply(res, 403, { error: 'runtime_voice_required' }); return }
                 const result = await agentEvents(ctx, agent).serial('hivemind/voice-fallback-request', { signal,
                   context: { session_id: id, instructions: `${prompt}\n\nAuthenticated room context:\n${context}`,
-                    initial_check_in: initialCheckIn, opening_instruction: runtimeVoiceOpening(true, initialCheckIn, 'fallback')('session.started')?.content[0]?.text ?? '' },
+                    initial_check_in: initialCheckIn, opening_instruction: runtimeVoiceOpening(runtime, initialCheckIn, 'fallback', employee)('session.started')?.content[0]?.text ?? '' },
                 }) as { session_id?: string; provider?: string; ws_url?: string; capability?: string; audio_format?: unknown }
                 if (result.provider !== 'grok' || !result.session_id || !result.capability || typeof result.ws_url !== 'string'
                   || !result.ws_url.startsWith('wss://')) throw new Error('voice_fallback_unavailable')
@@ -373,7 +373,7 @@ export function liveVoicePlugin(config: LiveVoiceConfig,
               const sdp = await response.text()
               const socket = new WebSocket(`wss://api.openai.com/v1/live/${encodeURIComponent(callId)}`, { headers, handshakeTimeout: config.timeoutMs, maxPayload: 1_000_000 })
               const roomId = randomUUID()
-              const opening = runtimeVoiceOpening(runtime, initialCheckIn, `runtime-opening-${roomId}`)
+              const opening = runtimeVoiceOpening(runtime, initialCheckIn, `runtime-opening-${roomId}`, employee)
               let lastCompact = compact
               let refreshingContext = false
               let closed = false; let busy = false; let hadUserSpeech = false; let closing = false
