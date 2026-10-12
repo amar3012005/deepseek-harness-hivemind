@@ -24,7 +24,7 @@ import { principalMembershipActive } from './principal-membership.ts'
 import { nativeSessionBinding, nativePrincipalAllowed } from './native-consent.ts'
 import { registerMediaAuth } from './media-auth.ts'
 import { liveVoicePlugin, type LiveVoiceConfig } from './live-voice.ts'
-import { createOpenDotRoomProvider, createOpenDotRuntimeOperationService } from './open-dot-runtime.ts'
+import { createOpenDotRoomProvider, createOpenDotRuntimeOperationService, installOpenDotRuntimeMonitorRecovery } from './open-dot-runtime.ts'
 import { createOpenDotRuntimeOperationHandler, OPEN_DOT_RUNTIME_OPERATION_PATH } from './open-dot-runtime-operation.ts'
 import { installExternalRoomPersistence, registerExternalEmployeeRoomProvider } from '@deepseek-ai/dsh-api-session-controller'
 
@@ -319,6 +319,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
   }
   installExternalRoomPersistence(ctx)
   const externalRoomProvider = createOpenDotRoomProvider(ctx, projectCatalogBase, projectCatalogSecret)
+  installOpenDotRuntimeMonitorRecovery(ctx, projectCatalogBase, projectCatalogSecret)
   const externalOperationService = createOpenDotRuntimeOperationService(ctx, projectCatalogBase, projectCatalogSecret)
   ctx.effect(() => registerExternalEmployeeRoomProvider(ctx, externalRoomProvider), 'hivemind-web-runner: Open Dot external room provider')
   ctx.effect(() => ctx.webServer.register({ kind: 'exact', path: OPEN_DOT_RUNTIME_OPERATION_PATH,
