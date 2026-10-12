@@ -15,7 +15,7 @@ import { authenticatedActorFromSource, principalForActor, type AuthenticatedActo
 import { resolveOrganizationAgentAccess, isAdmittedHumanSource, currentTurnActor, referencedSessionIds, admittedVoiceCallRef, admittedUserConfirmationRef, runtimeWitnessServices, withAuthenticatedInitiator, retainAdmittedUserWitness, retainTurnConfirmationRef } from './organization-agent-access.ts'
 import type {} from '@deepseek-ai/dsh-tools'
 import type {} from '@deepseek-ai/dsh-api-gateway'
-import { registerQuestionRespondents, validateQuestionRoom } from './question-respondent.ts'
+import { registerQuestionRespondents, validateQuestionRoom, privateBrainQuestionActor } from './question-respondent.ts'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { projectHyperagentProfiles } from '@deepseek-ai/dsh-hivemind-employee-directory'
@@ -353,9 +353,11 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
         const principal=ctx.hivemindExecutionScope.require()
         const agent=ctx.agents.get(SessionId(input.agentId))
         if(!agent)throw Error('session_not_found')
-        if(!organizationAgent(agent))return undefined
-        const access=await resolveAccess(principal,input.signal)
         const snapshot=await ctx.sessionPersistence.stat(SessionId(input.agentId),{ signal:input.signal })
+        if(!organizationAgent(agent)) {
+          return { agent,actor:privateBrainQuestionActor(input,snapshot,agent,principal) }
+        }
+        const access=await resolveAccess(principal,input.signal)
         if(!snapshot)throw Error('session_not_found')
         let profiles:Record<string,unknown>[]|undefined
         const selected=agent.session.snapshotEvents().findLast(event=>event.type==='agent-preset/selected')
@@ -373,6 +375,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
         return { agent,actor:access.actor }
       },
       admitted:(agent,actor,id)=>{
+        if(!organizationAgent(agent))return
         // This is the blocked turn's human response, not a new work assignment.
         actors.set(agent.id,actor)
         admittedUsers.set(agent.id,{ id,actor })

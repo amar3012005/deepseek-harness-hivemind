@@ -127,3 +127,18 @@ export function validateQuestionRoom(input:QuestionSubmission,access:Organizatio
     throw Error('question_answer_employee_not_active')
   }
 }
+
+/** Identity attestation for a private Brain question. The RPC membership guard and
+ * tenant-scoped persistence lookup authorize this room; this conveys no admin role. */
+export function privateBrainQuestionActor(
+  input: QuestionSubmission, snapshot: SessionPersistenceSnapshot | undefined, agent: Agent,
+  principal: { userId: string; orgId: string },
+): AuthenticatedActor {
+  const selected = agent.session.snapshotEvents().findLast(event => event.type === 'agent-preset/selected')
+  const preset = selected?.type === 'agent-preset/selected' ? selected.data.agentPreset : snapshot?.header.agentPreset
+  if (!snapshot || snapshot.header.id !== input.agentId || agent.id !== input.agentId
+    || preset !== 'hivemind-chat' || !principal.userId || !principal.orgId) {
+    throw Error('question_answer_session_not_authorized')
+  }
+  return Object.freeze({ userId: principal.userId, orgId: principal.orgId, name: '', role: 'authenticated-user' })
+}

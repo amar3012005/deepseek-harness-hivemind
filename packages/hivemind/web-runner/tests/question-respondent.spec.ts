@@ -94,3 +94,15 @@ it('binds the pending native room to fresh canonical organization and active emp
   expect(()=>validateQuestionRoom(input,access,employeeSnapshot,agent,actor,[{ id:'employee-id',status:'archived' }])).toThrow('not_active')
   expect(()=>validateQuestionRoom(input,access,employeeSnapshot,agent,actor,[{ id:'another',status:'ready' }])).toThrow('not_active')
 })
+
+import { privateBrainQuestionActor } from '../src/question-respondent.ts'
+it('attests a tenant-visible Brain answer without granting organization-agent authority', () => {
+  const { agent, input } = fixture()
+  const snapshot = { header: { id: agent.id, agentPreset: 'hivemind-chat' } } as never
+  expect(privateBrainQuestionActor(input, snapshot, agent, { userId: 'actual-user', orgId: 'actual-org' }))
+    .toEqual({ userId: 'actual-user', orgId: 'actual-org', name: '', role: 'authenticated-user' })
+  expect(() => privateBrainQuestionActor(input, undefined, agent, { userId: 'actual-user', orgId: 'actual-org' }))
+    .toThrow('not_authorized')
+  expect(() => privateBrainQuestionActor(input, { header: { id: 'foreign', agentPreset: 'hivemind-chat' } } as never, agent, { userId: 'actual-user', orgId: 'actual-org' }))
+    .toThrow('not_authorized')
+})
