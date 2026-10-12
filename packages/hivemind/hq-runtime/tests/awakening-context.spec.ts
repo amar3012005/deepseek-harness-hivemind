@@ -34,6 +34,19 @@ it('bounds latest checkpoint findings while keeping exact history references', a
   expect(text.length).toBeLessThan(1500)
 })
 
+it('routes a later employee result to operating review without reloading incomplete orientation', async () => {
+  const events = [
+    { seq: 0, type: 'hivemind/hq-awakening-start', data: { version: 1, turn: 1 } },
+    { seq: 1, type: 'hivemind/hq-awakening-checkpoint', data: { stage: 'company', blocked: false, summary: 'Known company' } },
+    { seq: 2, type: 'turn/start', data: { turn: 9 } },
+  ]
+  const agent = { session: { snapshotEvents: () => events } } as unknown as Agent
+  const message = createUserMessage({ source: { kind: 'agent-message', form: 'relay', senderSessionId: SessionId('worker') }, content: [{ type: 'text', text: 'The assigned verification has a model blocker.' }] })
+  expect(await awakeningContext({} as Context, agent, 9, [message])).toBe('')
+  expect(await awakeningContext({} as Context, agent, 1, [message])).toContain('Current unfinished checkpoint: evidence')
+  expect(events).toHaveLength(3)
+})
+
 it('keeps an unfinished awakening briefing compact and points to native loaded guidance', async () => {
   const events = [
     { type: 'hivemind/hq-awakening-start', data: { version: 1, turn: 1 } },

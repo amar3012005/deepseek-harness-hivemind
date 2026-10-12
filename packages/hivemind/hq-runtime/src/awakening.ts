@@ -55,14 +55,16 @@ export async function awakeningContext(ctx: Context, agent: Agent, turn: number,
   const events = agent.session.snapshotEvents()
   const start = events.findLast(event => event.type === 'hivemind/hq-awakening-start')
   const boundary = events.findLast(event => event.type === 'turn/start')?.seq ?? -1
-  const currentHuman = [...events.flatMap(event => event.seq > boundary && event.type === 'user/message' ? [event.data] : []), ...messages]
-    .filter(message => message.source.kind === 'user')
+  const inputs = [...events.flatMap(event => event.seq > boundary && event.type === 'user/message' ? [event.data] : []), ...messages]
+  const currentHuman = inputs.filter(message => message.source.kind === 'user')
   const request = currentHuman.at(-1)?.content.flatMap(block => block.type === 'text' ? [block.text] : []).join('').trim()
+  const orientationRequested = request !== undefined && (trigger.test(request)
+    || /^\s*(?:please\s+)?(?:continue|resume|finish|complete|orient)\b.{0,80}\b(?:awakening|orientation|onboarding)\b/iu.test(request))
+  const operatingInput = inputs.some(message => ['agent-message', 'hivemind-agent-message', 'team-message', 'hivemind-runtime-event', 'schedule'].includes(message.source.kind))
   // An unfinished orientation is saved work, not a competing objective for an
   // unrelated current human request. Native answer/result wakes can still resume it.
   if (start?.type === 'hivemind/hq-awakening-start' && start.data.turn !== turn
-    && request !== undefined && !trigger.test(request)
-    && !/^\s*(?:please\s+)?(?:continue|resume|finish|complete|orient)\b.{0,80}\b(?:awakening|orientation|onboarding)\b/iu.test(request)) return ''
+    && !orientationRequested && (request !== undefined || operatingInput)) return ''
   const checkpoints = events.flatMap(event => event.type === 'hivemind/hq-awakening-checkpoint' ? [event.data] : [])
   const stages = ['company', 'evidence', 'team', 'strategy', 'conversation'] as const
   // An invitation is not completion of orientation. Recover the latest stage
