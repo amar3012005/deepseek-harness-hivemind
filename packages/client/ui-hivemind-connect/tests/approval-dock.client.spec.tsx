@@ -24,7 +24,7 @@ const runtimeProps = {
   inputActions: {} as DockRuntimeProps['inputActions'],
   useChat: vi.fn() as unknown as DockRuntimeProps['useChat'],
   useTrajectory: vi.fn() as unknown as DockRuntimeProps['useTrajectory'],
-  useSessions: vi.fn() as unknown as DockRuntimeProps['useSessions'],
+  useSessions: ((select: (state: unknown) => unknown) => select({ byId: { 'session-1': { blank: false, projectionValues: { agentPreset: 'hivemind-hq' } } }, projectionsBySession: {} })) as DockRuntimeProps['useSessions'],
   useSessionStatus: vi.fn() as unknown as DockRuntimeProps['useSessionStatus'],
   useSessionRetainInfo: vi.fn() as unknown as DockRuntimeProps['useSessionRetainInfo'],
   useWorkspaces: vi.fn() as unknown as DockRuntimeProps['useWorkspaces'],
@@ -40,6 +40,14 @@ describe('HIVE approval input docks', () => {
       useApprovalEvents={useApprovalEvents} t={t as never} load={load} decide={vi.fn(async () => true)} />)
     expect(load).not.toHaveBeenCalled()
     expect(view.container.querySelector('[data-hivemind-approvals]')).toBeNull()
+  })
+  it('does not query Runtime approvals in a Brain room', () => {
+    const load = vi.fn(async () => [])
+    render(<ApprovalDock {...runtimeProps} kind="runtime"
+      useSessions={((select: (state: unknown) => unknown) => select({ byId: { 'session-1': { blank: false, projectionValues: { agentPreset: 'hivemind-chat' } } }, projectionsBySession: {} })) as DockRuntimeProps['useSessions']}
+      useApprovalEvents={useApprovalEvents} t={t as never} load={load} decide={vi.fn(async () => true)} />)
+    expect(load).not.toHaveBeenCalled()
+    expect(screen.queryByText('approval.unavailable')).toBeNull()
   })
   it('persists explicit memory decline with the exact save operation identity', async () => {
     let item: MemorySaveItem | undefined = {

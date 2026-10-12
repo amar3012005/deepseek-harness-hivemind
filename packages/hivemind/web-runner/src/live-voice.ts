@@ -28,6 +28,7 @@ import type { HivemindPrincipal } from '@deepseek-ai/dsh-hivemind-execution-scop
 import type {} from '@deepseek-ai/dsh-hivemind-runtime'
 import type {} from '@deepseek-ai/dsh-host-webserver'
 import type {} from '@deepseek-ai/dsh-client-connection'
+import { createOpenDotVoiceBroker } from './open-dot-voice-broker.ts'
 
 /** Deployment settings shared by every authenticated tenant. */
 export interface LiveVoiceConfig {
@@ -116,7 +117,7 @@ function textOf(value: unknown): string {
   const content = (value as { content?: unknown }).content
   return Array.isArray(content) ? content.flatMap(item => item?.type === 'text' && typeof item.text === 'string' ? [item.text] : []).join('\n') : ''
 }
-function appendContext(agent: Agent, text: string, authenticatedActor?: AuthenticatedActor): void {
+function appendContext(agent: Agent, text: string, authenticatedActor?: import('@deepseek-ai/dsh-hivemind-execution-scope').AuthenticatedActor): void {
   agent.session.append('user/message', createUserMessage({ content: [{ type: 'text', text }],
     source: { kind: 'hivemind-live-voice', plugin: 'hivemind-live-voice', form: 'recall', ...(authenticatedActor === undefined ? {} : { authenticatedActor }) } }), { surfaceOp: 'append' })
 }
@@ -217,8 +218,22 @@ export function liveVoicePlugin(config: LiveVoiceConfig,
       const starting = new Set<string>()
       const models = createModels({ credentials: credentialStoreFrom(ctx), authContext: authContextFrom(ctx) })
       models.setProvider(openaiCodexProvider())
-      ctx.effect(() => () => { for (const room of rooms.values()) room.close() })
+      const openDotBroker = createOpenDotVoiceBroker({
+        token: process.env.OPEN_DOT_VOICE_BROKER_TOKEN,
+        model: config.model,
+        voice: config.voice,
+        getAuth: async signal => (await models.getAuth('openai-codex', { signal }))?.auth.apiKey,
+        accountId: codexAccountId,
+        makeSession: voiceSession,
+        contextChunks: voiceContextChunks,
+        createQueryBuffer: () => new VoiceQueryBuffer(),
+        withPrincipal: (organizationId, userId, operation) => ctx.hivemindExecutionScope.run({
+          orgId: organizationId, userId, profile: 'hivemind-chat', variation: 'open-dot',
+        }, operation),
+      })
+      ctx.effect(() => () => { openDotBroker.dispose(); for (const room of rooms.values()) room.close() })
       ctx.effect(() => ctx.webServer.register({ kind: 'prefix', path: '/api/hivemind/voice', handler: async (req, res) => {
+        if (await openDotBroker(req, res)) return
         let authenticated: HivemindPrincipal | undefined
         try { authenticated = authenticate(req) } catch { reply(res, 401, { error: 'authentication_required' }); return }
         if (!authenticated) { reply(res, 401, { error: 'authentication_required' }); return }
@@ -230,6 +245,7 @@ export function liveVoicePlugin(config: LiveVoiceConfig,
           reply(res, 403, { error: 'invalid_request' }); return
         }
         const owner = p.orgId
+        let startupStage = 'context'
         try {
           const input = await body(req)
           if (resolveActor && typeof input.sessionId==='string') {
@@ -289,7 +305,19 @@ export function liveVoicePlugin(config: LiveVoiceConfig,
               const resolved = await ctx.sessionController.resolveAgent(id)
               if ('error' in resolved) throw new Error('session_unavailable')
               const agent = resolved.agent
-              const compact = await agentEvents(ctx, agent).serial('hivemind/voice-context', { signal })
+              let compact: string
+              try {
+                compact = await agentEvents(ctx, agent).serial('hivemind/voice-context', {
+                  signal: AbortSignal.any([signal, AbortSignal.timeout(5000)]),
+                })
+              } catch (error) {
+                const timeout = error instanceof Error && (['AbortError', 'TimeoutError'].includes(error.name)
+                  || ('code' in error && error.code === 'request_timeout'))
+                if (!timeout || signal.aborted) throw error
+                // Identity and room admission are already checked above. Remote
+                // enrichment is optional; delegated tools retain their own checks.
+                compact = 'Fresh company context could not be loaded before this call. Use only the authenticated room identity and saved conversation below; treat current company facts as unverified and retrieve them through authorized tools when needed.'
+              }
               if (!compact) throw new Error('profile_unavailable')
               const assembly = await ctx.systemPrompt.assemble(assembleContextFor(agent, signal))
               const persona = renderPrompt({ ...assembly, sections: assembly.sections.filter(section => section.name === 'deployment:persona-prefix') })
@@ -307,8 +335,16 @@ export function liveVoicePlugin(config: LiveVoiceConfig,
                   : VOICE_INSTRUCTIONS
               let decisionMemory = ''
               if (runtime) {
-                try { decisionMemory = await agentEvents(ctx, agent).serial('hivemind/runtime-call-context', { signal }) }
-                catch { throw new Error('runtime_decision_memory_unavailable') }
+                try {
+                  decisionMemory = await agentEvents(ctx, agent).serial('hivemind/runtime-call-context', {
+                    signal: AbortSignal.any([signal, AbortSignal.timeout(5000)]),
+                  })
+                } catch (error) {
+                  const timeout = error instanceof Error && (['AbortError', 'TimeoutError'].includes(error.name)
+                    || ('code' in error && error.code === 'request_timeout'))
+                  if (!timeout || signal.aborted) throw new Error('runtime_decision_memory_unavailable')
+                  decisionMemory = 'Fresh decision memory is unavailable for this call. Use saved Runtime investigation below; do not invent priorities, decisions, approvals or completed work. Retrieve current facts through authorized backend tools before acting.'
+                }
               }
               if (runtime && !decisionMemory) throw new Error('runtime_decision_memory_unavailable')
               const initialCheckIn = runtime && needsAwakeningCallAgenda(agent.session.snapshotEvents())
@@ -333,10 +369,12 @@ export function liveVoicePlugin(config: LiveVoiceConfig,
                 if (!(await ctx.sessions.flush(agent.session))) throw new Error('voice_handoff_persistence_required')
                 reply(res, 200, result); return
               }
+              startupStage = 'authorization'
               const grant = await models.getAuth('openai-codex', { signal })
               const token = grant?.auth.apiKey
               if (!token) throw new Error('voice_authorization_unavailable')
               const headers = { authorization: `Bearer ${token}`, 'ChatGPT-Account-Id': codexAccountId(token), originator: 'hivemind', 'OpenAI-Alpha': 'quicksilver=v2', 'content-type': 'application/json' }
+              startupStage = 'provider'
               const response = await fetch('https://chatgpt.com/backend-api/codex/realtime/calls?intent=quicksilver&architecture=avas', {
                 method: 'POST', headers, body: JSON.stringify({ sdp: input.sdp, session: voiceSession(config.model, config.voice, prompt, context) }), signal, redirect: 'error',
               })
@@ -473,7 +511,15 @@ export function liveVoicePlugin(config: LiveVoiceConfig,
               reply(res, 200, { id: roomId, sdp, ...(initialCheckIn ? { closingAfterMs: Math.max(0, closingAt - Date.now()) } : {}) })
             })
           } finally { starting.delete(owner) }
-        } catch (error) { reply(res, 503, { error: error instanceof Error && error.message === 'runtime_decision_memory_unavailable' ? 'runtime_decision_memory_unavailable' : 'voice_unavailable', fallbackAllowed: error instanceof Error && ['voice_connection_failed', 'voice_authorization_unavailable'].includes(error.message) }) }
+        } catch (error) {
+          const safeCodes = ['voice_connection_failed', 'voice_authorization_unavailable', 'session_unavailable', 'profile_unavailable', 'employee_voice_identity_unavailable', 'runtime_decision_memory_unavailable', 'voice_handoff_persistence_required']
+          const code = error instanceof Error && safeCodes.includes(error.message) ? error.message : 'startup_failed'
+          const category = error instanceof Error && 'code' in error && typeof error.code === 'string' && /^[a-z_]{1,60}$/.test(error.code) ? error.code : 'unknown'
+          const cause = error instanceof Error && error.cause instanceof Error ? error.cause.name : 'none'
+          const failureText = error instanceof Error ? error.message : ''
+          const refreshStatus = failureText.match(/token refresh failed \((\d{3})\)/)?.[1] ?? 'none'
+          console.warn('hivemind voice startup failed', startupStage, code, category, cause, refreshStatus)
+          reply(res, 503, { error: error instanceof Error && error.message === 'runtime_decision_memory_unavailable' ? 'runtime_decision_memory_unavailable' : 'voice_unavailable', fallbackAllowed: error instanceof Error && ['voice_connection_failed', 'voice_authorization_unavailable'].includes(error.message) }) }
       } }))
     } }
 }
