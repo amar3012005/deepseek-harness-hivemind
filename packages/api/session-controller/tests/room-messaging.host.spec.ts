@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
-import { RoomMessaging, roomMessageId, requestsAssignmentReview } from '../src/room-messaging.ts'
+import { RoomMessaging, roomMessageId, requestsAssignmentReview, type ExternalEmployeeRoomProvider } from '../src/room-messaging.ts'
 
 function fixture() {
   const agents = new Map<string, Agent>()
@@ -28,7 +28,7 @@ function fixture() {
   const open = vi.fn((key: string) => Promise.resolve(key === 'runtime' ? caller : ravi))
   const messaging = new RoomMessaging(ctx, open)
   const request = { key: 'test-1', target: 'employee-ravi', targetProfile: { id: 'employee-ravi', name: 'Ravi', role: 'Research' }, kind: 'question' as const, text: 'What is the requested title?' }
-  return { ctx, caller, ravi, messaging, request }
+  return { ctx, caller, ravi, messaging, request, open }
 }
 const signal = new AbortController().signal
 
@@ -55,6 +55,42 @@ describe('Persistent agent room messaging', () => {
     ravi.session.append('hivemind/session-owner', { id: 'other' } as never)
     await expect(messaging.resolveRoom(request.target, request.targetProfile, signal)).rejects.toThrow('identity_conflict')
     await expect(messaging.resolveRoom('different', request.targetProfile, signal)).rejects.toThrow('identity_conflict')
+  })
+  it('routes a marked external employee through durable provider acceptance without steering a DSH turn', async () => {
+    const { ctx, caller, open } = fixture()
+    const proxy = (() => {
+      const events: SessionEvent[] = []
+      return {
+        id: 'session-opaque-9f31',
+        session: { header: { id: 'session-opaque-9f31', agentPreset: 'hivemind-hyperagents' }, ownEvents: () => events, snapshotEvents: () => events, append: (type: string, data: unknown) => events.push({ type, data } as SessionEvent) },
+        inbox: { nextTurn: [], nextStep: [] }, steer: vi.fn(),
+      } as unknown as Agent
+    })()
+    const agents = (ctx as unknown as { agents: { get: (id: string) => Agent | undefined } }).agents
+    const originalGet = agents.get.bind(agents)
+    vi.spyOn(agents, 'get').mockImplementation(id => id === proxy.id ? proxy : originalGet(id))
+    let accept!: () => void
+    const acceptance = new Promise<void>(resolve => { accept = resolve })
+    const delivered = vi.fn(async () => { await acceptance; return { receiptId: 'dot-job-42', status: 'accepted' as const } })
+    const provider: ExternalEmployeeRoomProvider = {
+      resolve: async employeeId => employeeId === 'employee-dot' ? { agent: proxy, driverless: true } : undefined,
+      deliver: delivered,
+    }
+    const messaging = new RoomMessaging(ctx, open, provider)
+    const input = { key: 'external-1', target: 'employee-dot', targetProfile: { id: 'employee-dot', name: 'Ravi', role: 'Research', executionBackend: 'open-dot' as const, dotId: 'dot-canonical-7' }, kind: 'question' as const, text: 'Prepare the requested report.' }
+    const sending = messaging.send(caller, input, signal)
+    await vi.waitFor(() => expect(delivered).toHaveBeenCalledOnce())
+    expect(proxy.steer).not.toHaveBeenCalled()
+    expect(proxy.session.snapshotEvents().some(event => event.type === 'hivemind/room-message-received')).toBe(false)
+    expect(open).not.toHaveBeenCalled()
+    accept()
+    await sending
+    expect(proxy.session.snapshotEvents().find(event => event.type === 'hivemind/room-message-received')?.data).toMatchObject({ targetId: proxy.id })
+  })
+  it('fails closed for an explicitly external profile when no provider is registered', async () => {
+    const { messaging, open, request } = fixture()
+    await expect(messaging.resolveRoom(request.target, { ...request.targetProfile, executionBackend: 'open-dot', dotId: 'dot-canonical' }, signal)).rejects.toThrow('external_provider_required')
+    expect(open).not.toHaveBeenCalled()
   })
   it('admits a question once and pins the trusted recipient selection', async () => {
     const { caller, ravi, messaging, request } = fixture()
