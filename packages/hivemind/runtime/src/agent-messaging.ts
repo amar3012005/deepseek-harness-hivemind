@@ -6,14 +6,14 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import { sessionOwner } from './continuity.ts'
 import { currentNightlyOccurrence } from './nightly-routine-guidance.ts'
-import type {} from '@deepseek-ai/dsh-hivemind-employee-directory'
+import { employeeExternalDispatchAllowed } from '@deepseek-ai/dsh-hivemind-employee-directory'
 import type {} from '@deepseek-ai/dsh-agent-presets'
 
 interface RoomDelivery {
   deliverAgentMessage(caller: Agent, input: {
     key: string
     target: string
-    targetProfile?: { id: string; name: string; role: string }
+    targetProfile?: { id: string; name: string; role: string; executionBackend?: 'open-dot'; dotId?: string }
     kind: 'question' | 'reply' | 'update'
     text: string
     summary?: string
@@ -34,6 +34,18 @@ export function authorizedRecipient<T extends Record<string, unknown>>(profiles:
   if (names.length > 1) throw new Error('agent_message_recipient_ambiguous_use_exact_employee_id')
   return names[0]
 }
+function roomProfile(profile: Record<string, unknown>) {
+  const result = { id: String(profile['id']), name: String(profile['name']), role: String(profile['role_archetype'] ?? 'HIVE-MIND employee') }
+  if (!employeeExternalDispatchAllowed(profile as Record<string, JsonValue>)) return result
+  const rules = profile['policy_rules']
+  const marker = typeof rules === 'object' && rules !== null && !Array.isArray(rules)
+    ? (rules as Record<string, unknown>)['open_dot_employee'] : undefined
+  const dotId = typeof marker === 'object' && marker !== null && !Array.isArray(marker)
+    ? (marker as Record<string, unknown>)['dot_id'] : undefined
+  if (typeof dotId !== 'string' || !dotId) throw new Error('agent_message_external_binding_invalid')
+  return { ...result, executionBackend: 'open-dot' as const, dotId }
+}
+
 /** Resolve the sender's preset realm, retaining fresh tenant-authorized lookup. */
 export function messageDirectory(ctx: Context, agent: Agent) {
   return (typeof ctx.get === 'function' ? ctx.get('agentPresets')?.serviceFor(agent, 'hivemindEmployeeDirectory') : undefined)
@@ -103,7 +115,7 @@ export async function reconcileRoomMessages(ctx: Context, rooms: RoomDelivery, a
       || profile['status'] === 'archived' || profile['archived_at'] || profile['archivedAt'])) continue
     try {
       await rooms.deliverAgentMessage(agent, { key: delivery.key, target: delivery.target, kind: packet.kind, text: packet.text,
-        ...(profile === undefined ? {} : { targetProfile: { id: String(profile['id']), name: String(profile['name']), role: String(profile['role_archetype'] ?? 'HIVE-MIND employee') } }),
+        ...(profile === undefined ? {} : { targetProfile: roomProfile(profile) }),
         ...(packet.summary === undefined ? {} : { summary: packet.summary }),
         ...(packet.taskId === undefined ? {} : { taskId: packet.taskId }),
         ...(packet.replyTo === undefined ? {} : { replyTo: packet.replyTo }), artifactIds: packet.artifactIds }, signal)
@@ -246,7 +258,7 @@ export function installAgentMessaging(ctx: Context): void {
         const target = input.recipient === 'runtime' ? undefined : authorizedRecipient(directory.profiles, input.recipient)
         if (input.recipient !== 'runtime' && !target) throw new Error('agent_message_recipient_not_authorized: no exact ID, unique slug or unique name matches the authenticated employee directory. Read hivemind_hq_contract action list for employee IDs; delegated child teammates use native Team send_message. Do not guess session IDs or retry an unauthorized recipient.')
         if (target !== undefined && (target['status'] === 'paused' || target['status'] === 'archived' || target['archived_at'] || target['archivedAt'])) throw new Error('agent_message_recipient_unavailable')
-        const targetProfile = target === undefined ? undefined : { id: String(target['id']), name: String(target['name']), role: typeof target['role_archetype'] === 'string' ? target['role_archetype'] : 'HIVE-MIND employee' }
+        const targetProfile = target === undefined ? undefined : roomProfile(target)
         const events = agent.session.snapshotEvents()
         const messageId = `agent-message-${createHash('sha256').update(JSON.stringify([agent.id, input.message_key])).digest('hex')}`
         const queued = events.find(event => String(event.type) === 'hivemind/room-message-queued' && (event.data as { id?: string }).id === messageId)

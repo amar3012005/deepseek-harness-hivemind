@@ -5,6 +5,7 @@ import { installQuestionRecoveryHost } from './question-recovery-host.ts'
 import { createHash, createHmac, timingSafeEqual } from 'node:crypto'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { Context } from '@deepseek-ai/cordis'
+import type { Agent } from '@deepseek-ai/dsh-agent'
 import Schema from '@deepseek-ai/schemastery'
 import { z } from 'zod'
 import { SessionId } from '@deepseek-ai/dsh-session'
@@ -129,6 +130,7 @@ export function apply(ctx:Context,config:Config):void {
           const employee = await ctx.sessionController.resolvePersistentEmployeeRoom(input.employeeId, {
             id: input.employeeId, name: profile.name, role: profile.role,
           }, signal)
+          if ('kind' in employee && employee.kind === 'external-persistent-assignee') throw Error('employee_lifecycle_external_provisioning_blocked')
           const current = proofSchema.parse(await ctx.serial('hivemind/employee-lifecycle-proof', { employeeId:input.employeeId,signal }))
           const currentProfile = proof.profileReview !== undefined ? current.profileReview : current.joined
           if (current.phase !== 'active' || current.revision !== proof.revision
@@ -136,7 +138,7 @@ export function apply(ctx:Context,config:Config):void {
             || currentProfile?.profileRevision !== profile.profileRevision
             || currentProfile.creationHash !== profile.creationHash) throw Error('employee_lifecycle_changed')
           if (proof.profileReview !== undefined) {
-            await ctx.sessionController.deliverAgentMessage(employee, {
+            await ctx.sessionController.deliverAgentMessage(employee as Agent, {
               key: `employee-profile-review-${input.employeeId}-${profile.profileRevision}`,
               target:'runtime',kind:'question',
               text: `Our administrator has chosen my responsibilities: ${profile.role}. Please complete my company-relevant biography and operating instructions using our actual context and existing permitted capabilities, then confirm the saved profile. My agreed responsibility notes are: ${proof.profileReview.persona}. Employee: ${input.employeeId}; current profile revision: ${profile.profileRevision}. Do not expand tools, connectors, permissions or company-memory authority.`,
