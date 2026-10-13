@@ -277,7 +277,13 @@ export function ConversationRoot({
     (shellPhase === 'blank' && openState !== 'open')
     || parentAvailabilityPending
   ))
-  const hero = !agentRoutePending && (sessionId === undefined
+  // Brain chat only: leave the hero layout as soon as a send is pending, so the
+  // transcript, thinking orb and composer dock switch immediately instead of
+  // waiting for the server's first event.
+  const brainSendPending = typeof window !== 'undefined'
+    && /^\/hivemind\/app\/overview(?:\/(?:new|session\/[^/]+))?\/?$/u.test(window.location.pathname)
+    && (session?.pendingSubmissions?.length ?? 0) > 0
+  const hero = !agentRoutePending && !brainSendPending && (sessionId === undefined
     || (shellPhase === 'blank' && openState === 'open'))
   const zone: InputZone | undefined =
     session === undefined || inputState === undefined ? undefined : { session, input: inputState }

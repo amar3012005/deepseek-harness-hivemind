@@ -261,14 +261,14 @@ const ChatNodeList = memo(function ChatNodeList({ order, useChat, ...seatProps }
   }))
   let previousDay: string | undefined
   const agentRoom = window.location.pathname.includes('/employee/harness')
+  const brainRoom = /^\/hivemind\/app\/overview(?:\/(?:new|session\/[^/]+))?\/?$/u.test(window.location.pathname)
   return displayOrder.flatMap((nodeKey) => {
     const turn = turnOf(nodeKey)
     const time = turn === undefined ? undefined : snapshot.timeline.turns.get(turn)?.start?.time
     const day = time === undefined ? undefined : new Date(time).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })
-    const brainRoom = /^\/hivemind\/app\/overview(?:\/(?:new|session\/[^/]+))?\/?$/u.test(window.location.pathname)
     const header = (agentRoom || brainRoom) && day !== undefined && day !== previousDay
     if (day !== undefined) previousDay = day
-    const seat = <ChatNodeSeat key={nodeKey} nodeKey={nodeKey} avatarGroupEnd={!agentRoom || groupEnds.has(nodeKey)} {...seatProps} />
+    const seat = <ChatNodeSeat key={nodeKey} nodeKey={nodeKey} avatarGroupEnd={(!agentRoom && !brainRoom) || groupEnds.has(nodeKey)} {...seatProps} />
     return header ? [<div key={`date-${nodeKey}`} className={css.roomDate} data-brain-date={brainRoom || undefined}>{day}</div>, seat] : [seat]
   })
 })
