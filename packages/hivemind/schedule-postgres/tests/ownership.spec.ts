@@ -6,7 +6,7 @@ import ExecutionScope from '@deepseek-ai/dsh-hivemind-execution-scope'
 import { ScheduleId } from '@deepseek-ai/dsh-schedule'
 import Backend, { type Config } from '../src/index.ts'
 
-const principal = { orgId: '11111111-1111-4111-8111-111111111111', userId: '22222222-2222-4222-8222-222222222222', profile: 'hivemind-hq' as const, variation: 'harness' as const }
+const principal = { orgId: '11111111-1111-4111-8111-111111111111', userId: '22222222-2222-4222-8222-222222222222', profile: 'hivemind-chat' as const, variation: 'harness' as const }
 const configuration: Config = { connectionStringEnv: 'UNUSED', schema: 'hivemind', pollIntervalMs: 100, retryIntervalMs: 1000, batchSize: 100, maxConnections: 4, statementTimeoutMs: 10000, maxTasksPerUser: 100 }
 const contexts: Context[] = []
 function fixture(extra: Partial<Config>) {
