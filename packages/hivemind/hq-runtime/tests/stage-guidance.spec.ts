@@ -95,7 +95,7 @@ describe('Runtime current-stage selection', () => {
     const text = stage([input('user'), input('user'), input('hivemind-runtime-event')])
     expect(text.match(/Human request:/g)).toHaveLength(1)
     expect(text).toContain('Company signal:')
-    expect(text.length).toBeLessThan(2400)
+    expect(text.length).toBeLessThan(3200)
   })
 })
 

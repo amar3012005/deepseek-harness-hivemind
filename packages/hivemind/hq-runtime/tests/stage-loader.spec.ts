@@ -34,13 +34,23 @@ it('admits current stage before the first model request, saves full history and 
   const dir = await mkdtemp(join(tmpdir(), 'runtime-stage-loader-'))
   const ctx = new Context()
   let boardReads = 0
+  let parallelReads = false
+  let activeReads = 0
+  let maxActiveReads = 0
+  let releaseReads = () => {}
+  const parallelGate = new Promise<void>((resolve) => { releaseReads = resolve })
+  const parallelBatch = ['parallel-list-one', 'parallel-list-two'].flatMap((id, index) =>
+    toolCallResponse(id, 'hivemind_hq_contract', { action: 'list' })
+      .filter(chunk => chunk.type !== 'finish' && chunk.type !== 'usage')
+      .map(chunk => 'index' in chunk ? { ...chunk, index } : chunk))
+  parallelBatch.push({ type: 'finish', reason: { kind: 'stop' } })
   let awakeningBody: string = companyAwakeningSkill.content
   const adapter = new MockAdapter([textResponse('I will inspect the current deployment evidence.'), textResponse('Hello!'), textResponse('I will continue our authorized preparation.'),
     toolCallResponse('receive-current-result', 'fixture_employee_result', {}),
     toolCallResponse('inspect-current-result', 'fixture_inspection', {}), textResponse('I reviewed the saved contribution.'),
     textResponse('I will request the current daily evidence.'), textResponse('I will reconcile the saved daily reply.'), toolCallResponse('awakening-first-read', 'fixture_inspection', {}),
     toolCallResponse('awakening-second-read', 'fixture_inspection', {}), textResponse('I will orient using the complete awakening method.'),
-    textResponse('I will continue the same method.'), textResponse('I will use the updated method.')])
+    textResponse('I will continue the same method.'), textResponse('I will use the updated method.'), parallelBatch, textResponse('I read both saved pages.')])
   const dependencies = { name: 'stage-fixture', async apply(scope: Context) {
     await mountAgentLoopTestDependencies(scope)
     await scope.plugin(LocalAttachmentStore, { dshHome: dir })
@@ -58,7 +68,16 @@ it('admits current stage before the first model request, saves full history and 
     await scope.plugin(TeamService)
     scope.provide('schedule', { catalog: async () => [] } as never)
     scope.provide('sessionController', {} as never)
-    scope.provide('hivemindEmployeeDirectory', { profiles: async () => ({ profiles: [] }) } as never)
+    scope.provide('hivemindEmployeeDirectory', { profiles: async () => {
+      if (parallelReads) {
+        activeReads++
+        maxActiveReads = Math.max(maxActiveReads, activeReads)
+        if (activeReads === 2) releaseReads()
+        await parallelGate
+        activeReads--
+      }
+      return { profiles: [] }
+    } } as never)
     scope.provide('hivemindHq', { mode: () => ({ enabled: false }), workspace: async (agent: Parameters<Context['agentTeams']['listTasks']>[0]) => {
       boardReads++
       return { mode: { enabled: false, revision: 0, changedAt: 0 }, tasks: scope.get('agentTeams')!.listTasks(agent), calendar: [], wakes: [] }
@@ -135,6 +154,9 @@ it('admits current stage before the first model request, saves full history and 
     await vi.waitFor(() => expect(agent.status).toBe('idle'))
     expect(agent.session.snapshotEvents().filter(event => event.type === 'turn/start')).toHaveLength(turnCount + 1)
     expect(JSON.stringify(adapter.requests[3])).not.toContain('Employee result or blocker:')
+    expect(JSON.stringify(adapter.requests[3])).toContain('do not ask which people when that scope is already clear')
+    expect(JSON.stringify(adapter.requests[3])).toContain('batch independent concurrency-safe reads in one step')
+    expect(JSON.stringify(adapter.requests[3])).toContain('Choose routine reversible details yourself')
     expect(JSON.stringify(adapter.requests[4])).toContain('Employee result or blocker:')
     expect(JSON.stringify(adapter.requests[4])).toContain('Advance the next eligible dependency after review')
     expect(agent.session.snapshotEvents().filter(event => event.type === 'user/message'
@@ -183,9 +205,18 @@ it('admits current stage before the first model request, saves full history and 
     expect(agent.session.snapshotEvents().slice(0,before.length)).toEqual(before)
 
     expect(ctx.tools.get('hivemind_hq_rest')).toBeDefined()
+    parallelReads = true
+    agent.send(createUserMessage({ source: { kind: 'user' }, content: [{ type: 'text', text: 'Read the current saved task heads together.' }] }), 'next-turn', true)
+    await vi.waitFor(() => expect(adapter.requests).toHaveLength(15))
+    await vi.waitFor(() => expect(agent.status).toBe('idle'))
+    expect(maxActiveReads).toBe(2)
+    const parallelResults = agent.session.snapshotEvents().filter(event => event.type === 'tool/result'
+      && event.data.message.content.some(block => ['parallel-list-one', 'parallel-list-two'].includes(String(block.toolCallId))))
+    expect(parallelResults).toHaveLength(2)
+    expect(JSON.stringify(parallelResults)).toContain('next_cursor')
     await ctx.fiber.dispose()
     expect(ctx.get('tools')).toBeUndefined()
-  } finally { await ctx.fiber.dispose(); await rm(dir, { recursive: true, force: true }) }
+  } finally { releaseReads(); await ctx.fiber.dispose(); await rm(dir, { recursive: true, force: true }) }
 }, 30_000)
 
 

@@ -115,6 +115,20 @@
             Direct human-assigned tasks retain their existing question and
             connection flow; an intervening clarification does not erase the
             original Runtime assignment.
+            Treat an explicitly stated audience such as each agent, all agents or everyone
+            as the requested scope within the current authorized roster. Do not ask
+            the user to repeat that scope or approve each routine step. Choose
+            ordinary reversible details using the request, known company context
+            and relevant methods; briefly label a material assumption and act.
+            Ask only when unavailable evidence, a consequential choice or missing
+            authority changes the next action. Keep genuine native approval and
+            permission requirements. A blocker pauses only its dependent work.
+            Reuse current discovery and receipts. In one step, issue independent
+            read-only calls together when their tools support concurrent execution.
+            Do not parallelize dependent reads, mutations, shared browser operations
+            or a read with a write that can change its result. Read only what
+            resolves a specific gap; do not browse history to postpone clear work.
+
             Choose the smallest useful approach before expensive retrieval:
             direct responses and bounded memory lookups use the available
             context or one focused hivemind_meta call. Bounded action tasks
