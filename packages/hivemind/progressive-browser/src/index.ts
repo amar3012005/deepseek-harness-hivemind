@@ -1,7 +1,7 @@
 /** Progressive, native-schema access to one official Playwright MCP server. */
 
 import { randomUUID } from 'node:crypto'
-import { mountActionToolkits } from './action-toolkit.ts'
+import { mountActionToolkits, captureCloudflare } from './action-toolkit.ts'
 import { mountPlaywrightToolkit } from './playwright-toolkit.ts'
 export { mountActionToolkits } from './action-toolkit.ts'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
@@ -57,6 +57,7 @@ export const name = 'hivemind-progressive-browser'
 export const inject = ['tools', 'systemPrompt']
 
 export interface Config {
+  cloudflareActionsOnly: boolean
   actionAccountId: string
   actionBrowserToken: string
   actionGatewayId: string
@@ -79,6 +80,7 @@ export interface EndpointConfig {
 }
 
 export const Config: z<Config> = z.object({
+  cloudflareActionsOnly: z.boolean().default(false),
   actionAccountId: z.string().default(''),
   actionBrowserToken: z.string().default(''),
   actionGatewayId: z.string().default('hivemind-prod'),
@@ -288,9 +290,28 @@ function navigationFacts(value: unknown, fallbackUrl: string): { url: string; ti
  * in a generic execute schema or asks the model to invent selectors.
  */
 export function apply(ctx: Context, config: Partial<Config> = {}): void {
-  mountPlaywrightToolkit(ctx, config.url ?? '', config.headers ?? {})
+  if (!config.cloudflareActionsOnly) mountPlaywrightToolkit(ctx, config.url ?? '', config.headers ?? {})
   mountActionToolkits(ctx, { accountId: config.actionAccountId ?? '', browserToken: config.actionBrowserToken ?? '', gatewayId: config.actionGatewayId ?? 'hivemind-prod', gatewayToken: config.actionGatewayToken ?? '' })
+  if (config.cloudflareActionsOnly) {
+    ctx.tools.register({
+      name: 'hivemind_browser_capture',
+      description: 'Capture a known public URL through Cloudflare Browser Rendering in one call and attach the screenshot. No Playwright fallback. For page reading or extraction load the browser-use skill and use its Cloudflare action tools.',
+      parameters: { type: 'object', properties: { source_url: { type: 'string', description: 'Exact public URL supplied by the user or verified from search/context.' } }, required: ['source_url'], additionalProperties: false },
+      output: { schema: {}, render: (_args, value) => {
+        const result = value as Record<string, JsonValue>
+        return [{ type: 'text' as const, text: JSON.stringify(value) }, ...(result.preview ? [{ type: 'image' as const, attachment: result.preview as unknown as ImageAttachmentRef }] : [])]
+      } },
+      isConcurrencySafe: () => true,
+      execute: async (input, execution) => {
+        if (!config.actionAccountId || !config.actionBrowserToken) throw new Error('Cloudflare Browser Rendering credentials are not configured; Playwright fallback is disabled')
+        const args = input as Record<string, JsonValue>
+        return captureCloudflare(ctx, { accountId: config.actionAccountId, browserToken: config.actionBrowserToken, gatewayId: config.actionGatewayId ?? 'hivemind-prod', gatewayToken: config.actionGatewayToken ?? '' }, { url: args.source_url ?? '' }, execution)
+      },
+    })
+    return
+  }
   const resolved: Config = {
+    cloudflareActionsOnly: false,
     actionAccountId: config.actionAccountId ?? '', actionBrowserToken: config.actionBrowserToken ?? '', actionGatewayId: config.actionGatewayId ?? 'hivemind-prod', actionGatewayToken: config.actionGatewayToken ?? '',
     url: config.url ?? '', headers: config.headers ?? {}, serverName: config.serverName ?? 'singulance_browser',
     cloudflareUrl: config.cloudflareUrl ?? '', cloudflareHeaders: config.cloudflareHeaders ?? {}, cloudflareServerName: config.cloudflareServerName ?? 'singulance_browser',

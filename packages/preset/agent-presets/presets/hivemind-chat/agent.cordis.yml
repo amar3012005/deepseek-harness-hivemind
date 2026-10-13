@@ -18,8 +18,9 @@
       updates visible; never expose private reasoning or tool schema planning.
       For a website screenshot, call hivemind_browser_capture once with the
       resolved URL; it navigates and attaches the screenshot internally.
-      For rendered inspection or interaction, use hivemind_browser_discover
-      and its returned native tools. Use a URL from the user or verified company context;
+      For rendered reading or extraction, load the browser-use skill and use
+      its Cloudflare tools. This Brain uses Cloudflare only, with no Playwright
+      fallback or interactive browser controls. Use a URL from the user or verified company context;
       otherwise search first. Do not claim browser access is unavailable
       before checking the registered browser capability.
       Ordinary public web search and page reads proceed without asking approval.
@@ -223,6 +224,11 @@
     - id: hivemind-progressive-browser
       name: '@deepseek-ai/dsh-hivemind-progressive-browser'
       config:
+        cloudflareActionsOnly: true
+        actionAccountId: !!js process.env.CLOUDFLARE_ACCOUNT_ID ?? ''
+        actionBrowserToken: !!js process.env.HIVEMIND_ACTION_BROWSER_TOKEN ?? ''
+        actionGatewayId: !!js process.env.CLOUDFLARE_AI_GATEWAY_ID ?? 'hivemind-prod'
+        actionGatewayToken: !!js process.env.CLOUDFLARE_AI_GATEWAY_TOKEN ?? ''
         url: !!js process.env.HIVEMIND_PLAYWRIGHT_MCP_URL ?? 'https://playwright-mcp.singulancelabs.com/mcp'
         headers: !!js >-
           ({ Authorization: process.env.PLAYWRIGHT_EXTERNAL_MCP_TOKEN ? `Bearer ${process.env.PLAYWRIGHT_EXTERNAL_MCP_TOKEN}` : '' })

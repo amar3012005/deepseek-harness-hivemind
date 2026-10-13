@@ -20,6 +20,22 @@ const groups: Record<string, readonly string[]> = {
   'parallel-search': ['parallel_search'],
 }
 
+/** Native Cloudflare screenshot transport and durable attachment admission. */
+export async function captureCloudflare(ctx: Context, config: ActionConfig, args: Record<string, JsonValue>, execution: Parameters<NonNullable<ToolDefinition['execute']>>[1]): Promise<JsonValue> {
+  const result = await executeAction(config, 'browser_capture', args, execution.signal)
+  if (!(result instanceof Uint8Array)) throw new Error('Cloudflare screenshot did not return image bytes')
+  const store = execution.agent?.ctx.get('attachments') ?? ctx.get('attachments')
+  if (!store) throw new Error('No native attachment store is mounted')
+  const [preview] = await store.saveImages([{ data: result, mediaType: 'image/png', name: String(args.title ?? 'Website screenshot') + '.png' }])
+  if (!preview) throw new Error('Screenshot storage did not return a receipt')
+  const file = await store.saveFile({ data: result, name: preview.name ?? 'Website screenshot.png' })
+  execution.agent?.session.append('hivemind/browser-capture', {
+    captureId: preview.attachmentId, provider: 'cloudflare-action-toolkit',
+    url: String(args.url), title: String(args.title ?? 'Website screenshot'), preview, file,
+  })
+  return { id: preview.attachmentId, url: String(args.url), title: args.title ?? 'Website screenshot', contentType: 'image/png', preview: preview as unknown as JsonValue }
+}
+
 /** Reuse the MCP finalizer so PNG results enter native durable attachment storage. */
 export function mountActionToolkits(ctx: Context, config: ActionConfig): void {
   if (!config.accountId || !config.browserToken) return
@@ -71,6 +87,7 @@ export function mountActionToolkits(ctx: Context, config: ActionConfig): void {
           const saved = cache?.results.get(key)
           if (saved) return saved
           const pending = (async (): Promise<JsonValue> => {
+            if (tool.name === 'browser_capture') return captureCloudflare(ctx, config, args, execution)
             const result = await executeAction(config, tool.name, args, execution.signal)
             if (result instanceof Uint8Array) {
               const store = execution.agent?.ctx.get('attachments') ?? ctx.get('attachments')

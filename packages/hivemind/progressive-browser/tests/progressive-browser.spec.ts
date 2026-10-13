@@ -76,6 +76,43 @@ afterAll(async () => {
 }, 20_000)
 
 describe('progressive browser MCP', () => {
+  it('captures through Cloudflare only without opening a Playwright client', async () => {
+    const isolated = new Context()
+    await isolated.plugin(SystemPrompt)
+    await isolated.plugin(ToolRuntime)
+    isolated.provide('attachments', {
+      saveImages: async () => [{ attachmentId: AttachmentId(`sha256:${'a'.repeat(64)}`), mediaType: 'image/png', bytes: 8, width: 1, height: 1 }],
+      saveFile: async () => ({ attachmentId: AttachmentId(`sha256:${'a'.repeat(64)}`), name: 'Website screenshot.png' }),
+    } as never)
+    const connectSpy = vi.spyOn(Client.prototype, 'connect')
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(new Uint8Array([137,80,78,71,13,10,26,10]), { status: 200, headers: { 'Content-Type': 'image/png' } }))
+    try {
+      apply(isolated, { cloudflareActionsOnly: true, actionAccountId: 'test-account', actionBrowserToken: 'test-token' })
+      expect(isolated.tools.get('hivemind_browser_discover')).toBeUndefined()
+      const receipt = await isolated.tools.execute({ signal: new AbortController().signal, callId: callId(), name: 'hivemind_browser_capture', arguments: { source_url: 'https://example.com' } })
+      expect(receipt.isError, JSON.stringify(receipt)).toBe(false)
+      expect(connectSpy).not.toHaveBeenCalled()
+      expect(fetchSpy).toHaveBeenCalledTimes(1)
+      expect(String(fetchSpy.mock.calls[0][0])).toContain('/browser-rendering/screenshot')
+      expect(receipt.content.some(block => block.type === 'image')).toBe(true)
+    } finally {
+      connectSpy.mockRestore()
+      fetchSpy.mockRestore()
+      await isolated.fiber.dispose()
+    }
+  })
+
+  it('fails clearly with missing Cloudflare credentials without a fallback', async () => {
+    const isolated = new Context()
+    await isolated.plugin(SystemPrompt)
+    await isolated.plugin(ToolRuntime)
+    try {
+      apply(isolated, { cloudflareActionsOnly: true })
+      const receipt = await isolated.tools.execute({ signal: new AbortController().signal, callId: callId(), name: 'hivemind_browser_capture', arguments: { source_url: 'https://example.com' } })
+      expect(receipt.isError).toBe(true)
+      expect(JSON.stringify(receipt.content)).toContain('Playwright fallback is disabled')
+    } finally { await isolated.fiber.dispose() }
+  })
   it('invalidates an expired client before retrying read-only tool discovery', async () => {
     const original = Client.prototype.request
     const observed = new Set<Client>()
