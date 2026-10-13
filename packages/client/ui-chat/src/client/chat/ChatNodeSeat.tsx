@@ -1,13 +1,12 @@
 import { memo, useCallback, useMemo } from 'react'
 import { JsonBlock } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ConversationLocationDataStore, ConversationTurnDataMap } from '@deepseek-ai/dsh-client-ui-conversation/client'
-import type { ChatNodeOwnerProps, ChatNodeViewProps, ChatViewSlotProps } from '../contract/slots.ts'
+import type { ChatNodeOwnerProps, ChatViewSlotProps } from '../contract/slots.ts'
 import type { ChatNode } from '../contract/chat-nodes.ts'
 import { hasAssistantReplyContent } from '../contract/assistant-content.ts'
 import { TURN_PROCESS_INDEPENDENT_KINDS } from '../contract/turn-process.ts'
 import { storedTurnProcessEntry } from '../stores.ts'
 import { useSearchableHidden } from './searchable-hidden.ts'
-import { AssistantNodeView } from './AssistantNodeView.tsx'
 import css from './ChatView.module.css'
 
 interface ChatNodeSeatProps extends ChatNodeOwnerProps {
@@ -166,10 +165,10 @@ export const ChatNodeSeat = memo(function ChatNodeSeat({
         entryKey: routedNode.kind,
         hookContext: turnData,
         // A hot bundle transition must never expose an assistant's serialized
-        // step as an "unknown" JSON surface. This native fallback retains
-        // streamed public text while filtering Brain reasoning.
+        // step as an "unknown" JSON surface. The registered native renderer
+        // owns its injected turn-data hook; until it is ready, omit this row.
         fallback: routedNode.kind === 'assistant-step' && quietWork
-          ? <AssistantNodeView {...(routedOwner as unknown as ChatNodeViewProps<'assistant-step'>)} />
+          ? null
           : <JsonBlock
             label={t('message.unknownSurface', { type: routedNode.kind })}
             payload={routedNode.data}
