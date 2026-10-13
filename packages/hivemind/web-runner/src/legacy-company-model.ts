@@ -4,6 +4,10 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { ModelSelection } from '@deepseek-ai/dsh-api-session-controller/types'
 import type {} from '@deepseek-ai/dsh-api-session-controller'
 import type {} from '@deepseek-ai/dsh-settings'
+import z from '@deepseek-ai/schemastery'
+
+const MIGRATION_NAMESPACE = 'hivemind-legacy-model-migration'
+const migrationSchema = z.object({ claimed: z.boolean().default(false), completed: z.boolean().default(false) })
 
 /** Preserve generic native policy and newer choices; migrate authorized historical platform Haiku pins.
  * @param ctx - authenticated company host using native Session and model services.
@@ -72,12 +76,26 @@ async function resetHistoricalGlobalDefault(settings: Pick<Context['settings'], 
   if (!base || base.provider !== 'cloudflare-workers-ai' || base.model !== '@cf/zai-org/glm-5.3-flash'
     || !user || user.model !== 'anthropic/claude-haiku-5.5'
     || !value || !isHistoricalPlatformHaiku(value)) return true
+  const marker = settings.describe().find(section => section.ns === MIGRATION_NAMESPACE)
+  const status = marker?.value
+  if (!marker || !status || typeof status !== 'object'
+    || !('claimed' in status) || !('completed' in status)) throw new Error('company_model_default_migration_marker_required')
+  if (status.completed === true) return true
+  if (status.claimed === true) throw new Error('company_model_default_migration_unresolved')
+  signal.throwIfAborted()
+  try { await settings.replace(MIGRATION_NAMESPACE, { claimed: true, completed: false }, marker.revision) }
+  catch (error) {
+    throw new Error('company_model_default_migration_claim_unresolved', { cause: error })
+  }
   signal.throwIfAborted()
   try { await settings.replace('agent-default-model', {}, namespace.revision) }
   catch (error) {
     if (error instanceof Error && error.name === 'SettingsConflictError') return false
     throw error
   }
+  const claimed = settings.describe().find(section => section.ns === MIGRATION_NAMESPACE)
+  if (!claimed) throw new Error('company_model_default_migration_marker_required')
+  await settings.replace(MIGRATION_NAMESPACE, { claimed: true, completed: true }, claimed.revision)
   signal.throwIfAborted()
   return true
 }
@@ -92,6 +110,8 @@ export function installLegacyCompanyModelMigration(ctx: Context): void {
   ctx.inject(['sessionController', 'llm', 'sessionProjections', 'sessions'], (scope) => {
     let settings: Context['settings'] | undefined
     scope.inject(['settings'], (settingsScope) => {
+      settingsScope.settings.installSection(settingsScope, MIGRATION_NAMESPACE, migrationSchema,
+        { claimed: false, completed: false }, { setSource: () => {}, onChange: () => {} })
       settings = settingsScope.settings
       settingsScope.effect(() => () => { settings = undefined })
     })

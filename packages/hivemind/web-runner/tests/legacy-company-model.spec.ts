@@ -69,7 +69,9 @@ it('leaves rejected native admission unchanged and migrates only an admitted ste
   const scope = Object.assign(f.ctx, {
     effect: (effect: () => unknown) => effect(),
     on: (_name: string, callback: typeof hook) => { hook = callback; return () => {} },
-    inject: (_services: unknown, callback: (value: Context) => void) => callback(scope as unknown as Context),
+    inject: (services: string[], callback: (value: Context) => void) => {
+      if (!services.includes('settings')) callback(scope as unknown as Context)
+    },
   })
   installLegacyCompanyModelMigration(scope as unknown as Context)
   const input = { agent: f.agent, signal: new AbortController().signal }
@@ -171,13 +173,20 @@ it('does not report migration when an unchanged historical global setting resolv
 function defaultSettings(f: ReturnType<typeof fixture>) {
   const base={ provider:'cloudflare-workers-ai',model:'@cf/zai-org/glm-5.3-flash' }
   const descriptor={ ns:'agent-default-model',base,user:haiku,value:haiku,revision:7 }
-  const replace=vi.fn(async (_ns: string, _value: object, revision?: number) => {
-    expect(revision).toBe(7)
-    descriptor.value=base
-    f.resolve.mockResolvedValue(base)
+  const marker={ ns:'hivemind-legacy-model-migration',value:{ claimed:false,completed:false },revision:0 }
+  const replace=vi.fn(async (ns: string, value: object, revision?: number) => {
+    if(ns===marker.ns){
+      if(revision!==marker.revision) throw Object.assign(new Error('marker changed'),{ name:'SettingsConflictError' })
+      marker.value=value as typeof marker.value;marker.revision++
+    }else{
+      expect(revision).toBe(7)
+      descriptor.value=base
+      f.resolve.mockResolvedValue(base)
+    }
   })
-  const settings={ describe:()=>[descriptor],replace } as unknown as NonNullable<Parameters<typeof migrateLegacyCompanyModel>[3]>
-  return { settings,replace,descriptor,base }
+  const settings={ describe:()=>[descriptor,marker],replace } as unknown as NonNullable<Parameters<typeof migrateLegacyCompanyModel>[3]>
+  return { settings,replace,descriptor,base,marker }
+
 }
 it('resets the historical Haiku global override with native revision CAS before room selection', async () => {
   const f=fixture();f.session.append('model/selection',haiku)
@@ -189,7 +198,11 @@ it('resets the historical Haiku global override with native revision CAS before 
 it('preserves a newer global override after a stale settings revision conflict', async () => {
   const f=fixture();f.session.append('model/selection',haiku)
   const g=defaultSettings(f)
-  g.replace.mockImplementation(async()=>{throw Object.assign(new Error('new choice'),{ name:'SettingsConflictError' })})
+  const original=g.replace.getMockImplementation()
+  g.replace.mockImplementation(async(ns,value,revision)=>{
+    if(ns==='agent-default-model') throw Object.assign(new Error('new choice'),{ name:'SettingsConflictError' })
+    return original?.(ns,value,revision)
+  })
   expect(await migrateLegacyCompanyModel(f.ctx,f.agent,new AbortController().signal,g.settings)).toBe(false)
   expect(f.selected).not.toHaveBeenCalled();expect(f.flush).not.toHaveBeenCalled()
 })
@@ -205,4 +218,29 @@ it('works without a settings service using the current validated global configur
   const f=fixture();f.session.append('model/selection',haiku)
   expect(await migrateLegacyCompanyModel(f.ctx,f.agent,new AbortController().signal)).toBe(true)
   expect(f.selected).toHaveBeenCalledOnce()
+})
+
+it('a restored completed marker preserves a later intentional same-Haiku global selection', async()=>{
+  const f=fixture();f.session.append('model/selection',haiku)
+  const g=defaultSettings(f)
+  await migrateLegacyCompanyModel(f.ctx,f.agent,new AbortController().signal,g.settings)
+  g.descriptor.value=haiku;f.resolve.mockResolvedValue(haiku)
+  const restarted=fixture();restarted.session.append('model/selection',haiku)
+  restarted.resolve.mockResolvedValue(haiku)
+  g.replace.mockClear()
+  expect(await migrateLegacyCompanyModel(restarted.ctx,restarted.agent,new AbortController().signal,g.settings)).toBe(false)
+  expect(g.replace).not.toHaveBeenCalled();expect(restarted.selected).not.toHaveBeenCalled()
+})
+it('a competing marker claim cannot reset the old default or claim success', async()=>{
+  const f=fixture();f.session.append('model/selection',haiku)
+  const g=defaultSettings(f)
+  g.replace.mockImplementation(async()=>{throw Object.assign(new Error('marker changed'),{ name:'SettingsConflictError' })})
+  await expect(migrateLegacyCompanyModel(f.ctx,f.agent,new AbortController().signal,g.settings)).rejects.toThrow('claim_unresolved')
+  expect(g.replace).toHaveBeenCalledOnce();expect(f.selected).not.toHaveBeenCalled()
+})
+it('a restart after a claimed but unfinished reset exposes repair instead of retrying', async()=>{
+  const f=fixture();f.session.append('model/selection',haiku)
+  const g=defaultSettings(f);g.marker.value={ claimed:true,completed:false }
+  await expect(migrateLegacyCompanyModel(f.ctx,f.agent,new AbortController().signal,g.settings)).rejects.toThrow('migration_unresolved')
+  expect(g.replace).not.toHaveBeenCalled();expect(f.selected).not.toHaveBeenCalled()
 })
