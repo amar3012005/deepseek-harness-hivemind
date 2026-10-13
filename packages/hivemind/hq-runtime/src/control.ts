@@ -1,11 +1,11 @@
 /** Host-side human controls; no model tool can enable HQ autonomy. */
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
-import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { createBrowserTimeZoneConfirmation } from '@deepseek-ai/dsh-time-context'
 import type {} from '@deepseek-ai/dsh-agent-presets'
 import type {} from '@deepseek-ai/dsh-experimental-agent-team'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
+import { installFullAccessPolicySnapshot } from './full-access-policy.ts'
 import { fullAccessState, setFullAccess, delegatedFullAccess, validateFullAccessAdministrator } from './full-access.ts'
 import { installServiceRecovery } from './service-recovery.ts'
 import { installCrmDiscoveryGuard } from './crm-discovery-guard.ts'
@@ -90,20 +90,7 @@ export class HqControl extends TypertRemoteService {
     installEmployeeDelivery(ctx)
     installDelegatedBlockerReporting(ctx)
     installEmployeeSnapshots(ctx)
-    ctx.effect(() => ctx.on('agent/pre-step', async ({ agent, signal }, next) => {
-      const decision = await next()
-      if (decision.kind === 'reject' || !await this.fullAccessAllowed(agent, signal)) return decision
-      return { ...decision, messages: [...decision.messages, createUserMessage({
-        source: { kind: 'plugin', plugin: 'hivemind-runtime-full-access' },
-        content: [{ type: 'text', text:
-          'The administrator explicitly selected native Full access for Runtime. Within existing organization credentials and provider API scopes, ' +
-          'plan and delegate bounded useful work without asking again for routine permission, including applicable app/project and company-memory save decisions. ' +
-          'This covers only existing native exemptions for connected-app writes, project and applicable app saves, company-memory saves and listed research tools. ' +
-          'It is not blanket approval: residual native asks under approval=never are rejected, and downstream deny checks still apply. ' +
-          'Preserve confirmed user direction, attribution and all tenant/credential/deny guards. Missing connections and essential facts are real blockers: ' +
-          'report them through Runtime and ask only what changes the decision. Direct-human employee work keeps its own permissions.' }],
-      })] }
-    }))
+    installFullAccessPolicySnapshot(ctx, (agent, signal) => this.fullAccessAllowed(agent, signal))
     installServiceRecovery(ctx)
     ctx.effect(() => ctx.on('agent/session-start', ({ agent }) => {
       if (!isHq(agent)) return
