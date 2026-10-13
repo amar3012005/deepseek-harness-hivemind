@@ -167,3 +167,42 @@ it('does not report migration when an unchanged historical global setting resolv
   expect(f.selected).not.toHaveBeenCalled()
   expect(f.flush).not.toHaveBeenCalled()
 })
+
+function defaultSettings(f: ReturnType<typeof fixture>) {
+  const base={ provider:'cloudflare-workers-ai',model:'@cf/zai-org/glm-5.3-flash' }
+  const descriptor={ ns:'agent-default-model',base,user:haiku,value:haiku,revision:7 }
+  const replace=vi.fn(async (_ns: string, _value: object, revision?: number) => {
+    expect(revision).toBe(7)
+    descriptor.value=base
+    f.resolve.mockResolvedValue(base)
+  })
+  const settings={ describe:()=>[descriptor],replace } as unknown as NonNullable<Parameters<typeof migrateLegacyCompanyModel>[3]>
+  return { settings,replace,descriptor,base }
+}
+it('resets the historical Haiku global override with native revision CAS before room selection', async () => {
+  const f=fixture();f.session.append('model/selection',haiku)
+  const g=defaultSettings(f)
+  expect(await migrateLegacyCompanyModel(f.ctx,f.agent,new AbortController().signal,g.settings)).toBe(true)
+  expect(g.replace).toHaveBeenCalledWith('agent-default-model',{},7)
+  expect(f.selected).toHaveBeenCalledWith(f.agent,g.base)
+})
+it('preserves a newer global override after a stale settings revision conflict', async () => {
+  const f=fixture();f.session.append('model/selection',haiku)
+  const g=defaultSettings(f)
+  g.replace.mockImplementation(async()=>{throw Object.assign(new Error('new choice'),{ name:'SettingsConflictError' })})
+  expect(await migrateLegacyCompanyModel(f.ctx,f.agent,new AbortController().signal,g.settings)).toBe(false)
+  expect(f.selected).not.toHaveBeenCalled();expect(f.flush).not.toHaveBeenCalled()
+})
+it('never resets a newer global choice or an unverified composition base', async () => {
+  for(const change of ['value','base'] as const){
+    const f=fixture();f.session.append('model/selection',haiku)
+    const g=defaultSettings(f);g.descriptor[change]={ provider:'personal',model:'newer' }
+    await migrateLegacyCompanyModel(f.ctx,f.agent,new AbortController().signal,g.settings)
+    expect(g.replace).not.toHaveBeenCalled()
+  }
+})
+it('works without a settings service using the current validated global configuration', async()=>{
+  const f=fixture();f.session.append('model/selection',haiku)
+  expect(await migrateLegacyCompanyModel(f.ctx,f.agent,new AbortController().signal)).toBe(true)
+  expect(f.selected).toHaveBeenCalledOnce()
+})
