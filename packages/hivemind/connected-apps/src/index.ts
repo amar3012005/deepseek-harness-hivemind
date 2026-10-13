@@ -995,16 +995,27 @@ function latestUserRequest(messages: readonly unknown[] | undefined): string | u
 /**
  * Durable workflow state is advisory across turns. A new human request must
  * never inherit a provider cursor or execution contract merely because an old
- * read exposed pagination. Automatic auth-return turns have no human message
- * and still resume; human-authored turns require an explicit continuation.
+ * read exposed pagination. Empty automatic turns are not workflow resumes.
+ * A matching authenticated question answer or explicit human continuation is required.
  */
-function shouldProjectWorkflow(messages: readonly unknown[] | undefined, toolkits: readonly string[] = []): boolean {
+function shouldProjectWorkflow(
+  messages: readonly unknown[] | undefined, toolkits: readonly string[] = [], answerCalls: ReadonlySet<string> = new Set(),
+): boolean {
   if (messages?.some(message => record(message) && record(message['source'])
     && message['source']['kind'] === 'hivemind-runtime-event')) return false
+  const answered = messages?.some((message) => {
+    if (!record(message) || message['role'] !== 'user' || !record(message['source'])) return false
+    const source = message['source'], actor = source['authenticatedActor']
+    if (!record(actor) || typeof actor['userId'] !== 'string' || typeof actor['orgId'] !== 'string') return false
+    const callId = source['kind'] === 'user-question-reply' && source['outcome'] === 'answered' ? source['callId']
+      : source['kind'] === 'user' && source['questionAnswerSubmission'] === true ? source['questionCallId'] : undefined
+    return typeof callId === 'string' && answerCalls.has(callId)
+  })
+  if (answered) return true
   const request = latestUserRequest(messages)
-  return request === undefined || WORKFLOW_CONTINUATION_REQUEST.test(request)
+  return request !== undefined && (WORKFLOW_CONTINUATION_REQUEST.test(request)
     || (CONNECTION_RETURN_REQUEST.test(request) && toolkits.some(toolkit =>
-      request.toLocaleLowerCase().includes(toolkit.toLocaleLowerCase())))
+      request.toLocaleLowerCase().includes(toolkit.toLocaleLowerCase()))))
 }
 
 function discoveryKey(value: unknown): string {
@@ -2519,7 +2530,10 @@ export function apply(ctx: Context, config: Config = {}): void {
         ...stringArray(payload['toolkits']),
         ...(typeof payload['toolkit'] === 'string' ? [payload['toolkit']] : []),
       ])
-      state.projectWorkflow = shouldProjectWorkflow([...(messages ?? []), ...decision.messages], toolkits)
+      const answerCalls = new Set(agent.session.snapshotEvents().flatMap(event => event.type === 'tool/call'
+        && (event.data.name === BRIDGE_TOOL || event.data.name.startsWith(COMPOSIO_TOOL_PREFIX)) ? [String(event.data.callId)] : []))
+      if (typeof payload?.['request_call_id'] === 'string') answerCalls.add(payload['request_call_id'])
+      state.projectWorkflow = shouldProjectWorkflow([...(messages ?? []), ...decision.messages], toolkits, answerCalls)
       state.admissionResolved = true
     }
     const projectWorkflow = state.projectWorkflow

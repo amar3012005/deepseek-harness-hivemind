@@ -557,7 +557,7 @@ describe('progressive Composio bridge', () => {
     const app = harness()
     const next = vi.fn(async () => ({ kind: 'enter', messages: [] }))
     const decision = await app.listeners.get('agent/pre-step')?.(
-      { agent, turn: 2, messages: [] } as never, next as never,
+      { agent, turn: 2, messages: [{ role: 'user', source: { kind: 'user' }, content: [{ type: 'text', text: 'Continue' }] }] } as never, next as never,
     ) as { messages: unknown[] }
     const projected = JSON.stringify(decision.messages)
 
@@ -570,7 +570,7 @@ describe('progressive Composio bridge', () => {
 
     visible.push(...decision.messages)
     const repeated = await app.listeners.get('agent/pre-step')?.(
-      { agent, turn: 2, step: 2, messages: [] } as never, next as never,
+      { agent, turn: 2, step: 2, messages: [{ role: 'user', source: { kind: 'user' }, content: [{ type: 'text', text: 'Continue' }] }] } as never, next as never,
     ) as { messages: unknown[] }
     expect(repeated.messages).toEqual([])
   })
@@ -583,7 +583,7 @@ describe('progressive Composio bridge', () => {
     const agent = { session }
     const app = harness()
     const next = vi.fn(async () => ({ kind: 'enter', messages: [] }))
-    const first = await app.listeners.get('agent/pre-step')?.({ agent, turn: 1, messages: [] } as never, next as never) as { kind: 'enter'; messages: unknown[] }
+    const first = await app.listeners.get('agent/pre-step')?.({ agent, turn: 1, messages: [{ role: 'user', source: { kind: 'user' }, content: [{ type: 'text', text: 'Continue' }] }] } as never, next as never) as { kind: 'enter'; messages: unknown[] }
     expect(first.messages).toHaveLength(1)
     let bound!: (input: unknown, next: () => Promise<unknown>) => Promise<unknown>
     contextPlugin({ historyTurns: 3, historyMaxChars: 1000, capabilityToolName: 'hivemind_capabilities' }).apply({
@@ -594,12 +594,41 @@ describe('progressive Composio bridge', () => {
     await bound({ agent, turn: 1, signal: new AbortController().signal }, async () => first)
     expect(JSON.stringify(session.deriveMessages())).toContain('Receipt excerpt; original sequence')
     expect(session.deriveMessages().flatMap(message => message.content.flatMap(block => block.type === 'text' ? [block.text] : [])).join('').length).toBeLessThanOrEqual(1000)
-    const repeated = await app.listeners.get('agent/pre-step')?.({ agent, turn: 1, step: 2, messages: [] } as never, next as never) as { messages: unknown[] }
+    const repeated = await app.listeners.get('agent/pre-step')?.({ agent, turn: 1, step: 2, messages: [{ role: 'user', source: { kind: 'user' }, content: [{ type: 'text', text: 'Continue' }] }] } as never, next as never) as { messages: unknown[] }
     expect(repeated.messages).toEqual([])
     const restored = Session.create(SessionId('native-bounded-connected-cold'), session.snapshotEvents())
     const cold = harness()
-    const recovered = await cold.listeners.get('agent/pre-step')?.({ agent: { session: restored }, turn: 2, messages: [] } as never, next as never) as { messages: unknown[] }
+    const recovered = await cold.listeners.get('agent/pre-step')?.({ agent: { session: restored }, turn: 2, messages: [{ role: 'user', source: { kind: 'user' }, content: [{ type: 'text', text: 'Continue' }] }] } as never, next as never) as { messages: unknown[] }
     expect(recovered.messages).toEqual([])
+  })
+
+  it.each(['agent-message', 'schedule', 'plugin', undefined])('does not restore stale connected workflows for ordinary automatic %s turns', async (kind) => {
+    const events = [{ type: 'hivemind/connected-receipt', data: { version: 1, tool: 'connection_authorization',
+      workflowSessionId: 'stale-workflow', receipt: { status: 'connection_required', session_id: 'stale-workflow',
+        request_call_id: 'saved-connected-call', toolkits: ['vercel'] } } }]
+    const agent = { session: { header: { id: 'automatic-other-work' }, snapshotEvents: () => events, append: vi.fn() } }
+    const app = harness()
+    const messages = kind === undefined ? [] : [{ role: 'user', source: { kind }, content: [{ type: 'text', text: 'Review the completed company task.' }] }]
+    for (const step of [1, 2]) {
+      const result = await app.listeners.get('agent/pre-step')?.({ agent, turn: 2, step, messages: step === 1 ? messages : [] } as never,
+        (async () => ({ kind: 'enter', messages: [] })) as never) as { messages: unknown[] }
+      expect(result.messages).toEqual([])
+    }
+  })
+
+  it.each(['native', 'submission', 'foreign', 'unauthenticated'])('restores only a matching authenticated connected answer: %s', async (variant) => {
+    const events = [{ type: 'hivemind/connected-receipt', data: { version: 1, tool: 'connection_authorization',
+      workflowSessionId: 'answer-workflow', receipt: { status: 'connection_required', session_id: 'answer-workflow',
+        request_call_id: 'saved-connected-call', toolkits: ['vercel'] } } }]
+    const agent = { session: { header: { id: 'answer-connected-work' }, snapshotEvents: () => events, append: vi.fn() } }
+    const actor = { userId: 'actual-user', orgId: 'actual-org' }
+    const source = variant === 'submission' ? { kind: 'user', questionAnswerSubmission: true, questionCallId: 'saved-connected-call', authenticatedActor: actor }
+      : { kind: 'user-question-reply', outcome: 'answered', callId: variant === 'foreign' ? 'unrelated-call' : 'saved-connected-call',
+        ...(variant === 'unauthenticated' ? {} : { authenticatedActor: actor }) }
+    const app = harness()
+    const result = await app.listeners.get('agent/pre-step')?.({ agent, turn: 2, messages: [] } as never,
+      (async () => ({ kind: 'enter', messages: [{ role: 'user', source, content: [{ type: 'text', text: 'Yes' }] }] })) as never) as { messages: unknown[] }
+    expect(JSON.stringify(result.messages).includes('answer-workflow')).toBe(variant === 'native' || variant === 'submission')
   })
 
   it('uses the actual admitted new request after downstream middleware, not incidental continuation wording', async () => {
@@ -632,7 +661,7 @@ describe('progressive Composio bridge', () => {
     const app = harness()
     const next = vi.fn(async () => ({ kind: 'enter', messages: [] }))
     const first = await app.listeners.get('agent/pre-step')?.(
-      { agent, turn: 1, step: 1, messages: [] } as never, next as never,
+      { agent, turn: 1, step: 1, messages: [{ role: 'user', source: { kind: 'user' }, content: [{ type: 'text', text: 'Continue' }] }] } as never, next as never,
     ) as { messages: unknown[] }
 
     expect(first.messages).toHaveLength(1)
@@ -640,7 +669,7 @@ describe('progressive Composio bridge', () => {
     visible.push(...first.messages)
 
     const nextStep = await app.listeners.get('agent/pre-step')?.(
-      { agent, turn: 1, step: 2, messages: [] } as never, next as never,
+      { agent, turn: 1, step: 2, messages: [{ role: 'user', source: { kind: 'user' }, content: [{ type: 'text', text: 'Continue' }] }] } as never, next as never,
     ) as { messages: unknown[] }
     expect(nextStep.messages).toEqual([])
 
@@ -650,7 +679,7 @@ describe('progressive Composio bridge', () => {
       },
     } })
     const updated = await app.listeners.get('agent/pre-step')?.(
-      { agent, turn: 2, step: 1, messages: [] } as never, next as never,
+      { agent, turn: 2, step: 1, messages: [{ role: 'user', source: { kind: 'user' }, content: [{ type: 'text', text: 'Continue' }] }] } as never, next as never,
     ) as { messages: unknown[] }
     expect(JSON.stringify(updated.messages)).toContain('receipt-visible-2')
     expect(updated.messages).toHaveLength(1)
@@ -676,7 +705,7 @@ describe('progressive Composio bridge', () => {
     const app = harness()
     const next = vi.fn(async () => ({ kind: 'enter', messages: [] }))
     const decision = await app.listeners.get('agent/pre-step')?.(
-      { agent, turn: 2, messages: [] } as never, next as never,
+      { agent, turn: 2, messages: [{ role: 'user', source: { kind: 'user' }, content: [{ type: 'text', text: 'Continue' }] }] } as never, next as never,
     ) as { messages: unknown[] }
     const projected = JSON.stringify(decision.messages)
     expect(projected).toContain('continue_page')
