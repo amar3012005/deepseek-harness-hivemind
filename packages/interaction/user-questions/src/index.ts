@@ -7,10 +7,17 @@
  * @module @deepseek-ai/dsh-user-questions
  */
 
-import { Context, Service } from '@deepseek-ai/cordis'
+import { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-agent'
-import { HarnessError } from '@deepseek-ai/dsh-llm'
+import { createUserMessage, HarnessError, type MessageId, type ToolCallId, type UserMessage } from '@deepseek-ai/dsh-llm'
+import type { Session } from '@deepseek-ai/dsh-session'
 import { scopeTarget } from '@deepseek-ai/dsh-scope'
+import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
+import type { Agent } from '@deepseek-ai/dsh-agent'
+import type {} from '@deepseek-ai/dsh-session-projection'
+import z from '@deepseek-ai/schemastery'
+import { userQuestionProjectionDefinition, questionsOf } from './projection.ts'
+import { TimedQuestionWait } from './timed-wait.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -19,16 +26,21 @@ declare module '@deepseek-ai/cordis' {
 }
 
 import type {
-  AskUserQuestionAnswer, AskUserQuestionRequestEvent,
+  AskUserQuestionAnswer, AskUserQuestionRequestEvent, PendingUserQuestion,
 } from './types.ts'
 
 export type {
   AskUserQuestionAnswer, AskUserQuestionAnswerItem, AskUserQuestionIntent, AskUserQuestionItem,
-  AskUserQuestionOption,
+  AskUserQuestionOption, PendingUserQuestion, SettledUserQuestion, UserQuestionProjectionView,
+  UserQuestionState,
 } from './types.ts'
+export { isTimedAskUserQuestionSchema, TIMED_WAIT_PARAMETER } from './projection.ts'
 
 /** Request for a human answer. */
 export interface AskUserQuestionRequest extends AskUserQuestionRequestEvent {}
+
+/** Timed ask result returned when the foreground answer window closes. */
+export type TimedUserQuestionResult = AskUserQuestionAnswer | { pending: true; callId: ToolCallId }
 
 /** Stable error taxonomy for user-questions failures. */
 export class UserQuestionError extends HarnessError {
@@ -61,10 +73,250 @@ function restoreUserQuestionError(reason: unknown): unknown {
   return reason
 }
 
+type QueuedReply = { messageId: MessageId; claimedTurn?: number }
+
 /** `ctx.userQuestions`: validation plus the scoped answerer waterfall. */
-export class UserQuestionService extends Service {
+export class UserQuestionService extends TypertRemoteService {
+  static Config = z.object({})
+  private readonly waits = new Map<Agent, Map<ToolCallId, TimedQuestionWait>>()
+  private readonly queuedReplies = new WeakMap<Session, Map<ToolCallId, QueuedReply>>()
+
   constructor(ctx: Context) {
     super(ctx, 'userQuestions')
+    ctx.inject(['sessionProjections'], (projectionCtx) => {
+      projectionCtx.sessionProjections.register(userQuestionProjectionDefinition)
+    })
+    ctx.effect(() => () => {
+      for (const calls of this.waits.values()) {
+        for (const wait of calls.values()) wait.close(abortedQuestion())
+      }
+      this.waits.clear()
+    }, 'userQuestions: foreground waits')
+    ctx.on('agent/inbox/claimed', ({ agent, message, turn }) => {
+      const source = message.source
+      if (source.kind !== 'user-question-reply') return
+      const calls = this.queuedReplies.get(agent.session) ?? new Map<ToolCallId, QueuedReply>()
+      const reply = calls.get(source.callId)
+      if (reply === undefined) {
+        calls.set(source.callId, { messageId: message.id, claimedTurn: turn })
+        this.queuedReplies.set(agent.session, calls)
+      } else if (reply.messageId === message.id) {
+        reply.claimedTurn = turn
+      }
+    }, { global: true })
+    ctx.on('agent/inbox/discarded', ({ agent, message }) => {
+      const source = message.source
+      if (source.kind === 'user-question-reply') this.releaseReply(agent.session, source.callId, message.id)
+    }, { global: true })
+    ctx.on('session/event', (session, event) => {
+      if (event.type === 'user/message') {
+        const source = event.data.source
+        if (source.kind === 'user-question-reply') this.releaseReply(session, source.callId, event.data.id)
+      } else if (event.type === 'turn/end') {
+        const calls = this.queuedReplies.get(session)
+        if (calls === undefined) return
+        for (const [callId, reply] of calls) {
+          if (reply.claimedTurn === event.data.turn) calls.delete(callId)
+        }
+      }
+    }, { global: true })
+  }
+
+  private releaseReply(session: Session, callId: ToolCallId, messageId: MessageId): void {
+    const calls = this.queuedReplies.get(session)
+    if (calls?.get(callId)?.messageId !== messageId) return
+    calls.delete(callId)
+  }
+
+  private assertLiveRoot(agent: Agent): void {
+    const agents = this.ctx.get('agents')
+    if (agents === undefined || agents.get(agent.id) !== agent) {
+      throw new UserQuestionError(
+        'human interaction requires the exact live calling agent when an agent is supplied',
+        'CALLER_NOT_LIVE')
+    }
+    if (!agents.roots().includes(agent)) {
+      throw new UserQuestionError(
+        'human interaction is unavailable while the calling agent is owned by another live agent; '
+        + "include the unresolved question or decision in the child agent's final result",
+        'DELEGATED_CALLER')
+    }
+  }
+
+  private continued(agent: Agent): readonly PendingUserQuestion[] {
+    const state = this.ctx.get('sessionProjections')?.stateOf(agent.session, 'userQuestions')
+    return (state?.questions.active ?? []).filter(question => question.state === 'continued')
+  }
+
+  /**
+   * Answer a continued question. The reply is steered into the agent as a
+   * user message whose source names the call; that message is also the
+   * record that closes the question in the projection.
+   * @param agent - Live root agent for the owning Session.
+   * @param callId - Continued question identity.
+   * @param answer - Complete structured answer batch, one item per question of the call.
+   * @returns Whether the question is still continued; an accepted reply stays
+   *   queued until the agent admits its user message.
+   * @throws {UserQuestionError} `BAD_ANSWER` when the batch does not name each
+   *   question of the call exactly once, or `REPLY_QUEUED` when a reply is
+   *   already waiting for admission.
+   */
+  @Remote
+  async answer(agent: Agent, callId: ToolCallId, answer: AskUserQuestionAnswer): Promise<boolean> {
+    this.assertLiveRoot(agent)
+    const question = this.continued(agent).find(item => item.callId === callId)
+    if (question === undefined) return false
+    const queued = this.queuedReplies.get(agent.session)
+    const matches = (message: UserMessage): boolean =>
+      message.source.kind === 'user-question-reply' && message.source.callId === callId
+    if (queued?.has(callId) || agent.inbox.nextTurn.some(matches) || agent.inbox.nextStep.some(matches)) {
+      throw new UserQuestionError('a reply is already queued for this question', 'REPLY_QUEUED')
+    }
+    // The gateway validated the batch's shape from the type; the model-facing
+    // contract also promises one item per question, which only this owner of
+    // the asked questions can check before the batch reaches the model.
+    const answered = new Set(answer.answers.map(item => item.id))
+    if (answered.size !== answer.answers.length
+      || question.questions.length !== answer.answers.length
+      || !question.questions.every(item => answered.has(item.id))) {
+      throw new UserQuestionError(
+        `the answer batch for ${callId} must name each of its ${String(question.questions.length)} questions exactly once`,
+        'BAD_ANSWER')
+    }
+    const provenance = await this.ctx.bail('user-questions/late-answer-admission', agent, callId, question.questions, answer) ?? {}
+    // Admission can await authoritative access; recheck once-only state before queueing.
+    if (!this.continued(agent).some(item => item.callId === callId)) return false
+    if (this.queuedReplies.get(agent.session)?.has(callId) || agent.inbox.nextTurn.some(matches) || agent.inbox.nextStep.some(matches)) {
+      throw new UserQuestionError('a reply is already queued for this question', 'REPLY_QUEUED')
+    }
+    const message = createUserMessage({
+      source: { ...provenance, kind: 'user-question-reply', callId, outcome: 'answered' },
+      content: [{
+        type: 'text',
+        text: JSON.stringify({
+          kind: 'answer_to_pending_question', tool: 'ask_user_question', callId,
+          questions: question.questions, answers: answer.answers,
+        }),
+      }],
+    })
+    const calls = queued ?? new Map<ToolCallId, QueuedReply>()
+    calls.set(callId, { messageId: message.id })
+    this.queuedReplies.set(agent.session, calls)
+    try {
+      agent.steer(message)
+      const sessions = this.ctx.get('sessions')
+      if (sessions !== undefined && !await sessions.flush(agent.session)) throw new UserQuestionError('late answer was not persisted', 'REPLY_NOT_PERSISTED')
+      this.ctx.emit('user-questions/late-answer-admitted', agent, callId, message.id, provenance)
+    } catch (error: unknown) {
+      this.releaseReply(agent.session, callId, message.id)
+      throw error
+    }
+    return true
+  }
+
+  /**
+   * Let one answer UI hold a live timed wait. Closing the stream releases its claim.
+   * @param agent - Live root agent owning the question.
+   * @param callId - Foreground tool call to attach to.
+   * @param signal - Remote stream cancellation, including Client disconnect.
+   * @returns One Host-computed remaining duration, or no frames once the wait ended.
+   */
+  @Remote({ mode: 'stream' })
+  async *attachWait(agent: Agent, callId: ToolCallId, signal: AbortSignal): AsyncIterable<{ remainingMs: number }> {
+    this.assertLiveRoot(agent)
+    const wait = this.waits.get(agent)?.get(callId)
+    if (wait !== undefined) yield* wait.attach(signal)
+  }
+
+  /** Restore an unresolved legacy pure question after its old driver is idle; never creates an answer or tool result. */
+  @Remote
+  async parkLegacy(agent: Agent, callId: ToolCallId): Promise<boolean> {
+    this.assertLiveRoot(agent)
+    if (agent.status !== 'idle') throw new UserQuestionError('legacy question migration requires an idle driver', 'CALLER_BUSY')
+    return agent.runMaintenance(async (signal) => {
+      signal.throwIfAborted()
+      const events = agent.session.snapshotEvents()
+      const call = events.findLast(event => event.type === 'tool/call' && event.data.callId === callId)
+      if (call?.type !== 'tool/call' || call.data.name !== 'ask_user_question') {
+        throw new UserQuestionError('migration requires an exact saved ask_user_question call', 'BAD_CALL')
+      }
+      const questions = questionsOf(call.data.arguments)
+      if (questions === null) throw new UserQuestionError('saved questions are unreadable', 'BAD_CALL')
+      const result = events.findLast(event => event.type === 'tool/result' && event.data.message.content[0].toolCallId === callId)
+      // A successful answered result, or admitted/queued human reply, wins every migration race.
+      if (result?.type === 'tool/result' && result.data.error === undefined && result.data.message.content[0].isError !== true) return false
+      if (events.some((event) => {
+        if (event.type !== 'user/message') return false
+        const source: unknown = event.data.source
+        return isRecord(source) && ((source.kind === 'user-question-reply' && source.callId === callId)
+          || (source.kind === 'user' && source.questionCallId === callId && source.questionAnswer === true))
+      })) return false
+      if ([...agent.inbox.nextTurn, ...agent.inbox.nextStep].some(message => message.source.kind === 'user-question-reply' && message.source.callId === callId)) return false
+      await this.ctx.parallel('user-questions/park-admission', agent, callId, questions)
+      signal.throwIfAborted()
+      if (events.some(event => event.type === 'user-question/parked' && event.data.callId === callId)) return true
+      agent.session.append('user-question/parked', { callId, questions })
+      const sessions = this.ctx.get('sessions')
+      if (sessions !== undefined && !await sessions.flush(agent.session)) throw new UserQuestionError('migration checkpoint was not persisted', 'PARK_NOT_PERSISTED')
+      return true
+    })
+  }
+
+  /** Park a human question at the native tool boundary; the recorded pending result is its durable checkpoint. */
+  park(request: AskUserQuestionRequest & { agent: Agent }, callId: ToolCallId): { pending: true; callId: ToolCallId } {
+    request.signal?.throwIfAborted()
+    this.assertLiveRoot(request.agent)
+    if (request.questions.length === 0) throw new UserQuestionError('questions must not be empty', 'EMPTY_QUESTIONS')
+    return { pending: true, callId }
+  }
+
+  /**
+   * Foreground wait whose first settlement the Client decides: the Client
+   * rejects with `ASK_TIMED_OUT` when its countdown ends, and this method maps
+   * that code to the pending result.
+   * @param request - Questions, live owner agent, and abort signal.
+   * @param callId - Tool call identity the Client card is keyed by.
+   * @param timeoutMs - Positive foreground wait in milliseconds.
+   * @returns The answer when it arrives inside the window, otherwise a pending
+   *   result, also when no connected Client claimed the request by the deadline.
+   * @throws {UserQuestionError} `BAD_TIMEOUT` for a non-integer, non-positive,
+   *   or oversized wait.
+   */
+  async askTimed(
+    request: AskUserQuestionRequest & { agent: Agent },
+    callId: ToolCallId,
+    timeoutMs: number,
+  ): Promise<TimedUserQuestionResult> {
+    if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 2_147_483_647) {
+      throw new UserQuestionError('timeout must fit a positive platform timer', 'BAD_TIMEOUT')
+    }
+    this.assertLiveRoot(request.agent)
+    const calls = this.waits.get(request.agent) ?? new Map<ToolCallId, TimedQuestionWait>()
+    if (calls.has(callId)) throw new UserQuestionError('the question call already has a foreground wait', 'DUPLICATE_WAIT')
+    const wait = new TimedQuestionWait(Date.now() + timeoutMs, request.signal,
+      new UserQuestionError('ask_user_question timed out before the user answered', 'ASK_TIMED_OUT'))
+    calls.set(callId, wait)
+    this.waits.set(request.agent, calls)
+    try {
+      try {
+        return await this.ask({ ...request, signal: wait.signal, wait: { callId, timed: true } })
+      } catch (error) {
+        if (wait.signal.aborted) throw wait.signal.reason
+        if (error instanceof UserQuestionError && error.code === 'NO_PROVIDER') {
+          await wait.done
+          throw wait.signal.reason
+        }
+        throw error
+      }
+    } catch (error) {
+      if (error instanceof UserQuestionError && error.code === 'ASK_TIMED_OUT') return { pending: true, callId }
+      if (wait.signal.aborted) throw abortedQuestion(error)
+      throw error
+    } finally {
+      wait.close(abortedQuestion())
+      calls.delete(callId)
+      if (calls.size === 0) this.waits.delete(request.agent)
+    }
   }
 
   /**
@@ -91,20 +343,7 @@ export class UserQuestionService extends Service {
       throw new UserQuestionError('ask_user_question requires at least one question', 'EMPTY_QUESTIONS')
     }
     const agent = request.agent
-    if (agent !== undefined) {
-      const agents = this.ctx.get('agents')
-      if (agents === undefined || agents.get(agent.id) !== agent) {
-        throw new UserQuestionError(
-          'human interaction requires the exact live calling agent when an agent is supplied',
-          'CALLER_NOT_LIVE')
-      }
-      if (!agents.roots().includes(agent)) {
-        throw new UserQuestionError(
-          'human interaction is unavailable while the calling agent is owned by another live agent; '
-          + "include the unresolved question or decision in the child agent's final result",
-          'DELEGATED_CALLER')
-      }
-    }
+    if (agent !== undefined) this.assertLiveRoot(agent)
     // A presentation intent asserts two things the types cannot: that the
     // named approve label is one of this question's own options, and that a
     // plan-review carries the plan it is a review of. A UI honouring the
@@ -114,15 +353,7 @@ export class UserQuestionService extends Service {
     // the mistake is, rather than in each UI.
     for (const question of request.questions) {
       const intent = question.intent
-      if (intent === undefined) continue
-      if (intent.kind === 'memory-save-destination') {
-        if (question.multiSelect === true || (question.options ?? []).length < 2) {
-          throw new UserQuestionError(
-            `question ${question.id} declares intent memory-save-destination without a single-select destination list`,
-            'BAD_INTENT')
-        }
-        continue
-      }
+      if (intent === undefined || intent.kind === 'memory-save-destination') continue
       if (!(question.options ?? []).some(option => option.label === intent.approve)) {
         throw new UserQuestionError(
           `question ${question.id} declares intent ${intent.kind} whose approve label `
@@ -156,6 +387,20 @@ export class UserQuestionService extends Service {
       }
       throw restored
     }
+  }
+}
+
+declare module '@deepseek-ai/dsh-llm' {
+  interface MessageSourceMap {
+    /**
+     * Late reply to a continued `ask_user_question` call, steered into the
+     * agent by `dsh-user-questions` as an answer batch. Closing a question
+     * panel persists no reply. Readers preserve this message without the
+     * producer; only the `userQuestions` projection reads the kind to close
+     * the question and record its answers.
+     * @persistenceAttribution
+     */
+    'user-question-reply': { kind: 'user-question-reply'; callId: ToolCallId; outcome: 'answered'; questionCallId?: string; questionAnswerSubmission?: boolean; questionAnswer?: boolean; questionEventId?: string; authenticatedActor?: Record<string, unknown> }
   }
 }
 

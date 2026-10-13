@@ -202,7 +202,7 @@ describe('dsh-tool-team', () => {
   })
 
   it('adapts roster, mailbox, wait, and task CAS operations to canonical JSON', async () => {
-    const { ctx, lead } = await setup(['hang', textResponse('lead received wakeup')])
+    const { ctx, lead } = await setup(['hang', textResponse('lead received wakeup'), textResponse('lead received followup')])
     const spawned = await execute(ctx, lead, 'spawn_teammate', {
       name: 'json-worker', description: 'json worker', prompt: 'wait', context: 'fresh',
     })
@@ -219,10 +219,10 @@ describe('dsh-tool-team', () => {
     expect(text(roster)).toBe(JSON.stringify(JSON.parse(text(roster))))
     const peer = await execute(ctx, child, 'send_message', { target: 'lead', message: 'progress report' })
     expect(peer.isError).toBe(false)
-    expect(JSON.parse(text(peer))).toMatchObject({ status: 'accepted' })
+    expect(JSON.parse(text(peer))).toEqual({ messageId: expect.any(String) })
     const followup = await execute(ctx, child, 'send_message', { target: 'lead', message: 'review the report' })
     expect(followup.isError).toBe(false)
-    expect(JSON.parse(text(followup))).toMatchObject({ status: 'accepted' })
+    expect(JSON.parse(text(followup))).toEqual({ messageId: expect.any(String) })
     await lead.whenIdle()
 
     const created = await execute(ctx, lead, 'team_task_create', {

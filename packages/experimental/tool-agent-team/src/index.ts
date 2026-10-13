@@ -1,5 +1,7 @@
 /** Scoped model-facing tools for the opt-in Agent Teams runtime. */
 
+import { fulfillTeamWait } from './parked-wait.ts'
+export { activeTeamWait, fulfillTeamWait } from './parked-wait.ts'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type { Agent } from '@deepseek-ai/dsh-agent'
@@ -17,6 +19,8 @@ export const inject = ['agents', 'agentTeams', 'tools', 'systemPrompt']
 /** Tool routing configuration. */
 export interface Config {
   /** Continuable-subagent provider used for fresh teammates. */
+  /** End the turn at a durable reply checkpoint instead of holding a foreground timer. */
+  readonly parkWait?: boolean
   readonly freshProvider?: string
   /** Continuable-subagent provider used for completed-prefix fork teammates. */
   readonly forkProvider?: string
@@ -24,6 +28,7 @@ export interface Config {
 
 /** Loader schema for the opt-in Team tool plugin. */
 export const Config: z<Config> = z.object({
+  parkWait: z.boolean().default(false),
   freshProvider: z.string().default('spawn'),
   forkProvider: z.string().default('fork'),
 })
@@ -35,7 +40,7 @@ The Team Lead and all teammates share the same working directory and filesystem.
 
 Prefer read/edit/write for file changes. If a file operation returns FS_STALE_VERSION, read the current file, rebase your intended change onto the new content, and retry. Bash, formatters, code generators, and scripts are not fully protected by the filesystem version guard; coordinate them explicitly and have the Lead review the final diff and run tests.
 
-send_message steers a running target at its nearest step boundary, starts an idle target, and cold-resumes an inactive teammate. A delivered peer item starts with its stable message id and sender name. A successful send is already durable even when its result says queued; do not resend it. Shared-task workflow is list, get, claim with the current revision, perform the work, then complete. Task readiness never starts an owner. Before wait_agent, use list_agents and make sure another required member is running or provisioning; use send_message first when the required member is inactive. wait_agent observes only changes after that call starts, never wakes a member, and returns noProgress immediately when no other member can produce a change. Re-list after wakeup or timeout. The Lead must wait for required teammates before giving the final answer.`
+send_message steers a running target at its nearest step boundary, starts an idle target, and cold-resumes an inactive teammate. A delivered peer item identifies its sender. A successful send returns the native target Inbox message id; it means acceptance, not processing or synchronous storage flush. Team sends do not retain unaccepted intent, retry or deduplicate explicit resends. Shared-task workflow is list, get, claim with the current revision, perform the work, then complete. Task readiness never starts an owner. Before wait_agent, use list_agents and make sure another required member is running or provisioning; use send_message first when the required member is inactive. wait_agent observes only changes after that call starts, never wakes a member, and returns noProgress immediately when no other member can produce a change. Re-list after wakeup or timeout. The Lead must wait for required teammates before giving the final answer.`
 
 const ACTIVE_WAIT_STATUSES: ReadonlySet<TeamMemberView['status']> = new Set(['running', 'provisioning'])
 const NO_ACTIVE_PEER_MESSAGE = 'No other Team member is running or provisioning. wait_agent cannot make progress or wake inactive teammates. Re-list with list_agents and team_task_list, then use send_message to wake each required inactive teammate before waiting again.'
@@ -95,7 +100,6 @@ const SEND_VALUE_SCHEMA = {
   additionalProperties: false,
   properties: {
     messageId: { type: 'string', required: true },
-    status: { type: 'string', required: true, enum: ['accepted', 'queued'] },
   },
 } as const
 
@@ -105,6 +109,8 @@ const WAIT_VALUE_SCHEMA = {
   additionalProperties: false,
   properties: {
     timedOut: { type: 'boolean', required: true },
+    pending: { type: 'boolean' },
+    callId: { type: 'string' },
     noProgress: {
       type: 'object',
       additionalProperties: false,
@@ -163,6 +169,10 @@ function install(agent: Agent, ctx: Context, config: Required<Config>): () => vo
   const disposers: Array<() => unknown> = []
   const register = (disposer: () => unknown): void => { disposers.push(disposer) }
   try {
+    if (config.parkWait) register(scoped.on('agent/pre-step', ({ agent }, next) => {
+      fulfillTeamWait(agent)
+      return next()
+    }))
     register(scoped.systemPrompt.section({
       name: 'team:policy',
       order: scoped.systemPrompt.getSectionOrder('TEAM_POLICY'),
@@ -257,6 +267,19 @@ function install(agent: Agent, ctx: Context, config: Required<Config>): () => vo
               message: NO_ACTIVE_PEER_MESSAGE,
             },
           }
+        }
+        if (config.parkWait) {
+          const members = ctx.agentTeams.listMembers(caller).filter(member =>
+            member.id !== caller.id && ACTIVE_WAIT_STATUSES.has(member.status))
+          const original = caller.session.snapshotEvents().findLast(event =>
+            event.type === 'user/message' && event.data.source.kind !== 'team-message' && event.data.source.kind !== 'agent-message')
+          caller.session.append('team/wait/parked', { callId: exec.callId, teamId: ctx.agentTeams.membership(caller).id,
+            expectedSenderIds: members.map(member => member.id),
+            ...(original?.type === 'user/message' ? { originalSourceMessageId: original.data.id } : {}) })
+          const sessions = ctx.get('sessions')
+          if (sessions !== undefined && !await sessions.flush(caller.session)) throw new Error('team_wait_checkpoint_not_persisted')
+          exec.concludeTurn()
+          return { timedOut: false, pending: true, callId: exec.callId }
         }
         return await ctx.agentTeams.waitForChange(caller, timeoutMs, exec.signal)
       },
@@ -392,6 +415,7 @@ function install(agent: Agent, ctx: Context, config: Required<Config>): () => vo
 /** Install Team tools in every live or subsequently published Team member scope. */
 export function apply(ctx: Context, config: Config = {}): void {
   const resolved: Required<Config> = {
+    parkWait: config.parkWait ?? false,
     freshProvider: config.freshProvider ?? 'spawn',
     forkProvider: config.forkProvider ?? 'fork',
   }

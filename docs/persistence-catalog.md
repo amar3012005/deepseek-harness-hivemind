@@ -1677,6 +1677,30 @@ Types: [TeamId](subsystems/agent-team.md) · [TeamTaskSnapshot](subsystems/agent
 
 Source: [`packages/experimental/agent-team/src/types.ts:231`](../packages/experimental/agent-team/src/types.ts)
 
+<a id="teamwaitfulfilled--log-only"></a>
+
+#### `team/wait/fulfilled` — log-only
+
+```ts persistence-catalog
+/** The expected same-Team message settled this saved wait once; the message is retained in the native Inbox. */
+'team/wait/fulfilled': { readonly callId: ToolCallId; readonly messageId: string }
+```
+
+Types: [ToolCallId](subsystems/core.md)
+
+Source: [`packages/experimental/tool-agent-team/src/parked-wait.ts:18`](../packages/experimental/tool-agent-team/src/parked-wait.ts)
+
+<a id="teamwaitparked--log-only"></a>
+
+#### `team/wait/parked` — log-only
+
+```ts persistence-catalog
+/** A native Team wait ended its turn with these expected same-Team senders and original source identity. */
+'team/wait/parked': ParkedTeamWait
+```
+
+Source: [`packages/experimental/tool-agent-team/src/parked-wait.ts:16`](../packages/experimental/tool-agent-team/src/parked-wait.ts)
+
 ### `todo/*`
 
 <a id="todowrite--log-only"></a>
@@ -1901,6 +1925,21 @@ Source: [`packages/core/session/src/types.ts:276`](../packages/core/session/src/
 ```
 
 Source: [`packages/core/session/src/types.ts:297`](../packages/core/session/src/types.ts)
+
+### `user-question/*`
+
+<a id="user-questionparked--log-only"></a>
+
+#### `user-question/parked` — log-only
+
+```ts persistence-catalog
+/** Exact unanswered legacy ask preserved during an idle-only operator migration. */
+'user-question/parked': { callId: ToolCallId; questions: readonly AskUserQuestionItem[] }
+```
+
+Types: [ToolCallId](subsystems/core.md)
+
+Source: [`packages/interaction/user-questions/src/types.ts:113`](../packages/interaction/user-questions/src/types.ts)
 
 ### `web/*`
 
