@@ -209,3 +209,27 @@ export function savedArtifactAttachment(events: readonly LedgerEvent[], artifact
   const mediaType = typeof data?.['mediaType'] === 'string' ? data['mediaType'] : data?.['pdf'] ? 'application/pdf' : 'application/octet-stream'
   return { file: { attachmentId: file['attachmentId'], name: file['name'], bytes: file['bytes'] }, mediaType, modality: mediaType.startsWith('image/') ? 'image' : mediaType.startsWith('video/') ? 'video' : mediaType === 'application/pdf' ? 'pdf' : 'file', path: typeof data?.['path'] === 'string' ? data['path'] : null }
 }
+
+
+/** Read bounded text from the immutable native attachment, never a model supplied path. */
+export async function savedTextAttachment(
+  attachment: NonNullable<ReturnType<typeof savedArtifactAttachment>>,
+  read: (file: NonNullable<ReturnType<typeof savedArtifactAttachment>>['file']) => AsyncIterable<Uint8Array>,
+  signal: AbortSignal,
+): Promise<string | undefined> {
+  if (!(attachment.mediaType.startsWith('text/') || ['application/json','application/xml'].includes(attachment.mediaType))
+      || attachment.file.bytes > 48000) return undefined
+  const chunks: Uint8Array[] = []
+  let bytes = 0
+  const hash = createHash('sha256')
+  for await (const chunk of read(attachment.file)) {
+    signal.throwIfAborted()
+    bytes += chunk.byteLength
+    if (bytes > 48000 || bytes > attachment.file.bytes) throw new Error('hq_attachment_text_limit')
+    chunks.push(chunk); hash.update(chunk)
+  }
+  signal.throwIfAborted()
+  if (bytes !== attachment.file.bytes || 'sha256:' + hash.digest('hex') !== attachment.file.attachmentId)
+    throw new Error('hq_attachment_text_integrity')
+  return new TextDecoder('utf-8', { fatal: true }).decode(Buffer.concat(chunks))
+}

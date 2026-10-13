@@ -110,8 +110,8 @@ export async function prepareEmployee(ctx: Context, root: Agent, taskId: string,
   const profile = profileSnapshot(raw)
   const slug = raw['slug']
   if (typeof slug !== 'string' || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/u.test(slug)) throw new Error('hq_employee_slug_invalid')
-  const target = await rooms(ctx).resolvePersistentEmployeeRoom(employeeId, employeeRoomProfile(raw, employeeId, profile.name, profile.role),
-    signal)
+  const target = await rooms(ctx).resolvePersistentEmployeeRoom(
+    employeeId, employeeRoomProfile(raw, employeeId, profile.name, profile.role), signal)
   const prior = root.session.ownEvents().findLast(event => event.type === 'hivemind/hq-employee-assignment' && event.data.taskId === taskId)
   if (prior?.type === 'hivemind/hq-employee-assignment') {
     if (prior.data.employeeId !== employeeId || prior.data.sessionId !== target.id) throw new Error('hq_existing_assignment_requires_reconciliation')
@@ -147,7 +147,9 @@ export function employeeWorkPrompt(ctx: Context, root: Agent, taskId: string, pl
  * @param signal - Cancellation during scoped reads.
  * @returns Whether the saved work is currently authorized and due.
  */
-export async function allowsEmployeeWork(ctx: Context, target: Agent | ExternalEmployeeRoom, ref: WorkReference, signal: AbortSignal): Promise<boolean> {
+export async function allowsEmployeeWork(
+  ctx: Context, target: Agent | ExternalEmployeeRoom, ref: WorkReference, signal: AbortSignal,
+): Promise<boolean> {
   const root = await authenticatedRoot(ctx, ref.rootId, signal)
   const events = root.session.snapshotEvents()
   const assignment = events.findLast(event => event.type === 'hivemind/hq-employee-assignment' && event.data.taskId === ref.taskId)
@@ -249,7 +251,7 @@ export async function resumeEmployeeWork(ctx: Context, root: Agent, revision: nu
  */
 export async function reconcileEmployeeArtifacts(ctx: Context, root: Agent, signal: AbortSignal): Promise<void> {
   for (const event of root.session.ownEvents()) {
-    if (event.type !== 'hivemind/room-message-received' || event.data.kind !== 'update' || !event.data.taskId || !event.data.artifactIds.length) continue
+    if (event.type !== 'hivemind/room-message-received' || !event.data.taskId || !event.data.artifactIds.length) continue
     const assignment = root.session.ownEvents().findLast(value => value.type === 'hivemind/hq-employee-assignment' && value.data.taskId === event.data.taskId)
     if (assignment?.type !== 'hivemind/hq-employee-assignment' || assignment.data.sessionId !== event.data.senderId) continue
     const task = ctx.agentTeams.getTask(root, TeamTaskId(event.data.taskId))

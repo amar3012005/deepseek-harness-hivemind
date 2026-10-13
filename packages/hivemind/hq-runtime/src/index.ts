@@ -8,6 +8,7 @@ import {
   runtimeReviewAccepts,
   savedArtifactText,
   savedArtifactAttachment,
+  savedTextAttachment,
   savedSourceEvidence,
   type HqTaskReview,
 } from './review.ts'
@@ -52,6 +53,7 @@ export const inject = [
   'agentPresets',
   'sessions',
   'sessionPersistence',
+  'attachments',
   'agents',
   'schedule',
   'hivemindHq',
@@ -315,7 +317,8 @@ export function apply(ctx: Context): void {
               for (const receiptEvent of receipts) {
                 if (receiptEvent.type !== 'hivemind/open-dot-runtime-dispatch-receipt') continue
                 try {
-                  const status = await ctx.sessionController.getExternalDispatchStatus(room, receiptEvent.data.dispatchMessageId, execution.signal)
+                  const status = await ctx.sessionController.getExternalDispatchStatus(
+                    room, receiptEvent.data.dispatchMessageId, execution.signal)
                   runtimeDispatches.push(JSON.parse(JSON.stringify({ task_id: event.data.taskId, employee_id: event.data.employeeId,
                     dispatch_message_id: receiptEvent.data.dispatchMessageId, source: 'authenticated_open_dot_receipt', ...status })) as JsonValue)
                 } catch {
@@ -445,8 +448,10 @@ export function apply(ctx: Context): void {
               const source = (await handle.read(0, undefined, { signal: execution.signal })).events
               const assignment = events.findLast(event => event.type === 'hivemind/hq-employee-assignment' && event.data.taskId === task.id && event.data.sessionId === producer.id)
               if (assignment?.type === 'hivemind/hq-employee-assignment') operatingEvidence.push(savedOperatingEvidence(source, events, { sessionId: producer.id, employeeId: assignment.data.employeeId, taskId: task.id, artifactIds: links.artifactIds }))
-              const text = savedArtifactText(source, receipt.artifactId)
               const attachment = savedArtifactAttachment(source, receipt.artifactId)
+              const text = savedArtifactText(source, receipt.artifactId) ?? (attachment
+                ? await savedTextAttachment(attachment, file => ctx.attachments.readFileStream(file as FileAttachmentRef), execution.signal)
+                : undefined)
               if (!text && !attachment) throw new Error('hq_review_saved_document_unavailable')
               documents.push({
                 artifactId: receipt.artifactId,
