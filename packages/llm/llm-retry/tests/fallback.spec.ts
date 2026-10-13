@@ -35,6 +35,19 @@ async function harness(entries:Entry[],enabled=true,routes: Retry.StepFallbackCo
   return{ ctx,agent,adapter,send,toolExecutions:()=>toolExecutions }
 }
 describe('independent native model-step fallback',()=>{
+  it('keeps the original provider failure when a configured fallback is not registered', async () => {
+    const h = await harness([new LlmError('existing primary quota', 'QUOTA')], true, [
+      { fromProvider: 'primary', provider: 'unmounted', model: 'quick' },
+    ])
+    await h.send()
+    expect(h.adapter.requests.map(request => request.provider)).toEqual(['primary'])
+    expect(h.agent.session.snapshotEvents().filter(event => event.type === 'llm/fallback')).toHaveLength(0)
+    expect(h.agent.session.snapshotEvents().findLast(event => event.type === 'turn/end')?.data.reason)
+      .toMatchObject({ kind: 'error', error: { code: 'QUOTA' } })
+    expect(h.agent.options.provider).toBe('primary')
+    expect(h.agent.options.model).toBe('selected')
+  })
+
   it('supports both authorized directions without switching twice in one step', async () => {
     const routes = [{ fromProvider: 'primary', provider: 'backup', model: 'quick', maxTokens: 8192 }, { fromProvider: 'backup', provider: 'primary', model: 'selected', maxTokens: 4096 }]
     const h = await harness([new LlmError('budget', 'QUOTA'), new LlmError('other budget', 'QUOTA')], true, routes)

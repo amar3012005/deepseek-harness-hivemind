@@ -22,6 +22,21 @@
 - id: llm-pi-ai
   config:
     providers:
+      # Existing native OAuth record; expose the already configured recovery route.
+      # No key, endpoint override or primary/default selection belongs here.
+      openai-codex:
+        models:
+          - id: gpt-6-luna
+            name: GPT-6 Luna
+            contextWindow: 1050000
+            maxTokens: 8192
+            input: [text, image]
+            reasoningEfforts:
+              off:
+              low: low
+              medium: medium
+              high: high
+
       # Retain this provider/model identity for existing persisted sessions.
       cloudflare-openrouter:
         displayName: Cloudflare AI Gateway / OpenRouter (legacy sessions)

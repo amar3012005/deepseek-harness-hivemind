@@ -84,6 +84,12 @@ export function registerStepFallback(ctx: Context, config: StepFallbackConfig | 
       : Math.min(primary.maxTokens ?? route.maxTokens, route.maxTokens)
     const fallback:LlmCallConfig={ provider:route.provider,model:route.model,
       ...(maxTokens === undefined ? {} : { maxTokens }) }
+    // A configured route is not proof that its adapter is mounted. Validate
+    // against the current registry before saving a checkpoint or retrying.
+    if (!ctx.llm.listProviders().some(candidate => candidate.id === fallback.provider)) return next()
+    try { await ctx.llm.resolveCallConfig(fallback, signal) }
+    catch { return next() }
+    if (signal.aborted) return next()
     agent.session.append('llm/fallback',{ turn,step,primary:{ ...primary },fallback,failureCode:failure.code })
     // No waiting on the exhausted primary budget and no mutation of selected options.
     return { kind:'retry' }

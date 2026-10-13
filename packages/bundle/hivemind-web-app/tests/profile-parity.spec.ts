@@ -14,6 +14,15 @@ describe('hivemind-web native renderer parity', () => {
     expect(patch).toContain('allowed: [hivemind-chat, hivemind-hyperagents, hivemind-hq]')
   })
 
+  it('mounts the existing native Codex OAuth recovery profile without changing primary selection', () => {
+    const codex = patch.slice(patch.indexOf('      openai-codex:'), patch.indexOf('      cloudflare-openrouter:'))
+    expect(codex).toContain('id: gpt-6-luna')
+    expect(codex).toContain('maxTokens: 8192')
+    expect(codex).not.toContain('apiKeyEnv:')
+    expect(codex).not.toContain('baseURL:')
+    expect(patch).toContain('provider: cloudflare-openrouter-streaming')
+  })
+
   it('omits developer prompt contributions without replacing native tool guidance', () => {
     expect(patch).toContain('includeHarnessIdentity: false')
     expect(patch).toContain('includeRuntimeContext: false')

@@ -23,7 +23,7 @@ export { registerStepFallback } from './fallback.ts'
 export type { StepFallbackConfig } from './fallback.ts'
 
 export const name = 'llm-retry'
-export const inject = ['agents', 'sessionProjections']
+export const inject = ['agents', 'sessionProjections', 'llm']
 
 /** Providers own retryPolicy; an independent fallback route is explicitly opt-in. */
 export interface Config {
