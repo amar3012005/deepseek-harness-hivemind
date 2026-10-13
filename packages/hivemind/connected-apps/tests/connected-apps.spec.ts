@@ -1700,6 +1700,22 @@ describe('progressive Composio bridge', () => {
     })
   })
 
+  it('retains the native workflow when schemas omit an explicit session and returns execution continuation', async () => {
+    execute.mockResolvedValueOnce({ data: { session: { id: 'tube' }, results: [{ primary_tool_slugs: ['GMAIL_FETCH_EMAILS'] }] } })
+      .mockResolvedValueOnce({ data: { tool_schemas: { GMAIL_FETCH_EMAILS: { input_schema: {
+        type: 'object', properties: { query: { type: 'string' } }, required: [],
+      } } } } })
+    const app = harness()
+    const agent = { session: { header: { id: 'workflow-owner' }, snapshotEvents: () => [], append: vi.fn() } }
+    await app.listeners.get('agent/pre-step')?.({ agent, turn: 1 } as never, vi.fn(async () => undefined) as never)
+    const context = { signal: AbortSignal.abort(), agent }
+    await app.tool().execute({ action: 'search', queries: [{ app: 'Gmail', use_case: 'Read relevant Gmail messages.' }],
+      session: { generate_id: true } }, context as never)
+    await expect(app.tool().execute({ action: 'schemas', tool_slug: 'GMAIL_FETCH_EMAILS', session_id: '' }, context as never))
+      .resolves.toMatchObject({ status: 'ready', session_id: 'tube', next_action: 'execute_selected_tool' })
+    expect(execute).toHaveBeenNthCalledWith(2, 'COMPOSIO_GET_TOOL_SCHEMAS', { session_id: 'tube', tool_slugs: ['GMAIL_FETCH_EMAILS'] })
+  })
+
   it('permits refined discovery in the same workflow but rejects repeated searches', async () => {
     execute
       .mockResolvedValueOnce({ data: { session: { id: 'workflow-1' }, results: [] } })

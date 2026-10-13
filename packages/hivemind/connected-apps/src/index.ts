@@ -2335,6 +2335,9 @@ export function apply(ctx: Context, config: Config = {}): void {
       const continuationId = workflowSessionId(args)
       if (continuationId !== undefined) metaArguments['session_id'] = continuationId
       if (args.action === 'schemas') {
+        const activeWorkflowId = execution.agent === undefined ? undefined : turns.get(execution.agent)?.workflowId
+        const schemaWorkflowId = continuationId ?? activeWorkflowId ?? restoreWorkflowState(execution)?.workflowId
+        if (schemaWorkflowId !== undefined) metaArguments['session_id'] = schemaWorkflowId
         const listed = stringArray(args.tool_slugs)
         const singular = stringValue(args.tool_slug)
         const slugs = listed.length > 0 ? listed : singular === undefined ? [] : [singular]
@@ -2361,6 +2364,9 @@ export function apply(ctx: Context, config: Config = {}): void {
         contracts.set(fallbackKey, workflowContracts)
         return {
           status: 'ready',
+          ...(schemaWorkflowId === undefined ? {} : { session_id: schemaWorkflowId }),
+          next_action: 'execute_selected_tool',
+          next_action_guidance: 'Execute the selected tool with this exact contract and workflow session_id. Put record filters in arguments. Do not repeat discovery or treat schemas as record results.',
           operations: [{ tool: 'COMPOSIO_GET_TOOL_SCHEMAS', status: 'completed' }],
           execution_contracts: loaded as unknown as JsonValue,
           ...(sourceReceipt === undefined ? {} : {

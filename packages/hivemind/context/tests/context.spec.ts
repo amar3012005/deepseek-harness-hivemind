@@ -10,7 +10,7 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
 import { createUserMessage, createAssistantMessage, createToolResultMessage, createSystemMessage } from '@deepseek-ai/dsh-llm'
 import { Session, SessionId, foldSurface } from '@deepseek-ai/dsh-session'
 import { foldUserQuestions } from '@deepseek-ai/dsh-user-questions/src/projection.ts'
-import { completedExchanges, recentConversationText, contextPlugin } from '../src/index.ts'
+import { completedExchanges, recentConversationText, contextPlugin, connectedDiscoveryExcerpt } from '../src/index.ts'
 
 function user(text: string) {
   return createUserMessage({ content: [{ type: 'text', text }], source: { kind: 'user' } })
@@ -943,4 +943,33 @@ it('shares one historical allowance between conversation records and protected p
   expect(session.snapshotEvents().slice(0,originals.length)).toEqual(originals)
   expect(JSON.stringify(session.deriveMessages())).toContain('Current task-24 only')
   expect(Session.create(SessionId('shared-history-restored'),session.snapshotEvents()).deriveMessages()).toEqual(session.deriveMessages())
+})
+
+
+describe('connected workflow instruction preservation', () => {
+  it('keeps discovery JSON parseable with the provider workflow after bulky schemas are omitted', () => {
+    const source = { status: 'ready', session_id: 'tube', session: { id: 'tube' },
+      results: [{ primary_tool_slugs: ['GMAIL_FETCH_EMAILS'], use_case: 'Read relevant email', recommended_plan_steps: ['GMAIL_FETCH_EMAILS'] }],
+      execution_contracts: [{ tool_slug: 'GMAIL_FETCH_EMAILS', properties: { query: { description: 'Long schema '.repeat(1000) } } }],
+      source_receipt: { receipt_id: 'original' } }
+    const projected = JSON.parse(connectedDiscoveryExcerpt(JSON.stringify(source)))
+    expect(projected).toMatchObject({ session_id: 'tube', next_action: 'load_selected_schema',
+      results: [{ primary_tool_slugs: ['GMAIL_FETCH_EMAILS'] }], source_receipt: { receipt_id: 'original' } })
+    expect(projected.execution_contracts).toBeUndefined()
+  })
+  it('keeps the exact selected schema and continuation despite a smaller evidence budget', async () => {
+    const session = Session.create(SessionId('connected-schema-instructions'))
+    session.append('turn/start', { turn: 1 })
+    session.append('tool/call', { name: 'hivemind_connected_task', callId: 'schema',
+      arguments: '{"action":"schemas","tool_slug":"GMAIL_FETCH_EMAILS","session_id":"tube"}', turn: 1, step: 2 } as never)
+    const body = JSON.stringify({ status: 'ready', session_id: 'tube', next_action: 'execute_selected_tool',
+      execution_contracts: [{ tool_slug: 'GMAIL_FETCH_EMAILS', properties: { query: { type: 'string', description: 'Required schema '.repeat(1000) } } }] })
+    const original = session.append('tool/result', { turn: 1, step: 2, message: createToolResultMessage({ callId: 'schema' as never,
+      content: [{ type: 'text', text: body }], isError: false }) }, { surfaceOp: 'append' })
+    await mount().preStep({ agent: { session }, turn: 1, signal: new AbortController().signal } as never,
+      async () => ({ kind: 'enter', messages: [] }))
+    expect(session.deriveMessages().flatMap(message => message.content).some(block => block.type === 'tool-result'
+      && block.content.some(part => part.type === 'text' && part.text === body))).toBe(true)
+    expect(session.eventAt(original.seq)).toEqual(original)
+  })
 })

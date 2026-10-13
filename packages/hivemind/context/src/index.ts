@@ -342,6 +342,33 @@ export function structuredRecallExcerpt(text: string, budget: number): string {
   } catch { return JSON.stringify({ status: 'evidence_unavailable', omitted: true, reason: 'Receipt is not valid JSON; do not infer missing evidence.' }) }
 }
 
+/** Discovery is working state: keep the exact continuation usable after evidence pruning. */
+export function connectedDiscoveryExcerpt(text: string): string {
+  try {
+    const value = JSON.parse(text) as Record<string, unknown>
+    const results = Array.isArray(value.results) ? value.results as Array<Record<string, unknown>> : []
+    return JSON.stringify({
+      status: value.status,
+      session_id: value.session_id,
+      session: value.session,
+      operations: value.operations,
+      toolkit: value.toolkit,
+      toolkit_connection_statuses: value.toolkit_connection_statuses,
+      request_call_id: value.request_call_id,
+      redirect_url: value.redirect_url,
+      prompt: value.prompt,
+      results: results.map(result => ({ primary_tool_slugs: result.primary_tool_slugs, use_case: result.use_case,
+        recommended_plan_steps: result.recommended_plan_steps })),
+      recommended_plan_steps: value.recommended_plan_steps,
+      next_steps_guidance: value.next_steps_guidance,
+      next_action: value.next_action ?? 'load_selected_schema',
+      next_action_guidance: value.next_action_guidance ?? 'Use this workflow session_id. Load the selected tool schema, then execute it; do not repeat discovery.',
+      source_receipt: value.source_receipt,
+      details_omitted: true,
+    })
+  } catch { return text }
+}
+
 /** Keep complete receipts/media in the log and page their model-facing text. */
 function boundToolResults(agent: Agent, maxChars: number, latestRecallMaxChars?: number): boolean {
   const calls = agent.session.snapshotEvents()
@@ -361,6 +388,12 @@ function boundToolResults(agent: Agent, maxChars: number, latestRecallMaxChars?:
     // Loaded native skills are active instructions, not pageable evidence.
     if (blocks.some(block => block.type === 'tool-result' && calls.some(call =>
       call.type === 'tool/call' && call.data.callId === block.toolCallId && call.data.name === 'skill'))) return []
+    // Authoritative selected-tool schemas are active instructions, like loaded
+    // skills. Prefix truncation destroys their arguments and continuation.
+    if (blocks.some(block => block.type === 'tool-result' && calls.some((call) => {
+      if (call.type !== 'tool/call' || call.data.callId !== block.toolCallId || call.data.name !== 'hivemind_connected_task') return false
+      try { return (JSON.parse(call.data.arguments) as { action?: string }).action === 'schemas' } catch { return false }
+    }))) return []
     // Preserve native media and pending/error outcome semantics. Mixed success
     // receipts still contain pageable text; one image must not exempt 50k HTML.
     if (!blocks.every(block => block.type === 'tool-result' && !block.isError)
@@ -388,7 +421,12 @@ function boundToolResults(agent: Agent, maxChars: number, latestRecallMaxChars?:
       }
       const reference = `\n[Excerpt. Full saved receipt: sequence ${original.seq}; read hyperagents_history with offset pages before relying on omitted details. Tool identity and outcome are unchanged.]`
       let inserted = false
-      const excerpt = recallBudget === undefined ? boundedExcerpt(text, reference, perResult) : structuredRecallExcerpt(text, recallBudget)
+      const discovery = calls.some((call) => {
+        if (call.type !== 'tool/call' || call.data.callId !== block.toolCallId || call.data.name !== 'hivemind_connected_task') return false
+        try { return (JSON.parse(call.data.arguments) as { action?: string }).action === 'search' } catch { return false }
+      })
+      const excerpt = discovery ? connectedDiscoveryExcerpt(text)
+        : recallBudget === undefined ? boundedExcerpt(text, reference, perResult) : structuredRecallExcerpt(text, recallBudget)
       return { ...block, content: block.content.flatMap<ContentBlock>((part) => {
         if (part.type !== 'text') return [part]
         if (inserted) return []
