@@ -279,8 +279,10 @@ export function registerMediaWorkflow(
       const jobHolder: { done?: Promise<MediaSettled> } = {}
       // The job runner may call run() after jobs.start returns, so wait on a
       // promise that resolves once the job has actually started.
-      let announceJob!: (done: Promise<MediaSettled>) => void
-      const jobStarted = new Promise<Promise<MediaSettled>>(resolve => { announceJob = resolve })
+      // Wrapped in an object: resolving a promise with a promise would flatten it
+      // and make this settle only when the whole job finishes.
+      let announceJob!: (job: { done: Promise<MediaSettled> }) => void
+      const jobStarted = new Promise<{ done: Promise<MediaSettled> }>(resolve => { announceJob = resolve })
       const execute = async (jobController: AbortController) => {
         let attempts = 0
         let release: (() => void) | undefined
@@ -331,7 +333,7 @@ export function registerMediaWorkflow(
           controllers.add(controller)
           const done = execute(controller)
           jobHolder.done = done
-          announceJob(done)
+          announceJob({ done })
           return { cancel: reason => controller?.abort(reason), done }
         },
       })) } catch (error) { activeOperations.delete(operationId); throw error }
@@ -352,7 +354,7 @@ export function registerMediaWorkflow(
           new Promise<undefined>(resolve => { setTimeout(() => { resolve(undefined) }, 10_000).unref() }),
         ])
         const settled = started === undefined ? undefined : await Promise.race([
-          started,
+          started.done,
           new Promise<undefined>(resolve => { setTimeout(() => { resolve(undefined) }, config.inlineWaitMs ?? 60_000).unref() }),
         ])
         if (settled?.status === 'completed') {
