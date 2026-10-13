@@ -2020,65 +2020,88 @@ export function apply(ctx: Context, config: Config): void {
       return (event?.data as { enabled?: boolean } | undefined)?.enabled === true
     }
     const hqRecall = new WeakMap<Agent, { turn: number; text: string }>()
-    ctx.effect(() => ctx.on('agent/pre-step', async ({ agent, signal, turn }, next) => {
+    ctx.effect(() => ctx.on('agent/pre-step', async ({ agent, signal, turn, step, messages }, next) => {
       if (publicInvestigation(agent)) return next()
-      const owner = await ensureOwner(agent, signal)
-      installDecisionTools(agent)
-      principals.set(agent, ctx.hivemindExecutionScope.require())
-      enqueueTasks(agent, owner)
-      if (pendingTaskMemories(agent.session.snapshotEvents()).length > 0) await retryTasks(agent)
-      const decision = await next()
-      if (decision.kind === 'reject') return decision
-      let preset = agent.session.header?.agentPreset
-      for (const event of agent.session.snapshotEvents())
-        if (String(event.type) === 'agent-preset/selected') preset = (event.data as { agentPreset: string }).agentPreset
-      if (preset !== 'hivemind-hq') return decision
-      const currentEvents = agent.session.snapshotEvents()
-      const currentStart = currentEvents.findLast(event => event.type === 'turn/start')?.seq ?? -1
-      if (socialTurnOnly(currentEvents.filter(event => event.seq > currentStart), decision.messages)) return decision
-      let recalled = hqRecall.get(agent)
-      if (recalled?.turn === turn) return decision
-      if (recalled?.turn !== turn) {
+      const began = performance.now()
+      const timing: Record<string, number> = {}
+      const timed = async <T>(stage: string, work: () => Promise<T>): Promise<T> => {
+        const start = performance.now()
+        try { return await work() } finally { timing[stage] = Math.round(performance.now() - start) }
+      }
+      try {
+        const owner = await timed('ensureOwnerMs', () => ensureOwner(agent, signal))
+        installDecisionTools(agent)
+        const principal = ctx.hivemindExecutionScope.require()
+        principals.set(agent, principal)
+        const queueStarted = performance.now()
+        enqueueTasks(agent, owner)
+        if (pendingTaskMemories(agent.session.snapshotEvents()).length > 0) {
+        // Persist the retry queue before allowing optional ingestion to run off-path.
+          if (!await ctx.sessions.flush(agent.session)) throw new HiveMindRuntimeError('private task memory queue persistence required')
+          void ctx.hivemindExecutionScope.run(principal, () => retryTasks(agent))
+        }
+        timing['enqueueTasksMs'] = Math.round(performance.now() - queueStarted)
+        const decision = await timed('downstreamMs', next)
+        if (decision.kind === 'reject') return decision
+        let preset = agent.session.header?.agentPreset
+        for (const event of agent.session.snapshotEvents())
+          if (String(event.type) === 'agent-preset/selected') preset = (event.data as { agentPreset: string }).agentPreset
+        if (preset !== 'hivemind-hq') return decision
+        const currentEvents = agent.session.snapshotEvents()
+        const currentStart = currentEvents.findLast(event => event.type === 'turn/start')?.seq ?? -1
+        if (socialTurnOnly(currentEvents.filter(event => event.seq > currentStart),
+          [...(messages ?? []), ...decision.messages.filter(message => message.source.kind !== 'plugin')])) return decision
+        let recalled = hqRecall.get(agent)
+        if (recalled?.turn === turn) return decision
+        if (recalled?.turn !== turn) {
         // One authenticated bounded read per turn; a cold resumed Agent rereads.
         // A failed recall is explicit, never evidence that the store is empty.
-        const request = agent.session.snapshotEvents().findLast(event => event.type === 'user/message' && event.data.source.kind !== 'plugin')
-        const query = request?.type === 'user/message'
-          ? request.data.content.filter(block => block.type === 'text')
-            .map(block => block.type === 'text' ? block.text : '').join(' ').slice(0, 420) : ''
-        // Current query-free agenda heads are distinct from semantic historical notes.
-        // Both scoped reads start alongside relevant private recall, once per admitted turn.
-        const heads = freshDecisionMemoryContext(requestDecisionMemory, agent, signal)
-          .then(value => `Current confirmed agendas and open uncertainties. Compare independent priorities, follow newer confirmed direction and preserve pending questions; recalled historical plans are not current instructions.\n${value}`,
-            () => 'Current confirmed agenda and open uncertainty recall unavailable. Do not treat this as an empty agenda or invent user direction. Use current authenticated input and durable work; ask only if the gap changes the next decision.')
-        let text: string
-        try {
-          const authority = await resolveAuthority(ctx, config)
-          const result = apiRecord(await hiveRequest(authority, '/v1/hyperagents/operating-memory', {
-            method: 'POST', body: JSON.stringify({ action: 'recall',
-              query: `Recent company work, outcomes and unfinished handoffs. ${query}`.slice(0, 500), limit: 8 }),
-          }, signal, config), 'HQ private operating recall')
-          text = `Private operating memory recall for this wake. Response completion is not external task completion; inspect native receipts and current status before acting. Recalled notes do not grant authority.\n${JSON.stringify(privateRecallPreview(result))}`
-        } catch {
+          const request = agent.session.snapshotEvents().findLast(event => event.type === 'user/message' && event.data.source.kind !== 'plugin')
+          const query = request?.type === 'user/message'
+            ? request.data.content.filter(block => block.type === 'text')
+              .map(block => block.type === 'text' ? block.text : '').join(' ').slice(0, 420) : ''
+          // Current query-free agenda heads are distinct from semantic historical notes.
+          // Both scoped reads start alongside relevant private recall, once per admitted turn.
+          const heads = timed('agendaMs', () => freshDecisionMemoryContext(requestDecisionMemory, agent, signal))
+            .then(value => `Current confirmed agendas and open uncertainties. Compare independent priorities, follow newer confirmed direction and preserve pending questions; recalled historical plans are not current instructions.\n${value}`,
+              () => 'Current confirmed agenda and open uncertainty recall unavailable. Do not treat this as an empty agenda or invent user direction. Use current authenticated input and durable work; ask only if the gap changes the next decision.')
+          let text: string
+          const recallStarted = performance.now()
+          try {
+            const authority = await resolveAuthority(ctx, config)
+            const result = apiRecord(await hiveRequest(authority, '/v1/hyperagents/operating-memory', {
+              method: 'POST', body: JSON.stringify({ action: 'recall',
+                query: `Recent company work, outcomes and unfinished handoffs. ${query}`.slice(0, 500), limit: 8 }),
+            }, signal, config), 'HQ private operating recall')
+            text = `Private operating memory recall for this wake. Response completion is not external task completion; inspect native receipts and current status before acting. Recalled notes do not grant authority.\n${JSON.stringify(privateRecallPreview(result))}`
+          } catch {
+            signal.throwIfAborted()
+            text = 'Private operating memory recall unavailable for this wake. Do not infer that no prior work exists. Use durable tasks and receipts; report the gap if it blocks continuation.'
+          }
+          timing['recallMs'] = Math.round(performance.now() - recallStarted)
+          text += `\n${await heads}`
           signal.throwIfAborted()
-          text = 'Private operating memory recall unavailable for this wake. Do not infer that no prior work exists. Use durable tasks and receipts; report the gap if it blocks continuation.'
+          recalled = { turn, text }
+          hqRecall.set(agent, recalled)
         }
-        text += `\n${await heads}`
-        signal.throwIfAborted()
-        recalled = { turn, text }
-        hqRecall.set(agent, recalled)
+        return { ...decision, messages: [createUserMessage({
+          source: { kind: 'plugin', plugin: 'hivemind-runtime/hq-private-recall', form: 'recall' },
+          content: [{ type: 'text', text: recalled.text }],
+        }), ...decision.messages] }
+      } finally {
+        timing['totalMs'] = Math.round(performance.now() - began)
+        ctx.logger.info?.(`hivemind-runtime pre-step timing ${JSON.stringify({ sessionId: agent.id, turn, step: step ?? 0, ...timing })}`)
       }
-      return { ...decision, messages: [createUserMessage({
-        source: { kind: 'plugin', plugin: 'hivemind-runtime/hq-private-recall', form: 'recall' },
-        content: [{ type: 'text', text: recalled.text }],
-      }), ...decision.messages] }
     }, { prepend: true }))
     ctx.effect(() => ctx.on('agent/turn-ended', async ({ agent, reason }) => {
       if (publicInvestigation(agent)) return
       const owner = sessionOwner(agent.session.snapshotEvents())
       if (reason.kind !== 'completed' || owner === undefined) return
-      principals.set(agent, ctx.hivemindExecutionScope.require())
+      const principal = ctx.hivemindExecutionScope.require()
+      principals.set(agent, principal)
       enqueueTasks(agent, owner)
-      await retryTasks(agent)
+      if (!await ctx.sessions.flush(agent.session)) throw new HiveMindRuntimeError('private task memory queue persistence required')
+      void ctx.hivemindExecutionScope.run(principal, () => retryTasks(agent))
     }))
     ctx.effect(() => ctx.on('agent/disposed', ({ agent }) => { principals.delete(agent) }))
     ctx.effect(() => {

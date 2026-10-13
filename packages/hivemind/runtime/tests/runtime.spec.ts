@@ -21,6 +21,7 @@ interface HarnessMock {
   identity?: (signal: AbortSignal) => Promise<{ userId: string; orgId: string }>
   turnEnded?: (payload: unknown) => Promise<void>
   flush: ReturnType<typeof vi.fn>
+  timings: string[]
   dispose: () => Promise<void>
   preStep?: (payload: unknown, next: () => Promise<unknown>) => Promise<unknown>
   inboxInserted?: (payload: { agent: Agent; message: UserMessage }) => void
@@ -96,7 +97,7 @@ function mount(pluginConfig: Config, withSpill = false, web?: Pick<WebRuntime, '
   const spills: Array<{ suggestedName: string; content: string }> = []
   const cleanups: Array<() => unknown> = []
   const harness: HarnessMock = {
-    tools, skills, spills, flush: vi.fn(async () => true),
+    tools, skills, spills, flush: vi.fn(async () => true), timings: [],
     dispose: async () => { await Promise.all(cleanups.map(cleanup => cleanup())) },
   }
   disposals.push(harness.dispose)
@@ -178,7 +179,7 @@ function mount(pluginConfig: Config, withSpill = false, web?: Pick<WebRuntime, '
         },
       }
     },
-    logger: { warn: vi.fn() },
+    logger: { warn: vi.fn(), info: (value: string) => harness.timings.push(value) },
   }
   apply(ctx as never, pluginConfig)
   return harness
@@ -1289,10 +1290,13 @@ describe('HyperAgents durable employee ownership and completion outbox', () => {
     const profile = { id: 'elena', slug: 'elena', name: 'Elena', role_archetype: 'strategist', persona: 'Market strategist' }
     const packets: Record<string, unknown>[] = []
     let unavailable = true
+    let releaseWrite!: () => void
+    const writeGate = new Promise<void>((resolve) => { releaseWrite = resolve })
     vi.stubGlobal('fetch', vi.fn(async (url: string, init: RequestInit) => {
       if (String(url).endsWith('/v1/hyperagents/profiles')) return jsonResponse({ ok: true, contract: 'hivemind.hyperagent-profiles.v1', profiles: [profile], count: 1 })
       const packet = JSON.parse(String(init.body)) as Record<string, unknown>
       packets.push(packet)
+      await writeGate
       if (unavailable) return jsonResponse({ error: 'unavailable' }, 503)
       return jsonResponse({ ok: true, memory: { id: 'saved-memory', status: 'completed', agentSlug: 'elena' } })
     }))
@@ -1318,11 +1322,20 @@ describe('HyperAgents durable employee ownership and completion outbox', () => {
     await harness.turnEnded?.({ agent: subject, turn: 1, reason: { kind: 'completed' }, signal })
     expect(events.filter(event => event.type === 'hivemind/task-memory-pending')).toHaveLength(1)
     expect(events.some(event => event.type === 'hivemind/task-memory-recorded')).toBe(false)
+    // Durable queue persistence remains required before scheduling optional ingestion.
+    harness.flush.mockResolvedValueOnce(false)
+    await expect(harness.preStep?.({ agent: subject, turn: 2, signal }, enter)).rejects.toThrow('queue persistence required')
+    // A still-pending ingestion must not block the next native model step.
+    await harness.preStep?.({ agent: subject, turn: 2, signal }, enter)
+    expect(events.filter(event => event.type === 'hivemind/task-memory-pending')).toHaveLength(1)
+    releaseWrite()
+    await vi.waitFor(() => expect(packets).toHaveLength(1))
+    await Promise.resolve()
     unavailable = false
     await harness.preStep?.({ agent: subject, turn: 2, signal }, enter)
-    expect(packets).toHaveLength(2)
+    await vi.waitFor(() => expect(packets).toHaveLength(2))
     expect(packets[1]).toEqual(packets[0])
-    expect(events.filter(event => event.type === 'hivemind/task-memory-recorded')).toHaveLength(1)
+    await vi.waitFor(() => expect(events.filter(event => event.type === 'hivemind/task-memory-recorded')).toHaveLength(1))
     await harness.preStep?.({ agent: subject, turn: 2, signal }, enter)
     expect(packets).toHaveLength(2)
     expect(harness.flush).toHaveBeenCalled()
@@ -1405,4 +1418,41 @@ it('signs Runtime memory authority for the explicit legacy lead conversion',asyn
   expect(packets).toHaveLength(1)
   expect(packets[0]).toMatchObject({ operating_role:'runtime',operating_session:'session-legacy-role' })
   expect(events[0]).toMatchObject({ data:{ slug:'lead' } })
+})
+
+describe('Runtime foreground latency and social admission', () => {
+  it('skips optional historical recall for a greeting without dropping downstream guidance', async () => {
+    process.env.TEST_HIVE_RUNNER_SECRET = 'runner-service-secret-that-is-at-least-32-bytes'
+    const fetchMock = vi.fn(async () => jsonResponse({ ok: true, memories: [] }))
+    vi.stubGlobal('fetch', fetchMock)
+    const harness = mount({ ...config('unused'), authorityMode: 'scoped-service', privateMemoryEnabled: true,
+      serviceApiBase: 'http://control.test', serviceHttpOrigins: ['http://control.test'], serviceSecretEnv: 'TEST_HIVE_RUNNER_SECRET' })
+    const human = user('hello')
+    const guidance = createUserMessage({ source: { kind: 'plugin', plugin: 'current-stage-skill', form: 'recall' },
+      content: [{ type: 'text', text: 'Preserve the current company decisions.' }] })
+    const events = [
+      { seq: 0, type: 'hivemind/session-owner', data: { id: null, slug: 'runtime', name: 'Runtime', role: 'AI Chief of Staff' } },
+      { seq: 1, type: 'turn/start', data: { turn: 1 } },
+      { seq: 2, type: 'user/message', data: human },
+    ] as unknown as SessionEvent[]
+    const subject = { id: 'session-social', ctx: { effect: (run: () => void) => run(), tools: {
+      register: (definition: ToolDefinition) => { harness.tools.set(definition.name, definition); return () => {} },
+    } }, session: { header: { agentPreset: 'hivemind-hq' }, snapshotEvents: () => events } } as unknown as Agent
+    const decision = { kind: 'enter' as const, messages: [human, guidance] }
+    const actual = await harness.preStep?.({ agent: subject, turn: 1, step: 1, signal }, async () => decision)
+    expect(actual).toBe(decision)
+    expect(fetchMock).not.toHaveBeenCalled()
+    const timing = JSON.parse(harness.timings[0]!.replace('hivemind-runtime pre-step timing ', ''))
+    expect(timing).toMatchObject({ sessionId: 'session-social', turn: 1, step: 1 })
+    expect(timing).toHaveProperty('ensureOwnerMs')
+    expect(timing).toHaveProperty('enqueueTasksMs')
+    expect(timing).toHaveProperty('downstreamMs')
+    expect(timing).toHaveProperty('totalMs')
+    expect(JSON.stringify(timing)).not.toContain('hello')
+    // A real newly admitted operational wake/result must not inherit greeting treatment.
+    const wake = createUserMessage({ source: { kind: 'plugin', plugin: 'attention-pipeline', form: 'recall' },
+      content: [{ type: 'text', text: 'A current task result needs review.' }] })
+    await harness.preStep?.({ agent: subject, turn: 1, step: 2, signal, messages: [human, wake] }, async () => decision)
+    expect(fetchMock).toHaveBeenCalled()
+  })
 })
