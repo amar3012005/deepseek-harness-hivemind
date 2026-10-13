@@ -942,7 +942,10 @@ export function ChatView({
           {waitingForAnswer && <div className={css.turnStatus} role="status" aria-live="polite">
             <span className={css.turnStatusLabel}>{t('chat.waitingForAnswer')}</span>
           </div>}
-          {!waitingForAnswer && (running || visibleSubmissions.some(submission => submission.placement === 'transcript')) && <TurnStatus
+          {!waitingForAnswer && (running || visibleSubmissions.some(submission => submission.placement === 'transcript')
+            // Brain chat only: show the thinking orb the moment a send is pending,
+            // not after the server's first event.
+            || (/^\/hivemind\/app\/overview(?:\/|$)/u.test(window.location.pathname) && visibleSubmissions.length > 0)) && <TurnStatus
             startTime={activityStart}
             working={runningCalls.length > 0}
             activity={/^\/hivemind\/app\/employee\/harness(?:\/|$)/u.test(window.location.pathname)
