@@ -7,6 +7,7 @@ import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { ContextInjectionRow } from '../src/client/chat/ContextInjectionRow.tsx'
 import { AssistantMarkdown, type AssistantMarkdownProps } from '../src/client/chat/AssistantMarkdown.tsx'
+import { TurnProcessNodeView } from '../src/client/chat/TurnProcessNodeView.tsx'
 import { TurnErrorNodeView, UserMessageNodeView } from '../src/client/chat/MessageItem.tsx'
 import { hivemindFailureText, isQuestionAnswerSubmission } from '../src/client/chat/hivemind-presentation.ts'
 import { en } from '../src/client/locale.ts'
@@ -76,6 +77,14 @@ describe('HIVEMIND private technical details', () => {
     expect(view.container.textContent).toContain('Here is the report.')
     expect(view.container.textContent).not.toContain('Plan a report format')
     expect(view.queryByText('Think')).toBeNull()
+  })
+  it('does not render a process disclosure or Thinking state in HIVEMIND', () => {
+    document.documentElement.dataset.dshMode = 'hivemind-chat'
+    const view = render(<TurnProcessNodeView {...{
+      node: { data: { turn: 1, toolCallCount: 0, messageCount: 0, subagentCount: 0 } },
+      turnProcess: { foldable: true, open: false, spec: {}, setOpen: () => {} }, t,
+    } as never} />)
+    expect(view.container.innerHTML).toBe('')
   })
 })
 

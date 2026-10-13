@@ -12,6 +12,10 @@ export const TurnProcessNodeView = memo(function TurnProcessNodeView({
   node, turnProcess, t, renderSlot,
 }: ChatNodeViewProps<'turn-process'> & Partial<PropsRenderSlots<'conversation.chat.workUpdates'>>) {
   if (turnProcess === undefined) throw new Error('turn-process node requires Turn process owner state')
+  // Brain's public pending state is the composer activity orb.  Process rows
+  // are internal execution detail and must never create a visible "Thinking…"
+  // or "Work details" surface in the HIVE chat profile.
+  if (document.documentElement.dataset.dshMode === 'hivemind-chat') return null
   if (!turnProcess.foldable) return null
   const open = turnProcess.open
   const labels: string[] = []
