@@ -391,9 +391,12 @@ export function createOpenDotModelBrokerHandler(options: OpenDotModelBrokerOptio
       const ttl = Math.max(1, verified.exp - Math.floor((options.now ?? Date.now)() / 1000) + 5)
       if (!await options.consumeJti(verified.jti, ttl)) reject(409, 'open_dot_model_request_replayed')
       const selection = verified.body.provider === OPEN_DOT_PRIMARY_PROVIDER ? options.primarySelection() : undefined
-      const selectedBody = selection === undefined ? verified.body : {
+      const selectedBody: ModelBrokerBody = selection === undefined ? verified.body : {
         ...verified.body, provider: selection.provider, model: selection.model,
-        reasoning_effort: selection.reasoningEffort,
+      }
+      if (selection !== undefined) {
+        if (selection.reasoningEffort === undefined) delete selectedBody.reasoning_effort
+        else selectedBody.reasoning_effort = selection.reasoningEffort
       }
       const input = await parseInput(selectedBody, options.saveImages, options.validateImages)
       const principal: HivemindPrincipal = {
