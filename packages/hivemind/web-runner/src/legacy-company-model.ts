@@ -26,6 +26,8 @@ export async function migrateLegacyCompanyModel(ctx: Context, agent: Agent, sign
   if (!providers.some(provider => provider.id === configured.provider)) return false
   const resolved = await ctx.llm.resolveCallConfig(configured, signal)
   signal.throwIfAborted()
+  if (resolved.provider === intent.provider && resolved.model === intent.model
+    && resolved.reasoningEffort === intent.reasoningEffort) return false
   // Re-read durable intent after validation: a newer non-Haiku selection wins.
   const latest = currentIntent(ctx, agent)
   if (!latest || (haiku ? !isHistoricalPlatformHaiku(latest)

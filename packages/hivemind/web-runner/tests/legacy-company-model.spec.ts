@@ -159,3 +159,11 @@ it('keeps the current registered Codex route intact', async () => {
   const codex=fixture();codex.registered.push('openai-codex')
   expect(await migrateLegacyCompanyModel(codex.ctx,codex.agent,new AbortController().signal)).toBe(false)
 })
+
+it('does not report migration when an unchanged historical global setting resolves back to Haiku', async () => {
+  const f=fixture();f.session.append('model/selection',haiku)
+  f.resolve.mockResolvedValue(haiku)
+  expect(await migrateLegacyCompanyModel(f.ctx,f.agent,new AbortController().signal)).toBe(false)
+  expect(f.selected).not.toHaveBeenCalled()
+  expect(f.flush).not.toHaveBeenCalled()
+})
