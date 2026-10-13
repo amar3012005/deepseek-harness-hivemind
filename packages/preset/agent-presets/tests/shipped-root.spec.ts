@@ -278,6 +278,7 @@ describe('the shipped preset root', () => {
     expect(prefix).toContain("call recall directly with the user's exact wording")
     expect(prefix).toContain('call the exact selected execute tool once')
     expect(prefix).toContain("native Harness pauses that tool call for the user's single approval")
+    expect(prefix).toContain('Do not narrate a plan, capability discovery, tool preparation, or routine intermediate step.')
     expect(prefix).toContain('always use the available HIVE context first')
     expect(prefix).toContain('Use hivemind_web_search only when HIVE has no sufficient evidence')
     expect(findEntry(hivemindChat, 'tool-web')?.config).toMatchObject({ search: false, fetch: true })
