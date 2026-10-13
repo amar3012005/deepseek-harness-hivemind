@@ -16,6 +16,10 @@ import {
 
 /** Deployment controls for the shared PostgreSQL scheduler. */
 export interface Config {
+  /** Keep tenant-scoped reads mounted without taking automatic delivery ownership. */
+  dispatchEnabled?: boolean
+  /** A standby runner must not enqueue tasks for another deployment's scanner. */
+  managementEnabled?: boolean
   sharedOrganizationAgents?: boolean
   connectionStringEnv: string
   schema: string
@@ -56,6 +60,8 @@ interface TaskRow {
 export default class PostgresScheduleBackend extends Service implements ScheduleBackend {
   static inject = ['hivemindExecutionScope', 'agents']
   static Config: z<Config> = z.object({
+    dispatchEnabled: z.boolean().default(true),
+    managementEnabled: z.boolean().default(true),
     sharedOrganizationAgents: z.boolean().default(false),
     connectionStringEnv: z.string().required(),
     schema: z
@@ -101,6 +107,7 @@ export default class PostgresScheduleBackend extends Service implements Schedule
     return preset === 'hivemind-hyperagents' || preset === 'hivemind-chat' || preset === 'hivemind-hq'
   }
   start(wake: () => void): () => void {
+    if (this.config.dispatchEnabled === false) return () => {}
     const initial = setTimeout(wake, 0)
     const timer = setInterval(wake, this.config.pollIntervalMs)
     initial.unref()
@@ -141,6 +148,7 @@ export default class PostgresScheduleBackend extends Service implements Schedule
     }) as Promise<T>
   }
   async dispatch(work: (tasks: ScheduleTaskTable) => Promise<void>): Promise<boolean> {
+    if (this.config.dispatchEnabled === false) return false
     let changed = false
     const scanner = await this.pool.connect()
     let due: DueRow[]
@@ -350,6 +358,7 @@ export default class PostgresScheduleBackend extends Service implements Schedule
       entries: () => tasks.entries(),
       get: id => tasks.get(id),
       put: async (id, value) => {
+        if (this.config.managementEnabled === false) throw new Error('schedule_management_disabled_for_runner')
         const task = scheduleTaskSchema.parse(value)
         if (id !== task.record.id || (sessionId !== undefined && sessionId !== task.sessionId))
           throw new Error('Schedule identity mismatch')
@@ -404,6 +413,7 @@ export default class PostgresScheduleBackend extends Service implements Schedule
         tasks.set(id, task)
       },
       delete: async (id) => {
+        if (this.config.managementEnabled === false) throw new Error('schedule_management_disabled_for_runner')
         await client.query('DELETE FROM harness_scheduled_tasks WHERE id=$1 AND org_id=$2 AND user_id=$3', [
           id,
           owner.orgId,

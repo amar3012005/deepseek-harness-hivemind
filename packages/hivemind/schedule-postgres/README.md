@@ -16,6 +16,8 @@ HQ roots default to paused. Due delivery requires the canonical company HQ point
 
 The HIVE bundle explicitly supplies `connectionStringEnv`, `schema`, `pollIntervalMs`, `retryIntervalMs`, `batchSize`, `maxConnections`, `statementTimeoutMs`, and `maxTasksPerUser`. Missing storage or identity fails closed. The production profile polls every five seconds, retries unacknowledged targets after thirty seconds, and bounds each user's retained task count at 100. Delete old tasks to free that quota.
 
+`dispatchEnabled` and `managementEnabled` default to `true`. With `dispatchEnabled: false`, the provider installs no wake timers and `dispatch` acquires no database connection. With `managementEnabled: false`, authenticated, tenant-scoped reads remain available, but task writes and deletion reject with `schedule_management_disabled_for_runner`. A second runner sharing the same task database keeps both settings false until deployment ownership is assigned; it retains the native external provider and PostgreSQL row-level security rather than substituting the single-user JSON domain.
+
 ## Model Experience
 
 - Tools: upstream `schedule_create`, `schedule_list`, `schedule_update`, and `schedule_delete` attach to HIVE-MIND Chat and HyperAgents roots.
