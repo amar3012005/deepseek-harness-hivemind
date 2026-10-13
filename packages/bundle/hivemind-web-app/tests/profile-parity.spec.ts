@@ -14,13 +14,13 @@ describe('hivemind-web native renderer parity', () => {
     expect(patch).toContain('allowed: [hivemind-chat, hivemind-hyperagents, hivemind-hq]')
   })
 
-  it('mounts the existing native Codex OAuth recovery profile without changing primary selection', () => {
+  it('mounts the existing native Codex OAuth recovery profile without changing the Gateway primary selection', () => {
     const codex = patch.slice(patch.indexOf('      openai-codex:'), patch.indexOf('      cloudflare-openrouter:'))
     expect(codex).toContain('id: gpt-6-luna')
     expect(codex).toContain('maxTokens: 8192')
     expect(codex).not.toContain('apiKeyEnv:')
     expect(codex).not.toContain('baseURL:')
-    expect(patch).toContain('provider: cloudflare-openrouter-streaming')
+    expect(patch).toContain('provider: cloudflare-workers-ai')
   })
 
   it('omits developer prompt contributions without replacing native tool guidance', () => {
@@ -61,19 +61,17 @@ describe('hivemind-web native renderer parity', () => {
     expect(patch).not.toContain('sessionMaxAgeSeconds: 900')
   })
 
-  it('keeps legacy sessions valid while routing new HIVE turns through the streaming model', () => {
+  it('keeps legacy sessions valid while routing new HIVE turns through the Gateway GLM default', () => {
     expect(patch).toContain('off: none')
     expect(patch).toContain('reasoning: off')
-    expect(patch).toContain('cloudflare-openrouter-streaming:')
-    expect(patch).toContain('reasoning: low')
-    expect(patch).toContain('thinkingFormat: openrouter')
-    // Cloudflare's OpenRouter route accepts strict:false; the SDK's generic
-    // Cloudflare detector otherwise omits it and upstream forces all fields.
-    expect(patch.match(/supportsStrictMode: true/g)).toHaveLength(2)
+    expect(patch).toContain('cloudflare-workers-ai:')
+    expect(patch).toContain("reasoning: 'off'")
+    expect(patch).toContain('CLOUDFLARE_AI_GATEWAY_TOKEN')
+    expect(patch).toContain('gateway.ai.cloudflare.com')
     expect(patch).not.toContain('reasoningEffort: off')
     expect(patch).toContain('id: openrouter/deepseek/deepseek-v4-flash-0731')
-    expect(patch).toContain('provider: cloudflare-openrouter-streaming')
-    expect(patch).toContain('model: openai/gpt-6-luna')
+    expect(patch).toContain('provider: cloudflare-workers-ai')
+    expect(patch).toContain("model: '@cf/zai-org/glm-5.3-flash'")
     expect(patch).toContain('id: session-title-llm\n  disabled: true')
   })
 

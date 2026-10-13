@@ -83,14 +83,6 @@ export const ChatNodeSeat = memo(function ChatNodeSeat({
     && routedNode.kind === 'assistant-step'
     && routedNode.data.step === processSpec.answerStep
   const ownsDisclosure = routedNode?.kind === 'turn-process' || processAnswer
-  // Brain chat only: intermediate agent text between tool steps is shown as a
-  // grey bubble. Runtime and HyperAgent routes are unaffected.
-  const brainChat = /^\/hivemind\/app\/overview(?:\/|$)/u.test(window.location.pathname)
-  const intermediateReply = brainChat
-    && routedNode?.kind === 'assistant-step'
-    && processMember
-    && !processAnswer
-    && hasAssistantReplyContent(routedNode.data.blocks)
   const foldable = processWindowReady
     && (processMember || (ownsDisclosure
       && (processPresentation.hasExternalProcess || processSpec.inlineReasoning)))
@@ -169,7 +161,6 @@ export const ChatNodeSeat = memo(function ChatNodeSeat({
       data-turn-process-member={processMember || undefined}
       data-turn-process-hidden={processHidden || undefined}
       data-turn-process-answer={compactAnswer || undefined}
-      data-brain-intermediate={intermediateReply || undefined}
     >
       {renderSlot('conversation.chat.node', routedOwner, {
         entryKey: routedNode.kind,
