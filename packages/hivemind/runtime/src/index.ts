@@ -1488,6 +1488,7 @@ export function apply(ctx: Context, config: Config): void {
     historyMaxChars: config.historyMaxChars,
     capabilityToolName: HIVE_CAPABILITIES_TOOL,
     latestRecallMaxChars: agent => isHiveChat(agent) ? 24000 : undefined,
+    retainLatestExchange: isHiveChat,
     turnInstruction(agent) {
       const language = sessionReplyLanguage(agent)
       const employee = sessionSelectedEmployee(agent)

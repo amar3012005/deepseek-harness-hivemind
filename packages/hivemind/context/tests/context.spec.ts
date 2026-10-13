@@ -23,6 +23,7 @@ function mount(
   pendingCalls: string[] = [],
   nativePending = false,
   historyMaxChars = 3_000,
+  latestRecallMaxChars?: number,
 ) {
   let preStep: ((payload: never, next: () => Promise<unknown>) => Promise<unknown>) | undefined
   const ctx = {
@@ -40,6 +41,7 @@ function mount(
     historyTurns: 3,
     historyMaxChars,
     capabilityToolName: 'hivemind_capabilities',
+    ...(latestRecallMaxChars === undefined ? {} : { latestRecallMaxChars: () => latestRecallMaxChars }),
     ...(profileBrief === undefined ? {} : { profileBrief }),
     ...(turnInstruction === undefined ? {} : { turnInstruction }),
   }).apply(ctx as never)
@@ -447,6 +449,27 @@ describe('HIVE progressive context', () => {
     expect(Session.create(SessionId('aggregate-restored'), session.snapshotEvents()).deriveMessages()).toEqual(messages)
   })
 
+  it('preserves both parallel recall record sets through another step and cold restore', async () => {
+    const session = Session.create(SessionId('parallel-recall-records'))
+    session.append('turn/start', { turn: 1 })
+    const originals = ['first', 'second'].map((callId, step) => {
+      session.append('tool/call', { name: 'hivemind_meta', callId, arguments: '{"operation":"recall"}', turn: 1, step: step + 1 } as never)
+      return session.append('tool/result', { turn: 1, step: step + 1, message: createToolResultMessage({ callId: callId as never,
+        content: [{ type: 'text', text: JSON.stringify({ result: { results: Array.from({ length: 15 }, (_, i) => ({ id: `${callId}-${i}`, title: `Record ${i}`, citation_id: `${callId}-citation-${i}`, content: 'Evidence '.repeat(300) })) } }) }], isError: false }) }, { surfaceOp: 'append' })
+    })
+    const harness = mount([], undefined, undefined, [], false, 3000, 24000)
+    for (let step = 0; step < 2; step++) await harness.preStep({ agent: { session }, turn: 1, signal: new AbortController().signal } as never, async () => ({ kind: 'enter', messages: [] }))
+    const results = session.deriveMessages().flatMap(message => message.content.filter(block => block.type === 'tool-result'))
+    expect(results).toHaveLength(2)
+    for (const block of results) {
+      if (block.type !== 'tool-result') throw new Error('result missing')
+      const value = JSON.parse(block.content.flatMap(part => part.type === 'text' ? [part.text] : []).join(''))
+      expect(value.result.results).toHaveLength(15)
+      expect(value.result.results[14].citation_id).toBeDefined()
+    }
+    for (const original of originals) expect(session.eventAt(original.seq)).toEqual(original)
+    expect(Session.create(SessionId('parallel-recall-restored'), session.snapshotEvents()).deriveMessages()).toEqual(session.deriveMessages())
+  })
   it('bounds text across mixed successful receipts while retaining exact media, outcome and original event', async () => {
     const session = Session.create(SessionId('mixed-success-results'))
     session.append('turn/start', { turn: 1 })
