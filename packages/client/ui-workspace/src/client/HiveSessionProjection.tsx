@@ -36,6 +36,7 @@ export function HiveSessionProjection({
   renameSession, forkSession, deleteSession, renderSlot, t,
 }: Props) {
   const [creating, setCreating] = useState(false)
+  const [historyOpen, setHistoryOpen] = useState(false)
   const [recentsAtEnd, setRecentsAtEnd] = useState(false)
   const [renameTarget, setRenameTarget] = useState<{ id: SessionId; title: string }>()
   const [renameDraft, setRenameDraft] = useState('')
@@ -50,6 +51,7 @@ export function HiveSessionProjection({
     window.addEventListener('popstate', update)
     return () => { window.removeEventListener('popstate', update) }
   }, [])
+  const brainRoute = pathname.startsWith('/hivemind/app/overview')
   const hyperagentRoute = pathname.startsWith('/hivemind/app/employee/harness')
   // The OS sidebar is owned by the host frontend. Its existing first content
   // block is a stable seat, so the runner can show sessions without a host deploy.
@@ -121,9 +123,9 @@ export function HiveSessionProjection({
     {hyperagentRoute && <a href="/hivemind/app/employees" className={css.newSession}>Company workspace ↗</a>}
     {hyperagentRoute && renderSlot('shell.sessionRail.artifacts', {}, { fallback: null })}
     <div className={css.recentHeading}>
-      <span>{hyperagentRoute ? 'Your agent tasks' : t('section.recent')}</span>
+      {brainRoute ? <button type="button" className={css.historyToggle} aria-expanded={historyOpen} aria-controls="brain-recent-history" onClick={() => { setHistoryOpen(value => !value) }}><span aria-hidden="true">↶</span><span>Recent history</span><span aria-hidden="true">{historyOpen ? '⌃' : '⌄'}</span></button> : <span>{hyperagentRoute ? 'Your agent tasks' : t('section.recent')}</span>}
     </div>
-    <nav className={css.list} aria-label={t('section.sessions')} onScroll={(event) => {
+    <nav id={brainRoute ? 'brain-recent-history' : undefined} hidden={brainRoute && !historyOpen} className={css.list} aria-label={t('section.sessions')} onScroll={(event) => {
       const listElement = event.currentTarget
       setRecentsAtEnd(listElement.scrollTop + listElement.clientHeight >= listElement.scrollHeight - 2)
     }}>
@@ -156,7 +158,9 @@ export function HiveSessionProjection({
           t={t}
         />})}
     </nav>
-    {osRail === null && rows.length > 5 && !recentsAtEnd && <div className={css.scrollHint}>Scroll more ↓</div>}
+    {osRail === null && rows.length > 5 && !recentsAtEnd && (!brainRoute || historyOpen) && (
+      <div className={css.scrollHint}>Scroll more ↓</div>
+    )}
     {list.current !== undefined && <div className={css.viewTabs}>
       {renderSlot('conversation.sidebar.viewTabs', {}, { fallback: null })}
     </div>}

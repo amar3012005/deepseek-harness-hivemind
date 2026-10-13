@@ -121,7 +121,7 @@ export function AgentPresetSeat({ load, select, introduced, useAgentPresetSeat, 
 
   // Nothing to choose between: the deployment composes no presets and every
   // session shares the host composition.
-  if (!ready) return null
+  if (!ready || /^\/hivemind\/app\/overview(?:\/|$)/u.test(window.location.pathname)) return null
 
   // The employee Harness route is the HyperAgents workspace. Its composition
   // is selected as the blank session starts; the chip is context, not a mode

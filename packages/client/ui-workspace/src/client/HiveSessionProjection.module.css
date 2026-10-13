@@ -108,3 +108,8 @@
   pointer-events: none;
   user-select: none;
 }
+
+.list[hidden] { display: none; }
+.historyToggle { display:flex; align-items:center; gap:8px; width:100%; padding:10px 12px; border:1px solid var(--dsw-alias-border-l4); border-radius:6px; background:var(--dsw-alias-bg-layer-2, #f2f2ef); color:var(--dsw-alias-label-secondary); font:inherit; cursor:pointer; text-align:left; }
+.historyToggle > span:last-child { margin-left:auto; }
+.recentHeading:has(.historyToggle) { margin:12px 0 8px; }

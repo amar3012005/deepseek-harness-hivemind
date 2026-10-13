@@ -162,6 +162,7 @@ describe('title-first HIVE Recents', () => {
         useSessions={selector => selector(sessions)} useSessionPendingInteraction={selector => selector(noAttention)}
         createSession={vi.fn()} openSession={vi.fn()} {...actions} t={t}
       />)
+      fireEvent.click(screen.getByRole('button', { name: 'Recent history' }))
       const row = screen.getByRole('treeitem')
       expect(row.textContent).toContain('Market research blueprint')
       expect(row.getAttribute('title')).toMatch(/2026/)
@@ -184,4 +185,18 @@ it('does not duplicate agent rooms in a recent-chat list', () => {
     expect(view.container.textContent).toBe('')
     expect(screen.queryByRole('treeitem')).toBeNull()
   } finally { window.history.replaceState(null, '', before) }
+})
+
+it('starts Brain Recent history collapsed and preserves native rows when opened', () => {
+  const previous = window.location.pathname
+  window.history.replaceState({}, '', '/hivemind/app/overview')
+  try {
+    render(<HiveSessionProjection {...runtime} renderSlot={renderSlot} SessionProvider={SessionProvider} useSessions={selector => selector(list(summary('saved', 10)))} useSessionPendingInteraction={selector => selector(noAttention)} createSession={vi.fn()} openSession={vi.fn()} {...actions} t={t} />)
+    const trigger = screen.getByRole('button', { name: 'Recent history' })
+    expect(trigger.getAttribute('aria-expanded')).toBe('false')
+    expect(screen.queryByRole('treeitem')).toBeNull()
+    fireEvent.click(trigger)
+    expect(trigger.getAttribute('aria-expanded')).toBe('true')
+    expect(screen.getByRole('treeitem')).toBeTruthy()
+  } finally { window.history.replaceState({}, '', previous) }
 })

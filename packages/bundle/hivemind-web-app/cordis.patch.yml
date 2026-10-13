@@ -215,7 +215,7 @@
     default: hivemind-chat
     includeShippedRoot: true
     includeUserRoot: false
-    allowed: [hivemind-chat, hivemind-hyperagents, hivemind-hq]
+    allowed: [hivemind-chat]
 
 - insert:
     # The existing host-side Agent Teams packages use this fork's Session and
@@ -307,6 +307,7 @@
     - id: hivemind-schedule-postgres
       name: '@deepseek-ai/dsh-hivemind-schedule-postgres'
       config:
+        ownedPresets: [hivemind-chat]
         connectionStringEnv: DATABASE_URL
         schema: hivemind
         pollIntervalMs: 5000

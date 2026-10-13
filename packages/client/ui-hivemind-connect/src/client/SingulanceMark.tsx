@@ -1,6 +1,5 @@
-import { useSyncExternalStore, type SVGProps } from 'react'
+import { type SVGProps } from 'react'
 import type { RoomIdentity } from './room-identity.ts'
-import { BrainModeIcon } from './BrainModeIcon.tsx'
 
 export interface SingulanceMarkProps extends Omit<SVGProps<SVGSVGElement>, 'width' | 'height'> {
   size?: number
@@ -34,15 +33,11 @@ export function SingulanceMark({ size = 48, className, ...props }: SingulanceMar
 }
 
 /** Use the shared company mark above first-entry agent composers. */
-export function RoomHeroMark({ size = 34, className, identity }: {
+export function RoomHeroMark({ size = 34, className }: {
   size?: number | undefined
   className?: string | undefined
   identity: { getSnapshot(): string; subscribe(listener: () => void): () => void }
 }) {
-  const room = useSyncExternalStore(identity.subscribe, identity.getSnapshot, identity.getSnapshot)
-  const brain = room === 'null' && typeof window !== 'undefined'
-    && window.location.pathname.startsWith('/hivemind/app/overview')
-  if (brain) return <span className={className} data-hivemind-hero-brand="brain"><BrainModeIcon size={size} /></span>
   return <SingulanceMark size={size} className={className} />
 }
 
@@ -52,7 +47,7 @@ export function setupSingulanceHeadline(
   subscribe?: (refresh: () => void) => () => void,
   getIdentity?: () => RoomIdentity | undefined,
 ): () => void {
-  const originals = new Map<HTMLElement, { display: string; title: string; badgeDisplay: string }>()
+  const originals = new Map<HTMLElement, { display: string; title: string; badgeDisplay: string; badgeText: string }>()
   const apply = (): void => {
     if (typeof document === 'undefined') return
     for (const headline of document.querySelectorAll('[data-conversation-intro-headline]')) {
@@ -60,7 +55,7 @@ export function setupSingulanceHeadline(
       const title = headline.lastElementChild?.firstElementChild
       if (!(title instanceof HTMLElement)) continue
       const badge = title.nextElementSibling
-      if (!originals.has(headline)) originals.set(headline, { display: headline.style.display, title: title.textContent ?? '', badgeDisplay: badge instanceof HTMLElement ? badge.style.display : '' })
+      if (!originals.has(headline)) originals.set(headline, { display: headline.style.display, title: title.textContent ?? '', badgeDisplay: badge instanceof HTMLElement ? badge.style.display : '', badgeText: badge?.textContent ?? '' })
       const preset = getPreset?.()
       const identity = getIdentity?.()
       const runtime = preset === 'hivemind-hq' || identity?.name === 'Runtime'
@@ -73,9 +68,14 @@ export function setupSingulanceHeadline(
         headline.removeAttribute('data-hivemind-hero-headline')
         continue
       }
-      const text = brain ? 'Let’s remember what matters' : runtime ? 'RUNTIME : Lets Shape your company together' : 'Hyperagents : Lets do the real work.'
+      const text = brain ? 'Brain' : runtime ? 'RUNTIME : Lets Shape your company together' : 'Hyperagents : Lets do the real work.'
       if (title.textContent !== text) title.textContent = text
-      if (badge instanceof HTMLElement) badge.style.display = brain ? 'none' : originals.get(headline)?.badgeDisplay ?? ''
+      if (badge instanceof HTMLElement) {
+        badge.style.display = originals.get(headline)?.badgeDisplay ?? ''
+        const badgeText = brain ? 'Let’s remember what matters' : originals.get(headline)?.badgeText ?? ''
+        if (badge.textContent !== badgeText) badge.textContent = badgeText
+      }
+      headline.toggleAttribute('data-hivemind-brain-welcome', brain)
       headline.setAttribute('data-hivemind-hero-headline', '')
     }
   }
@@ -90,7 +90,11 @@ export function setupSingulanceHeadline(
       headline.style.display = original.display
       const title = headline.lastElementChild?.firstElementChild
       if (title instanceof HTMLElement) title.textContent = original.title
-      if (title?.nextElementSibling instanceof HTMLElement) title.nextElementSibling.style.display = original.badgeDisplay
+      if (title?.nextElementSibling instanceof HTMLElement) {
+        title.nextElementSibling.style.display = original.badgeDisplay
+        title.nextElementSibling.textContent = original.badgeText
+      }
+      headline.removeAttribute('data-hivemind-brain-welcome')
       headline.removeAttribute('data-hivemind-hero-headline')
     }
   }

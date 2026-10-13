@@ -32,11 +32,12 @@ describe('HIVE-MIND read scope control', () => {
 })
 
 describe('HIVE-MIND hero branding', () => {
-  it('restores the Brain welcome and hides only its upstream Preview badge', () => {
+  it('restores a separate Brain heading and company tagline', () => {
     const view = render(<div data-testid="welcome" data-conversation-intro-headline><span /><span><span>Into the Unknown</span><span>Preview</span></span></div>)
     const dispose = setupSingulanceHeadline(() => 'hivemind-chat')
     expect(view.getByText('Let’s remember what matters')).toBeTruthy()
-    expect(view.getByText('Preview').style.display).toBe('none')
+    expect(view.getByText('Brain')).toBeTruthy()
+    expect(view.queryByText('Preview')).toBeNull()
     dispose()
     expect(view.getByText('Into the Unknown')).toBeTruthy()
     expect(view.getByText('Preview').style.display).toBe('')

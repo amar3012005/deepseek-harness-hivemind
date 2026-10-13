@@ -23,7 +23,7 @@ export type ConversationSidebarViewTabsProps = ConversationSidebarViewTabsSlotPr
 export function ConversationSidebarViewTabs({ useConversationViews, useStore, selectView }: ConversationSidebarViewTabsProps) {
   const tabs = useConversationViews(value => value)
   const active = resolveActiveView(tabs, useStore(s => s.view))
-  if (tabs.length < 2) return null
+  if (tabs.length < 2 || /^\/hivemind\/app\/overview(?:\/|$)/u.test(window.location.pathname)) return null
   return <div className={css.sidebarTabs} role="tablist" aria-label="Conversation view">
     {tabs.map(viewTab => <button
       key={viewTab.id}
@@ -182,7 +182,7 @@ export function ConversationSessionHeader({
               {renderSlot('conversation.session.header.corner', {})}
             </div>
           </div>
-          {showViewTabs && tabs.length > 1 && (
+          {showViewTabs && tabs.length > 1 && !/^\/hivemind\/app\/overview(?:\/|$)/u.test(window.location.pathname) && (
             <div className={css.tabs} role="tablist">
               {tabs.map(viewTab => (
                 <button
