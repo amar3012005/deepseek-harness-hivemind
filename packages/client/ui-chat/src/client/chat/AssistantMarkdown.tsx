@@ -81,6 +81,11 @@ export const AssistantMarkdown = memo(function AssistantMarkdown({
   blocks, streaming, interrupted, renderMessageImages,
   reasoningHidden = false, revealProcess, mentions, t, finalAnswer = false,
 }: AssistantMarkdownProps) {
+  // Brain has a deliberately small public surface: activity belongs to the
+  // composer orb until there is answer prose.  Provider selection prevents
+  // reasoning upstream, while this guard keeps an unexpected provider chunk
+  // from becoming customer-facing process disclosure.
+  const hideBrainReasoning = document.documentElement.dataset.dshMode === 'hivemind-chat'
   // Stable per locale revision (t identity changes on switch): a fresh object
   // per render would rebuild MarkdownText's component table every chunk.
   const labels = useMemo(() => markdownLabels(t), [t])
@@ -102,9 +107,8 @@ export const AssistantMarkdown = memo(function AssistantMarkdown({
   // Tool-call heads render as tool rows in the chat view's grouping pass, so
   // a node that is only those heads (or empty) would paint an empty root
   // between tool groups — skip the shell unless something visible remains.
-  const hasVisible = streaming
-    || interrupted === true
-    || blocks.some(block => block.kind !== 'tool-call')
+  const hasVisible = interrupted === true
+    || blocks.some(block => block.kind !== 'tool-call' && (!hideBrainReasoning || block.kind !== 'reasoning'))
   if (!hasVisible) return null
   const rendered: ReactNode[] = []
   for (let i = 0; i < blocks.length; i++) {
@@ -128,15 +132,17 @@ export const AssistantMarkdown = memo(function AssistantMarkdown({
         }
         break
       case 'reasoning':
-        rendered.push(
-          <ProcessReasoning
-            key={i}
-            hidden={reasoningHidden}
-            reveal={revealProcess}
-          >
-            <ReasoningRow text={block.text} running={streaming && i === last} t={t} />
-          </ProcessReasoning>,
-        )
+        if (!hideBrainReasoning) {
+          rendered.push(
+            <ProcessReasoning
+              key={i}
+              hidden={reasoningHidden}
+              reveal={revealProcess}
+            >
+              <ReasoningRow text={block.text} running={streaming && i === last} t={t} />
+            </ProcessReasoning>,
+          )
+        }
         break
       case 'image': {
         // Consecutive image blocks share one gallery so several images tile

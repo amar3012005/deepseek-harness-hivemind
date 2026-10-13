@@ -6,11 +6,13 @@ import { readFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { ContextInjectionRow } from '../src/client/chat/ContextInjectionRow.tsx'
+import { AssistantMarkdown, type AssistantMarkdownProps } from '../src/client/chat/AssistantMarkdown.tsx'
 import { TurnErrorNodeView, UserMessageNodeView } from '../src/client/chat/MessageItem.tsx'
 import { hivemindFailureText, isQuestionAnswerSubmission } from '../src/client/chat/hivemind-presentation.ts'
 import { en } from '../src/client/locale.ts'
 
 const t = makeTranslate(en)
+const renderMessageImages: AssistantMarkdownProps['renderMessageImages'] = () => null
 const source = { kind: 'user', questionAnswerSubmission: true, authenticatedActor: {
   name: 'Amar', userId: 'private-user', orgId: 'private-org', role: 'owner',
 } }
@@ -60,6 +62,20 @@ describe('HIVEMIND private technical details', () => {
     expect(view.container.textContent).toContain('Welcome to the team.')
     expect(view.container.querySelector('details')).toBeNull()
     expect(view.container.textContent).not.toContain('private-message-id')
+  })
+  it('keeps provider reasoning behind the pending activity orb until answer prose arrives', () => {
+    document.documentElement.dataset.dshMode = 'hivemind-chat'
+    const view = render(<AssistantMarkdown t={t} streaming blocks={[{
+      kind: 'reasoning', text: 'Plan a report format and call tools.',
+    }]} renderMessageImages={renderMessageImages} />)
+    expect(view.container.innerHTML).toBe('')
+    view.rerender(<AssistantMarkdown t={t} streaming blocks={[
+      { kind: 'reasoning', text: 'Plan a report format and call tools.' },
+      { kind: 'text', text: 'Here is the report.' },
+    ]} renderMessageImages={renderMessageImages} />)
+    expect(view.container.textContent).toContain('Here is the report.')
+    expect(view.container.textContent).not.toContain('Plan a report format')
+    expect(view.queryByText('Think')).toBeNull()
   })
 })
 
