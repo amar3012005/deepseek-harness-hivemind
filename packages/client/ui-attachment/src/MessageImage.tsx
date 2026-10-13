@@ -76,10 +76,11 @@ function dimensionsOf(image: MessageImageSpec): { readonly width: number; readon
  * @param props.labels - resolved strings (tooltip, loading, retry, lightbox).
  * @returns the bounded thumbnail button, or the retry control on failure.
  */
-export function MessageImage({ image, load, variant, labels }: {
+export function MessageImage({ image, load, variant, labels, artifactCard = false }: {
   image: MessageImageSpec
   load: ImageLoader
   variant: 'single' | 'tile'
+  artifactCard?: boolean
   labels: MessageImageLabels
 }) {
   const preview = 'preview' in image ? image.preview : undefined
@@ -118,21 +119,32 @@ export function MessageImage({ image, load, variant, labels }: {
   const src = preview?.url ?? loaded
   const label = (preview?.name ?? attachment?.name) ?? labels.image
   if (error) return <button type="button" className={css.error} data-variant={variant} onClick={request}>{labels.loadFailed}</button>
+  const thumbnail = (
+    <button
+      type="button"
+      className={css.frame}
+      data-variant={variant}
+      data-artifact-thumbnail={artifactCard || undefined}
+      style={artifactCard || fit === undefined ? undefined : { width: fit.width, height: fit.height }}
+      title={labels.open}
+      aria-label={labels.openNamed(label)}
+      onClick={() => { if (src !== null) setOpen(true) }}
+    >
+      {src === null
+        ? <span className={css.loading}>{labels.loading}</span>
+        : <img src={src} alt={label} style={fit === undefined ? undefined : { objectPosition: fit.objectPosition }} />}
+    </button>
+  )
   return (
     <>
-      <button
-        type="button"
-        className={css.frame}
-        data-variant={variant}
-        style={fit === undefined ? undefined : { width: fit.width, height: fit.height }}
-        title={labels.open}
-        aria-label={labels.openNamed(label)}
-        onClick={() => { if (src !== null) setOpen(true) }}
-      >
-        {src === null
-          ? <span className={css.loading}>{labels.loading}</span>
-          : <img src={src} alt={label} style={fit === undefined ? undefined : { objectPosition: fit.objectPosition }} />}
-      </button>
+      {artifactCard ? <div className={css.artifactCard} data-artifact-card>
+        {thumbnail}
+        <div className={css.artifactFooter}>
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="3" /><path d="m3 17 5-5 4 4 4-6 5 7" /></svg>
+          <span><strong>{label}</strong><small>{attachment?.mediaType ?? 'Image'}{attachment ? ` · ${attachment.width} × ${attachment.height}` : ''}</small></span>
+          <button type="button" disabled={src === null} onClick={() => { setOpen(true) }} title={labels.open}>{labels.open}</button>
+        </div>
+      </div> : thumbnail}
       {open && src !== null && <ImageLightbox src={src} alt={label} labels={labels.lightbox} onClose={close} />}
     </>
   )
@@ -140,11 +152,12 @@ export function MessageImage({ image, load, variant, labels }: {
 
 /** Wrapping image group shared by user and assistant history: a lone image
  * renders large unless its owning mixed-attachment row requests compact tiles. */
-export function ImageGallery({ images, load, align, compact = false, labels }: {
+export function ImageGallery({ images, load, align, compact = false, labels, artifactCard = false }: {
   images: readonly MessageImageSpec[]
   load: ImageLoader
   align: 'start' | 'end'
   compact?: boolean
+  artifactCard?: boolean
   labels: MessageImageLabels
 }) {
   if (images.length === 0) return null
@@ -157,6 +170,7 @@ export function ImageGallery({ images, load, align, compact = false, labels }: {
           image={image}
           load={load}
           variant={variant}
+          artifactCard={artifactCard}
           labels={labels}
         />
       ))}

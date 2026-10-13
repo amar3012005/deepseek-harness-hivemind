@@ -114,3 +114,13 @@
   :global([data-native-chat]) .body :global(a) { text-underline-offset: 3px; }
   :global([data-native-chat]) .actions { margin-top: 8px; }
 }
+
+.artifactImageCard { display: block; width: min(100%, 560px); overflow: hidden; border: 1px solid var(--dsw-alias-border-l4); border-radius: 14px; background: var(--dsw-alias-bg-base); }
+.artifactImageThumbnail { display: block; width: 100%; padding: 0; border: 0; background: transparent; cursor: pointer; }
+.artifactImageThumbnail img { display: block; width: 100%; height: 220px; object-fit: cover; }
+.artifactImageFooter { display: flex; align-items: center; gap: 10px; padding: 12px 14px; }
+.artifactImageFooter svg { flex: none; }
+.artifactImageFooter > span { min-width: 0; flex: 1; }
+.artifactImageFooter strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; font-weight: 600; }
+.artifactImageFooter small { display: block; margin-top: 3px; opacity: .6; font-size: 12px; }
+.artifactImageFooter button { flex: none; padding: 5px 10px; border: 1px solid var(--dsw-alias-border-l4); border-radius: 7px; background: none; color: inherit; font: inherit; font-size: 12px; cursor: pointer; }

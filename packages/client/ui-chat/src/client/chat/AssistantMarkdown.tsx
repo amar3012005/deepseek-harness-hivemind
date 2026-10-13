@@ -1,4 +1,4 @@
-import { Fragment, memo, useMemo } from 'react'
+import { Fragment, memo, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import { JsonBlock, MarkdownText } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { MarkdownFileMentions, MarkdownPathImages } from '@deepseek-ai/dsh-client-ui-primitives'
@@ -53,6 +53,29 @@ export interface AssistantMarkdownProps {
   t: ChatViewSlotProps['t']
 }
 
+function AssistantImageCard({ src, destination, alt, open, label, openLabel }: {
+  src: string
+  destination: string
+  alt: string
+  open: () => void
+  label: string
+  openLabel: string
+}) {
+  const [failed, setFailed] = useState(false)
+  const name = destination.split(/[?#]/u)[0]?.split('/').pop() || alt || label
+  if (failed) return <span>{alt || name}</span>
+  return <span className={css.artifactImageCard} data-artifact-card>
+    <button type="button" className={css.artifactImageThumbnail} onClick={open} aria-label={`${openLabel}: ${name}`}>
+      <img src={src} alt={alt || name} loading="lazy" decoding="async" referrerPolicy="no-referrer" onError={() => { setFailed(true) }} />
+    </button>
+    <span className={css.artifactImageFooter}>
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="3" /><path d="m3 17 5-5 4 4 4-6 5 7" /></svg>
+      <span><strong>{name}</strong><small>{label}</small></span>
+      <button type="button" onClick={open}>{openLabel}</button>
+    </span>
+  </span>
+}
+
 /** Reasoning block as the Think variant summary row (figma 39:28304). */
 export const AssistantMarkdown = memo(function AssistantMarkdown({
   blocks, streaming, interrupted, renderMessageImages,
@@ -66,8 +89,15 @@ export const AssistantMarkdown = memo(function AssistantMarkdown({
   // stable per page load because MarkdownText memoizes on it.
   const pathImages = useMemo<MarkdownPathImages>(() => {
     const { protocol, origin } = window.location
-    return { resolve: value => localPathMediaUrl(protocol, origin, value) }
-  }, [])
+    return {
+      resolve: value => localPathMediaUrl(protocol, origin, value),
+      renderImage: props => <AssistantImageCard {...props} open={() => {
+        const knownFile = mentions?.resolve(props.destination)
+        if (knownFile !== undefined) knownFile.open()
+        else window.open(props.src, '_blank', 'noopener,noreferrer')
+      }} label={t('image.label')} openLabel={t('image.openOriginal')} />,
+    }
+  }, [mentions, t])
   const last = blocks.length - 1
   // Tool-call heads render as tool rows in the chat view's grouping pass, so
   // a node that is only those heads (or empty) would paint an empty root
@@ -127,6 +157,7 @@ export const AssistantMarkdown = memo(function AssistantMarkdown({
             {renderMessageImages({
               images: group.map(({ attachment }) => ({ attachment })),
               align: 'start',
+              artifactCard: true,
             })}
           </Fragment>,
         )

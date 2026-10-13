@@ -152,6 +152,8 @@ export interface MarkdownPathImages {
    * names no displayable image — it then stays inert alt text.
    */
   resolve(value: string): string | undefined
+  /** Owner presentation for a protocol-validated image, without changing its source. */
+  renderImage?: (props: { src: string; destination: string; alt: string }) => ReactNode
 }
 
 /**
@@ -566,6 +568,9 @@ function renderImage(url: string, alt: string, key: Key, context: MarkdownRender
   const imageSrc = imageSource(url, context.pathImages)
   if (imageSrc === undefined) {
     return <span key={key} className={css.imageAlt}>{alt}</span>
+  }
+  if (context.pathImages?.renderImage !== undefined) {
+    return <Fragment key={`${key}:${imageSrc}`}>{context.pathImages.renderImage({ src: imageSrc, alt, destination: url })}</Fragment>
   }
   return <MarkdownImage key={`${key}:${imageSrc}`} src={imageSrc} alt={alt} destination={url} />
 }

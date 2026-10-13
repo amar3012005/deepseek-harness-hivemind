@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import { cleanup, render } from '@testing-library/react'
-import { afterEach, describe, expect, it } from 'vitest'
+import { cleanup, render, fireEvent } from '@testing-library/react'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { AssistantMarkdown, localPathMediaUrl } from '../src/client/chat/AssistantMarkdown.tsx'
 import type { ChatNodeOwnerProps, ChatViewSlotProps } from '../src/client/contract/slots.ts'
 import type { AssistantBlock } from '../src/client/contract/snapshot.ts'
@@ -92,4 +92,14 @@ describe('agent reply bubble scope', () => {
     expect(view.container.textContent).toContain('The complete result is ready.')
     window.history.replaceState({}, '', previous)
   })
+})
+
+it('assistant markdown images render a compact original-file card and reuse the known file opener', () => {
+  const open = vi.fn()
+  const view = render(<AssistantMarkdown blocks={[textBlock('![Campaign image](/workspace/campaign.png)')]} streaming={false}
+    renderMessageImages={renderMessageImages} t={t} mentions={{ resolve: () => ({ open, title: '/workspace/campaign.png', label: 'campaign.png' }) }} />)
+  expect(view.container.querySelector('[data-artifact-card]')).not.toBeNull()
+  expect(view.getByRole('img', { name: 'Campaign image' }).getAttribute('src')).toContain('/api/file?path=')
+  fireEvent.click(view.getByRole('button', { name: 'label', exact: true }))
+  expect(open).toHaveBeenCalledOnce()
 })

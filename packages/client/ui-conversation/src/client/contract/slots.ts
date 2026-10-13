@@ -105,6 +105,8 @@ export interface MessageImagesOwnerProps {
   align: 'start' | 'end'
   /** Force every image into the compact message-attachment tile size. */
   compact?: boolean
+  /** Assistant output uses a compact content card; intake previews retain their own layout. */
+  artifactCard?: boolean
 }
 
 /** Slot-backed renderer used by Conversation targets without importing an attachment implementation. */

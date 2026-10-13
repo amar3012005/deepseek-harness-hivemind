@@ -299,3 +299,13 @@ describe('ImageGallery', () => {
     expect(view.container.querySelector('[data-align="end"]')).not.toBeNull()
   })
 })
+
+it('assistant artifact cards keep the real image and open the original native lightbox', async () => {
+  const load = vi.fn().mockResolvedValue('blob:original-artifact')
+  const view = render(<ImageGallery images={[{ attachment }]} load={load} align="start" artifactCard labels={labels} />)
+  await waitFor(() => expect(view.getByRole('img').getAttribute('src')).toBe('blob:original-artifact'))
+  expect(view.container.querySelector('[data-artifact-card]')).not.toBeNull()
+  expect(view.container.textContent).toContain(attachment.mediaType)
+  fireEvent.click(view.getByRole('button', { name: labels.open, exact: true }))
+  expect(view.getByRole('dialog', { name: labels.lightbox.dialog })).toBeTruthy()
+})

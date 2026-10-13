@@ -1129,6 +1129,49 @@ function ArtifactThumbnail({ attachment, load, title, unavailable }: {
   return url ? <img src={url} alt={title} style={{ width: '100%', height: 'auto' }} onError={() => { setFailed(true) }} /> : null
 }
 
+function ArtifactContentThumbnail({ file, mediaType, read, openPreview }: {
+  file: FileAttachmentRef
+  mediaType: string
+  read: (id: FileAttachmentRef['attachmentId']) => Promise<{ ok: boolean; value?: { attachment: FileAttachmentRef; data: string } }>
+  openPreview: () => void
+}) {
+  const [text, setText] = useState<string>()
+  const [url, setUrl] = useState<string>()
+  const [failed, setFailed] = useState(false)
+  const readRef = useRef(read); readRef.current = read
+  const textual = mediaType.startsWith('text/') || /\.(md|markdown|txt|html?|json|csv)$/i.test(file.name)
+  const pdf = mediaType === 'application/pdf'
+  useEffect(() => {
+    let active = true; let created: string | undefined
+    setText(undefined); setUrl(undefined); setFailed(false)
+    // The card is a bounded glimpse; the existing Preview retains full readers.
+    if ((!textual && !pdf) || file.bytes > 2 * 1024 * 1024) return
+    void readRef.current(file.attachmentId).then(async (result) => {
+      if (!result.ok || result.value?.attachment.attachmentId !== file.attachmentId) throw new Error('Artifact unavailable')
+      const blob = fileArtifactBlob(result.value.data, mediaType, file.bytes)
+      if (textual) {
+        const source = (await blob.text()).slice(0, 16000)
+        let excerpt = source
+        if (mediaType === 'text/html' || /\.html?$/i.test(file.name)) {
+          const document = new DOMParser().parseFromString(source, 'text/html')
+          document.querySelectorAll('script,style,template,noscript').forEach(element => element.remove())
+          document.querySelectorAll('p,div,h1,h2,h3,h4,li,br,tr').forEach(element => element.append(' '))
+          excerpt = document.body.textContent?.replace(/\s+/g, ' ').trim() ?? ''
+        }
+        if (active) setText(excerpt.slice(0, 1600))
+      } else {
+        created = URL.createObjectURL(blob)
+        if (active) setUrl(created); else URL.revokeObjectURL(created)
+      }
+    }).catch(() => { if (active) setFailed(true) })
+    return () => { active = false; if (created) URL.revokeObjectURL(created) }
+  }, [file.attachmentId, file.bytes, mediaType, textual, pdf])
+  if (url) return <div className={css.artifactDocumentThumbnail}><iframe src={`${url}#page=1&toolbar=0&navpanes=0`} title={`${file.name} preview`} tabIndex={-1} /><button type="button" aria-label={`Open ${file.name}`} onClick={openPreview} /></div>
+  if (text) return <button type="button" className={css.artifactTextThumbnail} onClick={openPreview} aria-label={`Open ${file.name}`}><pre>{text}</pre></button>
+  if (failed) return <div className={css.artifactThumbnailNotice}>Preview unavailable</div>
+  return null
+}
+
 export function ArtifactPanel({ sessionId, node, t, read, loadImage, openPreview, registeredAt }: PanelProps<'hivemind-artifact'> & { read: (id: FileAttachmentRef['attachmentId']) => Promise<{ ok: boolean; value?: { attachment: FileAttachmentRef; data: string } }> ; loadImage: (ref: ImageAttachmentRef) => Promise<string>; openPreview: () => void; registeredAt: number }) {
   const [busy, setBusy] = useState(false)
   const [failed, setFailed] = useState(false)
@@ -1140,13 +1183,18 @@ export function ArtifactPanel({ sessionId, node, t, read, loadImage, openPreview
     openPreview()
   }, [sessionId, node.id, node.data.file?.attachmentId, openPreview, registeredAt])
   return (
-    <div className={css.artifactResult}>
-      {node.data.preview === undefined ? null : <div className={css.artifactHeroImage}><ArtifactThumbnail attachment={node.data.preview} load={loadImage} title={node.data.title} unavailable={t('artifact.thumbnailUnavailable')} /></div>}
+    <div className={css.artifactResult} data-artifact-card>
+      {node.data.preview !== undefined ? <button type="button" className={css.artifactHeroImage} onClick={openPreview} aria-label={`Open ${node.data.title}`}><ArtifactThumbnail attachment={node.data.preview} load={loadImage} title={node.data.title} unavailable={t('artifact.thumbnailUnavailable')}
+      /></button>
+        : node.data.file !== undefined ? <ArtifactContentThumbnail
+          file={node.data.file} mediaType={node.data.mediaType} read={read} openPreview={openPreview}
+        /> : null}
       <div className={css.artifactFileRow}>
         <button type="button" className={css.artifactFilePreview} onClick={openPreview} disabled={node.data.file === undefined} title={node.data.file?.name ?? node.data.title}>
           <ArtifactTypeIcon mediaType={node.data.mediaType} name={node.data.file?.name ?? node.data.title} />
-          <span><strong>{node.data.file?.name ?? node.data.title}</strong><small>{t('artifact.preview')}</small></span>
+          <span><strong>{node.data.file?.name ?? node.data.title}</strong><small>{node.data.mediaType} · {node.data.file ? `${Math.max(1, Math.round(node.data.file.bytes / 1024))} KB` : t('artifact.preview')}</small></span>
         </button>
+        <button type="button" className={css.artifactCardOpen} onClick={openPreview} disabled={node.data.file === undefined && node.data.preview === undefined}>{t('artifact.cardOpen')}</button>
         <button
           type="button"
           className={`${css.artifactAction} ${css.artifactFileDownload}`}
