@@ -13,6 +13,7 @@ import AgentLoop from '@deepseek-ai/dsh-agent-loop'
 import Subagents from '@deepseek-ai/dsh-subagent'
 import TeamService from '@deepseek-ai/dsh-experimental-agent-team'
 import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
+import LocalAttachmentStore from '../../../attachment/attachment-local/src/index.ts'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
@@ -40,6 +41,7 @@ it('admits current stage before the first model request, saves full history and 
     textResponse('I will continue the same method.'), textResponse('I will use the updated method.')])
   const dependencies = { name: 'stage-fixture', async apply(scope: Context) {
     await mountAgentLoopTestDependencies(scope)
+    await scope.plugin(LocalAttachmentStore, { dshHome: dir })
     await scope.plugin(ExecutionScope)
     await scope.plugin(SkillRegistry)
     scope.get('skills')!.registerProvider(() => ({ name:'awakening-fixture-provider',
