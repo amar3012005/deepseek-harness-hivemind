@@ -631,6 +631,24 @@ describe('progressive Composio bridge', () => {
     expect(JSON.stringify(result.messages).includes('answer-workflow')).toBe(variant === 'native' || variant === 'submission')
   })
 
+  it.each(['old-call', 'new-call'])('matches the selected workflow before projecting an authenticated connected answer: %s', async (answerCall) => {
+    const events: unknown[] = []
+    for (const [callId, workflow] of [['old-call', 'old-gmail'], ['new-call', 'new-vercel']]) {
+      events.push({ type: 'tool/call', data: { name: 'hivemind_connected_task', callId, turn: 1,
+        arguments: JSON.stringify({ action: 'search', session: { generate_id: true }, queries: [{ use_case: workflow }] }) } },
+      { type: 'tool/result', data: { message: { source: { callId }, content: [{ type: 'tool-result', content: [{ type: 'text',
+        text: JSON.stringify({ status: 'connection_required', session_id: workflow, toolkit: workflow }) }] }] } } })
+    }
+    const agent = { session: { header: { id: 'late-old-answer' }, snapshotEvents: () => events, append: vi.fn() } }
+    const app = harness()
+    const result = await app.listeners.get('agent/pre-step')?.({ agent, turn: 2, messages: [] } as never,
+      (async () => ({ kind: 'enter', messages: [{ role: 'user', source: { kind: 'user-question-reply', outcome: 'answered',
+        callId: answerCall, authenticatedActor: { userId: 'actual-user', orgId: 'actual-org' } },
+      content: [{ type: 'text', text: 'Yes' }] }] })) as never) as { messages: unknown[] }
+    expect(JSON.stringify(result.messages).includes('new-vercel')).toBe(answerCall === 'new-call')
+    expect(JSON.stringify(result.messages).includes('Unfinished connected-app workflow')).toBe(answerCall === 'new-call')
+  })
+
   it('uses the actual admitted new request after downstream middleware, not incidental continuation wording', async () => {
     const events = [{ type: 'hivemind/connected-receipt', data: { version: 1, tool: 'connection_authorization', receipt: {
       status: 'connection_required', session_id: 'old-vercel', request_call_id: 'old-call', toolkits: ['vercel'],

@@ -2530,9 +2530,20 @@ export function apply(ctx: Context, config: Config = {}): void {
         ...stringArray(payload['toolkits']),
         ...(typeof payload['toolkit'] === 'string' ? [payload['toolkit']] : []),
       ])
-      const answerCalls = new Set(agent.session.snapshotEvents().flatMap(event => event.type === 'tool/call'
-        && (event.data.name === BRIDGE_TOOL || event.data.name.startsWith(COMPOSIO_TOOL_PREFIX)) ? [String(event.data.callId)] : []))
-      if (typeof payload?.['request_call_id'] === 'string') answerCalls.add(payload['request_call_id'])
+      const selectedWorkflow = unfinished?.workflowId ?? pending?.workflowSessionId
+      const answerCalls = new Set<string>()
+      if (selectedWorkflow !== undefined) {
+        const events = agent.session.snapshotEvents()
+        for (const event of events) {
+          const call = bridgeCall(event)
+          if (call !== undefined && workflowSessionId(call.args) === selectedWorkflow) answerCalls.add(call.callId)
+          const result = bridgeResult(event)
+          if (result !== undefined && returnedWorkflowSessionId(result.value) === selectedWorkflow) answerCalls.add(result.callId)
+        }
+        if (pending?.workflowSessionId === selectedWorkflow && typeof payload?.['request_call_id'] === 'string') {
+          answerCalls.add(payload['request_call_id'])
+        }
+      }
       state.projectWorkflow = shouldProjectWorkflow([...(messages ?? []), ...decision.messages], toolkits, answerCalls)
       state.admissionResolved = true
     }
