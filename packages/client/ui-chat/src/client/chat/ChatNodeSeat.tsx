@@ -180,8 +180,8 @@ export const ChatNodeSeat = memo(function ChatNodeSeat({
   )
   // Failed calls without a finalized process range still belong to technical details.
   return quietWork
-    && routedNode.kind === 'tool-call' && 'kind' in routedNode.data.root
-    && routedNode.data.root.kind === 'tool-result' && routedNode.data.root.isError && !foldable
+    && (routedNode.kind === 'turn-error' || (routedNode.kind === 'tool-call' && 'kind' in routedNode.data.root
+      && routedNode.data.root.kind === 'tool-result' && routedNode.data.root.isError)) && !foldable
     ? <details><summary>Work details</summary>{rendered}</details>
     : rendered
 })

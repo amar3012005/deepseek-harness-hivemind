@@ -6,7 +6,9 @@ import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 
 declare module '@deepseek-ai/dsh-session/types' {
   interface SessionEventMap {
+    /** Saved voice completion receipt, including interruption and transcript evidence. */
     'hivemind/voice-call-ended': { callId: string; provider: 'codex' | 'grok'; initialCheckIn: boolean; interrupted: boolean; hadUserSpeech: boolean; transcript: string }
+    /** Evidence-backed assessment of whether the initial company voice baseline completed. */
     'hivemind/voice-baseline-outcome': { callId: string; status: 'complete' | 'incomplete'; summary: string; remaining: string[] }
   }
 }

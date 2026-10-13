@@ -1,3 +1,4 @@
+import './tour-checkpoint.ts'
 import { savedOperatingEvidence } from './review-operating-evidence.ts'
 /** HQ policy extends native Team tasks instead of maintaining a competing board. */
 import {
