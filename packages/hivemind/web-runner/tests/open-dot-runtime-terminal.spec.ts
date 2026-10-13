@@ -5,7 +5,7 @@ import { SessionId } from '@deepseek-ai/dsh-session'
 import { afterEach, expect, it, vi } from 'vitest'
 import type { ExternalEmployeeOperation, ExternalEmployeeRoom, ExternalRuntimeDispatchStatus } from '@deepseek-ai/dsh-api-session-controller'
 import type { ScheduleDeliveryGuardResult, ScheduleTask } from '@deepseek-ai/dsh-schedule'
-import { installOpenDotRuntimeScheduleWake, reconcileTerminalRuntimeResult, startOpenDotRuntimeMonitor, verifyOpenDotArtifactBytes } from '../src/open-dot-runtime.ts'
+import { resolveOpenDotReplyReference, installOpenDotRuntimeScheduleWake, reconcileTerminalRuntimeResult, startOpenDotRuntimeMonitor, verifyOpenDotArtifactBytes } from '../src/open-dot-runtime.ts'
 
 const employeeId = '67503d34-97e9-49a8-8c52-8ee30cc7603e'
 const orgId = '54f5568b-4d6a-4ae1-9a33-48cb2909d59b'
@@ -170,4 +170,11 @@ it.each([
   expect(corrupted.byteLength).toBe(content.byteLength)
   expect(() => verifyOpenDotArtifactBytes(corrupted.toString('base64'), content.byteLength, checksum, prefix))
     .toThrow(prefix + '_checksum_invalid')
+})
+
+it('threads a current reply to its saved native request and rejects invented references', () => {
+ expect(resolveOpenDotReplyReference('reply', undefined, 'native-request')).toBe('native-request')
+ expect(resolveOpenDotReplyReference('update', undefined, 'native-request')).toBeUndefined()
+ expect(resolveOpenDotReplyReference('reply', 'native-request', 'native-request')).toBe('native-request')
+ expect(() => resolveOpenDotReplyReference('reply', 'dispatch-uuid', 'native-request')).toThrow('open_dot_runtime_reply_reference_invalid')
 })

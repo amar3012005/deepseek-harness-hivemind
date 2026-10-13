@@ -133,7 +133,7 @@ export function createOpenDotRuntimeOperationService(ctx: Context, base: URL, se
             dispatchMessageId: input.dispatchMessageId, rootSessionId: savedDispatch.rootSessionId, artifactIds: [...args.artifact_ids] })
           if (!await ctx.sessions.flush(room.session)) throw new Error('open_dot_runtime_operation_intent_persistence_required')
         }
-        if (args.reply_to !== undefined && args.reply_to !== savedDispatch.nativePacketId) throw new Error('open_dot_runtime_reply_reference_invalid')
+        const replyTo = resolveOpenDotReplyReference(args.kind, args.reply_to, savedDispatch.nativePacketId)
         const imported = []
         if (args.artifact_ids.length) {
           if (args.artifact_ids.length > 8 || new Set(args.artifact_ids).size !== args.artifact_ids.length
@@ -168,7 +168,7 @@ export function createOpenDotRuntimeOperationService(ctx: Context, base: URL, se
         }
         const admitted = await ctx.sessionController.receiveExternalEmployeeMessage(room, {
           dispatchMessageId: input.dispatchMessageId, messageKey: args.message_key, kind: args.kind, text: args.text,
-          ...(args.summary === undefined ? {} : { summary: args.summary }), ...(args.reply_to === undefined ? {} : { replyTo: args.reply_to }),
+          ...(args.summary === undefined ? {} : { summary: args.summary }), ...(replyTo === undefined ? {} : { replyTo }),
           ...(imported.length ? { artifacts: imported } : {}),
         }, signal)
         return { accepted: true as const, receipt_id: admitted.messageId, delivery_state: args.kind === 'update' ? 'recorded' : 'accepted' }
@@ -784,4 +784,9 @@ export function createOpenDotRoomProvider(ctx: Context, base: URL, secret: strin
       return { receiptId: receipt.receiptId, status: receipt.deliveryState }
     },
   }
+}
+/** Current Runtime replies derive their thread from the durable dispatch, never model guesses. */
+export function resolveOpenDotReplyReference(kind: string, requested: string | undefined, nativePacketId: string): string | undefined {
+  if (requested !== undefined && requested !== nativePacketId) throw new Error('open_dot_runtime_reply_reference_invalid')
+  return requested ?? (kind === 'reply' ? nativePacketId : undefined)
 }
