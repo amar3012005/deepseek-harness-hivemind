@@ -415,6 +415,17 @@ export interface ToolSchema {
   parameters: Record<string, unknown>
 }
 
+/** Provider-enforced strict JSON Schema response format. */
+export interface JsonSchemaResponseFormat {
+  readonly type: 'json_schema'
+  readonly json_schema: {
+    readonly name: string
+    readonly strict: true
+    readonly schema: Record<string, unknown>
+    readonly description?: string
+  }
+}
+
 /** A single model request, fully assembled. */
 export interface GenerateOptions {
   /** Registered provider route selecting the adapter instance. */
@@ -436,6 +447,8 @@ export interface GenerateOptions {
   system?: string
   /** Tool schemas (adapters map to the provider's `tools` field). */
   tools?: ToolSchema[]
+  /** Strict provider-side JSON Schema output constraint when supported by the exact route. */
+  responseFormat?: JsonSchemaResponseFormat
   temperature?: number
   maxTokens?: number
   /**

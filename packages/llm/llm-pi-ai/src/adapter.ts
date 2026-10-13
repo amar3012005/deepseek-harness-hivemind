@@ -47,6 +47,7 @@ import {
 } from '@deepseek-ai/dsh-llm'
 import type {
   GenerateOptions,
+  JsonSchemaResponseFormat,
   ImageAttachmentAccess,
   LlmModelInfo,
   LlmProviderInfo,
@@ -90,12 +91,26 @@ export function codexRequestPayload(
   payload: unknown,
   model: Pick<Model<Api>, 'api' | 'thinkingLevelMap'>,
   reasoning: ModelThinkingLevel | undefined,
+  responseFormat?: JsonSchemaResponseFormat,
 ): unknown {
   if (model.api !== 'openai-codex-responses') return payload
-  const request = preserveOptionalToolArguments(payload)
-  if (reasoning !== 'off' || model.thinkingLevelMap?.off !== 'none'
-    || typeof request !== 'object' || request === null) return request
-  return { ...request, reasoning: { effort: 'none' } }
+  const preserved = preserveOptionalToolArguments(payload)
+  if (typeof preserved !== 'object' || preserved === null) return preserved
+  let request: Record<string, unknown> = preserved as Record<string, unknown>
+  let changed = preserved !== payload
+  if (reasoning === 'off' && model.thinkingLevelMap?.off === 'none') {
+    request = { ...request, reasoning: { effort: 'none' } }
+    changed = true
+  }
+  if (responseFormat !== undefined) {
+    const previousText = 'text' in request && typeof request.text === 'object' && request.text !== null
+      ? request.text as Record<string, unknown> : {}
+    const { name, strict, schema, description } = responseFormat.json_schema
+    const format = { type: 'json_schema', name, strict, schema, ...(description === undefined ? {} : { description }) }
+    request = { ...request, text: { ...previousText, format } }
+    changed = true
+  }
+  return changed ? request : payload
 }
 
 /** One resolution's frozen view: the profiles and the collection built from them. */
@@ -377,6 +392,11 @@ export class PiAiAdapter extends LlmAdapter {
     // the one it started with and the next call picks up the new one.
     const profile = this.profileOf(snapshot, options.provider)
     const model = this.modelOf(snapshot, options.provider, options.model)
+    const responseFormat = options.responseFormat
+    if (responseFormat !== undefined
+      && model.api !== 'openai-completions' && model.api !== 'openai-codex-responses') {
+      throw new LlmError(`pi-ai API "${model.api}" does not support strict JSON Schema response format`, 'UNSUPPORTED_OPTION')
+    }
     const reasoning = resolveReasoningLevel(
       model,
       options.reasoningEffort ?? profile.reasoning,
@@ -417,12 +437,15 @@ export class PiAiAdapter extends LlmAdapter {
         ...profileOptions(profile, reasoning, apiKey),
         ...options.temperature === undefined ? {} : { temperature: options.temperature },
         ...options.maxTokens === undefined ? {} : { maxTokens: options.maxTokens },
+        ...(responseFormat !== undefined && model.api === 'openai-completions'
+          ? { samplingParams: { response_format: responseFormat } } : {}),
         ...options.sessionId === undefined ? {} : { sessionId: String(options.sessionId) },
         signal: watchdog.signal,
         // Profile headers are deployment-owned; attribution names are
         // Harness-owned and therefore win collisions.
         headers: requestHeaders(profile.headers),
-        ...model.api === 'openai-codex-responses' ? { onPayload: payload => codexRequestPayload(payload, model, reasoning) } : {},
+        ...model.api === 'openai-codex-responses'
+          ? { onPayload: payload => codexRequestPayload(payload, model, reasoning, responseFormat) } : {},
       })
       const iterator = toStreamChunks(events, model.contextWindow, options.signal, model.id)[Symbol.asyncIterator]()
       let exhausted = false

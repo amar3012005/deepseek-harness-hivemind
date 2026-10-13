@@ -27,10 +27,11 @@ import { registerMediaAuth } from './media-auth.ts'
 import { liveVoicePlugin, type LiveVoiceConfig } from './live-voice.ts'
 import { createOpenDotRoomProvider, createOpenDotRuntimeOperationService, installOpenDotRuntimeMonitorRecovery, installOpenDotRuntimeScheduleWake } from './open-dot-runtime.ts'
 import { createOpenDotRuntimeOperationHandler, OPEN_DOT_RUNTIME_OPERATION_PATH } from './open-dot-runtime-operation.ts'
+import { createOpenDotModelBroker, OPEN_DOT_MODEL_STREAM_PATH, type OpenDotFallbackProof } from './open-dot-model-broker.ts'
 import { installExternalRoomPersistence, registerExternalEmployeeRoomProvider } from '@deepseek-ai/dsh-api-session-controller'
 
 export const name = 'hivemind-web-runner'
-export const inject = ['webServer', 'connection', 'sessionPersistence', 'hivemindExecutionScope', 'agents', 'agentTeams', 'sessionController', 'sessions', 'schedule', 'jobs', 'attachments']
+export const inject = ['webServer', 'connection', 'sessionPersistence', 'hivemindExecutionScope', 'llm', 'agents', 'agentTeams', 'sessionController', 'sessions', 'schedule', 'jobs', 'attachments']
 
 const EXCHANGE_PATH = '/api/hivemind/embed/exchange'
 const ESTABLISH_PATH = '/api/hivemind/session/establish'
@@ -39,6 +40,7 @@ const PROJECTS_PATH = '/api/hivemind/projects'
 const EMPLOYEES_PATH = '/api/hivemind/employees'
 const HEALTH_PATH = '/health'
 const TICKET_NONCE_PREFIX = 'hive:harness-ticket:'
+const OPEN_DOT_FALLBACK_PREFIX = 'hive:opendot-model-fallback:'
 const MAX_BODY_BYTES = 8192
 const MAX_TICKET_TTL_SECONDS = 60
 const CLOCK_SKEW_SECONDS = 5
@@ -132,6 +134,12 @@ function nonEmpty(value: unknown): value is string {
 
 function ticketHash(token: string): string {
   return createHash('sha256').update(token).digest('hex')
+}
+
+function openDotFallbackKey(proof: OpenDotFallbackProof): string {
+  const binding = [proof.principal.orgId, proof.principal.userId, proof.employeeId, proof.dotId,
+    proof.sessionId, proof.requestId]
+  return `${OPEN_DOT_FALLBACK_PREFIX}${createHash('sha256').update(JSON.stringify(binding)).digest('hex')}`
 }
 
 function equalText(left: string, right: string): boolean {
@@ -480,6 +488,24 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
   const redis = createClient({ url: env(config.redisUrlEnv) }) as RedisClientType
   redis.on('error', (error) => { ctx.logger.warn('hivemind-web-runner: Redis error', error) })
   await redis.connect()
+  const openDotModelBroker = createOpenDotModelBroker(ctx, {
+    secret: projectCatalogSecret,
+    consumeJti: async (jti, ttlSeconds) => await redis.set(`hive:opendot-model-stream:${jti}`, '1', { EX: ttlSeconds, NX: true }) === 'OK',
+    recordFallback: async (proof, ttlSeconds) => {
+      const key = openDotFallbackKey(proof)
+      await redis.set(key, proof.failureCode, { EX: ttlSeconds, NX: true })
+    },
+    consumeFallback: async (proof) => {
+      const key = openDotFallbackKey(proof)
+      const result = await redis.eval(
+        "if redis.call('GET', KEYS[1]) == ARGV[1] then return redis.call('DEL', KEYS[1]) else return 0 end",
+        { keys: [key], arguments: [proof.failureCode] },
+      )
+      return result === 1
+    },
+  })
+  ctx.effect(() => ctx.webServer.register({ kind: 'exact', path: OPEN_DOT_MODEL_STREAM_PATH, handler: openDotModelBroker }),
+    'hivemind-web-runner: authenticated Open Dot native model stream')
   ctx.effect(() => ctx.connection.registerPrincipalScope((principal, action) => {
     if (principal['profile'] !== 'hivemind-chat' || principal['org_id'] === undefined
       || principal['user_id'] === undefined || principal['variation'] === undefined) {
