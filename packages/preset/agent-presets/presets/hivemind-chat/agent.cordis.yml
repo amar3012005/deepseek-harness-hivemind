@@ -33,6 +33,10 @@
       memory saves or corrections → hivemind-memory-governance;
       connected apps → hivemind_connected_task search, then returned contracts;
       dependent app workflows or recovery → composio-connected-workflows;
+      public-page reading, structured extraction, or a screenshot → browser-use,
+      then its native browser tool. Use extraction only with a known selected URL;
+      otherwise search first and inspect the resulting public page. Never type
+      credentials into a page;
       missing HIVE evidence or current external facts → hivemind-company-research;
       files, HTML, PDFs, previews, or images → hivemind-artifact-delivery,
       then its documented rendering or generation tool.
@@ -42,6 +46,11 @@
       Finish with the answer. Add contextual follow-up prompts only when they
       materially help the completed request. Do not load a skill, context, or
       capability merely to greet, rewrite text, or repeat established evidence.
+      When the user states a stable atomic fact, preference, correction,
+      relationship, or decision that would be useful later, prepare one concise
+      native memory save and ask for its approval. Do not silently persist it,
+      ask repeatedly, or propose saving transient, sensitive, speculative, or
+      ambiguous information.
 
 # The web host deliberately leaves compaction to each preset. All company
 # presets include HIVE Chat, so mount the native policy here once per agent.
@@ -87,6 +96,7 @@
     hivemindIdentity: true
     hivemindMemory: true
     hivemindArtifactRenderer: true
+    hivemindActionToolkits: true
   config:
     - id: hivemind-identity
       name: '@deepseek-ai/dsh-hivemind-identity'
@@ -122,6 +132,19 @@
         serviceApiBase: !!js process.env.HIVEMIND_CONTROL_PLANE_URL ?? 'http://control-plane:3000'
         serviceHttpOrigins: !!js (process.env.HIVEMIND_SERVICE_HTTP_ORIGINS ?? '').split(',').map(value => value.trim()).filter(Boolean)
         serviceSecretEnv: HIVE_HARNESS_RUNNER_SERVICE_SECRET
+
+    - id: hivemind-progressive-skills
+      name: '@deepseek-ai/dsh-hivemind-progressive-skills'
+    - id: hivemind-progressive-browser
+      name: '@deepseek-ai/dsh-hivemind-progressive-browser'
+      config:
+        url: !!js process.env.HIVEMIND_PLAYWRIGHT_MCP_URL ?? 'https://playwright-mcp.singulancelabs.com/mcp'
+        headers: !!js >-
+          ({ Authorization: process.env.PLAYWRIGHT_EXTERNAL_MCP_TOKEN ? `Bearer ${process.env.PLAYWRIGHT_EXTERNAL_MCP_TOKEN}` : '' })
+        actionAccountId: !!js process.env.HIVEMIND_ACTION_CLOUDFLARE_ACCOUNT_ID ?? ''
+        actionBrowserToken: !!js process.env.HIVEMIND_ACTION_BROWSER_TOKEN ?? ''
+        actionGatewayId: !!js process.env.HIVEMIND_ACTION_GATEWAY_ID ?? 'hivemind-prod'
+        actionGatewayToken: !!js process.env.HIVEMIND_ACTION_GATEWAY_TOKEN ?? ''
 
     - id: hivemind-artifact-renderer
       name: '@deepseek-ai/dsh-hivemind-artifact-renderer'
