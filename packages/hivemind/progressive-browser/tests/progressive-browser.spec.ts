@@ -1,4 +1,5 @@
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
+import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { createServer, type Server } from 'node:http'
 import { Context } from '@deepseek-ai/cordis'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
@@ -16,6 +17,8 @@ let server: Server
 let url: string
 let ctx: Context
 let sequence = 0
+let screenshotResets = 0
+const navigatedUrls: string[] = []
 
 function callId(): ToolCallId { sequence += 1; return ToolCallId(`progressive-browser-${sequence}`) }
 
@@ -29,16 +32,23 @@ beforeAll(async () => {
     // its schema boundary: this monorepo currently resolves Zod through two
     // compatible-but-nominally-distinct package paths during composite builds.
     registerTool('browser_navigate', { description: 'Navigate', inputSchema: { url: z.string() } }, async ({ url }: { url: string }) => {
+      navigatedUrls.push(url)
       if (request.url?.startsWith('/cloudflare/')) throw new Error('500 Unable to create new browser')
       return url.includes('blocked')
         ? ({ content: [{ type: 'text', text: JSON.stringify({ outcome: 'source_blocked', url, next: 'Resolve another authoritative source.' }) }] })
         : ({ content: [{ type: 'text', text: JSON.stringify({ outcome: 'ready', url, title: 'Example Product', status: 200 }) }] })
     })
     registerTool('browser_snapshot', { description: 'Snapshot', inputSchema: {} }, async () => ({ content: [{ type: 'text', text: 'snapshot' }] }))
-    registerTool('browser_take_screenshot', { description: 'Screenshot', inputSchema: { fullPage: z.boolean().optional() } }, async ({ fullPage }: { fullPage?: boolean }) => ({ content: [
-      { type: 'text', text: `screenshot:${typeof fullPage}:${String(fullPage)}` },
-      { type: 'image', mimeType: 'image/png', data: 'AQ==' },
-    ] }))
+    registerTool('browser_take_screenshot', { description: 'Screenshot', inputSchema: { fullPage: z.boolean().optional() } }, async ({ fullPage }: { fullPage?: boolean }) => {
+      if (screenshotResets > 0) {
+        screenshotResets -= 1
+        throw new Error('browser_session_reset: refusing screenshot of about:blank')
+      }
+      return { content: [
+        { type: 'text', text: `screenshot:${typeof fullPage}:${String(fullPage)}` },
+        { type: 'image', mimeType: 'image/png', data: 'AQ==' },
+      ] }
+    })
     const transport = new StreamableHTTPServerTransport({})
     response.on('close', () => { void transport.close(); void mcp.close() })
     void mcp.connect(transport as Transport).then(() => transport.handleRequest(request, response))
@@ -66,6 +76,49 @@ afterAll(async () => {
 }, 20_000)
 
 describe('progressive browser MCP', () => {
+  it('invalidates an expired client before retrying read-only tool discovery', async () => {
+    const original = Client.prototype.request
+    const observed = new Set<Client>()
+    let listCalls = 0
+    const spy = vi.spyOn(Client.prototype, 'request').mockImplementation(async function (this: Client, ...args) {
+      if (args[0].method === 'tools/list') {
+        observed.add(this)
+        listCalls += 1
+        if (listCalls === 1) {
+          throw new Error('Session not found')
+        }
+      }
+      return original.apply(this, args)
+    })
+    try {
+      const receipt = await ctx.tools.execute({ signal: new AbortController().signal, callId: callId(),
+        name: 'hivemind_browser_capture', arguments: { source_url: 'https://example.com/new-transport' } })
+      expect(receipt.isError, JSON.stringify(receipt)).toBe(false)
+      expect(listCalls).toBe(2)
+      expect(observed.size).toBe(2)
+    } finally {
+      spy.mockRestore()
+    }
+  }, 20_000)
+  it('restarts navigation once after screenshot session reset without admitting a blank image', async () => {
+    screenshotResets = 1
+    const before = navigatedUrls.length
+    const receipt = await ctx.tools.execute({ signal: new AbortController().signal, callId: callId(),
+      name: 'hivemind_browser_capture', arguments: { source_url: 'https://example.com/recovered' } })
+    expect(receipt.isError, JSON.stringify(receipt)).toBe(false)
+    expect(navigatedUrls.slice(before)).toEqual(['https://example.com/recovered', 'https://example.com/recovered'])
+    expect(receipt.content.filter(block => block.type === 'image')).toHaveLength(1)
+  }, 20_000)
+
+  it('stops recovery after a second browser reset', async () => {
+    screenshotResets = 2
+    const before = navigatedUrls.length
+    const receipt = await ctx.tools.execute({ signal: new AbortController().signal, callId: callId(),
+      name: 'hivemind_browser_capture', arguments: { source_url: 'https://example.com/expired' } })
+    expect(receipt.isError).toBe(true)
+    expect(navigatedUrls.slice(before)).toHaveLength(2)
+    expect(receipt.content.filter(block => block.type === 'image')).toHaveLength(0)
+  }, 20_000)
   it('keeps official browser tools out of the initial model surface', () => {
     expect(ctx.tools.get('hivemind_browser_discover')).toBeDefined()
     expect(ctx.tools.get('hivemind_browser_capture')).toBeDefined()

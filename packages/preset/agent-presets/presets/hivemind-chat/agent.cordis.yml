@@ -16,9 +16,10 @@
       the same response as the first tool calls. Share useful findings when
       they arrive, without extra model calls just to narrate. Keep these public
       updates visible; never expose private reasoning or tool schema planning.
-      For a website screenshot or rendered page inspection, use
-      hivemind_browser_discover with capture or inspect, then its returned
-      browser tools. Use a URL from the user or verified company context;
+      For a website screenshot, call hivemind_browser_capture once with the
+      resolved URL; it navigates and attaches the screenshot internally.
+      For rendered inspection or interaction, use hivemind_browser_discover
+      and its returned native tools. Use a URL from the user or verified company context;
       otherwise search first. Do not claim browser access is unavailable
       before checking the registered browser capability.
       Ordinary public web search and page reads proceed without asking approval.

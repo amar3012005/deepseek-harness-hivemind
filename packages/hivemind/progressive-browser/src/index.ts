@@ -371,6 +371,29 @@ export function apply(ctx: Context, config: Partial<Config> = {}): void {
     },
   })
 
+  const expiredBrowser = (error: unknown): boolean =>
+    /Session not found|browser_session_reset|Streamable HTTP error.*\b(?:502|503|504)\b/i
+      .test(error instanceof Error ? error.message : String(error))
+
+  const invalidateClient = async (endpoint: EndpointConfig): Promise<void> => {
+    const state = clients.get(`${endpoint.serverName}:${endpoint.url}`)
+    const expired = state?.client
+    if (state !== undefined) state.client = undefined
+    await expired?.close().catch(() => {})
+  }
+
+  // Listing has no side effects, but an expired transport must not remain the
+  // endpoint's cached client. Retry discovery once on a freshly admitted session.
+  const listAvailable = async (endpoint: EndpointConfig): Promise<readonly McpListedTool[]> => {
+    try {
+      return await listMcpTools(await connect(endpoint))
+    } catch (error) {
+      if (!expiredBrowser(error)) throw error
+      await invalidateClient(endpoint)
+      return listMcpTools(await connect(endpoint))
+    }
+  }
+
   const unregister = (state: {
     registered: Map<string, () => void>
     promptDispose?: () => void
@@ -436,13 +459,13 @@ export function apply(ctx: Context, config: Partial<Config> = {}): void {
     // Execute the two original MCP operations internally rather than asking
     // the model to discover and call each mechanical operation separately.
     const call = async (target: EndpointConfig) => {
-      const client = await connect(target)
-      const available = await listMcpTools(client)
+      const available = await listAvailable(target)
+      const activeClient = await connect(target)
       const selected = exactTools(available, ['browser_navigate', 'browser_take_screenshot'], 'new_page')
       const definition = (rawName: string) => {
         const tool = selected.find(item => item.name === rawName)
         if (tool === undefined) throw new Error(`the official browser MCP server did not advertise ${rawName}`)
-        return createMcpToolDefinition(client, ctx, publicToolName(target.serverName, rawName), rawName, tool.description ?? rawName,
+        return createMcpToolDefinition(activeClient, ctx, publicToolName(target.serverName, rawName), rawName, tool.description ?? rawName,
           tool.inputSchema, undefined, tool.execution?.taskSupport === 'required', tool.annotations?.readOnlyHint === true, bridgeOptions(target))
       }
       const navigation = await definition('browser_navigate').execute({ url: sourceUrl }, execution)
@@ -467,12 +490,23 @@ export function apply(ctx: Context, config: Partial<Config> = {}): void {
         ...(preview === undefined ? {} : { preview }),
       }
     }
+    const captureWithRecovery = async (target: EndpointConfig) => {
+      try {
+        return await call(target)
+      } catch (error) {
+        if (execution.signal.aborted || !expiredBrowser(error)) throw error
+        // A recovered screenshot transport can point at about:blank. Restart
+        // the entire read-only sequence, retaining the original URL, once.
+        await invalidateClient(target)
+        return call(target)
+      }
+    }
     try {
-      return await call(endpoint)
+      return await captureWithRecovery(endpoint)
     } catch (error) {
       if (!cloudflareEligible || !shouldUseLocalFallback(error)) throw error
       endpoint = local
-      return call(endpoint)
+      return captureWithRecovery(endpoint)
     }
   }
 
@@ -588,7 +622,7 @@ export function apply(ctx: Context, config: Partial<Config> = {}): void {
       : persisted.provider === local.serverName ? local : undefined
     if (endpoint === undefined) return
     const rawNames = persisted.tools.map(tool => tool.originalName ?? tool.name.split('__').at(-1) ?? '').filter(Boolean)
-    const selected = exactTools(await listMcpTools(await connect(endpoint)), rawNames, persisted.sourceUrl === undefined ? 'current_page' : 'new_page')
+    const selected = exactTools(await listAvailable(endpoint), rawNames, persisted.sourceUrl === undefined ? 'current_page' : 'new_page')
     const lease: Lease = {
       id: persisted.leaseId,
       expiresAt: persisted.expiresAt,
@@ -701,7 +735,7 @@ export function apply(ctx: Context, config: Partial<Config> = {}): void {
         : local
       let available: readonly McpListedTool[]
       try {
-        available = await listMcpTools(await connect(endpoint))
+        available = await listAvailable(endpoint)
       } catch (error) {
         // Public read work should prefer Browser Run, but a provider outage must
         // not strand an otherwise safe screenshot or rendered-page request.
@@ -709,7 +743,7 @@ export function apply(ctx: Context, config: Partial<Config> = {}): void {
         // private browsing, and interaction already select it above.
         if (!cloudflareEligible) throw error
         endpoint = local
-        available = await listMcpTools(await connect(endpoint))
+        available = await listAvailable(endpoint)
       }
       const selected = exactTools(available, DIRECT_TOOLS[requestedOperation], requestedScope)
       const nextLease = nowLease(
