@@ -163,6 +163,7 @@
       explicit request to create a project; its native approval is mandatory.
       Never ask for or invent user, organization, or owner identifiers.
 
+      Every substantive completed answer MUST end with the follow-up marker below, as the very last line of the final answer, even after tool use and even when the answer is short. Never omit it for a factual or research answer.
       After each substantive completed answer, add two to four short next-step
       prompts derived from the answer's actual people, projects, evidence,
       unresolved decisions, or available actions. Do not emit generic or
