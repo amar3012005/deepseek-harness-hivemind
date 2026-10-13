@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { Context } from '@deepseek-ai/cordis'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
-import { allowsEmployeeWork, employeeWorkPrompt, prepareEmployee, reconcileEmployeeRoster, workReference, installEmployeeDelivery } from '../src/employee-room.ts'
+import { allowsEmployeeWork, employeeWorkPrompt, prepareEmployee, reconcileEmployeeArtifacts, reconcileEmployeeRoster, workReference, installEmployeeDelivery } from '../src/employee-room.ts'
 
 function fixture() {
   const events = [
@@ -151,4 +151,22 @@ it('refreshes the full authorized roster including newly created employees witho
   expect(bind).toHaveBeenLastCalledWith(root, { id: 'room-monny' }, 'monny', 'Monny')
   expect(directory.profiles).toHaveBeenCalledTimes(2)
   expect(resolve).not.toHaveBeenCalledWith('closed', expect.anything(), expect.anything())
+})
+
+it('links verified assigned artifacts delivered as a review question without automatic acceptance', async () => {
+  const f = fixture()
+  const rootEvents = f.events
+  rootEvents.push({seq:3,type:'hivemind/room-message-received',data:{kind:'question',taskId:'task-1',senderId:'employee-room',artifactIds:['saved-artifact']}} as SessionEvent)
+  const root = {id:'runtime-room',session:{ownEvents:()=>rootEvents,append:(type:string,data:unknown)=>rootEvents.push({seq:rootEvents.length+1,type,data} as SessionEvent)}} as unknown as Agent
+  const flush = vi.fn(async()=>true)
+  Object.assign(f.ctx,{sessions:{flush},sessionPersistence:{open:async()=>({read:async()=>({events:[{seq:5,type:'hivemind/external-artifact-created',data:{artifactId:'saved-artifact'}}]}),close:async()=>{}})}})
+  await reconcileEmployeeArtifacts(f.ctx,root,signal)
+  const link = rootEvents.findLast(e=>e.type==='hivemind/hq-task-artifacts')
+  expect(link?.data).toMatchObject({taskId:'task-1',artifactIds:['saved-artifact'],producerReceipts:[{sessionId:'employee-room',sourceSeq:5}]})
+  expect(f.task.status).toBe('pending')
+  await reconcileEmployeeArtifacts(f.ctx,root,signal)
+  expect(rootEvents.filter(e=>e.type==='hivemind/hq-task-artifacts')).toHaveLength(1)
+  rootEvents.push({seq:9,type:'hivemind/room-message-received',data:{kind:'question',taskId:'task-1',senderId:'foreign-room',artifactIds:['foreign-artifact']}} as SessionEvent)
+  await reconcileEmployeeArtifacts(f.ctx,root,signal)
+  expect(rootEvents.filter(e=>e.type==='hivemind/hq-task-artifacts')).toHaveLength(1)
 })

@@ -249,7 +249,7 @@ export async function resumeEmployeeWork(ctx: Context, root: Agent, revision: nu
  */
 export async function reconcileEmployeeArtifacts(ctx: Context, root: Agent, signal: AbortSignal): Promise<void> {
   for (const event of root.session.ownEvents()) {
-    if (event.type !== 'hivemind/room-message-received' || event.data.kind !== 'update' || !event.data.taskId || !event.data.artifactIds.length) continue
+    if (event.type !== 'hivemind/room-message-received' || !event.data.taskId || !event.data.artifactIds.length) continue
     const assignment = root.session.ownEvents().findLast(value => value.type === 'hivemind/hq-employee-assignment' && value.data.taskId === event.data.taskId)
     if (assignment?.type !== 'hivemind/hq-employee-assignment' || assignment.data.sessionId !== event.data.senderId) continue
     const task = ctx.agentTeams.getTask(root, TeamTaskId(event.data.taskId))
