@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { ToolDefinition } from '@deepseek-ai/dsh-tools'
-import { apply } from '../src/index.ts'
+import { apply, inject } from '../src/index.ts'
 import { THINK_SKILLS } from '../src/think-skills.ts'
 
 function setup() {
@@ -27,6 +27,11 @@ function setup() {
 }
 
 describe('hivemind progressive skills', () => {
+  it('mounts without optional Cloudflare action-toolkit credentials', () => {
+    expect(inject).not.toContain('hivemindActionToolkits')
+    expect(() => setup()).not.toThrow()
+  })
+
   it('returns actual native reference pixels with design guidance only when Brand DNA is missing', async () => {
     const { tool, agent } = setup()
     const execution = { agent, signal: new AbortController().signal } as never

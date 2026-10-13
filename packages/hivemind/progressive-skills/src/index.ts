@@ -13,7 +13,10 @@ import type {} from '@deepseek-ai/dsh-hivemind-artifact-renderer'
 import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 
 export const name = 'hivemind-progressive-skills'
-export const inject = ['tools', 'skills', 'hivemindActionToolkits']
+// Action toolkits are optional deployment capabilities. The native skill
+// registry must remain available when their credentials are not configured;
+// browser/search actions report their own actionable unavailability on load.
+export const inject = ['tools', 'skills']
 
 /** Deployment-owned progressive discovery limits. */
 export interface Config { maxSearchResults: number; maxQueryChars: number }
