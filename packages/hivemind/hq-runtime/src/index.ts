@@ -1,4 +1,3 @@
-import { employeeDispatchAllowed } from '@deepseek-ai/dsh-hivemind-employee-directory'
 import { savedOperatingEvidence } from './review-operating-evidence.ts'
 /** HQ policy extends native Team tasks instead of maintaining a competing board. */
 import {
@@ -29,6 +28,8 @@ import type {} from '@deepseek-ai/dsh-hivemind-artifact-renderer'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import type { FileAttachmentRef, ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import type { Context } from '@deepseek-ai/cordis'
+import Schema from '@deepseek-ai/schemastery'
+import { contractListPage } from './contract-list.ts'
 import { parseAtInput } from '@deepseek-ai/dsh-schedule'
 import { TeamTaskId } from '@deepseek-ai/dsh-experimental-agent-team'
 import { SessionId } from '@deepseek-ai/dsh-session'
@@ -83,7 +84,15 @@ declare module '@deepseek-ai/dsh-session/types' {
     }
   }
 }
-export function apply(ctx: Context): void {
+/** Deployment-owned bounds for model-facing contract discovery. */
+export interface Config { listPageSize: number; listResultMaxBytes: number }
+const listDefaults: Config = { listPageSize: 8, listResultMaxBytes: 16000 }
+export const Config: Schema<Config> = Schema.object({
+  listPageSize: Schema.natural().min(1).max(25).default(listDefaults.listPageSize),
+  listResultMaxBytes: Schema.natural().min(1024).default(listDefaults.listResultMaxBytes),
+})
+export function apply(ctx: Context, config: Partial<Config> = {}): void {
+  const listBounds = { ...listDefaults, ...config }
   ctx.effect(() => ctx.on('tools/pre-execute', async (execution, next) => {
     if (execution.name === 'list_agents' && execution.agent && isHqLead(ctx, execution.agent)) {
       await reconcileEmployeeRoster(ctx, execution.agent, execution.signal)
@@ -222,14 +231,17 @@ export function apply(ctx: Context): void {
     defineTool({
       name: 'hivemind_hq_contract',
       description:
-        'Coordinate existing native Team tasks. list returns the authenticated employee directory with exact IDs, existing contracts, tasks, calendar and bounded live Core status for saved Open Dot Runtime dispatch receipts; status outputs are informational and do not prove task completion. attach saves immutable deadline/acceptance criteria. assign starts eligible work immediately in the authenticated employee persistent room. For a future start, use schedule directly with task_id, employee_id, starts_at and ends_at: it binds the employee, saves the native timer in that employee room, and sends a quiet assignment notice without starting work. Do not call assign before schedule; running tasks cannot be scheduled. Link saved producer artifacts, inspect the saved inputs, then decide accepted or needs_changes with the returned revision/evidence hash and rationale. Jev review is an optional advisory second opinion. Native Team tools own task lifecycle and dependencies. Completion requires linked receipts and Runtime’s explicit accepted decision for the current revision; Jev scores never authorize or block completion. This tool never grants authority.',
+        'Coordinate existing native Team tasks. list returns a bounded read-only page of authenticated employees and current task/contract/artifact/review/calendar heads. Use task_id for one existing task or next_cursor for another page; inspect retrieves full saved evidence. Only refresh_dispatches requests serialized live external status; status outputs are informational and do not prove task completion. attach saves immutable deadline/acceptance criteria. assign starts eligible work immediately in the authenticated employee persistent room. For a future start, use schedule directly with task_id, employee_id, starts_at and ends_at: it binds the employee, saves the native timer in that employee room, and sends a quiet assignment notice without starting work. Do not call assign before schedule; running tasks cannot be scheduled. Link saved producer artifacts, inspect the saved inputs, then decide accepted or needs_changes with the returned revision/evidence hash and rationale. Jev review is an optional advisory second opinion. Native Team tools own task lifecycle and dependencies. Completion requires linked receipts and Runtime’s explicit accepted decision for the current revision; Jev scores never authorize or block completion. This tool never grants authority.',
       parameters: {
         action: {
           type: 'string',
           required: true,
           enum: ['list', 'attach', 'artifacts', 'inspect', 'assign', 'review', 'schedule', 'decide'],
-          description: 'assign dispatches work now; schedule assigns pending work for a future start and requires no preceding assign call. artifacts links specified saved artifact_ids; it does not retrieve files. list queries only the latest saved dispatch receipt per active assigned task and falls back to its last persisted status if Core is unavailable; it never inserts polled outputs into chat. inspect reads linked producer document content without changing task or review state; without linked receipts it returns awaiting_producer_receipt and no review evidence hash. decide records Runtime’s evidence-based acceptance or needed changes after inspect. review optionally obtains Jev advisory scores; do not poll uncertainty.',
+          description: 'assign dispatches work now; schedule assigns pending work for a future start and requires no preceding assign call. artifacts links specified saved artifact_ids; it does not retrieve files. list normally reads saved heads without opening employee rooms or polling. refresh_dispatches explicitly queries only bounded current dispatch receipts and falls back to saved status if unavailable; it never inserts polled outputs into chat. inspect reads linked producer document content without changing task or review state; without linked receipts it returns awaiting_producer_receipt and no review evidence hash. decide records Runtime’s evidence-based acceptance or needed changes after inspect. review optionally obtains Jev advisory scores; do not poll uncertainty.',
         },
+        cursor: { type: 'string', description: 'For list: exact next_cursor from the prior page. A changed board requires a fresh first page.' },
+        limit: { type: 'number', description: 'For list: page size from 1 to 25; defaults to the deployment page size.' },
+        refresh_dispatches: { type: 'boolean', description: 'For list only: refresh bounded external dispatch status when a specific unfinished task needs it. This serialized operation may reconcile saved receipts; omit for ordinary read-only discovery.' },
         decision: { type: 'string', enum: ['accepted', 'needs_changes'], description: 'For decide: Runtime’s explicit acceptance or specific changes required after inspecting saved evidence.' },
         rationale: { type: 'string', description: 'For decide: concise evidence-based assessment against the acceptance criteria; explain any required changes.' },
         task_revision: { type: 'number', description: 'For decide: exact task_revision returned by inspect.' },
@@ -261,7 +273,7 @@ export function apply(ctx: Context): void {
           })]
         },
       },
-      isConcurrencySafe: () => false,
+      isConcurrencySafe: args => args.action === 'list' && args.refresh_dispatches !== true,
       async execute(args, execution) {
         const agent = execution.agent
         if (!agent) throw new Error('hq_active_agent_required')
@@ -272,6 +284,9 @@ export function apply(ctx: Context): void {
           task_revision?: number
           evidence_hash?: string
           action: string
+          cursor?: string
+          limit?: number
+          refresh_dispatches?: boolean
           task_id?: string
           employee_id?: string
           starts_at?: string
@@ -283,7 +298,8 @@ export function apply(ctx: Context): void {
         }
         const membership = ctx.agentTeams.membership(agent)
         const root = membership.root
-        await reconcileEmployeeArtifacts(ctx, root, execution.signal)
+        if (input.action !== 'list' || input.refresh_dispatches === true)
+          await reconcileEmployeeArtifacts(ctx, root, execution.signal)
         const events = root.session.snapshotEvents()
         const contracts = taskContracts(events)
         if (input.action === 'list') {
@@ -291,7 +307,8 @@ export function apply(ctx: Context): void {
           const runtimeDispatches: JsonValue[] = []
           const assignmentByTask = new Map<string, Extract<typeof events[number], { type: 'hivemind/hq-employee-assignment' }>>()
           for (const event of events) if (event.type === 'hivemind/hq-employee-assignment') assignmentByTask.set(event.data.taskId, event)
-          const assignments = [...assignmentByTask.values()].slice(-8)
+          const assignments = input.refresh_dispatches === true
+            ? [...assignmentByTask.values()].filter(event => !input.task_id || event.data.taskId === input.task_id).slice(-8) : []
           for (const event of assignments) {
             if (event.type !== 'hivemind/hq-employee-assignment') continue
             const task = ctx.agentTeams.getTask(root, TeamTaskId(event.data.taskId))
@@ -337,47 +354,13 @@ export function apply(ctx: Context): void {
                 source: 'saved_open_dot_receipt', state: 'status_unavailable', stale: true } as JsonValue)
             }
           }
-          return {
-            employees: directory.profiles.map(profile => ({
-              id: profile['id'] ?? null, name: profile['name'] ?? null, slug: profile['slug'] ?? null,
-              role: profile['role_archetype'] ?? profile['role'] ?? 'HIVE-MIND employee',
-              nativeDispatchAvailable: employeeDispatchAllowed(profile),
-            })),
-            contracts: contracts.map(contract => ({
-              ...contract,
-              acceptanceCriteria: [...contract.acceptanceCriteria],
-            })),
-            artifact_receipts: events.flatMap(event => event.type === 'hivemind/hq-task-artifacts' ? [{
-              task_id: event.data.taskId,
-              artifact_ids: [...event.data.artifactIds],
-              producer_receipts: (event.data.producerReceipts ?? []).map(receipt => ({ ...receipt })),
-            }] : []),
-            reviews: events.flatMap(event => event.type === 'hivemind/hq-task-review' ? [{
-              task_id: event.data.taskId, task_revision: event.data.taskRevision,
-              status: event.data.status, artifact_ids: [...event.data.artifactIds],
-            }] : []),
-            runtime_dispatches: runtimeDispatches,
-            tasks: ctx.agentTeams
-              .listTasks(agent)
-              .map(task => ({
-                task_id: task.id,
-                revision: task.revision,
-                subject: task.subject,
-                status: task.status,
-              })),
+          return contractListPage({
+            events, profiles: directory.profiles,
+            tasks: ctx.agentTeams.listTasks(agent), contracts,
             calendar: projectCalendarTaskStatus(calendarItems(events), new Map(events.flatMap(event =>
-              event.type === 'team/task' ? [[event.data.task.id, event.data.task.status] as const] : []))).map(item => ({
-              id: item.id,
-              revision: item.revision,
-              kind: item.kind,
-              title: item.title,
-              owner: item.owner,
-              startsAt: item.startsAt,
-              endsAt: item.endsAt,
-              resolved: item.resolved,
-              taskId: item.taskId ?? null,
-            })),
-          }
+              event.type === 'team/task' ? [[event.data.task.id, event.data.task.status] as const] : []))),
+            runtimeDispatches,
+          }, input, listBounds)
         }
         if (membership.role !== 'lead') throw new Error('hq_lead_required')
         if (!input.task_id) throw new Error('hq_task_id_required')

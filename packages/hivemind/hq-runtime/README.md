@@ -18,6 +18,12 @@ The authenticated native browser canary verifies cold Schedule delivery, human E
 
 No invariant companion is published: metadata and receipt checks are enforced at mutation with replay tests. Native Team coordination is experimental and does not support several processes coordinating one team. Cross-session and cross-replica guarantees require further integration and verification.
 
+## Bounded discovery and parallel reads
+
+`hivemind_hq_contract` list returns current saved heads without reconciling employee artifacts, opening employee rooms or polling external dispatch. Independent ordinary list calls are concurrency-safe. Writes, inspection and explicit `refresh_dispatches: true` remain serialized; inspection retains its existing authorized receipt reconciliation. Use `task_id` for one exact task, or `next_cursor` for another page. A changed roster or board invalidates the cursor. `listPageSize` defaults to eight and `listResultMaxBytes` to 16000 UTF-8 bytes including metadata; a page shrinks to fit or reports an oversized item. Summaries preserve exact identities and receipt counts, while inspect owns complete acceptance evidence. Discovery never certifies task completion.
+
+Runtime and employee presets treat a clear audience as requested scope, resolve routine reversible details within authority and ask only for information or decisions that change the next action. Independent concurrency-safe reads may share a native tool batch; dependent reads, writes and shared browser actions remain ordered. Existing native permissions and saved checkpoints stay authoritative.
+
 ## Model Experience
 
 One bounded company-contract tool supplements native Team tools. Company evidence, selected playbooks, and skills remain progressive. Contracts and artifact links persist as session events; they are not a second task board or a full prompt dump. Native Team IDs and revisions remain authoritative. The stable tool schema preserves the existing model prefix.
