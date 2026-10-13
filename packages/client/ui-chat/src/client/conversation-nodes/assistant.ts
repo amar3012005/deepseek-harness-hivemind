@@ -34,6 +34,7 @@ interface AssistantState {
   readonly firstVisibleSeq: number | undefined
   readonly firstVisibleTime: number | undefined
   readonly firstTokenTime: number | undefined
+  readonly firstTextTime: number | undefined
   readonly hidden: boolean
   readonly final: ConversationMatch | undefined
   readonly usage: unknown
@@ -48,6 +49,7 @@ function initialState(turn: number, step: number): AssistantState {
     firstVisibleSeq: undefined,
     firstVisibleTime: undefined,
     firstTokenTime: undefined,
+    firstTextTime: undefined,
     hidden: false,
     final: undefined,
     usage: undefined,
@@ -147,6 +149,8 @@ function updateChunk(
     - Number(previousVisible)
     + Number(blockIsVisible(blocks[changedIndex]))
   const firstToken = isTokenDelta(chunk)
+  const changedBlock = blocks[changedIndex]
+  const firstText = changedBlock?.kind === 'text' && changedBlock.text.trim() !== ''
   return {
     ...state,
     blocks,
@@ -157,6 +161,9 @@ function updateChunk(
       : {},
     ...firstToken && state.firstTokenTime === undefined
       ? { firstTokenTime: time }
+      : {},
+    ...firstText && state.firstTextTime === undefined
+      ? { firstTextTime: time }
       : {},
   }
 }
@@ -207,6 +214,7 @@ function finalNode(
       timing: {
         stepStartTime: context.start?.event.time ?? null,
         firstTokenTime: state.firstTokenTime ?? null,
+        firstTextTime: state.firstTextTime ?? null,
         completedTime: event.time,
       },
       ...event.data.interrupted === true ? { interrupted: true } : {},

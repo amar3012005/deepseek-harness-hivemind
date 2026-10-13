@@ -945,6 +945,7 @@ describe('built-in conversation node Definitions', () => {
     ])
     const retryTiming = (node(snapshot(retryTimingValue), 'assistant-step')?.data as AssistantChatData).finalNode
     expect(retryTiming?.timing?.firstTokenTime).toBe(1_700_000_000_052)
+    expect(retryTiming?.timing?.firstTextTime).toBe(1_700_000_000_054)
 
     const partialWindow = assembler([
       at(40, 'assistant/live-chunk', {
