@@ -12,6 +12,18 @@
 - id: session-title-llm
   disabled: true
 
+# Recovery is deliberately scoped to the HIVE Chat preset. Runtime and HyperAgents
+# retain their own provider policy even when they share the GLM primary provider.
+- id: llm-retry
+  config:
+    fallback:
+      fromProvider: cloudflare-workers-ai
+      provider: openai-codex
+      model: gpt-6-luna
+      reasoningEffort: off
+      maxTokens: 1024
+      agentPreset: hivemind-chat
+
 - id: web-runtime
   config:
     openBrowser: !!js ctx.webStartup.openBrowser

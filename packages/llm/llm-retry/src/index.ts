@@ -37,6 +37,8 @@ const fallbackRoute = z.object({
   provider: z.string().required(),
   model: z.string().required(),
   maxTokens: z.number().min(1),
+  reasoningEffort: z.string(),
+  agentPreset: z.string(),
 })
 export const Config = z.object({
   fallback: z.union([fallbackRoute, z.array(fallbackRoute)]),

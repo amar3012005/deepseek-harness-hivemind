@@ -23,14 +23,14 @@ function tool(id:string):StreamChunk[]{return[{ type:'block-start',index:0,block
 async function* partial():AsyncGenerator<StreamChunk>{yield{ type:'block-start',index:0,blockType:'text' };yield{ type:'text-delta',index:0,text:'discard me' };yield{ type:'block-end',index:0,block:{ type:'text',text:'discard me' } };yield*tool('discarded');throw new LlmError('stream ended before terminal event','TRANSPORT')}
 const contexts:Context[]=[]
 afterEach(async()=>{await Promise.all(contexts.splice(0).map(ctx=>ctx.fiber.dispose()))})
-async function harness(entries:Entry[],enabled=true,routes: Retry.StepFallbackConfig[] | undefined=undefined){
+async function harness(entries:Entry[],enabled=true,routes: Retry.StepFallbackConfig[] | undefined=undefined, agentPreset?: string){
   const ctx=new Context();contexts.push(ctx)
   for(const plugin of [LlmRuntime,SessionStore,SessionProjectionRegistry,SystemPrompt,ToolRuntime,AgentRegistry])await ctx.plugin(plugin)
   await ctx.plugin(Retry,enabled?{ fallback:routes ?? { fromProvider:'primary',provider:'backup',model:'quick' } }:{})
   await ctx.plugin(AgentLoop,{ agents:[] })
   const adapter=new Adapter(entries);ctx.llm.registerAdapter(['primary','backup'],adapter)
   let toolExecutions=0;ctx.tools.register(defineContentToolFixture({ name:'read_fixture',description:'fixture',parameters:{},async execute(){toolExecutions++;return[{ type:'text',text:'saved evidence' }]} }))
-  const agent=await ctx.agentLoop.create(SessionId(`fallback-${contexts.length}`),{ provider:'primary',model:'selected' })
+  const agent=await ctx.agentLoop.create(SessionId(`fallback-${contexts.length}`),{ provider:'primary',model:'selected' }, agentPreset === undefined ? {} : { agentPreset } as never)
   const send=async()=>{agent.followup(createUserMessage({ content:[{ type:'text',text:'continue' }],source:{ kind:'user' } }));await agent.whenIdle()}
   return{ ctx,agent,adapter,send,toolExecutions:()=>toolExecutions }
 }
@@ -95,6 +95,15 @@ describe('independent native model-step fallback',()=>{
     const config=await agentEvents(fresh.ctx,fake).waterfall('agent/request',{ turn:2,step:1,signal:new AbortController().signal },async()=>({ provider:'backup',model:'quick' }))
     expect(config).toMatchObject({ provider:'primary',model:'selected' })
     expect(JSON.stringify(restored.deriveMessages())).not.toContain('llm/fallback')
+  })
+  it('uses a preset-scoped recovery route only for its matching durable profile', async () => {
+    const route = { fromProvider:'primary',provider:'backup',model:'quick',maxTokens:1024,agentPreset:'hivemind-chat' }
+    const chat = await harness([new LlmError('budget','QUOTA'),text('recovered')], true, [route], 'hivemind-chat')
+    const runtime = await harness([new LlmError('budget','QUOTA')], true, [route], 'hivemind-hq')
+    await chat.send(); await runtime.send()
+    expect(chat.adapter.requests.map(request => request.provider)).toEqual(['primary','backup'])
+    expect(chat.adapter.requests[1]?.maxTokens).toBe(1024)
+    expect(runtime.adapter.requests.map(request => request.provider)).toEqual(['primary'])
   })
   it('keeps concurrent session fallback state isolated',async()=>{
     const one=await harness([new LlmError('budget','QUOTA'),text('one')]);const two=await harness([text('two')])

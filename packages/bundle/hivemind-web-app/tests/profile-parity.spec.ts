@@ -23,6 +23,15 @@ describe('hivemind-web native renderer parity', () => {
     expect(patch).toContain('provider: cloudflare-workers-ai')
   })
 
+  it('keeps Codex recovery narrow to HIVE Chat while GLM remains the primary', () => {
+    expect(patch).toContain('fromProvider: cloudflare-workers-ai')
+    expect(patch).toContain('provider: openai-codex')
+    expect(patch).toContain('model: gpt-6-luna')
+    expect(patch).toContain('reasoningEffort: off')
+    expect(patch).toContain('maxTokens: 1024')
+    expect(patch).toContain('agentPreset: hivemind-chat')
+  })
+
   it('omits developer prompt contributions without replacing native tool guidance', () => {
     expect(patch).toContain('includeHarnessIdentity: false')
     expect(patch).toContain('includeRuntimeContext: false')
@@ -68,7 +77,8 @@ describe('hivemind-web native renderer parity', () => {
     expect(patch).toContain("reasoning: 'off'")
     expect(patch).toContain('CLOUDFLARE_AI_GATEWAY_TOKEN')
     expect(patch).toContain('gateway.ai.cloudflare.com')
-    expect(patch).not.toContain('reasoningEffort: off')
+    expect(patch).toContain('reasoningEffort: off')
+    expect(patch).toContain('agentPreset: hivemind-chat')
     expect(patch).toContain('id: openrouter/deepseek/deepseek-v4-flash-0731')
     expect(patch).toContain('provider: cloudflare-workers-ai')
     expect(patch).toContain("model: '@cf/zai-org/glm-5.3-flash'")

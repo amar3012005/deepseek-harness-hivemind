@@ -15,6 +15,10 @@ export interface StepFallbackConfig {
   model: string
   /** Bound output reservation on the recovery route independently of the primary. */
   maxTokens?: number
+  /** Optional adapter-supported effort used only by this recovery request. */
+  reasoningEffort?: LlmCallConfig['reasoningEffort']
+  /** Optional durable agent-preset guard for a profile-specific recovery route. */
+  agentPreset?: string
 }
 type State = LlmFallbackEventData | null
 const call = z.object({
@@ -64,16 +68,21 @@ export function registerStepFallback(ctx: Context, config: StepFallbackConfig | 
   })
   if (!config) return
   const routes = Array.isArray(config) ? config : [config as StepFallbackConfig]
-  const primaries = new Set<string>()
+  const routeKeys = new Set<string>()
   for (const route of routes) {
-    if (!route.fromProvider || !route.provider || !route.model || route.provider === route.fromProvider || primaries.has(route.fromProvider)
+    const routeKey = JSON.stringify([route.fromProvider, route.agentPreset ?? null])
+    if (!route.fromProvider || !route.provider || !route.model || route.provider === route.fromProvider || routeKeys.has(routeKey)
       || (route.maxTokens !== undefined && (!Number.isInteger(route.maxTokens) || route.maxTokens < 1))) {
-      throw new Error('llm-retry: fallback must name a unique primary, distinct authorized provider, model and positive output cap')
+      throw new Error('llm-retry: fallback must name a unique primary, distinct authorized provider, optional preset guard, model and positive output cap')
     }
-    primaries.add(route.fromProvider)
+    routeKeys.add(routeKey)
   }
   ctx.on('agent/request-error', async ({ agent,turn,step,provider,failure,signal },next) => {
-    const route = routes.find(candidate => candidate.fromProvider === provider)
+    // A preset can only change while a session is blank, so the immutable creation
+    // header is the correct profile boundary for every request that can fail here.
+    const agentPreset = agent.session.header.agentPreset
+    const route = routes.find(candidate => candidate.fromProvider === provider && candidate.agentPreset === agentPreset)
+      ?? routes.find(candidate => candidate.fromProvider === provider && candidate.agentPreset === undefined)
     if (signal.aborted || !route || !ELIGIBLE.has(failure.code)) return next()
     const previous=ctx.sessionProjections.stateOf(agent.session,'llmStepFallback')
     if (previous?.turn===turn && previous.step===step) return next()
@@ -83,7 +92,8 @@ export function registerStepFallback(ctx: Context, config: StepFallbackConfig | 
       ? primary.maxTokens
       : Math.min(primary.maxTokens ?? route.maxTokens, route.maxTokens)
     const fallback:LlmCallConfig={ provider:route.provider,model:route.model,
-      ...(maxTokens === undefined ? {} : { maxTokens }) }
+      ...(maxTokens === undefined ? {} : { maxTokens }),
+      ...(route.reasoningEffort === undefined ? {} : { reasoningEffort: route.reasoningEffort }) }
     // A configured route is not proof that its adapter is mounted. Validate
     // against the current registry before saving a checkpoint or retrying.
     if (!ctx.llm.listProviders().some(candidate => candidate.id === fallback.provider)) return next()

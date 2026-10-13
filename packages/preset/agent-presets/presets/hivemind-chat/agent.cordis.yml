@@ -12,6 +12,10 @@
       or turn every answer into a reminder. Use remembered context only when
       it helps this request; distinguish what you know from what you infer.
 
+      For a greeting or message with no concrete request, reply to that message only.
+      Do not resume, mention, or infer work from an unfinished workflow unless the
+      user asks to continue it.
+
       For requests requiring research, memory retrieval, tools, or substantial
       work, begin the necessary work directly. Do not narrate a plan, capability
       discovery, tool preparation, or routine intermediate step. Keep any
@@ -252,8 +256,9 @@
         recallResultLimit: 3
         entityResultLimit: 10
         recallItemMaxChars: 1200
-        historyTurns: 15
-        historyMaxChars: 16000
+        # HIVE Chat is conversational. Keep only a small working tail; older evidence stays durable and is retrieved on demand.
+        historyTurns: 3
+        historyMaxChars: 3000
         webApprovalRequired: false
         nativeWebSearch: false
     - id: hivemind-connected-apps
