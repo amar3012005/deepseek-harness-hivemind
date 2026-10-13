@@ -18,6 +18,8 @@ import {
 export interface Config {
   /** Keep tenant-scoped reads mounted without taking automatic delivery ownership. */
   dispatchEnabled?: boolean
+  /** Only these native presets may be managed or restored by this runner. */
+  ownedPresets?: string[]
   /** A standby runner must not enqueue tasks for another deployment's scanner. */
   managementEnabled?: boolean
   sharedOrganizationAgents?: boolean
@@ -61,6 +63,7 @@ export default class PostgresScheduleBackend extends Service implements Schedule
   static inject = ['hivemindExecutionScope', 'agents']
   static Config: z<Config> = z.object({
     dispatchEnabled: z.boolean().default(true),
+    ownedPresets: z.array(z.string()).default(['hivemind-chat', 'hivemind-hq', 'hivemind-hyperagents']),
     managementEnabled: z.boolean().default(true),
     sharedOrganizationAgents: z.boolean().default(false),
     connectionStringEnv: z.string().required(),
@@ -75,6 +78,8 @@ export default class PostgresScheduleBackend extends Service implements Schedule
     statementTimeoutMs: z.natural().min(1000).required(),
     maxTasksPerUser: z.natural().min(1).max(10000).required(),
   })
+  private dueOffset = 0
+  private owned(preset: string): boolean { return (this.config.ownedPresets ?? ['hivemind-chat', 'hivemind-hq', 'hivemind-hyperagents']).includes(preset) }
   private readonly pool: Pool
   private readonly scope: Context['hivemindExecutionScope']
   constructor(
@@ -104,7 +109,7 @@ export default class PostgresScheduleBackend extends Service implements Schedule
     let preset = agent.session.header.agentPreset
     for (const event of agent.session.ownEvents())
       if (event.type === 'agent-preset/selected') preset = event.data.agentPreset
-    return preset === 'hivemind-hyperagents' || preset === 'hivemind-chat' || preset === 'hivemind-hq'
+    return this.owned(preset ?? '')
   }
   start(wake: () => void): () => void {
     if (this.config.dispatchEnabled === false) return () => {}
@@ -158,11 +163,12 @@ export default class PostgresScheduleBackend extends Service implements Schedule
       due = (
         await scanner.query<DueRow>(
           this.config.sharedOrganizationAgents ? `SELECT d.task_id,d.org_id,d.user_id,d.actor_user_id FROM harness_scheduled_due d
-        WHERE d.due_at <= now() ORDER BY d.due_at,d.task_id LIMIT $1` : `SELECT task_id,org_id,user_id FROM harness_scheduled_due
-        WHERE due_at <= now() ORDER BY due_at,task_id LIMIT $1`,
-          [this.config.batchSize],
+        WHERE d.due_at <= now() ORDER BY d.due_at,d.task_id LIMIT $1 OFFSET $2` : `SELECT task_id,org_id,user_id FROM harness_scheduled_due
+        WHERE due_at <= now() ORDER BY due_at,task_id LIMIT $1 OFFSET $2`,
+          [this.config.batchSize, this.dueOffset],
         )
       ).rows
+      this.dueOffset = due.length === this.config.batchSize ? this.dueOffset + due.length : 0
       await scanner.query('COMMIT')
     } catch (error) {
       await scanner.query('ROLLBACK').catch(() => undefined)
@@ -184,6 +190,15 @@ export default class PostgresScheduleBackend extends Service implements Schedule
             [row.task_id, owner.orgId, owner.userId],
           )
           if (pending.rowCount === 0) return
+          // The global due index carries no session content. Resolve native
+          // ownership under its existing tenant RLS before modifying or restoring.
+          const ownership = await client.query<{ preset: string }>(
+            `SELECT ${currentPreset} AS preset FROM harness_sessions s
+             JOIN harness_scheduled_tasks t ON t.session_id=s.id AND t.org_id=s.org_id AND t.user_id=s.user_id
+             WHERE t.id=$1 AND t.org_id=$2 AND t.user_id=$3`,
+            [row.task_id, owner.orgId, owner.userId],
+          )
+          if (ownership.rows[0] && !this.owned(ownership.rows[0].preset)) return
           try {
             await this.authorize(client, { ...owner,userId:row.actor_user_id ?? owner.userId })
           } catch (error) {
@@ -338,8 +353,8 @@ export default class PostgresScheduleBackend extends Service implements Schedule
       `SELECT t.* FROM harness_scheduled_tasks t JOIN harness_sessions s
       ON s.id=t.session_id AND s.org_id=t.org_id AND s.user_id=t.user_id
       WHERE t.org_id=$1 AND t.user_id=$2 AND ($3::text IS NULL OR t.session_id=$3)
-      AND ${currentPreset} IN (${audience==='personal'?"'hivemind-chat'":audience==='team'?"'hivemind-hyperagents','hivemind-hq'":"'hivemind-hyperagents','hivemind-chat','hivemind-hq'"}) ORDER BY t.created_at,t.id`,
-      [owner.orgId, owner.userId, sessionId ?? null],
+      AND ${currentPreset} IN (${audience==='personal'?"'hivemind-chat'":audience==='team'?"'hivemind-hyperagents','hivemind-hq'":"'hivemind-hyperagents','hivemind-chat','hivemind-hq'"}) AND ${currentPreset} = ANY($4::text[]) ORDER BY t.created_at,t.id`,
+      [owner.orgId, owner.userId, sessionId ?? null, this.config.ownedPresets ?? ['hivemind-chat', 'hivemind-hq', 'hivemind-hyperagents']],
     )
     const tasks = new Map<ScheduleId, ScheduleTask>(
       rows.rows.map((row) => {
@@ -367,8 +382,8 @@ export default class PostgresScheduleBackend extends Service implements Schedule
           throw new Error('Schedule session cannot change')
         const authorized = await client.query(
           `SELECT 1 FROM harness_sessions s WHERE s.id=$1 AND s.org_id=$2 AND s.user_id=$3
-          AND s.status='active' AND ${currentPreset} IN (${audience==='personal'?"'hivemind-chat'":audience==='team'?"'hivemind-hyperagents','hivemind-hq'":"'hivemind-hyperagents','hivemind-chat','hivemind-hq'"})`,
-          [task.sessionId, owner.orgId, owner.userId],
+          AND s.status='active' AND ${currentPreset} IN (${audience==='personal'?"'hivemind-chat'":audience==='team'?"'hivemind-hyperagents','hivemind-hq'":"'hivemind-hyperagents','hivemind-chat','hivemind-hq'"}) AND ${currentPreset} = ANY($4::text[])`,
+          [task.sessionId, owner.orgId, owner.userId, this.config.ownedPresets ?? ['hivemind-chat', 'hivemind-hq', 'hivemind-hyperagents']],
         )
         if (authorized.rowCount !== 1) throw new Error('Schedule requires an owned HIVE session')
         if (current === undefined && tasks.size >= this.config.maxTasksPerUser)
@@ -414,6 +429,7 @@ export default class PostgresScheduleBackend extends Service implements Schedule
       },
       delete: async (id) => {
         if (this.config.managementEnabled === false) throw new Error('schedule_management_disabled_for_runner')
+        if (this.config.ownedPresets && !tasks.has(id)) throw new Error('schedule_not_owned_by_runner')
         await client.query('DELETE FROM harness_scheduled_tasks WHERE id=$1 AND org_id=$2 AND user_id=$3', [
           id,
           owner.orgId,
