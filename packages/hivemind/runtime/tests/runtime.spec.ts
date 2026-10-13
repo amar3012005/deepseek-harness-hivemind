@@ -1091,6 +1091,40 @@ describe('HIVE-MIND runtime', () => {
     })
   })
 
+  it.each([
+    [503, 'memory_retrieval_timeout', undefined],
+    [503, 'memory_unavailable', undefined],
+    [429, 'tenant_recall_busy', 1],
+    [429, 'rate_limited', 30],
+  ])('preserves recall service %s/%s without an automatic second request', async (status, code, delay) => {
+    const path = await authorityFile()
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({
+      error: code, retry_after_seconds: delay, message: 'secret upstream material', private_token: 'hidden',
+    }), { status, headers: { 'content-type': 'application/json' } })))
+    const harness = mount(config(path))
+    const value = await tool(harness, 'hivemind_meta').execute({
+      operation: 'recall', recall: { query: 'Saved campaign details' },
+    }, execContext())
+    expect(value).toMatchObject({ status: 'unavailable', operation: 'recall', error: { code, retryable: true } })
+    if (delay !== undefined) expect(value).toMatchObject({ error: { retry_after_seconds: delay } })
+    expect(JSON.stringify(value)).toContain('Do not retry in this turn')
+    expect(JSON.stringify(value)).not.toContain('secret upstream')
+    expect(JSON.stringify(value)).not.toContain('hidden')
+    expect(fetch).toHaveBeenCalledTimes(1)
+  })
+
+  it('bounds Retry-After and gives an unknown recall throttle a safe technical identity', async () => {
+    const path = await authorityFile()
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ error: 'private provider detail' }), {
+      status: 429, headers: { 'content-type': 'application/json', 'retry-after': '999999' },
+    })))
+    const value = await tool(mount(config(path)), 'hivemind_meta').execute({
+      operation: 'recall', recall: { query: 'Stored records' },
+    }, execContext())
+    expect(value).toMatchObject({ error: { code: 'memory_recall_throttled', retry_after_seconds: 300 } })
+    expect(JSON.stringify(value)).not.toContain('private provider detail')
+  })
+
   it('returns one bounded evidence list instead of the verbose recall transport envelope', async () => {
     const path = await authorityFile()
     vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({

@@ -316,15 +316,17 @@ interface TenantIdentity {
 
 /** One authoritative HIVE-MIND employee entry. */
 class HiveMindRuntimeError extends Error {
-  constructor(message: string, options?: ErrorOptions & { status?: number; code?: string }) {
+  constructor(message: string, options?: ErrorOptions & { status?: number; code?: string; retryAfterSeconds?: number }) {
     super(`hivemind-runtime: ${message}`, options)
     this.name = 'HiveMindRuntimeError'
     this.status = options?.status
     this.code = options?.code
+    this.retryAfterSeconds = options?.retryAfterSeconds
   }
 
   readonly status: number | undefined
   readonly code: string | undefined
+  readonly retryAfterSeconds: number | undefined
 }
 
 function expandedPath(path: string): string {
@@ -568,6 +570,13 @@ async function hiveRequest(
       throw new HiveMindRuntimeError('HIVE-MIND redirect refused')
     }
     if (!response.ok) {
+      if (path === RECALL_PATH && (response.status === 429 || response.status === 503)) {
+        let body: unknown
+        try { body = await readResponseJson(response, Math.min(config.responseMaxBytes, 4096)) }
+        catch { /* Only allowlisted technical reasons may leave the service boundary. */ }
+        const failure = recallServiceFailure(response.status, response.headers.get('retry-after'), body)
+        if (failure) throw new HiveMindRuntimeError('Memory retrieval temporarily unavailable', failure)
+      }
       if (path === '/v1/hyperagents/operating-memory') {
         let failure: ReturnType<typeof privateMemoryFailure>
         try { failure = privateMemoryFailure(await readResponseJson(response, Math.min(config.responseMaxBytes, 4096))) }
@@ -740,13 +749,50 @@ function hyperagentProfilesFromResponse(value: unknown): JsonRecord {
   return projectHyperagentProfiles(value)
 }
 
+/** Preserve bounded technical admission/deadline facts; never forward arbitrary upstream bodies. */
+function recallServiceFailure(status: number, retryAfterHeader: string | null, value: unknown): {
+  status: number
+  code: string
+  retryAfterSeconds?: number
+} | undefined {
+  const record = value !== null && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown> : {}
+  const candidate = typeof record['error'] === 'string' ? record['error'] : record['code']
+  const allowed = status === 429 ? ['tenant_recall_busy', 'rate_limited']
+    : ['memory_retrieval_timeout', 'memory_unavailable', 'memory_retrieval_unavailable', 'temporal_inventory_unavailable']
+  const code = typeof candidate === 'string' && allowed.includes(candidate)
+    ? candidate : status === 429 ? 'memory_recall_throttled' : undefined
+  if (!code) return undefined
+  const retryAfter = Number(retryAfterHeader ?? record['retry_after_seconds'])
+  const retryAfterSeconds = Number.isFinite(retryAfter) && retryAfter > 0
+    ? Math.min(300, Math.max(1, Math.ceil(retryAfter))) : undefined
+  return { status, code, ...(retryAfterSeconds === undefined ? {} : { retryAfterSeconds }) }
+}
+
 type ReadOperation = 'context' | 'entities' | 'recall' | 'profiles'
 type ReadFailureCode = 'entity_index_unavailable' | 'memory_retrieval_timeout' | 'profile_context_unavailable' | 'feature_unavailable'
+  | 'tenant_recall_busy' | 'rate_limited' | 'memory_recall_throttled' | 'memory_unavailable'
+  | 'memory_retrieval_unavailable' | 'temporal_inventory_unavailable'
 
 /** Convert expected optional-service failures into model-visible states without disguising authentication errors. */
 function typedReadFailure(operation: ReadOperation, error: unknown): Record<string, JsonValue> | undefined {
   if (!(error instanceof HiveMindRuntimeError)) return undefined
   if (error.status === 401 || error.status === 403) return undefined
+  if (operation === 'recall' && error.code !== undefined && [
+    'memory_retrieval_timeout', 'tenant_recall_busy', 'rate_limited', 'memory_recall_throttled',
+    'memory_unavailable', 'memory_retrieval_unavailable', 'temporal_inventory_unavailable',
+  ].includes(error.code)) {
+    return {
+      status: 'unavailable', operation,
+      error: {
+        code: error.code, retryable: true,
+        ...(error.retryAfterSeconds === undefined ? {} : { retry_after_seconds: error.retryAfterSeconds }),
+        guidance: 'Memory retrieval did not complete; this is not an empty result. Do not retry in this turn or promise that waiting will fix it. '
+          + 'Preserve the request and report the service blocker; retry only after recovery or a later explicit request.',
+      },
+      result: { results: [], count: 0 },
+    }
+  }
   const timeout = error.code === 'request_timeout'
   const optionalFailure = timeout || error.status === 404 || error.status === 501 || error.status === 503
   if (!optionalFailure) return undefined
