@@ -5,6 +5,7 @@ import { mountAgentLoopTestDependencies } from '../../../test-support/agent-loop
 import { defineTool } from '../../../core/tools/src/index.ts'
 import { MockAdapter, textResponse, toolCallResponse } from '../../../core/agent-loop/tests/mock-adapter.ts'
 import { describe, expect, it, vi } from 'vitest'
+import type { UserMessage } from '@deepseek-ai/dsh-llm'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { createUserMessage, createAssistantMessage, createToolResultMessage, createSystemMessage } from '@deepseek-ai/dsh-llm'
 import { Session, SessionId, foldSurface } from '@deepseek-ai/dsh-session'
@@ -791,10 +792,10 @@ it('folds repeated owned policy, clock, and receipt snapshots while preserving e
   const session = Session.create(SessionId('snapshot-growth'))
   const harness = mount(), agent = { session }
   session.append('turn/start', { turn: 1 })
-  const originals: ReturnType<typeof user>[] = []
+  const originals: UserMessage[] = []
   for (let step=0; step<40; step++) {
     const incoming = ['time-context','hivemind-runtime-full-access','dsh-hivemind-connected-apps/receipt:verified-hash'].map(plugin =>
-      createUserMessage({ source:{ kind:'plugin',plugin,form:'snapshot' },content:[{ type:'text',text:`${plugin} current ${step} `+'evidence '.repeat(400) }] }))
+      createUserMessage({ source:{ kind:'plugin',plugin,form:'snapshot',sections:[{ name:plugin,text:`${plugin} current ${step}` }] },content:[{ type:'text',text:`${plugin} current ${step} `+'evidence '.repeat(400) }] }))
     originals.push(...incoming)
     const decision = await harness.preStep({ agent,turn:1,signal:new AbortController().signal } as never,
       async()=>({ kind:'enter',messages:incoming })) as { messages: ReturnType<typeof user>[]; startsRequestSeries?: boolean }
@@ -874,4 +875,23 @@ it('native prepared multi-step requests keep repeated snapshot and recall text c
     expect(raw).toHaveLength(12)
     expect(JSON.stringify(raw)).toContain('saved '.repeat(2000))
   } finally { await ctx.fiber.dispose() }
+})
+
+it('uses whole saved-sequence pointers when many task-list metadata envelopes exceed the shared allowance', async () => {
+  const session=Session.create(SessionId('many-list-receipts'))
+  const originals=Array.from({ length:100 },(_,index)=>savedTaskList(session,`many-list-${index}`,taskRows(1)))
+  const harness=mount([],undefined,undefined,[],false,8000)
+  await harness.preStep({ agent:{ session },turn:1,signal:new AbortController().signal } as never,async()=>({ kind:'enter',messages:[] }))
+  const messages=session.deriveMessages().filter(message=>message.content.some(block=>block.type==='tool-result'))
+  const texts=messages.flatMap(message=>message.content.flatMap(block=>block.type==='tool-result'
+    ?block.content.flatMap(part=>part.type==='text'?[part.text]:[]):[]))
+  expect(texts.join('').length).toBeLessThanOrEqual(8000)
+  expect(texts).toHaveLength(100)
+  for (const text of texts) {
+    const value=JSON.parse(text) as { originalSequence:number;readOriginal?:boolean;complete?:boolean }
+    if(value.readOriginal) expect(value.complete).not.toBe(true)
+    expect(originals.some(event=>event.seq===value.originalSequence)).toBe(true)
+  }
+  for(const event of originals) expect(session.eventAt(event.seq)).toEqual(event)
+  expect(Session.create(SessionId('many-list-restored'),session.snapshotEvents()).deriveMessages()).toEqual(session.deriveMessages())
 })

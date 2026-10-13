@@ -267,13 +267,18 @@ function boundTaskLists(agent: Agent, maxChars: number): { changed: boolean; cal
     ...(count === 0 && entry.heads.length ? { readOriginal: true } : {}),
     sourceRows: entry.heads.length, originalSequence: entry.original.seq, detailsTool: 'team_task_get',
   })
+  // Many retained call pairs can exceed the allowance on metadata alone.
+  // Keep a whole minimal pointer per older result instead of broken JSON.
+  const pointer = (entry: typeof entries[number]) => JSON.stringify({ readOriginal: true, originalSequence: entry.original.seq })
+  const compactMetadata = entries.reduce((sum, entry) => sum + encode(entry, 0).length, 0) > maxChars
+  const minimum = (entry: typeof entries[number]) => compactMetadata ? pointer(entry) : encode(entry, 0)
   let remaining = maxChars, changed = false
   for (let index = 0; index < entries.length; index++) {
     const entry = entries[index]
     if (!entry) continue
-    const reserved = entries.slice(index + 1).reduce((sum, pending) => sum + encode(pending, 0).length, 0)
+    const reserved = entries.slice(index + 1).reduce((sum, pending) => sum + minimum(pending).length, 0)
     const budget = Math.max(0, remaining - reserved)
-    let count = 0, text = encode(entry, 0)
+    let count = 0, text = minimum(entry)
     while (count < entry.heads.length) {
       const next = encode(entry, count + 1)
       if (next.length > budget) break
