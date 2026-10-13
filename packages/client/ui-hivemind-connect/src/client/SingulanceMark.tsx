@@ -68,10 +68,10 @@ export function setupSingulanceHeadline(
         headline.removeAttribute('data-hivemind-hero-headline')
         continue
       }
-      const text = brain ? 'Brain' : runtime ? 'RUNTIME : Lets Shape your company together' : 'Hyperagents : Lets do the real work.'
+      const text = brain ? 'Brain: Let’s remember what matters' : runtime ? 'RUNTIME : Lets Shape your company together' : 'Hyperagents : Lets do the real work.'
       if (title.textContent !== text) title.textContent = text
       if (badge instanceof HTMLElement) {
-        badge.style.display = originals.get(headline)?.badgeDisplay ?? ''
+        badge.style.display = brain ? 'none' : originals.get(headline)?.badgeDisplay ?? ''
         const badgeText = brain ? 'Let’s remember what matters' : originals.get(headline)?.badgeText ?? ''
         if (badge.textContent !== badgeText) badge.textContent = badgeText
       }

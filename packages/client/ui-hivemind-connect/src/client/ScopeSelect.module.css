@@ -40,6 +40,8 @@
   opacity: .58;
 }
 
-:global([data-hivemind-brain-welcome] > span:last-child) { display: flex; flex-direction: column; align-items: flex-start; gap: 5px; }
-:global([data-hivemind-brain-welcome] > span:last-child > span:first-child) { opacity: 1; font-weight: 600 !important; }
-:global([data-hivemind-brain-welcome] > span:last-child > span:last-child) { display: block !important; border: 0; background: transparent; padding: 0; font-size: 14px; line-height: 20px; letter-spacing: 0; font-weight: 400; color: var(--dsh-color-text-secondary, #6b7280); }
+/* One company welcome line aligned with the native composer card. */
+:global([data-hivemind-brain-welcome]) { padding-left: 0; gap: 8px !important; flex-wrap: nowrap; font-size: clamp(14px, 2vw, 24px) !important; line-height: 1.25 !important; letter-spacing: 0; white-space: nowrap; }
+:global([data-hivemind-brain-welcome] > span:last-child) { display: block; min-width: 0; }
+:global([data-hivemind-brain-welcome] > span:last-child > span:first-child) { opacity: 1; font-weight: 400 !important; }
+:global([data-hivemind-brain-welcome] svg) { width: 1em; height: 1em; }

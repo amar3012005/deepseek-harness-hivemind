@@ -14,6 +14,7 @@ import type { ChatSnapshot } from '../contract/snapshot.ts'
 import { PendingSteeringBubble, PendingSubmissionBubble } from './MessageItem.tsx'
 import { avatarGroupEnds } from './avatar-groups.ts'
 import { agentActivity, type AgentActivityKey } from './agent-activity.ts'
+import { brainActivity, type BrainActivity } from './brain-activity.ts'
 import { hasAssistantReplyContent } from '../contract/assistant-content.ts'
 import { ChatNodeSeat } from './ChatNodeSeat.tsx'
 import { TurnNavigator } from './TurnNavigator.tsx'
@@ -170,13 +171,14 @@ function runningTurnStartTime(timeline: ConversationTimelineSnapshot): number | 
 }
 
 /** Turn-level model activity label retained across first-token, tool, and streaming phases. */
-function TurnStatus({ startTime, working, activity, avatar, t }: {
+function TurnStatus({ startTime, working, activity, brainStatus, avatar, t }: {
   /** The running turn's logged `turn/start` time; null falls back to mount
    *  time when that boundary is outside the window. */
   startTime: number | null
   /** A live tool call means the turn is doing work beyond model preparation. */
   working: boolean
   activity?: AgentActivityKey | undefined
+  brainStatus?: BrainActivity | undefined
   avatar?: import('react').ReactNode
   /** The owning view's locale seat. */
   t: ChatViewSlotProps['t']
@@ -200,9 +202,13 @@ function TurnStatus({ startTime, working, activity, avatar, t }: {
   return (
     <div className={css.turnStatus} data-agent-room={window.location.pathname.includes('/employee/harness') || undefined} role="status" aria-live="polite">
       {/^\/hivemind\/app\/overview(?:\/|$)/u.test(window.location.pathname)
-        ? <span aria-hidden style={{ width: 32, height: 32, display: 'inline-flex' }}>{avatar}</span>
+        ? <span aria-hidden style={{ width: 32, height: 32, display: 'inline-flex', alignItems: 'center' }}>
+          {brainStatus?.app === 'gmail' ? <img src="https://logos.composio.dev/api/gmail" alt="" width={28} height={28} /> : avatar}
+        </span>
         : <ThinkingOrb className={css.activityOrb} state={working ? 'solving' : 'searching'} size={32} aria-hidden="true" />}
-      <span className={css.turnStatusLabel}>{activity === undefined ? working ? t('chat.working') : t('chat.thinking') : t(activity)}</span>
+      <span className={css.turnStatusLabel}>{/^\/hivemind\/app\/overview(?:\/|$)/u.test(window.location.pathname)
+        ? brainStatus?.label ?? (working ? 'Working on your request' : 'Preparing your answer')
+        : activity === undefined ? working ? t('chat.working') : t('chat.thinking') : t(activity)}</span>
       {showClock && (
         <span className={css.turnStatusClock} aria-hidden>
           {formatRunDuration(elapsedMs, t)}
@@ -871,6 +877,8 @@ export function ChatView({
             avatar={renderSlot('conversation.chat.activityAvatar', {})}
             startTime={runningTurnStart}
             working={runningCalls.length > 0}
+            brainStatus={/^\/hivemind\/app\/overview(?:\/|$)/u.test(window.location.pathname)
+              ? brainActivity(runningCalls) : undefined}
             activity={/^\/hivemind\/app\/employee\/harness(?:\/|$)/u.test(window.location.pathname)
               ? agentActivity(runningCalls) : undefined}
             t={t}
