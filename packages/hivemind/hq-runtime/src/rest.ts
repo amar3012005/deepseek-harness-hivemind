@@ -1,3 +1,4 @@
+import { isAppendSurfaceEvent } from '@deepseek-ai/dsh-session'
 /** Durable voluntary rest over native Session records and the existing Schedule owner. */
 import { createHash } from 'node:crypto'
 import { isDeepStrictEqual } from 'node:util'
@@ -14,7 +15,7 @@ import type { HqRestNote, HqRestNoteRequest, HqRestNoteResult, HqRestState } fro
 export function isNightlyScheduledTurn(agent:Agent, admitted: readonly UserMessage[] = []):boolean {
   const events=agent.session.snapshotEvents(),boundary=events.findLast(event=>event.type==='turn/end')?.seq??-1
   const schedule='schedule-'+createHash('sha256').update(`${agent.id}\0nightly-routine-check-v1`).digest('hex')
-  const current = [...events.flatMap(event => event.seq > boundary && event.type === 'user/message' ? [event.data] : []), ...admitted]
+  const current = [...events.flatMap(event => event.seq > boundary && event.type === 'user/message' && isAppendSurfaceEvent(event) ? [event.data] : []), ...admitted]
   // A saved colleague reply resumes the same review without another rest timer.
   for (const input of current) {
     if (input.source.kind !== 'hivemind-agent-message') continue
@@ -99,7 +100,7 @@ const MAX_REST_MS = 4 * 60 * 60 * 1000
 /** Only native scheduled recovery may end at a committed rest receipt without a wrap-up. */
 export function automaticRecoveryTurn(events: readonly SessionEvent[]): boolean {
   const start = events.findLast(event => event.type === 'turn/start')?.seq ?? -1
-  const inputs = events.flatMap(event => event.seq > start && event.type === 'user/message'
+  const inputs = events.flatMap(event => event.seq > start && event.type === 'user/message' && isAppendSurfaceEvent(event)
     && event.data.source.kind !== 'plugin' ? [event.data] : [])
   return inputs.length > 0 && inputs.every(message => message.source.kind === 'schedule')
 }
@@ -262,7 +263,7 @@ export async function acknowledgeRestNotes(ctx: Context, agent: Agent): Promise<
 export function restBriefing(agent: Agent, messages: readonly UserMessage[]): { text: string; section: { name: string; text: string } } {
   const events = agent.session.snapshotEvents(), intents = restIntents(events)
   const lastStart = events.findLast(event => event.type === 'turn/start')?.seq ?? -1
-  const admitted = events.filter(event => event.seq > lastStart && event.type === 'user/message')
+  const admitted = events.filter(event => event.seq > lastStart && event.type === 'user/message' && isAppendSurfaceEvent(event))
     .flatMap(event => event.type === 'user/message' ? [event.data] : [])
   const ids = new Set([...admitted, ...messages].filter(message => String(message.source.kind) === 'schedule')
     .flatMap(message => message.content.flatMap(block => block.type === 'text' ? [...block.text.matchAll(/HQ_REST_WAKE\[([A-Za-z0-9_-]+)\]/g)].flatMap(match => match[1] ? [match[1]] : []) : [])))

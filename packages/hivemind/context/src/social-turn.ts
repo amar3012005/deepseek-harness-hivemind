@@ -1,3 +1,4 @@
+import { isAppendSurfaceEvent } from '@deepseek-ai/dsh-session'
 /** Shared existing social-intent projection; never grants authority. */
 import type { UserMessage } from '@deepseek-ai/dsh-llm'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
@@ -21,7 +22,7 @@ export function greetingOnly(messages: readonly UserMessage[]): boolean {
 
 /** Preserve the current social intent across native model/tool steps. */
 export function socialTurnOnly(current: readonly SessionEvent[], fresh: readonly UserMessage[] = []): boolean {
-  const admitted = [...new Map([...current.flatMap(event => event.type === 'user/message' ? [event.data] : []),
+  const admitted = [...new Map([...current.flatMap(event => event.type === 'user/message' && isAppendSurfaceEvent(event) ? [event.data] : []),
     ...fresh].map(message => [message.id, message])).values()]
   // A reply to this turn's own social message closes that exchange. It is
   // not fresh company work, even when it arrives before the turn commits.

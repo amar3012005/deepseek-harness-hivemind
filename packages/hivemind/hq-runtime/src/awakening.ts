@@ -1,3 +1,4 @@
+import { isAppendSurfaceEvent } from '@deepseek-ai/dsh-session'
 /** First awakening is a resumable investigation in the native room, not a second agent loop. */
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import type { Context } from '@deepseek-ai/cordis'
@@ -55,7 +56,7 @@ export async function awakeningContext(ctx: Context, agent: Agent, turn: number,
   const events = agent.session.snapshotEvents()
   const start = events.findLast(event => event.type === 'hivemind/hq-awakening-start')
   const boundary = events.findLast(event => event.type === 'turn/start')?.seq ?? -1
-  const inputs = [...events.flatMap(event => event.seq > boundary && event.type === 'user/message' ? [event.data] : []), ...messages]
+  const inputs = [...events.flatMap(event => event.seq > boundary && event.type === 'user/message' && isAppendSurfaceEvent(event) ? [event.data] : []), ...messages]
   const currentHuman = inputs.filter(message => message.source.kind === 'user')
   const request = currentHuman.at(-1)?.content.flatMap(block => block.type === 'text' ? [block.text] : []).join('').trim()
   const orientationRequested = request !== undefined && (trigger.test(request)

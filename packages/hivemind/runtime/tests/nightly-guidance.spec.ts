@@ -10,7 +10,7 @@ function fixture(kind='schedule', preset='hivemind-hq') {
   const id='session-nightly-fixture'
   const schedule='schedule-'+createHash('sha256').update(`${id}\0nightly-routine-check-v1`).digest('hex')
   const events=[{ type:'hivemind/session-owner',seq:1,data:{ id:null,slug:'runtime' } },{ type:'turn/end',seq:2,data:{} },
-    { type:'user/message',seq:3,data:{ source:{ kind,occurrenceAt:occurrence },content:[{ type:'text',text:'reminders_json: '+JSON.stringify([{ schedule_id:schedule,occurrence_at:occurrence }]) }] } }] as unknown as SessionEvent[]
+    { type:'user/message',surfaceOp:'append',seq:3,data:{ source:{ kind,occurrenceAt:occurrence },content:[{ type:'text',text:'reminders_json: '+JSON.stringify([{ schedule_id:schedule,occurrence_at:occurrence }]) }] } }] as unknown as SessionEvent[]
   const agent={ id,session:{ header:{ agentPreset:preset },snapshotEvents:()=>events } } as unknown as Agent
   return { agent,events }
 }

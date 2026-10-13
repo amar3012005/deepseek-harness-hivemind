@@ -22,6 +22,8 @@ import * as Persona from '@deepseek-ai/dsh-persona'
 import SkillRegistry from '@deepseek-ai/dsh-skill'
 import { companyAwakeningSkill } from '../../runtime/src/awakening-guidance.ts'
 import * as Hq from '../src/index.ts'
+import { contextPlugin } from '../../context/src/index.ts'
+import { installNightlyRoutineGuidance } from '../../runtime/src/nightly-routine-guidance.ts'
 import ExecutionScope from '@deepseek-ai/dsh-hivemind-execution-scope'
 import { TestSessionQuery } from '../../../experimental/agent-team/tests/test-session-query.ts'
 import { MockAdapter, textResponse, toolCallResponse } from '../../../core/agent-loop/tests/mock-adapter.ts'
@@ -185,3 +187,71 @@ it('admits current stage before the first model request, saves full history and 
     expect(ctx.get('tools')).toBeUndefined()
   } finally { await ctx.fiber.dispose(); await rm(dir, { recursive: true, force: true }) }
 }, 30_000)
+
+
+it('native loop keeps a direct task request current after projection rewrites archived nightly peer receipts', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'runtime-native-admission-'))
+  const ctx = new Context()
+  const adapter = new MockAdapter([toolCallResponse('current-read', 'fixture_inspection', {}), textResponse('Reviewed task-24.')])
+  try {
+    await mountAgentLoopTestDependencies(ctx)
+    await ctx.plugin(LocalAttachmentStore, { dshHome: dir })
+    await ctx.plugin(ExecutionScope)
+    await ctx.plugin(SkillRegistry)
+    await ctx.plugin(JsonlSessionPersistence, { root: join(dir, 'sessions') })
+    await ctx.plugin(TestSessionQuery)
+    await ctx.plugin(AgentLoop, { agents: [] })
+    await ctx.plugin(Subagents)
+    ctx.provide('agentPresets', { serviceFor: (_agent: unknown, name: string & keyof Context) => ctx.get(name), composedPreset: () => undefined } as never)
+    await ctx.plugin(TeamService)
+    ctx.provide('schedule', { catalog: async () => [] } as never)
+    ctx.provide('sessionController', {} as never)
+    ctx.provide('hivemindEmployeeDirectory', { profiles: async () => ({ profiles: [] }) } as never)
+    ctx.provide('hivemindHq', { mode: () => ({ enabled: false }), workspace: async (agent: Parameters<Context['agentTeams']['listTasks']>[0]) => ({
+      mode: { enabled: false, revision: 0, changedAt: 0 }, tasks: ctx.get('agentTeams')!.listTasks(agent), calendar: [], wakes: [],
+    }) } as never)
+    await ctx.plugin(Hq)
+    installNightlyRoutineGuidance(ctx)
+    await ctx.plugin(contextPlugin({ historyTurns: 3, historyMaxChars: 3000, capabilityToolName: 'hivemind_capabilities' }))
+    ctx.get('llm')!.registerAdapter(['mock'], adapter)
+    ctx.get('tools')!.register(defineTool({ name: 'hivemind_research_answer', description: 'Never called.', parameters: {},
+      output: { schema: { type: 'object', properties: {}, additionalProperties: true }, render: () => [] }, execute: async () => ({}) }))
+    ctx.get('tools')!.register(defineTool({ name: 'fixture_inspection', description: 'Current task read fixture.', parameters: {},
+      output: { schema: { type: 'object', properties: {}, additionalProperties: true }, render: () => [{ type: 'text', text: 'Task-24 evidence.' }] },
+      execute: async () => ({ status: 'read' }),
+    }))
+    const agent = await ctx.agentLoop.create(SessionId('native-admission-fixture'), { provider: 'mock', model: 'mock' })
+    agent.session.append('hivemind/session-owner', { id: null, slug: 'runtime' } as never)
+    agent.session.append('agent-preset/selected', { agentPreset: 'hivemind-hq' })
+    const occurrence = '2026-10-13T00:00:00Z'
+    const scheduleId = 'schedule-' + createHash('sha256').update(`${agent.id}\0nightly-routine-check-v1`).digest('hex')
+    agent.session.append('turn/start', { turn: 1 })
+    agent.session.append('user/message', createUserMessage({ source: { kind: 'user' }, content: [{ type: 'text', text: 'Prior authorized nightly work.' }] }), { surfaceOp: 'append' })
+    agent.session.append('user/message', createUserMessage({ source: { kind: 'schedule', occurrenceAt: occurrence },
+      content: [{ type: 'text', text: 'reminders_json: ' + JSON.stringify([{ schedule_id: scheduleId, occurrence_at: occurrence }]) }] }), { surfaceOp: 'append' })
+    agent.session.append('hivemind/room-message-queued', { id: 'archived-review', senderId: agent.id, senderName: 'Runtime', senderEmployee: 'runtime',
+      targetId: SessionId('nightly-peer'), kind: 'question', text: 'NIGHTLY_REVIEW_REQUEST=' + JSON.stringify({ occurrence }), artifactIds: [], hops: 0 })
+    for (let index = 0; index < 12; index++) {
+      const id = `archived-reply-${index}`
+      agent.session.append('hivemind/room-message-received', { id, senderId: SessionId('nightly-peer'), senderName: 'Analyst', senderEmployee: 'analyst',
+        targetId: agent.id, kind: 'reply', replyTo: 'archived-review', text: 'Old nightly evidence', artifactIds: [], hops: 0 })
+      agent.session.append('user/message', createUserMessage({ source: { kind: 'hivemind-agent-message', form: 'relay', messageId: id,
+        senderId: SessionId('nightly-peer'), senderSessionId: SessionId('nightly-peer') }, content: [{ type: 'text', text: 'Old nightly evidence '.repeat(1000) }] }), { surfaceOp: 'append' })
+    }
+    agent.session.append('assistant/message', { turn: 1, step: 1, message: { role: 'assistant', content: [{ type: 'text', text: 'Prior review saved.' }], source: { kind: 'model', provider: 'mock', model: 'mock' } } } as never, { surfaceOp: 'append' })
+    agent.session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+    const request = 'Resume existing task-24 only. Inspect Mimi’s saved artifact; do not restart nightly review.'
+    agent.send(createUserMessage({ source: { kind: 'user' }, content: [{ type: 'text', text: request }] }), 'next-turn', true)
+    await vi.waitFor(() => expect(adapter.requests, JSON.stringify(agent.session.snapshotEvents().filter(event => event.type === 'turn/end'))).toHaveLength(2))
+    await vi.waitFor(() => expect(agent.status).toBe('idle'))
+    for (const prepared of adapter.requests) {
+      expect(JSON.stringify(prepared)).toContain(request)
+      expect(JSON.stringify(prepared)).not.toContain('Current admitted scheduled review: Nightly report')
+      expect(JSON.stringify(prepared)).not.toContain('Current Nightly report:')
+    }
+    expect(agent.session.snapshotEvents().some(event => event.type === 'user/message' && typeof event.surfaceOp === 'object'
+      && event.data.source.kind === 'hivemind-agent-message')).toBe(true)
+    expect(agent.session.snapshotEvents().filter(event => event.type === 'user/message' && event.surfaceOp === 'append'
+      && event.data.source.kind === 'hivemind-agent-message')).toHaveLength(12)
+  } finally { await ctx.fiber.dispose(); await rm(dir, { recursive: true, force: true }) }
+})

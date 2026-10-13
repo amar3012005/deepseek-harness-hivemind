@@ -1,3 +1,4 @@
+import { isAppendSurfaceEvent } from '@deepseek-ai/dsh-session'
 /** Native saved nightly provenance shared by prompt selection and tool admission. */
 import { createHash } from 'node:crypto'
 import type { Agent } from '@deepseek-ai/dsh-agent'
@@ -9,7 +10,7 @@ export function currentNightlyOccurrence(agent: Agent, admitted: readonly UserMe
   const events = agent.session.snapshotEvents()
   const boundary = events.findLast(event => event.type === 'turn/end')?.seq ?? -1
   const scheduleId = 'schedule-' + createHash('sha256').update(`${agent.id}\0nightly-routine-check-v1`).digest('hex')
-  const candidates = [...events.flatMap(event => event.seq > boundary && event.type === 'user/message' ? [event.data] : []), ...admitted]
+  const candidates = [...events.flatMap(event => event.seq > boundary && event.type === 'user/message' && isAppendSurfaceEvent(event) ? [event.data] : []), ...admitted]
   for (const message of candidates) {
     if (String(message.source.kind) === 'hivemind-agent-message') {
       const messageId = (message.source as { messageId?: string }).messageId

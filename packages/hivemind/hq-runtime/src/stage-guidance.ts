@@ -1,3 +1,4 @@
+import { isAppendSurfaceEvent } from '@deepseek-ai/dsh-session'
 /** Short model guidance selected from current native provenance, not message wording. */
 import type { UserMessage } from '@deepseek-ai/dsh-llm'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
@@ -7,7 +8,7 @@ import type { SessionEvent } from '@deepseek-ai/dsh-session'
 export function runtimeStageGuidance(events: readonly SessionEvent[], admitted: readonly UserMessage[], sessionId: string,
   awakening: boolean, nightly: boolean): string {
   const boundary = events.findLast(event => event.type === 'turn/start')?.seq ?? -1
-  const inputs = [...events.flatMap(event => event.seq > boundary && event.type === 'user/message' ? [event.data] : []), ...admitted]
+  const inputs = [...events.flatMap(event => event.seq > boundary && event.type === 'user/message' && isAppendSurfaceEvent(event) ? [event.data] : []), ...admitted]
   const stages = new Set<string>()
   if (awakening) stages.add('Initial orientation: recover current confirmed agendas and company evidence, then introduce yourself briefly. If direction is absent or materially ambiguous, one concise agenda-setting exchange precedes agenda-dependent assignments; reversible provisional research may continue. Do not repeat a completed introduction.')
   for (const input of inputs) {

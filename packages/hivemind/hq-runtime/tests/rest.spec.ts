@@ -29,7 +29,7 @@ function fixture() {
   const concludeTurn = vi.fn()
   const makeAgent = () => ({ id: 'root', session: { header: { agentPreset: 'hivemind-hq' }, snapshotEvents: () => events,
     ownEvents: () => events, append: (type: string, data: unknown) => {
-      events.push({ seq: events.length, time: Date.now(), type, data } as SessionEvent)
+      events.push({ seq: events.length, time: Date.now(), type, data, ...(type === 'user/message' ? { surfaceOp: 'append' } : {}) } as SessionEvent)
     } }, prompt, steer: vi.fn() }) as unknown as Agent
   agent = makeAgent()
   const flush = vi.fn(async () => { durable = structuredClone(events); return true })
