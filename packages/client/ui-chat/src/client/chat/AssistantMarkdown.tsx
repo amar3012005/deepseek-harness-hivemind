@@ -95,7 +95,7 @@ export const AssistantMarkdown = memo(function AssistantMarkdown({
         const knownFile = mentions?.resolve(props.destination)
         if (knownFile !== undefined) knownFile.open()
         else window.open(props.src, '_blank', 'noopener,noreferrer')
-      }} label={t('image.label')} openLabel={t('image.openOriginal')} />,
+      }} label={t('artifact.image')} openLabel={t('artifact.open')} />,
     }
   }, [mentions, t])
   const last = blocks.length - 1
