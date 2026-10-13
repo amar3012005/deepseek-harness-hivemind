@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { admissionFailedBeforeWork, companyTaskContract, requireArtifactReceipts, taskContracts, verifiedArtifactLinks } from '../src/ledger.ts'
+import { admissionFailedBeforeWork, companyTaskContract, requireArtifactReceipts, taskContracts, verifiedArtifactLinks, artifactProducer } from '../src/ledger.ts'
 const contract = () => companyTaskContract({ taskId: 'task-1', acceptanceCriteria: ['One saved report'], dueAt: '2026-10-01T10:00:00+02:00' })
 describe('HQ metadata over native Team tasks', () => {
   it('restores immutable requirements without another task lifecycle', () => {
@@ -51,5 +51,37 @@ describe('HQ reconciles admission failure without replaying accepted effects', (
     for (const type of ['user/message', 'assistant/message', 'tool/call', 'tool/result', 'hivemind/artifact-created'])
       expect(admissionFailedBeforeWork([queued, consumed, { type, data: {} }, failed])).toBe(false)
     expect(admissionFailedBeforeWork([{ ...failed, data: { reason: { kind: 'error', error: { message: 'unknown' } } } }])).toBe(false)
+  })
+})
+
+describe('task-owned omitted artifact producer', () => {
+  const members = [{ id: 'runtime-room', name: 'lead' }, { id: 'mimi-room', name: 'employee-canonical-slug' }]
+  const task = { id: 'task-24', ownerName: 'employee-canonical-slug' }
+  const events = [
+    { type: 'team/task', data: { task: { id: task.id, ownerId: 'mimi-room' } } },
+    { type: 'hivemind/hq-employee-assignment', data: { taskId: task.id, sessionId: 'mimi-room', memberName: task.ownerName } },
+  ]
+  it('uses the exact current native owner rather than defaulting a delegated artifact to lead', () => {
+    expect(artifactProducer(events, task, members)).toBe(members[1])
+    const link = verifiedArtifactLinks([{ type: 'hivemind/generation-created', seq: 1909, data: { artifactId: 'saved-html' } }],
+      task.id, ['saved-html'], artifactProducer(events, task, members).id)
+    expect(link.producerReceipts).toEqual([{ artifactId: 'saved-html', sessionId: 'mimi-room', sourceSeq: 1909,
+      sourceType: 'hivemind/generation-created' }])
+  })
+  it('retains explicit producer behavior and uses lead only for an unassigned task', () => {
+    expect(artifactProducer(events, task, members, 'lead')).toBe(members[0])
+    expect(artifactProducer([], { id: 'unassigned' }, members)).toBe(members[0])
+    expect(() => artifactProducer(events, task, members, 'Mimi')).toThrow('producer_not_member')
+  })
+  it('rejects stale assignments, foreign membership and missing durable task ownership', () => {
+    expect(() => artifactProducer(events, task, [members[0]!])).toThrow('owner_conflict')
+    expect(() => artifactProducer([], task, members)).toThrow('owner_conflict')
+    expect(() => artifactProducer([...events, { type: 'team/task', data: { task: { id: task.id, ownerId: 'runtime-room' } } }],
+      { ...task, ownerName: 'lead' }, members)).toThrow('owner_conflict')
+    expect(() => artifactProducer(events, { ...task, ownerName: 'wrong-slug' }, members)).toThrow('owner_conflict')
+  })
+  it('does not infer or register a receipt from an artifact GUID or completion narrative', () => {
+    expect(() => verifiedArtifactLinks([{ type: 'assistant/message', seq: 1910, data: { artifactId: 'saved-html' } }],
+      task.id, ['saved-html'], artifactProducer(events, task, members).id)).toThrow('artifact_receipt_required')
   })
 })

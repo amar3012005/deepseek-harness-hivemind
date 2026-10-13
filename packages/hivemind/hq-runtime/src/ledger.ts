@@ -17,6 +17,36 @@ export interface TaskArtifactLinks {
   readonly producerReceipts?: readonly ProducerArtifactReceipt[]
 }
 
+/** Resolve an omitted producer only from the current native task owner and roster.
+ * Explicit names retain their existing semantics; no artifact IDs or prose choose an owner.
+ */
+export function artifactProducer<T extends { readonly id: string; readonly name: string }>(
+  events: readonly LedgerEvent[], task: { readonly id: string; readonly ownerName?: string },
+  members: readonly T[], explicit?: string,
+): T {
+  if (explicit !== undefined) {
+    const named = members.find(member => member.name === explicit)
+    if (!named) throw new Error('hq_artifact_producer_not_member')
+    return named
+  }
+  const saved = events.findLast(event => event.type === 'team/task' && event.data !== null
+    && typeof event.data === 'object' && (event.data as { task?: { id?: unknown } }).task?.id === task.id)
+  const ownerId = (saved?.data as { task?: { ownerId?: unknown } } | undefined)?.task?.ownerId
+  if (ownerId !== undefined || task.ownerName !== undefined) {
+    const owner = members.find(member => member.id === ownerId && member.name === task.ownerName)
+    if (!owner) throw new Error('hq_artifact_producer_owner_conflict')
+    const assignment = events.findLast(event => event.type === 'hivemind/hq-employee-assignment'
+      && event.data !== null && typeof event.data === 'object' && (event.data as { taskId?: unknown }).taskId === task.id)
+    const binding = assignment?.data as { sessionId?: unknown; memberName?: unknown } | undefined
+    if (binding && (binding.sessionId !== owner.id || binding.memberName !== owner.name))
+      throw new Error('hq_artifact_producer_owner_conflict')
+    return owner
+  }
+  const lead = members.find(member => member.name === 'lead')
+  if (!lead) throw new Error('hq_artifact_producer_not_member')
+  return lead
+}
+
 /**
  * Validate artifact references against committed producer events.
  * @param events - committed events of one authenticated native Team member.

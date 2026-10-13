@@ -40,6 +40,7 @@ import {
   taskContracts,
   sameArtifactLinks,
   verifiedArtifactLinks,
+  artifactProducer,
   type CompanyTaskContract,
   type TaskArtifactLinks,
 } from './ledger.ts'
@@ -248,7 +249,7 @@ export function apply(ctx: Context): void {
         producer: {
           type: 'string',
           description:
-            'Exact native Team member name from list_agents, not a display name or employee ID; persistent employees normally use their authenticated slug. Defaults to lead. For received employee artifacts prefer inspect with exact task_id after list shows linked receipts; artifacts only links exact saved artifact_ids. Only authenticated native task assignees can supply receipts.',
+            'Exact native Team member name from list_agents, not a display name or employee ID; persistent employees normally use their authenticated slug. When omitted, resolves the current native task assignee and verified assignment; unassigned tasks use lead. For received employee artifacts prefer inspect with exact task_id after list shows linked receipts; artifacts only links exact saved artifact_ids. Only authenticated native task assignees can supply receipts.',
         },
       },
       output: {
@@ -318,7 +319,8 @@ export function apply(ctx: Context): void {
                 if (receiptEvent.type !== 'hivemind/open-dot-runtime-dispatch-receipt') continue
                 try {
                   const status = await ctx.sessionController.getExternalDispatchStatus(
-                    room, receiptEvent.data.dispatchMessageId, execution.signal)
+                    room, receiptEvent.data.dispatchMessageId, execution.signal,
+                  )
                   runtimeDispatches.push(JSON.parse(JSON.stringify({ task_id: event.data.taskId, employee_id: event.data.employeeId,
                     dispatch_message_id: receiptEvent.data.dispatchMessageId, source: 'authenticated_open_dot_receipt', ...status })) as JsonValue)
                 } catch {
@@ -612,10 +614,7 @@ export function apply(ctx: Context): void {
           !contracts.some(item => item.taskId === input.task_id)
         )
           throw new Error('hq_contract_required')
-        const producer = ctx.agentTeams
-          .listMembers(agent)
-          .find(member => member.name === (input.producer ?? 'lead'))
-        if (!producer) throw new Error('hq_artifact_producer_not_member')
+        const producer = artifactProducer(events, task, ctx.agentTeams.listMembers(agent), input.producer)
         const liveProducer = ctx.agents.get(producer.id)
         if (liveProducer && !(await ctx.sessions.flush(liveProducer.session)))
           throw new Error('hq_producer_persistence_required')
