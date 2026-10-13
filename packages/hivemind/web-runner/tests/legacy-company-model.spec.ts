@@ -2,7 +2,7 @@ import { expect, it, vi } from 'vitest'
 import type { Context } from '@deepseek-ai/cordis'
 import { Session, SessionId } from '@deepseek-ai/dsh-session'
 import { foldSurface } from '@deepseek-ai/dsh-session'
-import { migrateLegacyCompanyModel, installLegacyCompanyModelMigration } from '../src/legacy-company-model.ts'
+import { migrateBrainDefaultModel, migrateLegacyCompanyModel, installLegacyCompanyModelMigration } from '../src/legacy-company-model.ts'
 
 function fixture(preset = 'hivemind-hyperagents', provider = 'openai-codex') {
   const session = Session.create(SessionId('same-mimi-room'))
@@ -36,6 +36,26 @@ it('durably migrates the same legacy company room without changing history or gl
   expect(cold.snapshotEvents().find(event => event.type === 'model/selection')).toEqual(f.session.snapshotEvents().at(-1))
   expect(foldSurface(cold.snapshotEvents()).nodes).toEqual(foldSurface(f.session.snapshotEvents()).nodes)
   expect(await migrateLegacyCompanyModel(f.ctx, f.agent, new AbortController().signal)).toBe(false)
+})
+
+it('moves only an inherited Brain GLM route to the configured non-reasoning model', async () => {
+  const brain = fixture('hivemind-chat', 'cloudflare-workers-ai')
+  brain.session.append('request/header', { header: { config: { provider: 'cloudflare-workers-ai', model: '@cf/zai-org/glm-5.3-flash' } }, reason: 'change' } as never)
+  const target = { provider: 'cloudflare-workers-ai', model: '@cf/meta/llama-3.3-70b-instruct-fp8-fast' }
+  expect(await migrateBrainDefaultModel(brain.ctx, brain.agent, new AbortController().signal, target)).toBe(true)
+  expect(brain.selected).toHaveBeenLastCalledWith(brain.agent, target)
+  expect(brain.flush).toHaveBeenCalledOnce()
+
+  const runtime = fixture('hivemind-hq', 'cloudflare-workers-ai')
+  runtime.session.append('request/header', { header: { config: { provider: 'cloudflare-workers-ai', model: '@cf/zai-org/glm-5.3-flash' } }, reason: 'change' } as never)
+  expect(await migrateBrainDefaultModel(runtime.ctx, runtime.agent, new AbortController().signal, target)).toBe(false)
+  expect(runtime.selected).not.toHaveBeenCalled()
+
+  const chosen = fixture('hivemind-chat', 'cloudflare-workers-ai')
+  chosen.session.append('request/header', { header: { config: { provider: 'cloudflare-workers-ai', model: '@cf/zai-org/glm-5.3-flash' } }, reason: 'change' } as never)
+  chosen.setPending({ provider: 'user-selected', model: 'preserve-me' })
+  expect(await migrateBrainDefaultModel(chosen.ctx, chosen.agent, new AbortController().signal, target)).toBe(false)
+  expect(chosen.selected).not.toHaveBeenCalled()
 })
 it('preserves generic native unavailable routes, live providers and every explicit pending choice', async () => {
   for (const [preset, provider] of [['standard', 'openai-codex'], ['hivemind-hyperagents', 'custom-unavailable'], ['hivemind-hq', 'valid']]) {

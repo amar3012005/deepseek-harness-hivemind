@@ -79,6 +79,9 @@ export interface Config {
   chatgptPlanBrainEnabled?: boolean
   chatgptPlanFallbackProvider?: string
   chatgptPlanFallbackModel?: string
+  /** Brain-only non-reasoning default; Runtime and HyperAgents keep their own model policy. */
+  brainDefaultProvider?: string
+  brainDefaultModel?: string
 }
 
 export const Config: z<Config> = z.object({
@@ -95,6 +98,8 @@ export const Config: z<Config> = z.object({
   chatgptPlanBrainEnabled: z.boolean().default(false),
   chatgptPlanFallbackProvider: z.string().default('cloudflare-openrouter-streaming'),
   chatgptPlanFallbackModel: z.string().default('openai/gpt-6-luna'),
+  brainDefaultProvider: z.string(),
+  brainDefaultModel: z.string(),
   liveVoice: z.object({
     enabled: z.boolean().default(true),
     model: z.string().default('gpt-live-1-codex'),
@@ -310,7 +315,9 @@ function compactProjects(value: unknown): Array<{ id: string; name: string; slug
 
 /** Mount the one-time ticket exchange and health routes. */
 export async function apply(ctx: Context, config: Config): Promise<void> {
-  installLegacyCompanyModelMigration(ctx)
+  installLegacyCompanyModelMigration(ctx, config.brainDefaultProvider !== undefined && config.brainDefaultModel !== undefined
+    ? { provider: config.brainDefaultProvider, model: config.brainDefaultModel }
+    : undefined)
   registerMediaAuth(ctx)
   const secret = env(config.ticketSecretEnv)
   if (Buffer.byteLength(secret, 'utf8') < 32) throw new Error('hivemind-web-runner: ticket secret must be at least 32 bytes')

@@ -2,6 +2,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { ModelSelection } from '@deepseek-ai/dsh-api-session-controller/types'
+import { ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 import type {} from '@deepseek-ai/dsh-api-session-controller'
 import type {} from '@deepseek-ai/dsh-settings'
 import z from '@deepseek-ai/schemastery'
@@ -47,6 +48,43 @@ export async function migrateLegacyCompanyModel(
     ...(resolved.reasoningEffort === undefined ? {} : { reasoningEffort: resolved.reasoningEffort }),
   })
   if (!(await ctx.sessions.flush(agent.session))) throw new Error('company_model_migration_persistence_required')
+  return true
+}
+
+/**
+ * Move Brain sessions still inheriting the Workers AI GLM default onto the
+ * deployment's explicitly non-reasoning route.  This runs after admission and
+ * before the first provider step, so the durable selection is replay-safe and
+ * no client-side model switch races the user's first prompt.
+ */
+export async function migrateBrainDefaultModel(
+  ctx: Context,
+  agent: Agent,
+  signal: AbortSignal,
+  target: ModelSelection | undefined,
+): Promise<boolean> {
+  if (target === undefined) return false
+  signal.throwIfAborted()
+  if (ctx.sessionProjections.stateOf(agent.session, 'agentPreset') !== 'hivemind-chat') return false
+  const state = ctx.sessionProjections.stateOf(agent.session, 'modelSelection')
+  // A queued user selection always wins over a deployment default migration.
+  if (state?.pending !== null) return false
+  const intent = currentIntent(ctx, agent)
+  if (!intent || intent.provider !== 'cloudflare-workers-ai' || intent.model !== '@cf/zai-org/glm-5.3-flash') return false
+  const resolved = await ctx.llm.resolveCallConfig({
+    provider: target.provider,
+    model: target.model,
+    ...(target.reasoningEffort === undefined ? {} : { reasoningEffort: ReasoningEffortId(target.reasoningEffort) }),
+  }, signal)
+  signal.throwIfAborted()
+  const latest = currentIntent(ctx, agent)
+  if (!latest || latest.provider !== intent.provider || latest.model !== intent.model) return false
+  ctx.sessionController.selectForAdmittedRequest(agent, {
+    provider: resolved.provider,
+    model: resolved.model,
+    ...(resolved.reasoningEffort === undefined ? {} : { reasoningEffort: resolved.reasoningEffort }),
+  })
+  if (!await ctx.sessions.flush(agent.session)) throw new Error('brain_model_migration_persistence_required')
   return true
 }
 
@@ -106,7 +144,7 @@ function selectionRecord(value: unknown): ModelSelection | undefined {
 }
 
 /** Use the native post-admission pre-step seam before provider lookup. */
-export function installLegacyCompanyModelMigration(ctx: Context): void {
+export function installLegacyCompanyModelMigration(ctx: Context, brainDefault?: ModelSelection): void {
   ctx.inject(['sessionController', 'llm', 'sessionProjections', 'sessions'], (scope) => {
     let settings: Context['settings'] | undefined
     const inherited = new WeakMap<Agent, { turn: number; selection: ModelSelection }>()
@@ -121,7 +159,8 @@ export function installLegacyCompanyModelMigration(ctx: Context): void {
       if (decision.kind === 'reject') return decision
       const preset = scope.sessionProjections.stateOf(agent.session, 'agentPreset')
       if (!['hivemind-hq', 'hivemind-hyperagents', 'hivemind-chat'].includes(String(preset))) return decision
-      const migrated = await migrateLegacyCompanyModel(scope, agent, signal, settings)
+      const brainMigrated = await migrateBrainDefaultModel(scope, agent, signal, brainDefault)
+      const migrated = brainMigrated || await migrateLegacyCompanyModel(scope, agent, signal, settings)
       const selection = scope.sessionController.currentDefaultModelSelection()
       const previous = inherited.get(agent)
       if (previous !== undefined && previous.turn === turn && sameSelection(previous.selection, selection)) return decision
