@@ -358,6 +358,10 @@ export function registerMediaWorkflow(
           new Promise<undefined>(resolve => { setTimeout(() => { resolve(undefined) }, config.inlineWaitMs ?? 60_000).unref() }),
         ])
         if (settled?.status === 'completed') {
+          // The finished image is returned inline. A terminal read marks the job
+          // reported, so the jobs service does not wake the model with a
+          // completion notice that would be followed by a redundant job_output.
+          try { ctx.jobs.read(jobId as unknown as Parameters<typeof ctx.jobs.read>[0], agent) } catch { /* already settled or released */ }
           return { ...(JSON.parse(settled.output) as Record<string, unknown>), provider: provider.id }
         }
       }
