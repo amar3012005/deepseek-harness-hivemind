@@ -8,17 +8,20 @@ export function brainActivity(calls: readonly RunningToolCall[]): BrainActivity 
   let latest: { time: number; activity: BrainActivity } | undefined
   const visit = (call: RunningToolCall): void => {
     let args: Record<string, unknown> = {}
-    try { args = JSON.parse(call.argsRaw) as Record<string, unknown> } catch { /* A partial argument has no claimed action. */ }
+    try {
+      const parsed: unknown = JSON.parse(call.argsRaw)
+      if (parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed)) args = parsed as Record<string, unknown>
+    } catch { /* A partial argument has no claimed action. */ }
     let value: BrainActivity | undefined
     if (call.name === 'hivemind_meta') {
       value = { label: args.operation === 'context' ? 'Reading company context'
         : args.operation === 'entities' ? 'Checking saved entities'
           : ['save', 'remember', 'write'].includes(String(args.operation)) ? 'Preparing a company memory save'
-            : 'Searching company brain' }
+            : args.operation === 'recall' ? 'Searching company brain' : 'Working with company brain' }
     } else if (call.name === 'hivemind_connected_task') {
-      const queries = Array.isArray(args.queries) ? args.queries as Array<{ app?: unknown }> : []
+      const queries = Array.isArray(args.queries) ? args.queries as Array<{ app?: unknown } | null> : []
       const gmail = typeof args.tool_slug === 'string' && args.tool_slug.startsWith('GMAIL_')
-        || queries.some(query => typeof query.app === 'string' && query.app.toLowerCase() === 'gmail')
+        || queries.some(query => query !== null && typeof query.app === 'string' && query.app.toLowerCase() === 'gmail')
       const app = gmail ? 'Gmail' : 'Connected apps'
       const action = args.action === 'search' ? 'finding tools'
         : args.action === 'schemas' ? 'preparing the selected tool'

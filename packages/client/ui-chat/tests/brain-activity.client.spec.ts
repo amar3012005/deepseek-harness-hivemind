@@ -10,6 +10,10 @@ describe('native Brain activity cues', () => {
   it('has no invented tool activity when no call is running', () => {
     expect(brainActivity([])).toBeUndefined()
   })
+  it('does not crash the chat when an invalid or partial tool argument is logged', () => {
+    expect(() => brainActivity([{ ...call('hivemind_meta'), argsRaw: 'null' }])).not.toThrow()
+    expect(() => brainActivity([call('hivemind_connected_task', { action: 'search', queries: [null] })])).not.toThrow()
+  })
   it('labels memory and screenshots from their actual native call', () => {
     expect(brainActivity([call('hivemind_meta', { operation: 'recall' })])?.label).toBe('Searching company brain')
     expect(brainActivity([call('hivemind_browser_capture')])?.label).toBe('Capturing website screenshot')
