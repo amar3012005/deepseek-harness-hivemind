@@ -78,8 +78,8 @@ function findEntry(entries: unknown[], id: string): ShippedEntry | undefined {
 }
 
 /** Read and validate one shipped preset's Cordis entry list. */
-async function shippedEntries(id: string): Promise<unknown[]> {
-  const source = await readFile(join(SHIPPED_PRESET_ROOT, id, 'agent.cordis.yml'), 'utf8')
+async function shippedEntries(id: string, sourceName = 'agent.cordis.yml'): Promise<unknown[]> {
+  const source = await readFile(join(SHIPPED_PRESET_ROOT, id, sourceName), 'utf8')
   const entries: unknown = yaml.load(source, { schema: entryListSchema })
   if (!Array.isArray(entries)) throw new TypeError(`${id} preset must contain a Cordis entry list`)
   return entries.map((entry: unknown) => entry)
@@ -170,6 +170,7 @@ describe('the shipped preset root', () => {
 
   it('mounts native context recovery in every company preset without a second token meter', async () => {
     const chat = await shippedEntries('hivemind-chat') as EntryOptions[]
+    const shared = await shippedEntries('hivemind-chat', 'shared.cordis.yml') as EntryOptions[]
     const group = chat.find(entry => entry.id === 'compaction')
     expect(group).toMatchObject({
       name: 'cordis:group', group: true,
@@ -179,7 +180,7 @@ describe('the shipped preset root', () => {
       const entries = await shippedEntries(id) as EntryOptions[]
       const include = entries.find(entry => entry.id === 'hivemind-chat-base') as
         { config: { patches: Parameters<typeof applyEntryPatches>[1] } } | undefined
-      const effective = include ? applyEntryPatches(chat, include.config.patches, () => {}) : entries
+      const effective = include ? applyEntryPatches(shared, include.config.patches, () => {}) : entries
       expect(findEntry(effective, 'compaction-basic'), id).toMatchObject({
         name: '@deepseek-ai/dsh-compaction-basic',
         config: { pressureAuto:false, thresholdRatio: 0.65, thresholdTokens: 48000, retainTokens: 12000, maxTokens: 4096, summarizationProvider:'openai-codex',summarizationModel:'gpt-6-luna',summarizationReasoningEffort:'off' },
@@ -213,18 +214,18 @@ describe('the shipped preset root', () => {
       config: { path: string; patches: Parameters<typeof applyEntryPatches>[1] }
     }>
     const [employee] = (await shippedEntries('hivemind-hyperagents') as EntryOptions[]).filter(entry => entry.id === 'hivemind-chat-base') as typeof hq[]
-    expect(hq!.config.path).toBe('../hivemind-chat/agent.cordis.yml')
-    const chat = await shippedEntries('hivemind-chat') as EntryOptions[]
+    expect(hq!.config.path).toBe('../hivemind-chat/shared.cordis.yml')
+    const chat = await shippedEntries('hivemind-chat', 'shared.cordis.yml') as EntryOptions[]
     const warnings: string[] = []
     const composed = applyEntryPatches(chat, hq!.config.patches, message => warnings.push(message))
     const ordinary = applyEntryPatches(chat, employee!.config.patches, () => {})
     expect(warnings).toEqual([])
     expect(findEntry(composed, 'persona')?.config).toMatchObject({ prefix: expect.stringMatching(/chief of staff/i) })
     expect(findEntry(composed, 'persona')?.config).toMatchObject({
-      prefix: expect.stringContaining('Your default operating role on every wake is to assess, plan, delegate and review'),
+      prefix: expect.stringContaining('Ask only for a consequential choice, missing authority'),
     })
     expect(findEntry(composed, 'persona')?.config).toMatchObject({
-      prefix: expect.stringContaining('Do not ask users for internal UUIDs or technical call-status flags'),
+      prefix: expect.stringContaining('An old request for an app ID is an unverified blocker'),
     })
     expect(findEntry(composed, 'hivemind-hq-runtime')).toBeDefined()
     expect(findEntry(composed, 'hivemind-operating-workstreams')).toBeUndefined()
@@ -249,9 +250,9 @@ describe('the shipped preset root', () => {
       config: { path: string; patches: Parameters<typeof applyEntryPatches>[1] }
     }>
     if (!included) throw new TypeError('HyperAgents composition must include HIVE chat')
-    expect(included.config.path).toBe('../hivemind-chat/agent.cordis.yml')
+    expect(included.config.path).toBe('../hivemind-chat/shared.cordis.yml')
 
-    const chat = await shippedEntries('hivemind-chat') as EntryOptions[]
+    const chat = await shippedEntries('hivemind-chat', 'shared.cordis.yml') as EntryOptions[]
     const composed = applyEntryPatches(chat, included.config.patches, () => {})
     expect(findEntry(composed, 'hivemind-capabilities')).toMatchObject({ isolate: { hivemindIdentity: true } })
     expect(findEntry(composed, 'hivemind-runtime')?.config).toMatchObject({ capabilityHintEnabled: false })
@@ -264,7 +265,7 @@ describe('the shipped preset root', () => {
     expect(findEntry(composed, 'persona')?.config).toMatchObject({ includeRuntimeContext: false })
   })
 
-  it('keeps HIVE chat additive to native prompt guidance and renderer-safe', async () => {
+  it('keeps HIVE chat as a compact progressive company-brain composition', async () => {
     const hivemindChat = await shippedEntries('hivemind-chat')
     const persona = findEntry(hivemindChat, 'persona')
     if (typeof persona?.config !== 'object' || persona.config === null) {
@@ -277,29 +278,29 @@ describe('the shipped preset root', () => {
 
     expect(persona.config).not.toHaveProperty('complete')
     expect(persona.config).toMatchObject({ includeRuntimeContext: false })
-    expect(prefix).toContain('clean Markdown for the native Harness renderer')
-    expect(prefix).toContain('For one bounded task, call search directly without loading a skill')
-    expect(prefix).toContain('Begin with this contract, recent completed conversation')
-    expect(prefix).toContain('ask one concise clarification')
-    expect(prefix).toContain('when the returned guidance supports obtaining a missing requested field')
-    expect(prefix).toContain('Request hivemind_capabilities only when a detailed playbook is genuinely needed')
-    expect(prefix).toContain('profiles only for the HyperAgent directory')
-    expect(prefix).toContain('operation is always a required top-level field')
-    expect(prefix).toContain("call recall directly with the user's exact wording")
-    expect(prefix).toContain('If a call is rejected for missing operation')
-    expect(prefix).toContain('avoid narrating routine tool mapping')
-    expect(prefix).toContain('Reuse the current workflow\'s plans, contracts, and receipts')
-    expect(prefix).toContain('A connection-status question is read-only')
-    expect(prefix).toContain('Treat output constraints as a contract')
-    expect(prefix).toContain('A clear statement such as a company decision')
-    expect(prefix).toContain('do not pretend to be human')
-    expect(prefix).toContain("call recall directly with the user's exact wording")
-    expect(prefix).toContain('call the exact selected execute tool once')
-    expect(prefix).toContain("native Harness pauses that tool call for the user's single approval")
-    expect(prefix).toContain('Do not narrate a plan, capability discovery, tool preparation, or routine intermediate step.')
-    expect(prefix).toContain('always use the available HIVE context first')
-    expect(prefix).toContain('Use hivemind_web_search only when HIVE has no sufficient evidence')
+    expect(prefix).toContain('authenticated user\'s company brain')
+    expect(prefix).toContain('Show no process narration')
+    expect(prefix).toContain('Ask one concise question only when its answer materially changes the result')
+    expect(prefix).toContain('A stated audience, scope, or destination is an instruction')
+    expect(prefix).toContain('one focused hivemind_meta lookup')
+    expect(prefix).toContain('Load a focused skill only when the request needs its detailed procedure')
+    expect(prefix).toContain('hivemind-memory-governance')
+    expect(prefix).toContain('composio-connected-workflows')
+    expect(prefix).toContain('hivemind-company-research')
+    expect(prefix).toContain('hivemind-artifact-delivery')
+    expect(prefix).not.toContain('Every substantive completed answer MUST')
+    expect(prefix.length).toBeLessThan(2_500)
     expect(findEntry(hivemindChat, 'tool-web')?.config).toMatchObject({ search: false, fetch: true })
+    expect(findEntry(hivemindChat, 'hivemind-runtime')?.config).toMatchObject({
+      historyTurns: 3, historyMaxChars: 3000,
+    })
+    const shared = await shippedEntries('hivemind-chat', 'shared.cordis.yml')
+    expect(findEntry(shared, 'hivemind-runtime')?.config).toMatchObject({
+      historyTurns: 15, historyMaxChars: 16000,
+    })
+    expect(findEntry(shared, 'persona')?.config).toMatchObject({
+      prefix: expect.stringContaining('company memory and action agent'),
+    })
   })
 
   it('limits the Composio catalog entry to complex workflows', async () => {
@@ -308,6 +309,17 @@ describe('the shipped preset root', () => {
     expect(skill).toContain('routine destination discovery is part of the same task')
     expect(skill).toContain('whose contracts are absent')
     expect(skill).toMatch(/continue the same\s+session with one materially refined `tool_search`/)
+  })
+
+  it('ships detailed HIVE instructions as opt-in skills', async () => {
+    for (const [name, phrase] of [
+      ['hivemind-memory-governance', 'native approval flow'],
+      ['hivemind-company-research', 'approved web search'],
+      ['hivemind-artifact-delivery', 'saved receipt'],
+    ] as const) {
+      const skill = await readFile(join(SHIPPED_PRESET_ROOT, `hivemind/skills/${name}/SKILL.md`), 'utf8')
+      expect(skill).toContain(phrase)
+    }
   })
 
   it('keeps the complete Standard tool composition while adding scoped company-brain access to HyperAgents', async () => {

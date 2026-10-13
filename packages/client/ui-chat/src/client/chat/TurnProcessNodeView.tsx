@@ -11,6 +11,10 @@ import css from './TurnProcessNodeView.module.css'
 export const TurnProcessNodeView = memo(function TurnProcessNodeView({
   node, turnProcess, t, renderSlot,
 }: ChatNodeViewProps<'turn-process'> & Partial<PropsRenderSlots<'conversation.chat.workUpdates'>>) {
+  // HIVE Chat intentionally keeps work projection out of the conversation.
+  // Its composer owns the pending activity orb; durable details remain in the
+  // session log and diagnostics rather than becoming model-process prose.
+  if (document.documentElement.dataset.dshMode === 'hivemind-chat') return null
   if (turnProcess === undefined) throw new Error('turn-process node requires Turn process owner state')
   if (!turnProcess.foldable) return null
   const open = turnProcess.open

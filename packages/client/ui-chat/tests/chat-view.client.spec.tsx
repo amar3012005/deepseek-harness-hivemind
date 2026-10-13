@@ -1666,12 +1666,26 @@ describe('ChatView', () => {
       const row = view.getByText('I learned about our company').closest('[data-chat-flow-kind="assistant-step"]')
       act(() => { h.set({ nodes: [user(1, 'question'), reply, assistant(4, 'Sleeping now', 1, 2)],
         running: false, turnEnds: new Map([[1, 5]]) }) })
+      expect(turnProcessControl(view.container)).toBeNull()
       expect(row?.getAttribute('hidden')).toBe('until-found')
       expect(row?.hasAttribute('data-turn-process-hidden')).toBe(true)
       act(() => { h.set({ nodes: [user(1, 'question'), reply, assistant(4, 'Sleeping now', 1, 2), user(6, 'next')], running: true }) })
       expect(row?.getAttribute('hidden')).toBe('until-found')
     } finally { delete document.documentElement.dataset.dshMode
       window.history.replaceState(null, '', previousUrl) }
+  })
+
+  it('omits the generic turn-process control in HIVE Chat', () => {
+    const previousMode = document.documentElement.dataset.dshMode
+    document.documentElement.dataset.dshMode = 'hivemind-chat'
+    try {
+      const h = makeHarness({ nodes: [user(1, 'question'), assistant(2, 'answer', 1, 1)], running: false, turnEnds: new Map([[1, 3]]) })
+      const view = render(<h.ChatView {...h.props} />)
+      expect(turnProcessControl(view.container)).toBeNull()
+    } finally {
+      if (previousMode === undefined) delete document.documentElement.dataset.dshMode
+      else document.documentElement.dataset.dshMode = previousMode
+    }
   })
 
   it('keeps a live Turn expanded and folds it once at turn/end', () => {

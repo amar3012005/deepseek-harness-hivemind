@@ -9,7 +9,7 @@
 - id: hivemind-chat-base
   name: cordis:include
   config:
-    path: ../hivemind-chat/agent.cordis.yml
+    path: ../hivemind-chat/shared.cordis.yml
     patches:
       - id: persona
         name: '@deepseek-ai/dsh-persona'
