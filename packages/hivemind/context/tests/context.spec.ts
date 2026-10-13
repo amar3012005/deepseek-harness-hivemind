@@ -895,3 +895,29 @@ it('uses whole saved-sequence pointers when many task-list metadata envelopes ex
   for(const event of originals) expect(session.eventAt(event.seq)).toEqual(event)
   expect(Session.create(SessionId('many-list-restored'),session.snapshotEvents()).deriveMessages()).toEqual(session.deriveMessages())
 })
+
+it('shares one historical allowance between conversation records and protected peer excerpts', async () => {
+  const session=Session.create(SessionId('shared-history-allowance'))
+  session.append('turn/start',{ turn:1 })
+  session.append('user/message',user('Previous direction '.repeat(500)),{ surfaceOp:'append' })
+  const peers=[]
+  for(let index=0;index<20;index++) {
+    peers.push(session.append('user/message',createUserMessage({ source:{ kind:'agent-message',senderSessionId:'native-worker',form:'relay' } as never,
+      content:[{ type:'text',text:`Unreviewed peer ${index} `+'full evidence '.repeat(500) }] }),{ surfaceOp:'append' }))
+    session.append('assistant/message',{ turn:1,step:index+1,stream:[],message:createAssistantMessage({ source:{ provider:'mock',model:'mock' },
+      content:[{ type:'text',text:'Past answer '.repeat(300) }] }) },{ surfaceOp:'append' })
+  }
+  session.append('turn/end',{ turn:1,reason:{ kind:'completed' } })
+  session.append('turn/start',{ turn:2 })
+  const current=session.append('user/message',user('Current task-24 only'),{ surfaceOp:'append' })
+  const originals=session.snapshotEvents()
+  const harness=mount([],undefined,undefined,[],false,8000)
+  await harness.preStep({ agent:{ session },turn:2,signal:new AbortController().signal } as never,async()=>({ kind:'enter',messages:[] }))
+  const projected=session.deriveMessages().filter(message=>message.role==='user' && message.id!==current.data.id)
+  const text=projected.flatMap(message=>message.content.flatMap(part=>part.type==='text'?[part.text]:[])).join('')
+  expect(text.length).toBeLessThanOrEqual(8000)
+  for(const peer of peers) expect(session.eventAt(peer.seq)).toEqual(peer)
+  expect(session.snapshotEvents().slice(0,originals.length)).toEqual(originals)
+  expect(JSON.stringify(session.deriveMessages())).toContain('Current task-24 only')
+  expect(Session.create(SessionId('shared-history-restored'),session.snapshotEvents()).deriveMessages()).toEqual(session.deriveMessages())
+})

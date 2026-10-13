@@ -176,17 +176,6 @@ function projectHistory(ctx: Context, agent: Agent, config: ContextConfig): bool
       || unresolvedPeerMessage(event, events)
   }))
   const peers = historicalTail.filter(seq => isHistorical(seq) && unresolvedPeerMessage(session.eventAt(seq), events))
-  const peerBudget = Math.max(0, Math.floor(config.historyMaxChars / Math.max(1, peers.length)))
-  let boundedPeers = false
-  for (const seq of peers) {
-    const event = session.eventAt(seq)
-    if (event?.type !== 'user/message' || rawTextOf(event.data).length <= peerBudget) continue
-    const original = events.find(item => item.type === 'user/message' && isAppendSurfaceEvent(item) && item.data.id === event.data.id) ?? event
-    const reference = `\n[Peer evidence excerpt. Read original sequence ${original.seq} with hyperagents_history before review or acceptance.]`
-    session.append('user/message', { ...event.data, content: [{ type: 'text', text: boundedExcerpt(rawTextOf(event.data), reference, peerBudget) }] },
-      { surfaceOp: { op: 'replace', startSeq: seq, endSeq: seq }, sourceEventSeqs: [seq] })
-    boundedPeers = true
-  }
   const ranges: SessionSeq[][] = []
   let range: SessionSeq[] = []
   for (const seq of historicalTail) {
@@ -196,12 +185,31 @@ function projectHistory(ctx: Context, agent: Agent, config: ContextConfig): bool
     } else range.push(seq)
   }
   if (range.length) ranges.push(range)
-  const text = recentConversationText(exchanges, config.historyTurns, config.historyMaxChars)
+  const peerAllowance = ranges.length > 0 ? Math.floor(config.historyMaxChars / 2) : config.historyMaxChars
+  const peerBudget = Math.max(0, Math.floor(peerAllowance / Math.max(1, peers.length)))
+  let peerChars = 0
+  let boundedPeers = false
+  for (const seq of peers) {
+    const event = session.eventAt(seq)
+    if (event?.type !== 'user/message') continue
+    if (rawTextOf(event.data).length <= peerBudget) { peerChars += rawTextOf(event.data).length; continue }
+    const original = events.find(item => item.type === 'user/message' && isAppendSurfaceEvent(item) && item.data.id === event.data.id) ?? event
+    const reference = `\n[Peer evidence excerpt. Read original sequence ${original.seq} with hyperagents_history before review or acceptance.]`
+    const excerpt = boundedExcerpt(rawTextOf(event.data), reference, peerBudget)
+    peerChars += excerpt.length
+    session.append('user/message', { ...event.data, content: [{ type: 'text', text: excerpt }] },
+      { surfaceOp: { op: 'replace', startSeq: seq, endSeq: seq }, sourceEventSeqs: [seq] })
+    boundedPeers = true
+  }
+  const marker = '[Saved history.]'
+  const markerChars = Math.max(0, ranges.length - 1) * marker.length
+  const conversationBudget = Math.max(1, config.historyMaxChars - peerChars - markerChars)
+  const text = recentConversationText(exchanges, config.historyTurns, conversationBudget)
   let changed = boundedPeers
   for (const [index, shadowed] of ranges.entries()) {
     const start = shadowed[0], end = shadowed.at(-1)
     if (start === undefined || end === undefined) continue
-    const value = index === 0 ? text : 'Earlier conversation remains in the saved session history.'
+    const value = index === 0 ? text : marker
     const previous = shadowed.length === 1 ? session.eventAt(start) : undefined
     if (previous?.type === 'user/message' && previous.data.source.kind === 'plugin'
       && previous.data.source.plugin === HISTORY_CONTEXT_SOURCE && textOf(previous.data) === value.trim()) continue
