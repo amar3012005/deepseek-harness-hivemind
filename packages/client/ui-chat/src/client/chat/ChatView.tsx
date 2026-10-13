@@ -262,13 +262,24 @@ const ChatNodeList = memo(function ChatNodeList({ order, useChat, ...seatProps }
   let previousDay: string | undefined
   const agentRoom = window.location.pathname.includes('/employee/harness')
   const brainRoom = /^\/hivemind\/app\/overview(?:\/(?:new|session\/[^/]+))?\/?$/u.test(window.location.pathname)
+  // Brain chat: one avatar per turn, on the final answer step only.
+  const brainLastAnswer = new Set<string>()
+  if (brainRoom) {
+    const lastByTurn = new Map<number, string>()
+    for (const key of displayOrder) {
+      const node = snapshot.nodes.get(key) as ChatNode | undefined
+      const turn = turnOf(key)
+      if (turn !== undefined && node?.kind === 'assistant-step' && hasAssistantReplyContent(node.data.blocks)) lastByTurn.set(turn, key)
+    }
+    for (const key of lastByTurn.values()) brainLastAnswer.add(key)
+  }
   return displayOrder.flatMap((nodeKey) => {
     const turn = turnOf(nodeKey)
     const time = turn === undefined ? undefined : snapshot.timeline.turns.get(turn)?.start?.time
     const day = time === undefined ? undefined : new Date(time).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })
     const header = (agentRoom || brainRoom) && day !== undefined && day !== previousDay
     if (day !== undefined) previousDay = day
-    const seat = <ChatNodeSeat key={nodeKey} nodeKey={nodeKey} avatarGroupEnd={(!agentRoom && !brainRoom) || groupEnds.has(nodeKey)} {...seatProps} />
+    const seat = <ChatNodeSeat key={nodeKey} nodeKey={nodeKey} avatarGroupEnd={brainRoom ? brainLastAnswer.has(nodeKey) : (!agentRoom || groupEnds.has(nodeKey))} {...seatProps} />
     return header ? [<div key={`date-${nodeKey}`} className={css.roomDate} data-brain-date={brainRoom || undefined}>{day}</div>, seat] : [seat]
   })
 })
