@@ -56,7 +56,10 @@ it('checks permission on every real loop step but does not append unchanged poli
     const notes = f.agent.session.snapshotEvents().filter(event => event.type === 'user/message' && isAppendSurfaceEvent(event)
       && event.data.source.kind === 'plugin' && event.data.source.plugin === 'hivemind-runtime-full-access')
     expect(notes).toHaveLength(1)
-    expect(notes[0]?.data.source).toMatchObject({ form: 'snapshot' })
+    const firstNote = notes[0]
+    expect(firstNote?.type).toBe('user/message')
+    if (firstNote?.type !== 'user/message') throw new Error('Expected saved operator policy message')
+    expect(firstNote.data.source).toMatchObject({ form: 'snapshot' })
     const firstToolResult = f.agent.session.snapshotEvents().find(event => event.type === 'tool/result')!
     expect(notes[0]!.seq).toBeLessThan(firstToolResult.seq)
     for (const assembled of f.adapter.requests) {
