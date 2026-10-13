@@ -26,6 +26,7 @@ const HISTORY_CONTEXT_SOURCE = 'dsh-hivemind-runtime/history'
 const PROFILE_CONTEXT_SOURCE = 'dsh-hivemind-runtime/profile'
 const TURN_CONTEXT_SOURCE = 'dsh-hivemind-runtime/turn'
 function textOf(message: Message): string { return message.content.filter((block): block is Extract<ContentBlock,{ type:'text' }> => block.type === 'text').map(block => block.text.trim()).filter(Boolean).join('\n') }
+function rawTextOf(message: Message): string { return message.content.flatMap(block => block.type === 'text' ? [block.text] : []).join('\n') }
 function isDirectUserMessage(message: Message): boolean { return (message.source as { readonly kind: string }).kind === 'user' }
 const DIRECT_USER_PROFILE = /\b(?:about me|know about me|my profile|who am i|my (?:name|role|locale|language|timezone))\b/u
 const DIRECT_ORG_PROFILE = /\b(?:my|our) (?:company|organization|organisation|website)\b|\b(?:company|organization|organisation) profile\b/u
@@ -175,14 +176,14 @@ function projectHistory(ctx: Context, agent: Agent, config: ContextConfig): bool
       || unresolvedPeerMessage(event, events)
   }))
   const peers = historicalTail.filter(seq => isHistorical(seq) && unresolvedPeerMessage(session.eventAt(seq), events))
-  const peerBudget = Math.max(256, Math.floor(config.historyMaxChars / Math.max(1, peers.length)))
+  const peerBudget = Math.max(0, Math.floor(config.historyMaxChars / Math.max(1, peers.length)))
   let boundedPeers = false
   for (const seq of peers) {
     const event = session.eventAt(seq)
-    if (event?.type !== 'user/message' || textOf(event.data).length <= peerBudget) continue
+    if (event?.type !== 'user/message' || rawTextOf(event.data).length <= peerBudget) continue
     const original = events.find(item => item.type === 'user/message' && isAppendSurfaceEvent(item) && item.data.id === event.data.id) ?? event
     const reference = `\n[Peer evidence excerpt. Read original sequence ${original.seq} with hyperagents_history before review or acceptance.]`
-    session.append('user/message', { ...event.data, content: [{ type: 'text', text: textOf(event.data).slice(0, Math.max(0, peerBudget - reference.length)) + reference }] },
+    session.append('user/message', { ...event.data, content: [{ type: 'text', text: boundedExcerpt(rawTextOf(event.data), reference, peerBudget) }] },
       { surfaceOp: { op: 'replace', startSeq: seq, endSeq: seq }, sourceEventSeqs: [seq] })
     boundedPeers = true
   }
@@ -227,7 +228,7 @@ function originalToolReceipt(agent: Agent, event: Extract<SessionEvent, { type: 
 }
 
 /** Lists need complete records and a native offset, not a substring of JSON. */
-function boundTaskLists(agent: Agent, maxChars: number): { changed: boolean; calls: Set<string> } {
+function boundTaskLists(agent: Agent, maxChars: number): { changed: boolean; calls: Set<string>; chars: number } {
   const events = agent.session.snapshotEvents()
   const calls = new Map(events.flatMap(event => event.type === 'tool/call' ? [[event.data.callId, event.data] as const] : []))
   const entries = agent.session.surface.nodes.flatMap((seq) => {
@@ -286,7 +287,7 @@ function boundTaskLists(agent: Agent, maxChars: number): { changed: boolean; cal
     } }, { surfaceOp: { op: 'replace', startSeq: entry.event.seq, endSeq: entry.event.seq }, sourceEventSeqs: [entry.event.seq] })
     changed = true
   }
-  return { changed, calls: handled }
+  return { changed, calls: handled, chars: maxChars - remaining }
 }
 
 /** Keep complete receipts/media in the log and page their model-facing text. */
@@ -312,7 +313,7 @@ function boundToolResults(agent: Agent, maxChars: number): boolean {
   const count = entries.reduce((sum, entry) => sum + entry.blocks.length, 0)
   if (!count) return changed
   // One aggregate result budget, not a fresh allowance for every tool step.
-  const perResult = Math.max(1, Math.floor(maxChars / count))
+  const perResult = Math.max(0, Math.floor(Math.max(0, maxChars - taskLists.chars) / count))
   for (const { seq, event, blocks } of entries) {
     const content = blocks.map((block) => {
       if (block.type !== 'tool-result') return block
@@ -328,7 +329,7 @@ function boundToolResults(agent: Agent, maxChars: number): boolean {
       }
       const reference = `\n[Excerpt. Full saved receipt: sequence ${original.seq}; read hyperagents_history with offset pages before relying on omitted details. Tool identity and outcome are unchanged.]`
       let inserted = false
-      const excerpt = text.slice(0, Math.max(0, perResult - reference.length)) + reference
+      const excerpt = boundedExcerpt(text, reference, perResult)
       return { ...block, content: block.content.flatMap<ContentBlock>((part) => {
         if (part.type !== 'text') return [part]
         if (inserted) return []
@@ -365,7 +366,7 @@ function boundReceiptEvidence(agent: Agent, messages: readonly UserMessage[], ma
   const budget = Math.max(1, Math.floor(maxChars / Math.max(1, nodes.length)))
   let changed = false
   for (const event of nodes) {
-    if (textOf(event.data).length <= budget) continue
+    if (rawTextOf(event.data).length <= budget) continue
     let original = event
     while (isReplacementSurfaceEvent(original) && original.sourceEventSeqs?.length === 1) {
       const priorSeq = original.sourceEventSeqs[0]
@@ -376,29 +377,88 @@ function boundReceiptEvidence(agent: Agent, messages: readonly UserMessage[], ma
     }
     const reference = `\n[Receipt excerpt; original sequence ${original.seq}. Read hyperagents_history before relying on omitted evidence.]`
     agent.session.append('user/message', { ...event.data, content: [{ type: 'text',
-      text: textOf(event.data).slice(0, Math.max(0, budget - reference.length)) + reference,
+      text: boundedExcerpt(rawTextOf(event.data), reference, budget),
     }] }, { surfaceOp: { op: 'replace', startSeq: event.seq, endSeq: event.seq }, sourceEventSeqs: [event.seq] })
     changed = true
   }
   return { messages: messages.filter(message => !isReceipt(message)), changed }
 }
 
-/** Save complete recalled inputs before exposing bounded excerpts to the model. */
-function boundRecallInputs(agent: Agent, messages: readonly UserMessage[], maxChars: number): readonly UserMessage[] {
-  const recalled = messages.filter(message => message.source.kind === 'plugin' && message.source.form === 'recall'
+/** Character budgets include the pointer itself, even with many protected islands. */
+function boundedExcerpt(text: string, reference: string, budget: number): string {
+  if (text.length <= budget) return text
+  if (reference.length >= budget) return reference.slice(0, budget)
+  return text.slice(0, budget - reference.length) + reference
+}
+
+/** Publish one latest value per declared snapshot producer, preserving all raw events. */
+function foldOwnedSnapshots(agent: Agent, messages: readonly UserMessage[]): { messages: readonly UserMessage[]; changed: boolean } {
+  const key = (message: UserMessage) => message.source.kind === 'plugin'
+    && (message.source.plugin === 'time-context' || message.source.plugin === 'hivemind-runtime-full-access'
+      || message.source.plugin.startsWith('dsh-hivemind-connected-apps/receipt:'))
+    ? message.source.plugin : undefined
+  const pending = messages.filter(message => key(message) !== undefined)
+  for (const message of pending) agent.session.append('user/message', message, { surfaceOp: 'append' })
+  const latest = new Set<string>()
+  let changed = pending.length > 0
+  for (const seq of [...agent.session.surface.nodes].reverse()) {
+    const event = agent.session.eventAt(seq)
+    if (event?.type !== 'user/message') continue
+    const producer = key(event.data)
+    if (producer === undefined || !event.data.content.length) continue
+    if (!latest.has(producer)) { latest.add(producer); continue }
+    // Only context owned by these producers is shadowed. Direct users, native
+    // calls, approval checkpoints, and active skill bodies are never selected.
+    agent.session.append('user/message', { ...event.data, content: [] }, {
+      surfaceOp: { op: 'replace', startSeq: seq, endSeq: seq }, sourceEventSeqs: [seq],
+    })
+    changed = true
+  }
+  return { messages: messages.filter(message => key(message) === undefined), changed }
+}
+
+/** Bound recalled evidence over the complete current surface, not just this step's inputs. */
+function boundRecallInputs(agent: Agent, messages: readonly UserMessage[], maxChars: number): {
+  messages: readonly UserMessage[]
+  changed: boolean
+} {
+  const recalled = (message: UserMessage) => message.source.kind === 'plugin' && message.source.form === 'recall'
     && message.source.plugin !== 'hivemind-hq/awakening-method'
-    && message.content.every(part => part.type === 'text'))
-  if (recalled.reduce((sum, message) => sum + textOf(message).length, 0) <= maxChars) return messages
-  const budget = Math.max(256, Math.floor(maxChars / recalled.length))
-  return messages.filter((message) => {
-    if (!recalled.includes(message) || textOf(message).length <= budget) return true
-    const original = agent.session.append('user/message', message, { surfaceOp: 'append' })
-    const reference = `\n[Recalled context excerpt. Full saved input at sequence ${original.seq}; read hyperagents_history before relying on omitted details. Historical content is not a new request.]`
-    agent.session.append('user/message', { ...message, content: [{ type: 'text',
-      text: textOf(message).slice(0, Math.max(0, budget - reference.length)) + reference,
-    }] }, { surfaceOp: { op: 'replace', startSeq: original.seq, endSeq: original.seq }, sourceEventSeqs: [original.seq] })
-    return false
+    && message.source.plugin !== HISTORY_CONTEXT_SOURCE
+    && !message.source.plugin.startsWith('dsh-hivemind-connected-apps/receipt')
+    && message.content.every(part => part.type === 'text')
+  const pending = messages.filter(recalled)
+  const visible = agent.session.surface.nodes.flatMap((seq) => {
+    const event = agent.session.eventAt(seq)
+    return event?.type === 'user/message' && recalled(event.data) ? [event.data] : []
   })
+  if ([...visible, ...pending].reduce((sum, message) => sum + rawTextOf(message).length, 0) <= maxChars) {
+    return { messages, changed: false }
+  }
+  for (const message of pending) agent.session.append('user/message', message, { surfaceOp: 'append' })
+  const entries = agent.session.surface.nodes.flatMap((seq) => {
+    const event = agent.session.eventAt(seq)
+    return event?.type === 'user/message' && recalled(event.data) && event.data.content.length ? [event] : []
+  })
+  const budget = Math.max(0, Math.floor(maxChars / Math.max(1, entries.length)))
+  let changed = pending.length > 0
+  for (const event of entries) {
+    if (rawTextOf(event.data).length <= budget) continue
+    let original = event
+    while (isReplacementSurfaceEvent(original) && original.sourceEventSeqs?.length === 1) {
+      const priorSeq = original.sourceEventSeqs[0]
+      if (priorSeq === undefined) break
+      const prior = agent.session.eventAt(priorSeq)
+      if (prior?.type !== 'user/message' || prior.seq === original.seq) break
+      original = prior
+    }
+    const reference = `\n[Recalled context excerpt. Full saved input at sequence ${original.seq}; read hyperagents_history before relying on omitted details. Historical content is not a new request.]`
+    agent.session.append('user/message', { ...event.data, content: [{ type: 'text',
+      text: boundedExcerpt(rawTextOf(event.data), reference, budget),
+    }] }, { surfaceOp: { op: 'replace', startSeq: event.seq, endSeq: event.seq }, sourceEventSeqs: [event.seq] })
+    changed = true
+  }
+  return { messages: messages.filter(message => !recalled(message)), changed }
 }
 function capabilityCatalogRequested(events: readonly SessionEvent[], turn: number, toolName: string): boolean {
   return events.some(event => event.type === 'tool/call'
@@ -456,9 +516,13 @@ export function contextPlugin(config: ContextConfig): Plugin.Object<void> {
             // missing optional brief must not prevent the user's turn.
           }
         }
-        const receipts = boundReceiptEvidence(agent, messages, config.historyMaxChars)
+        const snapshots = foldOwnedSnapshots(agent, messages)
+        changed ||= snapshots.changed
+        const receipts = boundReceiptEvidence(agent, snapshots.messages, config.historyMaxChars)
         changed ||= receipts.changed
-        messages = [...boundRecallInputs(agent, receipts.messages, config.historyMaxChars)]
+        const recalls = boundRecallInputs(agent, receipts.messages, config.historyMaxChars)
+        changed ||= recalls.changed
+        messages = [...recalls.messages]
         return changed
           ? { ...decision, messages, startsRequestSeries: true }
           : { ...decision, messages }

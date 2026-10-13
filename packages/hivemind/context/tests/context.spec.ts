@@ -5,7 +5,7 @@ import { defineTool } from '../../../core/tools/src/index.ts'
 import { MockAdapter, textResponse, toolCallResponse } from '../../../core/agent-loop/tests/mock-adapter.ts'
 import { describe, expect, it, vi } from 'vitest'
 import type { Agent } from '@deepseek-ai/dsh-agent'
-import { createUserMessage, createAssistantMessage, createToolResultMessage } from '@deepseek-ai/dsh-llm'
+import { createUserMessage, createAssistantMessage, createToolResultMessage, createSystemMessage } from '@deepseek-ai/dsh-llm'
 import { Session, SessionId, foldSurface } from '@deepseek-ai/dsh-session'
 import { foldUserQuestions } from '@deepseek-ai/dsh-user-questions/src/projection.ts'
 import { completedExchanges, recentConversationText, contextPlugin } from '../src/index.ts'
@@ -784,4 +784,88 @@ it('retains the producer next cursor when every returned task head fits', async 
   expect(JSON.parse(projectedTaskList(session, 'native-page').text)).toMatchObject({
     pageComplete: true, complete: false, nextCursor: 43, sourceRows: 3,
   })
+})
+
+it('folds repeated owned policy, clock, and receipt snapshots while preserving exact archived input and cold replay', async () => {
+  const session = Session.create(SessionId('snapshot-growth'))
+  const harness = mount(), agent = { session }
+  session.append('turn/start', { turn: 1 })
+  const originals: ReturnType<typeof user>[] = []
+  for (let step=0; step<40; step++) {
+    const incoming = ['time-context','hivemind-runtime-full-access','dsh-hivemind-connected-apps/receipt:verified-hash'].map(plugin =>
+      createUserMessage({ source:{ kind:'plugin',plugin,form:'snapshot' },content:[{ type:'text',text:`${plugin} current ${step} `+'evidence '.repeat(400) }] }))
+    originals.push(...incoming)
+    const decision = await harness.preStep({ agent,turn:1,signal:new AbortController().signal } as never,
+      async()=>({ kind:'enter',messages:incoming })) as { messages: ReturnType<typeof user>[]; startsRequestSeries?: boolean }
+    for (const message of decision.messages) session.append('user/message',message,{ surfaceOp:'append' })
+    expect(decision.startsRequestSeries).toBe(true)
+    const visible = session.deriveMessages().filter(message=>message.content.length)
+    expect(visible).toHaveLength(3)
+    expect(JSON.stringify(visible)).toContain(`current ${step}`)
+  }
+  for (const message of originals) expect(session.snapshotEvents().some(event=>event.type==='user/message'
+    && event.surfaceOp==='append' && event.data.id===message.id && JSON.stringify(event.data)===JSON.stringify(message))).toBe(true)
+  expect(Session.create(SessionId('snapshots-restored'),session.snapshotEvents()).deriveMessages()).toEqual(session.deriveMessages())
+})
+
+it('shares the recall allowance across all admitted steps, including pointer text with hundreds of islands', async () => {
+  const session = Session.create(SessionId('recall-growth'))
+  const harness = mount(), agent = { session }
+  for (let step=0; step<60; step++) {
+    const recall = createUserMessage({ source:{ kind:'plugin',plugin:`fixture/recall-${step}`,form:'recall' },
+      content:[{ type:'text',text:'Original evidence '.repeat(250) }] })
+    const decision = await harness.preStep({ agent,turn:1,signal:new AbortController().signal } as never,
+      async()=>({ kind:'enter',messages:[recall,user(`Exact direction ${step}`)] })) as { messages: ReturnType<typeof user>[] }
+    for (const message of decision.messages) session.append('user/message',message,{ surfaceOp:'append' })
+    const visible = session.deriveMessages().filter(message=>message.role==='user' && message.source.kind==='plugin')
+    expect(visible.flatMap(message=>message.content.flatMap(part=>part.type==='text'?[part.text]:[])).join('').length).toBeLessThanOrEqual(3000)
+    expect(JSON.stringify(session.snapshotEvents())).toContain('Original evidence '.repeat(250))
+  }
+  expect(Session.create(SessionId('recall-growth-restored'),session.snapshotEvents()).deriveMessages()).toEqual(session.deriveMessages())
+})
+
+it('native prepared multi-step requests keep repeated snapshot and recall text constant while retaining current task evidence', async () => {
+  const ctx = new Context()
+  const adapter = new MockAdapter([...Array.from({ length:12 },(_,i)=>toolCallResponse(`step-${i}`,'fixture_progress',{})),textResponse('Reviewed the saved task.')])
+  try {
+    await mountAgentLoopTestDependencies(ctx)
+    await ctx.plugin(AgentLoop,{ agents:[] })
+    await ctx.plugin(contextPlugin({ historyTurns:3,historyMaxChars:8000,capabilityToolName:'hivemind_capabilities' }))
+    ctx.on('agent/pre-step', async (_,next)=>{
+      const decision=await next()
+      if(decision.kind==='reject') return decision
+      return { ...decision,messages:[...decision.messages,
+        ...['time-context','hivemind-runtime-full-access','dsh-hivemind-connected-apps/receipt:stable'].map(plugin=>
+          createUserMessage({ source:{ kind:'plugin',plugin,form:'recall' },content:[{ type:'text',text:plugin+' evidence '.repeat(600) }] })),
+        createUserMessage({ source:{ kind:'plugin',plugin:'fixture/current-state',form:'recall' },content:[{ type:'text',text:'task-24 revision 2 pending artifact review '+ 'state '.repeat(1200) }] }),
+      ] }
+    })
+    ctx.get('llm')!.registerAdapter(['mock'],adapter)
+    ctx.get('tools')!.register(defineTool({ name:'fixture_progress',description:'Review current saved evidence.',parameters:{},
+      output:{ schema:{ type:'object',properties:{},additionalProperties:true },render:()=>[{ type:'text',text:'Verified task-24 artifact receipt '+ 'saved '.repeat(2000) }] },
+      isConcurrencySafe:()=>true,execute:async()=>({ status:'saved' }),
+    }))
+    // Match the live fixed overhead: 27 tools with about 40k schema characters,
+    // plus a 13k permanent system policy, before current task evidence.
+    for(let index=0;index<26;index++) ctx.get('tools')!.register(defineTool({
+      name:`fixture_catalog_${index}`,description:'Native tool contract '.repeat(75),parameters:{},
+      output:{ schema:{ type:'object',properties:{},additionalProperties:true },render:()=>[{ type:'text',text:'unused' }] },
+      isConcurrencySafe:()=>true,execute:async()=>({ status:'unused' }),
+    }))
+    const agent=await ctx.get('agentLoop')!.create(SessionId('prepared-growth'),{ provider:'mock',model:'mock' })
+    agent.session.append('system/message',{ turn:1,step:1,message:createSystemMessage('Permanent company authority and coordination policy. '.repeat(260),'fixture-policy') },{ surfaceOp:'append' })
+    agent.send(user('Review task-24 exact saved artifact; preserve its assignment.'),'next-turn',true)
+    await vi.waitFor(()=>expect(agent.status).toBe('idle'))
+    expect(adapter.requests).toHaveLength(13)
+    for (const request of adapter.requests) {
+      // This is a character-level preparation regression, not a claim about
+      // provider token accounting. The live release must measure real usage.
+      expect(request.tools?.length).toBe(27)
+      expect(JSON.stringify(request).length).toBeLessThan(90_000)
+      expect(JSON.stringify(request)).toContain('task-24')
+    }
+    const raw=agent.session.snapshotEvents().filter(event=>event.type==='tool/result' && event.surfaceOp==='append')
+    expect(raw).toHaveLength(12)
+    expect(JSON.stringify(raw)).toContain('saved '.repeat(2000))
+  } finally { await ctx.fiber.dispose() }
 })
