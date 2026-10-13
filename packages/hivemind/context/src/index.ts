@@ -391,6 +391,8 @@ function boundedExcerpt(text: string, reference: string, budget: number): string
   return text.slice(0, budget - reference.length) + reference
 }
 
+const SUPERSEDED_CONTEXT = '[Superseded context.]'
+
 /** Publish one latest value per declared snapshot producer, preserving all raw events. */
 function foldOwnedSnapshots(agent: Agent, messages: readonly UserMessage[]): { messages: readonly UserMessage[]; changed: boolean } {
   const key = (message: UserMessage) => message.source.kind === 'plugin'
@@ -405,11 +407,11 @@ function foldOwnedSnapshots(agent: Agent, messages: readonly UserMessage[]): { m
     const event = agent.session.eventAt(seq)
     if (event?.type !== 'user/message') continue
     const producer = key(event.data)
-    if (producer === undefined || !event.data.content.length) continue
+    if (producer === undefined || rawTextOf(event.data) === SUPERSEDED_CONTEXT || !event.data.content.length) continue
     if (!latest.has(producer)) { latest.add(producer); continue }
     // Only context owned by these producers is shadowed. Direct users, native
     // calls, approval checkpoints, and active skill bodies are never selected.
-    agent.session.append('user/message', { ...event.data, content: [] }, {
+    agent.session.append('user/message', { ...event.data, content: [{ type: 'text', text: SUPERSEDED_CONTEXT }] }, {
       surfaceOp: { op: 'replace', startSeq: seq, endSeq: seq }, sourceEventSeqs: [seq],
     })
     changed = true

@@ -1,4 +1,5 @@
 import { Context } from '@deepseek-ai/cordis'
+import { toPiContext } from '../../../llm/llm-pi-ai/src/context.ts'
 import AgentLoop from '../../../core/agent-loop/src/index.ts'
 import { mountAgentLoopTestDependencies } from '../../../test-support/agent-loop-testkit/src/index.ts'
 import { defineTool } from '../../../core/tools/src/index.ts'
@@ -799,13 +800,18 @@ it('folds repeated owned policy, clock, and receipt snapshots while preserving e
       async()=>({ kind:'enter',messages:incoming })) as { messages: ReturnType<typeof user>[]; startsRequestSeries?: boolean }
     for (const message of decision.messages) session.append('user/message',message,{ surfaceOp:'append' })
     expect(decision.startsRequestSeries).toBe(true)
-    const visible = session.deriveMessages().filter(message=>message.content.length)
+    const visible = session.deriveMessages().filter(message=>message.content.length && !JSON.stringify(message.content).includes('[Superseded context.]'))
     expect(visible).toHaveLength(3)
     expect(JSON.stringify(visible)).toContain(`current ${step}`)
   }
   for (const message of originals) expect(session.snapshotEvents().some(event=>event.type==='user/message'
     && event.surfaceOp==='append' && event.data.id===message.id && JSON.stringify(event.data)===JSON.stringify(message))).toBe(true)
   expect(Session.create(SessionId('snapshots-restored'),session.snapshotEvents()).deriveMessages()).toEqual(session.deriveMessages())
+  const pi = toPiContext({ provider:'mock',model:'mock',messages:session.deriveMessages(),tools:[] })
+  expect(pi.messages.filter(message=>message.role==='user').every(message=>message.content.length>0)).toBe(true)
+  const before=session.snapshotEvents().length
+  await harness.preStep({ agent,turn:1,signal:new AbortController().signal } as never,async()=>({ kind:'enter',messages:[] }))
+  expect(session.snapshotEvents()).toHaveLength(before)
 })
 
 it('shares the recall allowance across all admitted steps, including pointer text with hundreds of islands', async () => {
