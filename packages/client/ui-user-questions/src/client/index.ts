@@ -58,9 +58,13 @@ async function answerQuestion(
   next: ClientQuestionNext,
   registerPendingInteraction: PendingInteractionPublisher<PendingQuestion>,
 ): Promise<ClientQuestionAnswer> {
-  const sessionId = (ctx.sessions as ISessions).scopeOf(owner)
+  // Host question projections also augment Context.sessions. This browser
+  // adapter uses only the existing client session-scope methods, never the
+  // host store or the entire client session management interface.
+  const sessions = ctx.sessions as unknown as Pick<ISessions, 'scopeOf' | 'sessionOf'>
+  const sessionId = sessions.scopeOf(owner)
   if (sessionId === undefined) return next()
-  const session = (ctx.sessions as ISessions).sessionOf(owner)
+  const session = sessions.sessionOf(owner)
   const pending = new PendingQuestion(
     sessionId,
     request.questions,
