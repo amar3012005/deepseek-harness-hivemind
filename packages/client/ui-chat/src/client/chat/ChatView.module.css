@@ -292,3 +292,11 @@
 @media (max-width: 600px) {
   :global([data-native-chat]) .toBottom { width: 48px; height: 48px; margin-top: -48px; }
 }
+
+/* Brain chat: intermediate agent replies between tool steps (grey bubble). */
+.flowItem[data-brain-intermediate] {
+  background: #f2f2ef;
+  border-radius: 16px;
+  padding: 10px 14px;
+  color: #525252;
+}
