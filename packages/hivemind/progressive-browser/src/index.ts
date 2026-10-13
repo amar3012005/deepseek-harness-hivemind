@@ -297,7 +297,9 @@ export function apply(ctx: Context, config: Partial<Config> = {}): void {
     toolCallTimeoutMs: config.toolCallTimeoutMs ?? 30_000, leaseDurationMs: config.leaseDurationMs ?? 5 * 60_000,
     captureSettleMs: config.captureSettleMs ?? 1_500,
   }
-  if (resolved.url === '') throw new Error('hivemind-progressive-browser.url is required')
+  // Cloudflare actions are a supported independent toolkit; an absent optional
+  // MCP endpoint must not prevent native agent presets from mounting.
+  if (resolved.url === '') return
 
   const local: EndpointConfig = { url: resolved.url, headers: resolved.headers, serverName: resolved.serverName }
   const clients = new Map<string, { client: Client | undefined; connecting: Promise<Client> | undefined; endpoint: EndpointConfig }>()

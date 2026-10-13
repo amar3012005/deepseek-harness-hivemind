@@ -66,6 +66,16 @@ afterAll(async () => {
 }, 20_000)
 
 describe('progressive browser MCP', () => {
+  it('mounts Cloudflare actions without an optional Playwright endpoint', async () => {
+    const isolated = new Context()
+    await isolated.plugin(SystemPrompt)
+    await isolated.plugin(ToolRuntime)
+    expect(() => apply(isolated, { actionAccountId: 'test-account', actionBrowserToken: 'test-token', url: '' })).not.toThrow()
+    expect(isolated.hivemindActionToolkits).toBeDefined()
+    expect(isolated.tools.get('hivemind_browser_capture')).toBeUndefined()
+    await isolated.fiber.dispose()
+  })
+
   it('keeps official browser tools out of the initial model surface', () => {
     expect(ctx.tools.get('hivemind_browser_discover')).toBeDefined()
     expect(ctx.tools.get('hivemind_browser_capture')).toBeDefined()
