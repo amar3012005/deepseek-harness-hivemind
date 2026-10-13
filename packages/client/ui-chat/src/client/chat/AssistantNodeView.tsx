@@ -7,6 +7,7 @@ export const AssistantNodeView = memo(function AssistantNodeView({
   node, useTurnData, turnProcess, openFile, renderMessageImages, fileMentions, t, renderSlot,
 }: ChatNodeViewProps<'assistant-step'> & Partial<import('@deepseek-ai/dsh-client-ui-slots').PropsRenderSlots<'conversation.chat.assistantAvatar'>>) {
   const data = node.data
+  const brainOnly = document.documentElement.dataset.dshMode === 'hivemind-chat'
   const turn = node.location.kind === 'turn' || node.location.kind === 'step'
     ? node.location.turn
     : undefined
@@ -31,7 +32,7 @@ export const AssistantNodeView = memo(function AssistantNodeView({
     <div data-assistant-message style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
       {renderSlot?.('conversation.chat.assistantAvatar', {})}
       <AssistantMarkdown
-        blocks={data.blocks}
+        blocks={brainOnly ? data.blocks.filter(block => block.kind !== 'reasoning') : data.blocks}
         finalAnswer={owner !== undefined}
         streaming={data.status === 'running'}
         interrupted={data.status === 'interrupted'}

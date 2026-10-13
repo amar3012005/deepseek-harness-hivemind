@@ -11,10 +11,8 @@ import css from './TurnProcessNodeView.module.css'
 export const TurnProcessNodeView = memo(function TurnProcessNodeView({
   node, turnProcess, t, renderSlot,
 }: ChatNodeViewProps<'turn-process'> & Partial<PropsRenderSlots<'conversation.chat.workUpdates'>>) {
-  // HIVE Chat intentionally keeps work projection out of the conversation.
-  // Its composer owns the pending activity orb; durable details remain in the
-  // session log and diagnostics rather than becoming model-process prose.
-  if (document.documentElement.dataset.dshMode === 'hivemind-chat') return null
+  const brainOnly = document.documentElement.dataset.dshMode === 'hivemind-chat'
+  if (brainOnly && node.data.toolCallCount === 0) return null
   if (turnProcess === undefined) throw new Error('turn-process node requires Turn process owner state')
   if (!turnProcess.foldable) return null
   const open = turnProcess.open
@@ -62,7 +60,7 @@ export const TurnProcessNodeView = memo(function TurnProcessNodeView({
           turnProcess.setOpen(!open)
         }}
       >
-        <span className={css.label}>{turnProcess.spec.dreamSynthesis === true ? 'Exploration details' : /^\/hivemind\/app\/(?:overview|employee\/harness)(?:\/|$)/u.test(window.location.pathname) ? 'Work details' : label}</span>
+        <span className={css.label}>{brainOnly ? 'Tools' : turnProcess.spec.dreamSynthesis === true ? 'Exploration details' : /^\/hivemind\/app\/(?:overview|employee\/harness)(?:\/|$)/u.test(window.location.pathname) ? 'Work details' : label}</span>
         <IconChevronDownOutline14 className={css.chevron} />
       </button>
       {renderSlot?.('conversation.chat.workUpdates', { turn: node.data.turn })}
