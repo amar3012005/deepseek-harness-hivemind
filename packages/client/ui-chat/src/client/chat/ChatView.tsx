@@ -170,13 +170,14 @@ function runningTurnStartTime(timeline: ConversationTimelineSnapshot): number | 
 }
 
 /** Turn-level model activity label retained across first-token, tool, and streaming phases. */
-function TurnStatus({ startTime, working, activity, t }: {
+function TurnStatus({ startTime, working, activity, avatar, t }: {
   /** The running turn's logged `turn/start` time; null falls back to mount
    *  time when that boundary is outside the window. */
   startTime: number | null
   /** A live tool call means the turn is doing work beyond model preparation. */
   working: boolean
   activity?: AgentActivityKey | undefined
+  avatar?: import('react').ReactNode
   /** The owning view's locale seat. */
   t: ChatViewSlotProps['t']
 }) {
@@ -198,7 +199,9 @@ function TurnStatus({ startTime, working, activity, t }: {
   const showClock = elapsedMs >= 15_000
   return (
     <div className={css.turnStatus} data-agent-room={window.location.pathname.includes('/employee/harness') || undefined} role="status" aria-live="polite">
-      <ThinkingOrb className={css.activityOrb} state={working ? 'solving' : 'searching'} size={32} aria-hidden="true" />
+      {/^\/hivemind\/app\/overview(?:\/|$)/u.test(window.location.pathname)
+        ? <span aria-hidden style={{ width: 32, height: 32, display: 'inline-flex' }}>{avatar}</span>
+        : <ThinkingOrb className={css.activityOrb} state={working ? 'solving' : 'searching'} size={32} aria-hidden="true" />}
       <span className={css.turnStatusLabel}>{activity === undefined ? working ? t('chat.working') : t('chat.thinking') : t(activity)}</span>
       {showClock && (
         <span className={css.turnStatusClock} aria-hidden>
@@ -865,6 +868,7 @@ export function ChatView({
           {/* Turn-level loading signal: rides the whole running turn (first-token
               wait, tool execution, streaming) so it never flickers per step. */}
           {running && <TurnStatus
+            avatar={renderSlot('conversation.chat.activityAvatar', {})}
             startTime={runningTurnStart}
             working={runningCalls.length > 0}
             activity={/^\/hivemind\/app\/employee\/harness(?:\/|$)/u.test(window.location.pathname)

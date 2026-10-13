@@ -157,7 +157,7 @@ export interface ChatViewInjected {
 /** Full Chat view props. */
 export type ChatViewSlotProps =
   PropsRuntime<'conversation.view'>
-  & PropsRenderSlots<'conversation.chat.node' | 'conversation.message.images'>
+  & PropsRenderSlots<'conversation.chat.node' | 'conversation.message.images' | 'conversation.chat.activityAvatar'>
   & PropsStore<ChatStore>
   & InjectFace<ChatViewInjected>
   & PropsLocale<'chat'>
@@ -177,6 +177,7 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
   }
 
   interface SlotMap {
+    'conversation.chat.activityAvatar': { kind: 'single'; scope: 'session'; owner: {} }
     /** Identity supplied by an installed product profile, never inferred from prose. */
     'conversation.chat.assistantAvatar': { kind: 'single'; scope: 'session'; owner: { employeeId?: string; name?: string } }
     'conversation.chat.contextAvatar': { kind: 'single'; scope: 'session'; owner: { employeeId?: string; name?: string } }

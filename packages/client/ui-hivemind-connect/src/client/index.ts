@@ -295,6 +295,10 @@ export function apply(ctx: ClientContext): void {
     }) : name === 'conversation.chat.assistantAvatar' && /^\/hivemind\/app\/overview(?:\/|$)/u.test(window.location.pathname)
       ? createElement('span', { 'data-chat-agent-avatar': true, style: { width: 32, flexShrink: 0, alignSelf: 'flex-end' } }, createElement(BrainModeIcon, { size: 32 }))
       : null))
+  ctx.slots.inject('conversation.chat.activityAvatar', () => ctx.slots.register({
+    name: 'conversation.chat.activityAvatar',
+  }, () => /^\/hivemind\/app\/overview(?:\/|$)/u.test(window.location.pathname)
+    ? createElement(BrainModeIcon, { size: 32 }) : null))
   ctx.inject(['remote.commands', 'remote.agentPresets'], (ctx: ClientContext) => {
     const selectEmployee = async (sessionId: SessionId, id: string | null, runtime = false): Promise<boolean> => {
       if (ctx.sessions.binding(sessionId) === undefined) throw new Error('Session is not ready. Please reopen it.')

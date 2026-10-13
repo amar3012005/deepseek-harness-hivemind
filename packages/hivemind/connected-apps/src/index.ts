@@ -16,6 +16,7 @@ import { defineTool } from '@deepseek-ai/dsh-tools'
 import type {} from '@deepseek-ai/dsh-user-questions'
 import { DreamConnectorService } from './dream-connectors.ts'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
+import type {} from './delegated-blocker.ts'
 
 interface ComposioRouterSessionEventData {
   readonly version: 1
@@ -224,6 +225,7 @@ async function scopedServiceToken(
   config: Config,
   execution: Pick<ToolExecution, 'signal'>,
   identity?: { userId: string; orgId: string },
+  runtimeSessionId?: string,
 ): Promise<{ token: string; base: URL } | undefined> {
   const base = allowedServiceBase(config.serviceApiBase, config.serviceHttpOrigins)
   if (base === undefined) return undefined
@@ -238,6 +240,7 @@ async function scopedServiceToken(
     iss: 'hivemind-harness-runner', aud: 'hivemind-control-plane-harness-proxy',
     sub: principal.userId, org_id: principal.orgId, profile: 'hivemind-chat',
     iat: now, exp: now + 30, jti: randomUUID(),
+    ...(runtimeSessionId === undefined ? {} : { operating_role: 'runtime', operating_session: runtimeSessionId }),
   }
   const input = `${base64url({ alg: 'HS256', typ: 'JWT' })}.${base64url(claims)}`
   return { token: `${input}.${createHmac('sha256', secret).update(input).digest('base64url')}`, base }
@@ -340,6 +343,12 @@ function catalogToolkits(value: unknown): ToolkitConnection[] {
 function connectorCatalogResponse(res: ServerResponse, status: number, value: unknown): void {
   res.writeHead(status, { 'cache-control': 'no-store', 'content-type': 'application/json; charset=utf-8' })
   res.end(JSON.stringify(value))
+}
+
+/** Only the authenticated site's same-origin POST may request server reconciliation. */
+export function connectionRefreshOrigin(origin: string | undefined, host: string | undefined): boolean {
+  if (!origin || !host) return false
+  try { const url = new URL(origin); return url.protocol === 'https:' && url.host === host && url.origin === origin } catch { return false }
 }
 
 function connectionCallbackUrl(baseUrl: string | undefined, execution: Pick<ToolExecution, 'agent'>): string | undefined {
@@ -918,6 +927,7 @@ function unfinishedWorkflow(
       continue
     }
     if (pending === undefined || (workflowId !== undefined && workflowId !== pending.workflowId)) continue
+    if (action === 'cancel_connection' && status === 'cancelled') { pending = undefined; continue }
     if (action === 'wait_connection') {
       const toolkits = workflowToolkits(result.value)
       pending = { ...pending, status, toolkits: toolkits.length > 0 ? toolkits : pending.toolkits }
@@ -953,18 +963,20 @@ function workflowContextMessage(state: UnfinishedWorkflowProjection) {
   return createUserMessage({
     content: [{
       type: 'text',
-      text: `## Unfinished connected-app workflow\nThis state is reconstructed from durable receipts in this conversation. If the current request continues it, resume this session without repeating search, checking status separately, or using HIVE memory for connected-app evidence. If the user changed tasks, leave it pending.\n${JSON.stringify(projection)}`,
+      text: `## Unfinished connected-app workflow\nThis state is reconstructed from durable receipts in this conversation. If the current request continues it, follow its next_action in this session. For wait_connection, pass the exact projected toolkits for one bounded access check. Do not repeat search, check status separately, or using HIVE memory for connected-app evidence. If the user merely changed tasks, leave it pending. If the user explicitly says no, leave it, or stop this request, or evidence establishes the request is no longer necessary, use cancel_connection with the exact saved session_id and request_call_id; do not cancel other requests or disconnect the account.\n${JSON.stringify(projection)}`,
     }],
-    source: { kind: 'plugin', plugin: WORKFLOW_CONTEXT_SOURCE, form: 'recall' },
+    source: { kind: 'plugin', plugin: `${WORKFLOW_CONTEXT_SOURCE}:${discoveryKey(projection)}`, form: 'recall' },
   })
 }
 
+// A continuation must be the request itself, not an incidental verb in a new objective.
 const WORKFLOW_CONTINUATION_REQUEST = new RegExp(
-  String.raw`\b(?:continue|resume|retry|try again|next page|more results|show more|keep going|proceed|`
-    + String.raw`finish (?:it|that)|complete (?:it|that)|same (?:task|request|search|workflow)|`
-    + String.raw`i (?:connected|authorized)|connection (?:is )?(?:done|ready))\b`,
+  String.raw`^(?:please\s+)?(?:continue|resume|retry|try again|next page|more results|show more|keep going|proceed|`
+    + String.raw`finish (?:it|that)|complete (?:it|that))`
+    + String.raw`(?:\s+(?:with\s+)?(?:the\s+)?(?:same|previous|pending)\s+(?:task|request|search|workflow))?[.!?\s]*$`,
   'iu',
 )
+const CONNECTION_RETURN_REQUEST = /^(?:i(?:'ve| have)?\s+(?:connected|authorized)\b|connection (?:is )?(?:done|ready)\b)/iu
 
 /** Return only the current human-authored request, never a plugin projection. */
 function latestUserRequest(messages: readonly unknown[] | undefined): string | undefined {
@@ -983,12 +995,27 @@ function latestUserRequest(messages: readonly unknown[] | undefined): string | u
 /**
  * Durable workflow state is advisory across turns. A new human request must
  * never inherit a provider cursor or execution contract merely because an old
- * read exposed pagination. Automatic auth-return turns have no human message
- * and still resume; human-authored turns require an explicit continuation.
+ * read exposed pagination. Empty automatic turns are not workflow resumes.
+ * A matching authenticated question answer or explicit human continuation is required.
  */
-function shouldProjectWorkflow(messages: readonly unknown[] | undefined): boolean {
+function shouldProjectWorkflow(
+  messages: readonly unknown[] | undefined, toolkits: readonly string[] = [], answerCalls: ReadonlySet<string> = new Set(),
+): boolean {
+  if (messages?.some(message => record(message) && record(message['source'])
+    && message['source']['kind'] === 'hivemind-runtime-event')) return false
+  const answered = messages?.some((message) => {
+    if (!record(message) || message['role'] !== 'user' || !record(message['source'])) return false
+    const source = message['source'], actor = source['authenticatedActor']
+    if (!record(actor) || typeof actor['userId'] !== 'string' || typeof actor['orgId'] !== 'string') return false
+    const callId = source['kind'] === 'user-question-reply' && source['outcome'] === 'answered' ? source['callId']
+      : source['kind'] === 'user' && source['questionAnswerSubmission'] === true ? source['questionCallId'] : undefined
+    return typeof callId === 'string' && answerCalls.has(callId)
+  })
+  if (answered) return true
   const request = latestUserRequest(messages)
-  return request === undefined || WORKFLOW_CONTINUATION_REQUEST.test(request)
+  return request !== undefined && (WORKFLOW_CONTINUATION_REQUEST.test(request)
+    || (CONNECTION_RETURN_REQUEST.test(request) && toolkits.some(toolkit =>
+      request.toLocaleLowerCase().includes(toolkit.toLocaleLowerCase()))))
 }
 
 function discoveryKey(value: unknown): string {
@@ -1429,13 +1456,30 @@ function latestConnectedReceipt(agent: ToolExecution['agent']): ConnectedReceipt
   return undefined
 }
 
+/** Keep the latest unresolved connection available independently of later tool receipts. */
+function pendingConnectionReceipt(agent: Agent): ConnectedReceiptEventData | undefined {
+  const pending = new Map<string, ConnectedReceiptEventData>()
+  for (const event of agent.session.snapshotEvents()) {
+    if (event.type !== 'hivemind/connected-receipt' || event.data.tool !== 'connection_authorization'
+      || event.data.workflowSessionId === undefined || !record(event.data.receipt)) continue
+    const receipt = event.data.receipt
+    const key = `${event.data.workflowSessionId}:${String(receipt['toolkit'])}`
+    const prior = pending.get(key)
+    if (receipt['status'] === 'connection_required') { pending.delete(key); pending.set(key, event.data) }
+    else if ((receipt['status'] === 'ready' || receipt['status'] === 'cancelled')
+      && record(prior?.receipt)
+      && prior.receipt['request_call_id'] === receipt['request_call_id']) pending.delete(key)
+  }
+  return [...pending.values()].at(-1)
+}
+
 function connectedReceiptContextMessage(receipt: ConnectedReceiptEventData) {
   return createUserMessage({
     content: [{
       type: 'text',
       text: `## Most recent connected-app receipt\nThis record was durably retained. Its status distinguishes a working checkpoint, pending intent, failure, or confirmed result; never treat a pending record as success. Use it when the current request refers to those results; do not repeat the provider read merely to reconstruct context.\n${JSON.stringify(receipt)}`,
     }],
-    source: { kind: 'plugin', plugin: RECEIPT_CONTEXT_SOURCE, form: 'recall' },
+    source: { kind: 'plugin', plugin: `${RECEIPT_CONTEXT_SOURCE}:${discoveryKey(receipt)}`, form: 'recall' },
   })
 }
 
@@ -1460,7 +1504,9 @@ function hasVisiblePluginContext(messages: readonly unknown[], expected: ReturnT
     && record(message['source'])
     && message['source']['kind'] === 'plugin'
     && message['source']['plugin'] === source.plugin
-    && messageText(message) === text)
+    // Producer-owned digest survives model-facing bounded content replacements.
+    && (source.plugin.startsWith(`${WORKFLOW_CONTEXT_SOURCE}:`)
+      || source.plugin.startsWith(`${RECEIPT_CONTEXT_SOURCE}:`) || messageText(message) === text))
 }
 
 function hasVisibleReceipt(messages: readonly unknown[], receipt: ConnectedReceiptEventData): boolean {
@@ -1541,6 +1587,9 @@ export function apply(ctx: Context, config: Config = {}): void {
     searchFingerprints: Set<string>
     billableCalls: number
     workflowId?: string
+    projectWorkflow: boolean
+    admissionResolved: boolean
+    initialReceiptSignature: string
   }>()
   const apiKey = config.apiKey?.trim()
   const composio = apiKey
@@ -1553,7 +1602,7 @@ export function apply(ctx: Context, config: Config = {}): void {
   const contracts = new Map<string, Map<string, ExecutionContract>>()
   const resultFields = new Map<string, string[]>()
 
-  async function getSession(identity: { userId: string; orgId: string }, execution: Pick<ToolExecution, 'agent'>): Promise<ComposioSession> {
+  async function getSession(identity: { userId: string; orgId: string }, execution: Pick<ToolExecution, 'agent'>, requestOptions?: { signal: AbortSignal }): Promise<ComposioSession> {
     if (composio === undefined) throw new Error('Connected tools are not configured on this runtime')
     const client = await composio
     const canonicalKey = sessionKey(identity)
@@ -1565,28 +1614,31 @@ export function apply(ctx: Context, config: Config = {}): void {
         const restored = restoredRouterSession(execution, canonicalKey)
         if (restored !== undefined) {
           try {
-            return await client.sessions.use(restored.routerSessionId, { mcp: true })
+            return await client.sessions.use(restored.routerSessionId, { mcp: true },
+              ...(requestOptions === undefined ? [] : [requestOptions]))
           } catch (error: unknown) {
+            if (requestOptions?.signal.aborted === true) throw error
             ctx.logger.warn(`hivemind-connected-apps: could not restore Composio session; creating a successor: ${String(error)}`)
           }
         }
         let subject = restored?.subject ?? canonicalKey
         let connectedAccounts: Record<string, string[]> = {}
         try {
-          const accounts = await client.connectedAccounts.list({ userIds: [subject], statuses: ['ACTIVE'] })
+          const accounts = await client.connectedAccounts.list({ userIds: [subject], statuses: ['ACTIVE'] }, ...(requestOptions === undefined ? [] : [requestOptions]))
           connectedAccounts = activeConnectedAccounts(accounts)
           // Existing HIVE connections were historically created under the
           // organization id. Use that bounded subject only for a first session
           // whose canonical user has no active account.
           if (restored === undefined && !hasActiveAccount(accounts)) {
             const legacyKey = legacySessionKey(identity)
-            const legacyAccounts = await client.connectedAccounts.list({ userIds: [legacyKey], statuses: ['ACTIVE'] })
+            const legacyAccounts = await client.connectedAccounts.list({ userIds: [legacyKey], statuses: ['ACTIVE'] }, ...(requestOptions === undefined ? [] : [requestOptions]))
             if (hasActiveAccount(legacyAccounts)) {
               subject = legacyKey
               connectedAccounts = activeConnectedAccounts(legacyAccounts)
             }
           }
         } catch (error: unknown) {
+          if (requestOptions?.signal.aborted === true) throw error
           ctx.logger.warn(`hivemind-connected-apps: could not inspect connection scope: ${String(error)}`)
         }
         const callbackUrl = connectionCallbackUrl(config.connectionCallbackBaseUrl, execution)
@@ -1594,7 +1646,7 @@ export function apply(ctx: Context, config: Config = {}): void {
           mcp: true,
           connectedAccounts,
           ...(callbackUrl === undefined ? {} : { manageConnections: { enable: true, callbackUrl } }),
-        })
+        }, ...(requestOptions === undefined ? [] : [requestOptions]))
         if (execution.agent !== undefined) {
           execution.agent.session.append('hivemind/composio-session', {
             version: 1,
@@ -1621,6 +1673,37 @@ export function apply(ctx: Context, config: Config = {}): void {
         webServer: { register(input: { kind: 'exact'; path: string; handler(req: IncomingMessage, res: ServerResponse): Promise<void> }): () => void }
         connection: { principal(input: { headers: { host?: string; cookie?: string } }): Record<string, string> | undefined }
       }
+      ctx.effect(() => runtime.webServer.register({
+        kind: 'exact', path: '/api/hivemind/connections/reconcile', handler: async (req, res) => {
+          if (req.method !== 'POST') { connectorCatalogResponse(res, 405, { ok: false }); return }
+          const host = typeof req.headers['x-forwarded-host'] === 'string'
+            ? req.headers['x-forwarded-host'].split(',', 1)[0]?.trim() : req.headers.host
+          if (!connectionRefreshOrigin(req.headers.origin, host)) {
+            connectorCatalogResponse(res, 403, { ok: false, diagnostic: 'same_origin_required' }); return
+          }
+          const principal = runtime.connection.principal({ headers: {
+            ...(host === undefined ? {} : { host }),
+            ...(req.headers.cookie === undefined ? {} : { cookie: req.headers.cookie }),
+          } })
+          const userId = principal === undefined ? undefined : stringValue(principal.user_id)
+          const orgId = principal === undefined ? undefined : stringValue(principal.org_id)
+          if (principal?.profile !== 'hivemind-chat' || userId === undefined || orgId === undefined) {
+            connectorCatalogResponse(res, 401, { ok: false, diagnostic: 'authentication_required' }); return
+          }
+          try {
+            const signal = AbortSignal.timeout(15000)
+            const service = await scopedServiceToken(ctx, config, { signal }, { userId, orgId })
+            if (!service) throw new Error('service_required')
+            const response = await fetch(new URL('/internal/v1/harness-chat/core/delegated-connection/refresh', service.base), {
+              method: 'POST', headers: { authorization: `Bearer ${service.token}`, 'content-type': 'application/json' },
+              body: '{}', signal,
+            })
+            const result = await response.json() as Record<string, unknown>
+            if (!response.ok || result['status'] !== 'reconciled') throw new Error('reconciliation_unavailable')
+            connectorCatalogResponse(res, 200, { ok: true, status: 'reconciled' })
+          } catch { connectorCatalogResponse(res, 503, { ok: false, diagnostic: 'connection_refresh_unavailable' }) }
+        },
+      }), 'hivemind-connected-apps: authenticated connection return reconciliation')
       ctx.effect(() => runtime.webServer.register({
         kind: 'exact',
         path: '/api/hivemind/connectors',
@@ -1720,11 +1803,46 @@ export function apply(ctx: Context, config: Config = {}): void {
     }
   }
 
+  ctx.effect(() => ctx.on('hivemind/delegated-connection-verify', async (input) => {
+    if (composio === undefined) throw new Error('Connected tools are not configured')
+    const identity = await ctx.hivemindIdentity.resolve(input.signal)
+    const restored = restoredRouterSession({ agent: input.employee }, sessionKey(identity))
+    if (restored?.routerSessionId !== input.routerSessionId) throw new Error('delegated_connection_router_mismatch')
+    const provider = await (await composio).sessions.use(input.routerSessionId, { mcp: true })
+    const waited = await provider.execute('COMPOSIO_WAIT_FOR_CONNECTIONS', {
+      session_id: input.workflowSessionId, toolkits: [...input.toolkits],
+    })
+    const statuses = connectionStatuses(waited)
+    if (!input.toolkits.every(toolkit => statuses.some(row => row.toolkit.toLowerCase() === toolkit.toLowerCase() && row.connected)
+      && !statuses.some(row => row.toolkit.toLowerCase() === toolkit.toLowerCase() && !row.connected))) return false
+    const service = await scopedServiceToken(ctx, config, { signal: input.signal }, identity, String(input.runtime.id))
+    if (!service) throw new Error('delegated_connection_verification_service_required')
+    const response = await fetch(new URL('/internal/v1/harness-chat/core/delegated-connection/verify', service.base), {
+      method: 'POST', headers: { authorization: `Bearer ${service.token}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ session_id: String(input.employee.id), router_session_id: input.routerSessionId,
+        toolkits: [...input.toolkits] }),
+      signal: input.signal,
+    })
+    const result = await response.json() as Record<string, unknown>
+    if (!response.ok) throw new Error(`delegated_connection_verification_failed:${typeof result['error'] === 'string' ? result['error'] : response.status}`)
+    return result['verified'] === true
+  }, { global: true }))
+
+  async function delegatedConnection(execution: ToolExecution, routerSessionId: string, workflow: string | undefined,
+    toolkits: string[], redirectUrl: string | undefined) {
+    if (execution.agent === undefined || workflow === undefined || typeof ctx.serial !== 'function') return undefined
+    return ctx.serial('hivemind/delegated-connection-blocker', {
+      execution, routerSessionId, workflowSessionId: workflow, toolkits,
+      ...(redirectUrl === undefined ? {} : { redirectUrl }),
+    })
+  }
+
   ctx.effect(() => ctx.tools.register(defineTool({
     name: BRIDGE_TOOL,
     description: 'Tenant-scoped connected-app gateway. Start external-app work with atomic search queries, explicit outcomes, exact result limits, all concrete search filters in known_fields, and a top-level session: { generate_id: true }. Follow recommended_plan_steps: for an explicitly planned read tool, call schemas with its exact slug in the same session, then execute using that contract. Never execute a plan hint directly or guess tools. External writes follow native permission policy. For dependent tasks save a checkpoint with the canonical report, sources, confirmed steps and next step; read_checkpoint restores it. Reuse operation_id on write retries. outcome_unknown requires destination reconciliation, never blind resend. Each successful execution completes only that step, not the whole task. When result_fields were requested, report projection_status and every missing_result_fields entry; never claim requested evidence was returned when projection_status is incomplete. For writes, request the stable resource identifier needed for later verification or follow-up when its exact field is known from the selected contract.',
     parameters: {
-      action: { type: 'string', required: true, enum: ['connection_status', 'search', 'schemas', 'manage_connection', 'wait_connection', 'execute', 'checkpoint', 'read_checkpoint', 'read_receipt'], description: 'Use connection_status only for a pure status check of explicitly named apps. Use search for real app work.' },
+      action: { type: 'string', required: true, enum: ['list_connections', 'connection_status', 'search', 'schemas', 'manage_connection', 'wait_connection', 'cancel_connection', 'execute', 'checkpoint', 'read_checkpoint', 'read_receipt'], description: 'Use list_connections to list authenticated active apps without authorizing anything. Use connection_status only for a pure status check of explicitly named apps. Use search for real app work. When the user declines or abandons a saved request, or you establish it is no longer necessary, use cancel_connection with its exact session_id and request_call_id; it cancels only that local request, not the connected account.' },
+      cancellation_reason: { type: 'string', enum: ['user_declined', 'no_longer_needed'], description: 'For cancel_connection: user_declined for an explicit decline; no_longer_needed only when current evidence establishes this saved request is unnecessary. Do not treat unrelated topic changes as a decline.' },
       apps: { type: 'array', items: { type: 'string' }, description: 'One to four explicit app names for connection_status. Resolved against authenticated toolkit metadata, never semantic tool search.' },
       queries: {
         type: 'array',
@@ -1757,11 +1875,12 @@ export function apply(ctx: Context, config: Config = {}): void {
       search_strategy: { type: 'string', enum: ['auto', 'tool_search'], description: 'Use auto normally; retry with tool_search only when the returned plan or tools do not match.' },
       tool_slug: { type: 'string', description: 'Exact selected tool slug.' },
       tool_slugs: { type: 'array', items: { type: 'string' }, description: 'Selected tool slugs or exact read-only slugs from recommended_plan_steps for schema loading.' },
-      toolkits: { type: 'array', items: { type: 'string' }, description: 'Exact toolkits returned by search.' },
+      toolkits: { type: 'array', items: { type: 'string' }, description: 'Exact toolkits returned by the original search. wait_connection checks access once within five seconds and parks if missing; never polls or starts authorization.' },
       session_id: { type: 'string', description: 'Search session id reused by later schema, connection, and execution operations.' },
       checkpoint_state: { type: 'string', enum: ['open', 'blocked', 'completed'], description: 'Task state. completed requires successful provider receipts for every requested external action.' },
       checkpoint_id: { type: 'string', description: 'Stable task identifier, reused across continuations.' },
       checkpoint: { type: 'string', description: 'Durable task plan, research report, source URLs and dates, artifact identifiers, confirmed steps, and next step. Maximum 32000 characters. This is a working note, not proof of execution.' },
+      request_call_id: { type: 'string', description: 'Exact original connection request call identity from the saved connection_authorization receipt. Required to cancel that request.' },
       receipt_id: { type: 'string', description: 'Private Core receipt UUID returned by this session.' },
       operation_id: { type: 'string', description: 'Stable workflow step identifier for a write. Reuse for retries; choose a new identifier only for a deliberately new operation.' },
       result_fields: { type: 'array', items: { type: 'string' }, description: 'Exact result keys for THIS execution only. Omit for bounded default output including resource identifiers.' },
@@ -1771,6 +1890,16 @@ export function apply(ctx: Context, config: Config = {}): void {
     async execute(args, execution) {
       if (!connectedAppsEnabled(ctx, config.enabledByDefault === true)) throw new Error('Connected tools are disabled for this turn. Enable Tools and retry.')
       const identity = await ctx.hivemindIdentity.resolve(execution.signal)
+      if (args.action === 'list_connections') {
+        const session = await getSession(identity, {})
+        const result = await session.toolkits({ isConnected: true, limit: 16 })
+        const apps = catalogToolkits(result).filter(item => item.connected).slice(0, 16)
+          .map(item => ({ app: item.slug, name: item.name, connected: true }))
+        const receipt = { status: 'active_connections', apps,
+          complete: !result.cursor, next_action_guidance: 'Search only relevant returned active app names. No new authorization has been started; an empty list means answer from saved evidence.' }
+        appendConnectedReceipt(execution, 'connection_inventory', receipt)
+        return receipt
+      }
       if (args.action === 'checkpoint' || args.action === 'read_checkpoint') {
         const id = stringValue(args.checkpoint_id)
         if (id === undefined || id.length > 120 || execution.agent === undefined) throw new Error('Checkpoint requires a task identifier and active session')
@@ -1798,6 +1927,90 @@ export function apply(ctx: Context, config: Config = {}): void {
         })
         if (!response.ok) throw new Error(`Private receipt read was refused (${response.status}); do not infer missing evidence`)
         return { status: 'receipt_read', receipt: await response.json() as JsonValue }
+      }
+      if (args.action === 'cancel_connection') {
+        const workflow = workflowSessionId(args)
+        const callId = stringValue(args.request_call_id)
+        const agent = execution.agent
+        if (workflow === undefined || callId === undefined || agent === undefined) throw new TypeError('Connection cancellation requires an active session and exact saved request identities')
+        const authorization = agent.session.snapshotEvents().findLast(event => event.type === 'hivemind/connected-receipt'
+          && event.data.tool === 'connection_authorization' && event.data.workflowSessionId === workflow
+          && record(event.data.receipt) && event.data.receipt['request_call_id'] === callId)
+        const saved = authorization?.type === 'hivemind/connected-receipt' && record(authorization.data.receipt) ? authorization.data.receipt : undefined
+        if (saved === undefined || !['connection_required', 'cancelled'].includes(String(saved['status']))) throw new TypeError('Connection cancellation requires an unresolved exact saved request')
+        if (saved['status'] !== 'cancelled') appendConnectedReceipt(execution, 'connection_authorization', { ...saved, status: 'cancelled', cancellation_reason: args.cancellation_reason === 'no_longer_needed' ? 'no_longer_needed' : 'user_declined' }, workflow)
+        if (!await ctx.sessions.flush(agent.session)) throw new Error('Connection cancellation was not durably saved')
+        return { status: 'cancelled', session_id: workflow, request_call_id: callId,
+          next_action_guidance: 'This saved request is closed. Do not resume it, ask for access, send another request email, or schedule a retry. A genuinely new authorized need may start a new workflow; closing this request does not authorize connecting an account.' }
+      }
+      if (args.action === 'wait_connection') {
+        const continuationId = workflowSessionId(args)
+        if (continuationId === undefined) throw new TypeError('Connection continuation requires the original search session_id')
+        const requested = stringArray(args.toolkits)
+        const authorization = execution.agent?.session.snapshotEvents().findLast(event =>
+          event.type === 'hivemind/connected-receipt' && event.data.tool === 'connection_authorization'
+          && event.data.workflowSessionId === continuationId && record(event.data.receipt)
+          && (requested.length === 0 || workflowToolkits(event.data.receipt).some(toolkit =>
+            requested.some(item => item.toLowerCase() === toolkit.toLowerCase()))))
+        const matchedAuthorization = authorization ?? execution.agent?.session.snapshotEvents().findLast(event =>
+          event.type === 'hivemind/connected-receipt' && event.data.tool === 'connection_authorization'
+          && event.data.workflowSessionId === continuationId)
+        const saved = matchedAuthorization?.type === 'hivemind/connected-receipt' && record(matchedAuthorization.data.receipt)
+          ? matchedAuthorization.data.receipt : undefined
+        if (saved?.['status'] === 'cancelled') throw new TypeError('This connection request was cancelled; a genuinely new authorized need requires a new workflow')
+        const savedToolkits = saved === undefined ? [] : workflowToolkits(saved)
+        if (savedToolkits.length > 0 && requested.some(toolkit => !savedToolkits.some(savedToolkit =>
+          savedToolkit.toLowerCase() === toolkit.toLowerCase()))) {
+          throw new TypeError('Connection continuation toolkits must match the original saved workflow')
+        }
+        // A partial model argument cannot clear a multi-app authorization.
+        const toolkits = savedToolkits.length > 0 ? savedToolkits : requested
+        if (toolkits.length === 0 || toolkits.length > 4) throw new TypeError('Connection operation requires one to four exact toolkits from the original workflow')
+        // Continue is one observational check, never the provider's long-poll
+        // WAIT_FOR_CONNECTIONS operation. The shared deadline also bounds
+        // cold router-session restoration and cancels the actual SDK request.
+        const deadline = AbortSignal.timeout(5_000)
+        const signal = AbortSignal.any([execution.signal, deadline])
+        let statuses: Array<{ toolkit: string; connected: boolean }> = []
+        let checkStatus = 'verified'
+        try {
+          const session = await getSession(identity, execution, { signal })
+          // SDK 0.18.1's Session facade omits the trailing transport option
+          // from its type alias; its concrete ToolRouterSession forwards it.
+          const readToolkits = session.toolkits as (
+            options: Parameters<ComposioSession['toolkits']>[0],
+            requestOptions: { signal: AbortSignal },
+          ) => ReturnType<ComposioSession['toolkits']>
+          const resolved = await Promise.all(toolkits.map(async toolkit => exactToolkit(
+            await readToolkits.call(session, { search: toolkit, limit: 8 }, { signal }), toolkit)))
+          statuses = resolved.map(item => ({ toolkit: item.slug, connected: item.connected }))
+        } catch (error: unknown) {
+          if (execution.signal.aborted) throw error
+          checkStatus = deadline.aborted ? 'timed_out' : 'unavailable'
+          ctx.logger.warn('hivemind-connected-apps: bounded access check could not verify the connection')
+        }
+        const pending = toolkits.filter(toolkit => !statuses.some(item =>
+          item.toolkit.toLowerCase() === toolkit.toLowerCase() && item.connected))
+        if (pending.length === 0 && saved !== undefined && saved['status'] !== 'ready' && execution.agent !== undefined) {
+          appendConnectedReceipt(execution, 'connection_authorization', { ...saved, status: 'ready' }, continuationId)
+          if (!await ctx.sessions.flush(execution.agent.session)) throw new Error('Verified connection checkpoint was not durably saved')
+        }
+        // Preserve the original authorization and notification receipt. Rechecks
+        // neither create a new OAuth request nor send another administrator email.
+        if (pending.length > 0) execution.concludeTurn()
+        return {
+          status: pending.length === 0 ? 'ready' : 'connection_pending',
+          session_id: continuationId,
+          pending_toolkits: pending,
+          toolkit_connection_statuses: statuses.map(item => ({ toolkit: item.toolkit, has_active_connection: item.connected })),
+          connection_check: checkStatus,
+          ...(pending[0] === undefined ? {} : { toolkit: pending[0], app_label: titleCaseToolkit(pending[0]) }),
+          next_action: pending.length === 0 ? 'continue_current_request' : 'remain_parked',
+          next_action_guidance: pending.length === 0
+            ? 'Verified access is active. Continue the original saved workflow.'
+            : 'Access is not verified. The original task remains paused; do not poll, repeat authorization, resend email, or ask another question. Resume only after explicit input.',
+          operations: [{ tool: 'connection_status', status: checkStatus }],
+        }
       }
       const session = await getSession(identity, execution)
       if (args.action === 'connection_status') {
@@ -1845,12 +2058,21 @@ export function apply(ctx: Context, config: Config = {}): void {
       if (args.action === 'search') {
         const turnState = execution.agent === undefined ? undefined : turns.get(execution.agent)
         const queries = searchQueries(args.queries)
+        const suppliedSession = args.session !== undefined || (Array.isArray(args.queries)
+          && args.queries.some(query => record(query) && query['session'] !== undefined))
+          ? searchSessionFromArgs(args) : undefined
+        const explicitId = stringValue(args.session_id)
+        if (explicitId !== undefined && suppliedSession !== undefined
+          && (!('id' in suppliedSession) || suppliedSession.id !== explicitId)) {
+          throw new TypeError('Search queries must use the same workflow session')
+        }
         const explicitNew = record(args.session) && args.session['generate_id'] === true
         const restoredWorkflow = !explicitNew && execution.agent !== undefined
           ? restoreWorkflowState(execution, workflowSessionId(args)) : undefined
         const recoveredId = !explicitNew ? turnState?.workflowId ?? restoredWorkflow?.workflowId : undefined
         const requestedWorkflowId = workflowSessionId(args) ?? recoveredId
-        const workflowSession = requestedWorkflowId === undefined ? searchSessionFromArgs(args) : { id: requestedWorkflowId }
+        const workflowSession = requestedWorkflowId === undefined
+          ? suppliedSession ?? searchSessionFromArgs(args) : { id: requestedWorkflowId }
         const searchStrategy = stringValue(args.search_strategy)
         if (searchStrategy !== undefined && searchStrategy !== 'auto' && searchStrategy !== 'tool_search') throw new TypeError('Unsupported Composio search strategy')
         if (!explicitNew && turnState?.workflowId !== undefined && requestedWorkflowId !== turnState.workflowId) {
@@ -1976,7 +2198,15 @@ export function apply(ctx: Context, config: Config = {}): void {
           const projected = compactComposioSearchReceipt(
             { status: 'connection_required', operations, result: scopedResult }, sourceReceipt,
           )
-          if (redirectUrl !== undefined && workflowSessionId !== undefined && execution.agent !== undefined) {
+          const delegated = await delegatedConnection(execution, session.sessionId, workflowSessionId, missing, redirectUrl)
+          if (delegated !== undefined) {
+            execution.concludeTurn()
+            return { ...delegated, session_id: workflowSessionId ?? '', pending_toolkits: missing,
+              next_action: 'Runtime owns this blocker. Continue other authorized work; do not ask the human in this employee room or repeat the blocked provider action.' }
+          }
+          const runtimeOwner = execution.agent !== undefined
+            && await ctx.serial('hivemind/runtime-connection-owner', execution.agent) === true
+          if (!runtimeOwner && redirectUrl !== undefined && workflowSessionId !== undefined && execution.agent !== undefined) {
             const connected = await awaitConnection(execution, {
               toolkit,
               appLabel: label,
@@ -2013,7 +2243,7 @@ export function apply(ctx: Context, config: Config = {}): void {
             }
           }
           execution.concludeTurn()
-          return {
+          const pendingReceipt = {
             ...(record(projected) ? projected : {}),
             status: 'connection_required',
             operations,
@@ -2024,6 +2254,32 @@ export function apply(ctx: Context, config: Config = {}): void {
             ...(redirectUrl === undefined ? {} : { redirect_url: redirectUrl }),
             ...(workflowSessionId === undefined ? {} : { session_id: workflowSessionId }),
           }
+          if (runtimeOwner && execution.agent !== undefined && workflowSessionId !== undefined) {
+            const reason = queries.map(query => query.use_case).join('; ').replace(/[\u0000-\u0020]+/gu, ' ').trim().slice(0, 2000)
+            appendConnectedReceipt(execution, 'connection_authorization', {
+              ...pendingReceipt, request_call_id: String(execution.callId), reason,
+            }, workflowSessionId)
+            if (!await ctx.sessions.flush(execution.agent.session)) throw new Error('Connection checkpoint was not durably saved')
+            const service = await scopedServiceToken(ctx, config, execution, identity, String(execution.agent.id))
+            if (service !== undefined) {
+              // One correlated send attempt. Unknown delivery is never blindly retried.
+              try {
+                const response = await fetch(new URL('/internal/v1/harness-chat/core/administrator-message', service.base), {
+                  method: 'POST', headers: { authorization: `Bearer ${service.token}`, 'content-type': 'application/json' },
+                  body: JSON.stringify({ message_key: `${execution.callId}-user-request`, kind: 'approval',
+                    request_call_id: String(execution.callId), subject: `Connect ${label}`, message: reason }),
+                  signal: AbortSignal.any([execution.signal, AbortSignal.timeout(10000)]),
+                })
+                const notification = await response.json().catch(() => ({})) as Record<string, unknown>
+                return { ...pendingReceipt, notification_status: response.ok ? stringValue(notification['status']) ?? 'accepted' : 'not_sent',
+                  next_action: 'The connection request is saved. Wait for verified access; do not repeat completed actions.' }
+              } catch {
+                return { ...pendingReceipt, notification_status: 'unknown',
+                  next_action: 'The connection request is saved. Email delivery is unconfirmed; do not resend blindly.' }
+              }
+            }
+          }
+          return pendingReceipt
         }
         const operations = Array.from({ length: searchOperations }, () => ({ tool: 'COMPOSIO_SEARCH_TOOLS', status: 'completed' }))
         const projected = compactComposioSearchReceipt({
@@ -2049,7 +2305,10 @@ export function apply(ctx: Context, config: Config = {}): void {
             ? 'No matching tool was found in these searches. Report that limitation, not that the provider cannot support the operation; do not check or connect another app.'
             : 'Refine search once in this same workflow session. Put the concrete user-supplied filter, identifiers, and result limit into known_fields; ask for a search of matching records rather than an unrelated collection. Do not check connection status or connect another app.'
         }
-        return record(projected) ? projected : { status: 'ready', operations }
+        return record(projected) ? projected : {
+          status: discovered.size === 0 ? 'no_matching_tool' : 'ready', operations,
+          ...(sourceReceipt === undefined ? {} : { source_receipt: privateReceiptReference(sourceReceipt) }),
+        }
       }
       const key = workflowStateKey(identity, execution, workflowSessionId(args))
       const fallbackKey = workflowStateKey(identity, execution)
@@ -2109,17 +2368,14 @@ export function apply(ctx: Context, config: Config = {}): void {
           }),
         }
       }
-      if (args.action === 'manage_connection' || args.action === 'wait_connection') {
+      if (args.action === 'manage_connection') {
         const toolkits = stringArray(args.toolkits)
         if (toolkits.length === 0) throw new TypeError('Connection operation requires at least one toolkit')
-        if (args.action === 'wait_connection' && continuationId === undefined) {
-          throw new TypeError('Connection continuation requires the original search session_id')
-        }
-        const metaTool = args.action === 'manage_connection' ? 'COMPOSIO_MANAGE_CONNECTIONS' : 'COMPOSIO_WAIT_FOR_CONNECTIONS'
+        const metaTool = 'COMPOSIO_MANAGE_CONNECTIONS'
         const managed = await session.execute(metaTool, { ...metaArguments, toolkits })
         const sourceReceipt = await saveReceipt(
           ctx, config, execution, JSON.stringify(managed),
-          args.action === 'manage_connection' ? 'composio-manage-connections.json' : 'composio-wait-for-connections.json',
+          'composio-manage-connections.json',
           { tool: metaTool },
         )
         const statuses = connectionStatuses(managed)
@@ -2130,7 +2386,26 @@ export function apply(ctx: Context, config: Config = {}): void {
           const matching = statuses.filter(item => item.toolkit.toLowerCase() === toolkit.toLowerCase())
           return matching.length === 0 || matching.some(item => !item.connected)
         })
+        if (pending.length === 0 && execution.agent !== undefined && continuationId !== undefined) {
+          const authorization = execution.agent.session.snapshotEvents().findLast(event =>
+            event.type === 'hivemind/connected-receipt'
+            && event.data.tool === 'connection_authorization'
+            && event.data.workflowSessionId === continuationId)
+          if (authorization?.type === 'hivemind/connected-receipt' && record(authorization.data.receipt)) {
+            appendConnectedReceipt(execution, 'connection_authorization', {
+              ...authorization.data.receipt, status: 'ready',
+            }, continuationId)
+            if (!await ctx.sessions.flush(execution.agent.session)) throw new Error('Verified connection checkpoint was not durably saved')
+          }
+        }
         const redirectUrl = safeHttpsUrl(firstString(managed, ['redirect_url', 'redirectUrl', 'connection_url', 'url']))
+        const delegated = pending.length
+          ? await delegatedConnection(execution, session.sessionId, continuationId, pending, redirectUrl) : undefined
+        if (delegated !== undefined) {
+          execution.concludeTurn()
+          return { ...delegated, session_id: continuationId ?? '', pending_toolkits: pending,
+            next_action: 'Runtime owns this blocker. Do not ask the human in this employee room.' }
+        }
         if (pending.length > 0) execution.concludeTurn()
         return {
           ...compactComposioExecutionReceipt(managed, sourceReceipt) as Record<string, JsonValue>,
@@ -2229,6 +2504,9 @@ export function apply(ctx: Context, config: Config = {}): void {
         enabled: connectedAppsEnabled(ctx, config.enabledByDefault === true),
         searchFingerprints: new Set(),
         billableCalls: 0,
+        projectWorkflow: false,
+        admissionResolved: false,
+        initialReceiptSignature: JSON.stringify(latestConnectedReceipt(agent)) ?? '',
       })
     }
     const decision = await next()
@@ -2242,14 +2520,41 @@ export function apply(ctx: Context, config: Config = {}): void {
         sessionId: String(agent.session.header.id), turnId: turn, kind: 'turn_admission',
       })
     }
+    const state = turns.get(agent)
+    if (state === undefined) return decision
     const unfinished = unfinishedWorkflow(agent.session.snapshotEvents(), turn)
+    if (!state.admissionResolved) {
+      const pending = pendingConnectionReceipt(agent)
+      const payload = pending !== undefined && record(pending.receipt) ? pending.receipt : undefined
+      const toolkits = unfinished?.toolkits ?? (payload === undefined ? [] : [
+        ...stringArray(payload['toolkits']),
+        ...(typeof payload['toolkit'] === 'string' ? [payload['toolkit']] : []),
+      ])
+      const selectedWorkflow = unfinished?.workflowId ?? pending?.workflowSessionId
+      const answerCalls = new Set<string>()
+      if (selectedWorkflow !== undefined) {
+        const events = agent.session.snapshotEvents()
+        for (const event of events) {
+          const call = bridgeCall(event)
+          if (call !== undefined && workflowSessionId(call.args) === selectedWorkflow) answerCalls.add(call.callId)
+          const result = bridgeResult(event)
+          if (result !== undefined && returnedWorkflowSessionId(result.value) === selectedWorkflow) answerCalls.add(result.callId)
+        }
+        if (pending?.workflowSessionId === selectedWorkflow && typeof payload?.['request_call_id'] === 'string') {
+          answerCalls.add(payload['request_call_id'])
+        }
+      }
+      state.projectWorkflow = shouldProjectWorkflow([...(messages ?? []), ...decision.messages], toolkits, answerCalls)
+      state.admissionResolved = true
+    }
+    const projectWorkflow = state.projectWorkflow
     const visibleMessages = [...visibleSessionMessages(agent.session), ...messages]
     const projections: ReturnType<typeof createUserMessage>[] = []
-    if (unfinished !== undefined && shouldProjectWorkflow(messages)) {
+    if (unfinished !== undefined && projectWorkflow) {
       const workflowMessage = workflowContextMessage(unfinished)
       if (!hasVisiblePluginContext(visibleMessages, workflowMessage)) projections.push(workflowMessage)
     }
-    if (shouldProjectWorkflow(messages)) {
+    if (projectWorkflow) {
       const checkpoint = agent.session.snapshotEvents().findLast(event => event.type === 'hivemind/connected-receipt' && event.data.tool === 'workflow_checkpoint')
       if (checkpoint?.type === 'hivemind/connected-receipt') {
         const note = connectedReceiptContextMessage(checkpoint.data)
@@ -2257,9 +2562,15 @@ export function apply(ctx: Context, config: Config = {}): void {
       }
     }
     const receipt = latestConnectedReceipt(agent)
-    if (receipt !== undefined && !hasVisibleReceipt(visibleMessages, receipt)) {
+    if (receipt !== undefined && (projectWorkflow || JSON.stringify(receipt) !== state.initialReceiptSignature)
+      && !hasVisibleReceipt(visibleMessages, receipt)) {
       const receiptMessage = connectedReceiptContextMessage(receipt)
       if (!hasVisiblePluginContext(visibleMessages, receiptMessage)) projections.push(receiptMessage)
+    }
+    const authorization = pendingConnectionReceipt(agent)
+    if (projectWorkflow && authorization !== undefined && authorization !== receipt) {
+      const message = connectedReceiptContextMessage(authorization)
+      if (!hasVisiblePluginContext(visibleMessages, message)) projections.push(message)
     }
     return projections.length === 0 ? decision : { ...decision, messages: [...decision.messages, ...projections] }
   }))
@@ -2275,7 +2586,9 @@ export function apply(ctx: Context, config: Config = {}): void {
     const slug = stringValue(execution.arguments['tool_slug'])
     if (slug === undefined || !MUTATING_TOOL.test(slug)) return downstream
     const presets = ctx.get('permissionPresets') as { current(session: Agent['session']): string } | undefined
-    if (execution.agent !== undefined && presets?.current(execution.agent.session) === 'danger-full-access') return downstream
+    if (execution.agent !== undefined && (presets?.current(execution.agent.session) === 'danger-full-access' || await (ctx.get('hivemindHq') as {
+      fullAccessAllowed?: (agent: Agent, signal: AbortSignal) => Promise<boolean>
+    } | undefined)?.fullAccessAllowed?.(execution.agent, execution.signal))) return downstream
     return { kind: 'ask', reason: `Approve this ${slug} action once. The provider will run only after approval.` }
   }))
   ctx.effect(() => ctx.on('tools/post-execute', async (execution, result, next): Promise<PostToolDecision> => {
@@ -2291,6 +2604,9 @@ export function apply(ctx: Context, config: Config = {}): void {
       } catch { /* Other Dreaming reads have no connector operation. */ } }
       return decision
     }
+    // The bridge handler owns its raw receipts and projections, including cache
+    // hits. Storing its projected result again would conflict with that receipt.
+    if (execution.name === BRIDGE_TOOL) return decision
     const isBridgeSearch = execution.name === BRIDGE_TOOL
       && record(execution.arguments)
       && execution.arguments['action'] === 'search'
@@ -2338,3 +2654,5 @@ export function createDreamConnectorService(
 }
 export type { DreamAccount, DreamGrant, DreamContract, DreamContractCache } from './dream-connectors.ts'
 export { validateDreamArguments, isDreamReadTool } from './dream-connectors.ts'
+
+export type { DelegatedConnectionRequest, DelegatedConnectionReceipt } from './delegated-blocker.ts'

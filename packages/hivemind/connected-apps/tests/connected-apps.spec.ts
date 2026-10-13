@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto'
 import { SpillLocator, type SpillRef } from '@deepseek-ai/dsh-spill'
 
 const execute = vi.fn()
-const toolkits = vi.fn(async (): Promise<{ items: Array<{
+const toolkits = vi.fn(async (_query?: { search: string; limit: number }, _options?: { signal: AbortSignal }): Promise<{ items: Array<{
   slug: string
   name?: string
   logo?: string
@@ -29,10 +29,12 @@ function harness(
     serviceApiBase?: string
     serviceSecretEnv?: string
   } = {},
+  delegatedReport?: (event: string, payload: unknown) => Promise<unknown>,
 ) {
   const concludeTurn = vi.fn()
   const ask = vi.fn()
   const spills: Array<{ suggestedName: string; content: string }> = []
+  const flush = vi.fn(async () => true)
   let tool: {
     execute(
       args: Record<string, unknown>,
@@ -41,7 +43,9 @@ function harness(
   } | undefined
   const listeners = new Map<string, (...args: never[]) => unknown>()
   const ctx = {
+    serial: delegatedReport ?? (async () => undefined),
     tools: { register(value: typeof tool) { tool = value } },
+    sessions: { flush },
     effect<T>(callback: () => T) { return callback() },
     hivemindIdentity: { resolve: vi.fn(async () => identity) },
     userQuestions: { ask },
@@ -56,6 +60,9 @@ function harness(
     },
     logger: { warn: vi.fn() },
   }
+  // Optional Cordis services must use get(); undeclared property access throws
+  // in the production host instead of returning an absent service.
+  Object.defineProperty(ctx, 'hivemindHq', { get() { throw new Error('cannot get property "hivemindHq" without inject') } })
   apply(ctx as never, { apiKey: 'server-secret', enabledByDefault, ...config })
   return {
     tool: () => ({
@@ -66,7 +73,21 @@ function harness(
     concludeTurn,
     ask,
     spills,
+    flush,
   }
+}
+
+
+function savedSearch(callId: string, response: unknown) {
+  return [
+    { type: 'tool/call', data: { name: 'hivemind_connected_task', callId, arguments: JSON.stringify({
+      action: 'search', queries: [{ use_case: 'Example: read one value.', result_fields: ['value'] }],
+      session: { generate_id: true },
+    }) } },
+    { type: 'tool/result', data: { message: { source: { callId }, content: [{ type: 'tool-result',
+      content: [{ type: 'text', text: JSON.stringify(response) }],
+    }] } } },
+  ]
 }
 
 describe('progressive Composio bridge', () => {
@@ -282,7 +303,7 @@ describe('progressive Composio bridge', () => {
     ) => Promise<{ kind: string; content: Array<{ type: string; text: string }> }>
     const huge = JSON.stringify({ result: { data: { results: [{ primary_tool_slugs: ['SLACK_LIST_CHANNELS'], tool_schemas: { huge: true } }] } } })
     const decision = await post(
-      { name: 'hivemind_connected_task', arguments: { action: 'search' } },
+      { name: 'mcp__composio__COMPOSIO_SEARCH_TOOLS', arguments: { action: 'search' } },
       { isError: false, content: [{ type: 'text', text: huge }] },
       async () => ({ kind: 'accept', content: [{ type: 'text', text: huge }] }),
     )
@@ -321,12 +342,14 @@ describe('progressive Composio bridge', () => {
     } }
     execute.mockResolvedValueOnce(search).mockResolvedValueOnce(provider)
     const app = harness(true, undefined, false, { withSpill: true })
-    const agent = { session: { header: { id: 'conversation-receipts' }, snapshotEvents: () => [], append: vi.fn() } }
+    const events: unknown[] = []
+    const agent = { session: { header: { id: 'conversation-receipts' }, snapshotEvents: () => events, append: vi.fn() } }
 
     const discovered = await app.tool().execute({
       action: 'search', queries: [{ use_case: 'Example: read one value.', result_fields: ['value'] }],
       session: { generate_id: true },
     }, { signal: AbortSignal.abort(), agent, name: 'hivemind_connected_task', callId: 'search-call' } as never)
+    events.push(...savedSearch('search-call', search))
     const completed = await app.tool().execute({
       action: 'execute', tool_slug: 'EXAMPLE_READ', arguments: { query: 'value' },
     }, { signal: AbortSignal.abort(), agent, name: 'hivemind_connected_task', callId: 'execute-call' } as never)
@@ -371,12 +394,14 @@ describe('progressive Composio bridge', () => {
       const app = harness(true, identity, false, {
         serviceApiBase: 'http://127.0.0.1:3000', serviceSecretEnv: 'TEST_CONNECTED_RECEIPT_SECRET', withSpill: true,
       })
-      const agent = { session: { header: { id: 'session-12345678' }, snapshotEvents: () => [], append: vi.fn() } }
+      const events: unknown[] = []
+      const agent = { session: { header: { id: 'session-12345678' }, snapshotEvents: () => events, append: vi.fn() } }
       await app.listeners.get('agent/pre-step')?.({ agent, turn: 1, messages: [] } as never, (async () => ({ kind: 'accept', messages: [] })) as never)
       await app.tool().execute({
         action: 'search', queries: [{ use_case: 'Example: read one value.', result_fields: ['value'] }],
         session: { generate_id: true },
       }, { signal: AbortSignal.abort(), agent, name: 'hivemind_connected_task', callId: 'search-call' } as never)
+      events.push(...savedSearch('search-call', search))
       const completed = await app.tool().execute({
         action: 'execute', tool_slug: 'EXAMPLE_READ', arguments: { query: 'value' },
       }, { signal: AbortSignal.abort(), agent, name: 'hivemind_connected_task', callId: 'execute-call' } as never)
@@ -532,7 +557,7 @@ describe('progressive Composio bridge', () => {
     const app = harness()
     const next = vi.fn(async () => ({ kind: 'enter', messages: [] }))
     const decision = await app.listeners.get('agent/pre-step')?.(
-      { agent, turn: 2, messages: [] } as never, next as never,
+      { agent, turn: 2, messages: [{ role: 'user', source: { kind: 'user' }, content: [{ type: 'text', text: 'Continue' }] }] } as never, next as never,
     ) as { messages: unknown[] }
     const projected = JSON.stringify(decision.messages)
 
@@ -545,8 +570,98 @@ describe('progressive Composio bridge', () => {
 
     visible.push(...decision.messages)
     const repeated = await app.listeners.get('agent/pre-step')?.(
-      { agent, turn: 2, step: 2, messages: [] } as never, next as never,
+      { agent, turn: 2, step: 2, messages: [{ role: 'user', source: { kind: 'user' }, content: [{ type: 'text', text: 'Continue' }] }] } as never, next as never,
     ) as { messages: unknown[] }
+    expect(repeated.messages).toEqual([])
+  })
+
+  it('deduplicates producer-owned receipt identity after native bounded replacement and cold restore', async () => {
+    const { Session, SessionId } = await import('@deepseek-ai/dsh-session')
+    const { contextPlugin } = await import('@deepseek-ai/dsh-hivemind-context')
+    const session = Session.create(SessionId('native-bounded-connected'))
+    session.append('hivemind/connected-receipt', { version: 1, tool: 'READ', receipt: { status: 'ready', data: 'evidence '.repeat(5000) } })
+    const agent = { session }
+    const app = harness()
+    const next = vi.fn(async () => ({ kind: 'enter', messages: [] }))
+    const first = await app.listeners.get('agent/pre-step')?.({ agent, turn: 1, messages: [{ role: 'user', source: { kind: 'user' }, content: [{ type: 'text', text: 'Continue' }] }] } as never, next as never) as { kind: 'enter'; messages: unknown[] }
+    expect(first.messages).toHaveLength(1)
+    let bound!: (input: unknown, next: () => Promise<unknown>) => Promise<unknown>
+    contextPlugin({ historyTurns: 3, historyMaxChars: 1000, capabilityToolName: 'hivemind_capabilities' }).apply({
+      get: () => undefined,
+      effect: (effect: () => unknown) => effect(),
+      on: (_event: string, listener: typeof bound) => { bound = listener; return () => {} },
+    } as never)
+    await bound({ agent, turn: 1, signal: new AbortController().signal }, async () => first)
+    expect(JSON.stringify(session.deriveMessages())).toContain('Receipt excerpt; original sequence')
+    expect(session.deriveMessages().flatMap(message => message.content.flatMap(block => block.type === 'text' ? [block.text] : [])).join('').length).toBeLessThanOrEqual(1000)
+    const repeated = await app.listeners.get('agent/pre-step')?.({ agent, turn: 1, step: 2, messages: [{ role: 'user', source: { kind: 'user' }, content: [{ type: 'text', text: 'Continue' }] }] } as never, next as never) as { messages: unknown[] }
+    expect(repeated.messages).toEqual([])
+    const restored = Session.create(SessionId('native-bounded-connected-cold'), session.snapshotEvents())
+    const cold = harness()
+    const recovered = await cold.listeners.get('agent/pre-step')?.({ agent: { session: restored }, turn: 2, messages: [{ role: 'user', source: { kind: 'user' }, content: [{ type: 'text', text: 'Continue' }] }] } as never, next as never) as { messages: unknown[] }
+    expect(recovered.messages).toEqual([])
+  })
+
+  it.each(['agent-message', 'schedule', 'plugin', undefined])('does not restore stale connected workflows for ordinary automatic %s turns', async (kind) => {
+    const events = [{ type: 'hivemind/connected-receipt', data: { version: 1, tool: 'connection_authorization',
+      workflowSessionId: 'stale-workflow', receipt: { status: 'connection_required', session_id: 'stale-workflow',
+        request_call_id: 'saved-connected-call', toolkits: ['vercel'] } } }]
+    const agent = { session: { header: { id: 'automatic-other-work' }, snapshotEvents: () => events, append: vi.fn() } }
+    const app = harness()
+    const messages = kind === undefined ? [] : [{ role: 'user', source: { kind }, content: [{ type: 'text', text: 'Review the completed company task.' }] }]
+    for (const step of [1, 2]) {
+      const result = await app.listeners.get('agent/pre-step')?.({ agent, turn: 2, step, messages: step === 1 ? messages : [] } as never,
+        (async () => ({ kind: 'enter', messages: [] })) as never) as { messages: unknown[] }
+      expect(result.messages).toEqual([])
+    }
+  })
+
+  it.each(['native', 'submission', 'foreign', 'unauthenticated'])('restores only a matching authenticated connected answer: %s', async (variant) => {
+    const events = [{ type: 'hivemind/connected-receipt', data: { version: 1, tool: 'connection_authorization',
+      workflowSessionId: 'answer-workflow', receipt: { status: 'connection_required', session_id: 'answer-workflow',
+        request_call_id: 'saved-connected-call', toolkits: ['vercel'] } } }]
+    const agent = { session: { header: { id: 'answer-connected-work' }, snapshotEvents: () => events, append: vi.fn() } }
+    const actor = { userId: 'actual-user', orgId: 'actual-org' }
+    const source = variant === 'submission' ? { kind: 'user', questionAnswerSubmission: true, questionCallId: 'saved-connected-call', authenticatedActor: actor }
+      : { kind: 'user-question-reply', outcome: 'answered', callId: variant === 'foreign' ? 'unrelated-call' : 'saved-connected-call',
+        ...(variant === 'unauthenticated' ? {} : { authenticatedActor: actor }) }
+    const app = harness()
+    const result = await app.listeners.get('agent/pre-step')?.({ agent, turn: 2, messages: [] } as never,
+      (async () => ({ kind: 'enter', messages: [{ role: 'user', source, content: [{ type: 'text', text: 'Yes' }] }] })) as never) as { messages: unknown[] }
+    expect(JSON.stringify(result.messages).includes('answer-workflow')).toBe(variant === 'native' || variant === 'submission')
+  })
+
+  it.each(['old-call', 'new-call'])('matches the selected workflow before projecting an authenticated connected answer: %s', async (answerCall) => {
+    const events: unknown[] = []
+    for (const [callId, workflow] of [['old-call', 'old-gmail'], ['new-call', 'new-vercel']]) {
+      events.push({ type: 'tool/call', data: { name: 'hivemind_connected_task', callId, turn: 1,
+        arguments: JSON.stringify({ action: 'search', session: { generate_id: true }, queries: [{ use_case: workflow }] }) } },
+      { type: 'tool/result', data: { message: { source: { callId }, content: [{ type: 'tool-result', content: [{ type: 'text',
+        text: JSON.stringify({ status: 'connection_required', session_id: workflow, toolkit: workflow }) }] }] } } })
+    }
+    const agent = { session: { header: { id: 'late-old-answer' }, snapshotEvents: () => events, append: vi.fn() } }
+    const app = harness()
+    const result = await app.listeners.get('agent/pre-step')?.({ agent, turn: 2, messages: [] } as never,
+      (async () => ({ kind: 'enter', messages: [{ role: 'user', source: { kind: 'user-question-reply', outcome: 'answered',
+        callId: answerCall, authenticatedActor: { userId: 'actual-user', orgId: 'actual-org' } },
+      content: [{ type: 'text', text: 'Yes' }] }] })) as never) as { messages: unknown[] }
+    expect(JSON.stringify(result.messages).includes('new-vercel')).toBe(answerCall === 'new-call')
+    expect(JSON.stringify(result.messages).includes('Unfinished connected-app workflow')).toBe(answerCall === 'new-call')
+  })
+
+  it('uses the actual admitted new request after downstream middleware, not incidental continuation wording', async () => {
+    const events = [{ type: 'hivemind/connected-receipt', data: { version: 1, tool: 'connection_authorization', receipt: {
+      status: 'connection_required', session_id: 'old-vercel', request_call_id: 'old-call', toolkits: ['vercel'],
+    } } }]
+    const agent = { session: { header: { id: 'admitted-new-objective' }, snapshotEvents: () => events, append: vi.fn() } }
+    const app = harness()
+    const admitted = { role: 'user', source: { kind: 'user', authenticatedActor: { userId: 'user-a', orgId: 'org-a', name: 'User', role: 'admin' } },
+      content: [{ type: 'text', text: 'Recover the internal release verification and continue by reporting the actual artifact.' }] }
+    const result = await app.listeners.get('agent/pre-step')?.({ agent, turn: 2, messages: [] } as never,
+      (async () => ({ kind: 'enter', messages: [admitted] })) as never) as { messages: unknown[] }
+    expect(result.messages).toEqual([admitted])
+    const repeated = await app.listeners.get('agent/pre-step')?.({ agent, turn: 2, step: 2, messages: [] } as never,
+      (async () => ({ kind: 'enter', messages: [] })) as never) as { messages: unknown[] }
     expect(repeated.messages).toEqual([])
   })
 
@@ -564,7 +679,7 @@ describe('progressive Composio bridge', () => {
     const app = harness()
     const next = vi.fn(async () => ({ kind: 'enter', messages: [] }))
     const first = await app.listeners.get('agent/pre-step')?.(
-      { agent, turn: 1, step: 1, messages: [] } as never, next as never,
+      { agent, turn: 1, step: 1, messages: [{ role: 'user', source: { kind: 'user' }, content: [{ type: 'text', text: 'Continue' }] }] } as never, next as never,
     ) as { messages: unknown[] }
 
     expect(first.messages).toHaveLength(1)
@@ -572,7 +687,7 @@ describe('progressive Composio bridge', () => {
     visible.push(...first.messages)
 
     const nextStep = await app.listeners.get('agent/pre-step')?.(
-      { agent, turn: 1, step: 2, messages: [] } as never, next as never,
+      { agent, turn: 1, step: 2, messages: [{ role: 'user', source: { kind: 'user' }, content: [{ type: 'text', text: 'Continue' }] }] } as never, next as never,
     ) as { messages: unknown[] }
     expect(nextStep.messages).toEqual([])
 
@@ -582,7 +697,7 @@ describe('progressive Composio bridge', () => {
       },
     } })
     const updated = await app.listeners.get('agent/pre-step')?.(
-      { agent, turn: 2, step: 1, messages: [] } as never, next as never,
+      { agent, turn: 2, step: 1, messages: [{ role: 'user', source: { kind: 'user' }, content: [{ type: 'text', text: 'Continue' }] }] } as never, next as never,
     ) as { messages: unknown[] }
     expect(JSON.stringify(updated.messages)).toContain('receipt-visible-2')
     expect(updated.messages).toHaveLength(1)
@@ -608,7 +723,7 @@ describe('progressive Composio bridge', () => {
     const app = harness()
     const next = vi.fn(async () => ({ kind: 'enter', messages: [] }))
     const decision = await app.listeners.get('agent/pre-step')?.(
-      { agent, turn: 2, messages: [] } as never, next as never,
+      { agent, turn: 2, messages: [{ role: 'user', source: { kind: 'user' }, content: [{ type: 'text', text: 'Continue' }] }] } as never, next as never,
     ) as { messages: unknown[] }
     const projected = JSON.stringify(decision.messages)
     expect(projected).toContain('continue_page')
@@ -645,6 +760,29 @@ describe('progressive Composio bridge', () => {
     expect(decision.messages).toEqual([])
   })
 
+  it.each(['user', 'hivemind-runtime-event'])('keeps old receipts out of a new %s request throughout its turn', async (kind) => {
+    const events = [{ type: 'hivemind/connected-receipt', data: {
+      version: 1, tool: 'connection_authorization', receipt: {
+        status: 'connection_required', session_id: 'old-vercel', request_call_id: 'old-call', toolkits: ['vercel'],
+      },
+    } }]
+    const agent = { session: { header: { id: 'new-purpose' }, snapshotEvents: () => events, append: vi.fn() } }
+    const app = harness()
+    const next = vi.fn(async () => ({ kind: 'enter', messages: [] }))
+    const first = await app.listeners.get('agent/pre-step')?.({
+      agent, turn: 2, messages: [{ role: 'user', source: { kind }, content: [{ type: 'text', text: 'Find our catalog information.' }] }],
+    } as never, next as never) as { messages: unknown[] }
+    expect(first.messages).toEqual([])
+    const later = await app.listeners.get('agent/pre-step')?.({ agent, turn: 2, step: 2, messages: [] } as never, next as never) as { messages: unknown[] }
+    expect(later.messages).toEqual([])
+    events.push({ type: 'hivemind/connected-receipt', data: { version: 1, tool: 'CATALOG_READ', receipt: {
+      status: 'ready', session_id: 'current-catalog', request_call_id: 'current-call', toolkits: ['catalog'],
+    } } })
+    const current = await app.listeners.get('agent/pre-step')?.({ agent, turn: 2, step: 3, messages: [] } as never, next as never) as { messages: unknown[] }
+    expect(JSON.stringify(current.messages)).toContain('current-catalog')
+    expect(JSON.stringify(current.messages)).not.toContain('old-vercel')
+  })
+
   it('projects an unfinished workflow when the user explicitly continues it', async () => {
     const events = [
       { type: 'tool/call', data: { turn: 1, callId: 'call-search', name: 'hivemind_connected_task', arguments: JSON.stringify({
@@ -665,6 +803,19 @@ describe('progressive Composio bridge', () => {
     } as never, next as never) as { messages: unknown[] }
 
     expect(JSON.stringify(decision.messages)).toContain('workflow-continue')
+  })
+
+  it.each([['vercel', true], ['outlook', false]])('correlates connected return to the pending toolkit %s', async (appName, expected) => {
+    const events = [{ type: 'hivemind/connected-receipt', data: { version: 1, workflowSessionId: 'pending-vercel', tool: 'connection_authorization', receipt: {
+      status: 'connection_required', session_id: 'pending-vercel', request_call_id: 'saved-call', toolkit: 'vercel', toolkits: ['vercel'],
+    } } }]
+    const agent = { session: { header: { id: 'connected-return' }, snapshotEvents: () => events, append: vi.fn() } }
+    const app = harness()
+    const request = { role: 'user', source: { kind: 'user' }, content: [{ type: 'text', text: `I've connected ${appName} — continue` }] }
+    const result = await app.listeners.get('agent/pre-step')?.({ agent, turn: 2, messages: [] } as never,
+      (async () => ({ kind: 'enter', messages: [request] })) as never) as { messages: unknown[] }
+    expect(JSON.stringify(result.messages).includes('pending-vercel')).toBe(expected)
+    expect(execute).not.toHaveBeenCalled()
   })
 
   it('does not project a workflow after its native approval was rejected', async () => {
@@ -726,9 +877,10 @@ describe('progressive Composio bridge', () => {
     execute.mockResolvedValue({ status: 'ready' })
     const { tool } = harness()
     await tool().execute({ action: 'manage_connection', toolkits: ['slack'], session_id: 'session-1' }, { signal: AbortSignal.abort() })
-    await tool().execute({ action: 'wait_connection', toolkits: ['slack'], session_id: 'session-1' }, { signal: AbortSignal.abort() })
+    await tool().execute({ action: 'wait_connection', toolkits: ['slack'], session_id: 'session-1' }, { signal: new AbortController().signal })
     expect(execute).toHaveBeenNthCalledWith(1, 'COMPOSIO_MANAGE_CONNECTIONS', { session_id: 'session-1', toolkits: ['slack'] })
-    expect(execute).toHaveBeenNthCalledWith(2, 'COMPOSIO_WAIT_FOR_CONNECTIONS', { session_id: 'session-1', toolkits: ['slack'] })
+    expect(execute).toHaveBeenCalledOnce()
+    expect(toolkits).toHaveBeenCalledWith({ search: 'slack', limit: 8 }, { signal: expect.any(AbortSignal) })
   })
 
   it('checks an explicitly named toolkit without semantic tool search', async () => {
@@ -805,40 +957,144 @@ describe('progressive Composio bridge', () => {
   })
 
   it.each([
-    ['unspecified', { status: 'ready' }],
-    ['inactive', { toolkit: 'slack', has_active_connection: false }],
-    ['unrelated active account', { toolkit: 'gmail', has_active_connection: true }],
-    ['conflicting evidence', [{ toolkit: 'slack', status: 'ACTIVE' }, { toolkit: 'slack', status: 'EXPIRED' }]],
-  ])('keeps %s connection evidence paused without another model step', async (_label, data) => {
-    execute.mockResolvedValue({ data })
+    ['unspecified', []],
+    ['inactive', [{ slug: 'slack', name: 'Slack', connection: { isActive: false } }]],
+    ['unrelated active account', [{ slug: 'gmail', name: 'Gmail', connection: { isActive: true } }]],
+    ['conflicting evidence', [{ slug: 'slack', name: 'Slack', connection: { isActive: true } }, { slug: 'slack', name: 'Slack', connection: { isActive: false } }]],
+  ])('keeps %s connection evidence paused without another model step', async (_label, items) => {
+    toolkits.mockResolvedValue({ items })
     const app = harness()
-    await expect(app.tool().execute({ action: 'wait_connection', toolkits: ['slack'], session_id: 'workflow-1' }, { signal: AbortSignal.abort() }))
-      .resolves.toMatchObject({ status: 'connection_pending', session_id: 'workflow-1', pending_toolkits: ['slack'] })
+    await expect(app.tool().execute({ action: 'wait_connection', toolkits: ['slack'], session_id: 'workflow-1' }, { signal: new AbortController().signal }))
+      .resolves.toMatchObject({ status: 'connection_pending', session_id: 'workflow-1', pending_toolkits: ['slack'], next_action: 'remain_parked' })
     expect(app.concludeTurn).toHaveBeenCalledOnce()
+    expect(execute).not.toHaveBeenCalled()
   })
 
   it('continues only after every requested toolkit is active', async () => {
-    execute.mockResolvedValue({ data: { toolkit_connection_statuses: [
-      { toolkit: 'slack', status: 'ACTIVE' }, { toolkit: 'gmail', has_active_connection: true },
-    ] } })
+    toolkits.mockResolvedValue({ items: [
+      { slug: 'slack', name: 'Slack', connection: { isActive: true } },
+      { slug: 'gmail', name: 'Gmail', connection: { isActive: true } },
+    ] })
     const app = harness()
-    await expect(app.tool().execute({ action: 'wait_connection', toolkits: ['slack', 'gmail'], session_id: 'workflow-1' }, { signal: AbortSignal.abort() }))
+    await expect(app.tool().execute({ action: 'wait_connection', toolkits: ['slack', 'gmail'], session_id: 'workflow-1' }, { signal: new AbortController().signal }))
       .resolves.toMatchObject({ status: 'ready', session_id: 'workflow-1', pending_toolkits: [] })
     expect(app.concludeTurn).not.toHaveBeenCalled()
+    expect(toolkits).toHaveBeenCalledTimes(2)
+    expect(execute).not.toHaveBeenCalled()
   })
 
   it('does not wait with a missing workflow session', async () => {
     const app = harness()
-    await expect(app.tool().execute({ action: 'wait_connection', toolkits: ['slack'] }, { signal: AbortSignal.abort() }))
+    await expect(app.tool().execute({ action: 'wait_connection', toolkits: ['slack'] }, { signal: new AbortController().signal }))
       .rejects.toThrow('original search session_id')
     expect(execute).not.toHaveBeenCalled()
+    expect(create).not.toHaveBeenCalled()
   })
 
-  it('preserves provider failure instead of reporting connection success', async () => {
-    execute.mockRejectedValue(new Error('provider unavailable'))
+  it('parks on provider failure without reporting connection success or repeating authorization', async () => {
+    toolkits.mockRejectedValue(new Error('provider unavailable'))
+    const app = harness()
+    await expect(app.tool().execute({ action: 'wait_connection', toolkits: ['slack'], session_id: 'workflow-1' }, { signal: new AbortController().signal }))
+      .resolves.toMatchObject({ status: 'connection_pending', connection_check: 'unavailable' })
+    expect(app.concludeTurn).toHaveBeenCalledOnce()
+    expect(execute).not.toHaveBeenCalled()
+    expect(app.ask).not.toHaveBeenCalled()
+  })
+
+  it('cancels a slow provider status request at five seconds and parks the same workflow', async () => {
+    toolkits.mockImplementationOnce(async (_query, options) => {
+      if (options === undefined) throw new Error('Access check must pass SDK cancellation')
+      return await new Promise<Awaited<ReturnType<typeof toolkits>>>((_resolve, reject) => {
+        options.signal.addEventListener('abort', () => reject(options.signal.reason), { once: true })
+      })
+    })
+    const app = harness()
+    await expect(app.tool().execute({ action: 'wait_connection', toolkits: ['slack'], session_id: 'workflow-1' }, { signal: new AbortController().signal }))
+      .resolves.toMatchObject({ status: 'connection_pending', session_id: 'workflow-1', connection_check: 'timed_out', next_action: 'remain_parked' })
+    expect(app.concludeTurn).toHaveBeenCalledOnce()
+    expect(execute).not.toHaveBeenCalled()
+    expect(app.ask).not.toHaveBeenCalled()
+  }, 7_000)
+
+  it.each(['user_declined', 'no_longer_needed'])('persists exact %s cancellation without provider calls and refuses later continuation', async (reason) => {
+    const app = harness()
+    const events: Array<{ type: string; data: Record<string, unknown> }> = [{ type: 'hivemind/connected-receipt', data: {
+      version: 1, tool: 'connection_authorization', workflowSessionId: 'workflow-1',
+      receipt: { status: 'connection_required', request_call_id: 'original-call', toolkit: 'slack', session_id: 'workflow-1' } } }]
+    const agent = { session: { header: { id: 'restored-room' }, snapshotEvents: () => events,
+      append: vi.fn((type: string, data: Record<string, unknown>) => events.push({ type, data })) } }
+    const execution = { signal: new AbortController().signal, agent } as never
+    await expect(app.tool().execute({ action: 'cancel_connection', session_id: 'workflow-1', request_call_id: 'wrong' }, execution)).rejects.toThrow('exact saved request')
+    await expect(app.tool().execute({ action: 'cancel_connection', session_id: 'workflow-1', request_call_id: 'original-call', cancellation_reason: reason }, execution)).resolves.toMatchObject({ status: 'cancelled' })
+    await app.tool().execute({ action: 'cancel_connection', session_id: 'workflow-1', request_call_id: 'original-call' }, execution)
+    expect(agent.session.append).toHaveBeenCalledOnce()
+    expect(JSON.stringify(events.at(-1))).toContain(reason)
+    expect(app.flush).toHaveBeenCalledTimes(2)
+    await expect(app.tool().execute({ action: 'wait_connection', session_id: 'workflow-1' }, execution)).rejects.toThrow('cancelled')
+    expect(execute).not.toHaveBeenCalled()
+    expect(toolkits).not.toHaveBeenCalled()
+  })
+
+  it('preserves another app authorization in the same workflow after exact cancellation', async () => {
+    const app = harness()
+    toolkits.mockResolvedValue({ items: [{ slug: 'gmail', name: 'Gmail', connection: { isActive: true } }] })
+    const events = ['gmail', 'slack'].map(toolkit => ({ type: 'hivemind/connected-receipt', data: {
+      version: 1, tool: 'connection_authorization', workflowSessionId: 'workflow-1',
+      receipt: { status: toolkit === 'slack' ? 'cancelled' : 'connection_required', toolkit,
+        session_id: 'workflow-1', request_call_id: `${toolkit}-call` } } }))
+    const agent = { session: { header: { id: 'restored-room' }, snapshotEvents: () => events, append: vi.fn() } }
+    await expect(app.tool().execute({ action: 'wait_connection', session_id: 'workflow-1', toolkits: ['gmail'] },
+      { signal: new AbortController().signal, agent } as never)).resolves.toMatchObject({ status: 'ready' })
+    expect(agent.session.append).toHaveBeenCalledWith('hivemind/connected-receipt', expect.objectContaining({ receipt: expect.objectContaining({ request_call_id: 'gmail-call', status: 'ready' }) }))
+  })
+
+  it('recovers exact saved toolkits after reload and leaves one original notification unchanged across Continue clicks', async () => {
+    toolkits.mockResolvedValue({ items: [{ slug: 'slack', name: 'Slack', connection: { isActive: false } }] })
+    const app = harness()
+    const receipt = { status: 'connection_required', request_call_id: 'original-call', toolkit: 'slack',
+      session_id: 'workflow-1', notification_status: 'accepted', redirect_url: 'https://connect.example/slack' }
+    const events = [{ type: 'hivemind/connected-receipt', data: { version: 1,
+      tool: 'connection_authorization', workflowSessionId: 'workflow-1', receipt } }]
+    const agent = { session: { header: { id: 'restored-room' }, snapshotEvents: () => events, append: vi.fn() } }
+    for (let click = 0; click < 2; click++) {
+      await expect(app.tool().execute({ action: 'wait_connection', session_id: 'workflow-1' },
+        { signal: new AbortController().signal, agent } as never))
+        .resolves.toMatchObject({ status: 'connection_pending', session_id: 'workflow-1', pending_toolkits: ['slack'] })
+    }
+    expect(toolkits).toHaveBeenCalledTimes(2)
+    expect(app.concludeTurn).toHaveBeenCalledTimes(2)
+    expect(agent.session.append).not.toHaveBeenCalledWith('hivemind/connected-receipt', expect.anything())
+    expect(receipt.notification_status).toBe('accepted')
+    expect(execute).not.toHaveBeenCalled()
+    expect(app.ask).not.toHaveBeenCalled()
+  })
+
+  it('checks every original app even when Continue supplies a partial toolkit list', async () => {
+    toolkits.mockResolvedValue({ items: [
+      { slug: 'slack', name: 'Slack', connection: { isActive: true } },
+      { slug: 'gmail', name: 'Gmail', connection: { isActive: false } },
+    ] })
+    const app = harness()
+    const events = [{ type: 'hivemind/connected-receipt', data: { version: 1,
+      tool: 'connection_authorization', workflowSessionId: 'workflow-1',
+      receipt: { status: 'connection_required', pending_toolkits: ['slack', 'gmail'], request_call_id: 'original' } } }]
+    const agent = { session: { header: { id: 'room' }, snapshotEvents: () => events, append: vi.fn() } }
+    await expect(app.tool().execute({ action: 'wait_connection', toolkits: ['slack'], session_id: 'workflow-1' },
+      { signal: new AbortController().signal, agent } as never))
+      .resolves.toMatchObject({ status: 'connection_pending', pending_toolkits: ['gmail'] })
+    expect(toolkits).toHaveBeenCalledTimes(2)
+    expect(agent.session.append).not.toHaveBeenCalledWith('hivemind/connected-receipt', expect.anything())
+    await expect(app.tool().execute({ action: 'wait_connection', toolkits: ['notion'], session_id: 'workflow-1' },
+      { signal: new AbortController().signal, agent } as never)).rejects.toThrow('original saved workflow')
+    expect(toolkits).toHaveBeenCalledTimes(2)
+  })
+
+  it('preserves cancellation by the caller rather than treating it as provider timeout', async () => {
+    toolkits.mockRejectedValue(new Error('cancelled'))
     const app = harness()
     await expect(app.tool().execute({ action: 'wait_connection', toolkits: ['slack'], session_id: 'workflow-1' }, { signal: AbortSignal.abort() }))
-      .rejects.toThrow('provider unavailable')
+      .rejects.toThrow('cancelled')
+    expect(app.concludeTurn).not.toHaveBeenCalled()
   })
 
   it('concludes a disconnected search with one session-bound connection receipt', async () => {
@@ -896,6 +1152,120 @@ describe('progressive Composio bridge', () => {
     })
     expect(execute).toHaveBeenCalledTimes(2)
     expect(app.concludeTurn).toHaveBeenCalledOnce()
+  })
+
+  it.each([
+    { name: 'missing toolkit', statuses: [{ toolkit: 'slack', status: 'ACTIVE' }], ready: false },
+    { name: 'contradictory toolkit', statuses: [{ toolkit: 'slack', status: 'ACTIVE' }, { toolkit: 'gmail', status: 'ACTIVE' }, { toolkit: 'gmail', status: 'PENDING' }], ready: false },
+    { name: 'all affirmative toolkits', statuses: [{ toolkit: 'slack', status: 'ACTIVE' }, { toolkit: 'gmail', status: 'ACTIVE' }], ready: true },
+  ])('updates only the matching saved authorization after verified access: $name', async ({ statuses, ready }) => {
+    toolkits.mockResolvedValue({ items: statuses.map(item => ({ slug: item.toolkit, name: item.toolkit, connection: { isActive: item.status === 'ACTIVE' } })) })
+    const app = harness()
+    const events = [
+      { type: 'hivemind/connected-receipt', data: { version: 1, tool: 'connection_authorization',
+        workflowSessionId: 'workflow-1', receipt: { status: 'connection_required', request_call_id: 'original-call',
+          session_id: 'workflow-1', pending_toolkits: ['slack', 'gmail'], app_label: 'Slack', reason: 'Review the company sources.' } } },
+      { type: 'hivemind/connected-receipt', data: { version: 1, tool: 'connection_authorization',
+        workflowSessionId: 'foreign-workflow', receipt: { status: 'connection_required', request_call_id: 'foreign-call',
+          session_id: 'foreign-workflow' } } },
+    ]
+    const agent = { id: 'runtime-room', session: { header: { id: 'runtime-room' }, snapshotEvents: () => events, append: vi.fn() } }
+    await expect(app.tool().execute({ action: 'wait_connection', toolkits: ['slack', 'gmail'], session_id: 'workflow-1' },
+      { signal: new AbortController().signal, agent, callId: 'verify-call' } as never))
+      .resolves.toMatchObject({ status: ready ? 'ready' : 'connection_pending' })
+    const authorizationUpdates = agent.session.append.mock.calls.filter(([type, data]) =>
+      type === 'hivemind/connected-receipt' && data.tool === 'connection_authorization')
+    if (ready) {
+      expect(authorizationUpdates).toEqual([['hivemind/connected-receipt', {
+        version: 1, tool: 'connection_authorization', workflowSessionId: 'workflow-1', receipt: {
+          status: 'ready', request_call_id: 'original-call', session_id: 'workflow-1', pending_toolkits: ['slack', 'gmail'],
+          app_label: 'Slack', reason: 'Review the company sources.',
+        },
+      }]])
+      expect(app.flush).toHaveBeenCalledOnce()
+      expect(app.concludeTurn).not.toHaveBeenCalled()
+    } else {
+      expect(authorizationUpdates).toEqual([])
+      expect(app.flush).not.toHaveBeenCalled()
+      expect(app.concludeTurn).toHaveBeenCalledOnce()
+    }
+    expect(app.ask).not.toHaveBeenCalled()
+    expect(execute).not.toHaveBeenCalled()
+    expect(events[0]?.data.receipt.status).toBe('connection_required')
+    expect(events[1]?.data.receipt.status).toBe('connection_required')
+  })
+
+  it.each(['accepted', 'not_sent', 'unknown'] as const)(
+    'ends the Runtime connection turn after one saved request and one email attempt (%s)', async (outcome) => {
+      execute.mockResolvedValueOnce({ data: {
+        results: [{ primary_tool_slugs: ['ASANA_LIST_TASKS'], toolkits: ['asana'] }],
+        toolkit_connection_statuses: [{ toolkit: 'asana', has_active_connection: false }],
+        session: { id: 'workflow-asana' },
+      } }).mockResolvedValueOnce({ data: { redirect_url: 'https://connect.example/asana' } })
+      const order: string[] = []
+      const serial = vi.fn(async (event: string) => event === 'hivemind/runtime-connection-owner' ? true : undefined)
+      const app = harness(true, undefined, false, {
+        serviceApiBase: 'http://127.0.0.1:3000', serviceSecretEnv: 'TEST_RUNTIME_CONNECTION_SECRET',
+      }, serial)
+      app.flush.mockImplementation(async () => { order.push('flush'); return true })
+      const agent = { id: 'runtime-room', session: { header: { id: 'runtime-room' }, snapshotEvents: () => [], append: vi.fn() } }
+      const emails: Array<Record<string, unknown>> = []
+      process.env.TEST_RUNTIME_CONNECTION_SECRET = 'runtime-connection-secret-at-least-32-bytes'
+      vi.stubGlobal('fetch', vi.fn(async (url: URL, init: RequestInit) => {
+        if (String(url).endsWith('/administrator-message')) {
+          order.push('email')
+          emails.push(JSON.parse(String(init.body)))
+          expect(agent.session.append).toHaveBeenCalledWith('hivemind/connected-receipt', expect.objectContaining({
+            version: 1, tool: 'connection_authorization', workflowSessionId: 'workflow-asana',
+            receipt: expect.objectContaining({ status: 'connection_required', request_call_id: 'connection-call',
+              session_id: 'workflow-asana', app_label: 'Asana', reason: 'List current Asana tasks.' }),
+          }))
+          const token = String((init.headers as Record<string, string>).authorization).split(' ')[1]!
+          const claims = JSON.parse(Buffer.from(token.split('.')[1]!, 'base64url').toString())
+          expect(claims).toMatchObject({ operating_role: 'runtime', operating_session: 'runtime-room', org_id: 'org-a', sub: 'user-a' })
+          if (outcome === 'unknown') throw new Error('connection lost after send')
+          return new Response(JSON.stringify({ status: 'accepted' }), { status: outcome === 'not_sent' ? 503 : 200 })
+        }
+        return new Response(JSON.stringify({ receipt_id: 'receipt-1', bytes: 10 }), { status: 201 })
+      }))
+      try {
+        await expect(app.tool().execute({ action: 'search', queries: [{ app: 'Asana', use_case: 'List current Asana tasks.' }],
+          session: { generate_id: true } }, { signal: new AbortController().signal, agent,
+          callId: 'connection-call', name: 'hivemind_connected_task' } as never))
+          .resolves.toMatchObject({ status: 'connection_required', notification_status: outcome, session_id: 'workflow-asana' })
+        expect(emails).toEqual([{ message_key: 'connection-call-user-request', kind: 'approval',
+          request_call_id: 'connection-call', subject: 'Connect Asana', message: 'List current Asana tasks.' }])
+        expect(order).toEqual(['flush', 'email'])
+        expect(serial).toHaveBeenCalledWith('hivemind/runtime-connection-owner', agent)
+        expect(app.ask).not.toHaveBeenCalled()
+        expect(execute).toHaveBeenCalledTimes(2)
+        expect(app.concludeTurn).toHaveBeenCalledOnce()
+      } finally {
+        delete process.env.TEST_RUNTIME_CONNECTION_SECRET
+        vi.unstubAllGlobals()
+      }
+    },
+  )
+
+  it('hands a Runtime-delegated missing connector to its durable blocker without a human popup', async () => {
+    execute.mockResolvedValueOnce({ data: {
+      results: [{ primary_tool_slugs: ['ASANA_LIST_TASKS'], toolkits: ['asana'] }],
+      toolkit_connection_statuses: [{ toolkit: 'asana', has_active_connection: false }],
+      session: { id: 'workflow-asana' },
+    } }).mockResolvedValueOnce({ data: { redirect_url: 'https://connect.example/asana' } })
+    const report = vi.fn(async () => ({ status: 'blocked_reported', blocker_id: 'blocker', task_id: 'task-1',
+      checkpoint_id: 'checkpoint', message_id: 'message' }))
+    const app = harness(true, { orgId: 'org-a', userId: 'user-a' }, false, {}, report)
+    const agent = { id: 'employee', session: { header: { id: 'room' }, snapshotEvents: () => [], append: vi.fn() } }
+    await expect(app.tool().execute({ action: 'search', queries: [{ app: 'Asana', use_case: 'List Asana tasks' }],
+      session: { generate_id: true } }, { signal: new AbortController().signal, agent, callId: 'call' } as never))
+      .resolves.toMatchObject({ status: 'blocked_reported', session_id: 'workflow-asana' })
+    expect(report).toHaveBeenCalledWith('hivemind/delegated-connection-blocker', expect.objectContaining({
+      workflowSessionId: 'workflow-asana', toolkits: ['asana'],
+    }))
+    expect(app.ask).not.toHaveBeenCalled()
+    expect(app.concludeTurn).toHaveBeenCalledOnce()
+    expect(execute).toHaveBeenCalledTimes(2)
   })
 
   it('pauses natively and resumes the original search contract after verified connection', async () => {
@@ -985,11 +1355,11 @@ describe('progressive Composio bridge', () => {
     expect(app.concludeTurn).not.toHaveBeenCalled()
   })
 
-  it('does not make an unselected related schema executable', async () => {
+  it('does not make a schema absent from provider discovery executable', async () => {
     execute
       .mockResolvedValueOnce({ data: { results: [{
         primary_tool_slugs: ['GMAIL_FETCH_EMAILS'],
-        related_tool_slugs: ['GMAIL_FETCH_MESSAGE_BY_MESSAGE_ID'],
+        related_tool_slugs: ['GMAIL_LIST_LABELS'],
       }] } })
       .mockResolvedValueOnce({ data: { tool_schemas: {
         GMAIL_FETCH_MESSAGE_BY_MESSAGE_ID: { input_schema: {
@@ -1118,7 +1488,7 @@ describe('progressive Composio bridge', () => {
     } }] } })
     const key = createHash('sha256').update(JSON.stringify({
       workflow: 'hivemind:user-a:conversation-write:current', tool_slug: 'SLACK_SEND_MESSAGE',
-      arguments: { text: 'hello' }, call_id: 'write-call',
+      arguments: { text: 'hello' }, operation_id: 'default',
     })).digest('hex')
     const events = [
       { type: 'tool/call', data: { name: 'hivemind_connected_task', callId: 'write-call', arguments: JSON.stringify({ action: 'execute' }) } },
@@ -1351,7 +1721,7 @@ describe('progressive Composio bridge', () => {
       session: { id: 'workflow-1' },
       search_strategy: 'tool_search',
     }, execution as never)).resolves.toMatchObject({ status: 'no_matching_tool' })
-    await expect(app.tool().execute(request, execution as never)).rejects.toThrow('returned session id')
+    await expect(app.tool().execute(request, execution as never)).rejects.toThrow('search repeated without new evidence')
     expect(execute).toHaveBeenCalledTimes(2)
   })
 
@@ -1499,4 +1869,16 @@ describe('progressive Composio bridge', () => {
     expect(execute).not.toHaveBeenCalled()
     expect(app.ask).not.toHaveBeenCalled()
   })
+})
+
+it('lists only authenticated active connections without asking for authorization', async () => {
+  toolkits.mockResolvedValueOnce({ items: [
+    { slug: 'gmail', name: 'Gmail', connection: { isActive: true } },
+    { slug: 'outlook', name: 'Outlook', connection: { isActive: false } },
+  ] })
+  const fixture = harness()
+  const result = await fixture.tool().execute({ action: 'list_connections' }, { signal: new AbortController().signal, concludeTurn: vi.fn() } as never)
+  expect(result).toMatchObject({ status: 'active_connections', apps: [{ app: 'gmail', name: 'Gmail', connected: true }] })
+  expect(fixture.ask).not.toHaveBeenCalled()
+  expect(execute).not.toHaveBeenCalled()
 })

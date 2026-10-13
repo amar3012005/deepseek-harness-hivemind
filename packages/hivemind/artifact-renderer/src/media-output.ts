@@ -11,18 +11,31 @@ export function installMediaJobPreview(ctx: Context): void {
   ctx.on('tools/post-execute', async (execution, result, next): Promise<PostToolDecision> => {
     const decision = await next()
     if (decision.kind !== 'accept' || 'value' in decision || decision.content !== undefined
-      || result.isError || execution.name !== 'job_output' || !execution.agent) return decision
-    const args = object(execution.arguments)
-    const value = object(result.value)
-    const job = object(value?.['job'])
-    if (job?.['kind'] !== 'media' || job['status'] !== 'completed' || typeof job['id'] !== 'string'
-      || args?.['job_id'] !== job['id']) return decision
+      || result.isError || !execution.agent) return decision
     const events = execution.agent.session.snapshotEvents()
-    const terminal = events.findLast(event => event.type === 'hivemind/media-workflow-ended' && event.data.jobId === job['id'])
-    if (terminal?.type !== 'hivemind/media-workflow-ended' || terminal.data.status !== 'completed'
-      || !terminal.data.artifactId) return decision
+    const value = object(result.value)
+    let artifactId: string | undefined
+    if (execution.name === 'job_output') {
+      const args = object(execution.arguments)
+      const job = object(value?.['job'])
+      if (job?.['kind'] !== 'media' || job['status'] !== 'completed' || typeof job['id'] !== 'string'
+        || args?.['job_id'] !== job['id']) return decision
+      const terminal = events.findLast(event => event.type === 'hivemind/media-workflow-ended' && event.data.jobId === job['id'])
+      if (terminal?.type !== 'hivemind/media-workflow-ended' || terminal.data.status !== 'completed'
+        || !terminal.data.artifactId) return decision
+      artifactId = terminal.data.artifactId
+    } else if (execution.name === 'hivemind_media_generate') {
+      // The generate tool waits for a finished image, so its completed result
+      // carries the saved artifact. Require the matching terminal receipt.
+      const completedId = value?.['artifact_id']
+      if (value?.['status'] !== 'completed' || typeof completedId !== 'string' || completedId.length === 0) return decision
+      const terminal = events.findLast(event => event.type === 'hivemind/media-workflow-ended'
+        && event.data.artifactId === completedId)
+      if (terminal?.type !== 'hivemind/media-workflow-ended' || terminal.data.status !== 'completed') return decision
+      artifactId = completedId
+    } else return decision
     const generated = events.findLast(event => event.type === 'hivemind/generation-created'
-      && event.data.artifactId === terminal.data.artifactId)
+      && event.data.artifactId === artifactId)
     if (generated?.type !== 'hivemind/generation-created' || !generated.data.mediaType.startsWith('image/')) return decision
     const preview = generated.data.preview
     if (!preview || !Number.isSafeInteger(preview.bytes) || preview.bytes <= 0 || preview.bytes > 30 * 1024 * 1024

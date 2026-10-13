@@ -128,6 +128,8 @@ export function registerMediaWorkflow(
   config: {
     readonly maxBriefChars: number
     readonly imageAttempts: number
+    /** Bounded inline wait for a finished image before returning the running receipt. */
+    readonly inlineWaitMs?: number
     readonly retryBaseDelayMs: number
     readonly attachmentOnly?: boolean
     readonly admission?: MediaAdmissionConfig
@@ -273,6 +275,14 @@ export function registerMediaWorkflow(
       const admitted = new Promise<void>((resolve, reject) => { admit = resolve; refuse = reject })
       activeOperations.add(operationId)
       let controller: AbortController | undefined
+      type MediaSettled = { status: string; output: string }
+      const jobHolder: { done?: Promise<MediaSettled> } = {}
+      // The job runner may call run() after jobs.start returns, so wait on a
+      // promise that resolves once the job has actually started.
+      // Wrapped in an object: resolving a promise with a promise would flatten it
+      // and make this settle only when the whole job finishes.
+      let announceJob!: (job: { done: Promise<MediaSettled> }) => void
+      const jobStarted = new Promise<{ done: Promise<MediaSettled> }>((resolve) => { announceJob = resolve })
       const execute = async (jobController: AbortController) => {
         let attempts = 0
         let release: (() => void) | undefined
@@ -321,7 +331,10 @@ export function registerMediaWorkflow(
         run: () => {
           controller = new AbortController()
           controllers.add(controller)
-          return { cancel: reason => controller?.abort(reason), done: execute(controller) }
+          const done = execute(controller)
+          jobHolder.done = done
+          announceJob({ done })
+          return { cancel: reason => controller?.abort(reason), done }
         },
       })) } catch (error) { activeOperations.delete(operationId); throw error }
       const start: MediaStart = {
@@ -332,6 +345,26 @@ export function registerMediaWorkflow(
         if (!(await ctx.sessions.flush(agent.session))) throw new Error('Image intent could not be persisted; generation was not started')
         admit()
       } catch (error) { refuse(error instanceof Error ? error : new Error('Image intent persistence failed')); throw error }
+      // Wait briefly for the image so the model can answer in this same turn
+      // instead of spending another step on job_output. Videos and slow images
+      // still return the running receipt after the bounded wait.
+      if (kind === 'image') {
+        const started = await Promise.race([
+          jobStarted,
+          new Promise<undefined>((resolve) => { setTimeout(() => { resolve(undefined) }, 10_000).unref() }),
+        ])
+        const settled = started === undefined ? undefined : await Promise.race([
+          started.done,
+          new Promise<undefined>((resolve) => { setTimeout(() => { resolve(undefined) }, config.inlineWaitMs ?? 60_000).unref() }),
+        ])
+        if (settled?.status === 'completed') {
+          // The finished image is returned inline. A terminal read marks the job
+          // reported, so the jobs service does not wake the model with a
+          // completion notice that would be followed by a redundant job_output.
+          try { ctx.jobs.read(jobId as unknown as Parameters<typeof ctx.jobs.read>[0], agent) } catch { /* already settled or released */ }
+          return { ...(JSON.parse(settled.output) as Record<string, unknown>), provider: provider.id }
+        }
+      }
       const queued = owner && admission?.status(owner, operationId) === 'queued'
       return { workflow_id: workflowId, job_id: jobId, status: 'running', provider: provider.id, attempt_limit: attemptLimit,
         ...(queued ? { queue_status: 'queued', message: 'Your image request is queued and will start when a generation slot is available.' } : {}),

@@ -12,6 +12,15 @@
       or turn every answer into a reminder. Use remembered context only when
       it helps this request; distinguish what you know from what you infer.
 
+      For a request needing tools, stream one brief natural acknowledgment in
+      the same response as the first tool calls. Share useful findings when
+      they arrive, without extra model calls just to narrate. Keep these public
+      updates visible; never expose private reasoning or tool schema planning.
+      Ordinary public web search and page reads proceed without asking approval.
+      Company-memory saves still require the native destination scope and
+      approval; prepare that card when a stable user-stated fact or verified
+      new finding is worth remembering, without repeatedly asking in prose.
+
       Begin with this contract, recent completed conversation, unfinished
       durable workflow state, and the compact authenticated profile brief when
       it is present. Use that brief only for direct user-profile or company-profile
@@ -190,7 +199,7 @@
         recallItemMaxChars: 1200
         historyTurns: 3
         historyMaxChars: 3000
-        webApprovalRequired: true
+        webApprovalRequired: false
         nativeWebSearch: false
     - id: hivemind-connected-apps
       name: '@deepseek-ai/dsh-hivemind-connected-apps'
