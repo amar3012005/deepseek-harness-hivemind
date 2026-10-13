@@ -22,6 +22,27 @@
 - id: llm-pi-ai
   config:
     providers:
+      # Cloudflare Workers AI through the account's OpenAI-compatible endpoint.
+      # Verified live: @cf/zai-org/glm-5.3-flash returns chat completions with
+      # low latency; billed per neuron on the account's Workers AI balance.
+      cloudflare-workers-ai:
+        displayName: Cloudflare Workers AI (GLM-5.3 Flash)
+        apiKeyEnv: CLOUDFLARE_API_KEY
+        api: openai-completions
+        reasoning: 'off'
+        baseURL: https://api.cloudflare.com/client/v4/accounts/0dc6b9186b5a9b8985613b10c1c59f4f/ai/v1
+        defaultContextWindow: 131072
+        defaultMaxTokens: 8192
+        defaultInput: [text]
+        retryPolicy:
+          mode: normal
+          maxRetries: 2
+        models:
+          - id: '@cf/zai-org/glm-5.3-flash'
+            name: GLM-5.3 Flash (Workers AI)
+            contextWindow: 131072
+            maxTokens: 8192
+            input: [text]
       # Existing native OAuth record; expose the already configured recovery route.
       # No key, endpoint override or primary/default selection belongs here.
       openai-codex:
@@ -86,7 +107,7 @@
         headers:
           cf-aig-byok-alias: first-bundb
         defaultContextWindow: 131072
-        defaultMaxTokens: 32768
+        defaultMaxTokens: 8192
         defaultInput: [text]
         retryPolicy:
           mode: normal
@@ -154,7 +175,7 @@
           - id: anthropic/claude-haiku-5.5
             name: Claude Haiku 5.5
             contextWindow: 1000000
-            maxTokens: 32768
+            maxTokens: 8192
             input: [text, image]
             reasoningEfforts:
               low: low
@@ -181,8 +202,8 @@
 
 - id: agent-default-model
   config:
-    provider: cloudflare-openrouter-streaming
-    model: openai/gpt-6-luna
+    provider: cloudflare-workers-ai
+    model: '@cf/zai-org/glm-5.3-flash'
 
 - id: session-persistence-jsonl
   disabled: true

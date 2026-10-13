@@ -356,6 +356,7 @@
 
     - id: ui-trajectory
       name: '@deepseek-ai/dsh-client-ui-trajectory'
+      disabled: true
 
 # ── the agent plane moves behind agent presets ─────────────────────────────
 #
