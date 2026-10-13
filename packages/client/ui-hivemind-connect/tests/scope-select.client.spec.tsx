@@ -32,15 +32,24 @@ describe('HIVE-MIND read scope control', () => {
 })
 
 describe('HIVE-MIND hero branding', () => {
-  it('hides the introductory headline without changing its text', () => {
+  it('restores the Brain welcome and hides only its upstream Preview badge', () => {
+    const view = render(<div data-testid="welcome" data-conversation-intro-headline><span /><span><span>Into the Unknown</span><span>Preview</span></span></div>)
+    const dispose = setupSingulanceHeadline(() => 'hivemind-chat')
+    expect(view.getByText('Let’s remember what matters')).toBeTruthy()
+    expect(view.getByText('Preview').style.display).toBe('none')
+    dispose()
+    expect(view.getByText('Into the Unknown')).toBeTruthy()
+    expect(view.getByText('Preview').style.display).toBe('')
+  })
+  it('preserves the introductory headline outside a branded HIVE mode', () => {
     const view = render(<div>
       <div data-testid="headline" data-conversation-intro-headline><span><span data-hivemind-hero-brand="singulance"><img alt="Runtime" /></span></span><span><span>Beyond Horizon Of Intelligence</span><span>Preview</span></span></div>
     </div>)
     vi.stubGlobal('matchMedia', vi.fn(() => ({ matches: true })))
     Object.defineProperty(view.getByText('Beyond Horizon Of Intelligence'), 'getAnimations', { value: () => [] })
     const dispose = setupSingulanceHeadline()
-    expect(view.getByTestId('headline').hasAttribute('data-hivemind-hero-headline')).toBe(true)
-    expect(view.getByTestId('headline').style.display).toBe('none')
+    expect(view.getByTestId('headline').hasAttribute('data-hivemind-hero-headline')).toBe(false)
+    expect(view.getByTestId('headline').style.display).toBe('')
     expect(view.getByText('Beyond Horizon Of Intelligence')).toBeTruthy()
     dispose()
     expect(view.getByTestId('headline').hasAttribute('data-hivemind-hero-headline')).toBe(false)

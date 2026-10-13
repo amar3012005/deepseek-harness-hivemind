@@ -1,5 +1,6 @@
-import type { SVGProps } from 'react'
+import { useSyncExternalStore, type SVGProps } from 'react'
 import type { RoomIdentity } from './room-identity.ts'
+import { BrainModeIcon } from './BrainModeIcon.tsx'
 
 export interface SingulanceMarkProps extends Omit<SVGProps<SVGSVGElement>, 'width' | 'height'> {
   size?: number
@@ -38,7 +39,10 @@ export function RoomHeroMark({ size = 34, className, identity }: {
   className?: string | undefined
   identity: { getSnapshot(): string; subscribe(listener: () => void): () => void }
 }) {
-  void identity
+  const room = useSyncExternalStore(identity.subscribe, identity.getSnapshot, identity.getSnapshot)
+  const brain = room === 'null' && typeof window !== 'undefined'
+    && window.location.pathname.startsWith('/hivemind/app/overview')
+  if (brain) return <span className={className} data-hivemind-hero-brand="brain"><BrainModeIcon size={size} /></span>
   return <SingulanceMark size={size} className={className} />
 }
 
@@ -48,27 +52,30 @@ export function setupSingulanceHeadline(
   subscribe?: (refresh: () => void) => () => void,
   getIdentity?: () => RoomIdentity | undefined,
 ): () => void {
-  const originals = new Map<HTMLElement, { display: string; title: string }>()
+  const originals = new Map<HTMLElement, { display: string; title: string; badgeDisplay: string }>()
   const apply = (): void => {
     if (typeof document === 'undefined') return
     for (const headline of document.querySelectorAll('[data-conversation-intro-headline]')) {
       if (!(headline instanceof HTMLElement)) continue
       const title = headline.lastElementChild?.firstElementChild
       if (!(title instanceof HTMLElement)) continue
-      if (!originals.has(headline)) originals.set(headline, { display: headline.style.display, title: title.textContent ?? '' })
+      const badge = title.nextElementSibling
+      if (!originals.has(headline)) originals.set(headline, { display: headline.style.display, title: title.textContent ?? '', badgeDisplay: badge instanceof HTMLElement ? badge.style.display : '' })
       const preset = getPreset?.()
       const identity = getIdentity?.()
       const runtime = preset === 'hivemind-hq' || identity?.name === 'Runtime'
       const agent = runtime || preset === 'hivemind-hyperagents' || identity?.employee !== undefined
+      const brain = preset === 'hivemind-chat' || (!agent && window.location.pathname.startsWith('/hivemind/app/overview'))
       headline.style.display = originals.get(headline)?.display ?? ''
-      if (!agent) {
+      if (!agent && !brain) {
         const original = originals.get(headline)
         if (original && title.textContent !== original.title) title.textContent = original.title
         headline.removeAttribute('data-hivemind-hero-headline')
         continue
       }
-      const text = runtime ? 'RUNTIME : Lets Shape your company together' : 'Hyperagents : Lets do the real work.'
-      if (agent && title.textContent !== text) title.textContent = text
+      const text = brain ? 'Let’s remember what matters' : runtime ? 'RUNTIME : Lets Shape your company together' : 'Hyperagents : Lets do the real work.'
+      if (title.textContent !== text) title.textContent = text
+      if (badge instanceof HTMLElement) badge.style.display = brain ? 'none' : originals.get(headline)?.badgeDisplay ?? ''
       headline.setAttribute('data-hivemind-hero-headline', '')
     }
   }
@@ -83,6 +90,7 @@ export function setupSingulanceHeadline(
       headline.style.display = original.display
       const title = headline.lastElementChild?.firstElementChild
       if (title instanceof HTMLElement) title.textContent = original.title
+      if (title?.nextElementSibling instanceof HTMLElement) title.nextElementSibling.style.display = original.badgeDisplay
       headline.removeAttribute('data-hivemind-hero-headline')
     }
   }

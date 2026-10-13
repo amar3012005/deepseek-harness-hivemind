@@ -5,6 +5,14 @@ import { roomIdentity } from '../src/client/room-identity.ts'
 import { AgentChatAvatar } from '../src/client/AgentChatAvatar.tsx'
 import { RoomHeroMark } from '../src/client/SingulanceMark.tsx'
 afterEach(cleanup)
+it('uses the Brain logo only in a Brain overview welcome', () => {
+  const previousPath = window.location.pathname
+  window.history.replaceState({}, '', '/hivemind/app/overview')
+  const view = render(<RoomHeroMark identity={{ getSnapshot: () => 'null', subscribe: () => () => {} }} />)
+  expect(view.getByRole('img', { name: 'Brain' })).toBeTruthy()
+  expect(view.container.querySelector('[data-hivemind-hero-brand="singulance"]')).toBeNull()
+  window.history.replaceState({}, '', previousPath)
+})
 it('distinguishes pending first entry, saved Runtime owner and the employee identity', () => {
   expect(roomIdentity(undefined, undefined, true)).toMatchObject({ name: 'Runtime', pending: true })
   expect(roomIdentity('hivemind-hq', undefined)).toMatchObject({ pending: true })
