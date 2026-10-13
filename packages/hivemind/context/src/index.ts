@@ -367,17 +367,16 @@ function boundToolResults(agent: Agent, maxChars: number, latestRecallMaxChars?:
       || !blocks.some(block => block.type === 'tool-result' && block.content.some(part => part.type === 'text'))) return []
     return [{ seq, event, blocks }]
   })
-  const recallCount = entries.reduce((sum, entry) => sum + entry.blocks.filter(block => block.type === 'tool-result' && recallIds.has(block.toolCallId)).length, 0)
   const count = entries.reduce((sum, entry) => sum + entry.blocks.length, 0)
   if (!count) return changed
   // One aggregate result budget, not a fresh allowance for every tool step.
-  const perResult = Math.max(0, Math.floor(Math.max(0, maxChars - taskLists.chars) / count))
+  const perResult = Math.max(0, Math.floor(Math.max(0, (latestRecallMaxChars ?? maxChars) - taskLists.chars) / count))
   for (const { seq, event, blocks } of entries) {
     const content = blocks.map((block) => {
       if (block.type !== 'tool-result') return block
       const text = block.content.flatMap(part => part.type === 'text' ? [part.text] : []).join('\n')
       const recallBudget = latestRecallMaxChars !== undefined && recallIds.has(block.toolCallId)
-        ? Math.floor(latestRecallMaxChars / Math.max(1, recallCount)) : undefined
+        ? perResult : undefined
       if (text.length <= (recallBudget ?? perResult)) return block
       let original = event
       while (isReplacementSurfaceEvent(original) && original.sourceEventSeqs?.length === 1) {

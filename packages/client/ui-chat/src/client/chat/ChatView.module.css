@@ -92,6 +92,22 @@
   filter: brightness(.62) contrast(1.25);
 }
 
+/* The single Brain mark belongs to the active-turn footer, so it naturally
+   moves down the transcript as real tool work and streamed text arrive. */
+.activityAvatar {
+  width: 32px;
+  height: 32px;
+  flex: 0 0 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  animation: dsh-brain-activity-pulse 1.8s ease-in-out infinite;
+}
+
+@keyframes dsh-brain-activity-pulse {
+  50% { transform: translateY(2px); opacity: .72; }
+}
+
 .turnStatusLabel {
   font: var(--dsw-font-s-strong-14);
   /* Retain the existing animated label beside the new activity orb. */
@@ -137,6 +153,7 @@
     background-size: 100% 100%;
     animation: none;
   }
+  .activityAvatar { animation: none; }
 }
 
 .hint {
