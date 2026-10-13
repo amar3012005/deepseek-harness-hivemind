@@ -190,6 +190,24 @@ describe('the shipped preset root', () => {
     }
   })
 
+  it('keeps ordinary HIVE Chat on its default capability set', async () => {
+    const chat = await shippedEntries('hivemind-chat') as EntryOptions[]
+    // Chat owns identity, memory, and approved connected-app work. Company
+    // operating behavior is opt-in through the two derived presets below.
+    for (const id of [
+      'hivemind-employee-directory',
+      'hivemind-playbooks',
+      'hivemind-progressive-skills',
+      'hivemind-operating-workstreams',
+      'hivemind-research',
+      'hivemind-progressive-browser',
+      'hivemind-app-builder',
+    ]) expect(findEntry(chat, id), `HIVE Chat must not mount ${id}`).toBeUndefined()
+
+    expect(findEntry(chat, 'hivemind-runtime')).toBeDefined()
+    expect(findEntry(chat, 'hivemind-connected-apps')).toBeDefined()
+  })
+
   it('mounts HQ policy at the actual HIVE Chat include boundary with shared plugin parity', async () => {
     const [hq] = (await shippedEntries('hivemind-hq') as EntryOptions[]).filter(entry => entry.id === 'hivemind-chat-base') as Array<{
       config: { path: string; patches: Parameters<typeof applyEntryPatches>[1] }
