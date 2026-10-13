@@ -15,7 +15,6 @@ const presentation = {
   'Markdown, tables, code, and math': ['ui-renderer', 'ui-conversation', 'ui-chat'],
   reasoning: ['ui-conversation', 'ui-chat'],
   tools: ['ui-tool'],
-  trajectory: ['ui-trajectory'],
   attachments: ['ui-attachment'],
   jobs: ['ui-jobs', 'ui-workflow-run'],
   subagents: ['ui-subagent'],
@@ -35,21 +34,25 @@ for (const [feature, ids] of Object.entries(presentation)) {
   console.log(`hivemind-web image profile retains ${feature}`)
 }
 
+// The alternate trajectory tab is intentionally hidden; tool rendering remains enabled.
+const trajectory = dump.match(/^- id: ui-trajectory\n(?:(?!^- id: ).)*/ms)
+if (trajectory === null || !/^  disabled: true$/m.test(trajectory[0])) {
+  throw new Error('hivemind-web must preserve the approved hidden trajectory tab')
+}
 const defaultModel = row('agent-default-model')
 const llmProvider = row('llm-pi-ai')
-if (!defaultModel.includes('provider: cloudflare-openrouter-streaming')
-  || !defaultModel.includes('model: openai/gpt-6-luna')
-  || !llmProvider.includes('cloudflare-openrouter-streaming:')
-  || !llmProvider.includes('id: anthropic/claude-haiku-5.5')
-  || !llmProvider.includes('id: openai/gpt-6-luna')
-  || !/reasoning:\s*['"]?low['"]?/.test(llmProvider)) {
-  throw new Error('hivemind-web image profile must use the streaming GPT-6 Luna route with required reasoning and retain Haiku')
+if (!defaultModel.includes('provider: cloudflare-workers-ai')
+  || !defaultModel.includes('@cf/zai-org/glm-5.3-flash')
+  || !llmProvider.includes('cloudflare-workers-ai:')
+  || !llmProvider.includes('openai-codex:')
+  || !llmProvider.includes('id: gpt-6-luna')
+  || !llmProvider.includes('maxTokens: 8192')) {
+  throw new Error('hivemind-web must mount its global GLM default and bounded native Codex recovery route')
 }
-if (!llmProvider.includes('id: openrouter/deepseek/deepseek-v4-flash-0731')
-  || !/reasoning:\s*['"]?off['"]?/.test(llmProvider)) {
-  throw new Error('hivemind-web image profile must retain the legacy DeepSeek route for persisted sessions')
+if (!llmProvider.includes('id: openrouter/deepseek/deepseek-v4-flash-0731')) {
+  throw new Error('hivemind-web must retain the legacy provider for persisted sessions')
 }
-console.log('hivemind-web image profile uses streaming Claude Haiku 5.5 and retains the legacy DeepSeek route')
+console.log('hivemind-web mounts the global GLM default, native Codex recovery, and preserved legacy provider')
 
 const ctx = new Context()
 ctx.baseUrl = pathToFileURL('/opt/deepseek-harness/apps/cli/').href
