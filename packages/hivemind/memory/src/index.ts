@@ -70,7 +70,7 @@ declare module '@deepseek-ai/cordis' {
   interface Context { hivemindMemory: MemoryProvider }
 }
 
-export interface MemoryPluginConfig { defaultLimit: number }
+export interface MemoryPluginConfig { defaultLimit: number; defaultMode?: (execution: ToolExecution) => RecallRequest['mode'] }
 
 declare module '@deepseek-ai/dsh-session/types' {
   interface SessionEventMap {
@@ -548,7 +548,7 @@ export function memoryPlugin(config: MemoryPluginConfig, provider: MemoryProvide
           const input = readInput(args, 'recall')
           const rawLimit = input['limit'] ?? config.defaultLimit
           if (!Number.isInteger(rawLimit) || (rawLimit as number) < 1 || (rawLimit as number) > 25) throw new TypeError('hivemind-memory: recall limit must be an integer from 1 to 25')
-          const mode = text(input['mode'] ?? 'memory', 'mode')
+          const mode = text(input['mode'] ?? config.defaultMode?.(execution) ?? 'memory', 'mode')
           if (!['memory', 'auto', 'hybrid', 'evidence'].includes(mode)) throw new TypeError('hivemind-memory: recall mode is unsupported')
           const request: RecallRequest = { query: text(input['query'], 'query'), mode: mode as RecallRequest['mode'], limit: rawLimit as number }
           const scopeFilter = optionalScope(input['scope_filter'] ?? input['scope'], 'recall.scope_filter')

@@ -30,7 +30,7 @@ export const AssistantNodeView = memo(function AssistantNodeView({
   const revealProcess = useCallback(() => { turnProcess?.setOpen(true) }, [turnProcess])
   return (
     <div data-assistant-message style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
-      {renderSlot?.('conversation.chat.assistantAvatar', {})}
+      {!brainOnly && renderSlot?.('conversation.chat.assistantAvatar', {})}
       <AssistantMarkdown
         blocks={brainOnly ? data.blocks.filter(block => block.kind !== 'reasoning') : data.blocks}
         finalAnswer={owner !== undefined}

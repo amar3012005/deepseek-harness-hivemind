@@ -183,7 +183,7 @@ describe('the shipped preset root', () => {
       const effective = include ? applyEntryPatches(shared, include.config.patches, () => {}) : entries
       expect(findEntry(effective, 'compaction-basic'), id).toMatchObject({
         name: '@deepseek-ai/dsh-compaction-basic',
-        config: { pressureAuto:false, thresholdRatio: 0.65, thresholdTokens: 48000, retainTokens: 12000, maxTokens: 4096, summarizationProvider:'openai-codex',summarizationModel:'gpt-6-luna',summarizationReasoningEffort:'off' },
+        config: { pressureAuto:false, thresholdRatio: 0.65, retainTokens: 12000, maxTokens: 4096, ...(id === 'hivemind-chat' ? { thresholdTokens: 28000, summarizationProvider:'hivemind-brain-glm', summarizationModel:'@cf/zai-org/glm-5.3-flash', summarizationReasoningEffort:'low' } : { thresholdTokens: 48000, summarizationProvider:'openai-codex',summarizationModel:'gpt-6-luna',summarizationReasoningEffort:'off' }) },
       })
       expect(findEntry(effective, 'command-compact')?.disabled, id).not.toBe(true)
       expect(findEntry(effective, 'tool-result-pruner')?.config, id).toMatchObject({ thresholdChars: 8192 })
@@ -279,7 +279,7 @@ describe('the shipped preset root', () => {
     expect(persona.config).not.toHaveProperty('complete')
     expect(persona.config).toMatchObject({ includeRuntimeContext: false })
     expect(prefix).toContain('authenticated user\'s company brain')
-    expect(prefix).toContain('Show no process narration')
+    expect(prefix).toContain('one short natural acknowledgment before the first tool call')
     expect(prefix).toContain('Ask one concise question only when its answer materially changes the result')
     expect(prefix).toContain('A stated audience, scope, or destination is an instruction')
     expect(prefix).toContain('one focused hivemind_meta lookup')
@@ -289,14 +289,14 @@ describe('the shipped preset root', () => {
     expect(prefix).toContain('hivemind-company-research')
     expect(prefix).toContain('hivemind-artifact-delivery')
     expect(prefix).not.toContain('Every substantive completed answer MUST')
-    expect(prefix.length).toBeLessThan(2_500)
+    expect(prefix.length).toBeLessThan(3_200)
     expect(findEntry(hivemindChat, 'tool-web')?.config).toMatchObject({ search: false, fetch: true })
     expect(findEntry(hivemindChat, 'hivemind-runtime')?.config).toMatchObject({
       historyTurns: 3, historyMaxChars: 3000,
     })
     const shared = await shippedEntries('hivemind-chat', 'shared.cordis.yml')
     expect(findEntry(shared, 'hivemind-runtime')?.config).toMatchObject({
-      historyTurns: 15, historyMaxChars: 16000,
+      historyTurns: 3, historyMaxChars: 3000,
     })
     expect(findEntry(shared, 'persona')?.config).toMatchObject({
       prefix: expect.stringContaining('company memory and action agent'),
