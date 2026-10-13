@@ -81,6 +81,27 @@ it('leaves rejected native admission unchanged and migrates only an admitted ste
   expect(f.selected).toHaveBeenCalledOnce()
 })
 
+it('inherits a changed global model in an existing product room without disrupting a same-turn fallback', async () => {
+  const f = fixture('hivemind-hq'); f.registered.push('openai-codex')
+  let selection = { provider: 'platform-route', model: 'first-global' }
+  f.ctx.sessionController.currentDefaultModelSelection = () => selection
+  let hook!: (input: unknown, next: () => Promise<unknown>) => Promise<unknown>
+  const scope = Object.assign(f.ctx, {
+    effect: (effect: () => unknown) => effect(),
+    on: (_name: string, callback: typeof hook) => { hook = callback; return () => {} },
+    inject: (services: string[], callback: (value: Context) => void) => { if (!services.includes('settings')) callback(scope as unknown as Context) },
+  })
+  installLegacyCompanyModelMigration(scope as unknown as Context)
+  const next = async () => ({ kind: 'enter', messages: [] })
+  const input = { agent: f.agent, signal: new AbortController().signal, turn: 1 }
+  await hook(input, next); expect(f.selected).toHaveBeenCalledTimes(1)
+  await hook(input, next); expect(f.selected).toHaveBeenCalledTimes(1)
+  selection = { provider: 'platform-route', model: 'changed-global' }
+  await hook({ ...input, turn: 2 }, next)
+  expect(f.selected).toHaveBeenCalledTimes(2)
+  expect(f.selected).toHaveBeenLastCalledWith(f.agent, selection)
+})
+
 it('flushes migration through real Cordis declared injection instead of an unrestricted mock scope', async () => {
   const { Context } = await import('@deepseek-ai/cordis')
   const { default: SessionStore } = await import('@deepseek-ai/dsh-session')

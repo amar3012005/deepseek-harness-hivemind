@@ -109,16 +109,40 @@ function selectionRecord(value: unknown): ModelSelection | undefined {
 export function installLegacyCompanyModelMigration(ctx: Context): void {
   ctx.inject(['sessionController', 'llm', 'sessionProjections', 'sessions'], (scope) => {
     let settings: Context['settings'] | undefined
+    const inherited = new WeakMap<Agent, { turn: number; selection: ModelSelection }>()
     scope.inject(['settings'], (settingsScope) => {
       settingsScope.settings.installSection(settingsScope, MIGRATION_NAMESPACE, migrationSchema,
         { claimed: false, completed: false }, { setSource: () => {}, onChange: () => {} })
       settings = settingsScope.settings
       settingsScope.effect(() => () => { settings = undefined })
     })
-    scope.effect(() => scope.on('agent/pre-step', async ({ agent, signal }, next) => {
+    scope.effect(() => scope.on('agent/pre-step', async ({ agent, signal, turn }, next) => {
       const decision = await next()
-      if (decision.kind !== 'reject') await migrateLegacyCompanyModel(scope, agent, signal, settings)
+      if (decision.kind === 'reject') return decision
+      const preset = scope.sessionProjections.stateOf(agent.session, 'agentPreset')
+      if (!['hivemind-hq', 'hivemind-hyperagents', 'hivemind-chat'].includes(String(preset))) return decision
+      const migrated = await migrateLegacyCompanyModel(scope, agent, signal, settings)
+      const selection = scope.sessionController.currentDefaultModelSelection()
+      const previous = inherited.get(agent)
+      if (previous !== undefined && previous.turn === turn && sameSelection(previous.selection, selection)) return decision
+      const resolved = await scope.llm.resolveCallConfig(selection, signal)
+      signal.throwIfAborted()
+      // A global setting changed while its route was resolving: leave the new native choice intact.
+      if (!sameSelection(scope.sessionController.currentDefaultModelSelection(), selection)) return decision
+      const actual = agent.session.requestHeader()?.config
+      if (!migrated && (!actual || !sameSelection(actual, resolved))) {
+        scope.sessionController.selectForAdmittedRequest(agent, {
+          provider: resolved.provider, model: resolved.model,
+          ...(resolved.reasoningEffort === undefined ? {} : { reasoningEffort: resolved.reasoningEffort }),
+        })
+        if (!await scope.sessions.flush(agent.session)) throw new Error('company_model_inheritance_persistence_required')
+      }
+      inherited.set(agent, { turn, selection })
       return decision
     }, { global: true }))
   })
+}
+
+function sameSelection(left: ModelSelection, right: ModelSelection): boolean {
+  return left.provider === right.provider && left.model === right.model && left.reasoningEffort === right.reasoningEffort
 }

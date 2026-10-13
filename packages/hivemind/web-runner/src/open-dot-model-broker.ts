@@ -10,8 +10,8 @@ import { createMessage, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 import type { GenerateOptions, JsonSchemaResponseFormat, Message, StreamChunk, ToolCallId } from '@deepseek-ai/dsh-llm'
 
 export const OPEN_DOT_MODEL_STREAM_PATH = '/internal/hivemind/open-dot/model/stream'
-export const OPEN_DOT_PRIMARY_PROVIDER = 'cloudflare-workers-ai'
-export const OPEN_DOT_PRIMARY_MODEL_ID = '@cf/zai-org/glm-5.3-flash'
+export const OPEN_DOT_PRIMARY_PROVIDER = 'hivemind-global'
+export const OPEN_DOT_PRIMARY_MODEL_ID = 'default'
 export const OPEN_DOT_MODEL_PROVIDER = 'openai-codex'
 export const OPEN_DOT_MODEL_ID = 'gpt-6-luna'
 const ALLOWED_ROUTES = new Set([
@@ -86,6 +86,8 @@ export interface OpenDotModelRequest {
 }
 export interface OpenDotModelBrokerOptions {
   readonly secret: string
+  /** Read the native global model at each request, never a session-pinned copy. */
+  readonly primarySelection: () => { provider: string; model: string; reasoningEffort?: string }
   readonly now?: () => number
   /** Atomic Redis SET NX with an expiry covering the signed grant lifetime. */
   readonly consumeJti: (jti: string, ttlSeconds: number) => Promise<boolean>
@@ -388,7 +390,12 @@ export function createOpenDotModelBrokerHandler(options: OpenDotModelBrokerOptio
       responseRequestId = verified.body.request_id
       const ttl = Math.max(1, verified.exp - Math.floor((options.now ?? Date.now)() / 1000) + 5)
       if (!await options.consumeJti(verified.jti, ttl)) reject(409, 'open_dot_model_request_replayed')
-      const input = await parseInput(verified.body, options.saveImages, options.validateImages)
+      const selection = verified.body.provider === OPEN_DOT_PRIMARY_PROVIDER ? options.primarySelection() : undefined
+      const selectedBody = selection === undefined ? verified.body : {
+        ...verified.body, provider: selection.provider, model: selection.model,
+        reasoning_effort: selection.reasoningEffort,
+      }
+      const input = await parseInput(selectedBody, options.saveImages, options.validateImages)
       const principal: HivemindPrincipal = {
         orgId: verified.body.organization_id, userId: verified.body.user_id,
         profile: 'hivemind-chat', variation: 'harness',
@@ -409,7 +416,7 @@ export function createOpenDotModelBrokerHandler(options: OpenDotModelBrokerOptio
       let finished = false
       const createdAt = Math.floor((options.now ?? Date.now)() / 1000)
       const completionId = `chatcmpl-${randomUUID()}`
-      const model = verified.body.model
+      const model = input.model
       const toolIndices = new Map<number, number>()
       let nextToolIndex = 0
       const recordFallback = async (failureCode: string): Promise<void> => {
@@ -529,9 +536,10 @@ export function createOpenDotModelBrokerHandler(options: OpenDotModelBrokerOptio
 }
 
 /** Compose the runner-side verifier with native authenticated scope and LLM services. */
-export function createOpenDotModelBroker(ctx: Context, options: Omit<OpenDotModelBrokerOptions, 'stream' | 'saveImages' | 'validateImages'>) {
+export function createOpenDotModelBroker(ctx: Context, options: Omit<OpenDotModelBrokerOptions, 'stream' | 'saveImages' | 'validateImages' | 'primarySelection'>) {
   return createOpenDotModelBrokerHandler({
     ...options,
+    primarySelection: () => ctx.sessionController.currentDefaultModelSelection(),
     consumeJti: options.consumeJti,
     stream: (principal, request) => scopedChunks(ctx, principal, request),
     saveImages: images => ctx.attachments.saveImages(images),

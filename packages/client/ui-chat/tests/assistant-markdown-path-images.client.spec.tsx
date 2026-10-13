@@ -100,6 +100,6 @@ it('assistant markdown images render a compact original-file card and reuse the 
     renderMessageImages={renderMessageImages} t={t} mentions={{ resolve: () => ({ open, title: '/workspace/campaign.png', label: 'campaign.png' }) }} />)
   expect(view.container.querySelector('[data-artifact-card]')).not.toBeNull()
   expect(view.getByRole('img', { name: 'Campaign image' }).getAttribute('src')).toContain('/api/file?path=')
-  fireEvent.click(view.getByRole('button', { name: 'label', exact: true }))
+  fireEvent.click(view.getByRole('button', { name: 'label' }))
   expect(open).toHaveBeenCalledOnce()
 })

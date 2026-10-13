@@ -306,6 +306,6 @@ it('assistant artifact cards keep the real image and open the original native li
   await waitFor(() => expect(view.getByRole('img').getAttribute('src')).toBe('blob:original-artifact'))
   expect(view.container.querySelector('[data-artifact-card]')).not.toBeNull()
   expect(view.container.textContent).toContain(attachment.mediaType)
-  fireEvent.click(view.getByRole('button', { name: labels.open, exact: true }))
+  fireEvent.click(view.getByRole('button', { name: labels.open }))
   expect(view.getByRole('dialog', { name: labels.lightbox.dialog })).toBeTruthy()
 })

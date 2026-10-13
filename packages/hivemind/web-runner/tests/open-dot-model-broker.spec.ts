@@ -39,11 +39,13 @@ async function endpoint(options: {
   consumeJti?: (jti: string, ttlSeconds: number) => Promise<boolean>
   consumeFallback?: (proof: { requestId: string; failureCode: string }) => Promise<boolean>
   validateImages?: () => Promise<void>
+  primarySelection?: () => { provider: string; model: string }
 } = {}) {
   const calls: Array<{ scope: HivemindPrincipal; input: GenerateOptions }> = []
   const fallbackProofs = new Map<string, string>()
   const handler = createOpenDotModelBrokerHandler({
     secret, now: () => 1_000_000,
+    primarySelection: options.primarySelection ?? (() => ({ provider: 'cloudflare-workers-ai', model: '@cf/zai-org/glm-5.3-flash' })),
     consumeJti: options.consumeJti ?? (async () => true),
     recordFallback: async (proof) => { fallbackProofs.set(fallbackKey(proof), proof.failureCode) },
     consumeFallback: options.consumeFallback ?? (async (proof) => {
@@ -88,17 +90,17 @@ describe('Open Dot native model broker', () => {
     expect(text).toContain('data: [DONE]')
     expect(calls).toHaveLength(1)
     expect(calls[0]!.scope).toEqual(principal)
-    expect(calls[0]!.input).toMatchObject({ provider: OPEN_DOT_PRIMARY_PROVIDER, model: OPEN_DOT_PRIMARY_MODEL_ID, maxTokens: 512 })
+    expect(calls[0]!.input).toMatchObject({ provider: 'cloudflare-workers-ai', model: '@cf/zai-org/glm-5.3-flash', maxTokens: 512 })
     expect(calls[0]!.input).not.toHaveProperty('sessionId')
   })
 
-  it('accepts only the signed primary GLM tuple in addition to the Codex fallback', async () => {
+  it('accepts only the signed global-default route in addition to the Codex fallback', async () => {
     const { url, calls } = await endpoint()
     const primary = { ...body, provider: OPEN_DOT_PRIMARY_PROVIDER, model: OPEN_DOT_PRIMARY_MODEL_ID }
     const primaryRaw = JSON.stringify(primary)
     const response = await post(url, primaryRaw, sign(primaryRaw, { provider: primary.provider, model: primary.model }))
     expect(response.status).toBe(200)
-    expect(calls[0]!.input).toMatchObject({ provider: OPEN_DOT_PRIMARY_PROVIDER, model: OPEN_DOT_PRIMARY_MODEL_ID })
+    expect(calls[0]!.input).toMatchObject({ provider: 'cloudflare-workers-ai', model: '@cf/zai-org/glm-5.3-flash' })
     const unsupported = { ...body, provider: OPEN_DOT_PRIMARY_PROVIDER, model: 'arbitrary-model' }
     const unsupportedRaw = JSON.stringify(unsupported)
     const unsupportedResponse = await post(url, unsupportedRaw, sign(unsupportedRaw, {
@@ -108,9 +110,22 @@ describe('Open Dot native model broker', () => {
     expect(calls).toHaveLength(1)
   })
 
+  it('uses a changed global model in the same conversation without changing its history', async () => {
+    let selection = { provider: 'cloudflare-workers-ai', model: '@cf/zai-org/glm-5.3-flash' }
+    const { url, calls } = await endpoint({ primarySelection: () => selection })
+    await (await post(url)).text()
+    selection = { provider: 'another-registered-provider', model: 'another-global-model' }
+    const raw = JSON.stringify({ ...body, request_id: 'same_conversation_next_request' })
+    await (await post(url, raw, sign(raw))).text()
+    expect(calls.map(call => ({ provider: call.input.provider, model: call.input.model }))).toEqual([
+      { provider: 'cloudflare-workers-ai', model: '@cf/zai-org/glm-5.3-flash' }, selection,
+    ])
+    expect(calls.every(call => !('sessionId' in call.input))).toBe(true)
+  })
+
   it('records only a pre-output GLM failure and consumes its identity-bound proof for Codex fallback', async () => {
     const { url, calls, fallbackProofs } = await endpoint({ stream: async function* (_scope, request) {
-      if (request.provider === OPEN_DOT_PRIMARY_PROVIDER) {
+      if (request.provider === 'cloudflare-workers-ai') {
         yield { type: 'finish', reason: { kind: 'error', failure: { code: 'RATE_LIMIT', message: 'provider detail' } } }
         return
       }
@@ -137,7 +152,7 @@ describe('Open Dot native model broker', () => {
     expect(response.status).toBe(200)
     expect((await response.text())).toContain('fallback answer')
     expect(fallbackProofs.has(fallbackKey(proofIdentity))).toBe(false)
-    expect(calls.map(call => call.input.provider)).toEqual([OPEN_DOT_PRIMARY_PROVIDER, OPEN_DOT_MODEL_PROVIDER])
+    expect(calls.map(call => call.input.provider)).toEqual(['cloudflare-workers-ai', OPEN_DOT_MODEL_PROVIDER])
   })
 
   it('rejects direct Codex use without a matching signed GLM failure proof', async () => {
