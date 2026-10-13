@@ -22,15 +22,18 @@
 - id: llm-pi-ai
   config:
     providers:
-      # Cloudflare Workers AI through the account's OpenAI-compatible endpoint.
-      # Verified live: @cf/zai-org/glm-5.3-flash returns chat completions with
-      # low latency; billed per neuron on the account's Workers AI balance.
+      # Cloudflare AI Gateway's Workers AI compatibility route. It keeps
+      # provider receipts, routing and guardrails in the configured gateway;
+      # do not fall back to the account inference endpoint from this runner.
       cloudflare-workers-ai:
-        displayName: Cloudflare Workers AI (GLM-5.3 Flash)
-        apiKeyEnv: CLOUDFLARE_API_KEY
+        displayName: Cloudflare AI Gateway (GLM-5.3 Flash)
+        apiKeyEnv: CLOUDFLARE_AI_GATEWAY_TOKEN
         api: openai-completions
         reasoning: 'off'
-        baseURL: https://api.cloudflare.com/client/v4/accounts/0dc6b9186b5a9b8985613b10c1c59f4f/ai/v1
+        baseURL: !!js >-
+          `https://gateway.ai.cloudflare.com/v1/${process.env.CLOUDFLARE_ACCOUNT_ID}/${process.env.CLOUDFLARE_AI_GATEWAY_ID}/compat`
+        headers: !!js >-
+          ({ 'cf-aig-authorization': `Bearer ${process.env.CLOUDFLARE_AI_GATEWAY_TOKEN ?? ''}` })
         defaultContextWindow: 131072
         defaultMaxTokens: 8192
         defaultInput: [text]

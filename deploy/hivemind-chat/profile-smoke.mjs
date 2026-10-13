@@ -44,6 +44,9 @@ const llmProvider = row('llm-pi-ai')
 if (!defaultModel.includes('provider: cloudflare-workers-ai')
   || !defaultModel.includes('@cf/zai-org/glm-5.3-flash')
   || !llmProvider.includes('cloudflare-workers-ai:')
+  || !llmProvider.includes('apiKeyEnv: CLOUDFLARE_AI_GATEWAY_TOKEN')
+  || !llmProvider.includes('gateway.ai.cloudflare.com')
+  || !llmProvider.includes('cf-aig-authorization')
   || !llmProvider.includes('openai-codex:')
   || !llmProvider.includes('id: gpt-6-luna')
   || !llmProvider.includes('maxTokens: 8192')) {
@@ -52,7 +55,7 @@ if (!defaultModel.includes('provider: cloudflare-workers-ai')
 if (!llmProvider.includes('id: openrouter/deepseek/deepseek-v4-flash-0731')) {
   throw new Error('hivemind-web must retain the legacy provider for persisted sessions')
 }
-console.log('hivemind-web mounts the global GLM default, native Codex recovery, and preserved legacy provider')
+console.log('hivemind-web mounts the Gateway-backed GLM default, native Codex recovery, and preserved legacy provider')
 
 const ctx = new Context()
 ctx.baseUrl = pathToFileURL('/opt/deepseek-harness/apps/cli/').href
