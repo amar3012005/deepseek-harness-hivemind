@@ -20,6 +20,7 @@ function mount(
   turnInstruction?: (agent: Agent, turn: number) => string | undefined,
   pendingCalls: string[] = [],
   nativePending = false,
+  historyMaxChars = 3_000,
 ) {
   let preStep: ((payload: never, next: () => Promise<unknown>) => Promise<unknown>) | undefined
   const ctx = {
@@ -35,7 +36,7 @@ function mount(
   }
   contextPlugin({
     historyTurns: 3,
-    historyMaxChars: 3_000,
+    historyMaxChars,
     capabilityToolName: 'hivemind_capabilities',
     ...(profileBrief === undefined ? {} : { profileBrief }),
     ...(turnInstruction === undefined ? {} : { turnInstruction }),
@@ -665,4 +666,122 @@ it('native prepared model request sees the replaced mixed receipt, not the full 
     expect(originals).toHaveLength(1)
     expect(JSON.stringify(originals[0])).toContain('Original saved HTML '.repeat(1000))
   } finally { await ctx.fiber.dispose() }
+})
+
+
+function savedTaskList(session: Session, id: string, tasks: unknown[], cursor=0, nextCursor?: number) {
+  session.append('tool/call', { name:'team_task_list',callId:id,arguments:JSON.stringify({ cursor,limit:100 }),turn:1,step:1 } as never)
+  return session.append('tool/result', { turn:1,step:1,message:createToolResultMessage({ callId:id as never,isError:false,
+    content:[{ type:'text',text:JSON.stringify({ tasks,...(nextCursor === undefined ? {} : { nextCursor }) }) }],
+  }) },{ surfaceOp:'append' })
+}
+function taskRows(count: number, start=1) {
+  return Array.from({ length:count },(_,index)=>({ id:`task-${index+start}`,subject:`Daily draft ${index+start} — exact subject`,
+    description:'Full criteria and source references '.repeat(100),status:'in_progress',ownerName:'verified-employee',
+    revision:index+1,ready:true,blockedBy:[],writeScopes:[],writeScopeWarnings:[] }))
+}
+function projectedTaskList(session: Session, callId: string) {
+  const block=session.deriveMessages().flatMap(message=>message.content).find(part=>part.type==='tool-result'&&part.toolCallId===callId)
+  if (block?.type !== 'tool-result') throw new Error('list missing')
+  return { block,text:block.content.flatMap(part=>part.type==='text'?[part.text]:[]).join('\n') }
+}
+
+it('retains all23 complete task heads within8k without corrupting the original full list', async()=>{
+  const session=Session.create(SessionId('complete-task-heads'))
+  session.append('turn/start',{ turn:1 })
+  const tasks=taskRows(23), original=savedTaskList(session,'list23',tasks)
+  const harness=mount([],undefined,undefined,[],false,8000)
+  await harness.preStep({ agent:{ session },turn:1,signal:new AbortController().signal } as never,
+    async()=>({ kind:'enter',messages:[] }))
+  const { text,block }=projectedTaskList(session,'list23'), value=JSON.parse(text)
+  expect(text.length).toBeLessThanOrEqual(8000)
+  expect(value.tasks).toHaveLength(23)
+  expect(value.complete).toBe(true);expect(value.pageComplete).toBe(true);expect(value.nextCursor).toBeUndefined()
+  expect(value.tasks.map((row: { id:string;subject:string })=>[row.id,row.subject])).toEqual(tasks.map(row=>[row.id,row.subject]))
+  expect(value.tasks[0]).toMatchObject({ status:'in_progress',ownerName:'verified-employee',revision:1,ready:true })
+  expect(value.tasks[0].description).toBeUndefined()
+  expect(block).toMatchObject({ toolCallId:'list23',isError:false })
+  expect(session.eventAt(original.seq)).toEqual(original)
+})
+
+it('keeps a short3-inprogress list valid across rebudgeting, repeated steps and restore', async()=>{
+  const session=Session.create(SessionId('short-task-heads'))
+  session.append('turn/start',{ turn:1 })
+  const tasks=taskRows(3),original=savedTaskList(session,'list3',tasks)
+  const harness=mount([],undefined,undefined,[],false,1600), agent={ session }
+  for (let step=0;step<3;step++) {
+    await harness.preStep({ agent,turn:1,signal:new AbortController().signal } as never,async()=>({ kind:'enter',messages:[] }))
+    const value=JSON.parse(projectedTaskList(session,'list3').text)
+    expect(value.tasks).toHaveLength(3);expect(value.complete).toBe(true)
+    expect(value.originalSequence).toBe(original.seq)
+  }
+  const restored=Session.create(SessionId('restored-task-heads'),session.snapshotEvents())
+  await mount([],undefined,undefined,[],false,1600).preStep({ agent:{ session:restored },turn:1,
+    signal:new AbortController().signal } as never,async()=>({ kind:'enter',messages:[] }))
+  expect(JSON.parse(projectedTaskList(restored,'list3').text).tasks).toHaveLength(3)
+  expect(session.eventAt(original.seq)).toEqual(original)
+})
+
+it('pages only whole task heads with the exact native numeric cursor and shares one list budget', async()=>{
+  const session=Session.create(SessionId('paged-task-heads'))
+  session.append('turn/start',{ turn:1 })
+  const tasks=taskRows(80,41),original=savedTaskList(session,'page40',tasks,40,120)
+  const harness=mount([],undefined,undefined,[],false,1600),agent={ session }
+  await harness.preStep({ agent,turn:1,signal:new AbortController().signal } as never,async()=>({ kind:'enter',messages:[] }))
+  const first=JSON.parse(projectedTaskList(session,'page40').text)
+  expect(first.tasks.length).toBeGreaterThan(0);expect(first.tasks.length).toBeLessThan(80)
+  expect(first.nextCursor).toBe(40+first.tasks.length);expect(first.complete).toBe(false)
+  const next=first.nextCursor
+  savedTaskList(session,'next-page',tasks.slice(next-40),next,120)
+  await harness.preStep({ agent,turn:1,signal:new AbortController().signal } as never,async()=>({ kind:'enter',messages:[] }))
+  const pages=['page40','next-page'].map(id=>projectedTaskList(session,id).text)
+  expect(pages.reduce((n,text)=>n+text.length,0)).toBeLessThanOrEqual(1600)
+  for (const text of pages) expect(()=>JSON.parse(text)).not.toThrow()
+  expect(JSON.parse(pages[1]!).tasks[0].id).toBe(`task-${next+1}`)
+  expect(session.eventAt(original.seq)).toEqual(original)
+})
+
+
+it('native prepared request receives all task heads and preserves the complete archived receipt', async () => {
+  const ctx = new Context()
+  const rows = taskRows(23)
+  const adapter = new MockAdapter([toolCallResponse('native-list', 'team_task_list', {}), textResponse('Read all task heads.')])
+  try {
+    await mountAgentLoopTestDependencies(ctx)
+    await ctx.plugin(AgentLoop, { agents: [] })
+    await ctx.plugin(contextPlugin({ historyTurns: 3, historyMaxChars: 8000, capabilityToolName: 'hivemind_capabilities' }))
+    ctx.get('llm')!.registerAdapter(['mock'], adapter)
+    ctx.get('tools')!.register(defineTool({ name: 'team_task_list', description: 'Native task list fixture.', parameters: {},
+      output: { schema: { type: 'object', properties: {}, additionalProperties: true },
+        render: () => [{ type: 'text', text: JSON.stringify({ tasks: rows }) }] },
+      isConcurrencySafe: () => true, execute: async () => ({ tasks: rows }),
+    }))
+    const agent = await ctx.get('agentLoop')!.create(SessionId('prepared-task-list'), { provider: 'mock', model: 'mock' })
+    agent.send(user('Read the current task board.'), 'next-turn', true)
+    await vi.waitFor(() => expect(adapter.requests).toHaveLength(2))
+    await vi.waitFor(() => expect(agent.status).toBe('idle'))
+    const request = adapter.requests[1]!
+    const result = request.messages.flatMap(message => message.content).find(part => part.type === 'tool-result')
+    if (result?.type !== 'tool-result') throw new Error('prepared task list missing')
+    const text = result.content.flatMap(part => part.type === 'text' ? [part.text] : []).join('\n')
+    const value = JSON.parse(text)
+    expect(value.tasks).toHaveLength(23)
+    expect(value.complete).toBe(true)
+    expect(text.length).toBeLessThanOrEqual(8000)
+    expect(JSON.stringify(request).length).toBeLessThan(32000)
+    expect(JSON.stringify(request)).not.toContain(rows[0]!.description)
+    const original = agent.session.snapshotEvents().find(event => event.type === 'tool/result' && event.surfaceOp === 'append')
+    expect(JSON.stringify(original)).toContain(rows[0]!.description)
+  } finally { await ctx.fiber.dispose() }
+})
+
+it('retains the producer next cursor when every returned task head fits', async () => {
+  const session = Session.create(SessionId('native-next-cursor'))
+  session.append('turn/start', { turn: 1 })
+  savedTaskList(session, 'native-page', taskRows(3, 41), 40, 43)
+  await mount([], undefined, undefined, [], false, 1600).preStep({ agent: { session }, turn: 1,
+    signal: new AbortController().signal } as never, async () => ({ kind: 'enter', messages: [] }))
+  expect(JSON.parse(projectedTaskList(session, 'native-page').text)).toMatchObject({
+    pageComplete: true, complete: false, nextCursor: 43, sourceRows: 3,
+  })
 })

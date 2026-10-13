@@ -213,14 +213,93 @@ function projectHistory(ctx: Context, agent: Agent, config: ContextConfig): bool
   return changed
 }
 
+/** Read the first complete receipt, even after several model-surface rewrites. */
+function originalToolReceipt(agent: Agent, event: Extract<SessionEvent, { type: 'tool/result' }>) {
+  let original = event
+  while (isReplacementSurfaceEvent(original) && original.sourceEventSeqs?.length === 1) {
+    const seq = original.sourceEventSeqs[0]
+    if (seq === undefined) break
+    const prior = agent.session.eventAt(seq)
+    if (prior?.type !== 'tool/result' || prior.seq === original.seq) break
+    original = prior
+  }
+  return original
+}
+
+/** Lists need complete records and a native offset, not a substring of JSON. */
+function boundTaskLists(agent: Agent, maxChars: number): { changed: boolean; calls: Set<string> } {
+  const events = agent.session.snapshotEvents()
+  const calls = new Map(events.flatMap(event => event.type === 'tool/call' ? [[event.data.callId, event.data] as const] : []))
+  const entries = agent.session.surface.nodes.flatMap((seq) => {
+    const event = agent.session.eventAt(seq)
+    if (event?.type !== 'tool/result') return []
+    const block = event.data.message.content[0]
+    if (block?.type !== 'tool-result' || block.isError) return []
+    const call = calls.get(block.toolCallId)
+    if (call?.name !== 'team_task_list') return []
+    const original = originalToolReceipt(agent, event)
+    const saved = original.data.message.content[0]
+    if (saved?.type !== 'tool-result' || !saved.content.every(part => part.type === 'text')) return []
+    try {
+      const value = record(JSON.parse(saved.content.flatMap(part => part.type === 'text' ? [part.text] : []).join('\n')))
+      const args = record(JSON.parse(call.arguments))
+      const cursor = args?.cursor ?? 0
+      if (!value || !Array.isArray(value.tasks) || !Number.isSafeInteger(cursor) || Number(cursor) < 0) return []
+      if (value.nextCursor !== undefined && (!Number.isSafeInteger(value.nextCursor) || Number(value.nextCursor) < 0)) return []
+      const heads = value.tasks.map((task) => {
+        const row = record(task)
+        if (!row || typeof row.id !== 'string' || typeof row.subject !== 'string' || typeof row.status !== 'string'
+          || !Number.isSafeInteger(row.revision) || typeof row.ready !== 'boolean'
+          || (row.ownerName !== undefined && typeof row.ownerName !== 'string')) throw new Error('invalid task head')
+        return { id: row.id, subject: row.subject, status: row.status,
+          ...(row.ownerName === undefined ? {} : { ownerName: row.ownerName }), revision: row.revision, ready: row.ready }
+      })
+      return [{ event, block, original, heads, cursor: Number(cursor), nextCursor: value.nextCursor as number | undefined }]
+    } catch { return [] }
+  }).reverse() // Prefer the current read; earlier snapshots remain separately paged.
+  const handled = new Set(entries.map(entry => String(entry.block.toolCallId)))
+  const encode = (entry: typeof entries[number], count: number) => JSON.stringify({
+    tasks: entry.heads.slice(0, count), pageComplete: count === entry.heads.length,
+    complete: count === entry.heads.length && entry.nextCursor === undefined,
+    ...(count < entry.heads.length && count > 0 ? { nextCursor: entry.cursor + count }
+      : count === entry.heads.length && entry.nextCursor !== undefined ? { nextCursor: entry.nextCursor } : {}),
+    ...(count === 0 && entry.heads.length ? { readOriginal: true } : {}),
+    sourceRows: entry.heads.length, originalSequence: entry.original.seq, detailsTool: 'team_task_get',
+  })
+  let remaining = maxChars, changed = false
+  for (let index = 0; index < entries.length; index++) {
+    const entry = entries[index]
+    if (!entry) continue
+    const reserved = entries.slice(index + 1).reduce((sum, pending) => sum + encode(pending, 0).length, 0)
+    const budget = Math.max(0, remaining - reserved)
+    let count = 0, text = encode(entry, 0)
+    while (count < entry.heads.length) {
+      const next = encode(entry, count + 1)
+      if (next.length > budget) break
+      text = next; count++
+    }
+    remaining -= text.length
+    const current = entry.block.content.flatMap(part => part.type === 'text' ? [part.text] : []).join('\n')
+    if (current === text) continue
+    agent.session.append('tool/result', { ...entry.event.data, message: { ...entry.event.data.message,
+      content: [{ ...entry.block, content: [{ type: 'text', text }] }],
+    } }, { surfaceOp: { op: 'replace', startSeq: entry.event.seq, endSeq: entry.event.seq }, sourceEventSeqs: [entry.event.seq] })
+    changed = true
+  }
+  return { changed, calls: handled }
+}
+
 /** Keep complete receipts/media in the log and page their model-facing text. */
 function boundToolResults(agent: Agent, maxChars: number): boolean {
-  let changed = false
+  const taskLists = boundTaskLists(agent, maxChars)
+  let changed = taskLists.changed
   const entries = [...agent.session.surface.nodes].flatMap((seq) => {
     const event = agent.session.eventAt(seq)
     if (event?.type !== 'tool/result') return []
     const blocks = event.data.message.content
     const calls = agent.session.snapshotEvents()
+    // Structured task heads already share a whole-record page budget.
+    if (blocks.some(block => block.type === 'tool-result' && taskLists.calls.has(String(block.toolCallId)))) return []
     // Loaded native skills are active instructions, not pageable evidence.
     if (blocks.some(block => block.type === 'tool-result' && calls.some(call =>
       call.type === 'tool/call' && call.data.callId === block.toolCallId && call.data.name === 'skill'))) return []
@@ -231,7 +310,7 @@ function boundToolResults(agent: Agent, maxChars: number): boolean {
     return [{ seq, event, blocks }]
   })
   const count = entries.reduce((sum, entry) => sum + entry.blocks.length, 0)
-  if (!count) return false
+  if (!count) return changed
   // One aggregate result budget, not a fresh allowance for every tool step.
   const perResult = Math.max(1, Math.floor(maxChars / count))
   for (const { seq, event, blocks } of entries) {
