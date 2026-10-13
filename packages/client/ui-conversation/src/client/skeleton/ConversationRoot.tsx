@@ -372,7 +372,9 @@ export function ConversationRoot({
   // on the fallback alone would leave a business-owned takeover at the content
   // end off-screen when the user is not pinned to the floor.
   const composerSeat = (
-    <div ref={seatResizeRef} className={css.composerSeat} data-composer-seat="">
+    <div ref={seatResizeRef} className={css.composerSeat} data-composer-seat=""
+      data-hivemind-composer-ready={/^\/hivemind\/app\/overview(?:\/|$)/u.test(window.location.pathname)
+        && sessionId !== undefined && openState === 'open' && zone !== undefined && !settling ? 'true' : undefined}>
       {composer}
     </div>
   )

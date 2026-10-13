@@ -701,6 +701,13 @@ it('shows the actual open error instead of an empty conversation or perpetual sp
   expect(b.view.queryByText('Loading conversation…')).toBeNull()
 })
 
+it.each(['loading', 'error', 'open'] as const)('publishes Brain composer admission only after native session opens: %s', (openState) => {
+  window.history.replaceState({}, '', '/hivemind/app/overview/session/saved')
+  const b = mount(sessionSnapshotOf({ blank: true, openState }))
+  expect(b.view.container.querySelector('[data-composer-seat]')?.getAttribute('data-hivemind-composer-ready'))
+    .toBe(openState === 'open' ? 'true' : null)
+})
+
 it.each(['/hivemind/app/employee/harness', '/hivemind/app/employee/harness/session/saved'])('keeps native Environment header and compact agent layout at %s', (path) => {
   window.history.replaceState({}, '', path)
   const b = mount(sessionSnapshotOf({ blank: true }))
