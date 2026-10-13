@@ -16,7 +16,7 @@ import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import LocalAttachmentStore from '../../../attachment/attachment-local/src/index.ts'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import { defineTool } from '@deepseek-ai/dsh-tools'
-import { createUserMessage } from '@deepseek-ai/dsh-llm'
+import { createUserMessage, type StreamChunk } from '@deepseek-ai/dsh-llm'
 import { ToolCallId } from '@deepseek-ai/dsh-llm/brand'
 import * as Persona from '@deepseek-ai/dsh-persona'
 import SkillRegistry from '@deepseek-ai/dsh-skill'
@@ -39,7 +39,7 @@ it('admits current stage before the first model request, saves full history and 
   let maxActiveReads = 0
   let releaseReads = () => {}
   const parallelGate = new Promise<void>((resolve) => { releaseReads = resolve })
-  const parallelBatch = ['parallel-list-one', 'parallel-list-two'].flatMap((id, index) =>
+  const parallelBatch: StreamChunk[] = ['parallel-list-one', 'parallel-list-two'].flatMap((id, index) =>
     toolCallResponse(id, 'hivemind_hq_contract', { action: 'list' })
       .filter(chunk => chunk.type !== 'finish' && chunk.type !== 'usage')
       .map(chunk => 'index' in chunk ? { ...chunk, index } : chunk))
