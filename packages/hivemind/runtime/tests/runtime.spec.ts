@@ -653,7 +653,7 @@ describe('HIVE-MIND runtime', () => {
     expect(text).toContain('Question one')
     expect(text).toContain('Final one')
     expect(text).not.toContain('secret tool payload')
-    expect(text).toContain('separate user message after this block is the current request')
+    expect(text).toContain('The separate direct user message is the current request.')
   })
 
   it('bounds the projected conversation to the latest three completed exchanges', () => {
