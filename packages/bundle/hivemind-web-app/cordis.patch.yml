@@ -22,6 +22,31 @@
 - id: llm-pi-ai
   config:
     providers:
+      cloudflare-workers-ai:
+        displayName: Cloudflare Gateway / GLM 5.3 Flash
+        apiKeyEnv: CLOUDFLARE_AI_GATEWAY_TOKEN
+        api: openai-completions
+        reasoning: low
+        baseURL: !!js >-
+          `https://gateway.ai.cloudflare.com/v1/${process.env.CLOUDFLARE_ACCOUNT_ID}/${process.env.CLOUDFLARE_AI_GATEWAY_ID}/compat`
+        headers: !!js >-
+          ({ 'cf-aig-authorization': `Bearer ${process.env.CLOUDFLARE_AI_GATEWAY_TOKEN ?? ''}` })
+        compat:
+          supportsReasoningEffort: true
+        defaultContextWindow: 32000
+        defaultMaxTokens: 8192
+        retryPolicy:
+          mode: normal
+          maxRetries: 1
+        models:
+          - id: '@cf/zai-org/glm-5.3-flash'
+            name: GLM 5.3 Flash
+            contextWindow: 32000
+            maxTokens: 8192
+            input: [text]
+            reasoningEfforts:
+              low: low
+
       # Retain this provider/model identity for existing persisted sessions.
       cloudflare-openrouter:
         displayName: Cloudflare AI Gateway / OpenRouter (legacy sessions)
@@ -159,8 +184,8 @@
 
 - id: agent-default-model
   config:
-    provider: cloudflare-openrouter-streaming
-    model: openai/gpt-6-luna
+    provider: cloudflare-workers-ai
+    model: '@cf/zai-org/glm-5.3-flash'
 
 - id: session-persistence-jsonl
   disabled: true
