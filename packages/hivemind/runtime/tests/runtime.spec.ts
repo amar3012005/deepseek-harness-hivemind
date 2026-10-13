@@ -1456,3 +1456,25 @@ describe('Runtime foreground latency and social admission', () => {
     expect(fetchMock).toHaveBeenCalled()
   })
 })
+
+
+it('does not reconstruct old completed exchanges that already have durable task-memory queue records', async () => {
+  const harness = mount({ ...config('unused'), authorityMode: 'scoped-service', privateMemoryEnabled: true })
+  const events = [
+    { seq: 0, type: 'hivemind/session-owner', data: { id: null, slug: 'lead', name: 'HyperAgents', role: 'Team Lead' } },
+    { seq: 1, type: 'turn/start', data: { turn: 1 } },
+    { seq: 2, type: 'user/message', data: { source: { kind: 'user' }, get content() { throw new Error('old exchange reconstructed') } } },
+    { seq: 3, type: 'assistant/message', data: { turn: 1 } },
+    { seq: 4, type: 'turn/end', data: { turn: 1, reason: { kind: 'completed' } } },
+    { seq: 5, type: 'hivemind/task-memory-pending', data: { idempotency_key: 'dsh-task:session-warm-history:1:4' } },
+    { seq: 6, type: 'hivemind/task-memory-recorded', data: { idempotencyKey: 'dsh-task:session-warm-history:1:4' } },
+  ] as unknown as SessionEvent[]
+  const append = vi.fn()
+  const subject = { id: 'session-warm-history', ctx: { effect: (run: () => void) => run(), tools: {
+    register: (definition: ToolDefinition) => { harness.tools.set(definition.name, definition); return () => {} },
+  } }, session: { header: { agentPreset: 'hivemind-task' }, snapshotEvents: () => events, append } } as unknown as Agent
+  const decision = { kind: 'enter' as const, messages: [user('hello')] }
+  await expect(harness.preStep?.({ agent: subject, turn: 2, signal }, async () => decision)).resolves.toBe(decision)
+  expect(append).not.toHaveBeenCalled()
+  expect(harness.flush).not.toHaveBeenCalled()
+})

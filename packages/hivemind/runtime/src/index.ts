@@ -52,7 +52,7 @@ import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { contextPlugin, socialTurnOnly } from '@deepseek-ai/dsh-hivemind-context'
 import { memoryPlugin, type EntitySearchRequest, type RecallRequest, type SaveRequest, type SaveStatusRequest } from '@deepseek-ai/dsh-hivemind-memory'
 import { employeeDispatchAllowed, employeeCloseoutAllowed, employeeCloseoutToolAllowed, hyperagentDirectory, projectHyperagentProfiles } from '@deepseek-ai/dsh-hivemind-employee-directory'
-import { completedTaskMemory, pendingTaskMemories, sessionOwner, sessionOwnerProjection, employeeSelectionProjection, employeeLatestMessageProjection, type SessionOwner } from './continuity.ts'
+import { completedTaskMemory, taskMemoryIdempotencyKey, pendingTaskMemories, sessionOwner, sessionOwnerProjection, employeeSelectionProjection, employeeLatestMessageProjection, type SessionOwner } from './continuity.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Events {
@@ -1985,9 +1985,15 @@ export function apply(ctx: Context, config: Config): void {
       const ownerEvent = events.find(event => event.type === 'hivemind/session-owner')
       const queued = new Set(events.filter(event => event.type === 'hivemind/task-memory-pending').map(event => event.data.idempotency_key))
       for (const event of events) {
-        if (event.type !== 'turn/end' || (ownerEvent !== undefined && event.seq < ownerEvent.seq)) continue
+        if (event.type !== 'turn/end' || event.data.reason.kind !== 'completed'
+          || (ownerEvent !== undefined && event.seq < ownerEvent.seq)) continue
+        // Warm long sessions must not rebuild every already-persisted exchange.
+        if (queued.has(taskMemoryIdempotencyKey(agent.id, event.data.turn, event.seq))) continue
         const packet = completedTaskMemory(agent.id, owner, events, event.data.turn)
-        if (packet !== undefined && !queued.has(packet.idempotency_key)) agent.session.append('hivemind/task-memory-pending', packet)
+        if (packet !== undefined && !queued.has(packet.idempotency_key)) {
+          agent.session.append('hivemind/task-memory-pending', packet)
+          queued.add(packet.idempotency_key)
+        }
       }
     }
     const flushTasks = (agent: Agent): Promise<void> => {

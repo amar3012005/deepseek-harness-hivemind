@@ -61,6 +61,11 @@ export function pendingTaskMemories(events: readonly SessionEvent[]): TaskMemory
   return events.flatMap(event => event.type === 'hivemind/task-memory-pending' && !saved.has(event.data.idempotency_key) ? [event.data] : [])
 }
 
+/** Canonical durable response-memory identity; shared by queue admission and packet generation. */
+export function taskMemoryIdempotencyKey(sessionId: string, turn: number, completionSeq: number): string {
+  return `dsh-task:${sessionId}:${turn}:${completionSeq}`
+}
+
 /** Record the delivered response, never infer an external action from assistant prose. */
 export function completedTaskMemory(
   sessionId: string, owner: SessionOwner, events: readonly SessionEvent[], turn: number,
@@ -98,7 +103,7 @@ export function completedTaskMemory(
       name: name.slice(0, 100), callId: callId.slice(0, 100), resultSeq: Number(event.seq), isError: block.isError === true,
     }]
   }).slice(-16)
-  const idempotencyKey = `dsh-task:${sessionId}:${turn}:${end.seq}`
+  const idempotencyKey = taskMemoryIdempotencyKey(sessionId, turn, end.seq)
   const hash = createHash('sha256').update(idempotencyKey).digest('hex')
   const runId = `${hash.slice(0, 8)}-${hash.slice(8, 12)}-5${hash.slice(13, 16)}-a${hash.slice(17, 20)}-${hash.slice(20, 32)}`
   return {
