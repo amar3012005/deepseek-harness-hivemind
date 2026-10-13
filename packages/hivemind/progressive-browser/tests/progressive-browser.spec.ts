@@ -93,7 +93,7 @@ describe('progressive browser MCP', () => {
       expect(receipt.isError, JSON.stringify(receipt)).toBe(false)
       expect(connectSpy).not.toHaveBeenCalled()
       expect(fetchSpy).toHaveBeenCalledTimes(1)
-      expect(String(fetchSpy.mock.calls[0][0])).toContain('/browser-rendering/screenshot')
+      expect(String(fetchSpy.mock.calls[0]?.[0])).toContain('/browser-rendering/screenshot')
       expect(receipt.content.some(block => block.type === 'image')).toBe(true)
     } finally {
       connectSpy.mockRestore()
