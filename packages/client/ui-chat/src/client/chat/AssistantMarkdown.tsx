@@ -183,7 +183,7 @@ export const AssistantMarkdown = memo(function AssistantMarkdown({
         )
     }
   }
-  const readableReply = /^\/hivemind\/app\/(?:overview|employee\/harness)(?:\/|$)/u.test(window.location.pathname)
+  const readableReply = !hideBrainReasoning && /^\/hivemind\/app\/(?:overview|employee\/harness)(?:\/|$)/u.test(window.location.pathname)
     && (!finalAnswer || /^\/hivemind\/app\/employee\/harness(?:\/|$)/u.test(window.location.pathname))
     && blocks.some(block => block.kind === 'text' && visibleAssistantText(block.text).trim() !== '')
   return (

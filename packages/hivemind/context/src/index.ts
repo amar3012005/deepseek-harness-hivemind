@@ -16,6 +16,7 @@ export interface ContextConfig {
   historyTurns: number
   historyMaxChars: number
   capabilityToolName: string
+  latestRecallMaxChars?: (agent: Agent) => number | undefined
   /** Load the bounded authenticated profile brief for the first turn and direct profile questions. */
   profileBrief?: (agent: Agent, signal: AbortSignal, turn: number) => Promise<string | undefined>
   /** Return a compact authoritative instruction that is re-read for every user turn. */
@@ -303,8 +304,36 @@ function boundTaskLists(agent: Agent, maxChars: number): { changed: boolean; cal
   return { changed, calls: handled, chars: maxChars - remaining }
 }
 
+/** Keep recall JSON parseable and every ranked record identifiable when content is bounded. */
+export function structuredRecallExcerpt(text: string, budget: number): string {
+  if (text.length <= budget) return text
+  try {
+    const root = JSON.parse(text) as { result?: { results?: Array<Record<string, unknown>> }; results?: Array<Record<string, unknown>> }
+    const result = root.result ?? root
+    if (!Array.isArray(result.results)) return JSON.stringify({ status: 'evidence_too_large', omitted: true, reason: 'Read the saved source receipt; do not infer missing evidence.' })
+    const records = result.results.map(record => ({ ...record }))
+    const encode = (allowance: number): string => {
+      result.results = records.map(record => typeof record.content === 'string' && record.content.length > allowance
+        ? { ...record, content: record.content.slice(0, allowance), content_truncated: true } : record)
+      return JSON.stringify(root)
+    }
+    let low = 0, high = budget, best = encode(0)
+    if (best.length > budget) return JSON.stringify({ status: 'evidence_too_large', omitted: true, reason: 'Record identities exceed the evidence budget; inspect the saved source receipt.' })
+    while (low <= high) {
+      const mid = Math.floor((low + high) / 2), encoded = encode(mid)
+      if (encoded.length <= budget) { best = encoded; low = mid + 1 } else high = mid - 1
+    }
+    return best
+  } catch { return JSON.stringify({ status: 'evidence_unavailable', omitted: true, reason: 'Receipt is not valid JSON; do not infer missing evidence.' }) }
+}
+
 /** Keep complete receipts/media in the log and page their model-facing text. */
-function boundToolResults(agent: Agent, maxChars: number): boolean {
+function boundToolResults(agent: Agent, maxChars: number, latestRecallMaxChars?: number): boolean {
+  const calls = agent.session.snapshotEvents()
+  const latestRecallCall = latestRecallMaxChars === undefined ? undefined : calls.findLast(event =>
+    event.type === 'tool/call' && event.data.name === 'hivemind_meta'
+    && (() => { try { return (JSON.parse(event.data.arguments) as { operation?: string }).operation === 'recall' } catch { return false } })())
+  const latestRecallId = latestRecallCall?.type === 'tool/call' ? latestRecallCall.data.callId : undefined
   const taskLists = boundTaskLists(agent, maxChars)
   let changed = taskLists.changed
   const entries = [...agent.session.surface.nodes].flatMap((seq) => {
@@ -331,7 +360,8 @@ function boundToolResults(agent: Agent, maxChars: number): boolean {
     const content = blocks.map((block) => {
       if (block.type !== 'tool-result') return block
       const text = block.content.flatMap(part => part.type === 'text' ? [part.text] : []).join('\n')
-      if (text.length <= perResult) return block
+      const recallBudget = block.toolCallId === latestRecallId ? latestRecallMaxChars : undefined
+      if (text.length <= (recallBudget ?? perResult)) return block
       let original = event
       while (isReplacementSurfaceEvent(original) && original.sourceEventSeqs?.length === 1) {
         const previousSeq = original.sourceEventSeqs[0]
@@ -342,7 +372,7 @@ function boundToolResults(agent: Agent, maxChars: number): boolean {
       }
       const reference = `\n[Excerpt. Full saved receipt: sequence ${original.seq}; read hyperagents_history with offset pages before relying on omitted details. Tool identity and outcome are unchanged.]`
       let inserted = false
-      const excerpt = boundedExcerpt(text, reference, perResult)
+      const excerpt = recallBudget === undefined ? boundedExcerpt(text, reference, perResult) : structuredRecallExcerpt(text, recallBudget)
       return { ...block, content: block.content.flatMap<ContentBlock>((part) => {
         if (part.type !== 'text') return [part]
         if (inserted) return []
@@ -501,7 +531,7 @@ export function contextPlugin(config: ContextConfig): Plugin.Object<void> {
         const first = projected.get(agent) !== turn
         if (first) projected.set(agent, turn)
         const projectedHistory = first && projectHistory(ctx, agent, config)
-        const boundedResults = boundToolResults(agent, config.historyMaxChars)
+        const boundedResults = boundToolResults(agent, config.historyMaxChars, config.latestRecallMaxChars?.(agent))
         let changed = projectedHistory || boundedResults
         const showCatalog = capabilityCatalogRequested(
           agent.session.snapshotEvents(),

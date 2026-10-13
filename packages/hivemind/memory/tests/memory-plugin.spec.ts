@@ -31,6 +31,23 @@ describe('hivemind-memory plugin lifecycle', () => {
     expect(save).not.toHaveBeenCalled()
     await fiber.dispose()
   })
+  it('uses the configured hybrid default, preserves explicit mode and forwards real memory types', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SystemPrompt, {})
+    await ctx.plugin(ToolRuntime)
+    const recall = vi.fn(async () => ({ status: 'ready' }))
+    const fiber = await ctx.plugin(memoryPlugin({ defaultLimit: 5, defaultMode: () => 'hybrid' }, {
+      context: async () => ({}), entities: async () => ({}), recall,
+      save: async () => ({}), profiles: async () => ({}),
+    }))
+    const meta = fiber.ctx.tools.get('hivemind_meta')!
+    const execution = { signal: new AbortController().signal } as never
+    await meta.execute({ operation: 'recall', recall: { query: 'Which test-run decisions did we make?', memory_types: ['decision'], limit: 15 } }, execution)
+    expect(recall).toHaveBeenLastCalledWith({ query: 'Which test-run decisions did we make?', mode: 'hybrid', memoryTypes: ['decision'], limit: 15 }, expect.any(AbortSignal), execution)
+    await meta.execute({ operation: 'recall', recall: { query: 'Only source evidence', mode: 'evidence' } }, execution)
+    expect(recall).toHaveBeenLastCalledWith({ query: 'Only source evidence', mode: 'evidence', limit: 5 }, expect.any(AbortSignal), execution)
+    await fiber.dispose()
+  })
   it('registers hivemind_meta in its Cordis effect and removes it on disposal', async () => {
     const ctx = new Context()
     await ctx.plugin(SystemPrompt, {})

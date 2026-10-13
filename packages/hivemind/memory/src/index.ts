@@ -10,6 +10,7 @@ export interface RecallRequest {
   mode: 'memory' | 'auto' | 'hybrid' | 'evidence'
   limit: number
   tags?: string[]
+  memoryTypes?: string[]
   sourcePlatforms?: string[]
   project?: string
   validAt?: string
@@ -470,6 +471,7 @@ export function memoryPlugin(config: MemoryPluginConfig, provider: MemoryProvide
               mode: { type: 'string', enum: ['memory', 'auto', 'hybrid', 'evidence'] },
               limit: { type: 'integer' },
               tags: { type: 'array', items: { type: 'string' } },
+              memory_types: { type: 'array', items: { type: 'string' }, description: 'Filter actual memory categories such as fact, event, decision, preference, goal or commitment; distinct from tags.' },
               source_platforms: { type: 'array', items: { type: 'string' } },
               media_kind: { type: 'string', enum: ['all', 'image', 'document'], description: 'Omit or use all unless the user requested an image/document filter.' },
               filename: { type: 'string', description: 'Optional filename filter; omit unless the user named a file. Empty means no filter.' },
@@ -554,6 +556,8 @@ export function memoryPlugin(config: MemoryPluginConfig, provider: MemoryProvide
           const scopeFilter = optionalScope(input['scope_filter'] ?? input['scope'], 'recall.scope_filter')
           if (scopeFilter !== undefined) request.scopeFilter = scopeFilter
           const tags = tagsFor(input)
+          const memoryTypes = strings(input['memory_types'], 'memory_types')
+          if (memoryTypes !== undefined) request.memoryTypes = memoryTypes
           const sourcePlatforms = strings(input['source_platforms'], 'source_platforms')
           if (tags !== undefined) request.tags = tags
           if (sourcePlatforms !== undefined) request.sourcePlatforms = sourcePlatforms

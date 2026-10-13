@@ -186,7 +186,7 @@ describe('the shipped preset root', () => {
         config: { pressureAuto:false, thresholdRatio: 0.65, retainTokens: 12000, maxTokens: 4096, ...(id === 'hivemind-chat' ? { thresholdTokens: 28000, summarizationProvider:'hivemind-brain-glm', summarizationModel:'@cf/zai-org/glm-5.3-flash', summarizationReasoningEffort:'low' } : { thresholdTokens: 48000, summarizationProvider:'openai-codex',summarizationModel:'gpt-6-luna',summarizationReasoningEffort:'off' }) },
       })
       expect(findEntry(effective, 'command-compact')?.disabled, id).not.toBe(true)
-      expect(findEntry(effective, 'tool-result-pruner')?.config, id).toMatchObject({ thresholdChars: 8192 })
+      expect(findEntry(effective, 'tool-result-pruner')?.config, id).toMatchObject({ thresholdChars: id === 'hivemind-chat' ? 40000 : 8192 })
       expect(findEntry(effective, 'token-meter'), id).toBeUndefined()
     }
   })
