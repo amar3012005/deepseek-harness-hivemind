@@ -275,7 +275,12 @@ export function registerMediaWorkflow(
       const admitted = new Promise<void>((resolve, reject) => { admit = resolve; refuse = reject })
       activeOperations.add(operationId)
       let controller: AbortController | undefined
-      const jobHolder: { done?: Promise<{ status: string; output: string }> } = {}
+      type MediaSettled = { status: string; output: string }
+      const jobHolder: { done?: Promise<MediaSettled> } = {}
+      // The job runner may call run() after jobs.start returns, so wait on a
+      // promise that resolves once the job has actually started.
+      let announceJob!: (done: Promise<MediaSettled>) => void
+      const jobStarted = new Promise<Promise<MediaSettled>>(resolve => { announceJob = resolve })
       const execute = async (jobController: AbortController) => {
         let attempts = 0
         let release: (() => void) | undefined
@@ -326,6 +331,7 @@ export function registerMediaWorkflow(
           controllers.add(controller)
           const done = execute(controller)
           jobHolder.done = done
+          announceJob(done)
           return { cancel: reason => controller?.abort(reason), done }
         },
       })) } catch (error) { activeOperations.delete(operationId); throw error }
@@ -340,9 +346,13 @@ export function registerMediaWorkflow(
       // Wait briefly for the image so the model can answer in this same turn
       // instead of spending another step on job_output. Videos and slow images
       // still return the running receipt after the bounded wait.
-      if (kind === 'image' && jobHolder.done !== undefined) {
-        const settled = await Promise.race([
-          jobHolder.done,
+      if (kind === 'image') {
+        const started = await Promise.race([
+          jobStarted,
+          new Promise<undefined>(resolve => { setTimeout(() => { resolve(undefined) }, 10_000).unref() }),
+        ])
+        const settled = started === undefined ? undefined : await Promise.race([
+          started,
           new Promise<undefined>(resolve => { setTimeout(() => { resolve(undefined) }, config.inlineWaitMs ?? 60_000).unref() }),
         ])
         if (settled?.status === 'completed') {
