@@ -1655,7 +1655,7 @@ describe('ChatView', () => {
     expect(answer?.hasAttribute('data-turn-process-answer')).toBe(false)
   })
 
-  it('keeps Brain narration live, then folds it into Work details after the answer', () => {
+  it('keeps Brain narration visible during streaming, after completion and across later turns', () => {
     const previousUrl = window.location.href
     window.history.replaceState(null, '', '/hivemind/app/overview/session/brain-test')
     document.documentElement.dataset.dshMode = 'hivemind-chat'
@@ -1667,10 +1667,10 @@ describe('ChatView', () => {
       act(() => { h.set({ nodes: [user(1, 'question'), reply, assistant(4, 'Sleeping now', 1, 2)],
         running: false, turnEnds: new Map([[1, 5]]) }) })
       expect(turnProcessControl(view.container)).toBeNull()
-      expect(row?.getAttribute('hidden')).toBe('until-found')
-      expect(row?.hasAttribute('data-turn-process-hidden')).toBe(true)
+      expect(row?.getAttribute('hidden')).toBeNull()
+      expect(row?.hasAttribute('data-turn-process-hidden')).toBe(false)
       act(() => { h.set({ nodes: [user(1, 'question'), reply, assistant(4, 'Sleeping now', 1, 2), user(6, 'next')], running: true }) })
-      expect(row?.getAttribute('hidden')).toBe('until-found')
+      expect(row?.getAttribute('hidden')).toBeNull()
     } finally { delete document.documentElement.dataset.dshMode
       window.history.replaceState(null, '', previousUrl) }
   })

@@ -843,9 +843,10 @@ function compactRecallResponse(
       ? content
       : `${content.slice(0, Math.max(1, itemMaxChars - 1))}…`
     const compact: Record<string, JsonValue> = { id, content: boundedContent }
-    for (const field of ['citation_id', 'title', 'memory_type', 'source', 'created_at', 'document_date']) {
+    for (const field of ['citation_id', 'title', 'kind', 'memory_type', 'source', 'created_at', 'document_date']) {
       if (typeof item[field] === 'string') compact[field] = item[field]
     }
+    if (typeof item['rank'] === 'number' && Number.isFinite(item['rank'])) compact['rank'] = item['rank']
     if (typeof item['score'] === 'number' && Number.isFinite(item['score'])) compact['score'] = item['score']
     results.push(compact)
   }
