@@ -47,7 +47,8 @@ export const ChatNodeSeat = memo(function ChatNodeSeat({
   const turn = turnOf(routedNode)
   const processPresentation = useChatNodeProcess(nodeKey)
   const processSpec = processPresentation?.spec
-  const quietWork = /^\/hivemind\/app\/(?:overview|employee\/harness)(?:\/|$)/u.test(window.location.pathname)
+  const quietWork = document.documentElement.dataset.dshMode === 'hivemind-chat'
+    || /^\/hivemind\/app\/(?:overview|employee\/harness)(?:\/|$)/u.test(window.location.pathname)
   const disclosureStep = processSpec?.answerStep ?? -1
   const storedEntry = useStore(state => processSpec === undefined
     ? undefined
@@ -164,13 +165,16 @@ export const ChatNodeSeat = memo(function ChatNodeSeat({
       {renderSlot('conversation.chat.node', routedOwner, {
         entryKey: routedNode.kind,
         hookContext: turnData,
-        fallback: (
-          <JsonBlock
+        // A hot bundle transition must never expose an assistant's serialized
+        // step as an "unknown" JSON surface. The registered native renderer
+        // owns its injected turn-data hook; until it is ready, omit this row.
+        fallback: routedNode.kind === 'assistant-step' && quietWork
+          ? null
+          : <JsonBlock
             label={t('message.unknownSurface', { type: routedNode.kind })}
             payload={routedNode.data}
             truncatedLabel={total => t('json.truncated', { total })}
-          />
-        ),
+          />,
       })}
     </div>
   )

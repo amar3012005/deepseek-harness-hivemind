@@ -1,7 +1,16 @@
+import { Context } from '@deepseek-ai/cordis'
+import { toPiContext } from '../../../llm/llm-pi-ai/src/context.ts'
+import AgentLoop from '../../../core/agent-loop/src/index.ts'
+import { mountAgentLoopTestDependencies } from '../../../test-support/agent-loop-testkit/src/index.ts'
+import { defineTool } from '../../../core/tools/src/index.ts'
+import { MockAdapter, textResponse, toolCallResponse } from '../../../core/agent-loop/tests/mock-adapter.ts'
 import { describe, expect, it, vi } from 'vitest'
+import type { UserMessage } from '@deepseek-ai/dsh-llm'
 import type { Agent } from '@deepseek-ai/dsh-agent'
-import { createUserMessage, createAssistantMessage, createToolResultMessage } from '@deepseek-ai/dsh-llm'
-import { contextPlugin } from '../src/index.ts'
+import { createUserMessage, createAssistantMessage, createToolResultMessage, createSystemMessage } from '@deepseek-ai/dsh-llm'
+import { Session, SessionId, foldSurface } from '@deepseek-ai/dsh-session'
+import { foldUserQuestions } from '@deepseek-ai/dsh-user-questions/src/projection.ts'
+import { completedExchanges, recentConversationText, contextPlugin } from '../src/index.ts'
 
 function user(text: string) {
   return createUserMessage({ content: [{ type: 'text', text }], source: { kind: 'user' } })
@@ -11,9 +20,15 @@ function mount(
   events: unknown[] = [],
   profileBrief?: (agent: Agent, signal: AbortSignal, turn: number) => Promise<string | undefined>,
   turnInstruction?: (agent: Agent, turn: number) => string | undefined,
+  pendingCalls: string[] = [],
+  nativePending = false,
+  historyMaxChars = 3_000,
+  latestRecallMaxChars?: number,
 ) {
   let preStep: ((payload: never, next: () => Promise<unknown>) => Promise<unknown>) | undefined
   const ctx = {
+    get: () => ({ snapshot: (session: Session) => ({ values: { userQuestions: nativePending
+      ? foldUserQuestions(session.snapshotEvents()) : { active: pendingCalls.map(callId => ({ callId })) } } }) }),
     effect(callback: () => (() => void) | undefined) {
       return callback()
     },
@@ -24,8 +39,9 @@ function mount(
   }
   contextPlugin({
     historyTurns: 3,
-    historyMaxChars: 3_000,
+    historyMaxChars,
     capabilityToolName: 'hivemind_capabilities',
+    ...(latestRecallMaxChars === undefined ? {} : { latestRecallMaxChars: () => latestRecallMaxChars }),
     ...(profileBrief === undefined ? {} : { profileBrief }),
     ...(turnInstruction === undefined ? {} : { turnInstruction }),
   }).apply(ctx as never)
@@ -40,6 +56,28 @@ function mount(
 }
 
 describe('HIVE progressive context', () => {
+  it('bounds injected recall while preserving the complete saved input and exact current request', async () => {
+    const session = Session.create(SessionId('bounded-injected-recall'))
+    const harness = mount()
+    const agent = { session }
+    const request = user('Read the saved task record, not the old roster request')
+    const recall = createUserMessage({
+      source: { kind: 'plugin', plugin: 'hivemind-hq/wake-briefing', form: 'recall' },
+      content: [{ type: 'text', text: 'old task evidence '.repeat(50_000) }],
+    })
+    const decision = await harness.preStep({ agent, turn: 1, signal: new AbortController().signal } as never,
+      async () => ({ kind: 'enter', messages: [recall, request] })) as { messages: ReturnType<typeof user>[] }
+    expect(decision.messages).toEqual([request])
+    expect(session.snapshotEvents().some(event => event.type === 'user/message' && event.data.content[0]
+      && JSON.stringify(event.data.content) === JSON.stringify(recall.content))).toBe(true)
+    for (const message of decision.messages) session.append('user/message', message, { surfaceOp: 'append' })
+    const visible = session.deriveMessages()
+    expect(visible.at(-1)).toEqual(request)
+    expect(JSON.stringify(visible).length).toBeLessThan(4500)
+    const restored = Session.create(SessionId('bounded-injected-recall-restored'), session.snapshotEvents())
+    expect(restored.deriveMessages()).toEqual(visible)
+  })
+
   it('retains persistent ownership instructions alongside the initial company brief', async () => {
     const harness = mount([], async () => 'Company brief', () => 'You are Elena, persistent owner')
     const result = await harness.preStep({ agent: harness.agent, turn: 1, signal: new AbortController().signal } as never, async () => ({ kind: 'enter' as const, messages: [user('Create blueprint')] })) as { messages: ReturnType<typeof user>[] }
@@ -94,6 +132,443 @@ describe('HIVE progressive context', () => {
     expect(text).not.toContain('Current work already admitted')
     expect(events).toHaveLength(8)
   })
+  it('uses complete positional provenance after pruning and compaction, including cold replay', async () => {
+    const session = Session.create(SessionId('history-replacements'))
+    session.append('turn/start', { turn: 1 })
+    const request = session.append('user/message', user('Review the company evidence'), { surfaceOp: 'append' })
+    const assistant = session.append('assistant/message', {
+      turn: 1, step: 1, stream: [], message: createAssistantMessage({
+        source: { provider: 'test', model: 'test' },
+        content: [{ type: 'tool-call', id: 'old' as never, name: 'read', arguments: '{}'  }],
+      }),
+    }, { surfaceOp: 'append' })
+    const oldResult = session.append('tool/result', { turn: 1, step: 1, message: createToolResultMessage({
+      callId: 'old' as never, content: [{ type: 'text', text: 'OLD_EVIDENCE' }], isError: false,
+    }) }, { surfaceOp: 'append' })
+    session.append('assistant/message', { turn: 1, step: 2, stream: [], message: createAssistantMessage({
+      source: { provider: 'test', model: 'test' }, content: [{ type: 'text', text: 'Evidence reviewed.' }],
+    }) }, { surfaceOp: 'append' })
+    session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+    session.append('turn/start', { turn: 2 })
+    const current = session.append('user/message', user('Continue this exact task'), { surfaceOp: 'append' })
+    session.append('assistant/message', { turn: 2, step: 1, stream: [], message: createAssistantMessage({
+      source: { provider: 'test', model: 'test' },
+      content: [{ type: 'tool-call', id: 'current' as never, name: 'read', arguments: '{}'  }],
+    }) }, { surfaceOp: 'append' })
+    const currentResult = session.append('tool/result', { turn: 2, step: 1, message: createToolResultMessage({
+      callId: 'current' as never, content: [{ type: 'text', text: 'CURRENT_EVIDENCE' }], isError: false,
+    }) }, { surfaceOp: 'append' })
+    const pruned = session.append('tool/result', { ...oldResult.data, message: {
+      ...oldResult.data.message,
+      content: [{ ...oldResult.data.message.content[0], content: [{ type: 'text', text: 'PRUNED_EVIDENCE' }] }],
+    } }, { surfaceOp: { op: 'replace', startSeq: oldResult.seq, endSeq: oldResult.seq }, sourceEventSeqs: [oldResult.seq] })
+    const compact = session.append('user/message', createUserMessage({
+      content: [{ type: 'text', text: 'Earlier decisions retained' }], source: { kind: 'plugin', plugin: 'compact' },
+    }), { surfaceOp: { op: 'replace', startSeq: request.seq, endSeq: request.seq }, sourceEventSeqs: [request.seq] })
+    const before = session.snapshotEvents()
+    const harness = mount()
+    await expect(harness.preStep({ agent: { session }, turn: 2, signal: new AbortController().signal } as never,
+      async () => ({ kind: 'enter', messages: session.deriveMessages() }))).resolves.toMatchObject({ startsRequestSeries: true })
+    const projection = session.snapshotEvents().at(-1)!
+    expect(projection.sourceEventSeqs).toContain(pruned.seq)
+    expect(projection.sourceEventSeqs).not.toContain(compact.seq)
+    expect(session.surface.nodes).toContain(compact.seq)
+    expect(projection.sourceEventSeqs).toContain(assistant.seq)
+    expect(projection.sourceEventSeqs).not.toContain(current.seq)
+    expect(session.snapshotEvents().slice(0, before.length)).toEqual(before)
+    const restored = Session.create(SessionId('history-restored'), session.snapshotEvents())
+    expect(restored.surface.nodes).toEqual(session.surface.nodes)
+    expect(foldSurface(restored.snapshotEvents()).nodes).toEqual(session.surface.nodes)
+    expect(restored.deriveMessages()).toContainEqual(current.data)
+    expect(restored.deriveMessages().at(-1)).toEqual(currentResult.data.message)
+    const blocks = restored.deriveMessages().flatMap(message => message.content)
+    expect(blocks.filter(block => block.type === 'tool-call').map(block => block.id)).toEqual(['current'])
+    expect(blocks.filter(block => block.type === 'tool-result').map(block => block.toolCallId)).toEqual(['current'])
+  })
+
+  it('keeps a native working checkpoint and does not rewrite an unchanged recent window', async () => {
+    const session = Session.create(SessionId('working-window'))
+    session.append('turn/start', { turn: 1 })
+    const old = session.append('user/message', user('Deliver the agreed plan'), { surfaceOp: 'append' })
+    session.append('assistant/message', { turn: 1, step: 1, stream: [], message: createAssistantMessage({
+      source: { provider: 'test', model: 'test' }, content: [{ type: 'text', text: 'The plan is agreed.' }],
+    }) }, { surfaceOp: 'append' })
+    session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+    const checkpoint = session.append('user/message', createUserMessage({
+      source: { kind: 'plugin', plugin: 'compact', compactionId: 'native-checkpoint' as never },
+      content: [{ type: 'text', text: 'Pending approval and current task checkpoint' }],
+    }), { surfaceOp: { op: 'replace', startSeq: old.seq, endSeq: old.seq }, sourceEventSeqs: [old.seq] })
+    const current = session.append('user/message', user('Continue'), { surfaceOp: 'append' })
+    const agent = { session }
+    const harness = mount()
+    await harness.preStep({ agent, turn: 2, signal: new AbortController().signal } as never,
+      async () => ({ kind: 'enter', messages: session.deriveMessages() }))
+    expect(session.surface.nodes).toContain(checkpoint.seq)
+    const before = session.snapshotEvents()
+    const decision = await harness.preStep({ agent, turn: 3, signal: new AbortController().signal } as never,
+      async () => ({ kind: 'enter', messages: session.deriveMessages() })) as { startsRequestSeries?: boolean }
+    expect(decision.startsRequestSeries).toBeUndefined()
+    expect(session.snapshotEvents()).toEqual(before)
+    expect(session.deriveMessages()).toContainEqual(checkpoint.data)
+    expect(session.deriveMessages().at(-1)).toEqual(current.data)
+  })
+
+  it('retains an unanswered native call and matching result instead of hiding its pending work', async () => {
+    const session = Session.create(SessionId('pending-window'))
+    session.append('turn/start', { turn: 1 })
+    session.append('user/message', user('Prepare the research'), { surfaceOp: 'append' })
+    const question = session.append('assistant/message', { turn: 1, step: 1, stream: [], message: createAssistantMessage({
+      source: { provider: 'test', model: 'test' },
+      content: [{ type: 'tool-call', id: 'pending-question' as never, name: 'ask_user_question', arguments: '{}' }],
+    }) }, { surfaceOp: 'append' })
+    const pending = session.append('tool/result', { turn: 1, step: 1, message: createToolResultMessage({
+      callId: 'pending-question' as never, content: [{ type: 'text', text: 'Pending authenticated answer' }], isError: false,
+    }) }, { surfaceOp: 'append' })
+    session.append('assistant/message', { turn: 1, step: 2, stream: [], message: createAssistantMessage({
+      source: { provider: 'test', model: 'test' }, content: [{ type: 'text', text: 'I am waiting for that answer.' }],
+    }) }, { surfaceOp: 'append' })
+    session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+    session.append('user/message', user('Another request'), { surfaceOp: 'append' })
+    const harness = mount([], undefined, undefined, ['pending-question'])
+    await harness.preStep({ agent: { session }, turn: 2, signal: new AbortController().signal } as never,
+      async () => ({ kind: 'enter', messages: session.deriveMessages() }))
+    expect(session.surface.nodes).toContain(question.seq)
+    expect(session.surface.nodes).toContain(pending.seq)
+    const restored = Session.create(SessionId('pending-restored'), session.snapshotEvents())
+    expect(restored.deriveMessages().flatMap(message => message.content).filter(block => block.type === 'tool-call')).toHaveLength(1)
+    expect(restored.deriveMessages().flatMap(message => message.content).filter(block => block.type === 'tool-result')).toHaveLength(1)
+  })
+
+  it('keeps the original Team wait source and full tool pair through cold restoration', async () => {
+    const session = Session.create(SessionId('team-working-window'))
+    session.append('turn/start', { turn: 1 })
+    session.append('user/message', user('Earlier request'), { surfaceOp: 'append' })
+    session.append('assistant/message', { turn: 1, step: 1, stream: [], message: createAssistantMessage({
+      source: { provider: 'test', model: 'test' }, content: [{ type: 'text', text: 'Earlier result' }],
+    }) }, { surfaceOp: 'append' })
+    session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+    session.append('turn/start', { turn: 2 })
+    const original = session.append('user/message', user('Collect the nightly employee reports'), { surfaceOp: 'append' })
+    const call = session.append('assistant/message', { turn: 2, step: 1, stream: [], message: createAssistantMessage({
+      source: { provider: 'test', model: 'test' },
+      content: [{ type: 'tool-call', id: 'team-wait' as never, name: 'wait', arguments: '{}' }],
+    }) }, { surfaceOp: 'append' })
+    const result = session.append('tool/result', { turn: 2, step: 1, message: createToolResultMessage({
+      callId: 'team-wait' as never, content: [{ type: 'text', text: 'Waiting for Elena' }], isError: false,
+    }) }, { surfaceOp: 'append' })
+    session.append('team/wait/parked', {
+      callId: 'team-wait' as never, teamId: 'this-team', expectedSenderIds: ['elena'], originalSourceMessageId: original.data.id,
+    })
+    session.append('turn/end', { turn: 2, reason: { kind: 'completed' } })
+    const before = session.snapshotEvents()
+    const harness = mount()
+    await harness.preStep({ agent: { session }, turn: 3, signal: new AbortController().signal } as never,
+      async () => ({ kind: 'enter', messages: session.deriveMessages() }))
+    expect(session.snapshotEvents().slice(0, before.length)).toEqual(before)
+    const restored = Session.create(SessionId('team-window-restored'), session.snapshotEvents())
+    for (const event of [original, call, result]) expect(restored.surface.nodes).toContain(event.seq)
+    expect(restored.deriveMessages().flatMap(message => message.content).filter(block => block.type === 'tool-call')).toHaveLength(1)
+    expect(restored.deriveMessages().flatMap(message => message.content).filter(block => block.type === 'tool-result')).toHaveLength(1)
+  })
+
+  it('projects only successful exchanges and leaves failed work available for recovery', async () => {
+    const session = Session.create(SessionId('failed-window'))
+    session.append('turn/start', { turn: 1 })
+    session.append('user/message', user('Successful request'), { surfaceOp: 'append' })
+    session.append('assistant/message', { turn: 1, step: 1, stream: [], message: createAssistantMessage({
+      source: { provider: 'test', model: 'test' }, content: [{ type: 'text', text: 'Successful answer' }],
+    }) }, { surfaceOp: 'append' })
+    session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+    session.append('turn/start', { turn: 2 })
+    const failed = session.append('user/message', user('Failed request needs recovery'), { surfaceOp: 'append' })
+    const partial = session.append('assistant/message', { turn: 2, step: 1, stream: [], message: createAssistantMessage({
+      source: { provider: 'test', model: 'test' }, content: [{ type: 'text', text: 'Partial result, not completed' }],
+    }) }, { surfaceOp: 'append' })
+    session.append('turn/end', { turn: 2, reason: { kind: 'error', error: { code: 'UNKNOWN', message: 'provider failed' } } })
+    const harness = mount()
+    await harness.preStep({ agent: { session }, turn: 3, signal: new AbortController().signal } as never,
+      async () => ({ kind: 'enter', messages: session.deriveMessages() }))
+    expect(completedExchanges(session.snapshotEvents())).toHaveLength(1)
+    expect(session.surface.nodes).toContain(failed.seq)
+    expect(session.surface.nodes).toContain(partial.seq)
+    const recent = recentConversationText(Array.from({ length: 30 }, (_, turn) => ({
+      turn, user: `request-${turn}`, assistant: `answer-${turn}`,
+    })), 15, 16_000)
+    expect(recent).not.toContain('request-14')
+    expect(recent).toContain('request-15')
+    expect(recent).toContain('request-29')
+    expect(recent.length).toBeLessThanOrEqual(16_000)
+    expect(recent).toContain('END OF SAVED CONVERSATION RECORDS.')
+    const huge = recentConversationText([{ turn: 99, user: 'quoted request'.repeat(1000), assistant: 'old answer' }], 15, 600)
+    expect(huge.length).toBeLessThanOrEqual(600)
+    expect(huge).toContain('END OF SAVED CONVERSATION RECORDS.')
+    expect(huge).toContain('pastTurn')
+  })
+
+  it('keeps a real pending approval from the native projection after denied tool output and cold replay', async () => {
+    const session = Session.create(SessionId('approval-window'))
+    session.append('turn/start', { turn: 1 })
+    session.append('user/message', user('Prepare the release'), { surfaceOp: 'append' })
+    const call = session.append('assistant/message', { turn: 1, step: 1, stream: [], message: createAssistantMessage({
+      source: { provider: 'fixture', model: 'fixture' },
+      content: [{ type: 'tool-call', id: 'approval-call' as never, name: 'publish_release', arguments: JSON.stringify({ revision: 'approved-source' }) }],
+    }) }, { surfaceOp: 'append' })
+    session.append('approval/asked', { id: 'approval-id', callId: 'approval-call', toolName: 'publish_release',
+      questions: [{ id: 'approval', question: 'Allow this release?', options: [{ label: 'Allow once' }, { label: 'Reject' }] }],
+    } as never)
+    session.append('approval/decided', { id: 'approval-id', outcome: 'pending' } as never)
+    const result = session.append('tool/result', { turn: 1, step: 1, message: createToolResultMessage({
+      callId: 'approval-call' as never, content: [{ type: 'text', text: 'Waiting for authenticated approval' }], isError: true,
+    }) }, { surfaceOp: 'append' })
+    session.append('assistant/message', { turn: 1, step: 2, stream: [], message: createAssistantMessage({
+      source: { provider: 'fixture', model: 'fixture' }, content: [{ type: 'text', text: 'Release is paused.' }],
+    }) }, { surfaceOp: 'append' })
+    session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+    const restored = Session.create(SessionId('approval-cold'), session.snapshotEvents())
+    expect(foldUserQuestions(restored.snapshotEvents()).active).toMatchObject([{ callId: 'approval-call', state: 'continued' }])
+    const harness = mount([], undefined, undefined, [], true)
+    await harness.preStep({ agent: { session: restored }, turn: 2, signal: new AbortController().signal } as never,
+      async () => ({ kind: 'enter', messages: restored.deriveMessages() }))
+    expect(restored.surface.nodes).toContain(call.seq)
+    expect(restored.surface.nodes).toContain(result.seq)
+    expect(foldUserQuestions(restored.snapshotEvents()).active).toMatchObject([{ callId: 'approval-call', state: 'continued' }])
+  })
+
+  it('retains native direct Team relay evidence through bounded replay and cold restoration', async () => {
+    const session = Session.create(SessionId('native-team-relay'))
+    session.append('turn/start', { turn: 1 })
+    session.append('user/message', user('Review employee result'), { surfaceOp: 'append' })
+    const relay = session.append('user/message', createUserMessage({
+      source: { kind: 'agent-message', senderSessionId: 'native-worker', form: 'relay' } as never,
+      content: [{ type: 'text', text: 'Native saved peer result needing review.' }],
+    }), { surfaceOp: 'append' })
+    session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+    const original = session.snapshotEvents()
+    const restored = Session.create(SessionId('native-team-cold'), original)
+    const harness = mount()
+    await harness.preStep({ agent: { session: restored }, turn: 2, signal: new AbortController().signal } as never,
+      async () => ({ kind: 'enter', messages: restored.deriveMessages() }))
+    expect(restored.surface.nodes).toContain(relay.seq)
+    expect(restored.snapshotEvents().slice(0, original.length)).toEqual(original)
+  })
+
+  it('retains an unreviewed employee artifact until the exact saved Runtime acceptance', async () => {
+    const session = Session.create(SessionId('unreviewed-employee'))
+    session.append('turn/start', { turn: 1 })
+    session.append('user/message', user('Review the delegated work'), { surfaceOp: 'append' })
+    const relay = session.append('user/message', createUserMessage({
+      source: { kind: 'hivemind-agent-message', messageId: 'employee-report', senderId: 'elena', senderSessionId: 'elena', form: 'relay' } as never,
+      content: [{ type: 'text', text: 'Saved artifact and blocking schema failure details' }],
+    }), { surfaceOp: 'append' })
+    Reflect.apply(session.append, session, ['hivemind/room-message-received', {
+      id: 'employee-report', taskId: 'delegated-task', artifactIds: ['saved-artifact'],
+    }])
+    session.append('assistant/message', { turn: 1, step: 1, stream: [], message: createAssistantMessage({
+      source: { provider: 'fixture', model: 'fixture' }, content: [{ type: 'text', text: 'The deliverable needs review.' }],
+    }) }, { surfaceOp: 'append' })
+    session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+    Reflect.apply(session.append, session, ['team/task', { task: { id: 'delegated-task', revision: 4, status: 'in_progress' } }])
+    const harness = mount()
+    await harness.preStep({ agent: { session }, turn: 2, signal: new AbortController().signal } as never,
+      async () => ({ kind: 'enter', messages: session.deriveMessages() }))
+    expect(session.surface.nodes).toContain(relay.seq)
+    Reflect.apply(session.append, session, ['hivemind/hq-task-review', { taskId: 'delegated-task', reviewer: 'runtime',
+      status: 'accepted', taskRevision: 4, artifactIds: ['different-artifact'],
+    }])
+    await harness.preStep({ agent: { session }, turn: 3, signal: new AbortController().signal } as never,
+      async () => ({ kind: 'enter', messages: session.deriveMessages() }))
+    expect(session.surface.nodes).toContain(relay.seq)
+    Reflect.apply(session.append, session, ['hivemind/hq-task-review', { taskId: 'delegated-task', reviewer: 'runtime',
+      status: 'accepted', taskRevision: 4, artifactIds: ['saved-artifact'],
+    }])
+    await harness.preStep({ agent: { session }, turn: 4, signal: new AbortController().signal } as never,
+      async () => ({ kind: 'enter', messages: session.deriveMessages() }))
+    expect(session.surface.nodes).not.toContain(relay.seq)
+    expect(session.snapshotEvents().find(event => event.seq === relay.seq)).toEqual(relay)
+  })
+
+  it('bounds a megabyte after an old pending approval while preserving exact replay and pairs', async () => {
+    const session = Session.create(SessionId('long-pending-approval'))
+    session.append('turn/start', { turn: 1 })
+    session.append('user/message', user('Approval remains pending'), { surfaceOp: 'append' })
+    const call = session.append('assistant/message', { turn: 1, step: 1, stream: [], message: createAssistantMessage({
+      source: { provider: 'fixture', model: 'fixture' }, content: [{ type: 'tool-call', id: 'pending' as never, name: 'question', arguments: '{"operation":"exact-original"}' }],
+    }) }, { surfaceOp: 'append' })
+    const result = session.append('tool/result', { turn: 1, step: 1, message: createToolResultMessage({ callId: 'pending' as never,
+      content: [{ type: 'text', text: 'Waiting for authenticated approval' }], isError: true }) }, { surfaceOp: 'append' })
+    session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+    for (let turn = 2; turn <= 40; turn++) {
+      session.append('turn/start', { turn })
+      session.append('user/message', user('Unrelated historical request ' + 'x'.repeat(30_000)), { surfaceOp: 'append' })
+      session.append('assistant/message', { turn, step: 1, stream: [], message: createAssistantMessage({ source: { provider: 'fixture', model: 'fixture' }, content: [{ type: 'text', text: 'Recorded answer' }] }) }, { surfaceOp: 'append' })
+      session.append('turn/end', { turn, reason: { kind: 'completed' } })
+    }
+    const original = session.snapshotEvents()
+    const harness = mount([], undefined, undefined, ['pending'])
+    await harness.preStep({ agent: { session }, turn: 41, signal: new AbortController().signal } as never, async () => ({ kind: 'enter', messages: [user('Current question')] }))
+    expect(JSON.stringify(session.deriveMessages()).length).toBeLessThan(10_000)
+    expect(session.surface.nodes).toContain(call.seq)
+    expect(session.surface.nodes).toContain(result.seq)
+    expect(session.snapshotEvents().slice(0, original.length)).toEqual(original)
+    const restored = Session.create(SessionId('long-pending-restored'), session.snapshotEvents())
+    expect(restored.deriveMessages()).toEqual(session.deriveMessages())
+    expect(restored.eventAt(call.seq)).toEqual(call)
+    expect(restored.snapshotEvents().some(event => event.type === 'compaction/start')).toBe(false)
+  })
+
+  it('pages a large text tool receipt without changing its identity, outcome or saved original', async () => {
+    const session = Session.create(SessionId('large-current-result'))
+    session.append('turn/start', { turn: 1 })
+    const receipt = session.append('tool/result', { turn: 1, step: 1, message: createToolResultMessage({ callId: 'read-original' as never,
+      content: [{ type: 'text', text: 'Exact evidence '.repeat(10_000) }], isError: false }) }, { surfaceOp: 'append' })
+    const harness = mount()
+    await harness.preStep({ agent: { session }, turn: 1, signal: new AbortController().signal } as never, async () => ({ kind: 'enter', messages: [] }))
+    expect(session.eventAt(receipt.seq)).toEqual(receipt)
+    const projected = session.deriveMessages()[0]!
+    expect(projected.id).toEqual(receipt.data.message.id)
+    expect(JSON.stringify(projected.content).length).toBeLessThan(3300)
+    expect(JSON.stringify(projected.content)).toContain('hyperagents_history')
+    expect(projected.content[0]).toMatchObject({ type: 'tool-result', toolCallId: 'read-original', isError: false })
+    expect(Session.create(SessionId('large-result-restored'), session.snapshotEvents()).deriveMessages()).toEqual(session.deriveMessages())
+  })
+
+  it('shares one result budget across a long active turn while retaining every saved original', async () => {
+    const session = Session.create(SessionId('aggregate-current-results'))
+    session.append('turn/start', { turn: 1 })
+    const originals = Array.from({ length: 12 }, (_, index) => session.append('tool/result', {
+      turn: 1, step: index + 1, message: createToolResultMessage({ callId: `saved-${index}` as never,
+        content: [{ type: 'text', text: 'Stored evidence '.repeat(400) }], isError: false }),
+    }, { surfaceOp: 'append' }))
+    const harness = mount()
+    await harness.preStep({ agent: { session }, turn: 1, signal: new AbortController().signal } as never,
+      async () => ({ kind: 'enter', messages: [] }))
+    const messages = session.deriveMessages()
+    expect(messages).toHaveLength(12)
+    expect(JSON.stringify(messages).length).toBeLessThan(8000)
+    for (const original of originals) expect(session.eventAt(original.seq)).toEqual(original)
+    expect(Session.create(SessionId('aggregate-restored'), session.snapshotEvents()).deriveMessages()).toEqual(messages)
+  })
+
+  it('preserves both parallel recall record sets through another step and cold restore', async () => {
+    const session = Session.create(SessionId('parallel-recall-records'))
+    session.append('turn/start', { turn: 1 })
+    const originals = ['first', 'second'].map((callId, step) => {
+      session.append('tool/call', { name: 'hivemind_meta', callId, arguments: '{"operation":"recall"}', turn: 1, step: step + 1 } as never)
+      return session.append('tool/result', { turn: 1, step: step + 1, message: createToolResultMessage({ callId: callId as never,
+        content: [{ type: 'text', text: JSON.stringify({ result: { results: Array.from({ length: 15 }, (_, i) => ({ id: `${callId}-${i}`, title: `Record ${i}`, citation_id: `${callId}-citation-${i}`, content: 'Evidence '.repeat(300) })) } }) }], isError: false }) }, { surfaceOp: 'append' })
+    })
+    const harness = mount([], undefined, undefined, [], false, 3000, 24000)
+    for (let step = 0; step < 2; step++) await harness.preStep({ agent: { session }, turn: 1, signal: new AbortController().signal } as never, async () => ({ kind: 'enter', messages: [] }))
+    const results = session.deriveMessages().flatMap(message => message.content.filter(block => block.type === 'tool-result'))
+    expect(results).toHaveLength(2)
+    for (const block of results) {
+      if (block.type !== 'tool-result') throw new Error('result missing')
+      const value = JSON.parse(block.content.flatMap(part => part.type === 'text' ? [part.text] : []).join(''))
+      expect(value.result.results).toHaveLength(15)
+      expect(value.result.results[14].citation_id).toBeDefined()
+    }
+    for (const original of originals) expect(session.eventAt(original.seq)).toEqual(original)
+    expect(Session.create(SessionId('parallel-recall-restored'), session.snapshotEvents()).deriveMessages()).toEqual(session.deriveMessages())
+  })
+  it('bounds text across mixed successful receipts while retaining exact media, outcome and original event', async () => {
+    const session = Session.create(SessionId('mixed-success-results'))
+    session.append('turn/start', { turn: 1 })
+    const image = { type: 'image', url: 'https://example.invalid/saved-image.png', mimeType: 'image/png' } as const
+    const original = session.append('tool/result', { turn: 1, step: 1, message: createToolResultMessage({ callId: 'mixed-receipt' as never,
+      content: [{ type: 'text', text: 'Exact saved HTML '.repeat(4000) }, image,
+        { type: 'text', text: 'Additional saved evidence '.repeat(1000) }] as never, isError: false }) }, { surfaceOp: 'append' })
+    const harness = mount()
+    const decision = await harness.preStep({ agent: { session }, turn: 1, signal: new AbortController().signal } as never,
+      async () => ({ kind: 'enter', messages: [] })) as { startsRequestSeries?: boolean }
+    expect(decision.startsRequestSeries).toBe(true)
+    const projected = session.deriveMessages()[0]!
+    expect(projected.id).toBe(original.data.message.id)
+    const block = projected.content[0]!
+    expect(block).toMatchObject({ type: 'tool-result', toolCallId: 'mixed-receipt', isError: false })
+    if (block.type !== 'tool-result') throw new Error('result missing')
+    expect(block.content.filter(part => part.type === 'image')).toEqual([image])
+    expect(block.content.filter(part => part.type === 'text').map(part => part.text).join('').length).toBeLessThanOrEqual(3000)
+    expect(JSON.stringify(block.content)).toContain('hyperagents_history')
+    expect(session.eventAt(original.seq)).toEqual(original)
+    expect(Session.create(SessionId('mixed-restored'), session.snapshotEvents()).deriveMessages()).toEqual(session.deriveMessages())
+  })
+
+  it.each(['', ':producer-digest'])('shares one visible receipt-evidence budget across successive active steps without losing originals or current requests (%s)', async (suffix) => {
+    const session = Session.create(SessionId('receipt-batches'))
+    session.append('turn/start', { turn: 1 })
+    const harness = mount(), agent = { session }
+    for (let step = 0; step < 6; step++) {
+      const request = user(`Current exact request ${step}`)
+      const receipts = Array.from({ length: 2 }, (_, index) => createUserMessage({
+        source: { kind: 'plugin', plugin: `dsh-hivemind-connected-apps/receipt${suffix}`, form: 'recall' },
+        content: [{ type: 'text', text: `Original batch ${step}-${index} ` + 'Evidence '.repeat(800) }],
+      }))
+      const decision = await harness.preStep({ agent, turn: 1, signal: new AbortController().signal } as never,
+        async () => ({ kind: 'enter', messages: [...receipts, request] })) as { messages: ReturnType<typeof user>[] }
+      expect(decision.messages).toContainEqual(request)
+      for (const message of decision.messages) session.append('user/message', message, { surfaceOp: 'append' })
+      const visible = session.deriveMessages().filter(message => message.role === 'user' && message.source.kind === 'plugin'
+        && message.source.plugin === `dsh-hivemind-connected-apps/receipt${suffix}`)
+      expect(visible.flatMap(message => message.content.flatMap(part => part.type === 'text' ? [part.text] : [])).join('').length)
+        .toBeLessThanOrEqual(3000)
+      for (const receipt of receipts) expect(session.snapshotEvents().some(event => event.type === 'user/message'
+        && event.data.id === receipt.id && event.data.content[0]?.type === 'text'
+        && event.data.content[0].text === receipt.content[0]?.text)).toBe(true)
+    }
+    expect(Session.create(SessionId('receipt-batches-restored'), session.snapshotEvents()).deriveMessages()).toEqual(session.deriveMessages())
+  })
+
+  it('retains the complete trusted awakening method while paging accompanying recalled evidence', async () => {
+    const session = Session.create(SessionId('method-with-recall'))
+    const harness = mount()
+    const body = '<skill_content name="runtime-company-awakening">'+ 'Full method '.repeat(3000)+'</skill_content>'
+    const method = createUserMessage({ source: { kind: 'plugin', plugin: 'hivemind-hq/awakening-method', form: 'recall' },
+      content: [{ type: 'text', text: body }] })
+    const evidence = createUserMessage({ source: { kind: 'plugin', plugin: 'hivemind-hq/private-recall', form: 'recall' },
+      content: [{ type: 'text', text: 'Evidence '.repeat(4000) }] })
+    const decision = await harness.preStep({ agent: { session }, turn: 1, signal: new AbortController().signal } as never,
+      async () => ({ kind: 'enter', messages: [method, evidence, user('Current exact direction')] })) as { messages: ReturnType<typeof user>[] }
+    expect(decision.messages).toContainEqual(method)
+    expect(JSON.stringify(decision.messages)).toContain(JSON.stringify(body).slice(1,-1))
+    expect(decision.messages).not.toContainEqual(evidence)
+  })
+
+  it('retains complete loaded skill instructions instead of paging them as evidence', async () => {
+    const session = Session.create(SessionId('active-skill-body'))
+    session.append('turn/start', { turn: 1 })
+    session.append('tool/call', { name: 'skill', callId: 'loaded-method', arguments: '{"name":"method"}', turn: 1, step: 1 } as never)
+    const body = 'Complete active method '.repeat(1000)
+    session.append('tool/result', { turn: 1, step: 1, message: createToolResultMessage({ callId: 'loaded-method' as never,
+      content: [{ type: 'text', text: body }], isError: false }) }, { surfaceOp: 'append' })
+    const harness = mount()
+    await harness.preStep({ agent: { session }, turn: 1, signal: new AbortController().signal } as never,
+      async () => ({ kind: 'enter', messages: [] }))
+    expect(JSON.stringify(session.deriveMessages())).toContain(body)
+  })
+
+  it('does not pin closed history before a later empty native system node', async () => {
+    const session = Session.create(SessionId('later-system-island'))
+    const first = session.append('system/message', { turn: 1, step: 1,
+      message: { id: 'system-one', role: 'system', source: 'fixture', content: [{ type: 'text', text: 'Current policy' }] } } as never, { surfaceOp: 'append' })
+    session.append('turn/start', { turn: 1 })
+    session.append('user/message', user('Old request'), { surfaceOp: 'append' })
+    session.append('assistant/message', { turn: 1, step: 1, stream: [], message: createAssistantMessage({
+      source: { provider: 'fixture', model: 'fixture' }, content: [{ type: 'text', text: 'OLD_PAYLOAD'.repeat(12000) }],
+    }) }, { surfaceOp: 'append' })
+    const tail = session.append('system/message', { turn: 1, step: 2,
+      message: { id: 'system-tail', role: 'system', source: 'fixture', content: [] } } as never, { surfaceOp: 'append' })
+    session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+    session.append('turn/start', { turn: 2 })
+    const current = session.append('user/message', user('Current request'), { surfaceOp: 'append' })
+    const original = session.snapshotEvents()
+    const harness = mount()
+    await harness.preStep({ agent: { session }, turn: 2, signal: new AbortController().signal } as never,
+      async () => ({ kind: 'enter', messages: [] }))
+    expect(JSON.stringify(session.deriveMessages()).length).toBeLessThan(6000)
+    expect(session.surface.nodes).toEqual(expect.arrayContaining([first.seq, tail.seq, current.seq]))
+    expect(session.snapshotEvents().slice(0, original.length)).toEqual(original)
+  })
+
   it('starts a greeting with no skill catalog', async () => {
     const harness = mount()
     const catalog = createUserMessage({
@@ -183,4 +658,289 @@ describe('HIVE progressive context', () => {
     expect(decision.messages).toHaveLength(2)
     expect(decision.messages).toEqual([request, catalog])
   })
+})
+
+
+it('native prepared model request sees the replaced mixed receipt, not the full old HTML or a cached duplicate', async () => {
+  const ctx = new Context()
+  const adapter = new MockAdapter([toolCallResponse('prepared-mixed', 'fixture_saved_receipt', {}), textResponse('Inspected bounded receipt.')])
+  try {
+    await mountAgentLoopTestDependencies(ctx)
+    await ctx.plugin(AgentLoop, { agents: [] })
+    await ctx.plugin(contextPlugin({ historyTurns:3,historyMaxChars:3000,capabilityToolName:'hivemind_capabilities' }))
+    ctx.get('llm')!.registerAdapter(['mock'],adapter)
+    const image = { type: 'image', attachment: {
+      attachmentId: `sha256:${'a'.repeat(64)}` as never,
+      mediaType: 'image/png', bytes: 32, width: 1, height: 1,
+    } } as const
+    ctx.get('tools')!.register(defineTool({ name:'fixture_saved_receipt',description:'Saved source receipt fixture.',parameters:{},
+      output:{ schema:{ type:'object',properties:{},additionalProperties:true },
+        render:()=>[{ type:'text',text:'Original saved HTML '.repeat(3000) },image] },
+      isConcurrencySafe:()=>true,execute:async()=>({ status:'saved' }),
+    }))
+    const agent=await ctx.get('agentLoop')!.create(SessionId('prepared-mixed-request'),{ provider:'mock',model:'mock' })
+    agent.send(user('Inspect this exact saved source.'),'next-turn',true)
+    await vi.waitFor(()=>expect(adapter.requests).toHaveLength(2))
+    await vi.waitFor(()=>expect(agent.status).toBe('idle'))
+    const request=adapter.requests[1]
+    expect(JSON.stringify(request)).toContain(image.attachment.attachmentId)
+    expect(JSON.stringify(request)).not.toContain('Original saved HTML '.repeat(1000))
+    expect(JSON.stringify(request)).toContain('hyperagents_history')
+    const originals=agent.session.snapshotEvents().filter(event=>event.type==='tool/result'
+      && event.surfaceOp==='append')
+    expect(originals).toHaveLength(1)
+    expect(JSON.stringify(originals[0])).toContain('Original saved HTML '.repeat(1000))
+  } finally { await ctx.fiber.dispose() }
+})
+
+
+function savedTaskList(session: Session, id: string, tasks: unknown[], cursor=0, nextCursor?: number) {
+  session.append('tool/call', { name:'team_task_list',callId:id,arguments:JSON.stringify({ cursor,limit:100 }),turn:1,step:1 } as never)
+  return session.append('tool/result', { turn:1,step:1,message:createToolResultMessage({ callId:id as never,isError:false,
+    content:[{ type:'text',text:JSON.stringify({ tasks,...(nextCursor === undefined ? {} : { nextCursor }) }) }],
+  }) },{ surfaceOp:'append' })
+}
+function taskRows(count: number, start=1) {
+  return Array.from({ length:count },(_,index)=>({ id:`task-${index+start}`,subject:`Daily draft ${index+start} — exact subject`,
+    description:'Full criteria and source references '.repeat(100),status:'in_progress',ownerName:'verified-employee',
+    revision:index+1,ready:true,blockedBy:[],writeScopes:[],writeScopeWarnings:[] }))
+}
+function projectedTaskList(session: Session, callId: string) {
+  const block=session.deriveMessages().flatMap(message=>message.content).find(part=>part.type==='tool-result'&&part.toolCallId===callId)
+  if (block?.type !== 'tool-result') throw new Error('list missing')
+  return { block,text:block.content.flatMap(part=>part.type==='text'?[part.text]:[]).join('\n') }
+}
+
+it('retains all23 complete task heads within8k without corrupting the original full list', async()=>{
+  const session=Session.create(SessionId('complete-task-heads'))
+  session.append('turn/start',{ turn:1 })
+  const tasks=taskRows(23), original=savedTaskList(session,'list23',tasks)
+  const harness=mount([],undefined,undefined,[],false,8000)
+  await harness.preStep({ agent:{ session },turn:1,signal:new AbortController().signal } as never,
+    async()=>({ kind:'enter',messages:[] }))
+  const { text,block }=projectedTaskList(session,'list23'), value=JSON.parse(text)
+  expect(text.length).toBeLessThanOrEqual(8000)
+  expect(value.tasks).toHaveLength(23)
+  expect(value.complete).toBe(true);expect(value.pageComplete).toBe(true);expect(value.nextCursor).toBeUndefined()
+  expect(value.tasks.map((row: { id:string;subject:string })=>[row.id,row.subject])).toEqual(tasks.map(row=>[row.id,row.subject]))
+  expect(value.tasks[0]).toMatchObject({ status:'in_progress',ownerName:'verified-employee',revision:1,ready:true })
+  expect(value.tasks[0].description).toBeUndefined()
+  expect(block).toMatchObject({ toolCallId:'list23',isError:false })
+  expect(session.eventAt(original.seq)).toEqual(original)
+})
+
+it('keeps a short3-inprogress list valid across rebudgeting, repeated steps and restore', async()=>{
+  const session=Session.create(SessionId('short-task-heads'))
+  session.append('turn/start',{ turn:1 })
+  const tasks=taskRows(3),original=savedTaskList(session,'list3',tasks)
+  const harness=mount([],undefined,undefined,[],false,1600), agent={ session }
+  for (let step=0;step<3;step++) {
+    await harness.preStep({ agent,turn:1,signal:new AbortController().signal } as never,async()=>({ kind:'enter',messages:[] }))
+    const value=JSON.parse(projectedTaskList(session,'list3').text)
+    expect(value.tasks).toHaveLength(3);expect(value.complete).toBe(true)
+    expect(value.originalSequence).toBe(original.seq)
+  }
+  const restored=Session.create(SessionId('restored-task-heads'),session.snapshotEvents())
+  await mount([],undefined,undefined,[],false,1600).preStep({ agent:{ session:restored },turn:1,
+    signal:new AbortController().signal } as never,async()=>({ kind:'enter',messages:[] }))
+  expect(JSON.parse(projectedTaskList(restored,'list3').text).tasks).toHaveLength(3)
+  expect(session.eventAt(original.seq)).toEqual(original)
+})
+
+it('pages only whole task heads with the exact native numeric cursor and shares one list budget', async()=>{
+  const session=Session.create(SessionId('paged-task-heads'))
+  session.append('turn/start',{ turn:1 })
+  const tasks=taskRows(80,41),original=savedTaskList(session,'page40',tasks,40,120)
+  const harness=mount([],undefined,undefined,[],false,1600),agent={ session }
+  await harness.preStep({ agent,turn:1,signal:new AbortController().signal } as never,async()=>({ kind:'enter',messages:[] }))
+  const first=JSON.parse(projectedTaskList(session,'page40').text)
+  expect(first.tasks.length).toBeGreaterThan(0);expect(first.tasks.length).toBeLessThan(80)
+  expect(first.nextCursor).toBe(40+first.tasks.length);expect(first.complete).toBe(false)
+  const next=first.nextCursor
+  savedTaskList(session,'next-page',tasks.slice(next-40),next,120)
+  await harness.preStep({ agent,turn:1,signal:new AbortController().signal } as never,async()=>({ kind:'enter',messages:[] }))
+  const pages=['page40','next-page'].map(id=>projectedTaskList(session,id).text)
+  expect(pages.reduce((n,text)=>n+text.length,0)).toBeLessThanOrEqual(1600)
+  for (const text of pages) expect(()=>JSON.parse(text)).not.toThrow()
+  expect(JSON.parse(pages[1]!).tasks[0].id).toBe(`task-${next+1}`)
+  expect(session.eventAt(original.seq)).toEqual(original)
+})
+
+
+it('native prepared request receives all task heads and preserves the complete archived receipt', async () => {
+  const ctx = new Context()
+  const rows = taskRows(23)
+  const adapter = new MockAdapter([toolCallResponse('native-list', 'team_task_list', {}), textResponse('Read all task heads.')])
+  try {
+    await mountAgentLoopTestDependencies(ctx)
+    await ctx.plugin(AgentLoop, { agents: [] })
+    await ctx.plugin(contextPlugin({ historyTurns: 3, historyMaxChars: 8000, capabilityToolName: 'hivemind_capabilities' }))
+    ctx.get('llm')!.registerAdapter(['mock'], adapter)
+    ctx.get('tools')!.register(defineTool({ name: 'team_task_list', description: 'Native task list fixture.', parameters: {},
+      output: { schema: { type: 'object', properties: {}, additionalProperties: true },
+        render: () => [{ type: 'text', text: JSON.stringify({ tasks: rows }) }] },
+      isConcurrencySafe: () => true, execute: async () => ({ tasks: rows }),
+    }))
+    const agent = await ctx.get('agentLoop')!.create(SessionId('prepared-task-list'), { provider: 'mock', model: 'mock' })
+    agent.send(user('Read the current task board.'), 'next-turn', true)
+    await vi.waitFor(() => expect(adapter.requests).toHaveLength(2))
+    await vi.waitFor(() => expect(agent.status).toBe('idle'))
+    const request = adapter.requests[1]!
+    const result = request.messages.flatMap(message => message.content).find(part => part.type === 'tool-result')
+    if (result?.type !== 'tool-result') throw new Error('prepared task list missing')
+    const text = result.content.flatMap(part => part.type === 'text' ? [part.text] : []).join('\n')
+    const value = JSON.parse(text)
+    expect(value.tasks).toHaveLength(23)
+    expect(value.complete).toBe(true)
+    expect(text.length).toBeLessThanOrEqual(8000)
+    expect(JSON.stringify(request).length).toBeLessThan(32000)
+    expect(JSON.stringify(request)).not.toContain(rows[0]!.description)
+    const original = agent.session.snapshotEvents().find(event => event.type === 'tool/result' && event.surfaceOp === 'append')
+    expect(JSON.stringify(original)).toContain(rows[0]!.description)
+  } finally { await ctx.fiber.dispose() }
+})
+
+it('retains the producer next cursor when every returned task head fits', async () => {
+  const session = Session.create(SessionId('native-next-cursor'))
+  session.append('turn/start', { turn: 1 })
+  savedTaskList(session, 'native-page', taskRows(3, 41), 40, 43)
+  await mount([], undefined, undefined, [], false, 1600).preStep({ agent: { session }, turn: 1,
+    signal: new AbortController().signal } as never, async () => ({ kind: 'enter', messages: [] }))
+  expect(JSON.parse(projectedTaskList(session, 'native-page').text)).toMatchObject({
+    pageComplete: true, complete: false, nextCursor: 43, sourceRows: 3,
+  })
+})
+
+it('folds repeated owned policy, clock, and receipt snapshots while preserving exact archived input and cold replay', async () => {
+  const session = Session.create(SessionId('snapshot-growth'))
+  const harness = mount(), agent = { session }
+  session.append('turn/start', { turn: 1 })
+  const originals: UserMessage[] = []
+  for (let step=0; step<40; step++) {
+    const incoming = ['time-context','hivemind-runtime-full-access','dsh-hivemind-connected-apps/receipt:verified-hash'].map(plugin =>
+      createUserMessage({ source:{ kind:'plugin',plugin,form:'snapshot',sections:[{ name:plugin,text:`${plugin} current ${step}` }] },content:[{ type:'text',text:`${plugin} current ${step} `+'evidence '.repeat(400) }] }))
+    originals.push(...incoming)
+    const decision = await harness.preStep({ agent,turn:1,signal:new AbortController().signal } as never,
+      async()=>({ kind:'enter',messages:incoming })) as { messages: ReturnType<typeof user>[]; startsRequestSeries?: boolean }
+    for (const message of decision.messages) session.append('user/message',message,{ surfaceOp:'append' })
+    expect(decision.startsRequestSeries).toBe(true)
+    const visible = session.deriveMessages().filter(message=>message.content.length && !JSON.stringify(message.content).includes('[Superseded context.]'))
+    expect(visible).toHaveLength(3)
+    expect(JSON.stringify(visible)).toContain(`current ${step}`)
+  }
+  for (const message of originals) expect(session.snapshotEvents().some(event=>event.type==='user/message'
+    && event.surfaceOp==='append' && event.data.id===message.id && JSON.stringify(event.data)===JSON.stringify(message))).toBe(true)
+  expect(Session.create(SessionId('snapshots-restored'),session.snapshotEvents()).deriveMessages()).toEqual(session.deriveMessages())
+  const pi = toPiContext({ provider:'mock',model:'mock',messages:session.deriveMessages(),tools:[] })
+  expect(pi.messages.filter(message=>message.role==='user').every(message=>message.content.length>0)).toBe(true)
+  const before=session.snapshotEvents().length
+  await harness.preStep({ agent,turn:1,signal:new AbortController().signal } as never,async()=>({ kind:'enter',messages:[] }))
+  expect(session.snapshotEvents()).toHaveLength(before)
+})
+
+it('shares the recall allowance across all admitted steps, including pointer text with hundreds of islands', async () => {
+  const session = Session.create(SessionId('recall-growth'))
+  const harness = mount(), agent = { session }
+  for (let step=0; step<60; step++) {
+    const recall = createUserMessage({ source:{ kind:'plugin',plugin:`fixture/recall-${step}`,form:'recall' },
+      content:[{ type:'text',text:'Original evidence '.repeat(250) }] })
+    const decision = await harness.preStep({ agent,turn:1,signal:new AbortController().signal } as never,
+      async()=>({ kind:'enter',messages:[recall,user(`Exact direction ${step}`)] })) as { messages: ReturnType<typeof user>[] }
+    for (const message of decision.messages) session.append('user/message',message,{ surfaceOp:'append' })
+    const visible = session.deriveMessages().filter(message=>message.role==='user' && message.source.kind==='plugin')
+    expect(visible.flatMap(message=>message.content.flatMap(part=>part.type==='text'?[part.text]:[])).join('').length).toBeLessThanOrEqual(3000)
+    expect(JSON.stringify(session.snapshotEvents())).toContain('Original evidence '.repeat(250))
+  }
+  expect(Session.create(SessionId('recall-growth-restored'),session.snapshotEvents()).deriveMessages()).toEqual(session.deriveMessages())
+})
+
+it('native prepared multi-step requests keep repeated snapshot and recall text constant while retaining current task evidence', async () => {
+  const ctx = new Context()
+  const adapter = new MockAdapter([...Array.from({ length:12 },(_,i)=>toolCallResponse(`step-${i}`,'fixture_progress',{})),textResponse('Reviewed the saved task.')])
+  try {
+    await mountAgentLoopTestDependencies(ctx)
+    await ctx.plugin(AgentLoop,{ agents:[] })
+    await ctx.plugin(contextPlugin({ historyTurns:3,historyMaxChars:8000,capabilityToolName:'hivemind_capabilities' }))
+    ctx.on('agent/pre-step', async (_,next)=>{
+      const decision=await next()
+      if(decision.kind==='reject') return decision
+      return { ...decision,messages:[...decision.messages,
+        ...['time-context','hivemind-runtime-full-access','dsh-hivemind-connected-apps/receipt:stable'].map(plugin=>
+          createUserMessage({ source:{ kind:'plugin',plugin,form:'recall' },content:[{ type:'text',text:plugin+' evidence '.repeat(600) }] })),
+        createUserMessage({ source:{ kind:'plugin',plugin:'fixture/current-state',form:'recall' },content:[{ type:'text',text:'task-24 revision 2 pending artifact review '+ 'state '.repeat(1200) }] }),
+      ] }
+    })
+    ctx.get('llm')!.registerAdapter(['mock'],adapter)
+    ctx.get('tools')!.register(defineTool({ name:'fixture_progress',description:'Review current saved evidence.',parameters:{},
+      output:{ schema:{ type:'object',properties:{},additionalProperties:true },render:()=>[{ type:'text',text:'Verified task-24 artifact receipt '+ 'saved '.repeat(2000) }] },
+      isConcurrencySafe:()=>true,execute:async()=>({ status:'saved' }),
+    }))
+    // Match the live fixed overhead: 27 tools with about 40k schema characters,
+    // plus a 13k permanent system policy, before current task evidence.
+    for(let index=0;index<26;index++) ctx.get('tools')!.register(defineTool({
+      name:`fixture_catalog_${index}`,description:'Native tool contract '.repeat(75),parameters:{},
+      output:{ schema:{ type:'object',properties:{},additionalProperties:true },render:()=>[{ type:'text',text:'unused' }] },
+      isConcurrencySafe:()=>true,execute:async()=>({ status:'unused' }),
+    }))
+    const agent=await ctx.get('agentLoop')!.create(SessionId('prepared-growth'),{ provider:'mock',model:'mock' })
+    agent.session.append('system/message',{ turn:1,step:1,message:createSystemMessage('Permanent company authority and coordination policy. '.repeat(260),'fixture-policy') },{ surfaceOp:'append' })
+    agent.send(user('Review task-24 exact saved artifact; preserve its assignment.'),'next-turn',true)
+    await vi.waitFor(()=>expect(agent.status).toBe('idle'))
+    expect(adapter.requests).toHaveLength(13)
+    for (const request of adapter.requests) {
+      // This is a character-level preparation regression, not a claim about
+      // provider token accounting. The live release must measure real usage.
+      expect(request.tools?.length).toBe(27)
+      expect(JSON.stringify(request).length).toBeLessThan(90_000)
+      expect(JSON.stringify(request)).toContain('task-24')
+    }
+    const raw=agent.session.snapshotEvents().filter(event=>event.type==='tool/result' && event.surfaceOp==='append')
+    expect(raw).toHaveLength(12)
+    expect(JSON.stringify(raw)).toContain('saved '.repeat(2000))
+  } finally { await ctx.fiber.dispose() }
+})
+
+it('uses whole saved-sequence pointers when many task-list metadata envelopes exceed the shared allowance', async () => {
+  const session=Session.create(SessionId('many-list-receipts'))
+  const originals=Array.from({ length:100 },(_,index)=>savedTaskList(session,`many-list-${index}`,taskRows(1)))
+  const harness=mount([],undefined,undefined,[],false,8000)
+  await harness.preStep({ agent:{ session },turn:1,signal:new AbortController().signal } as never,async()=>({ kind:'enter',messages:[] }))
+  const messages=session.deriveMessages().filter(message=>message.content.some(block=>block.type==='tool-result'))
+  const texts=messages.flatMap(message=>message.content.flatMap(block=>block.type==='tool-result'
+    ?block.content.flatMap(part=>part.type==='text'?[part.text]:[]):[]))
+  expect(texts.join('').length).toBeLessThanOrEqual(8000)
+  expect(texts).toHaveLength(100)
+  for (const text of texts) {
+    const value=JSON.parse(text) as { originalSequence:number;readOriginal?:boolean;complete?:boolean }
+    if(value.readOriginal) expect(value.complete).not.toBe(true)
+    expect(originals.some(event=>event.seq===value.originalSequence)).toBe(true)
+  }
+  for(const event of originals) expect(session.eventAt(event.seq)).toEqual(event)
+  expect(Session.create(SessionId('many-list-restored'),session.snapshotEvents()).deriveMessages()).toEqual(session.deriveMessages())
+})
+
+it('shares one historical allowance between conversation records and protected peer excerpts', async () => {
+  const session=Session.create(SessionId('shared-history-allowance'))
+  session.append('turn/start',{ turn:1 })
+  session.append('user/message',user('Previous direction '.repeat(500)),{ surfaceOp:'append' })
+  const peers=[]
+  for(let index=0;index<20;index++) {
+    peers.push(session.append('user/message',createUserMessage({ source:{ kind:'agent-message',senderSessionId:'native-worker',form:'relay' } as never,
+      content:[{ type:'text',text:`Unreviewed peer ${index} `+'full evidence '.repeat(500) }] }),{ surfaceOp:'append' }))
+    session.append('assistant/message',{ turn:1,step:index+1,stream:[],message:createAssistantMessage({ source:{ provider:'mock',model:'mock' },
+      content:[{ type:'text',text:'Past answer '.repeat(300) }] }) },{ surfaceOp:'append' })
+  }
+  session.append('turn/end',{ turn:1,reason:{ kind:'completed' } })
+  session.append('turn/start',{ turn:2 })
+  const current=session.append('user/message',user('Current task-24 only'),{ surfaceOp:'append' })
+  const originals=session.snapshotEvents()
+  const harness=mount([],undefined,undefined,[],false,8000)
+  await harness.preStep({ agent:{ session },turn:2,signal:new AbortController().signal } as never,async()=>({ kind:'enter',messages:[] }))
+  const projected=session.deriveMessages().filter(message=>message.role==='user' && message.id!==current.data.id)
+  const text=projected.flatMap(message=>message.content.flatMap(part=>part.type==='text'?[part.text]:[])).join('')
+  expect(text.length).toBeLessThanOrEqual(8000)
+  for(const peer of peers) expect(session.eventAt(peer.seq)).toEqual(peer)
+  expect(session.snapshotEvents().slice(0,originals.length)).toEqual(originals)
+  expect(JSON.stringify(session.deriveMessages())).toContain('Current task-24 only')
+  expect(Session.create(SessionId('shared-history-restored'),session.snapshotEvents()).deriveMessages()).toEqual(session.deriveMessages())
 })

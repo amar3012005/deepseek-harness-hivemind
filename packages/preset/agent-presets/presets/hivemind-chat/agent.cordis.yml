@@ -16,6 +16,11 @@
       the same response as the first tool calls. Share useful findings when
       they arrive, without extra model calls just to narrate. Keep these public
       updates visible; never expose private reasoning or tool schema planning.
+      For a website screenshot or rendered page inspection, use
+      hivemind_browser_discover with capture or inspect, then its returned
+      browser tools. Use a URL from the user or verified company context;
+      otherwise search first. Do not claim browser access is unavailable
+      before checking the registered browser capability.
       Ordinary public web search and page reads proceed without asking approval.
       Company-memory saves still require the native destination scope and
       approval; prepare that card when a stable user-stated fact or verified
@@ -176,6 +181,7 @@
     hivemindIdentity: true
     hivemindMemory: true
     hivemindArtifactRenderer: true
+    hivemindActionToolkits: true
   config:
     - id: hivemind-identity
       name: '@deepseek-ai/dsh-hivemind-identity'
@@ -210,6 +216,15 @@
         serviceApiBase: !!js process.env.HIVEMIND_CONTROL_PLANE_URL ?? 'http://control-plane:3000'
         serviceHttpOrigins: !!js (process.env.HIVEMIND_SERVICE_HTTP_ORIGINS ?? '').split(',').map(value => value.trim()).filter(Boolean)
         serviceSecretEnv: HIVE_HARNESS_RUNNER_SERVICE_SECRET
+
+    - id: hivemind-progressive-skills
+      name: '@deepseek-ai/dsh-hivemind-progressive-skills'
+    - id: hivemind-progressive-browser
+      name: '@deepseek-ai/dsh-hivemind-progressive-browser'
+      config:
+        url: !!js process.env.HIVEMIND_PLAYWRIGHT_MCP_URL ?? 'https://playwright-mcp.singulancelabs.com/mcp'
+        headers: !!js >-
+          ({ Authorization: process.env.PLAYWRIGHT_EXTERNAL_MCP_TOKEN ? `Bearer ${process.env.PLAYWRIGHT_EXTERNAL_MCP_TOKEN}` : '' })
 
     - id: hivemind-artifact-renderer
       name: '@deepseek-ai/dsh-hivemind-artifact-renderer'
