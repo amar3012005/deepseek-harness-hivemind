@@ -48,6 +48,7 @@ export const ChatNodeSeat = memo(function ChatNodeSeat({
   const processPresentation = useChatNodeProcess(nodeKey)
   const processSpec = processPresentation?.spec
   const quietWork = /^\/hivemind\/app\/(?:overview|employee\/harness)(?:\/|$)/u.test(window.location.pathname)
+  const brainChat = /^\/hivemind\/app\/overview(?:\/|$)/u.test(window.location.pathname)
   const disclosureStep = processSpec?.answerStep ?? -1
   const storedEntry = useStore(state => processSpec === undefined
     ? undefined
@@ -108,7 +109,7 @@ export const ChatNodeSeat = memo(function ChatNodeSeat({
   const incomingTeamReply = routedNode?.kind === 'context'
     && typeof routedNode.data.source === 'object' && routedNode.data.source !== null
     && 'kind' in routedNode.data.source && routedNode.data.source.kind === 'hivemind-agent-message'
-  const preserveReply = incomingTeamReply || (quietWork
+  const preserveReply = incomingTeamReply || (quietWork && !brainChat
     && routedNode?.kind === 'assistant-step'
     && processSpec?.dreamSynthesis !== true
     && hasAssistantReplyContent(routedNode.data.blocks))

@@ -1655,7 +1655,7 @@ describe('ChatView', () => {
     expect(answer?.hasAttribute('data-turn-process-answer')).toBe(false)
   })
 
-  it('preserves product narration through live completion on a non-employee route', () => {
+  it('keeps Brain narration live, then folds it into Work details after the answer', () => {
     const previousUrl = window.location.href
     window.history.replaceState(null, '', '/hivemind/app/overview/session/brain-test')
     document.documentElement.dataset.dshMode = 'hivemind-chat'
@@ -1666,10 +1666,10 @@ describe('ChatView', () => {
       const row = view.getByText('I learned about our company').closest('[data-chat-flow-kind="assistant-step"]')
       act(() => { h.set({ nodes: [user(1, 'question'), reply, assistant(4, 'Sleeping now', 1, 2)],
         running: false, turnEnds: new Map([[1, 5]]) }) })
-      expect(row?.hasAttribute('hidden')).toBe(false)
-      expect(row?.hasAttribute('data-turn-process-hidden')).toBe(false)
+      expect(row?.getAttribute('hidden')).toBe('until-found')
+      expect(row?.hasAttribute('data-turn-process-hidden')).toBe(true)
       act(() => { h.set({ nodes: [user(1, 'question'), reply, assistant(4, 'Sleeping now', 1, 2), user(6, 'next')], running: true }) })
-      expect(row?.hasAttribute('hidden')).toBe(false)
+      expect(row?.getAttribute('hidden')).toBe('until-found')
     } finally { delete document.documentElement.dataset.dshMode
       window.history.replaceState(null, '', previousUrl) }
   })
