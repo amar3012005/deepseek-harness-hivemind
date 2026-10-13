@@ -285,3 +285,16 @@ it('a restart after a claimed but unfinished reset exposes repair instead of ret
   await expect(migrateLegacyCompanyModel(f.ctx,f.agent,new AbortController().signal,g.settings)).rejects.toThrow('migration_unresolved')
   expect(g.replace).not.toHaveBeenCalled();expect(f.selected).not.toHaveBeenCalled()
 })
+
+it('recovers the old Brain Llama pin onto the same fixed GLM low route', async () => {
+  const brain = fixture('hivemind-chat', 'cloudflare-workers-ai')
+  brain.session.append('request/header', { header: { config: {
+    provider: 'cloudflare-workers-ai', model: '@cf/meta/llama-3.3-70b-instruct-fp8-fast',
+  } }, reason: 'change' } as never)
+  const target = { provider: 'hivemind-brain-glm', model: '@cf/zai-org/glm-5.3-flash',
+    reasoningEffort: 'low' } as Parameters<typeof migrateBrainDefaultModel>[3]
+  expect(await migrateBrainDefaultModel(brain.ctx, brain.agent, new AbortController().signal, target)).toBe(true)
+  expect(brain.selected).toHaveBeenLastCalledWith(brain.agent, target)
+  brain.setPending(null)
+  expect(await migrateBrainDefaultModel(brain.ctx, brain.agent, new AbortController().signal, target)).toBe(false)
+})

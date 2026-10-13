@@ -70,7 +70,9 @@ export async function migrateBrainDefaultModel(
   // A queued user selection always wins over a deployment default migration.
   if (state?.pending !== null) return false
   const intent = currentIntent(ctx, agent)
-  if (!intent || intent.provider !== 'cloudflare-workers-ai' || intent.model !== '@cf/zai-org/glm-5.3-flash') return false
+  if (!intent || ![target.provider, 'cloudflare-workers-ai'].includes(intent.provider)
+    || ![target.model, '@cf/zai-org/glm-5.3-flash', '@cf/meta/llama-3.3-70b-instruct-fp8-fast'].includes(intent.model)) return false
+  if (sameSelection(intent, target)) return false
   const resolved = await ctx.llm.resolveCallConfig({
     provider: target.provider,
     model: target.model,
@@ -161,13 +163,17 @@ export function installLegacyCompanyModelMigration(ctx: Context, brainDefault?: 
       if (!['hivemind-hq', 'hivemind-hyperagents', 'hivemind-chat'].includes(String(preset))) return decision
       const brainMigrated = await migrateBrainDefaultModel(scope, agent, signal, brainDefault)
       const migrated = brainMigrated || await migrateLegacyCompanyModel(scope, agent, signal, settings)
-      const selection = scope.sessionController.currentDefaultModelSelection()
+      const selection = preset === 'hivemind-chat' && brainDefault !== undefined
+        ? brainDefault : scope.sessionController.currentDefaultModelSelection()
       const previous = inherited.get(agent)
       if (previous !== undefined && previous.turn === turn && sameSelection(previous.selection, selection)) return decision
-      const resolved = await scope.llm.resolveCallConfig(selection, signal)
+      const resolved = await scope.llm.resolveCallConfig({
+        provider: selection.provider, model: selection.model,
+        ...(selection.reasoningEffort === undefined ? {} : { reasoningEffort: ReasoningEffortId(selection.reasoningEffort) }),
+      }, signal)
       signal.throwIfAborted()
       // A global setting changed while its route was resolving: leave the new native choice intact.
-      if (!sameSelection(scope.sessionController.currentDefaultModelSelection(), selection)) return decision
+      if (preset !== 'hivemind-chat' && !sameSelection(scope.sessionController.currentDefaultModelSelection(), selection)) return decision
       const actual = agent.session.requestHeader()?.config
       if (!migrated && (!actual || !sameSelection(actual, resolved))) {
         scope.sessionController.selectForAdmittedRequest(agent, {

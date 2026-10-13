@@ -1,3 +1,4 @@
+import { ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 import { installLegacyCompanyModelMigration } from './legacy-company-model.ts'
 import type {} from '@deepseek-ai/dsh-agent-presets'
 import { registerPlanConnection } from './chatgpt-plan-connection.ts'
@@ -82,6 +83,7 @@ export interface Config {
   /** Brain-only non-reasoning default; Runtime and HyperAgents keep their own model policy. */
   brainDefaultProvider?: string
   brainDefaultModel?: string
+  brainDefaultReasoningEffort?: string
 }
 
 export const Config: z<Config> = z.object({
@@ -100,6 +102,7 @@ export const Config: z<Config> = z.object({
   chatgptPlanFallbackModel: z.string().default('openai/gpt-6-luna'),
   brainDefaultProvider: z.string(),
   brainDefaultModel: z.string(),
+  brainDefaultReasoningEffort: z.string(),
   liveVoice: z.object({
     enabled: z.boolean().default(true),
     model: z.string().default('gpt-live-1-codex'),
@@ -316,7 +319,9 @@ function compactProjects(value: unknown): Array<{ id: string; name: string; slug
 /** Mount the one-time ticket exchange and health routes. */
 export async function apply(ctx: Context, config: Config): Promise<void> {
   installLegacyCompanyModelMigration(ctx, config.brainDefaultProvider !== undefined && config.brainDefaultModel !== undefined
-    ? { provider: config.brainDefaultProvider, model: config.brainDefaultModel }
+    ? { provider: config.brainDefaultProvider, model: config.brainDefaultModel,
+      ...(config.brainDefaultReasoningEffort === undefined ? {}
+        : { reasoningEffort: ReasoningEffortId(config.brainDefaultReasoningEffort) }) }
     : undefined)
   registerMediaAuth(ctx)
   const secret = env(config.ticketSecretEnv)

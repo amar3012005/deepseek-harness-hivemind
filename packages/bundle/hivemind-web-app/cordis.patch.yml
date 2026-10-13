@@ -66,6 +66,29 @@
             contextWindow: 131072
             maxTokens: 8192
             input: [text]
+      # Brain has one explicit Gateway route; employee providers stay unchanged.
+      hivemind-brain-glm:
+        displayName: Cloudflare GLM-5.3 Flash (Brain)
+        apiKeyEnv: CLOUDFLARE_AI_GATEWAY_TOKEN
+        api: openai-completions
+        reasoning: low
+        baseURL: !!js >-
+          `https://gateway.ai.cloudflare.com/v1/${process.env.CLOUDFLARE_ACCOUNT_ID}/${process.env.CLOUDFLARE_AI_GATEWAY_ID}/compat`
+        headers: !!js >-
+          ({ 'cf-aig-authorization': `Bearer ${process.env.CLOUDFLARE_AI_GATEWAY_TOKEN ?? ''}` })
+        compat:
+          supportsReasoningEffort: true
+        retryPolicy:
+          mode: normal
+          maxRetries: 1
+        models:
+          - id: '@cf/zai-org/glm-5.3-flash'
+            name: GLM-5.3 Flash (Brain)
+            contextWindow: 32000
+            maxTokens: 8192
+            input: [text]
+            reasoningEfforts:
+              low: low
       # Existing native OAuth record; expose the already configured recovery route.
       # No key, endpoint override or primary/default selection belongs here.
       openai-codex:
@@ -377,8 +400,9 @@
     - id: hivemind-web-runner
       name: '@deepseek-ai/dsh-hivemind-web-runner'
       config:
-        brainDefaultProvider: cloudflare-workers-ai
-        brainDefaultModel: '@cf/meta/llama-3.3-70b-instruct-fp8-fast'
+        brainDefaultProvider: hivemind-brain-glm
+        brainDefaultModel: '@cf/zai-org/glm-5.3-flash'
+        brainDefaultReasoningEffort: low
         sharedOrganizationAgents: !!js process.env.HIVE_SHARED_ORGANIZATION_AGENTS_ENABLED === 'true'
         parentOrigins: !!js (process.env.HIVEMIND_PARENT_ORIGINS ?? '').split(',').map(value => value.trim()).filter(Boolean)
         ticketSecretEnv: HIVE_HARNESS_TICKET_SECRET
