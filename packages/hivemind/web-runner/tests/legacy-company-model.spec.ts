@@ -8,7 +8,7 @@ function fixture(preset = 'hivemind-hyperagents', provider = 'openai-codex') {
   const session = Session.create(SessionId('same-mimi-room'))
   session.append('request/header', { header: { config: { provider, model: 'saved-gpt' } }, reason: 'initial' } as never)
   let pending: unknown = null
-  const selected = vi.fn((_agent, model) => { pending = model; session.append('model/selection', model) })
+  const selected = vi.fn((_agent, model) => { pending = model; _agent.session.append('model/selection', model) })
   const flush = vi.fn(async () => true)
   const registered = ['platform-route']
   const resolve = vi.fn(async model => model)
@@ -107,4 +107,55 @@ it('flushes migration through real Cordis declared injection instead of an unres
     expect(f.selected).toHaveBeenCalledOnce()
     expect(flushes).toBe(1)
   } finally { await root.fiber.dispose() }
+})
+
+const haiku = { provider: 'cloudflare-openrouter-streaming', model: 'anthropic/claude-haiku-5.5' }
+it.each(['hivemind-hq', 'hivemind-hyperagents', 'hivemind-chat'])('migrates consumed Haiku intent in %s despite the latest Codex fallback header', async (preset) => {
+  const f = fixture(preset)
+  f.session.append('model/selection', haiku)
+  f.session.append('request/header', { header: { config: haiku }, reason: 'change' } as never)
+  f.session.append('request/header', { header: { config: { provider: 'openai-codex', model: 'gpt-6-luna' } }, reason: 'change' } as never)
+  const history = f.session.snapshotEvents()
+  const cold = Session.create(SessionId('cold-company-room'), history)
+  const agent = { session: cold } as never
+  const restoredHistory = cold.snapshotEvents()
+  expect(await migrateLegacyCompanyModel(f.ctx, agent, new AbortController().signal)).toBe(true)
+  expect(f.selected).toHaveBeenCalledWith(agent, { provider: 'platform-route', model: 'platform-model' })
+  expect(cold.snapshotEvents().slice(0, restoredHistory.length)).toEqual(restoredHistory)
+  expect(cold.snapshotEvents().at(-1)?.data).toEqual({ provider: 'platform-route', model: 'platform-model' })
+  expect(f.flush).toHaveBeenCalledOnce()
+})
+it('migrates an authorized pending Haiku pin, preserving all preceding task and approval events', async () => {
+  const f = fixture()
+  f.session.append('model/selection', haiku)
+  f.setPending(haiku)
+  const history = f.session.snapshotEvents()
+  expect(await migrateLegacyCompanyModel(f.ctx, f.agent, new AbortController().signal)).toBe(true)
+  expect(f.session.snapshotEvents().slice(0, history.length)).toEqual(history)
+  expect(f.session.snapshotEvents().at(-1)?.data).toEqual({ provider: 'platform-route', model: 'platform-model' })
+})
+it('does not overwrite a newer consumed or pending non-Haiku selection or generic native profile', async () => {
+  for (const pending of [false, true]) {
+    const f = fixture()
+    f.session.append('model/selection', haiku)
+    f.session.append('model/selection', { provider: 'personal', model: 'chosen' })
+    if (pending) f.setPending({ provider: 'personal', model: 'chosen' })
+    expect(await migrateLegacyCompanyModel(f.ctx, f.agent, new AbortController().signal)).toBe(false)
+  }
+  const generic = fixture('standard');generic.session.append('model/selection',haiku)
+  expect(await migrateLegacyCompanyModel(generic.ctx,generic.agent,new AbortController().signal)).toBe(false)
+})
+it('rechecks a newer selection committed during default validation before applying migration', async () => {
+  const f = fixture();f.session.append('model/selection',haiku)
+  f.resolve.mockImplementation(async (model) => {
+    f.session.append('model/selection',{ provider:'personal',model:'new-choice' })
+    return model
+  })
+  expect(await migrateLegacyCompanyModel(f.ctx,f.agent,new AbortController().signal)).toBe(false)
+  expect(f.selected).not.toHaveBeenCalled()
+  expect(f.flush).not.toHaveBeenCalled()
+})
+it('keeps the current registered Codex route intact', async () => {
+  const codex=fixture();codex.registered.push('openai-codex')
+  expect(await migrateLegacyCompanyModel(codex.ctx,codex.agent,new AbortController().signal)).toBe(false)
 })
