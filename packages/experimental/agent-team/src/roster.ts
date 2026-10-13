@@ -1,3 +1,4 @@
+import type { ExternalPersistentAssignee } from './external-assignee.ts'
 /** Team membership, continuable-child provisioning, and roster-owned teardown. */
 
 import { randomUUID } from 'node:crypto'
@@ -21,7 +22,6 @@ import type {
   SpawnTeammateResult,
   TeamMemberSnapshot,
   TeamMemberView,
-  ExternalPersistentAssignee,
 } from './types.ts'
 import { requiredText } from './validation.ts'
 
@@ -218,14 +218,18 @@ export class TeamRoster {
    * @param description - Employee responsibility.
    * @returns Persisted assignee view.
    */
-  async bindPersistent(caller: Agent, target: Agent | ExternalPersistentAssignee, rawName: string, description: string): Promise<TeamMemberView> {
+  async bindPersistent(
+    caller: Agent, target: Agent | ExternalPersistentAssignee, rawName: string, description: string,
+  ): Promise<TeamMemberView> {
     if (this.lifecycle.disposed) throw new TeamError('Agent Teams service is disposing', 'TEAM_DISPOSED')
     const operation = this.bindPersistentAdmitted(caller, target, rawName, description)
     this.inFlightCreations.add(operation)
     try { return await operation } finally { this.inFlightCreations.delete(operation) }
   }
 
-  private async bindPersistentAdmitted(caller: Agent, target: Agent | ExternalPersistentAssignee, rawName: string, description: string): Promise<TeamMemberView> {
+  private async bindPersistentAdmitted(
+    caller: Agent, target: Agent | ExternalPersistentAssignee, rawName: string, description: string,
+  ): Promise<TeamMemberView> {
     const membership = this.membership(caller)
     if (membership.role !== 'lead' || caller !== membership.root) throw new TeamError('only the Team Lead can bind assignees', 'TEAM_LEAD_REQUIRED')
     const validTarget = (): boolean => {

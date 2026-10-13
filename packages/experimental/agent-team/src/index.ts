@@ -1,3 +1,4 @@
+import type { ExternalPersistentAssignee } from './external-assignee.ts'
 /** Agent Teams service façade over roster, mailbox, task, and runtime lifecycle owners. */
 
 import { Context } from '@deepseek-ai/cordis'
@@ -24,7 +25,6 @@ import type {
   SpawnTeammateRequest,
   SpawnTeammateResult,
   TeamMemberView,
-  ExternalPersistentAssignee,
   TeamTaskMutationResult,
   TeamTaskView,
   TeamView,
@@ -34,7 +34,7 @@ import type {
 
 export type * from './types.ts'
 export type { TeamMembership } from './roster.ts'
-export type { ExternalPersistentAssignee } from './types.ts'
+export type { ExternalPersistentAssignee } from './external-assignee.ts'
 export { TeamId, TeamMessageId, TeamTaskId } from './types.ts'
 export { TeamError } from './error.ts'
 
@@ -170,7 +170,9 @@ export class TeamService extends TypertRemoteService {
    * @param description - Human-facing employee responsibility.
    * @returns Persisted assignee roster row.
    */
-  async bindPersistentAssignee(caller: Agent, target: Agent | ExternalPersistentAssignee, name: string, description: string): Promise<TeamMemberView> {
+  async bindPersistentAssignee(
+    caller: Agent, target: Agent | ExternalPersistentAssignee, name: string, description: string,
+  ): Promise<TeamMemberView> {
     return this.roster.bindPersistent(caller, target, name, description)
   }
 
