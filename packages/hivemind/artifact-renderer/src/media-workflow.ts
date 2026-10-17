@@ -217,6 +217,11 @@ export function registerMediaWorkflow(
         throw new Error('operation_id must contain 1–120 characters')
       }
       const files = await referenceFiles(ctx, agent, args.reference_artifact_ids ?? [], args.use_latest_uploaded_images === true)
+      if (kind === 'image' && files.length === 0 && references.length === 0) {
+        const catalog = await ctx.serial('hivemind/design-reference-list', { agent })
+        if (Array.isArray(catalog) && catalog.length) return { status: 'design_reference_required', references: catalog,
+          next: 'No image job was started. Choose a suitable reference by description, call hivemind_design_reference with its reference_id and inspect the pixels, then submit the image brief.' }
+      }
       if (args.operation === 'edit' && files.length === 0) throw new Error('Image editing requires a session-owned reference image')
 
       const owner = config.requireOwner ? await ctx.serial('hivemind/media-owner', { sessionId: String(agent.session.header.id) }) : undefined

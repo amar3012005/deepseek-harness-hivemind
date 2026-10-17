@@ -55,7 +55,7 @@ describe('private owner-scoped visual reference', () => {
     ) => Promise<PostToolDecision>
     const preview = { attachmentId: 'private-pixels', mediaType: 'image/png', bytes: 200, width: 800, height: 600 }
     let reads = 0
-    const ctx = { on: (_name: string, callback: typeof listener) => { listener = callback }, serial: async () => { reads++; return { id: 'cream-orange', sha256: 'hash', preview } }, attachments: { async *readFileStream() { yield Buffer.from('<html>Existing complete design</html>') } } } as unknown as Context
+    const ctx = { on: (_name: string, callback: typeof listener) => { listener = callback }, serial: async (event: string) => { if (event === 'hivemind/design-reference-list') return []; reads++; return { id: 'cream-orange', sha256: 'hash', preview } }, attachments: { async *readFileStream() { yield Buffer.from('<html>Existing complete design</html>') } } } as unknown as Context
     installNativeDesignSkillReference(ctx)
     let events: unknown[] = []
     const execution = { name: 'skill', arguments: { name: 'design-artifact' }, signal: new AbortController().signal, agent: { session: { snapshotEvents: () => events } } } as unknown as ToolExecution

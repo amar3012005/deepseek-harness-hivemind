@@ -7,6 +7,7 @@ import type { FileAttachmentRef, ImageAttachmentRef } from '@deepseek-ai/dsh-att
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { MediaOwner } from './media-admission.ts'
 import { inspectPdf } from './pdf-inspection.ts'
+import { currentDesignReference } from './design-reference.ts'
 import { embedHtmlAssets, latestUploadedImages } from './html-assets.ts'
 import type { DesignProfile, DesignQuality } from './design-kit.ts'
 
@@ -29,6 +30,7 @@ export interface GenerationRequest {
   readonly sourcePath?: string
   readonly aspectRatio?: string
   readonly durationSeconds?: number
+  readonly designReference?: { readonly id: string; readonly sha256: string }
   readonly designProfile?: DesignProfile
 }
 /** Bytes created by the provider; no delivery claim is made until storage succeeds. */
@@ -98,6 +100,7 @@ export interface GenerationReceipt {
   readonly sha256: string
   readonly pageCount?: number
   readonly preview?: ImageAttachmentRef
+  readonly designReference?: { readonly id: string; readonly sha256: string }
   readonly designProfile?: DesignProfile
   readonly designQuality?: DesignQuality
   /** Conventional image content lets the native Session route authorize async previews. */
@@ -132,6 +135,7 @@ export async function generateArtifact(
     readonly sourcePath?: string
     readonly aspectRatio?: string
     readonly durationSeconds?: number
+    readonly designReference?: { readonly id: string; readonly sha256: string }
     readonly designProfile?: DesignProfile
   },
   agent: { readonly session: { readonly header: { readonly cwd?: string }; append(type: 'hivemind/generation-created', receipt: GenerationReceipt): unknown } },
@@ -157,6 +161,7 @@ export async function generateArtifact(
     ...(input.sourcePath === undefined ? {} : { sourcePath: input.sourcePath }),
     ...(input.aspectRatio === undefined ? {} : { aspectRatio: input.aspectRatio }),
     ...(input.durationSeconds === undefined ? {} : { durationSeconds: input.durationSeconds }),
+    ...(input.designReference === undefined ? {} : { designReference: input.designReference }),
     ...(input.designProfile === undefined ? {} : { designProfile: input.designProfile }),
   })
   signal.throwIfAborted()
@@ -197,6 +202,7 @@ export async function generateArtifact(
     ...((inspection?.pageCount ?? generated.pageCount) === undefined ? {} : { pageCount: inspection?.pageCount ?? generated.pageCount }),
     sha256: createHash('sha256').update(generated.data).digest('hex'),
     ...(preview === undefined ? {} : { preview, content: [{ type: 'image', attachment: preview }] }),
+    ...(input.designReference === undefined ? {} : { designReference: input.designReference }),
     ...(input.designProfile === undefined ? {} : { designProfile: input.designProfile }),
     ...(generated.designQuality === undefined ? {} : { designQuality: generated.designQuality }),
   }
@@ -239,6 +245,12 @@ export function registerGenerationTools(
       if (agent === undefined) throw new Error('Generation requires an active session')
       if (!args.title.trim() || args.title.length > 240) throw new Error('Title must contain 1–240 characters')
       if (!args.content.trim() || args.content.length > maxContentChars) throw new Error(`Content must contain 1–${maxContentChars} characters`)
+      const selectedReference = currentDesignReference(agent.session.snapshotEvents())
+      if ((args.format === 'web' || args.source_format === 'html') && !selectedReference && latestUploadedImages(agent).size === 0) {
+        const catalog = await ctx.serial('hivemind/design-reference-list', { agent })
+        if (Array.isArray(catalog) && catalog.length) return { status: 'design_reference_required', references: catalog,
+          next: 'No artifact was generated. Read these descriptions, choose the best match, call hivemind_design_reference with its reference_id, inspect the returned image pixels, then author or revise the HTML and call hivemind_generate again.' }
+      }
       const referenceImages = args.reference_images ?? []
       if (referenceImages.length > 8 || referenceImages.some((value) => { try { const u = new URL(value); return u.protocol !== 'https:' || Boolean(u.username || u.password) } catch { return true } })) throw new Error('Use at most eight public HTTPS reference image URLs')
       if (args.source_format && !['web', 'pdf'].includes(args.format)) throw new Error('HTML source supports web or PDF only')
@@ -253,6 +265,7 @@ export function registerGenerationTools(
         registry,
         outputDirectory,
         {
+          ...(selectedReference ? { designReference: { id: selectedReference.id, sha256: selectedReference.sha256 } } : {}),
           format: args.format as GenerationFormat, title: args.title, content, referenceImages,
           ...(args.source_format === undefined ? {} : { sourceFormat: args.source_format, savedImageIds: args.saved_image_ids ?? [],
             ...(args.use_latest_uploaded_images === true ? { uploadedImageIds: [...latestUploadedImages(agent)].filter(([id]) => args.content.includes(`hive-asset:${id}`)).map(([, ref]) => String(ref.attachmentId)) } : {}),
@@ -267,6 +280,7 @@ export function registerGenerationTools(
         artifact_id: receipt.artifactId, title: args.title, format: receipt.format, provider: receipt.provider,
         path: receipt.path, file: receipt.file, sha256: receipt.sha256,
         ...(receipt.preview === undefined ? {} : { preview: receipt.preview }),
+        ...(receipt.designReference === undefined ? {} : { design_reference: receipt.designReference }),
         ...(receipt.designProfile === undefined ? {} : { design_profile: receipt.designProfile }),
         ...(receipt.designQuality === undefined ? {} : { design_quality: receipt.designQuality }),
         ...(receipt.pageCount === undefined ? {} : { page_count: receipt.pageCount, preview_page: 1 }),

@@ -1,5 +1,6 @@
 /** Private owner-scoped design exemplars, delivered through native logged tool results. */
 import { createHash } from 'node:crypto'
+import { defaultDesignCatalogDirectory, listDesignReferences, readCatalogReference, registerDesignReferenceCatalog } from './design-reference-catalog.ts'
 import { bundledDesignExemplar } from './design-exemplar.ts'
 import { readFile, realpath, stat } from 'node:fs/promises'
 import { isAbsolute, join, relative, sep } from 'node:path'
@@ -17,7 +18,7 @@ declare module '@deepseek-ai/cordis' {
      * @param input - Active agent and declared design purpose.
      * @mode serial
      */
-    'hivemind/design-reference'(input: { agent: Agent; purpose: string }): Promise<DesignReference | undefined>
+    'hivemind/design-reference'(input: { agent: Agent; purpose: string; referenceId?: string }): Promise<DesignReference | undefined>
   }
 }
 declare module '@deepseek-ai/dsh-session/types' {
@@ -69,13 +70,18 @@ export async function readPrivateReference(
   if (!data.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])) || createHash('sha256').update(data).digest('hex') !== selected.sha256) throw new Error('Private design reference integrity mismatch')
   return { id: selected.id, data, sha256: selected.sha256 }
 }
-export function registerPrivateDesignReferences(ctx: Context, directory: string, maxSourceChars: number): void {
+export function registerPrivateDesignReferences(
+  ctx: Context, directory: string, maxSourceChars: number, catalogDirectory = defaultDesignCatalogDirectory,
+): void {
   if (!directory) return
-  ctx.on('hivemind/design-reference', async ({ agent, purpose }) => {
+  registerDesignReferenceCatalog(ctx, catalogDirectory)
+  ctx.on('hivemind/design-reference', async ({ agent, purpose, referenceId }) => {
     const sessionId = String(agent.session.header.id)
     const owner = await ctx.serial('hivemind/media-owner', { sessionId })
     if (!owner?.orgId || !owner.userId || owner.sessionId !== sessionId) throw new Error('Private reference authenticated owner unavailable')
-    const reference = await readPrivateReference(directory, owner.orgId, owner.userId, purpose) ?? bundledDesignExemplar(purpose)
+    if (!referenceId && (await listDesignReferences(catalogDirectory)).length) return undefined
+    const reference = referenceId ? await readCatalogReference(catalogDirectory, referenceId)
+      : await readPrivateReference(directory, owner.orgId, owner.userId, purpose) ?? bundledDesignExemplar(purpose)
     const preview = await ctx.attachments.saveImage({ data: reference.data, mediaType: 'image/png', name: 'private-design-reference.png' })
     const result = { id: reference.id, sha256: reference.sha256, preview }
     agent.session.append('hivemind/design-reference-selected', result)
@@ -120,6 +126,10 @@ export function installNativeDesignSkillReference(ctx: Context, maxSourceChars =
       && ['user', 'schedule', 'agent-message'].includes(item.data.source.kind))
     if (message?.type === 'user/message' && message.data.source.kind === 'user' && message.data.content.some(block => block.type === 'image')) return previousHtml.length ? { ...decision, content } : decision
     execution.signal.throwIfAborted()
+    const catalog = await ctx.serial('hivemind/design-reference-list', { agent })
+    if (!currentDesignReference(events) && Array.isArray(catalog) && catalog.length) return { ...decision, content: [...content,
+      { type: 'text', text: JSON.stringify({ status: 'choose_design_reference', references: catalog, next: 'Choose the best reference description for the brief. Call hivemind_design_reference with its reference_id to inspect actual pixels before authoring HTML or generating illustrations. Preserve the previous artifact composition for edits.' }) },
+    ] }
     const reference = currentDesignReference(events) ?? await ctx.serial('hivemind/design-reference', { agent, purpose: 'design_purpose' in execution.arguments && typeof execution.arguments.design_purpose === 'string' ? execution.arguments.design_purpose : 'editorial' })
     execution.signal.throwIfAborted()
     if (!reference) return previousHtml.length ? { ...decision, content } : decision
