@@ -52,6 +52,11 @@ function projectionsBaseline(value: SessionProjectionBaseline): ProjectionsBasel
 /** Messages requested per history page. */
 export const PAGE_MESSAGES = 50
 
+/** Initial HIVE view is five messages; older pages retain the native batch size. */
+export function initialHistoryMessages(): number {
+  return typeof window !== 'undefined' && window.location?.pathname?.startsWith('/hivemind/') ? 5 : PAGE_MESSAGES
+}
+
 /** Messages requested per page while a turn jump loops backwards (fewer, larger round trips). */
 export const JUMP_PAGE_MESSAGES = 200
 
@@ -618,7 +623,7 @@ export class Session implements SessionFace {
     })
     this.events = events
     try {
-      await events.open({ maxMessages: PAGE_MESSAGES })
+      await events.open({ maxMessages: initialHistoryMessages() })
       if (generation !== this.openGeneration || this.events !== events) return
       this.openState = 'open'
     } catch (error) {

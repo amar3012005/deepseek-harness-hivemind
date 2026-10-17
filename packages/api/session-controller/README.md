@@ -84,3 +84,5 @@ None.
 </details>
 
 **Runtime invariant:** No companion is published. Every page and frame is checked against the addressed durable Session.
+
+HIVE routes request five messages when opening the initial history window. Upward pagination continues through the native fifty-message cursor pages; this display limit does not change model context or saved history.
