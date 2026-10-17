@@ -1,5 +1,6 @@
 /** Private owner-scoped design exemplars, delivered through native logged tool results. */
 import { createHash } from 'node:crypto'
+import { bundledDesignExemplar } from './design-exemplar.ts'
 import { readFile, realpath, stat } from 'node:fs/promises'
 import { isAbsolute, join, relative, sep } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
@@ -74,8 +75,7 @@ export function registerPrivateDesignReferences(ctx: Context, directory: string,
     const sessionId = String(agent.session.header.id)
     const owner = await ctx.serial('hivemind/media-owner', { sessionId })
     if (!owner?.orgId || !owner.userId || owner.sessionId !== sessionId) throw new Error('Private reference authenticated owner unavailable')
-    const reference = await readPrivateReference(directory, owner.orgId, owner.userId, purpose)
-    if (!reference) return undefined
+    const reference = await readPrivateReference(directory, owner.orgId, owner.userId, purpose) ?? bundledDesignExemplar(purpose)
     const preview = await ctx.attachments.saveImage({ data: reference.data, mediaType: 'image/png', name: 'private-design-reference.png' })
     const result = { id: reference.id, sha256: reference.sha256, preview }
     agent.session.append('hivemind/design-reference-selected', result)
@@ -106,8 +106,9 @@ export async function existingHtmlDesignContext(
 export function installNativeDesignSkillReference(ctx: Context, maxSourceChars = 40_000): void {
   ctx.on('tools/post-execute', async (execution, result, next): Promise<PostToolDecision> => {
     const decision = await next()
-    if (decision.kind !== 'accept' || 'value' in decision || result.isError || execution.name !== 'skill'
+    if (decision.kind !== 'accept' || 'value' in decision || result.isError || !['skill', 'hivemind_skills'].includes(execution.name)
       || !execution.agent || typeof execution.arguments !== 'object' || execution.arguments === null
+      || (execution.name === 'hivemind_skills' && (!('operation' in execution.arguments) || execution.arguments.operation !== 'load'))
       || !('name' in execution.arguments) || execution.arguments.name !== 'design-artifact') return decision
     const agent = execution.agent
     const events = agent.session.snapshotEvents()
@@ -119,7 +120,7 @@ export function installNativeDesignSkillReference(ctx: Context, maxSourceChars =
       && ['user', 'schedule', 'agent-message'].includes(item.data.source.kind))
     if (message?.type === 'user/message' && message.data.source.kind === 'user' && message.data.content.some(block => block.type === 'image')) return previousHtml.length ? { ...decision, content } : decision
     execution.signal.throwIfAborted()
-    const reference = currentDesignReference(events) ?? await ctx.serial('hivemind/design-reference', { agent, purpose: 'editorial' })
+    const reference = currentDesignReference(events) ?? await ctx.serial('hivemind/design-reference', { agent, purpose: 'design_purpose' in execution.arguments && typeof execution.arguments.design_purpose === 'string' ? execution.arguments.design_purpose : 'editorial' })
     execution.signal.throwIfAborted()
     if (!reference) return previousHtml.length ? { ...decision, content } : decision
     if (content.some(block => block.type === 'image' && 'attachment' in block && block.attachment.attachmentId === reference.preview.attachmentId)) return previousHtml.length ? { ...decision, content } : decision

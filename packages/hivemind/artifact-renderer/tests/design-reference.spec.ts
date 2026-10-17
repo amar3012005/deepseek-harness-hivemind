@@ -3,6 +3,7 @@ import { mkdtemp, mkdir, writeFile, rm, symlink } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, it, expect } from 'vitest'
+import { bundledDesignExemplar } from '../src/design-exemplar.ts'
 import { currentDesignReference, existingHtmlDesignContext, installNativeDesignSkillReference, readPrivateReference, referenceOwnerKey } from '../src/design-reference.ts'
 import { Context } from '@deepseek-ai/cordis'
 import type { ToolExecution, ToolExecutionResult, PostToolDecision } from '@deepseek-ai/dsh-tools'
@@ -12,6 +13,14 @@ import { ToolCallId } from '@deepseek-ai/dsh-llm'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 
 describe('private owner-scoped visual reference', () => {
+  it('provides original offline reference pixels without copying any tenant content', () => {
+    const editorial = bundledDesignExemplar('editorial')
+    expect(Array.from(editorial.data.slice(0, 8))).toEqual([137, 80, 78, 71, 13, 10, 26, 10])
+    expect(bundledDesignExemplar('editorial')).toBe(editorial)
+    expect(bundledDesignExemplar('marketing').sha256).not.toBe(editorial.sha256)
+    expect(bundledDesignExemplar('unknown')).toBe(editorial)
+  })
+
   it('supplies the saved same-chat HTML source and actual preview again on a later edit turn', async () => {
     const preview = { attachmentId: 'actual-preview', mediaType: 'image/png', bytes: 20, width: 800, height: 600 }
     const events = [{ type: 'hivemind/generation-created', data: { artifactId: 'saved-html', title: 'Designed plan', mediaType: 'text/html', sha256: 'hash', file: { attachmentId: 'saved-file' }, preview } }, { type: 'turn/start', data: { turn: 2 } }]
@@ -22,19 +31,19 @@ describe('private owner-scoped visual reference', () => {
     expect(content).toContainEqual({ type: 'image', attachment: preview })
     await expect(existingHtmlDesignContext(ctx, agent, new AbortController().signal, 10)).rejects.toThrow('configured design-context limit')
   })
-  it('preserves the image in the real native tool pipeline final model-facing result', async () => {
+  it.each(['skill', 'hivemind_skills'])('preserves the image in the real %s tool pipeline result', async (loader) => {
     const ctx = new Context()
     await ctx.plugin(SystemPrompt); await ctx.plugin(ToolRuntime)
     {
       const preview = { attachmentId: 'pixels', mediaType: 'image/png', bytes: 20, width: 800, height: 600 }
       ctx.on('hivemind/design-reference', async () => ({ id: 'cream-orange', sha256: 'hash', preview }) as never)
-      ctx.tools.register(defineTool({ name: 'skill', description: 'Native loader shape', parameters: { name: { type: 'string', required: true } },
+      ctx.tools.register(defineTool({ name: loader, description: 'Native loader shape', parameters: { name: { type: 'string', required: true }, operation: { type: 'string' } },
         output: { schema: { type: 'object', additionalProperties: true, properties: {} }, render: (_args, value) => [{ type: 'text', text: JSON.stringify(value) }] },
         execute: async () => ({ name: 'design-artifact', provider: 'bundled', content: 'Native design instructions' }),
       }))
       installNativeDesignSkillReference(ctx)
       const agent = { session: { snapshotEvents: () => [] } } as unknown as Agent
-      const result = await ctx.tools.execute({ name: 'skill', arguments: { name: 'design-artifact' }, callId: ToolCallId('design-load'), agent, signal: new AbortController().signal })
+      const result = await ctx.tools.execute({ name: loader, arguments: { name: 'design-artifact', ...(loader === 'hivemind_skills' ? { operation: 'load' } : {}) }, callId: ToolCallId('design-load'), agent, signal: new AbortController().signal })
       expect(result.isError).toBe(false)
       expect(result.content).toContainEqual({ type: 'image', attachment: preview })
       expect(result.content[0]).toMatchObject({ type: 'text' })
@@ -56,7 +65,7 @@ describe('private owner-scoped visual reference', () => {
     expect(decision).toMatchObject({ kind: 'accept', content: expect.arrayContaining([{ type: 'image', attachment: preview }]) })
     expect(JSON.stringify(decision)).toContain('homepage is factual context, not approved Brand DNA')
     expect(reads).toBe(1)
-    await listener({ ...execution, name: 'hivemind_skills' }, result, next)
+    await listener({ ...execution, name: 'hivemind_skills', arguments: { operation: 'search', name: 'design-artifact' } }, result, next)
     expect(reads).toBe(1)
     events = [{ type: 'user/message', data: { source: { kind: 'user' }, content: [{ type: 'image', attachment: { attachmentId: 'user-reference' } }] } }]
     expect(await listener(execution, result, next)).toEqual({ kind: 'accept' })

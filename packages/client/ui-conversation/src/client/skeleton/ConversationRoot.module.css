@@ -734,7 +734,7 @@
 }
 
 /* Brain keeps its native scope/workspace actions in a quiet context strip. */
-.root[data-brain-room] .heroWorkspaceRow { margin: 0 var(--dsh-composer-side-clearance) -10px; padding: 12px 18px 18px; border-radius: 20px 20px 0 0; background: var(--dsw-alias-interactive-bg-hover); gap: 16px; }
+.root[data-brain-room] .heroWorkspaceRow { margin: 0 var(--dsh-composer-side-clearance); padding: 8px 14px; border-radius: 14px; background: var(--dsw-alias-interactive-bg-hover); gap: 16px; }
 
 
 /* A voice-first session has no transcript yet. Auto space docks the same
