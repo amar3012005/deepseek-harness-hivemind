@@ -1,9 +1,16 @@
 import type { PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
-import { useEffect, useState } from 'react'
+import { useEffect, useId, useState } from 'react'
 import { roomIdentity } from './room-identity.ts'
 import { SessionCredits } from './SessionCredits.tsx'
 import css from './DreamingConnectors.module.css'
 import { EmployeeAvatar, RuntimeAvatar, projectedEmployee } from './HyperagentEmployee.tsx'
+function CompanyBrainIcon() {
+  const id = `company-brain-${useId().replace(/:/gu, "")}`
+  return <svg width="38" height="38" viewBox="0 0 40 40" role="img" aria-label="Company Brain">
+    <defs><linearGradient id={`${id}-shade`} x2="1" y2="1"><stop stopColor="#e7dcf0"/><stop offset=".5" stopColor="#b3a4c5"/><stop offset="1" stopColor="#756686"/></linearGradient><pattern id={`${id}-weave`} width="2" height="2" patternUnits="userSpaceOnUse"><path d="M0 0H2M0 0V2" stroke="white" strokeOpacity=".22" strokeWidth=".45"/></pattern><clipPath id={`${id}-shape`}><path d="M20 9C15 3 8 7 9 12C3 13 3 20 6 23C3 29 8 34 13 32C15 37 20 34 20 31C20 34 25 37 27 32C32 34 37 29 34 23C37 20 37 13 31 12C32 7 25 3 20 9Z"/></clipPath></defs>
+    <ellipse cx="20" cy="35" rx="12" ry="2" fill="#44354d" opacity=".12"/><g clipPath={`url(#${id}-shape)`}><rect x="3" y="4" width="34" height="32" fill={`url(#${id}-shade)`}/><rect x="3" y="4" width="34" height="32" fill={`url(#${id}-weave)`}/></g><path d="M20 10V31M13 12C12 17 17 16 16 21M9 22C14 19 15 26 12 28M27 12C28 17 23 16 24 21M31 22C26 19 25 26 28 28" fill="none" stroke="#695977" strokeWidth="1.5" strokeLinecap="round" opacity=".65"/>
+  </svg>
+}
 const names: Record<string, string> = { googlecalendar: 'Google Calendar', gmail: 'Gmail', slack: 'Slack', googledocs: 'Google Docs', googledrive: 'Google Drive', github: 'GitHub', notion: 'Notion', outlook: 'Outlook' }
 export function BrainConnections({ sessionId, useSessions, environmentActivity, showDetails, isPreviewOpen, hero = false }: PropsRuntime<'conversation.session.header.utilities'> & { hero?: boolean; showDetails: () => void; isPreviewOpen?: () => boolean }) {
   const preset = useSessions(state => state.byId[sessionId]?.projectionValues?.agentPreset ?? state.byId[sessionId]?.agentPreset)
@@ -79,8 +86,8 @@ export function BrainConnections({ sessionId, useSessions, environmentActivity, 
     <div className={css.environmentHeading}><span className={css.dots} aria-hidden="true"><i /><i /><i /></span><span>Environment</span><button type="button" onClick={() => { setOpen(false); setWideOpen(false) }}>Hide</button></div>
     <div className={css.identity}>
       {employee ? <EmployeeAvatar employee={employee} size={40} />
-        : hyperagents ? <RuntimeAvatar size={52} /> : <span className={css.avatar}>H</span>}
-      <span><strong>{identity?.name ?? (hyperagents ? 'Runtime' : 'HIVEMIND-Chat')}</strong><small>{identity?.role ?? (hyperagents ? 'AI Chief of Staff' : 'Your company brain')}</small>{hyperagents && <small className={css.agentStatus}><i className={running || busy ? css.workingDot : css.readyDot} aria-hidden="true" />{running || busy ? 'Working' : 'Ready'}</small>}</span></div>
+        : hyperagents ? <RuntimeAvatar size={52} /> : <CompanyBrainIcon />}
+      <span><strong>{identity?.name ?? (hyperagents ? 'Runtime' : 'Company Brain')}</strong><small>{identity?.role ?? (hyperagents ? 'AI Chief of Staff' : 'Your company brain')}</small>{hyperagents && <small className={css.agentStatus}><i className={running || busy ? css.workingDot : css.readyDot} aria-hidden="true" />{running || busy ? 'Working' : 'Ready'}</small>}</span></div>
     <button type="button" className={css.connectorHeading} aria-expanded={showApps} onClick={() => { setAppsOpen(value => !value) }}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M9 3v5M15 3v5M7 8h10v4a5 5 0 0 1-5 5v4M7 8v4" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" /></svg><span>Connected apps</span><span aria-hidden="true">{showApps ? '⌄' : '›'}</span></button>
     {showApps && <>
       {error ? <p role="status">Apps could not be loaded. Reopen this page to try again.</p> : accounts === undefined ? <p>Loading connected apps…</p> :

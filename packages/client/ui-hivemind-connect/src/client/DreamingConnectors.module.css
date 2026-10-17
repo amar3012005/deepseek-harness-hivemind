@@ -68,3 +68,8 @@
 .identity small { overflow-wrap: anywhere; }
 
 .compactIdentity { display: inline-flex; align-items: center; gap: 7px; margin-right: 8px; font-size: 12px; }
+
+/* The embedded Brain canvas starts below the outer navbar already. */
+@media (min-width: 901px) {
+  :global([data-brain-chat]) :global([data-conversation-header-corner]) { top: 12px !important; }
+}
