@@ -1,0 +1,17 @@
+ARG BRAIN_BASE
+FROM ${BRAIN_BASE}
+USER root
+WORKDIR /opt/deepseek-harness
+COPY pnpm-lock.yaml pnpm-lock.yaml
+COPY packages/client/ui-workspace/ packages/client/ui-workspace/
+COPY packages/client/ui-conversation/ packages/client/ui-conversation/
+RUN pnpm install --frozen-lockfile --ignore-scripts \
+ && node node_modules/typescript/bin/tsc -b packages/client/ui-workspace packages/client/ui-conversation \
+ && (cd packages/client/ui-workspace && node ../../../node_modules/tsdown/dist/run.mjs --env.DSH_BUILD_FACE client --config tsdown.config.ts) \
+ && (cd packages/client/ui-conversation && node ../../../node_modules/tsdown/dist/run.mjs --env.DSH_BUILD_FACE client --config tsdown.config.ts) \
+ && grep -q 'data-room-call-strip' packages/client/ui-workspace/lib/client.js \
+ && grep -q 'Ask me anything about your company, people, projects.' packages/client/ui-conversation/lib/client.js
+ARG SOURCE_SHA
+ENV DSH_CLIENT_COMMIT_HASH=$SOURCE_SHA
+LABEL org.opencontainers.image.revision=$SOURCE_SHA com.singulance.scope=brain-voice-composer
+USER node

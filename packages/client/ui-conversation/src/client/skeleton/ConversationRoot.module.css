@@ -736,4 +736,8 @@
 /* Brain keeps its native scope/workspace actions in a quiet context strip. */
 .root[data-brain-room] .heroWorkspaceRow { margin: 0 var(--dsh-composer-side-clearance) -10px; padding: 12px 18px 18px; border-radius: 20px 20px 0 0; background: var(--dsw-alias-interactive-bg-hover); gap: 16px; }
 
-.brainContext { font-size: 13px; font-weight: 500; color: var(--dsw-alias-label-primary); }
+
+/* A voice-first session has no transcript yet. Auto space docks the same
+   composer seat at the floor without scrolling or remounting its media owner. */
+.root[data-brain-room][data-phase='active'] .composerSeat { margin-top: auto; }
+.root[data-brain-room] .composerSeat:has(:global([data-room-call-strip])) { padding-top: 56px; }

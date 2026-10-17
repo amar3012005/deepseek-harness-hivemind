@@ -304,7 +304,6 @@ export function ConversationRoot({
 
   const heroWorkspaceRow = (
     <div className={css.heroWorkspaceRow}>
-      {/^\/hivemind\/app\/overview(?:\/|$)/u.test(window.location.pathname) && <span className={css.brainContext}>HIVEMIND</span>}
       {renderSlot('conversation.hero.scope', { sessionId, locked: sessionId === undefined })}
       {requiresWorkspace && <WorkspaceChip
         buttonRef={pickerAnchor}
@@ -354,7 +353,9 @@ export function ConversationRoot({
         // block keeps the model seat live because choosing a model is how the
         // user clears it.
         ? { blocked: composerBlock, placeholder: composerBlock.reason }
-        : hero ? { placeholder: t(/^\/hivemind\/app\/overview(?:\/|$)/u.test(window.location.pathname) ? 'placeholder.brain' : 'placeholder.hero') } : {}),
+        : /^\/hivemind\/app\/overview(?:\/|$)/u.test(window.location.pathname)
+          ? { placeholder: t('placeholder.brain') }
+          : hero ? { placeholder: t('placeholder.hero') } : {}),
   })
 
   const composerBar = (

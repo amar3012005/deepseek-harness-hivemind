@@ -371,14 +371,14 @@
 .trailing:has([data-voice-active]) [data-composer-context-meter] { display: none; }
 
 /* Brain reference composer; native slots retain their behavior and state. */
-:global([data-brain-room]) .card { border-radius: 28px; padding-top: 18px; gap: 24px; box-shadow: 0 2px 14px #00000006, 0 0 0 1px var(--dsw-alias-border-l2); }
-:global([data-brain-room]) .row { padding: 4px 14px 12px; flex-wrap: wrap; }
+:global([data-brain-room]) .card { border-radius: 24px; padding-top: 10px; gap: 8px; box-shadow: 0 2px 14px #00000006, 0 0 0 1px var(--dsw-alias-border-l2); }
+:global([data-brain-room]) .row { padding: 2px 12px 8px; flex-wrap: wrap; }
 :global([data-brain-room]) .add { background: transparent; width: 30px; height: 36px; }
 :global([data-brain-room]) .add svg { width: 20px; height: 20px; }
 :global([data-brain-room]) .primary { border-radius: 50%; }
 :global([data-brain-room]) .trailing { gap: 14px; }
 @media (max-width: 540px) {
-  :global([data-brain-room]) .card { border-radius: 24px; gap: 16px; }
+  :global([data-brain-room]) .card { border-radius: 24px; gap: 8px; }
   :global([data-brain-room]) .tools { gap: 8px; }
   :global([data-brain-room]) .trailing { gap: 8px; }
 }

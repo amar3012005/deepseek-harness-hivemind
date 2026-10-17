@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { HiveLiveVoiceButton } from '../src/client/HiveLiveVoiceButton.tsx'
 
+vi.mock('voice-glow', () => ({ VoiceBeam: ({ children }: { children: React.ReactNode }) => children }))
 vi.mock('@deepseek-ai/dsh-client-ui-primitives', () => ({ Tooltip: ({ children }: { children: React.ReactNode }) => children }))
 vi.mock('../src/client/grok-voice.ts', () => ({ startGrokVoice: vi.fn(async () => ({ close: vi.fn(), id: 'grok-call' })) }))
 import { startGrokVoice } from '../src/client/grok-voice.ts'
@@ -34,7 +35,7 @@ describe('native HIVEMIND live voice composer', () => {
     render(<HiveLiveVoiceButton sessionId={'session-1' as never} useInput={input()} t={t} />)
     expect(screen.queryByText('voice.alternate')).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: 'voice.start' }))
-    await waitFor(() => { expect(screen.getByRole('alert').textContent).toContain('ChatGPT connection is unavailable') })
+    await waitFor(() => { expect(screen.getByRole('alertdialog').textContent).toContain('voice.connectionUnavailable') })
     expect(startGrokVoice).not.toHaveBeenCalled()
     expect(stop).toHaveBeenCalledOnce()
     expect(fetcher).toHaveBeenCalledOnce()
@@ -46,10 +47,11 @@ describe('native HIVEMIND live voice composer', () => {
     vi.stubGlobal('Audio', class { autoplay = false; pause = vi.fn() })
     const fetcher = vi.fn(async () => ({ ok: true, json: async () => ({ id: 'room-1', sdp: 'answer' }) }))
     vi.stubGlobal('fetch', fetcher)
-    render(<HiveLiveVoiceButton sessionId={'session-1' as never} useInput={input('draft')} t={t} />)
+    const view = render(<div data-composer-card><HiveLiveVoiceButton sessionId={'session-1' as never} useInput={input('draft')} t={t} /></div>)
     const invitation = new CustomEvent('hivemind:start-room-call', { cancelable: true, detail: { sessionId: 'session-1' } })
     fireEvent(window, invitation)
     expect(invitation.defaultPrevented).toBe(true)
+    expect(view.container.querySelector('[data-composer-card] > [data-room-call-strip]')).not.toBeNull()
     await waitFor(() => { expect(Peer.instance.setRemoteDescription).toHaveBeenCalledOnce() })
     const repeat = new CustomEvent('hivemind:start-room-call', { cancelable: true, detail: { sessionId: 'session-1' } })
     fireEvent(window, repeat)

@@ -80,5 +80,8 @@
     "lib/index.js",
     "lib/client.js",
     "lib/types/**/*.d.ts"
-  ]
+  ],
+  "dependencies": {
+    "voice-glow": "0.2.1"
+  }
 }
