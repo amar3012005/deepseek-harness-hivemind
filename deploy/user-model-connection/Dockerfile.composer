@@ -3,6 +3,7 @@ FROM ${BRAIN_BASE}
 USER root
 WORKDIR /opt/deepseek-harness
 COPY pnpm-lock.yaml pnpm-lock.yaml
+COPY packages/bundle/hivemind-web-app/cordis.patch.yml packages/bundle/hivemind-web-app/cordis.patch.yml
 COPY packages/hivemind/web-runner/ packages/hivemind/web-runner/
 COPY packages/hivemind/artifact-renderer/ packages/hivemind/artifact-renderer/
 COPY packages/api/session-controller/ packages/api/session-controller/

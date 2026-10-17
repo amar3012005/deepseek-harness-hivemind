@@ -27,7 +27,7 @@ function fixture(identity = owner, connected = true) {
 it('routes native image generation through the selected user and reconciles the same operation', async () => {
   const { handlers, requests } = fixture()
   const provider = await handlers.get('hivemind/selected-image-provider')!() as GenerationProvider
-  const result = await provider.generate({ owner: { ...owner, sessionId: 'session-test' }, operationId: 'operation-test', content: 'A green leaf', title: 'Leaf', reconcileOnly: true, signal: new AbortController().signal })
+  const result = await provider.generate({ cwd: '/workspace', owner: { ...owner, sessionId: 'session-test' }, operationId: 'operation-test', content: 'A green leaf', title: 'Leaf', reconcileOnly: true, signal: new AbortController().signal })
   expect(result.data.toString()).toBe('image-fixture')
   expect(requests.at(-1)).toBe('https://bridge.example/bridge/brain-test/images/generate')
 })

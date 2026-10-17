@@ -160,7 +160,7 @@
 - id: agent-default-model
   config:
     provider: cloudflare-openrouter-streaming
-    model: openai/gpt-6-luna
+    model: z-ai/glm-5.3-flash:nitro
 
 - id: session-persistence-jsonl
   disabled: true

@@ -71,7 +71,7 @@ export function ModelSelect(
     window.addEventListener('focus', refresh)
     return () => { controller.abort(); clearInterval(timer); window.removeEventListener('focus', refresh) }
   }, [hivemind])
-  const groups = !hivemind ? state.groups : connection?.connected ? state.groups.filter(group => group.id === 'hivemind-codex-cloud') : state.groups.filter(group => group.id === 'cloudflare-openrouter-streaming').map(group => ({ ...group, name: 'Default', models: group.models.map(model => ({ ...model, name: 'Default' })) }))
+  const groups = !hivemind ? state.groups : connection?.connected ? state.groups.filter(group => group.id === 'hivemind-codex-cloud') : state.groups.filter(group => group.id === 'cloudflare-openrouter-streaming').map(group => ({ ...group, name: 'Default', models: group.models.filter(model => model.id === 'z-ai/glm-5.3-flash:nitro').map(model => ({ ...model, name: 'Default' })) }))
   const [open, setOpen] = useState(false)
   const [pane, setPane] = useState<Pane>('root')
   // The in-menu error strip serves catalog loads (its Retry re-runs the
@@ -354,9 +354,9 @@ export function ModelSelect(
                 </div>
               ))}
               <div className={clsx(css.groups, 'scrollable')}>
-                {hivemind && connection?.connected && state.groups.find(group => group.id === 'cloudflare-openrouter-streaming')?.models[0] && (
+                {hivemind && connection?.connected && state.groups.find(group => group.id === 'cloudflare-openrouter-streaming')?.models.find(model => model.id === 'z-ai/glm-5.3-flash:nitro') && (
                   <button type="button" role="menuitem" className={css.option} onClick={() => {
-                    const model = state.groups.find(group => group.id === 'cloudflare-openrouter-streaming')?.models[0]
+                    const model = state.groups.find(group => group.id === 'cloudflare-openrouter-streaming')?.models.find(model => model.id === 'z-ai/glm-5.3-flash:nitro')
                     if (model) choose({ provider: 'cloudflare-openrouter-streaming', model: model.id })
                   }}>Follow Usage default · {connection.selected_model?.replace(/^gpt-/u, 'GPT-').replace(/-luna$/u, ' Luna')}</button>
                 )}

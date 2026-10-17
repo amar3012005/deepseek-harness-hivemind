@@ -71,6 +71,25 @@ describe('ModelSelect reasoning effort', () => {
     expect(screen.queryByRole('menuitemradio', { name: 'DeepSeek-V4-Flash' })).toBeNull()
   })
 
+  it('offers only the GLM-backed Default without a ChatGPT connection', async () => {
+    document.documentElement.dataset.dshMode = 'hivemind-chat'
+    vi.stubGlobal('fetch', vi.fn(async () => Response.json({ connected: false, selected_model: null })))
+    const select = vi.fn().mockResolvedValue(true)
+    render(<ModelSelect locked={false} available directory={createSnapshotStore(state({
+      groups: [{ id: 'cloudflare-openrouter-streaming', name: 'Workspace', models: [
+        { id: 'openai/gpt-6-luna', name: 'API model' },
+        { id: 'z-ai/glm-5.3-flash:nitro', name: 'GLM 5.3 Flash Nitro' },
+      ] }],
+    }))} load={vi.fn()} select={select} t={t} />)
+    await waitFor(() => expect(screen.getByRole('button').textContent).toContain('Default'))
+    fireEvent.click(screen.getByRole('button'))
+    fireEvent.click(screen.getByRole('menuitem', { name: /模型/ }))
+    expect(screen.getAllByRole('menuitemradio')).toHaveLength(1)
+    expect(screen.getByRole('menuitemradio').textContent).toBe('Default')
+    fireEvent.click(screen.getByRole('menuitemradio'))
+    expect(select).toHaveBeenCalledWith({ provider: 'cloudflare-openrouter-streaming', model: 'z-ai/glm-5.3-flash:nitro' })
+  })
+
   it('exposes native model recovery when a saved HIVE model is unavailable', () => {
     document.documentElement.dataset.dshMode = 'hivemind-chat'
     render(<ModelSelect
