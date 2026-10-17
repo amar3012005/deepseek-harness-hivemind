@@ -871,11 +871,19 @@ export function ChatView({
           {/* No pending placeholders: questions (ui-user-questions) and approvals
               (ApprovalPanel) both take over the composer, so a flow card would
               double-render the same wait. */}
+          {visibleSubmissions.map(submission => (
+            <PendingSubmissionBubble
+              key={submission.requestId}
+              submission={submission}
+              renderMessageImages={renderMessageImages}
+              t={t}
+            />
+          ))}
           {/* Turn-level loading signal: rides the whole running turn (first-token
               wait, tool execution, streaming) so it never flickers per step. */}
-          {running && <TurnStatus
+          {(running || visibleSubmissions.some(submission => submission.placement === 'transcript')) && <TurnStatus
             avatar={renderSlot('conversation.chat.activityAvatar', {})}
-            startTime={runningTurnStart}
+            startTime={runningTurnStart ?? visibleSubmissions.find(submission => submission.placement === 'transcript')?.time ?? null}
             working={runningCalls.length > 0}
             brainStatus={/^\/hivemind\/app\/overview(?:\/|$)/u.test(window.location.pathname)
               ? brainActivity(runningCalls) : undefined}
@@ -887,14 +895,6 @@ export function ChatView({
             <PendingSteeringBubble
               key={item.id}
               content={item.content}
-              renderMessageImages={renderMessageImages}
-              t={t}
-            />
-          ))}
-          {visibleSubmissions.map(submission => (
-            <PendingSubmissionBubble
-              key={submission.requestId}
-              submission={submission}
               renderMessageImages={renderMessageImages}
               t={t}
             />

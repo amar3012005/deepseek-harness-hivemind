@@ -483,6 +483,31 @@ describe('sendSession submission echo', () => {
     return { ...b, beginSubmission, abandon, retire, revoked, restore }
   }
 
+  it('paints the local echo before waiting for embedded reply-language admission', async () => {
+    const b = await echoBench()
+    const oldPath = location.pathname
+    history.replaceState({}, '', '/hivemind/app/overview/session/s1')
+    document.documentElement.dataset.hivemindReplyLanguage = 'en'
+    let finish!: () => void
+    const session = b.runtime.sessions.binding('s1')!.session
+    const command = vi.spyOn(session, 'command').mockImplementation(() => new Promise((resolve) => {
+      finish = () => resolve({ ok: true, value: { accepted: true } } as never)
+    }))
+    try {
+      const sending = b.root.sendSession(session, 'hello', [], 'queue')
+      expect(b.beginSubmission).toHaveBeenCalledOnce()
+      await vi.waitFor(() => expect(command).toHaveBeenCalledOnce())
+      expect(b.prompt).not.toHaveBeenCalled()
+      finish()
+      await sending
+      expect(b.prompt).toHaveBeenCalledOnce()
+    } finally {
+      command.mockRestore(); b.restore(); await b.runtime.dispose()
+      delete document.documentElement.dataset.hivemindReplyLanguage
+      history.replaceState({}, '', oldPath)
+    }
+  })
+
   it('registers the echo before serialization and prompts with its identity', async () => {
     const b = await echoBench()
     try {

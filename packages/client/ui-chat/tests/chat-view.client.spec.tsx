@@ -1049,6 +1049,10 @@ describe('ChatView', () => {
     )
     const view = render(<h.ChatView {...h.props} />)
     expect(view.getByText('即发即显').closest('[data-submission-echo]')).not.toBeNull()
+    const status = view.container.querySelector('[data-chat-flow] > [role="status"]')!
+    expect(status).not.toBeNull()
+    expect(view.getByText('即发即显').compareDocumentPosition(status) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+
 
     // The durable node arrives while the echo is STILL in the session
     // snapshot: the render-time rpcId dedupe keeps exactly one bubble.

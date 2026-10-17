@@ -271,7 +271,6 @@ export class ConversationController extends Service implements IConversation {
         ? { type: 'image' as const, ...await this.encodeImage(attachment.file) }
         : { type: 'file' as const, receiptId: uploadFor(attachment).receiptId }),
     )
-    await syncHivemindReplyLanguage(session)
     const snapshot = session.getSnapshot()
     if (snapshot.subagent !== null) {
       const uploaded = await serializeAttachments()
@@ -295,6 +294,8 @@ export class ConversationController extends Service implements IConversation {
     let content: Parameters<SessionFace['prompt']>[0]
     try {
       await nextPaint()
+      // Preserve language admission ordering without blocking the native local echo.
+      await syncHivemindReplyLanguage(session)
       const uploaded = await serializeAttachments()
       content = [...uploaded, ...(text === '' ? [] : [{ type: 'text' as const, text }])]
     } catch (error) {
