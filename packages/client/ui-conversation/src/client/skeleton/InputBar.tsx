@@ -409,7 +409,7 @@ export const InputBar = memo(function InputBar({
       // (the gate never consults plan mode), so the actionable hint wins.
       : canSteerQueue
         ? t('placeholder.steerQueue')
-        : planActive ? t('placeholder.plan') : t('placeholder.default'))
+        : planActive ? t('placeholder.plan') : t(/^\/hivemind\/app\/overview(?:\/|$)/u.test(window.location.pathname) ? 'placeholder.brain' : 'placeholder.default'))
 
   return (
     <div className={clsx(css.root, variant === 'hero' && css.hero)}>
