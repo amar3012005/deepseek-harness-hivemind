@@ -7,7 +7,7 @@ it('Brain model calls are signed for the authenticated user and cannot select a 
   const calls: { url: string; token: string }[] = []
   const clients = new CodexConnections([{ ...binding, secretEnv: 'FIXTURE', sharedService: true }], () => binding.secret,
     async (url, options) => {
-      calls.push({ url: String(url), token: (options?.headers as Record<string, string>).authorization.slice(7) })
+      calls.push({ url: String(url), token: String((options?.headers as Record<string, string>).authorization ?? '').slice(7) })
       return new Response(JSON.stringify({ available: true, connected: true, selected_model: 'fixture-model', models: ['fixture-model'], platform_fallback: false }))
     })
   expect(clients.binding({ ...owner, userId: 'foreign' })).toBeUndefined()
