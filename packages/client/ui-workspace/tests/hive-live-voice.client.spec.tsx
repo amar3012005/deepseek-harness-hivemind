@@ -23,19 +23,21 @@ class Peer {
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.restoreAllMocks() })
 
 describe('native HIVEMIND live voice composer', () => {
-  it('explicit alternate voice uses microphone consent and existing Grok adapter without primary start', async () => {
-    const media = vi.fn(async () => ({ getTracks: () => [{ stop: vi.fn() }] }))
+  it('reports a primary failure and releases media without falling back to another provider', async () => {
+    const stop = vi.fn()
+    const media = vi.fn(async () => ({ getTracks: () => [{ stop }] }))
     Object.defineProperty(navigator, 'mediaDevices', { configurable: true, value: { getUserMedia: media } })
     vi.stubGlobal('RTCPeerConnection', Peer)
     vi.stubGlobal('Audio', class { autoplay = false; pause = vi.fn() })
-    const fetcher = vi.fn(async () => ({ ok: true }))
+    const fetcher = vi.fn(async () => ({ ok: false, status: 503, json: async () => ({ fallbackAllowed: true }) }))
     vi.stubGlobal('fetch', fetcher)
     render(<HiveLiveVoiceButton sessionId={'session-1' as never} useInput={input()} t={t} />)
-    fireEvent.click(screen.getByText('voice.alternate'))
-    await waitFor(() => { expect(startGrokVoice).toHaveBeenCalledOnce() })
-    expect(media).toHaveBeenCalledOnce()
-    expect(fetcher).not.toHaveBeenCalled()
-    expect(Peer.instance.createOffer).not.toHaveBeenCalled()
+    expect(screen.queryByText('voice.alternate')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'voice.start' }))
+    await waitFor(() => { expect(screen.getByRole('alert').textContent).toContain('ChatGPT connection is unavailable') })
+    expect(startGrokVoice).not.toHaveBeenCalled()
+    expect(stop).toHaveBeenCalledOnce()
+    expect(fetcher).toHaveBeenCalledOnce()
   })
 
   it('acknowledges an invitation and starts the existing voice API even with a typed draft', async () => {
