@@ -221,7 +221,7 @@ export function registerGenerationTools(
   })))
   ctx.effect(() => ctx.tools.register(defineTool({
     name: 'hivemind_generate',
-    description: 'Create a finished Markdown report, PDF, presentation, spreadsheet, or web file using a configured generator. For format "web", provide complete self-contained HTML directly; generator discovery is unnecessary. For image/text HTML or PDF use source_format html with saved_image_ids and hive-asset:<saved ID> placeholders. Image and video must use hivemind_media_generate so their long-running lifecycle is tracked. Returns a stored artifact, not a published campaign or sent message.',
+    description: 'Create a finished Markdown report, PDF, presentation, spreadsheet, or web file using a configured generator. Before authoring visual HTML, load design-artifact through the native skill tool and inspect its actual reference pixels; use current user references and approved Brand DNA first. Generate required illustrations with hivemind_media_generate, then embed the saved images. For format "web", provide complete self-contained HTML directly; generator discovery is unnecessary. For image/text HTML or PDF use source_format html with saved_image_ids and hive-asset:<saved ID> placeholders. Image and video must use hivemind_media_generate so their long-running lifecycle is tracked. Returns a stored artifact, not a published campaign or sent message.',
     parameters: {
       format: { type: 'string', required: true, enum: ['markdown_report', 'pdf', 'presentation', 'spreadsheet', 'web'] },
       title: { type: 'string', required: true },
