@@ -290,6 +290,7 @@
         serviceHttpOrigins: !!js >-
           [...(process.env.HIVEMIND_SERVICE_HTTP_ORIGINS ?? '').split(',').map(value => value.trim()).filter(Boolean),
           process.env.HIVEMIND_ONBOARDING_SERVICE_URL ?? 'http://core:3000']
+        codexConnections: !!js JSON.parse(process.env.HIVEMIND_CODEX_CONNECTIONS || '[]')
         serviceSecretEnv: HIVE_HARNESS_RUNNER_SERVICE_SECRET
         databaseUrlEnv: DATABASE_URL
 
