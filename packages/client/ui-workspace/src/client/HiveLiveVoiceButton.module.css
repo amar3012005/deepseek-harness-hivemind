@@ -39,7 +39,8 @@
   background: #232326; color: #fff;
   box-shadow: 0 4px 16px #0002; animation: callRise 180ms ease-out;
 }
-.hangup { width: 44px; height: 44px; flex: 0 0 44px; display: grid; place-items: center; background: transparent; border: 0; color: #ff777b; cursor: pointer; }
+.hangup { min-width: 44px; min-height: 44px; flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 0 12px; border-radius: 22px; background: #b42332; border: 0; color: #fff; cursor: pointer; white-space: nowrap; font: inherit; font-size: 12px; }
+.hangup:hover { background: #cf2b3c; }
 .hangup:focus-visible { outline: 2px solid #fff; outline-offset: -4px; border-radius: 10px; }
 .phone { flex: 0 0 20px; margin-inline: 10px; color: #d8d8de; }
 .waveWindow { flex: 1; min-width: 0; height: 44px; overflow: hidden; pointer-events: none; opacity: 0; transition: opacity 180ms ease; }

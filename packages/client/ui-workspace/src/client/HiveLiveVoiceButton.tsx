@@ -161,8 +161,9 @@ export function HiveLiveVoiceButton({ sessionId, useInput, useSession, t }: Prop
   const label = busy ? t('voice.busy') : error ? t('voice.retry') : state === 'connecting' ? t('voice.connecting') : state === 'live' ? t('voice.end') : t('voice.start')
   const activeControls = <div className={composer ? css.callStrip : css.callControls} data-room-call-strip role="group" aria-label={label}>
     <Tooltip label={t('voice.end')} side="top" delayMs={300}>
-      <button type="button" className={css.hangup} aria-label={t('voice.end')} onClick={stop}>
+      <button type="button" className={css.hangup} data-voice-hangup aria-label={t('voice.end')} onClick={stop}>
         <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden><path d="M4 15v-3c4-4 12-4 16 0v3l-5-1v-3M9 11v3l-5 1" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /></svg>
+        <span>{t('voice.end')}</span>
       </button>
     </Tooltip>
     <CallColorWave levels={levels} />

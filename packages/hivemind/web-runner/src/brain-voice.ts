@@ -6,6 +6,6 @@ export function brainVoiceOpening(eventId: string) {
   return (type: string | undefined) => {
     if (sent || type !== 'session.started') return undefined
     sent = true
-    return { type: 'session.context.append', event_id: eventId, channel: 'speakable', content: [{ type: 'input_text', text: 'Begin speaking now as the company brain. Briefly welcome the caller and continue the most relevant recent question or follow-up supported by the supplied context. If none is known, ask what they would like to explore. Use their language if known. Keep this opening to one or two sentences, then pause and listen.' }] }
+    return { type: 'session.context.append', event_id: eventId, channel: 'speakable', content: [{ type: 'input_text', text: 'Begin speaking now as the company brain. Briefly welcome the caller and pick up the latest unresolved user question, decision or next step in the supplied recent conversation. Mention one concrete topic so the caller knows what you are following up on, then offer a useful next step or ask one focused question. Prefer recent messages over older company background; do not reopen a resolved topic. Use a name only when present in authenticated context. Never imply unseen activity, completed work, personal familiarity or memories beyond the supplied evidence. If none is known, ask what they would like to explore. Use their language if known. Keep this opening to one or two sentences, then pause and listen.' }] }
   }
 }
