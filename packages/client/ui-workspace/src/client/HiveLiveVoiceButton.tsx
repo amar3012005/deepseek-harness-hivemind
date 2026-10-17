@@ -115,7 +115,7 @@ export function HiveLiveVoiceButton({ sessionId, useInput, useSession, t }: Prop
       }
       peer.onconnectionstatechange = () => {
         if (generation.current !== ticket) return
-        if (peer.connectionState === 'connected') setState('live')
+        if (peer.connectionState === 'connected') { stopRingback(); setState('live') }
         if (['failed', 'closed'].includes(peer.connectionState)) { stop(); setError(true) }
       }
       const events = peer.createDataChannel('oai-events')
