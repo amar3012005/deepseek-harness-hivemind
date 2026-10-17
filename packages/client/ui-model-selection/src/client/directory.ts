@@ -15,6 +15,7 @@ import type { ModelCatalogDirectory } from './catalog.ts'
 
 /** Directory snapshot both entries render from. */
 export interface ModelDirectoryState {
+  explicit?: ModelSelection | null
   /** Effective selection: durable next-request projection, then Host default. */
   current: ModelSelection | null
   /**
@@ -163,6 +164,7 @@ export class ModelDirectory {
     this.resolved = true
     this.store.set({
       current,
+      explicit: projected.explicit ?? null,
       routable: catalog.value.routableProviders.includes(current.provider),
       groups: catalog.value.groups,
       failures: catalog.value.failures,

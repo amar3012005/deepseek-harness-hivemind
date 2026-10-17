@@ -1,3 +1,4 @@
+import type {} from './codex-voice-connection.ts'
 /** Authenticated WebRTC voice bridge; media travels directly to OpenAI. */
 import type { Context, Plugin } from '@deepseek-ai/cordis'
 import type { IncomingMessage, ServerResponse } from 'node:http'
@@ -166,6 +167,7 @@ export function liveVoicePlugin(config: LiveVoiceConfig,
       models.setProvider(openaiCodexProvider())
       ctx.effect(() => () => { for (const room of rooms.values()) room.close() })
       ctx.effect(() => ctx.webServer.register({ kind: 'prefix', path: '/api/hivemind/voice', handler: async (req, res) => {
+        let selectedVoice = false
         let p: HivemindPrincipal | undefined
         try { p = authenticate(req) } catch { reply(res, 401, { error: 'authentication_required' }); return }
         if (!p) { reply(res, 401, { error: 'authentication_required' }); return }
@@ -273,11 +275,14 @@ export function liveVoicePlugin(config: LiveVoiceConfig,
                 if (!(await ctx.sessions.flush(agent.session))) throw new Error('voice_handoff_persistence_required')
                 reply(res, 200, result); return
               }
-              const grant = await models.getAuth('openai-codex', { signal })
+              const connection = await ctx.serial('hivemind/codex-voice-connection')
+              selectedVoice = Boolean(connection)
+              const grant = connection ? undefined : await models.getAuth('openai-codex', { signal })
               const token = grant?.auth.apiKey
-              if (!token) throw new Error('voice_authorization_unavailable')
-              const headers = { authorization: `Bearer ${token}`, 'ChatGPT-Account-Id': codexAccountId(token), originator: 'hivemind', 'OpenAI-Alpha': 'quicksilver=v2', 'content-type': 'application/json' }
-              const response = await fetch('https://chatgpt.com/backend-api/codex/realtime/calls?intent=quicksilver&architecture=avas', {
+              if (!connection && !token) throw new Error('voice_authorization_unavailable')
+              const headers = { authorization: `Bearer ${token ?? ''}`, 'ChatGPT-Account-Id': token ? codexAccountId(token) : '', originator: 'hivemind', 'OpenAI-Alpha': 'quicksilver=v2', 'content-type': 'application/json' }
+              const response = connection ? await connection.start({ sdp: input.sdp as string,
+                session: voiceSession(config.model, config.voice, prompt, context) }, signal) : await fetch('https://chatgpt.com/backend-api/codex/realtime/calls?intent=quicksilver&architecture=avas', {
                 method: 'POST', headers, body: JSON.stringify({ sdp: input.sdp, session: voiceSession(config.model, config.voice, prompt, context) }), signal, redirect: 'error',
               })
               if (!response.ok) { if ([400, 403].includes(response.status)) { reply(res, 502, { error: 'voice_provider_rejected', fallbackAllowed: false }); return }; throw new Error('voice_connection_failed') }
@@ -285,7 +290,7 @@ export function liveVoicePlugin(config: LiveVoiceConfig,
               const callId = (location.split('?')[0] ?? '').split('/').filter(Boolean).at(-1)
               if (!callId || !/^[\w-]+$/.test(callId)) throw new Error('voice_connection_failed')
               const sdp = await response.text()
-              const socket = new WebSocket(`wss://api.openai.com/v1/live/${encodeURIComponent(callId)}`, { headers, handshakeTimeout: config.timeoutMs, maxPayload: 1_000_000 })
+              const socket = connection ? connection.socket(callId) : new WebSocket(`wss://api.openai.com/v1/live/${encodeURIComponent(callId)}`, { headers, handshakeTimeout: config.timeoutMs, maxPayload: 1_000_000 })
               const roomId = randomUUID()
               const opening = runtimeVoiceOpening(runtime, initialCheckIn, `runtime-opening-${roomId}`)
               let lastCompact = compact
@@ -415,7 +420,7 @@ export function liveVoicePlugin(config: LiveVoiceConfig,
               reply(res, 200, { id: roomId, sdp, ...(initialCheckIn ? { closingAfterMs: Math.max(0, closingAt - Date.now()) } : {}) })
             })
           } finally { starting.delete(owner) }
-        } catch (error) { reply(res, 503, { error: 'voice_unavailable', fallbackAllowed: error instanceof Error && ['voice_connection_failed', 'voice_authorization_unavailable'].includes(error.message) }) }
+        } catch (error) { reply(res, 503, { error: 'voice_unavailable', fallbackAllowed: !selectedVoice && error instanceof Error && ['voice_connection_failed', 'voice_authorization_unavailable'].includes(error.message) }) }
       } }))
     } }
 }

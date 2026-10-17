@@ -87,6 +87,19 @@ async function bench(opts?: { blank?: boolean }) {
 }
 
 describe('resident composer', () => {
+  it('moves the same blank-session composer to active layout when native voice starts', async () => {
+    const runtime = await bench({ blank: true })
+    const view = runtime.renderRoot()
+    await act(async () => { runtime.sessions.open(SID); await Promise.resolve() })
+    expect(view.container.querySelector('[data-phase="hero"]')).not.toBeNull()
+    const seat = view.container.querySelector('[data-composer-seat]')
+    act(() => window.dispatchEvent(new CustomEvent('hivemind:room-call-status', { detail: { sessionId: 'other', state: 'live' } })))
+    expect(view.container.querySelector('[data-phase="hero"]')).not.toBeNull()
+    act(() => window.dispatchEvent(new CustomEvent('hivemind:room-call-status', { detail: { sessionId: SID, state: 'connecting' } })))
+    expect(view.container.querySelector('[data-phase="active"]')).not.toBeNull()
+    expect(view.container.querySelector('[data-composer-seat]')).toBe(seat)
+  })
+
   it('renders the locked view state while no session exists at all', async () => {
     const runtime = await SlotTestRuntime.create()
     runtime.ctx.provide('uiWorkspace', {

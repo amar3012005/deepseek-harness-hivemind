@@ -149,6 +149,18 @@ export function ConversationRoot({
   // send; its reason is already localized by whoever raised it.
   const composerBlock = useComposerBlock(block => block)
 
+  const [callStarted, setCallStarted] = useState(false)
+  useEffect(() => {
+    setCallStarted(false)
+    const update = (event: Event) => {
+      const detail = (event as CustomEvent<{ sessionId: string; state: string }>).detail
+      if (detail?.sessionId === sessionId && ['connecting', 'live'].includes(detail.state)) setCallStarted(true)
+    }
+    window.addEventListener('hivemind:room-call-status', update)
+    window.dispatchEvent(new CustomEvent('hivemind:room-call-status-request', { detail: { sessionId } }))
+    return () => window.removeEventListener('hivemind:room-call-status', update)
+  }, [sessionId])
+
   const [pickerOpen, setPickerOpen] = useState(false)
   const [pendingWorkspaceId, setPendingWorkspaceId] = useState<WorkspaceId | undefined>()
   const pickerAnchor = useRef<HTMLButtonElement>(null)
@@ -270,7 +282,7 @@ export function ConversationRoot({
     || parentAvailabilityPending
   )
   const hero = sessionId === undefined
-    || (shellPhase === 'blank' && (openState === 'open' || summaryBlank === true))
+    || (!callStarted && shellPhase === 'blank' && (openState === 'open' || summaryBlank === true))
   const zone: InputZone | undefined =
     session === undefined || inputState === undefined ? undefined : { session, input: inputState }
 

@@ -49,15 +49,29 @@ export function ModelSelect(
   { locked, available, directory, load, select, t }:
   ModelSelectInjected & { locked: boolean } & PropsLocale<'model'>,
 ) {
-  // HIVE-MIND owns the product-facing default. The selected provider and
-  // reasoning configuration remain session-owned, but neither provider nor
-  // model catalog belongs in the company-brain composer UI.
-  const hivemindMode = typeof document !== 'undefined'
-    && document.documentElement.dataset.dshMode === 'hivemind-chat'
+  // Keep model choices in the native session-owned directory and projection.
   const state = useSyncExternalStore(
     fn => directory.subscribe(fn),
     () => directory.getSnapshot(),
   )
+  const hivemind = typeof document !== 'undefined' && document.documentElement.dataset.dshMode === 'hivemind-chat'
+  const [connection, setConnection] = useState<{ connected: boolean; selected_model: string | null } | null>(null)
+  useEffect(() => {
+    if (!hivemind) return
+    const controller = new AbortController()
+    const refresh = async (): Promise<void> => {
+      if (document.hidden) return
+      try {
+        const response = await fetch('/api/hivemind/model-connection/status', { credentials: 'include', cache: 'no-store', signal: controller.signal })
+        if (response.ok) setConnection(await response.json())
+      } catch { /* Keep the last confirmed connection during transient outages. */ }
+    }
+    void refresh()
+    const timer = setInterval(() => { void refresh() }, 5000)
+    window.addEventListener('focus', refresh)
+    return () => { controller.abort(); clearInterval(timer); window.removeEventListener('focus', refresh) }
+  }, [hivemind])
+  const groups = !hivemind ? state.groups : connection?.connected ? state.groups.filter(group => group.id === 'hivemind-codex-cloud') : state.groups.filter(group => group.id === 'cloudflare-openrouter-streaming').map(group => ({ ...group, name: 'Default', models: group.models.map(model => ({ ...model, name: 'Default' })) }))
   const [open, setOpen] = useState(false)
   const [pane, setPane] = useState<Pane>('root')
   // The in-menu error strip serves catalog loads (its Retry re-runs the
@@ -74,7 +88,7 @@ export function ModelSelect(
   const itemRefs = useRef<(HTMLButtonElement | null)[]>([])
   const id = useId()
 
-  const choices = useMemo(() => state.groups.flatMap(group =>
+  const choices = useMemo(() => groups.flatMap(group =>
     group.models.map(model => ({
       group,
       model,
@@ -85,10 +99,12 @@ export function ModelSelect(
           ? {}
           : { reasoningEffort: model.reasoning.defaultEffort },
       } satisfies ModelSelection,
-    }))), [state.groups])
-  const selectedIndex = state.current === null
+    }))), [groups])
+  const displayed = hivemind && connection?.connected && state.explicit?.provider !== 'hivemind-codex-cloud'
+    ? { provider: 'hivemind-codex-cloud', model: connection.selected_model ?? '' } : state.current
+  const selectedIndex = displayed === null
     ? -1
-    : choices.findIndex(c => c.selection.provider === state.current?.provider && c.selection.model === state.current.model)
+    : choices.findIndex(c => c.selection.provider === displayed?.provider && c.selection.model === displayed.model)
   const currentChoice = choices[selectedIndex]
   const reasoning = currentChoice?.model.reasoning
   const effectiveEffort = state.current?.reasoningEffort ?? reasoning?.defaultEffort
@@ -164,9 +180,6 @@ export function ModelSelect(
 
   if (!available) return null
 
-  if (hivemindMode) {
-    return <span className={css.defaultLabel} aria-label="Model: GPT-6">GPT-6</span>
-  }
 
   const show = (): void => {
     setPane('root')
@@ -247,10 +260,10 @@ export function ModelSelect(
     void select(selection).then(settleSelection)
   }
 
-  const waiting = state.current === null && state.status === 'loading'
+  const waiting = (hivemind && connection === null) || (state.current === null && state.status === 'loading')
   const modelLabel = waiting
     ? t('trigger.loading')
-    : currentChoice?.model.name
+    : (hivemind && !connection?.connected ? 'Default' : (currentChoice?.model.name ?? (hivemind ? displayed?.model : undefined))?.replace(/^gpt-/u, 'GPT-').replace(/-luna$/u, ' Luna'))
       ?? (state.current === null ? t('trigger.fallback') : `${state.current.provider}/${state.current.model}`)
   const triggerLabel = effortLabel === undefined ? modelLabel : `${modelLabel} · ${effortLabel}`
   const triggerAria = waiting
@@ -341,13 +354,19 @@ export function ModelSelect(
                 </div>
               ))}
               <div className={clsx(css.groups, 'scrollable')}>
-                {state.groups.map((group) => {
+                {hivemind && connection?.connected && state.groups.find(group => group.id === 'cloudflare-openrouter-streaming')?.models[0] && (
+                  <button type="button" role="menuitem" className={css.option} onClick={() => {
+                    const model = state.groups.find(group => group.id === 'cloudflare-openrouter-streaming')?.models[0]
+                    if (model) choose({ provider: 'cloudflare-openrouter-streaming', model: model.id })
+                  }}>Follow Usage default · {connection.selected_model?.replace(/^gpt-/u, 'GPT-').replace(/-luna$/u, ' Luna')}</button>
+                )}
+                {groups.map((group) => {
                   const headingId = `${id}-${group.id}`
                   return (
                     <section role="group" aria-labelledby={headingId} className={css.group} key={group.id}>
                       <div className={css.groupTitle} id={headingId}>{group.name}</div>
                       {group.models.map((model) => {
-                        const selected = state.current?.provider === group.id && state.current.model === model.id
+                        const selected = displayed?.provider === group.id && displayed.model === model.id
                         return (
                           <button
                             ref={itemRef()}

@@ -53,26 +53,36 @@ function state(overrides: Partial<ModelDirectoryState> = {}): ModelDirectoryStat
 afterEach(cleanup)
 
 afterEach(() => {
+  vi.unstubAllGlobals()
   delete document.documentElement.dataset.dshMode
 })
 
 describe('ModelSelect reasoning effort', () => {
-  it('keeps the resolved provider private in HIVE-MIND mode', () => {
+  it('shows the live Usage default and hides workspace models when connected', async () => {
     document.documentElement.dataset.dshMode = 'hivemind-chat'
-    const load = vi.fn()
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({
+      connected: true, selected_model: 'gpt-5.6-luna',
+    }))))
+    render(<ModelSelect locked={false} available directory={createSnapshotStore(state())}
+      load={vi.fn()} select={vi.fn().mockResolvedValue(true)} t={t} />)
+    await waitFor(() => expect(screen.getByRole('button').textContent).toContain('GPT-5.6 Luna'))
+    fireEvent.click(screen.getByRole('button'))
+    fireEvent.click(screen.getByRole('menuitem', { name: /模型/ }))
+    expect(screen.queryByRole('menuitemradio', { name: 'DeepSeek-V4-Flash' })).toBeNull()
+  })
+
+  it('exposes native model recovery when a saved HIVE model is unavailable', () => {
+    document.documentElement.dataset.dshMode = 'hivemind-chat'
     render(<ModelSelect
       locked={false}
       available
-      directory={createSnapshotStore(state())}
-      load={load}
+      directory={createSnapshotStore(state({ routable: false }))}
+      load={vi.fn()}
       select={vi.fn().mockResolvedValue(true)}
       t={t}
     />)
-
-    expect(screen.getByLabelText('Model: Default').textContent).toBe('Default')
-    expect(screen.queryByRole('button')).toBeNull()
-    expect(screen.queryByText('DeepSeek-V4-Flash')).toBeNull()
-    expect(load).not.toHaveBeenCalled()
+    expect(screen.getByRole('button')).toBeTruthy()
+    expect(screen.queryByLabelText('Model: GPT-6')).toBeNull()
   })
 
   it('renders effort names without descriptions and submits the effort as part of the session selection', async () => {

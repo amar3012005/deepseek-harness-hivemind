@@ -1,3 +1,4 @@
+import { installCodexConnections, type CodexConnectionConfig } from './codex-connections.ts'
 /** HIVE-MIND embedded Web authentication and production health routes. */
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
@@ -57,6 +58,7 @@ export interface Config {
   /** Environment variable holding the runner-to-control-plane signing secret. */
   serviceSecretEnv: string
   /** Native voice capability; authorization is resolved on the server. */
+  codexConnections?: CodexConnectionConfig[]
   liveVoice: LiveVoiceConfig
 }
 
@@ -70,6 +72,9 @@ export const Config: z<Config> = z.object({
   serviceApiBase: z.string().required(),
   serviceHttpOrigins: z.array(String).default([]),
   serviceSecretEnv: z.string().required(),
+  codexConnections: z.array(z.object({ orgId: z.string().required(), userId: z.string().required(),
+    connectionId: z.string().required(), endpoint: z.string().required(), secretEnv: z.string().required(),
+    sharedService: z.boolean() })).default([]),
   liveVoice: z.object({
     enabled: z.boolean().default(true),
     model: z.string().default('gpt-live-1-codex'),
@@ -272,6 +277,15 @@ function compactProjects(value: unknown): Array<{ id: string; name: string; slug
 
 /** Mount the one-time ticket exchange and health routes. */
 export async function apply(ctx: Context, config: Config): Promise<void> {
+  installCodexConnections(ctx, config.codexConnections ?? [], {
+    actor: async principal => ({ orgId: principal.orgId, userId: principal.userId }),
+    origin: req => `https://${publicHost(req) || req.headers.host}`,
+    authorize: async (req) => {
+      const principal = ctx.connection.principal({ headers: { host: publicHost(req) || req.headers.host, cookie: req.headers.cookie } })
+      if (principal?.profile !== 'hivemind-chat' || !nonEmpty(principal.org_id) || !nonEmpty(principal.user_id)) return undefined
+      return { orgId: principal.org_id, userId: principal.user_id }
+    },
+  })
   registerMediaAuth(ctx)
   ctx.plugin(liveVoicePlugin(config.liveVoice, (req) => {
     const principal = ctx.connection.principal({ headers: {

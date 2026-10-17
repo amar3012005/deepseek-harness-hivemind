@@ -11,7 +11,7 @@ import type { FileAttachmentRef, ImageAttachmentRef } from '@deepseek-ai/dsh-att
 import type {} from '@deepseek-ai/dsh-agent'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import { defaultPageLayout, generatePdf } from '@speajus/markdown-to-pdf'
-import { GenerationRegistry, registerGenerationTools } from './generation.ts'
+import { GenerationRegistry, registerGenerationTools, type GenerationProvider } from './generation.ts'
 import {
   markdownReportProvider, presentationProvider, spreadsheetProvider, webProvider,
 } from './office-providers.ts'
@@ -316,6 +316,15 @@ export function registerArtifactTool(ctx: Context, config: Config): void {
   }))
 }
 
+declare module '@deepseek-ai/cordis' {
+  interface Events {
+    /** Resolve the selected account image provider without exposing credentials.
+     * @mode serial
+     */
+    'hivemind/selected-image-provider'(): Promise<GenerationProvider | undefined>
+  }
+}
+
 /** Mount the selected provider and compact model-facing render tool. */
 export function apply(ctx: Context, config: Config): void {
   registerPrivateDesignReferences(ctx, config.privateDesignReferenceDirectory ?? '', config.designContextMaxChars ?? 40_000)
@@ -327,12 +336,22 @@ export function apply(ctx: Context, config: Config): void {
     const { imageModel, imageBaseURL, imageApiKeyEnv } = config
     if (config.imageMuseFallback) rendererCtx.effect(() => registry.register(museImageProvider(config.imageTimeoutMs ?? 180_000, input => rendererCtx.serial('hivemind/muse-image', input)), true))
     if (config.imageProvider === 'codex') {
-      rendererCtx.effect(() => registry.register(codexImageProvider({
+      const localImage = codexImageProvider({
         command: config.codexImageCommand ?? '/opt/deepseek-harness/packages/subagent/subagent-codex/node_modules/@openai/codex/bin/codex.js',
         stateDirectory: config.codexImageStateDirectory ?? '/tmp/dsh/storages/media-codex',
         model: config.codexImageModel ?? 'gpt-5.6-luna', timeoutMs: config.imageTimeoutMs ?? 600_000,
         auth: signal => rendererCtx.serial('hivemind/codex-image-auth', { signal }),
-      })))
+      })
+      rendererCtx.effect(() => registry.register({ ...localImage,
+        availability: async () => {
+          const provider = await rendererCtx.serial('hivemind/selected-image-provider') ?? localImage
+          return await provider.availability?.() ?? { ready: true }
+        },
+        generate: async (request) => {
+          const provider = await rendererCtx.serial('hivemind/selected-image-provider') ?? localImage
+          return provider.generate(request)
+        },
+      }))
     } else if (imageModel) {
       if (!imageBaseURL || !imageApiKeyEnv) throw new Error('Configured image model requires imageBaseURL and imageApiKeyEnv')
       rendererCtx.effect(() => registry.register(openRouterImageProvider({

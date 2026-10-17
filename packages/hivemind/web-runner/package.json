@@ -25,7 +25,8 @@
     "redis": "^5.8.2",
     "@earendil-works/pi-ai": "^0.85.1",
     "@deepseek-ai/dsh-llm-pi-ai": "workspace:^",
-    "ws": "^8.18.3"
+    "ws": "^8.18.3",
+    "@deepseek-ai/dsh-hivemind-artifact-renderer": "workspace:^"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "workspace:^",

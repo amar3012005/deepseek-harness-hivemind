@@ -17,11 +17,13 @@ const modelSelectionSchema = z.object({
 }) as unknown as z.ZodType<ModelSelection>
 
 const modelSelectionProjectionStateSchema = z.object({
+  explicit: modelSelectionSchema.nullable().optional(),
   lastUsed: modelSelectionSchema.nullable(),
   pending: modelSelectionSchema.nullable(),
 }) as unknown as z.ZodType<ModelSelectionProjectionState>
 
 const modelSelectionProjectionSchema = z.object({
+  explicit: modelSelectionSchema.nullable().optional(),
   lastUsed: modelSelectionSchema.nullable(),
   next: modelSelectionSchema.nullable(),
 }) as unknown as z.ZodType<ModelSelectionProjection>
@@ -39,7 +41,7 @@ function applyModelSelectionProjection(
   if (event.type === 'model/selection') {
     return sameSelection(state.pending, event.data)
       ? state
-      : { lastUsed: state.lastUsed, pending: event.data }
+      : { ...state, explicit: event.data, lastUsed: state.lastUsed, pending: event.data }
   }
   if (event.type !== 'request/header') return state
   const lastUsed: ModelSelection = {
@@ -52,7 +54,7 @@ function applyModelSelectionProjection(
   const pending = sameSelection(state.pending, lastUsed) ? null : state.pending
   return sameSelection(state.lastUsed, lastUsed) && pending === state.pending
     ? state
-    : { lastUsed, pending }
+    : { ...state, lastUsed, pending }
 }
 
 const modelSelectionProjection = {
@@ -62,7 +64,10 @@ const modelSelectionProjection = {
   apply: applyModelSelectionProjection,
   wire: {
     viewSchema: modelSelectionProjectionSchema,
-    view: state => ({ lastUsed: state.lastUsed, next: state.pending ?? state.lastUsed }),
+    view: state => ({
+      lastUsed: state.lastUsed, next: state.pending ?? state.lastUsed,
+      ...(state.explicit === undefined ? {} : { explicit: state.explicit }),
+    }),
   },
   stateVersion: 2,
 } satisfies ProjectionDefinition<'modelSelection', ModelSelectionProjectionState>

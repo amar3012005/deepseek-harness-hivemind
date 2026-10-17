@@ -7404,6 +7404,9 @@ importers:
 
   packages/hivemind/web-runner:
     dependencies:
+      '@deepseek-ai/dsh-hivemind-artifact-renderer':
+        specifier: workspace:^
+        version: link:../artifact-renderer
       '@deepseek-ai/dsh-hivemind-employee-directory':
         specifier: workspace:^
         version: link:../employee-directory
