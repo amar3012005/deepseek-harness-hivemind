@@ -13,7 +13,7 @@ RUN pnpm install --frozen-lockfile --ignore-scripts \
  && (cd packages/client/ui-workspace && node ../../../node_modules/tsdown/dist/run.mjs --env.DSH_BUILD_FACE client --config tsdown.config.ts) \
  && (cd packages/client/ui-conversation && node ../../../node_modules/tsdown/dist/run.mjs --env.DSH_BUILD_FACE client --config tsdown.config.ts) \
  && (cd packages/client/ui-chat && node ../../../node_modules/tsdown/dist/run.mjs --env.DSH_BUILD_FACE client --config tsdown.config.ts) \
- && (cd packages/hivemind/web-runner && node ../../../node_modules/tsdown/dist/run.mjs --config tsdown.config.ts) \
+ && node node_modules/tsdown/dist/run.mjs --env.DSH_BUILD_FACE host --filter @deepseek-ai/dsh-hivemind-web-runner \
  && grep -q 'data-room-call-strip' packages/client/ui-workspace/lib/client.js \
  && grep -q 'Ask me anything about your company, people, projects.' packages/client/ui-conversation/lib/client.js
 ARG SOURCE_SHA
