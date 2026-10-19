@@ -1,3 +1,4 @@
+import { modelConnectionPrincipal } from './model-connection-principal.ts'
 import { installCodexConnections, type CodexConnectionConfig } from './codex-connections.ts'
 /** HIVE-MIND embedded Web authentication and production health routes. */
 import type { Context } from '@deepseek-ai/cordis'
@@ -280,11 +281,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
   installCodexConnections(ctx, config.codexConnections ?? [], {
     actor: async principal => ({ orgId: principal.orgId, userId: principal.userId }),
     origin: req => `https://${publicHost(req) || req.headers.host}`,
-    authorize: async (req) => {
-      const principal = ctx.connection.principal({ headers: { host: publicHost(req) || req.headers.host, cookie: req.headers.cookie } })
-      if (principal?.profile !== 'hivemind-chat' || !nonEmpty(principal.org_id) || !nonEmpty(principal.user_id)) return undefined
-      return { orgId: principal.org_id, userId: principal.user_id }
-    },
+    authorize: (req,signal) => modelConnectionPrincipal(req, serviceBase(config.serviceApiBase, config.serviceHttpOrigins), signal),
   })
   registerMediaAuth(ctx)
   ctx.plugin(liveVoicePlugin(config.liveVoice, (req) => {

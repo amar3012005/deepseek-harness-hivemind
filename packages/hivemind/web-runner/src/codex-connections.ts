@@ -32,7 +32,7 @@ export function installCodexConnections(
     const identity = principal
     return options.actor({ ...principal, orgId: identity.orgId, userId: identity.userId }, AbortSignal.timeout(10000))
   }
-  if (configs.length) installSelectedCodexModels(ctx, connections, async () => {
+  if (configs.length || process.env.HIVEMIND_CODEX_SELF_SERVICE_SECRET) installSelectedCodexModels(ctx, connections, async () => {
     try { ctx.hivemindExecutionScope.require() } catch { return undefined }
     return actor()
   })

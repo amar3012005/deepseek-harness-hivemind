@@ -1,0 +1,58 @@
+{
+  "title": "Main-session ChatGPT self-service connections",
+  "status": "in_progress",
+  "baseline_sha": "4edafbfa3bb41db1a8cc8d186696abbba77e9660",
+  "native_owner": "hivemind web-runner account routes and codex worker; Brain separately",
+  "outcome": "An authenticated member can enroll their own ChatGPT connection from AI Models without native chat admission",
+  "scope": [
+    "main-session identity",
+    "deterministic isolated connection fallback",
+    "lazy native worker enrollment",
+    "Brain auth integration"
+  ],
+  "preserve": [
+    "legacy bindings and encrypted grants",
+    "native agent loops",
+    "Core/Control",
+    "existing provider routing"
+  ],
+  "criteria": [
+    {
+      "id": "auth",
+      "required": true,
+      "passed": false,
+      "evidence": []
+    },
+    {
+      "id": "isolation",
+      "required": true,
+      "passed": false,
+      "evidence": []
+    },
+    {
+      "id": "enrollment",
+      "required": true,
+      "passed": false,
+      "evidence": []
+    },
+    {
+      "id": "release",
+      "required": true,
+      "passed": false,
+      "evidence": []
+    },
+    {
+      "id": "new-user-live",
+      "required": true,
+      "passed": false,
+      "evidence": []
+    }
+  ],
+  "release": {
+    "requested": true,
+    "source_sha": "",
+    "artifact": "",
+    "rollback": "attention-notice-4edafbfa3b / codex-bridge:openrouter-634d30944c / Brain five-message-d836e0defc"
+  },
+  "blockers": []
+}

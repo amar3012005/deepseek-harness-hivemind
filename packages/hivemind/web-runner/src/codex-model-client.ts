@@ -1,4 +1,5 @@
 /** Reusable native model client for the user-scoped bridge; no agent loop or OAuth storage. */
+import { codexConnectionId } from './codex-self-service.ts'
 import { randomUUID } from 'node:crypto'
 import { LlmAdapter, LlmError } from '@deepseek-ai/dsh-llm'
 import type { GenerateOptions, LlmModelInfo, LlmResolvedModelInfo, StreamChunk } from '@deepseek-ai/dsh-llm'
@@ -26,12 +27,15 @@ export interface ConnectionActor {
 }
 export const CODEX_CLOUD_PROVIDER = 'hivemind-codex-cloud'
 export class CodexConnections {
+  private readonly selfServiceSecret: string | undefined
   private readonly bindings: (CodexBinding & { sharedService?: boolean })[]
   constructor(
     configs: readonly CodexConnectionConfig[],
     secrets: (name: string) => string | undefined,
     private readonly fetchImpl: typeof fetch = fetch,
   ) {
+    this.selfServiceSecret = secrets('HIVEMIND_CODEX_SELF_SERVICE_SECRET')
+    if(this.selfServiceSecret && Buffer.byteLength(this.selfServiceSecret)<32)throw Error('connection_service_configuration_invalid')
     const keys = new Set<string>(),
       ids = new Set<string>()
     this.bindings = configs.map((config) => {
@@ -58,7 +62,8 @@ export class CodexConnections {
     })
   }
   binding(actor: ConnectionActor): (CodexBinding & { sharedService?: boolean }) | undefined {
-    return this.bindings.find(binding => binding.orgId === actor.orgId && binding.userId === actor.userId)
+    return this.bindings.find(binding => binding.orgId === actor.orgId && binding.userId === actor.userId) ??
+      (this.selfServiceSecret ? { ...actor,connectionId:codexConnectionId(actor),secret:this.selfServiceSecret,sharedService:true,endpoint:'https://runtime-runner-origin.singulancelabs.com/internal/codex-bridge' } : undefined)
   }
   async request(actor: ConnectionActor, action: BridgeAction, body?: unknown, signal?: AbortSignal): Promise<Response> {
     const binding = this.binding(actor)

@@ -25,3 +25,8 @@ The subscription transport is experimental. Its wire version is pinned to the Co
 ## Known Limitations and Deferred Work
 
 - Subscription voice requires an authorized server credential and compatible experimental transport; missing authorization fails closed.
+
+
+### Main-session model connections
+
+AI Models authenticates with the authoritative main HIVEMIND session, independently of native chat admission. Self-service connections derive an isolated user/workspace ID when enabled by the deployment secret. Explicit legacy bindings retain precedence; OAuth credentials remain in the bridge encrypted store.
