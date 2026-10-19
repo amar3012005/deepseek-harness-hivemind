@@ -271,6 +271,12 @@ export class ClientSessions implements ISessions {
    * Select a listed or retained catalog-addressed session as current.
    * @param id - listed or addressed session id.
    */
+  /** Make an authorized exact root addressable without creating it. */
+  async resolveExisting(id: SessionId): Promise<void> {
+    await this.manager.resolveExisting(id)
+    this.projectList()
+  }
+
   open(id: SessionId): void {
     this.manager.select(id)
   }

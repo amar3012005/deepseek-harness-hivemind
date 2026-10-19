@@ -42,6 +42,8 @@ export interface ISessions {
    * Select a session as current.
    * @param id - session id (must exist in the list; unknown ids fail loud).
    */
+  /** Resolve an exact durable root outside the recent list; never creates. */
+  resolveExisting(id: SessionId): Promise<void>
   open(id: SessionId): void
   /**
    * Open a healthy catalog child through its exact direct-parent address.

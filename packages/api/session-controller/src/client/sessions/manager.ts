@@ -113,6 +113,7 @@ export class SessionManager {
    *  same store so history-baseline seeding and frames converge on one row set. */
   private readonly projectionStores = new Map<SessionId, ProjectionValueStore>()
   private summaries: SessionSummary[] = []
+  private readonly exactRoots = new Map<SessionId, SessionSummary>()
   private listState: 'idle' | 'loading' | 'error' = 'idle'
   /** Arrival phase; the pending → ready edge fires on the first successful pull (see SessionListPhase). */
   private listPhase: SessionListPhase = 'pending'
@@ -159,6 +160,39 @@ export class SessionManager {
     this.selected = restoredSelection
     if (restoredAddress !== undefined) this.addresses.set(restoredAddress.childSessionId, restoredAddress)
     this.listSnapshotCache = this.buildListSnapshot()
+  }
+
+  /** Resolve an exact persisted root through the authorized native follow seam.
+   * Never create a Session merely because its id is absent from the list.
+   */
+  async resolveExisting(sessionId: SessionId): Promise<void> {
+    if (this.summaries.some(row => row.sessionId === sessionId)) return
+    const controller = new AbortController()
+    try {
+      for await (const frame of this.remote.session.follow({
+        address: { kind: 'session', sessionId }, maxMessages: 1,
+      }, controller.signal)) {
+        if (frame.type !== 'snapshot') continue
+        const header = frame.header
+        if (header.id !== sessionId || header.origin === 'subagent') {
+          throw new Error('The requested chat is not an ordinary root conversation.')
+        }
+        if (this.disposed) return
+        const projectedPreset = frame.projections.values.agentPreset
+        const preset = typeof projectedPreset === 'string' ? projectedPreset : header.agentPreset
+        const summary: SessionSummary = {
+          sessionId, updatedAt: header.createdAt, running: false,
+          blank: frame.cursor === 0,
+          ...(header.cwd === undefined ? {} : { cwd: header.cwd }),
+          ...(preset === undefined ? {} : { agentPreset: preset }),
+          projections: frame.projections,
+        }
+        this.exactRoots.set(sessionId, summary)
+        this.recordMutation({ kind: 'upsert', summary })
+        return
+      }
+      throw new Error('Chat lookup ended without an opening snapshot.')
+    } finally { controller.abort() }
   }
 
   // ---- Selection ----
@@ -483,6 +517,8 @@ export class SessionManager {
           const baseline: SessionSummary[] = this.listPhase === 'pending'
             ? [...result.value.items]
             : mergeOrderedBaseline(established, result.value.items, summary => summary.sessionId)
+          const retained = this.selected === undefined ? undefined : this.exactRoots.get(this.selected)
+          if (retained && !baseline.some(row => row.sessionId === retained.sessionId)) baseline.push(retained)
           // Seed first observations from the pull-time baseline BEFORE replaying
           // in-flight mutations, then reconcile the reminders after EVERY
           // replayed mutation: an edge that happens entirely between mutations
@@ -652,6 +688,7 @@ export class SessionManager {
 
   /** Apply immediately and retain for replay when a list response is in flight. */
   private recordMutation(mutation: SessionListMutation): void {
+    if (mutation.kind === 'remove') this.exactRoots.delete(mutation.sessionId)
     this.listMutations?.push(mutation)
     this.summaries = applyMutation(this.summaries, mutation)
     // Eager edge reconciliation — a snapshot-build-time pass would miss consecutive status frames.
