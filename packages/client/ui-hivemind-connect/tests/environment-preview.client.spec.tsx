@@ -110,3 +110,18 @@ it.each([0.9, 1])('keeps Environment before the native Preview boundary at zoom 
   expect(Number.parseFloat(environment.style.right)).toBeCloseTo(layoutWidth + 20 / scale + 8)
   expect(Number.parseFloat(environment.style.maxWidth)).toBeCloseTo(left / scale - 16)
 })
+
+it('starts closed on phones and opens only from the Environment control', () => {
+  window.history.replaceState({}, '', '/hivemind/app/employee/harness/session/test')
+  vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} })
+  vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => ({ accounts: [] }) })))
+  vi.stubGlobal('matchMedia', (query: string) => ({ matches: query === '(max-width: 600px)', addEventListener() {}, removeEventListener() {} }))
+  const props = {
+    sessionId: 'test', showDetails: vi.fn(), isPreviewOpen: () => false,
+    useSessions: (select: (value: unknown) => unknown) => select({ byId: { test: { agentPreset: 'hivemind-hq' } }, jobsBySession: {} }),
+  }
+  const view = render(<BrainConnections {...props as unknown as Parameters<typeof BrainConnections>[0]} />)
+  expect(view.queryByRole('region', { name: 'HIVEMIND connected apps' })).toBeNull()
+  fireEvent.click(view.getByRole('button', { name: 'HIVEMIND environment' }))
+  expect(view.getByRole('region', { name: 'HIVEMIND connected apps' })).toBeTruthy()
+})
