@@ -39,6 +39,12 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
       scope: 'session'
       owner: ApprovalDetailOwnerProps
     }
+    /** Label of one approval decision button; the approval owner registers its own copy as the default. */
+    'conversation.approval.actionLabel': {
+      kind: 'single'
+      scope: 'session'
+      owner: ApprovalActionLabelOwnerProps
+    }
   }
 }
 
@@ -46,6 +52,16 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 export interface ApprovalDetailOwnerProps {
   /** Tool call correlated with the request. */
   callId: ToolCallId
+}
+
+/** Identity and default copy handed to an approval decision-label renderer. */
+export interface ApprovalActionLabelOwnerProps {
+  /** Tool call correlated with the request. */
+  callId: ToolCallId
+  /** Decision the labelled button returns. */
+  decision: ApprovalDecision
+  /** The approval owner's own label, shown when the call has no more specific name. */
+  fallback: string
 }
 
 /** Client-visible fields of an approval request projected through Remote Events. */

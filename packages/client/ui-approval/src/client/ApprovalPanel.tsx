@@ -1,7 +1,7 @@
 /** Composer takeover for one pending approval waterfall. */
 import { useState, type ReactNode } from 'react'
 import { Button } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { ApprovalComposerProps, PendingApproval } from './contract/slots.ts'
+import type { ApprovalComposerProps, ApprovalDecision, PendingApproval } from './contract/slots.ts'
 import css from './ApprovalPanel.module.css'
 
 /**
@@ -14,12 +14,17 @@ export function ApprovalPanel(props: ApprovalComposerProps) {
   const detail = approval.callId === undefined
     ? null
     : props.renderSlot('conversation.approval.detail', { callId: approval.callId })
-  return <ApprovalFlow key={approval.key} pending={approval} detail={detail} t={props.t} />
+  const label = (decision: ApprovalDecision, fallback: string): ReactNode => approval.callId === undefined
+    ? fallback
+    : props.renderSlot('conversation.approval.actionLabel', { callId: approval.callId, decision, fallback })
+  const labels = { 'allowed-once': label('allowed-once', props.t('allowOnce')), rejected: label('rejected', props.t('reject')) }
+  return <ApprovalFlow key={approval.key} pending={approval} detail={detail} labels={labels} t={props.t} />
 }
 
-function ApprovalFlow({ pending, detail, t }: {
+function ApprovalFlow({ pending, detail, labels, t }: {
   pending: PendingApproval
   detail: ReactNode
+  labels: Readonly<Record<ApprovalDecision, ReactNode>>
   t: ApprovalComposerProps['t']
 }) {
   const [answered, setAnswered] = useState(false)
@@ -43,10 +48,10 @@ function ApprovalFlow({ pending, detail, t }: {
         </div>
         <div className={css.actionRow}>
           <Button variant="primary" className={css.action} disabled={answered} onClick={() => { answer('allowed-once') }}>
-            {t('allowOnce')}
+            {labels['allowed-once']}
           </Button>
           <Button variant="outline" className={css.action} disabled={answered} onClick={() => { answer('rejected') }}>
-            {t('reject')}
+            {labels.rejected}
           </Button>
         </div>
       </div>

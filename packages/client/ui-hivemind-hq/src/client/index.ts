@@ -1,5 +1,6 @@
 import type {} from '@deepseek-ai/dsh-client-ui-chat/client'
 import { RuntimeTaskCard } from './RuntimeTaskCard.tsx'
+import { ApprovalActionLabel, ApprovalAppDetail } from './ApprovalAppDetail.tsx'
 import { employeeTaskCard } from './employee-task-card.ts'
 import { FinalRuntimePlanSummary } from './RuntimePlanSummary.tsx'
 /** Native header contribution over generated, tenant-authorized HQ Remote contracts. */
@@ -33,6 +34,14 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
   const ui = ctx.inject(['uiConversation', 'sessions', 'remote.hivemindHq', 'remote.agentPresets', 'slots', 'locale', 'layout', 'uiWorkspace'], (child) => {
     child.effect(() => child.locale.register('hivemind.hq', { en, zh }))
     child.effect(() => child.uiConversation.events.register(employeeTaskCard))
+    // Shadows the shell-command detail (priority 0) so a connected-app approval reads as the app, its logo and fields.
+    child.slots.inject('conversation.approval.detail', () => child.slots.register({
+      name: 'conversation.approval.detail', priority: -10, locale: 'hivemind.hq',
+    }, ApprovalAppDetail))
+    // Shadows the approval owner's default copy so a known app action reads as Send email / Discard.
+    child.slots.inject('conversation.approval.actionLabel', () => child.slots.register({
+      name: 'conversation.approval.actionLabel', priority: -10, locale: 'hivemind.hq',
+    }, ApprovalActionLabel))
     child.slots.inject('conversation.chat.node', () => child.slots.register({
       name: 'conversation.chat.node', key: 'hivemind-employee-task',
       children: { 'hivemind.employee.taskAvatar': { kind: 'single', scope: 'session' } },

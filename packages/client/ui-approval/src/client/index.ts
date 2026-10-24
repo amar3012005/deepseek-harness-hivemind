@@ -12,6 +12,7 @@ import { PendingApproval } from './contract/slots.ts'
 import { en, zh } from './locales.ts'
 
 export type {
+  ApprovalActionLabelOwnerProps,
   ApprovalComposerProps,
   ApprovalDecision,
   ApprovalDetailOwnerProps,
@@ -85,8 +86,11 @@ export function apply(ctx: ClientContext): void {
     locale: NS,
     children: {
       'conversation.approval.detail': { kind: 'single', scope: 'session' },
+      'conversation.approval.actionLabel': { kind: 'single', scope: 'session' },
     },
   }, ApprovalPanel))
+  ctx.slots.inject('conversation.approval.actionLabel', () => ctx.slots.register(
+    { name: 'conversation.approval.actionLabel' }, ({ fallback }) => fallback))
   ctx.remote.$on('approval/request', function (request, next) {
     return answerApproval(ctx, this, request, next, registerPendingInteraction)
   })
