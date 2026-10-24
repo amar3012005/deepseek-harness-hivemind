@@ -288,13 +288,9 @@ function QuestionFlow({ pending, t, useStore, actions }: QuestionFlowProps) {
         className={clsx(css.card, minimized && css.cardMinimized)}
         aria-labelledby={`question-${pending.key}-${String(index)}`}
       >
-        <header className={css.header}>
-          <div className={css.headingBlock}>
-            {question.header !== undefined && <div className={css.eyebrow}>{question.header}</div>}
-            <h2 className={css.title} id={`question-${pending.key}-${String(index)}`}>
-              {question.question}
-            </h2>
-          </div>
+        <div className={css.strip}>
+          <span className={css.dot} aria-hidden="true" />
+          <span className={css.stripLabel}>{t('strip')}</span>
           <div className={css.headerActions}>
             <button
               type="button" className={css.iconButton}
@@ -313,6 +309,14 @@ function QuestionFlow({ pending, t, useStore, actions }: QuestionFlowProps) {
             >
               <IconCloseOutline16 />
             </button>
+          </div>
+        </div>
+        <header className={css.header}>
+          <div className={css.headingBlock}>
+            {question.header !== undefined && <div className={css.eyebrow}>{question.header}</div>}
+            <h2 className={css.title} id={`question-${pending.key}-${String(index)}`}>
+              {question.question}
+            </h2>
           </div>
         </header>
 
@@ -406,7 +410,23 @@ function QuestionFlow({ pending, t, useStore, actions }: QuestionFlowProps) {
             </div>
 
             <footer className={css.footer}>
-              <div className={css.pager}>
+              <div className={css.footerActions}>
+                <Button
+                  variant="primary" className={css.action}
+                  disabled={busy !== null || !answered(draft)} onClick={continueFlow}
+                >
+                  {busy === 'answer'
+                    ? t('submitting')
+                    : index === questions.length - 1 ? t('submit') : t('action.next')}
+                </Button>
+                <Button variant="outline" className={css.action} disabled={busy !== null} onClick={skipQuestion}>
+                  {t('action.skip')}
+                </Button>
+              </div>
+              <div className={css.feedback} role="status">
+                {error === null ? null : 'key' in error ? t(error.key) : error.text}
+              </div>
+              {questions.length > 1 && <div className={css.pager}>
                 <button
                   type="button" className={css.iconButton} aria-label={t('nav.prev')}
                   disabled={index === 0 || busy !== null}
@@ -422,23 +442,7 @@ function QuestionFlow({ pending, t, useStore, actions }: QuestionFlowProps) {
                 >
                   <IconChevronRightOutline14 />
                 </button>
-              </div>
-              <div className={css.feedback} role="status">
-                {error === null ? null : 'key' in error ? t(error.key) : error.text}
-              </div>
-              <div className={css.footerActions}>
-                <Button variant="outline" disabled={busy !== null} onClick={skipQuestion}>
-                  {t('action.skip')}
-                </Button>
-                <Button
-                  variant="primary"
-                  disabled={busy !== null || !answered(draft)} onClick={continueFlow}
-                >
-                  {busy === 'answer'
-                    ? t('submitting')
-                    : index === questions.length - 1 ? t('submit') : t('action.next')}
-                </Button>
-              </div>
+              </div>}
             </footer>
           </>
         )}

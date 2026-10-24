@@ -2,7 +2,7 @@
 
 /** Simplified Chinese dictionary and key-set source of truth. */
 export const zh = {
-  waiting: '等待审批',
+  waiting: '需要你的批准',
   'detail.aria': '审批详情',
   escalation: '工具 {toolName} 请求越权执行',
   reject: '拒绝',
@@ -14,7 +14,7 @@ export type ApprovalKey = keyof typeof zh
 
 /** English dictionary, checked against the Chinese key set. */
 export const en = {
-  waiting: 'Waiting for approval',
+  waiting: 'Needs your approval',
   'detail.aria': 'Approval details',
   escalation: 'Tool {toolName} requests privileged execution',
   reject: 'Reject',

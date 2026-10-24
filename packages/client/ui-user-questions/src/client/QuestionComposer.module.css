@@ -18,12 +18,15 @@
      hidden): cap the card against the viewport and scroll the option list
      so header and footer actions stay reachable on long batches. */
   max-height: min(60vh, 520px);
-  padding: 0 0 10px;
-  border: 0;
-  --dsw-elevation-stroke-color: var(--dsw-alias-border-l2-darkmode-thin);
-  border-radius: 20px;
+  /* Dynamic units follow the visible viewport where supported; a host seat
+     that knows the keyboard-adjusted height sets the cap directly. */
+  max-height: var(--dsh-composer-takeover-max-height, min(60dvh, 520px));
+  padding: 0 0 4px;
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: 18px;
   background: var(--dsw-specific-input-major);
-  box-shadow: var(--dsw-elevation-panel);
+  box-shadow: var(--dsw-shadow-lv2);
+  animation: card-rise 260ms cubic-bezier(0.2, 0.9, 0.25, 1) both;
   color: var(--dsw-alias-label-primary);
   overflow: hidden;
   /* Elevated surface in dark, same as the menus: the body inside scrolls
@@ -53,6 +56,37 @@
   padding-bottom: 14px;
 }
 
+/* The agent action card strip shared with approvals: warning dot, quiet
+   uppercase label, and the minimize and dismiss controls at its trailing edge. */
+.strip {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  gap: 8px;
+  min-height: 36px;
+  padding: 6px 10px 6px 16px;
+  border-bottom: 0.5px solid var(--dsw-alias-border-l2);
+  background: var(--dsw-alias-fill-secondary, rgba(0, 0, 0, 0.03));
+}
+
+.dot {
+  flex-shrink: 0;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  corner-shape: round;
+  background: var(--dsw-alias-state-warn-primary);
+}
+
+.stripLabel {
+  color: var(--dsw-alias-label-secondary);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 16px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
 /* Header button group: minimize sits next to the close action, both on the
    same 24px icon-button grid. */
 .headerActions {
@@ -60,6 +94,31 @@
   align-items: center;
   gap: 4px;
   flex-shrink: 0;
+  margin-left: auto;
+}
+
+.action {
+  height: 36px;
+  min-width: 44px;
+  padding: 0 18px;
+  border-radius: 999px;
+  corner-shape: round;
+  font-size: 14px;
+  font-weight: 500;
+  transition: transform 200ms cubic-bezier(0.2, 0.9, 0.25, 1.15), background-color 120ms ease;
+}
+
+.action:active:not(:disabled) {
+  transform: scale(0.96);
+}
+
+@keyframes card-rise {
+  from { opacity: 0; transform: translateY(6px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .card { animation: none; }
+  .action { transition: none; }
 }
 
 /* Figma 1019:36938 header, user-tuned: heading block left, close right; the
@@ -70,7 +129,7 @@
   justify-content: space-between;
   gap: 16px;
   flex-shrink: 0;
-  padding: 20px 16px 0 24px;
+  padding: 14px 16px 0;
 }
 
 .headingBlock {
@@ -159,7 +218,7 @@
   flex-direction: column;
   gap: 1px;
   margin: 8px 0 0;
-  padding: 4px 12px;
+  padding: 4px 8px;
 }
 
 .option {
@@ -383,13 +442,13 @@
 }
 
 /* Optionless question: the free-form answer is the whole body, so it carries
-   its own frame. The 12px side margins add to the .options 12px padding so both
-   edges align with the title's 24px inset; two lines are reserved before the
+   its own frame. The 8px side margins add to the .options 8px padding so both
+   edges align with the title's 16px inset; two lines are reserved before the
    answer starts growing. */
 .customBlock {
   min-height: 64px;
   flex-shrink: 0;
-  margin: 0 12px;
+  margin: 0 8px;
   border: 0.5px solid var(--dsw-alias-border-l4);
   border-radius: 10px;
   background: var(--dsw-alias-bg-module-platform);
@@ -407,7 +466,7 @@
   gap: 12px;
   flex-shrink: 0;
   margin-top: 12px;
-  padding: 0 10px 0 18px;
+  padding: 0 12px 12px 16px;
 }
 
 .feedback {
@@ -416,7 +475,7 @@
   color: var(--dsw-alias-state-error-primary);
   font-size: 11px;
   line-height: 16px;
-  text-align: right;
+  text-align: center;
 }
 
 @media (max-width: 720px) {
@@ -425,7 +484,7 @@
   }
 
   .header {
-    padding: 10px 12px 0 18px;
+    padding: 12px 12px 0 16px;
   }
 
   .options {
@@ -443,12 +502,29 @@
   }
 
   .footer {
-    align-items: flex-end;
-    padding: 0 10px;
+    padding: 0 10px 10px 16px;
   }
 
   .footerActions {
     flex-shrink: 0;
+  }
+}
+
+/* Phone width: the pager and both actions do not fit one 327px row, so the
+   pill actions take their own row at the leading edge and the pager wraps under. */
+@media (max-width: 600px) {
+  .footer {
+    flex-wrap: wrap;
+    row-gap: 8px;
+  }
+
+  .footerActions {
+    flex: 1 0 100%;
+  }
+
+  .action {
+    height: 40px;
+    font-size: 15px;
   }
 }
 

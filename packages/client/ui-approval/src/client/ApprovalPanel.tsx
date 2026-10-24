@@ -30,7 +30,7 @@ function ApprovalFlow({ pending, detail, t }: {
   return (
     <div className={css.root} data-approval-key={pending.key}>
       <div className={css.card}>
-        <div className={css.strip}><span className={css.dot} />{t('waiting')}</div>
+        <div className={css.strip}><span className={css.dot} aria-hidden="true" /><span className={css.eyebrow}>{t('waiting')}</span></div>
         <div
           className={css.body}
           data-approval-scroll=""
@@ -42,11 +42,11 @@ function ApprovalFlow({ pending, detail, t }: {
           {detail !== null && <div className={css.command}>{detail}</div>}
         </div>
         <div className={css.actionRow}>
-          <Button variant="outline" className={css.reject} disabled={answered} onClick={() => { answer('rejected') }}>
-            {t('reject')}
-          </Button>
-          <Button variant="primary" disabled={answered} onClick={() => { answer('allowed-once') }}>
+          <Button variant="primary" className={css.action} disabled={answered} onClick={() => { answer('allowed-once') }}>
             {t('allowOnce')}
+          </Button>
+          <Button variant="outline" className={css.action} disabled={answered} onClick={() => { answer('rejected') }}>
+            {t('reject')}
           </Button>
         </div>
       </div>

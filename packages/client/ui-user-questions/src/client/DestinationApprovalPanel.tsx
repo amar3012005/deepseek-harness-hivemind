@@ -23,17 +23,17 @@ export function DestinationApprovalPanel({ pending, destination, t }: Destinatio
     <div className={css.frame} data-memory-save-destination-key={pending.key}>
       <section className={css.card} aria-label={destination.question}>
         <div className={css.strip}>
-          <span className={css.dot} />
-          {t('save.header')}
+          <span className={css.dot} aria-hidden="true" />
+          <span className={css.eyebrow}>{t('save.header')}</span>
         </div>
         <div className={css.body}>
-          <p>{destination.question}</p>
+          <p className={css.headline}>{destination.question}</p>
           {destination.detail ? <p>{destination.detail}</p> : null}
-          <div role="radiogroup" aria-label={t('save.header')}>
+          <div className={css.choices} role="radiogroup" aria-label={t('save.header')}>
             {destination.options.map(option => (
               <Button
                 key={option.label}
-                variant={selected === option.label ? 'primary' : 'outline'}
+                variant={selected === option.label ? 'primary' : 'outline'} className={css.action}
                 disabled={busy}
                 title={option.description}
                 onClick={() => { setSelected(option.label) }}
@@ -44,13 +44,9 @@ export function DestinationApprovalPanel({ pending, destination, t }: Destinatio
           </div>
         </div>
         <div className={css.footer}>
-          <div className={css.feedback} role="status">{error}</div>
           <div className={css.actions}>
-            <Button variant="ghost" disabled={busy} onClick={() => { settle(() => pending.cancel()) }}>
-              {t('save.decline')}
-            </Button>
             <Button
-              variant="primary"
+              variant="primary" className={css.action}
               disabled={busy || selected === null}
               onClick={() => {
                 if (selected === null) return
@@ -59,7 +55,11 @@ export function DestinationApprovalPanel({ pending, destination, t }: Destinatio
             >
               {t('save.submit')}
             </Button>
+            <Button variant="outline" className={css.action} disabled={busy} onClick={() => { settle(() => pending.cancel()) }}>
+              {t('save.decline')}
+            </Button>
           </div>
+          <div className={css.feedback} role="status">{error}</div>
         </div>
       </section>
     </div>

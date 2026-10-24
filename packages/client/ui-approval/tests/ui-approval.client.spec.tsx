@@ -323,6 +323,12 @@ function panelProps(
 }
 
 describe('ApprovalPanel', () => {
+  it('leads with the allowing action, as every agent action card does', () => {
+    const pending = new PendingApproval(id('s1'), { toolName: 'bash' })
+    render(<ApprovalPanel {...panelProps(pending)} />)
+    expect(screen.getAllByRole('button').map(button => button.textContent)).toEqual(['Allow once', 'Reject'])
+  })
+
   it('renders fallback copy without detail and returns rejection', async () => {
     const pending = new PendingApproval(id('s1'), { toolName: 'bash' })
     const props = panelProps(pending)

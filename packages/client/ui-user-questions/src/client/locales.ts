@@ -2,6 +2,7 @@
 
 /** Simplified Chinese dictionary (the key-set source of truth). */
 export const zh = {
+  strip: '需要你回答',
   'error.incomplete': '请先完成这道问题。',
   'error.unanswered': '请选择一个选项或填写自定义答案。',
   'nav.prev': '上一题',
@@ -27,6 +28,7 @@ export type QuestionKey = keyof typeof zh
 
 /** English dictionary, checked complete against the zh key set. */
 export const en = {
+  strip: 'Question for you',
   'error.incomplete': 'Please complete this question first.',
   'error.unanswered': 'Please select an option or enter a custom answer.',
   'nav.prev': 'Previous question',
