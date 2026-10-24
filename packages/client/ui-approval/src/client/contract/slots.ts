@@ -178,6 +178,6 @@ export class PendingApproval {
 /** Full props of the approval composer takeover. */
 export type ApprovalComposerProps =
   PropsRuntime<'conversation.composer'>
-  & PropsRenderSlots<'conversation.approval.detail'>
+  & PropsRenderSlots<'conversation.approval.detail' | 'conversation.approval.actionLabel'>
   & { matched: PendingApproval }
   & PropsLocale<'approval'>
