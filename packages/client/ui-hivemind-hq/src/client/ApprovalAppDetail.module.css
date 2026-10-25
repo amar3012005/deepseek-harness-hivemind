@@ -1,0 +1,46 @@
+.app {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--dsw-alias-label-primary);
+  font-family: var(--ds-font-family-base, inherit);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.logo {
+  width: 20px;
+  height: 20px;
+  border-radius: 5px;
+  flex-shrink: 0;
+}
+
+.fields {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 16px;
+  margin: 10px 0 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--dsw-alias-fill-secondary, rgba(0, 0, 0, 0.03));
+  font-family: var(--ds-font-family-base, inherit);
+  font-size: 13px;
+  line-height: 20px;
+  word-break: normal;
+}
+
+.fields dt {
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.fields dd {
+  margin: 0;
+  min-width: 0;
+  color: var(--dsw-alias-label-primary);
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.row {
+  display: contents;
+}

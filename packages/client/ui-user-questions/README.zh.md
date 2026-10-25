@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-当 agent 在 Web 客户端中提问时，本包会用交互式提问界面接管聊天编辑器。用户可以在问题之间导航、选择一个或多个选项、输入自定义答案、跳过问题，并提交一批结构化答案。选择单选项后会立即前进，而草稿会在当前页面的生命周期内跨 Session 导航保留。若唯一的问题声明了受支持的呈现意图，则可使用专用界面，包括带 `Chat about it`、`Refuse` 和 `Approve` 操作的 plan-review 卡片。
+当 agent 在 Web 客户端中提问时，本包会用交互式提问界面接管聊天编辑器。用户可以在问题之间导航、选择一个或多个选项、输入自定义答案、跳过问题，并提交一批结构化答案。选择单选项后会立即前进，而草稿会在当前页面的生命周期内跨 Session 导航保留。若唯一的问题声明了受支持的呈现意图，则可使用专用界面，包括带 `Approve`、`Refuse` 和 `Chat about it` 操作的 plan-review 卡片。
 
 ## 目录
 
@@ -33,7 +33,7 @@ kind: "package-reference"
 
 ### plan-review 卡片
 
-`plan-review` 意图——由 `dsh-plan-mode` 在 `exit_plan_mode` 审阅上设置——渲染等待审批卡片的布局：一条 `Plan review` 条带、计划作为可滚动的 markdown 主体，以及一行 `Chat about it` / `Refuse` / `Approve` 的决定操作。Approve 与 Refuse 用提问方自己的选项标签回答；`Chat about it` 以 `ASK_CANCELLED` 拒绝该等待，让编辑器归位，用户可以直接说出他想说的话。
+`plan-review` 意图——由 `dsh-plan-mode` 在 `exit_plan_mode` 审阅上设置——渲染智能体操作卡片：一条 `Plan review` 条带、计划作为可滚动的 markdown 主体，以及一行主操作在前的 `Approve` / `Refuse` / `Chat about it` 决定操作。Approve 与 Refuse 用提问方自己的选项标签回答；`Chat about it` 以 `ASK_CANCELLED` 拒绝该等待，让编辑器归位，用户可以直接说出他想说的话。
 
 ### 失败与恢复
 

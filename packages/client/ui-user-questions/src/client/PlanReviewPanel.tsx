@@ -50,36 +50,36 @@ export function PlanReviewPanel({ pending, review, t }: PlanReviewPanelProps) {
     <div className={css.frame} data-plan-review-key={pending.key}>
       <section className={css.card} aria-label={review.question}>
         <div className={css.strip}>
-          <span className={css.dot} />
-          {t('plan.header')}
+          <span className={css.dot} aria-hidden="true" />
+          <span className={css.eyebrow}>{t('plan.header')}</span>
         </div>
         <div className={css.body} data-plan-review-scroll>
           <MarkdownText text={review.plan} labels={markdownLabels} />
         </div>
         <div className={css.footer}>
-          <div className={css.feedback} role="status">{error}</div>
           <div className={css.actions}>
             <Button
-              variant="ghost" className={css.discuss} icon={<IconEditOutline16 size={14} />}
-              disabled={busy} onClick={() => { settle(() => pending.cancel()) }}
+              variant="primary" className={css.action} {...tooltip(review.approve.description)}
+              disabled={busy} onClick={() => { decide(review.approve.label) }}
             >
-              {t('plan.discuss')}
+              {t('plan.approve')}
             </Button>
             {decline !== undefined && (
               <Button
-                variant="outline" {...tooltip(decline.description)}
+                variant="outline" className={css.action} {...tooltip(decline.description)}
                 disabled={busy} onClick={() => { decide(decline.label) }}
               >
                 {t('plan.decline')}
               </Button>
             )}
             <Button
-              variant="primary" {...tooltip(review.approve.description)}
-              disabled={busy} onClick={() => { decide(review.approve.label) }}
+              variant="ghost" className={css.discuss} icon={<IconEditOutline16 size={14} />}
+              disabled={busy} onClick={() => { settle(() => pending.cancel()) }}
             >
-              {t('plan.approve')}
+              {t('plan.discuss')}
             </Button>
           </div>
+          <div className={css.feedback} role="status">{error}</div>
         </div>
       </section>
     </div>

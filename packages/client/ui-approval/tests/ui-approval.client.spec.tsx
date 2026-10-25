@@ -64,7 +64,7 @@ function setupPlugin(): PluginBench {
     options: NonNullable<typeof registration>['options'],
     component: unknown,
   ) => {
-    registration = { options, component }
+    if ((options as { name?: string }).name === 'conversation.composer') registration = { options, component }
     return disposeSlot
   })
   const injectSlot = vi.fn((_name: string, mount: () => () => void) => {
@@ -205,7 +205,7 @@ describe('approval Remote Event consumer', () => {
       .resolves.toBe('unavailable')
     expect(next).toHaveBeenCalledOnce()
     expect(bench.pending.getSnapshot()).toEqual([])
-    expect(bench.register).toHaveBeenCalledOnce()
+    expect(bench.register).toHaveBeenCalledTimes(2)
   })
 
   it('publishes one scoped takeover, returns the answer, and keeps stable registrations', async () => {
@@ -239,7 +239,7 @@ describe('approval Remote Event consumer', () => {
     await expect(result).resolves.toBe('allowed-once')
     expect(next).not.toHaveBeenCalled()
     expect(bench.pending.getSnapshot()).toEqual([])
-    expect(bench.register).toHaveBeenCalledOnce()
+    expect(bench.register).toHaveBeenCalledTimes(2)
     expect(bench.disposeSlot).not.toHaveBeenCalled()
     await scope.fiber.dispose()
   })
@@ -299,7 +299,7 @@ describe('approval Remote Event consumer', () => {
   it('removes stable registrations with the plugin lifetime', async () => {
     const bench = setupPlugin()
     await bench.ctx.fiber.dispose()
-    expect(bench.disposeSlot).toHaveBeenCalledOnce()
+    expect(bench.disposeSlot).toHaveBeenCalledTimes(2)
     expect(bench.disposeLocale).toHaveBeenCalledOnce()
   })
 })
@@ -323,6 +323,21 @@ function panelProps(
 }
 
 describe('ApprovalPanel', () => {
+  it('labels each decision through the action-label slot, so an app can name what happens', () => {
+    const pending = new PendingApproval(id('s1'), { toolName: 'composio', callId: 'call-2' as ToolCallId })
+    const named: Record<string, string> = { 'allowed-once': 'Send email', rejected: 'Discard' }
+    const renderSlot = vi.fn((key: string, owner: { decision?: string }) =>
+      key === 'conversation.approval.actionLabel' ? named[owner.decision ?? ''] : null)
+    render(<ApprovalPanel {...panelProps(pending, renderSlot as never)} />)
+    expect(screen.getAllByRole('button').map(button => button.textContent)).toEqual(['Send email', 'Discard'])
+  })
+
+  it('leads with the allowing action, as every agent action card does', () => {
+    const pending = new PendingApproval(id('s1'), { toolName: 'bash' })
+    render(<ApprovalPanel {...panelProps(pending)} />)
+    expect(screen.getAllByRole('button').map(button => button.textContent)).toEqual(['Allow once', 'Reject'])
+  })
+
   it('renders fallback copy without detail and returns rejection', async () => {
     const pending = new PendingApproval(id('s1'), { toolName: 'bash' })
     const props = panelProps(pending)
@@ -344,8 +359,9 @@ describe('ApprovalPanel', () => {
       callId: 'call-1' as ToolCallId,
       reason: 'Run this exact command',
     })
-    const renderSlot = vi.fn(() => <code>pnpm test</code>)
-    render(<ApprovalPanel {...panelProps(pending, renderSlot)} />)
+    const renderSlot = vi.fn((key: string, owner: { fallback?: string }) =>
+      key === 'conversation.approval.detail' ? <code>pnpm test</code> : owner.fallback)
+    render(<ApprovalPanel {...panelProps(pending, renderSlot as never)} />)
 
     expect(screen.getByText('Run this exact command')).toBeTruthy()
     expect(screen.getByText('pnpm test')).toBeTruthy()
