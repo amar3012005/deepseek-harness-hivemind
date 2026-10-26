@@ -74,6 +74,7 @@ function harness(
     ask,
     spills,
     flush,
+    definition: () => tool as unknown as { isConcurrencySafe?: (args: unknown) => boolean },
   }
 }
 
@@ -246,18 +247,30 @@ describe('progressive Composio bridge', () => {
     expect(JSON.stringify(projected)).not.toContain('[truncated]')
   })
 
-  it('projects only requested provider evidence fields while retaining structural containers', () => {
+  it('projects requested fields and keeps message identifiers, sender, and bounded body beside them', () => {
     const projected = compactComposioExecutionReceipt({ data: { messages: [{
       id: 'message-1', subject: 'Project update', received_at: '2026-09-12T12:00:00Z',
-      body: 'large unrequested body', sender: { name: 'Rama', address: 'rama@example.com' },
+      body: 'bounded message body', sender: { name: 'Rama', address: 'rama@example.com' },
+      internal_flags: 'omit this',
     }] } }, receipt, ['subject', 'received_at'])
 
     expect(projected).toMatchObject({
-      data: { messages: [{ subject: 'Project update', received_at: '2026-09-12T12:00:00Z' }] },
+      data: { messages: [{
+        subject: 'Project update', received_at: '2026-09-12T12:00:00Z', id: 'message-1',
+        body: 'bounded message body', sender: { address: 'rama@example.com' },
+      }] },
       source_receipt: { receipt_id: expect.any(String), bytes: 10 },
     })
-    expect(JSON.stringify(projected)).not.toContain('large unrequested body')
-    expect(JSON.stringify(projected)).not.toContain('rama@example.com')
+    expect(JSON.stringify(projected)).not.toContain('omit this')
+  })
+
+  it('keeps message identifiers and attachment names when a requested field is absent', () => {
+    const projected = compactComposioExecutionReceipt({ messageId: 'msg-9', threadId: 'thread-9', subject: 'Invoice',
+      attachmentList: [{ filename: 'invoice.pdf', attachmentId: 'att-1', data: 'bytes' }], payloadNoise: 'omit this' },
+    undefined, ['subject'])
+    expect(projected).toMatchObject({ messageId: 'msg-9', threadId: 'thread-9', subject: 'Invoice', attachmentList: ['invoice.pdf'] })
+    expect(JSON.stringify(projected)).not.toContain('bytes')
+    expect(JSON.stringify(projected)).not.toContain('omit this')
   })
 
   it('reports absent requested keys without substituting unrelated provider evidence', () => {
@@ -285,7 +298,7 @@ describe('progressive Composio bridge', () => {
 
   it('preserves only a bounded provider continuation cursor beside compact evidence', () => {
     const projected = compactComposioExecutionReceipt({ data: {
-      messages: [{ subject: 'first page' }], nextPageToken: 'page-2', body: 'unrelated payload',
+      messages: [{ subject: 'first page' }], nextPageToken: 'page-2', providerDebug: 'unrelated payload',
     } }, receipt, ['subject']) as Record<string, unknown>
     expect(projected).toMatchObject({
       data: { messages: [{ subject: 'first page' }] },
@@ -1897,4 +1910,158 @@ it('lists only authenticated active connections without asking for authorization
   expect(result).toMatchObject({ status: 'active_connections', apps: [{ app: 'gmail', name: 'Gmail', connected: true }] })
   expect(fixture.ask).not.toHaveBeenCalled()
   expect(execute).not.toHaveBeenCalled()
+})
+
+describe('connected-app cache, concurrency, and draft recipients', () => {
+  beforeEach(() => {
+    execute.mockReset(); toolkits.mockReset(); toolkits.mockResolvedValue({ items: [] })
+    list.mockReset(); list.mockResolvedValue({ items: [] })
+  })
+
+  it('classifies only provider reads and read-only connected actions as concurrency-safe', () => {
+    const definition = harness().definition()
+    expect(definition.isConcurrencySafe?.({ action: 'list_connections' })).toBe(true)
+    expect(definition.isConcurrencySafe?.({ action: 'read_receipt' })).toBe(true)
+    expect(definition.isConcurrencySafe?.({ action: 'execute', tool_slug: 'GMAIL_FETCH_EMAILS' })).toBe(true)
+    expect(definition.isConcurrencySafe?.({ action: 'execute', tool_slug: 'GMAIL_SEND_EMAIL' })).toBe(false)
+    expect(definition.isConcurrencySafe?.({ action: 'execute', tool_slug: 'GMAIL_CREATE_EMAIL_DRAFT' })).toBe(false)
+    expect(definition.isConcurrencySafe?.({ action: 'execute', tool_slug: 'GMAIL_MARK_AS_READ' })).toBe(false)
+    expect(definition.isConcurrencySafe?.({ action: 'execute', tool_slug: 'COMPOSIO_SEARCH_TOOLS' })).toBe(false)
+    expect(definition.isConcurrencySafe?.({ action: 'search', queries: [] })).toBe(false)
+    expect(definition.isConcurrencySafe?.({ action: 'schemas', tool_slugs: ['GMAIL_FETCH_EMAILS'] })).toBe(false)
+    expect(definition.isConcurrencySafe?.(undefined)).toBe(false)
+  })
+
+  it('reuses a cached authoritative schema for a planned read on a later search without a schema round trip', async () => {
+    const plan = ['[Required] [Step] GMAIL_FETCH_MESSAGE_BY_THREAD_ID for the full thread']
+    execute
+      .mockResolvedValueOnce({ data: { session: { id: 'wf-1' }, results: [{
+        primary_tool_slugs: ['GMAIL_FETCH_EMAILS'], recommended_plan_steps: plan,
+        tool_schemas: { GMAIL_FETCH_EMAILS: { input_schema: { type: 'object', properties: { max_results: { type: 'integer' } } } } },
+      }] } })
+      .mockResolvedValueOnce({ data: { tool_schemas: { GMAIL_FETCH_MESSAGE_BY_THREAD_ID: { input_schema: {
+        type: 'object', required: ['thread_id'], properties: { thread_id: { type: 'string' } },
+      } } } } })
+      .mockResolvedValueOnce({ data: { session: { id: 'wf-2' }, results: [{
+        primary_tool_slugs: ['GMAIL_FETCH_EMAILS'], recommended_plan_steps: plan,
+        tool_schemas: { GMAIL_FETCH_EMAILS: { input_schema: { type: 'object', properties: { max_results: { type: 'integer' } } } } },
+      }] } })
+      .mockResolvedValueOnce({ data: { messages: [{ id: 'msg-1' }] } })
+    const app = harness()
+    const first = await app.tool().execute({ action: 'search', queries: [{ app: 'Gmail', use_case: 'Read the full Gmail thread.' }], session: { generate_id: true } }, { signal: AbortSignal.abort() })
+    expect(first).toMatchObject({ session_id: 'wf-1' })
+    await app.tool().execute({ action: 'schemas', session_id: 'wf-1', tool_slug: 'GMAIL_FETCH_MESSAGE_BY_THREAD_ID' }, { signal: AbortSignal.abort() })
+    await app.tool().execute({ action: 'search', queries: [{ app: 'Gmail', use_case: 'Read the full Gmail thread again.' }], session: { generate_id: true } }, { signal: AbortSignal.abort() })
+    await expect(app.tool().execute({ action: 'execute', tool_slug: 'GMAIL_FETCH_MESSAGE_BY_THREAD_ID', arguments: { thread_id: 'thread-1' } }, { signal: AbortSignal.abort() }))
+      .resolves.toMatchObject({ status: 'ready' })
+    expect(execute.mock.calls.map(call => call[0])).toEqual([
+      'COMPOSIO_SEARCH_TOOLS', 'COMPOSIO_GET_TOOL_SCHEMAS', 'COMPOSIO_SEARCH_TOOLS', 'GMAIL_FETCH_MESSAGE_BY_THREAD_ID',
+    ])
+  })
+
+  it('schemas answers from cache and makes no provider schema call for a schema already loaded in this tenant', async () => {
+    execute
+      .mockResolvedValueOnce({ data: { session: { id: 'wf-3' }, results: [{
+        primary_tool_slugs: ['GMAIL_FETCH_EMAILS'], recommended_plan_steps: ['[Required] [Step] GMAIL_LIST_THREADS for thread ids'],
+        tool_schemas: { GMAIL_FETCH_EMAILS: { input_schema: { type: 'object', properties: {} } } },
+      }] } })
+      .mockResolvedValueOnce({ data: { tool_schemas: { GMAIL_LIST_THREADS: { input_schema: { type: 'object', properties: {} } } } } })
+    const app = harness()
+    await app.tool().execute({ action: 'search', queries: [{ app: 'Gmail', use_case: 'List Gmail threads.' }], session: { generate_id: true } }, { signal: AbortSignal.abort() })
+    await app.tool().execute({ action: 'schemas', session_id: 'wf-3', tool_slug: 'GMAIL_LIST_THREADS' }, { signal: AbortSignal.abort() })
+    const repeated = await app.tool().execute({ action: 'schemas', session_id: 'wf-3', tool_slug: 'GMAIL_LIST_THREADS' }, { signal: AbortSignal.abort() })
+    expect(repeated).toMatchObject({ status: 'ready', operations: [{ tool: 'schema_cache', status: 'hit' }], execution_contracts: [{ tool_slug: 'GMAIL_LIST_THREADS' }] })
+    expect(execute.mock.calls.filter(call => call[0] === 'COMPOSIO_GET_TOOL_SCHEMAS')).toHaveLength(1)
+  })
+
+  it('addresses an in-thread draft to the original sender when the recipient is omitted', async () => {
+    execute
+      .mockResolvedValueOnce({ data: { session: { id: 'wf-draft' }, results: [{
+        primary_tool_slugs: ['GMAIL_CREATE_EMAIL_DRAFT'],
+        tool_schemas: { GMAIL_CREATE_EMAIL_DRAFT: { input_schema: {
+          type: 'object', required: ['recipient_email', 'subject', 'body'],
+          properties: { recipient_email: { type: 'string' }, thread_id: { type: 'string' }, subject: { type: 'string' }, body: { type: 'string' } },
+        } } },
+      }] } })
+      .mockResolvedValueOnce({ data: { draft: { id: 'draft-1' } } })
+    const events = [{ type: 'hivemind/connected-receipt', data: { tool: 'GMAIL_FETCH_EMAILS', receipt: {
+      status: 'ready', messageId: 'msg-1', threadId: 'thread-1', sender: 'Rama <rama@example.com>', subject: 'Project update',
+    } } }]
+    const agent = { session: { header: { id: 'conversation-draft' }, snapshotEvents: () => events, append: vi.fn() } }
+    const app = harness()
+    await app.tool().execute({ action: 'search', queries: [{ app: 'Gmail', use_case: 'Draft a reply in the thread.' }], session: { generate_id: true } }, { signal: AbortSignal.abort(), agent } as never)
+    await expect(app.tool().execute({ action: 'execute', tool_slug: 'GMAIL_CREATE_EMAIL_DRAFT', arguments: { thread_id: 'thread-1', subject: 'Re: Project update', body: 'Thanks.' } },
+      { signal: AbortSignal.abort(), agent } as never)).resolves.toMatchObject({ status: 'ready' })
+    expect(execute).toHaveBeenLastCalledWith('GMAIL_CREATE_EMAIL_DRAFT', expect.objectContaining({ recipient_email: 'rama@example.com', thread_id: 'thread-1' }))
+  })
+
+  it('does not guess a draft recipient when the referenced thread has more than one sender', async () => {
+    execute.mockResolvedValueOnce({ data: { session: { id: 'wf-amb' }, results: [{
+      primary_tool_slugs: ['GMAIL_CREATE_EMAIL_DRAFT'],
+      tool_schemas: { GMAIL_CREATE_EMAIL_DRAFT: { input_schema: {
+        type: 'object', required: ['recipient_email', 'body'],
+        properties: { recipient_email: { type: 'string' }, thread_id: { type: 'string' }, body: { type: 'string' } },
+      } } },
+    }] } })
+    const events = [{ type: 'hivemind/connected-receipt', data: { tool: 'GMAIL_FETCH_EMAILS', receipt: { messages: [
+      { messageId: 'msg-1', threadId: 'thread-1', sender: 'a@example.com' },
+      { messageId: 'msg-2', threadId: 'thread-1', sender: 'b@example.com' },
+    ] } } }]
+    const agent = { session: { header: { id: 'conversation-amb' }, snapshotEvents: () => events, append: vi.fn() } }
+    const app = harness()
+    await app.tool().execute({ action: 'search', queries: [{ app: 'Gmail', use_case: 'Draft a reply.' }], session: { generate_id: true } }, { signal: AbortSignal.abort(), agent } as never)
+    await expect(app.tool().execute({ action: 'execute', tool_slug: 'GMAIL_CREATE_EMAIL_DRAFT', arguments: { thread_id: 'thread-1', body: 'Thanks.' } },
+      { signal: AbortSignal.abort(), agent } as never)).rejects.toThrow("required property 'recipient_email'")
+    expect(execute).toHaveBeenCalledTimes(1)
+  })
+
+  it('completes a reply to received mail in three connected invocations with the sender addressed', async () => {
+    const events: Array<{ type: string; data: unknown }> = []
+    const agent = { session: { header: { id: 'conversation-reply' }, snapshotEvents: () => events,
+      append: (type: string, data: unknown) => { events.push({ type, data }) } } }
+    execute
+      .mockResolvedValueOnce({ data: { session: { id: 'wf-reply' }, results: [{
+        primary_tool_slugs: ['GMAIL_FETCH_EMAILS', 'GMAIL_CREATE_EMAIL_DRAFT'],
+        tool_schemas: {
+          GMAIL_FETCH_EMAILS: { input_schema: { type: 'object', properties: { query: { type: 'string' } } } },
+          GMAIL_CREATE_EMAIL_DRAFT: { input_schema: {
+            type: 'object', required: ['recipient_email', 'subject', 'body'],
+            properties: { recipient_email: { type: 'string' }, thread_id: { type: 'string' }, subject: { type: 'string' }, body: { type: 'string' } },
+          } },
+        },
+      }] } })
+      .mockResolvedValueOnce({ data: { messages: [{ messageId: 'msg-1', threadId: 'thread-1', sender: 'Rama <rama@example.com>',
+        subject: 'Filing date', messageText: 'Can you confirm the filing date?' }] } })
+      .mockResolvedValueOnce({ data: { draft: { id: 'draft-1' } } })
+    const app = harness()
+    await app.tool().execute({ action: 'search', queries: [{ app: 'Gmail', use_case: "Reply to Rama's latest Gmail message about the filing date." }], session: { generate_id: true } },
+      { signal: AbortSignal.abort(), agent } as never)
+    await app.tool().execute({ action: 'execute', tool_slug: 'GMAIL_FETCH_EMAILS', arguments: { query: 'from:rama newest' } },
+      { signal: AbortSignal.abort(), agent } as never)
+    const draft = await app.tool().execute({ action: 'execute', tool_slug: 'GMAIL_CREATE_EMAIL_DRAFT',
+      arguments: { thread_id: 'thread-1', subject: 'Re: Filing date', body: 'The filing date is confirmed.' } },
+    { signal: AbortSignal.abort(), agent } as never)
+    expect(draft).toMatchObject({ status: 'ready' })
+    expect(execute.mock.calls.map(call => call[0])).toEqual(['COMPOSIO_SEARCH_TOOLS', 'GMAIL_FETCH_EMAILS', 'GMAIL_CREATE_EMAIL_DRAFT'])
+    expect(execute).toHaveBeenLastCalledWith('GMAIL_CREATE_EMAIL_DRAFT', expect.objectContaining({ recipient_email: 'rama@example.com', thread_id: 'thread-1' }))
+  })
+
+  it('names the implied recipient in the approval reason before a reply that omits it runs', async () => {
+    const events = [{ type: 'hivemind/connected-receipt', data: { tool: 'GMAIL_FETCH_EMAILS', receipt: {
+      messageId: 'msg-1', threadId: 'thread-1', sender: 'Rama <rama@example.com>',
+    } } }]
+    const agent = { session: { header: { id: 'conversation-approval' }, snapshotEvents: () => events, append: vi.fn() } }
+    const app = harness()
+    const preExecute = app.listeners.get('tools/pre-execute') as (execution: unknown, next: () => Promise<unknown>) => Promise<unknown>
+    await expect(preExecute({
+      name: 'hivemind_connected_task', agent,
+      arguments: { action: 'execute', tool_slug: 'GMAIL_REPLY_TO_THREAD', arguments: { thread_id: 'thread-1', message_body: 'Thanks.' } },
+    }, async () => ({ kind: 'allow' }))).resolves.toMatchObject({ kind: 'ask', reason: expect.stringContaining('rama@example.com') })
+  })
+
+  it('names the missing read_receipt inputs instead of a generic refusal', async () => {
+    const app = harness()
+    await expect(app.tool().execute({ action: 'read_receipt' }, { signal: AbortSignal.abort() }))
+      .rejects.toThrow(/read_receipt was not run: receipt_id must be the UUID.*result_fields must list 1 to 32/)
+  })
 })

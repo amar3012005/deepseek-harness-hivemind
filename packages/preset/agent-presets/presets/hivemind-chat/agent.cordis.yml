@@ -107,6 +107,10 @@
       approval → receipt sequence. For one bounded task, call search directly
       without loading a skill. Request hivemind_capabilities only when a detailed
       playbook is genuinely needed.
+      Issue independent connected reads and memory recall in one response, and
+      write at most one short line before tool work. For a reply or draft to a
+      received message, pass its thread_id or message_id and omit the recipient;
+      the referenced sender's address is filled in when it is unambiguous.
       Load composio-connected-workflows only for dependent or multi-service work,
       partial-failure recovery, or durable connection or approval resumption.
       Never guess providers, tools, schemas, recipients, destinations, or

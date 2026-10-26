@@ -15,6 +15,7 @@ import {
 } from '../src/index.ts'
 
 interface HarnessMock {
+  logs?: { warn: ReturnType<typeof vi.fn> }
   memory?: MemoryProvider
   tools: Map<string, ToolDefinition>
   identity?: (signal: AbortSignal) => Promise<{ userId: string; orgId: string }>
@@ -94,8 +95,9 @@ function mount(pluginConfig: Config, withSpill = false, web?: Pick<WebRuntime, '
   }>()
   const spills: Array<{ suggestedName: string; content: string }> = []
   const cleanups: Array<() => unknown> = []
+  const logs = { warn: vi.fn() }
   const harness: HarnessMock = {
-    tools, skills, spills, flush: vi.fn(async () => true),
+    logs, tools, skills, spills, flush: vi.fn(async () => true),
     dispose: async () => { await Promise.all(cleanups.map(cleanup => cleanup())) },
   }
   disposals.push(harness.dispose)
@@ -177,7 +179,7 @@ function mount(pluginConfig: Config, withSpill = false, web?: Pick<WebRuntime, '
         },
       }
     },
-    logger: { warn: vi.fn() },
+    logger: logs,
   }
   apply(ctx as never, pluginConfig)
   return harness
@@ -1034,6 +1036,65 @@ describe('HIVE-MIND runtime', () => {
       },
       result: { matches: [] },
     })
+  })
+
+  it('retries one transient Core recall 503 before returning the recalled evidence', async () => {
+    const path = await authorityFile()
+    let recallAttempts = 0
+    vi.stubGlobal('fetch', vi.fn(async (url: URL) => {
+      if (!String(url).endsWith('/api/recall')) return jsonResponse({})
+      recallAttempts += 1
+      return recallAttempts === 1
+        ? jsonResponse({ error: 'busy' }, 503)
+        : jsonResponse({ results: [{ id: '5d0334d6-987a-483f-9c1d-2d60be012a7c', title: 'Rama project', content: 'Rama leads the Singapore incorporation.' }] })
+    }))
+    const harness = mount(config(path))
+
+    const result = await tool(harness, 'hivemind_meta').execute({
+      operation: 'recall', recall: { query: 'Singapore incorporation' },
+    }, execContext())
+    expect(recallAttempts).toBe(2)
+    expect(result).toMatchObject({ status: 'ready', operation: 'recall' })
+    expect(harness.logs?.warn).toHaveBeenCalledWith(
+      expect.stringMatching(/recall outcome route=\/api\/recall status=ok attempts=2 latency_ms=\d+/),
+    )
+  })
+
+  it('reports recall unavailable after a second 503 and logs the status without the query text', async () => {
+    const path = await authorityFile()
+    let recallAttempts = 0
+    vi.stubGlobal('fetch', vi.fn(async (url: URL) => {
+      if (!String(url).endsWith('/api/recall')) return jsonResponse({})
+      recallAttempts += 1
+      return jsonResponse({ error: 'busy' }, 503)
+    }))
+    const harness = mount(config(path))
+
+    await expect(tool(harness, 'hivemind_meta').execute({
+      operation: 'recall', recall: { query: 'Singapore incorporation' },
+    }, execContext())).resolves.toMatchObject({
+      status: 'unavailable', operation: 'recall', error: { code: 'feature_unavailable', retryable: true },
+    })
+    expect(recallAttempts).toBe(2)
+    const logged = harness.logs?.warn.mock.calls.map(call => String(call[0])).find(line => line.includes('recall outcome')) ?? ''
+    expect(logged).toMatch(/route=\/api\/recall status=503 attempts=2 latency_ms=\d+/)
+    expect(logged).not.toContain('Singapore')
+  })
+
+  it('does not retry a recall that fails with a non-retryable status', async () => {
+    const path = await authorityFile()
+    let recallAttempts = 0
+    vi.stubGlobal('fetch', vi.fn(async (url: URL) => {
+      if (!String(url).endsWith('/api/recall')) return jsonResponse({})
+      recallAttempts += 1
+      return jsonResponse({ error: 'missing' }, 404)
+    }))
+    const harness = mount(config(path))
+
+    await expect(tool(harness, 'hivemind_meta').execute({
+      operation: 'recall', recall: { query: 'Singapore incorporation' },
+    }, execContext())).resolves.toMatchObject({ status: 'unavailable', operation: 'recall' })
+    expect(recallAttempts).toBe(1)
   })
 
   it('returns a typed recall timeout instead of an empty-memory claim', async () => {
