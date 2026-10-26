@@ -40,7 +40,14 @@ import { resolveSubmitMode } from '../input/submission-policy.ts'
 import { attachmentErrorText, imageSizeText } from '../image-labels.ts'
 import { ContextMeter } from './ContextMeter.tsx'
 import { PermissionSelect } from './PermissionSelect.tsx'
+import { MobileAddSheet } from './MobileAddSheet.tsx'
 import css from './InputBar.module.css'
+
+/** Brain chat on a phone: the "+" opens the add sheet instead of the command menu. */
+function isPhoneBrainChat(): boolean {
+  return window.matchMedia?.('(max-width: 600px)').matches === true
+    && document.querySelector('[data-brain-chat]') !== null
+}
 
 declare module '@deepseek-ai/dsh-session-projection/types' { interface SessionProjectionMap { hyperagentOwner: string | null; hyperagentSelection: string | null } }
 
@@ -53,7 +60,7 @@ export const InputBar = memo(function InputBar({
   renderSlot, useBusyEnter, useFileUploads, useNotices, useLexicon, useMenuLauncher,
   useProjection, sessionId, variant, disabled: inert = false, blocked,
   workspacePickerOpen = false, onRequestWorkspace,
-  placeholder, accessory,
+  placeholder, accessory, heroScope,
 }: InputBarProps) {
   const input = useInput(s => s)
   const notice = useNotices(s => s)
@@ -365,6 +372,15 @@ export const InputBar = memo(function InputBar({
     if (keyboard !== undefined) toggleCommandMenu?.(keyboard.caretSpan())
   }
 
+  const [mobileAddOpen, setMobileAddOpen] = useState(false)
+  const photoInputRef = useRef<HTMLInputElement | null>(null)
+  const cameraInputRef = useRef<HTMLInputElement | null>(null)
+  const closeMobileAdd = useCallback(() => { setMobileAddOpen(false) }, [])
+  const onAddClick = (): void => {
+    if (isPhoneBrainChat()) setMobileAddOpen(true)
+    else onToggleCommandMenu()
+  }
+
   // The no-session Workspace trigger: the resident editable div acts as the
   // picker trigger for keyboard users (no editor is bound in this state).
   const onWorkspaceKeyDown = (e: KeyboardEvent<HTMLDivElement>): void => {
@@ -475,6 +491,24 @@ export const InputBar = memo(function InputBar({
           <div className={css.overlayAnchor}>{renderSlot('conversation.input.overlay', {})}</div>
         )}
         {accessory !== undefined && <div className={css.accessory}>{accessory}</div>}
+        {mobileAddOpen && <MobileAddSheet t={t} close={closeMobileAdd} canAttach={canAcceptDrop}
+          pick={(kind) => {
+            closeMobileAdd()
+            const target = kind === 'photo' ? photoInputRef : kind === 'camera' ? cameraInputRef : fileInputRef
+            target.current?.click()
+          }}
+          chooseMode={(mode) => {
+            const prefix = mode === 'search' ? t('mobileAdd.searchPrefix') : t('mobileAdd.researchPrefix')
+            inputActions?.setDraft(`${prefix} ${draft}`)
+            closeMobileAdd()
+          }}
+          controls={<>{heroScope ?? (sessionId === undefined ? accessSelect : renderSlot('conversation.input.scope', { locked, sessionId }, { fallback: accessSelect }))}
+            {sessionId === undefined ? null : renderSlot('conversation.input.plan', { locked })}
+            {input === undefined || sessionId === undefined ? null : renderSlot('conversation.input.left', {})}
+            {sessionId === undefined ? null : renderSlot('conversation.input.model', { locked: modelSeatLocked })}</>}
+          commands={toggleCommandMenu === undefined ? undefined : () => { closeMobileAdd(); onToggleCommandMenu() }} />}
+        <input ref={photoInputRef} type="file" accept="image/*" multiple disabled={subagent !== null} hidden onChange={onPickFiles} />
+        <input ref={cameraInputRef} type="file" accept="image/*" capture="environment" disabled={subagent !== null} hidden onChange={onPickFiles} />
         {renderSlot('conversation.input.attachments', {
           attachments,
           canAcceptDrop,
@@ -539,10 +573,10 @@ export const InputBar = memo(function InputBar({
                 className={css.add}
                 aria-label={t('input.commands')}
                 aria-haspopup="listbox"
-                aria-expanded={commandMenuOpen}
-                disabled={locked || toggleCommandMenu === undefined}
+                aria-expanded={mobileAddOpen || commandMenuOpen}
+                disabled={locked || (toggleCommandMenu === undefined && inputActions === undefined)}
                 onMouseDown={keepFocus}
-                onClick={onToggleCommandMenu}
+                onClick={onAddClick}
               >
                 <IconPlusOutline16 size={14} />
               </button>
@@ -550,7 +584,7 @@ export const InputBar = memo(function InputBar({
             <Tooltip label={t('file.attach')} side="top" delayMs={500}>
               <button
                 type="button"
-                className={css.add}
+                className={clsx(css.add, css.desktopAttachment)}
                 aria-label={t('file.attach')}
                 disabled={subagent !== null || locked || machineBusy || addFiles === undefined}
                 onMouseDown={keepFocus}
@@ -567,19 +601,23 @@ export const InputBar = memo(function InputBar({
               hidden
               onChange={onPickFiles}
             />
-            <div className={css.modes}>
+            <div className={clsx(css.modes, css.desktopOptions)}>
               {sessionId === undefined
                 ? accessSelect
                 : renderSlot('conversation.input.scope', { locked, sessionId }, { fallback: accessSelect })}
               {sessionId === undefined ? null : renderSlot('conversation.input.plan', { locked })}
             </div>
-            {input === undefined || sessionId === undefined
-              ? null
-              : renderSlot('conversation.input.left', {})}
+            <div className={css.desktopOptions}>
+              {input === undefined || sessionId === undefined
+                ? null
+                : renderSlot('conversation.input.left', {})}
+            </div>
           </div>
           <div className={css.trailing}>
-            {sessionId === undefined ? null : renderSlot('conversation.input.model', { locked: modelSeatLocked })}
-            <ContextMeter useProjection={useProjection} t={t} />
+            <div className={css.desktopOptions}>
+              {sessionId === undefined ? null : renderSlot('conversation.input.model', { locked: modelSeatLocked })}
+              <ContextMeter useProjection={useProjection} t={t} />
+            </div>
             {input === undefined || sessionId === undefined
               ? null
               : renderSlot('conversation.input.right', {})}

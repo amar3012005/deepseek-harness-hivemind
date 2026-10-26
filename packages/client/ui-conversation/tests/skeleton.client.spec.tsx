@@ -545,6 +545,28 @@ describe('ConversationRoot resident composer', () => {
     expect(b.view.getByRole('textbox')).toBeTruthy()
   })
 
+  it('Brain new session: the composer is the last block of the scroll body, below the greeting', () => {
+    window.history.replaceState({}, '', '/hivemind/app/overview/new')
+    try {
+      const b = mount(sessionSnapshotOf({ blank: true }))
+      const root = b.view.container.querySelector('[data-phase]')
+      expect(root?.getAttribute('data-phase')).toBe('hero')
+      expect(root?.hasAttribute('data-brain-chat')).toBe(true)
+      const scroll = b.view.container.querySelector('[data-conversation-scroll]')
+      const seat = b.view.container.querySelector('[data-composer-seat]')
+      const greeting = b.view.getByText('探索未至之境')
+      const input = b.view.getByRole('textbox')
+      // Composer seat closes the scroll body, so the composer docks at the floor.
+      expect(scroll?.lastElementChild).toBe(seat)
+      expect(seat?.contains(input)).toBe(true)
+      // Greeting precedes the composer in document order: it sits above, never below.
+      expect(greeting.compareDocumentPosition(input) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+      expect(b.view.container.querySelector('[data-brain-chat] [class*="heroIntroduction"]')).not.toBeNull()
+    } finally {
+      window.history.replaceState({}, '', '/')
+    }
+  })
+
   it('same textarea DOM node survives the hero → active flip into the sticky scrollport', () => {
     const b = mount(sessionSnapshotOf({ blank: true }))
     const before = b.view.getByRole('textbox')

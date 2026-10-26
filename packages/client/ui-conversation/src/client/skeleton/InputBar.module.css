@@ -542,3 +542,10 @@
 @media (max-width: 600px) {
   :global([data-brain-room]) .modes { grid-column: 1 / -1; grid-row: 2; padding: 0 4px 6px; }
 }
+
+/* Brain phone chat: attachment, access, plan, model and the left seat live in
+   the "+" sheet (MobileAddSheet), so the composer row keeps only send and voice. */
+@media (max-width: 600px) {
+  :global([data-brain-chat]) .desktopAttachment,
+  :global([data-brain-chat]) .desktopOptions { display: none; }
+}

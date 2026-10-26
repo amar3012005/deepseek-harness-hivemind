@@ -302,9 +302,12 @@ export function ConversationRoot({
           ? undefined
           : workspaceLabel(cwd)))
 
+  // Rendered once and offered to the phone add sheet through the composer bar; the
+  // row copy hides on phones (see .heroScope). A selector without its value renders nothing.
+  const heroScopeNode = renderSlot('conversation.hero.scope', { sessionId, locked: sessionId === undefined })
   const heroWorkspaceRow = (
     <div className={css.heroWorkspaceRow}>
-      {renderSlot('conversation.hero.scope', { sessionId, locked: sessionId === undefined })}
+      <div className={css.heroScope} data-hero-scope="">{heroScopeNode}</div>
       {requiresWorkspace && <WorkspaceChip
         buttonRef={pickerAnchor}
         label={chipTitle}
@@ -341,6 +344,7 @@ export function ConversationRoot({
   const blocked = !inert && composerBlock !== undefined
   const inputBar = renderSlot('conversation.composer.bar', {
     variant: hero ? 'hero' : 'composer',
+    heroScope: hero ? heroScopeNode : undefined,
     ...(inert
       ? {
         disabled: true,
@@ -360,7 +364,7 @@ export function ConversationRoot({
 
   const composerBar = (
     <div className={clsx(css.composerStack, hero && css.composerHero)}>
-      {hero && <HeroShell t={t} renderSlot={renderSlot} />}
+      {hero && <div className={css.heroIntroduction}><HeroShell t={t} renderSlot={renderSlot} /></div>}
       {(hero || !requiresWorkspace) && heroWorkspaceRow}
       {zone !== undefined && renderSlot('conversation.input.dock', zone)}
       {sessionId !== undefined && /^\/hivemind\/app\/employee\/harness(?:\/|$)/u.test(window.location.pathname) && (
@@ -399,6 +403,7 @@ export function ConversationRoot({
       className={css.root}
       data-agent-room={/^\/hivemind\/app\/employee\/harness(?:\/|$)/u.test(window.location.pathname) || undefined}
       data-brain-room={/^\/hivemind\/app\/overview(?:\/|$)/u.test(window.location.pathname) || undefined}
+      data-brain-chat={/^\/hivemind\/app\/overview(?:\/(?:new|session\/[^/]+))?\/?$/u.test(window.location.pathname) || undefined}
       data-phase={phase}
       data-dreaming-ready={dreamingReady || undefined}
     >
