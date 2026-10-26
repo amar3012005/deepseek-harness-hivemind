@@ -15,6 +15,7 @@ import type { PostToolDecision, ToolExecution } from '@deepseek-ai/dsh-tools'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import type {} from '@deepseek-ai/dsh-user-questions'
 import { DreamConnectorService } from './dream-connectors.ts'
+import { SchemaCache } from './schema-cache.ts'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import type {} from './delegated-blocker.ts'
 
@@ -61,7 +62,11 @@ const META_TOOLS = new Set([
   'COMPOSIO_MANAGE_CONNECTIONS',
   'COMPOSIO_WAIT_FOR_CONNECTIONS',
 ])
-const MUTATING_TOOL = /(?:SEND|CREATE|POST|PUBLISH|UPDATE|EDIT|DELETE|REMOVE|INVITE|PAY|TRANSFER|UPLOAD|WRITE|ADD|CANCEL|SCHEDULE)/i
+const MUTATING_VERBS = [
+  'SEND', 'REPLY', 'FORWARD', 'CREATE', 'POST', 'PUBLISH', 'UPDATE', 'EDIT', 'DELETE', 'REMOVE',
+  'INVITE', 'PAY', 'TRANSFER', 'UPLOAD', 'WRITE', 'ADD', 'CANCEL', 'SCHEDULE',
+]
+const MUTATING_TOOL = new RegExp(`(?:${MUTATING_VERBS.join('|')})`, 'i')
 
 export interface Config {
   /** Server-side Composio project credential. */
@@ -72,6 +77,8 @@ export interface Config {
   connectionCallbackBaseUrl?: string
   /** Freshness window for unsuccessful discovery within the same workflow. */
   discoveryCacheTtlMs?: number
+  /** Freshness window for authoritative provider schemas per tenant, user, toolkit, tool and version. */
+  schemaCacheTtlMs?: number
   /** Consecutive unsuccessful searches allowed before returning existing evidence. */
   maxUnmatchedSearches?: number
   /** Discovery-only calls per workflow before provider execution must advance it. */
@@ -94,6 +101,7 @@ export const Config: z<Config> = z.object({
   enabledByDefault: z.boolean().default(false),
   connectionCallbackBaseUrl: z.string(),
   discoveryCacheTtlMs: z.number().min(1).default(300_000),
+  schemaCacheTtlMs: z.number().min(0).default(3_600_000),
   maxUnmatchedSearches: z.number().min(1).default(2),
   maxDiscoverySearches: z.number().min(1).default(2),
   serviceApiBase: z.string(),
@@ -549,6 +557,11 @@ function isConnectedAppInvocation(toolName: string, args: unknown): boolean {
   return toolName === BRIDGE_TOOL
     || toolName.startsWith(COMPOSIO_TOOL_PREFIX)
     || (toolName === 'skill' && record(args) && args['name'] === CONNECTED_WORKFLOWS_SKILL)
+}
+
+/** Tenant key for authoritative schema caching; orgId keeps identical user ids in different tenants apart. */
+function tenantKey(identity: { userId: string; orgId: string }): string {
+  return `${identity.orgId}:${identity.userId}`
 }
 
 function sessionKey(identity: { userId: string; orgId: string }): string {
@@ -1236,6 +1249,39 @@ const PROVIDER_NOISE = new Set([
   'image_192', 'image_512', 'image_1024', 'status_emoji_display_info', 'cache_ts',
 ])
 
+/** Identifiers and readable evidence kept in every provider projection, including exact result_fields projections. */
+const EVIDENCE_KEYS = new Set([
+  'id', 'message_id', 'messageId', 'thread_id', 'threadId', 'from', 'sender', 'to', 'cc', 'bcc',
+  'subject', 'date', 'messageTimestamp', 'snippet', 'body', 'messageText', 'title', 'summary',
+  'start', 'end', 'htmlLink', 'webViewLink', 'channel', 'ts', 'text',
+])
+const ATTACHMENT_KEYS = new Set(['attachments', 'attachmentList', 'attachment_list'])
+
+/** Attachment names only; file bytes and MIME parts never enter a projection. */
+function attachmentNames(value: unknown): JsonValue[] {
+  if (!Array.isArray(value)) return []
+  return value.slice(0, 20).flatMap((item): JsonValue[] => {
+    if (typeof item === 'string') return [item]
+    if (!record(item)) return []
+    const name = stringValue(item['filename']) ?? stringValue(item['name']) ?? stringValue(item['file_name'])
+      ?? stringValue(item['fileName'])
+    return name === undefined ? [] : [name]
+  })
+}
+
+/** Copy the evidence keys of one provider record into a projection that does not yet hold them. */
+function evidenceFields(value: Record<string, unknown>, target: Record<string, JsonValue>): void {
+  for (const [key, item] of Object.entries(value)) {
+    if (Object.hasOwn(target, key)) continue
+    if (ATTACHMENT_KEYS.has(key)) {
+      const names = attachmentNames(item)
+      if (names.length > 0) target[key] = names
+    } else if (EVIDENCE_KEYS.has(key) && item !== '' && item !== undefined && item !== null && !isMimeTransportTree(item)) {
+      target[key] = compactProviderValue(item)
+    }
+  }
+}
+
 /** Keep authentication content out of the model projection and rendered chat.
  * The complete tenant-scoped provider receipt remains private and durable. */
 function containsAuthenticationMaterial(value: string): boolean {
@@ -1273,8 +1319,8 @@ function compactProviderValue(value: unknown): JsonValue {
       || isMimeTransportTree(item)
       || (Array.isArray(item) && item.length === 0)
       || (record(item) && Object.keys(item).length === 0)) continue
-    if (count++ >= 40) break
-    compact[key] = compactProviderValue(item)
+    if (!EVIDENCE_KEYS.has(key) && count++ >= 40) continue
+    compact[key] = ATTACHMENT_KEYS.has(key) ? attachmentNames(item) : compactProviderValue(item)
   }
   return compact
 }
@@ -1303,6 +1349,8 @@ function projectRequestedFields(value: unknown, requested: ReadonlySet<string>):
     if (nested !== undefined && (!Array.isArray(nested) || nested.length > 0)
       && (!record(nested) || Object.keys(nested).length > 0)) projected[key] = nested
   }
+  // A record that matched a requested field keeps its identifiers and readable evidence.
+  if (Object.keys(projected).length > 0) evidenceFields(value, projected)
   return Object.keys(projected).length === 0 ? undefined : projected
 }
 
@@ -1580,6 +1628,97 @@ async function saveReceipt(
 }
 
 /** Register the compact progressive Composio router and its policy guards. */
+const READ_ONLY_CONNECTED_ACTIONS = new Set(['list_connections', 'connection_status', 'read_checkpoint', 'read_receipt'])
+const READ_PROVIDER_VERB = /(?:^|_)(?:FETCH|GET|LIST|SEARCH|FIND|READ|LOOKUP|CHECK|RETRIEVE)(?:_|$)/
+// Read-looking verbs can appear inside mutations, such as MARK_AS_READ; those stay exclusive.
+const NON_READ_VERBS = [
+  'MARK', 'ARCHIVE', 'STAR', 'LABEL', 'MOVE', 'TRASH', 'RESTORE', 'APPLY', 'SET', 'CLEAR', 'REPLY',
+  'FORWARD', 'SUBSCRIBE', 'UNSUBSCRIBE', 'ENABLE', 'DISABLE', 'APPROVE', 'MERGE', 'CLOSE', 'REOPEN',
+  'ASSIGN', 'COMMENT', 'CHECKOUT', 'CHECKIN',
+]
+const NON_READ_PROVIDER_VERB = new RegExp(`(?:^|_)(?:${NON_READ_VERBS.join('|')})(?:_|$)`)
+
+/** Only actions whose provider effect is a read may join a parallel tool group. */
+function connectedActionIsConcurrencySafe(args: unknown): boolean {
+  if (!record(args) || typeof args['action'] !== 'string') return false
+  if (READ_ONLY_CONNECTED_ACTIONS.has(args['action'])) return true
+  const slug = args['tool_slug']
+  return args['action'] === 'execute' && typeof slug === 'string' && READ_PROVIDER_VERB.test(slug)
+    && !MUTATING_TOOL.test(slug) && !NON_READ_PROVIDER_VERB.test(slug) && !META_TOOLS.has(slug)
+}
+
+const RECIPIENT_FIELDS = ['recipient_email', 'to', 'to_email', 'recipient'] as const
+const IN_THREAD_TOOL = /(?:DRAFT|REPLY)/
+const THREAD_REFERENCE_FIELDS = ['thread_id', 'threadId', 'message_id', 'messageId', 'in_reply_to'] as const
+const IDENTIFIER_FIELDS = ['id', 'messageId', 'message_id', 'threadId', 'thread_id'] as const
+const SENDER_FIELDS = ['from', 'sender'] as const
+
+function emailAddress(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined
+  return /[^\s<>"',;()]+@[^\s<>"',;()]+/.exec(value)?.[0]
+}
+
+/** Collect sender addresses of provider records whose identifier matches one of the referenced ids. */
+function collectSenders(value: unknown, ids: ReadonlySet<string>, senders: Set<string>, depth: number): void {
+  if (depth > 8) return
+  if (Array.isArray(value)) {
+    for (const item of value.slice(0, 50)) collectSenders(item, ids, senders, depth + 1)
+    return
+  }
+  if (!record(value)) return
+  if (IDENTIFIER_FIELDS.some(key => typeof value[key] === 'string' && ids.has(value[key]))) {
+    for (const key of SENDER_FIELDS) {
+      const address = emailAddress(value[key])
+      if (address !== undefined) senders.add(address)
+    }
+  }
+  for (const item of Object.values(value)) collectSenders(item, ids, senders, depth + 1)
+}
+
+/** Sender of the newest durable receipt that names one of the ids; undefined when none or ambiguous. */
+function originalSender(agent: Agent, ids: ReadonlySet<string>): string | undefined {
+  const events = agent.session.snapshotEvents()
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const event = events[index]
+    if (event?.type !== 'hivemind/connected-receipt') continue
+    const senders = new Set<string>()
+    collectSenders(event.data.receipt, ids, senders, 0)
+    if (senders.size === 0) continue
+    return senders.size === 1 ? [...senders][0] : undefined
+  }
+  return undefined
+}
+
+/** Recipient that the execute-time fill would add, so the approval reason can name it before the action runs. */
+function impliedThreadRecipient(agent: Agent | undefined, bridgeArguments: unknown): string | undefined {
+  if (agent === undefined || !record(bridgeArguments)) return undefined
+  const slug = stringValue(bridgeArguments['tool_slug'])
+  const args = record(bridgeArguments['arguments']) ? bridgeArguments['arguments'] : undefined
+  if (slug === undefined || args === undefined || !IN_THREAD_TOOL.test(slug)) return undefined
+  if (RECIPIENT_FIELDS.some(name => args[name] !== undefined && args[name] !== null && args[name] !== '')) return undefined
+  const ids = new Set(THREAD_REFERENCE_FIELDS.map(name => stringValue(args[name]))
+    .filter((id): id is string => id !== undefined))
+  return ids.size === 0 ? undefined : originalSender(agent, ids)
+}
+
+/** Address an in-thread draft or reply to the original sender when the caller omitted the recipient. */
+function fillInThreadRecipient(
+  contract: ExecutionContract, slug: string, args: Record<string, unknown>, agent: Agent,
+): Record<string, unknown> {
+  if (!IN_THREAD_TOOL.test(slug)) return args
+  const field = RECIPIENT_FIELDS.find(name => Object.hasOwn(contract.properties, name))
+  if (field === undefined) return args
+  const current = args[field]
+  if (current !== undefined && current !== null && current !== '' && !(Array.isArray(current) && current.length === 0)) return args
+  const ids = new Set(THREAD_REFERENCE_FIELDS.map(name => stringValue(args[name]))
+    .filter((id): id is string => id !== undefined))
+  if (ids.size === 0) return args
+  const sender = originalSender(agent, ids)
+  if (sender === undefined) return args
+  const schema = contract.properties[field]
+  return { ...args, [field]: record(schema) && schema['type'] === 'array' ? [sender] : sender }
+}
+
 export function apply(ctx: Context, config: Config = {}): void {
   const turns = new WeakMap<object, {
     turn: number
@@ -1601,6 +1740,7 @@ export function apply(ctx: Context, config: Config = {}): void {
   const plannedReads = new Map<string, Set<string>>()
   const contracts = new Map<string, Map<string, ExecutionContract>>()
   const resultFields = new Map<string, string[]>()
+  const schemaCache = new SchemaCache<ExecutionContract>(config.schemaCacheTtlMs ?? 3_600_000)
 
   async function getSession(identity: { userId: string; orgId: string }, execution: Pick<ToolExecution, 'agent'>, requestOptions?: { signal: AbortSignal }): Promise<ComposioSession> {
     if (composio === undefined) throw new Error('Connected tools are not configured on this runtime')
@@ -1806,6 +1946,7 @@ export function apply(ctx: Context, config: Config = {}): void {
   ctx.effect(() => ctx.on('hivemind/delegated-connection-verify', async (input) => {
     if (composio === undefined) throw new Error('Connected tools are not configured')
     const identity = await ctx.hivemindIdentity.resolve(input.signal)
+    schemaCache.invalidateTenant(tenantKey(identity))
     const restored = restoredRouterSession({ agent: input.employee }, sessionKey(identity))
     if (restored?.routerSessionId !== input.routerSessionId) throw new Error('delegated_connection_router_mismatch')
     const provider = await (await composio).sessions.use(input.routerSessionId, { mcp: true })
@@ -1839,7 +1980,7 @@ export function apply(ctx: Context, config: Config = {}): void {
 
   ctx.effect(() => ctx.tools.register(defineTool({
     name: BRIDGE_TOOL,
-    description: 'Tenant-scoped connected-app gateway. Start external-app work with atomic search queries, explicit outcomes, exact result limits, all concrete search filters in known_fields, and a top-level session: { generate_id: true }. Follow recommended_plan_steps: for an explicitly planned read tool, call schemas with its exact slug in the same session, then execute using that contract. Never execute a plan hint directly or guess tools. External writes follow native permission policy. For dependent tasks save a checkpoint with the canonical report, sources, confirmed steps and next step; read_checkpoint restores it. Reuse operation_id on write retries. outcome_unknown requires destination reconciliation, never blind resend. Each successful execution completes only that step, not the whole task. When result_fields were requested, report projection_status and every missing_result_fields entry; never claim requested evidence was returned when projection_status is incomplete. For writes, request the stable resource identifier needed for later verification or follow-up when its exact field is known from the selected contract.',
+    description: 'Tenant-scoped connected-app gateway. Batch independent reads (several searches, status checks, or reads of different records) into one response, and write at most one short line of text before tool work. Start external-app work with atomic search queries, explicit outcomes, exact result limits, all concrete search filters in known_fields, and a top-level session: { generate_id: true }. Follow recommended_plan_steps: a planned read tool is executable only with a contract returned by this search or cached for this tenant; otherwise call schemas with its exact slug in the same session first, then execute using that contract. Never execute a plan hint without a contract or guess tools. For a draft or reply to a received message, pass its thread_id or message_id and omit the recipient; the address of the original sender fills it when unambiguous. External writes follow native permission policy. For dependent tasks save a checkpoint with the canonical report, sources, confirmed steps and next step; read_checkpoint restores it. Reuse operation_id on write retries. outcome_unknown requires destination reconciliation, never blind resend. Each successful execution completes only that step, not the whole task. When result_fields were requested, report projection_status and every missing_result_fields entry; never claim requested evidence was returned when projection_status is incomplete. For writes, request the stable resource identifier needed for later verification or follow-up when its exact field is known from the selected contract.',
     parameters: {
       action: { type: 'string', required: true, enum: ['list_connections', 'connection_status', 'search', 'schemas', 'manage_connection', 'wait_connection', 'cancel_connection', 'execute', 'checkpoint', 'read_checkpoint', 'read_receipt'], description: 'Use list_connections to list authenticated active apps without authorizing anything. Use connection_status only for a pure status check of explicitly named apps. Use search for real app work. When the user declines or abandons a saved request, or you establish it is no longer necessary, use cancel_connection with its exact session_id and request_call_id; it cancels only that local request, not the connected account.' },
       cancellation_reason: { type: 'string', enum: ['user_declined', 'no_longer_needed'], description: 'For cancel_connection: user_declined for an explicit decline; no_longer_needed only when current evidence establishes this saved request is unnecessary. Do not treat unrelated topic changes as a decline.' },
@@ -1887,6 +2028,7 @@ export function apply(ctx: Context, config: Config = {}): void {
       arguments: { type: 'object', additionalProperties: true, description: 'Selected tool arguments.' },
     },
     output: { schema: { type: 'object', additionalProperties: true, properties: {} }, render: (_args, value: JsonValue) => [{ type: 'text', text: JSON.stringify(value) }] },
+    isConcurrencySafe: connectedActionIsConcurrencySafe,
     async execute(args, execution) {
       if (!connectedAppsEnabled(ctx, config.enabledByDefault === true)) throw new Error('Connected tools are disabled for this turn. Enable Tools and retry.')
       const identity = await ctx.hivemindIdentity.resolve(execution.signal)
@@ -1918,7 +2060,14 @@ export function apply(ctx: Context, config: Config = {}): void {
       if (args.action === 'read_receipt') {
         const receiptId = stringValue(args.receipt_id)
         const fields = stringArray(args.result_fields)
-        if (receiptId === undefined || !/^[0-9a-f-]{36}$/i.test(receiptId) || fields.length === 0 || fields.length > 32 || execution.agent === undefined) throw new Error('Receipt read requires a receipt UUID, active session, and 1–32 approved fields')
+        const problems = [
+          receiptId === undefined || !/^[0-9a-f-]{36}$/i.test(receiptId) ? 'receipt_id must be the UUID from source_receipt.receipt_id of an earlier result' : undefined,
+          fields.length === 0 || fields.length > 32 ? 'result_fields must list 1 to 32 exact field names from that receipt' : undefined,
+          execution.agent === undefined ? 'no active session is available for this receipt' : undefined,
+        ].filter((problem): problem is string => problem !== undefined)
+        if (problems.length > 0 || execution.agent === undefined) {
+          throw new TypeError(`read_receipt was not run: ${problems.join('; ')}. Read a receipt only when a result reports missing_result_fields or projection_status incomplete; otherwise use the evidence already returned.`)
+        }
         const service = await scopedServiceToken(ctx, config, execution, identity)
         if (service === undefined) throw new Error('Private receipt reader is unavailable')
         const response = await fetch(new URL(`/internal/v1/harness-chat/receipts/${receiptId}/read`, service.base), {
@@ -1944,6 +2093,7 @@ export function apply(ctx: Context, config: Config = {}): void {
           next_action_guidance: 'This saved request is closed. Do not resume it, ask for access, send another request email, or schedule a retry. A genuinely new authorized need may start a new workflow; closing this request does not authorize connecting an account.' }
       }
       if (args.action === 'wait_connection') {
+        schemaCache.invalidateTenant(tenantKey(identity))
         const continuationId = workflowSessionId(args)
         if (continuationId === undefined) throw new TypeError('Connection continuation requires the original search session_id')
         const requested = stringArray(args.toolkits)
@@ -2164,6 +2314,16 @@ export function apply(ctx: Context, config: Config = {}): void {
         ])
         const discoveredContracts = new Map(executionContracts(scopedResult, discovered).map(contract => [contract.tool_slug, contract]))
         const planned = plannedReadTools(scopedResult)
+        const tenant = tenantKey(identity)
+        for (const contract of discoveredContracts.values()) schemaCache.set(tenant, contract.tool_slug, contract.schema_hash, contract)
+        for (const slug of planned) {
+          // A planned read is selectable only with an authoritative contract from this tenant's cache.
+          if (discoveredContracts.has(slug)) continue
+          const cachedContract = schemaCache.get(tenant, slug)
+          if (cachedContract === undefined) continue
+          discoveredContracts.set(slug, cachedContract)
+          discovered.add(slug)
+        }
         for (const stateKey of stateKeys) {
           const selected = selectedTools.get(stateKey) ?? new Set<string>()
           for (const slug of discovered) selected.add(slug)
@@ -2345,13 +2505,34 @@ export function apply(ctx: Context, config: Config = {}): void {
         if (slugs.some(slug => !selectedForWorkflow?.has(slug) && !plannedForWorkflow?.has(slug))) {
           throw new Error('Schema request contains a tool not selected by the current search')
         }
-        const result = await session.execute('COMPOSIO_GET_TOOL_SCHEMAS', { ...metaArguments, tool_slugs: slugs })
-        const sourceReceipt = await saveReceipt(
-          ctx, config, execution, JSON.stringify(result), 'composio-tool-schemas.json',
-          { tool: 'COMPOSIO_GET_TOOL_SCHEMAS' },
-        )
-        const loaded = executionContracts(result, new Set(slugs))
-        if (loaded.length !== new Set(slugs).size) throw new Error('Provider did not return an authoritative schema for every requested tool')
+        const uniqueSlugs = [...new Set(slugs)]
+        const tenant = tenantKey(identity)
+        const loadedBySlug = new Map<string, ExecutionContract>()
+        const misses: string[] = []
+        for (const slug of uniqueSlugs) {
+          const cachedContract = schemaCache.get(tenant, slug)
+          if (cachedContract === undefined) misses.push(slug)
+          else loadedBySlug.set(slug, cachedContract)
+        }
+        let sourceReceipt: SpillRef | PrivateReceiptReference | undefined
+        if (misses.length > 0) {
+          const result = await session.execute('COMPOSIO_GET_TOOL_SCHEMAS', { ...metaArguments, tool_slugs: misses })
+          sourceReceipt = await saveReceipt(
+            ctx, config, execution, JSON.stringify(result), 'composio-tool-schemas.json',
+            { tool: 'COMPOSIO_GET_TOOL_SCHEMAS' },
+          )
+          const fetched = executionContracts(result, new Set(misses))
+          if (fetched.length !== misses.length) throw new Error('Provider did not return an authoritative schema for every requested tool')
+          for (const contract of fetched) {
+            loadedBySlug.set(contract.tool_slug, contract)
+            schemaCache.set(tenant, contract.tool_slug, contract.schema_hash, contract)
+          }
+        }
+        const loaded = uniqueSlugs.map((slug) => {
+          const contract = loadedBySlug.get(slug)
+          if (contract === undefined) throw new Error('Provider did not return an authoritative schema for every requested tool')
+          return contract
+        })
         const workflowContracts = contractsForWorkflow ?? new Map<string, ExecutionContract>()
         const workflowSelected = selectedForWorkflow ?? new Set<string>()
         for (const contract of loaded) {
@@ -2367,7 +2548,7 @@ export function apply(ctx: Context, config: Config = {}): void {
           ...(schemaWorkflowId === undefined ? {} : { session_id: schemaWorkflowId }),
           next_action: 'execute_selected_tool',
           next_action_guidance: 'Execute the selected tool with this exact contract and workflow session_id. Put record filters in arguments. Do not repeat discovery or treat schemas as record results.',
-          operations: [{ tool: 'COMPOSIO_GET_TOOL_SCHEMAS', status: 'completed' }],
+          operations: [misses.length > 0 ? { tool: 'COMPOSIO_GET_TOOL_SCHEMAS', status: 'completed' } : { tool: 'schema_cache', status: 'hit' }],
           execution_contracts: loaded as unknown as JsonValue,
           ...(sourceReceipt === undefined ? {} : {
             source_receipt: privateReceiptReference(sourceReceipt),
@@ -2375,6 +2556,7 @@ export function apply(ctx: Context, config: Config = {}): void {
         }
       }
       if (args.action === 'manage_connection') {
+        schemaCache.invalidateTenant(tenantKey(identity))
         const toolkits = stringArray(args.toolkits)
         if (toolkits.length === 0) throw new TypeError('Connection operation requires at least one toolkit')
         const metaTool = 'COMPOSIO_MANAGE_CONNECTIONS'
@@ -2430,10 +2612,13 @@ export function apply(ctx: Context, config: Config = {}): void {
       if (!selectedForWorkflow?.has(slug)) throw new Error('Tool was not selected by the current conversation-scoped search')
       const contract = contractsForWorkflow?.get(slug)
       if (contract === undefined) throw new Error('Authoritative schema unavailable for selected tool; call schemas before execute')
-      const executionArguments = args.arguments === undefined && contract.required_fields.length === 0
+      const rawArguments = args.arguments === undefined && contract.required_fields.length === 0
         ? {}
         : args.arguments
-      if (!record(executionArguments)) throw new TypeError('Execute requires arguments matching the authoritative schema')
+      if (!record(rawArguments)) throw new TypeError('Execute requires arguments matching the authoritative schema')
+      const executionArguments = execution.agent === undefined
+        ? rawArguments
+        : fillInThreadRecipient(contract, slug, rawArguments, execution.agent)
       validateArguments(contract, executionArguments)
       const idempotencyKey = discoveryKey({
         workflow: key,
@@ -2595,7 +2780,10 @@ export function apply(ctx: Context, config: Config = {}): void {
     if (execution.agent !== undefined && (presets?.current(execution.agent.session) === 'danger-full-access' || await (ctx.get('hivemindHq') as {
       fullAccessAllowed?: (agent: Agent, signal: AbortSignal) => Promise<boolean>
     } | undefined)?.fullAccessAllowed?.(execution.agent, execution.signal))) return downstream
-    return { kind: 'ask', reason: `Approve this ${slug} action once. The provider will run only after approval.` }
+    const addressee = impliedThreadRecipient(execution.agent, execution.arguments)
+    return { kind: 'ask', reason: addressee === undefined
+      ? `Approve this ${slug} action once. The provider will run only after approval.`
+      : `Approve this ${slug} action once for ${addressee}, the original sender of the referenced message. The provider will run only after approval.` }
   }))
   ctx.effect(() => ctx.on('tools/post-execute', async (execution, result, next): Promise<PostToolDecision> => {
     const decision = await next()

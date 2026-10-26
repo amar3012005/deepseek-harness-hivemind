@@ -159,6 +159,8 @@ const PROFILE_PATH = '/api/profile'
 const PROFILE_FACTS_PATH = '/api/profiles'
 const PROFILE_CONTEXT_PATH = '/api/profiles/context'
 const RECALL_PATH = '/api/recall'
+/** Single short wait before retrying a Core 503 recall; a second 503 reports the memory as unavailable. */
+const RECALL_RETRY_BACKOFF_MS = 300
 const SAVE_PATH = '/api/memories?sync=true'
 const SAVE_STATUS_PATH = '/api/memories/save-status'
 const ENTITY_SEARCH_PATH = '/api/entities'
@@ -515,6 +517,14 @@ async function readResponseJson(response: Response, maxBytes: number): Promise<u
   } catch (error: unknown) {
     throw new HiveMindRuntimeError('HIVE-MIND returned invalid JSON', { cause: error })
   }
+}
+
+/** Resolve after `ms`, or immediately when the caller aborts, so a retry never outlives its request. */
+function delayUnlessAborted(ms: number, signal: AbortSignal): Promise<void> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(resolve, ms)
+    signal.addEventListener('abort', () => { clearTimeout(timer); resolve() }, { once: true })
+  })
 }
 
 async function hiveRequest(
@@ -1385,28 +1395,46 @@ export function apply(ctx: Context, config: Config): void {
       const principal = config.authorityMode === 'scoped-service' ? ctx.hivemindExecutionScope.require() : undefined
       const identity = principal === undefined ? 'legacy' : createHash('sha256').update(`${principal.orgId}:${principal.userId}`).digest('hex').slice(0, 12)
       ctx.logger.warn(`hivemind-runtime: recall read route=${RECALL_PATH} authority=${config.authorityMode} identity=${identity} scope=${effectiveRequest.scopeFilter ?? 'full'}`)
+      const started = Date.now()
+      const requestBody = JSON.stringify({
+        query_context: effectiveRequest.query,
+        max_memories: effectiveRequest.limit,
+        mode: effectiveRequest.mode,
+        ...effectiveRequest.tags === undefined ? {} : { tags: effectiveRequest.tags },
+        ...effectiveRequest.sourcePlatforms === undefined ? {} : { source_platforms: effectiveRequest.sourcePlatforms },
+        ...effectiveRequest.project === undefined ? {} : { project: effectiveRequest.project },
+        ...effectiveRequest.validAt === undefined ? {} : { valid_at: effectiveRequest.validAt },
+        ...effectiveRequest.transactionAt === undefined ? {} : { transaction_at: effectiveRequest.transactionAt },
+        ...effectiveRequest.sort === undefined ? {} : { sort: effectiveRequest.sort },
+        ...effectiveRequest.includeSuperseded === undefined ? {} : { include_superseded: effectiveRequest.includeSuperseded },
+        ...effectiveRequest.scopeFilter === undefined ? {} : { scope_filter: effectiveRequest.scopeFilter },
+      })
+      const attempt = (): Promise<unknown> => hiveRequest(authority, RECALL_PATH, { method: 'POST', body: requestBody }, signal, config)
       let result: unknown
+      let attempts = 1
+      let failure: unknown
       try {
-        result = await hiveRequest(authority, RECALL_PATH, {
-          method: 'POST',
-          body: JSON.stringify({
-            query_context: effectiveRequest.query,
-            max_memories: effectiveRequest.limit,
-            mode: effectiveRequest.mode,
-            ...effectiveRequest.tags === undefined ? {} : { tags: effectiveRequest.tags },
-            ...effectiveRequest.sourcePlatforms === undefined ? {} : { source_platforms: effectiveRequest.sourcePlatforms },
-            ...effectiveRequest.project === undefined ? {} : { project: effectiveRequest.project },
-            ...effectiveRequest.validAt === undefined ? {} : { valid_at: effectiveRequest.validAt },
-            ...effectiveRequest.transactionAt === undefined ? {} : { transaction_at: effectiveRequest.transactionAt },
-            ...effectiveRequest.sort === undefined ? {} : { sort: effectiveRequest.sort },
-            ...effectiveRequest.includeSuperseded === undefined ? {} : { include_superseded: effectiveRequest.includeSuperseded },
-            ...effectiveRequest.scopeFilter === undefined ? {} : { scope_filter: effectiveRequest.scopeFilter },
-          }),
-        }, signal, config)
+        result = await attempt()
       } catch (error: unknown) {
-        const failure = typedReadFailure('recall', error)
-        if (failure !== undefined) return failure
-        throw error
+        failure = error
+      }
+      if (failure instanceof HiveMindRuntimeError && failure.status === 503 && !signal.aborted) {
+        attempts += 1
+        await delayUnlessAborted(RECALL_RETRY_BACKOFF_MS, signal)
+        failure = undefined
+        try {
+          result = await attempt()
+        } catch (error: unknown) {
+          failure = error
+        }
+      }
+      const outcome = failure === undefined ? 'ok'
+        : failure instanceof HiveMindRuntimeError ? String(failure.status ?? failure.code ?? 'error') : 'error'
+      ctx.logger.warn(`hivemind-runtime: recall outcome route=${RECALL_PATH} status=${outcome} attempts=${attempts} latency_ms=${Date.now() - started}`)
+      if (failure !== undefined) {
+        const typed = typedReadFailure('recall', failure)
+        if (typed !== undefined) return typed
+        throw failure
       }
       const record = apiRecord(result, 'meta recall response')
       const receipt = await saveMemoryReceipt(ctx, config, execution, 'hivemind-recall.json', record)

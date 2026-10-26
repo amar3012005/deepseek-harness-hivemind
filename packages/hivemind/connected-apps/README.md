@@ -31,8 +31,14 @@ The registered bridge tool schema is present while connected tools are enabled. 
 
 The bridge reuses an unchanged workflow or receipt projection already visible in the live session and adds a fresh projection only when its state changes or history compaction removes the prior evidence. Full provider receipts remain durable and private. Stable system and tool-schema prefixes remain reusable. The bridge does not rewrite native completed history; provider execution or completion removes the need for future workflow projection.
 
+#### Read-only concurrency, schema reuse, and in-thread recipients
+
+Read-only actions (`list_connections`, `connection_status`, `read_checkpoint`, `read_receipt`) and provider reads whose slug carries a read verb and no mutating verb are concurrency-safe. Search, schema loading, and every write stay exclusive. A search reuses a planned read's schema from the tenant cache, so the planned read is executable without a schema round trip. A draft or reply that omits its recipient receives the sender address of the referenced message, only when one sender matches the `thread_id` or `message_id` in the durable receipts. Ambiguous or absent senders leave the recipient unfilled, and schema validation reports it.
+
+Execution projections keep identifiers (`id`, `message_id`, `thread_id`), readable evidence (`from`, `to`, `cc`, `subject`, `date`, a bounded body or snippet), and attachment names, even when `result_fields` names other fields.
+
 ## Known Limitations and Deferred Work
 
 - Selected execution contracts preserve complete property schemas and root schema keywords through repeated projection. Non-executable JSON Schema annotations such as `examples` and `$comment` are omitted, while descriptions, nested constraints, and validation keywords remain. Returned planning steps and pitfalls are not character-truncated. Ajv validates the complete selected contract locally before any provider execution. The original search, schema, and provider responses are written to session-authorized private spill storage before the bounded model projection is returned. Provider projections keep readable evidence and requested identifiers but omit duplicated MIME transport trees, headers, and encoded parts.
 
-- This cache does not reuse live app reads or connection authorization. Successful search/schema caching requires authoritative versioned schemas and connection invalidation. Durable negative lookup currently scans the owning session log. The bridge has no separate invariant companion because its cache is derived directly from committed tool receipts rather than an independent persistent store.
+- This cache does not reuse live app reads or connection authorization. Authoritative provider schemas are cached per tenant, user, toolkit, tool slug and schema hash for `schemaCacheTtlMs` (default 3600000); every connection management or verification event drops that tenant's entries. Durable negative lookup currently scans the owning session log. The bridge has no separate invariant companion because its cache is derived directly from committed tool receipts rather than an independent persistent store.
