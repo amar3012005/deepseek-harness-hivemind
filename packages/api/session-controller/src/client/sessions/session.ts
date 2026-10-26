@@ -37,6 +37,7 @@ import { ProjectionValueStore } from './projection-store.ts'
 import type { ProjectionsBaseline } from './projection-store.ts'
 import { resolvedClientTimeZone } from '../time-zone.ts'
 import { SessionQueueMirror } from './queue-mirror.ts'
+import { SendOutbox } from './send-outbox.ts'
 import {
   ClientAssistantStream,
   type ClientAssistantStreamResult,
@@ -83,6 +84,13 @@ export interface SessionOptions {
   projections?: ProjectionValueStore
 }
 
+/** Prompt fields held by the outbox until the subscription opens. */
+interface HeldPrompt {
+  readonly content: PromptContentPart[]
+  readonly mode: 'queue' | 'steer'
+  readonly clientTimeZone: string
+}
+
 /**
  * Owns a session's event window, lifecycle state, and observable
  * snapshot. React bindings remain outside this data layer. Features see only
@@ -106,6 +114,11 @@ export class Session implements SessionFace {
   private jumpPromise: Promise<void> | null = null
   /** Authoritative stream-only inbox snapshot; pending work never hits history. */
   private readonly queueMirror = new SessionQueueMirror()
+  /**
+   * Top-level prompts sent before the subscription is open. Each keeps its
+   * echo's requestId; the server deduplicates prompts by requestId.
+   */
+  private readonly outbox = new SendOutbox<HeldPrompt>(() => randomUUID())
   private readonly assistantStream = new ClientAssistantStream()
   private running = false
   private address: SubagentAddress | undefined
@@ -251,6 +264,11 @@ export class Session implements SessionFace {
     let result: RemoteResult<{ accepted: true }>
     if (this.address === undefined) {
       const clientTimeZone = resolvedClientTimeZone()
+      if (this.openState === 'loading') {
+        // Subscription opening: the prompt waits in the outbox under its echo's requestId, and the open flushes it.
+        this.outbox.enqueue({ content, mode, clientTimeZone }, requestId)
+        return { ok: true, value: { accepted: true } }
+      }
       result = await this.remote.session.prompt({
         requestId: requestId ?? randomUUID() as SessionRequestId,
         sessionId: this.sessionId,
@@ -609,6 +627,7 @@ export class Session implements SessionFace {
 
   /** @param generation - openGeneration at launch; stale passes cannot publish after replacement. */
   private async doOpen(generation: number): Promise<void> {
+    this.outbox.beginConnection()
     this.openState = 'loading'
     this.openError = null
     this.notifier.markDirty()
@@ -626,6 +645,7 @@ export class Session implements SessionFace {
       await events.open({ maxMessages: initialHistoryMessages() })
       if (generation !== this.openGeneration || this.events !== events) return
       this.openState = 'open'
+      void this.flushOutbox()
     } catch (error) {
       if (generation !== this.openGeneration || this.events !== events) return
       if (!isRemoteFailure(error)) throw error
@@ -727,15 +747,38 @@ export class Session implements SessionFace {
     return queueChanged || awaitingFirstTurn !== this.firstPromptPendingTurn
   }
 
+  /** Send held prompts in enqueue order. A rejected prompt is dropped with its echo; a transport failure keeps it for the next open. */
+  private async flushOutbox(): Promise<void> {
+    if (this.openState !== 'open') return
+    await this.outbox.flush(async (entry) => {
+      const { content, mode, clientTimeZone } = entry.payload
+      const result = await this.remote.session.prompt({
+        requestId: entry.rpcId as SessionRequestId,
+        sessionId: this.sessionId,
+        mode,
+        content,
+        clientTimeZone,
+      })
+      if (result.ok) return
+      this.outbox.acknowledge(entry.rpcId)
+      this.retireFailedSubmission(entry.rpcId as SessionRequestId)
+      this.promptError = { op: 'send', error: result.error }
+      this.notifier.markDirty()
+    })
+  }
+
   /** Retire the matching echo when a durable browser-prompt `user/message` becomes visible. */
   private observeSubmissionEvent(event: { readonly type: string; readonly data?: unknown }): void {
-    if (this.submissionSettlements.size === 0 || event.type !== 'user/message') return
+    if (event.type !== 'user/message') return
     // Structural read: window entries may be compact history records, so the
     // fields are narrowed rather than trusted (same posture as Conversation
     // assembly matchers).
     const data = event.data as { readonly source?: unknown; readonly content?: unknown } | undefined
     const source = data?.source as { readonly kind?: unknown; readonly rpcId?: unknown } | undefined
     if (source?.kind !== 'user' || typeof source.rpcId !== 'string') return
+    // The durable echo acknowledges a held prompt, whether or not an echo is still pending.
+    this.outbox.acknowledge(source.rpcId)
+    if (this.submissionSettlements.size === 0) return
     this.scheduleObservedRetirement(source.rpcId as SessionRequestId, attachmentRefsIn(data?.content))
   }
 

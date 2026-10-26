@@ -160,6 +160,31 @@ describe('HIVE native session routes', () => {
     expect(window.location.pathname).toBe(hivemindSessionPath(sid('session-created')))
   })
 
+  it('reuses the blank Session on a repeated /new visit instead of creating another', async () => {
+    window.history.replaceState(null, '', `${HIVE_OVERVIEW_PATH}/new`)
+    const harness = fixture({ ...state(), ids: [], byId: {} })
+    install(harness.sessions)
+    await vi.waitFor(() => { expect(harness.open).toHaveBeenCalledWith('session-created') })
+    const created = sid('session-created')
+    harness.set({ ...state(), current: created, ids: [created, sid('session-recent')],
+      byId: { [created]: { id: created, displayTitle: 'New', running: false, blank: true, updatedAt: 9 },
+        [sid('session-recent')]: state().byId[sid('session-recent')]! } })
+    window.history.replaceState(null, '', `${HIVE_OVERVIEW_PATH}/new`)
+    install(harness.sessions)
+    await vi.waitFor(() => { expect(harness.open).toHaveBeenCalledTimes(2) })
+    expect(harness.create).toHaveBeenCalledTimes(1)
+    expect(harness.open).toHaveBeenLastCalledWith('session-created')
+    expect(window.location.pathname).toBe(hivemindSessionPath(created))
+  })
+
+  it('creates a Session from /new when the list holds only non-blank Sessions', async () => {
+    window.history.replaceState(null, '', `${HIVE_OVERVIEW_PATH}/new`)
+    const harness = fixture(state())
+    install(harness.sessions)
+    await vi.waitFor(() => { expect(harness.open).toHaveBeenCalledWith('session-created') })
+    expect(harness.create).toHaveBeenCalledTimes(1)
+  })
+
   it('opens an exact listed root, pushes native selection, and follows popstate', () => {
     window.history.replaceState(null, '', `${HIVE_OVERVIEW_PATH}/session/session-older`)
     const harness = fixture(state('session-recent'))

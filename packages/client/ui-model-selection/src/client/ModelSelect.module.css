@@ -304,3 +304,10 @@
   flex: 0 0 auto;
   color: var(--dsw-alias-label-tertiary);
 }
+
+/* Brain room phones: the composer pill's model picker shows the model name and chevron only. */
+@media (max-width: 600px) {
+  :global([data-brain-room]) .triggerEffort,
+  :global([data-brain-room]) .triggerIcon { display: none; }
+  :global([data-brain-room]) .triggerLabel { display: block; }
+}

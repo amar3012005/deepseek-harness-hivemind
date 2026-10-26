@@ -350,3 +350,9 @@
         transport: codex
         model: gpt-6-luna
         timeoutMs: 12000
+
+# Da-vinci hands the composer draft to this frame from the production shell origin.
+- id: ui-conversation
+  config:
+    hostDraftParentOrigins:
+      - https://next.singulancelabs.com

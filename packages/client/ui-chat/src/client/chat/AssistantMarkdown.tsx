@@ -7,6 +7,7 @@ import type { AssistantBlock } from '../contract/snapshot.ts'
 import { markdownLabels } from '../markdown-labels.ts'
 import { ReasoningRow } from './ReasoningRow.tsx'
 import { useSearchableHidden } from './searchable-hidden.ts'
+import { revealedPrefix, useStreamReveal } from './stream-reveal.ts'
 import css from './AssistantMarkdown.module.css'
 
 const HIVE_FOLLOW_UP_MARKER = /<!--\s*hivemind-follow-ups:\s*\[[\s\S]*?\]\s*-->/giu
@@ -69,6 +70,12 @@ export const AssistantMarkdown = memo(function AssistantMarkdown({
     return { resolve: value => localPathMediaUrl(protocol, origin, value) }
   }, [])
   const last = blocks.length - 1
+  const visibleTextLength = useMemo(() => blocks.reduce(
+    (length, block) => block.kind === 'text' ? length + visibleAssistantText(block.text).length : length,
+    0,
+  ), [blocks])
+  // Finished text is never paced: a settled message reveals in full.
+  const revealed = useStreamReveal(visibleTextLength, streaming)
   // Tool-call heads render as tool rows in the chat view's grouping pass, so
   // a node that is only those heads (or empty) would paint an empty root
   // between tool groups — skip the shell unless something visible remains.
@@ -77,6 +84,7 @@ export const AssistantMarkdown = memo(function AssistantMarkdown({
     || blocks.some(block => block.kind !== 'tool-call')
   if (!hasVisible) return null
   const rendered: ReactNode[] = []
+  let textOffset = 0
   for (let i = 0; i < blocks.length; i++) {
     const block = blocks[i]
     if (block === undefined) continue
@@ -84,12 +92,14 @@ export const AssistantMarkdown = memo(function AssistantMarkdown({
       case 'text':
         {
           const text = visibleAssistantText(block.text)
+          const cut = Math.max(0, Math.min(text.length, revealed - textOffset))
+          textOffset += text.length
           if (text === '' && !streaming) break
           rendered.push(
             <MarkdownText
               key={i}
-              text={text}
-              streaming={streaming}
+              text={revealedPrefix(text, cut)}
+              streaming={streaming || cut < text.length}
               labels={labels}
               fileMentions={mentions}
               pathImages={pathImages}

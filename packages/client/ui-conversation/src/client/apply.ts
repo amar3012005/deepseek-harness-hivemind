@@ -35,6 +35,7 @@ import {
 import { InputBar } from './skeleton/InputBar.tsx'
 import { todoDockEntry } from './skeleton/TodoPanel.tsx'
 import { resolveActiveView } from './view-selection.ts'
+import { configureHostDraftParentOrigins } from './skeleton/pending-draft.ts'
 import { en, NS, zh, type ConversationKey } from './locales.ts'
 import { CONVERSATION_SETTINGS_NAMESPACE, type ConversationSettings } from '../submission-settings.ts'
 
@@ -54,11 +55,14 @@ export const inject = [
 export interface Config {
   /** Maximum generic-file uploads allowed to run concurrently in browser Workers. */
   maxConcurrentFileUploads?: number
+  /** Exact parent origins (scheme, host, optional port) allowed to hand over composer drafts. */
+  hostDraftParentOrigins?: string[]
 }
 
 /** Validated Conversation runtime configuration. */
 export const Config: z<Config> = z.object({
   maxConcurrentFileUploads: z.natural().min(1).default(2),
+  hostDraftParentOrigins: z.array(z.string()).default([]),
 })
 
 // Stable no-session sources keep the renderer's observable-hook cache and
@@ -121,6 +125,7 @@ export function apply(ctx: Context, config: Config = Config({})): void {
   const slots = ctx.slots
   // Schemastery's field default is materialized before Cordis calls apply.
   const maxConcurrentFileUploads = config.maxConcurrentFileUploads as number
+  configureHostDraftParentOrigins(config.hostDraftParentOrigins ?? [])
   const workspaceNavigation = ctx.get('uiWorkspace') as unknown as WorkspaceNavigation
   const uiConversation = new UiConversation(ctx, sessions)
 

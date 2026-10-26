@@ -31,6 +31,7 @@ import type { SessionFace } from '../contract/session.ts'
 import type { AgentContext, ISessions } from '../contract/sessions.ts'
 import { createScope, scopeOf as scopeTagOf } from '../scope.ts'
 import { SessionManager } from './manager.ts'
+import { createSessionListCache } from '../cache/session-list-cache.ts'
 import type { SessionRemotes } from './remotes.ts'
 import type { SessionListPhase, SessionSearchResultItem, SubagentCatalogSnapshot } from './manager.ts'
 import type { Session } from './session.ts'
@@ -231,6 +232,8 @@ export class ClientSessions implements ISessions {
       remote,
       restored.sessionId,
       restored.subagentAddress,
+      // Browsers without IndexedDB keep the live list only.
+      createSessionListCache(typeof indexedDB === 'undefined' ? undefined : indexedDB),
     )
     this.list = createSnapshotStore<SessionListState>({
       ids: [], byId: {}, current: undefined, phase: 'pending',

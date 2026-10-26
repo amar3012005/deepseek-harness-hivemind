@@ -78,6 +78,12 @@ function rootSession(state: SessionListState, sessionId: SessionId | undefined, 
     ? sessionId : undefined
 }
 
+/** The newest root Session with no user message yet, in this mode. A `/new` visit reuses it instead of creating another. */
+function newestBlankRoot(state: SessionListState, base: string): SessionId | undefined {
+  return state.ids.find(id => state.byId[id]?.origin !== 'subagent'
+    && state.byId[id]?.blank === true && matchesMode(state, id, base))
+}
+
 function newestRoot(state: SessionListState, base: string): SessionId | undefined {
   return state.ids.find(id => state.byId[id]?.origin !== 'subagent'
     && state.byId[id]?.blank === false && matchesMode(state, id, base))
@@ -126,7 +132,9 @@ export function setupHivemindSessionRouting(
   const selectOrCreate = (state: SessionListState, forceCreate: boolean): void => {
     if (creating) return
     const attempt = ++generation
-    const selected = forceCreate || currentBase === HIVE_EMPLOYEE_HARNESS_PATH ? undefined : newestRoot(state, currentBase)
+    const selected = forceCreate
+      ? newestBlankRoot(state, currentBase)
+      : currentBase === HIVE_EMPLOYEE_HARNESS_PATH ? undefined : newestRoot(state, currentBase)
     if (selected !== undefined) {
       applyingRoute = true
       initialized = true

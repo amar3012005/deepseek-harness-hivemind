@@ -5,6 +5,7 @@
 import type { SubagentAddress, SubagentCatalog } from '@deepseek-ai/dsh-subagent/client'
 import { SessionSeq, type SessionId, type SessionSeqCursor } from '@deepseek-ai/dsh-session/types'
 import type { WorkspaceId } from '@deepseek-ai/dsh-workspace/types'
+import type { SessionListCacheSeam } from '../cache/session-list-cache.ts'
 import type {
   SessionControlBaseline,
   SessionControlFrame,
@@ -153,6 +154,7 @@ export class SessionManager {
     private readonly remote: SessionRemotes,
     restoredSelection?: SessionId,
     restoredAddress?: SubagentAddress,
+    private readonly listCache?: SessionListCacheSeam,
   ) {
     this.selected = restoredSelection
     if (restoredAddress !== undefined) this.addresses.set(restoredAddress.childSessionId, restoredAddress)
@@ -450,18 +452,34 @@ export class SessionManager {
   // ---- List API ----
 
   /** Full refresh via session.list (single-flight: an in-flight call is reused). */
+  /** @returns true while the session list has not yet received its first authoritative result. */
+  private listPendingNow(): boolean {
+    return this.listPhase === 'pending'
+  }
+
   refreshList(): Promise<void> {
     if (this.listInflight !== null) return this.listInflight
     this.listState = 'loading'
     this.listError = null
-    const established = this.summaries
+    let established = this.summaries
     const mutations: SessionListMutation[] = []
     this.listMutations = mutations
     this.notifier.markDirty()
     this.listInflight = (async () => {
       try {
+        // Stale-while-revalidate: a cached list shows on the first load; the server pull below replaces it.
+        if (this.listPhase === 'pending' && this.listCache !== undefined) {
+          const cached = await this.listCache.read().catch(() => undefined)
+          if (cached !== undefined && this.listPendingNow() && this.summaries.length === 0) {
+            this.summaries = [...cached]
+            established = this.summaries
+            this.listPhase = 'ready'
+            this.notifier.markDirty()
+          }
+        }
         const result = await this.remote.session.list({})
         if (result.ok) {
+          void this.listCache?.write(result.value.items).catch(() => {})
           const baseline: SessionSummary[] = this.listPhase === 'pending'
             ? [...result.value.items]
             : mergeOrderedBaseline(established, result.value.items, summary => summary.sessionId)
