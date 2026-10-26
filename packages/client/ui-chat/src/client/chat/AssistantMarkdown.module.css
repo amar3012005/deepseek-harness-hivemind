@@ -78,3 +78,11 @@
   border-radius: 18px 18px 18px 4px;
   background: var(--dsh-agent-bubble-color, color-mix(in srgb, currentColor 5%, transparent));
 }
+
+/* Brain phone chat: assistant text sits in a quiet bubble frame, as in the Runtime room. */
+@media (max-width: 600px) {
+  :global([data-brain-chat]) .body[data-assistant-text] {
+    box-sizing: border-box; min-width: 0; padding: 9px 12px; border-radius: 3px 14px 14px 14px;
+    background: var(--dsw-alias-interactive-bg-hover); overflow-wrap: anywhere; gap: 10px;
+  }
+}

@@ -319,6 +319,8 @@ export interface ConversationSidebarViewTabsInjected {
 export interface ComposerBarOwnerProps {
   /** Hero uses centered placement; composer uses the active bottom placement. */
   variant: 'hero' | 'composer'
+  /** The hero read-scope control, offered inside the phone add sheet as well as the hero row. */
+  heroScope?: ReactNode
   /** A feature-owned reason that makes message input inert while leaving model selection live. */
   blocked?: { readonly reason: string }
   /** Lock all message actions while preserving the resident composer surface. */

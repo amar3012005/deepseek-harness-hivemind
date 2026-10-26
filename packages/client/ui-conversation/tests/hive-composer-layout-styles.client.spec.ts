@@ -21,7 +21,28 @@ describe('HIVE composer layout', () => {
 
   it('aligns both HIVE modes and composer phases with the chat column', () => {
     expect(css).toMatch(/data-hivemind-harness-surface[^}]*\.composerSeat \.composerStack\s*\{[^}]*transform:\s*none\s*!important/s)
-    expect(css).toMatch(/data-dsh-mode='hivemind-chat'[^}]*\.header \.headerUtilities\s*\{[^}]*display:\s*flex/s)
+    // Embedded HIVE hides the header utilities; their controls live in the header corner.
+    expect(css).toMatch(/\.root \.header \.headerUtilities\s*\{\s*display:\s*none;/u)
+  })
+
+  it('docks the Brain composer at the floor in the hero phase and keeps the greeting above it', () => {
+    // The hero stack grows to the column floor; the greeting flexes into the space above it.
+    expect(css).toMatch(
+      /\.root\[data-brain-chat\]\[data-phase='hero'\] \.composerSeat,[\s\S]*?\{\s*flex:\s*1 0 auto;\s*justify-content:\s*flex-end;\s*\}/u,
+    )
+    expect(css).toMatch(/\.root\[data-brain-chat\]\[data-phase='hero'\] \.composerHero\s*\{\s*flex:\s*1 0 auto;/u)
+    expect(css).toMatch(/\.root\[data-brain-chat\]\[data-phase='hero'\] \.heroIntroduction\s*\{[^}]*flex:\s*1 1 0/su)
+    // The hero no longer centres the stack in Brain chat.
+    expect(css).toMatch(/\.root\[data-brain-chat\]\[data-phase='hero'\] \.scrollBody,[\s\S]*?justify-content:\s*flex-start/u)
+  })
+
+  it('keeps the Brain read-scope selector out of the phone row and never paints it empty', () => {
+    expect(css).toMatch(/\.heroScope:empty\s*\{\s*display:\s*none/u)
+    expect(css).toMatch(/@media \(max-width: 600px\)\s*\{\s*:global\(\[data-brain-chat\]\) \.heroScope\s*\{\s*display:\s*none/u)
+  })
+
+  it('does not paint an empty background strip above the Brain composer', () => {
+    expect(css).not.toMatch(/\[data-brain-room\] \.heroWorkspaceRow\s*\{[^}]*background:/su)
   })
 
   it('keeps Chat and Trajectory as lower-left HIVE overlay controls', () => {
