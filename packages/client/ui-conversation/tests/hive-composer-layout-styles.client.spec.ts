@@ -26,14 +26,14 @@ describe('HIVE composer layout', () => {
   })
 
   it('docks the Brain composer at the floor in the hero phase and keeps the greeting above it', () => {
-    // The hero stack grows to the column floor; the greeting flexes into the space above it.
+    // The data-brain-chat marker sits on the host surface, so the rule scopes through an ancestor.
+    // Before the first message the column packs to the floor and reserves room for the host footer.
     expect(css).toMatch(
-      /\.root\[data-brain-chat\]\[data-phase='hero'\] \.composerSeat,[\s\S]*?\{\s*flex:\s*1 0 auto;\s*justify-content:\s*flex-end;\s*\}/u,
+      new RegExp(String.raw`:global\(\[data-brain-chat\]\) \.root\[data-phase='hero'\] \.scrollBody,[\s\S]*?\{\s*`
+        + String.raw`justify-content:\s*flex-end;\s*padding-bottom:\s*calc\(var\(--hm-brain-composer-floor, 108px\)`, 'u'),
     )
-    expect(css).toMatch(/\.root\[data-brain-chat\]\[data-phase='hero'\] \.composerHero\s*\{\s*flex:\s*1 0 auto;/u)
-    expect(css).toMatch(/\.root\[data-brain-chat\]\[data-phase='hero'\] \.heroIntroduction\s*\{[^}]*flex:\s*1 1 0/su)
-    // The hero no longer centres the stack in Brain chat.
-    expect(css).toMatch(/\.root\[data-brain-chat\]\[data-phase='hero'\] \.scrollBody,[\s\S]*?justify-content:\s*flex-start/u)
+    // No rule may grow the composer stack past the column, which pushed the composer below the fold.
+    expect(css).not.toMatch(/\.composerSeat,[\s\S]*?flex:\s*1 0 auto/u)
   })
 
   it('keeps the Brain read-scope selector out of the phone row and never paints it empty', () => {

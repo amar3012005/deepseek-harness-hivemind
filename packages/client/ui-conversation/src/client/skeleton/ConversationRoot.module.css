@@ -752,26 +752,13 @@
 .root[data-brain-room] .composerSeat:has(:global([data-room-call-strip])) { padding-top: 56px; }
 
 /* Brain chat docks its composer at the floor in every phase, as the Runtime room
-   does: the greeting fills the space above it and scrolls with the column, and the
-   composer keeps the same seat when the first message moves the room to the
-   transcript. The hero stack keeps its intrinsic height; only the greeting grows. */
-.heroIntroduction { display: contents; }
-.root[data-brain-chat][data-phase='hero'] .scrollBody,
-.root[data-brain-chat][data-phase='settling'] .scrollBody { justify-content: flex-start; }
-.root[data-brain-chat][data-phase='hero'] .composerSeat,
-.root[data-brain-chat][data-phase='settling'] .composerSeat {
-  flex: 1 0 auto;
+   does: before the first message the column packs to the bottom, so the greeting and
+   scope sit just above the composer and the composer keeps its seat when the
+   transcript starts. The bottom reserve keeps the host's "Connect to your ChatGPT"
+   footer (absolutely positioned under the room) clear of the composer. */
+:global([data-brain-chat]) .root[data-phase='hero'] .scrollBody,
+:global([data-brain-chat]) .root[data-phase='settling'] .scrollBody {
   justify-content: flex-end;
-}
-.root[data-brain-chat][data-phase='hero'] .composerHero {
-  flex: 1 0 auto;
-  padding-bottom: 0;
-}
-.root[data-brain-chat][data-phase='hero'] .heroIntroduction {
-  display: flex;
-  flex: 1 1 0;
-  min-height: 0;
-  flex-direction: column;
-  justify-content: flex-end;
-  padding-bottom: 16px;
+  padding-bottom: calc(var(--hm-brain-composer-floor, 108px) + env(safe-area-inset-bottom));
+  box-sizing: border-box;
 }
