@@ -138,7 +138,7 @@ function TurnErrorItem({ node, t, grouped = false }: {
     </div>
   )
   return !grouped && /^\/hivemind\/app\/(?:overview|employee\/harness)(?:\/|$)/u.test(window.location.pathname)
-    ? <details><summary>Work details</summary>{technicalDetails}</details>
+    ? <details data-work-details><summary>Work details</summary>{technicalDetails}</details>
     : technicalDetails
 }
 

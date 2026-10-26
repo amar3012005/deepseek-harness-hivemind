@@ -182,6 +182,6 @@ export const ChatNodeSeat = memo(function ChatNodeSeat({
   return quietWork
     && (routedNode.kind === 'turn-error' || (routedNode.kind === 'tool-call' && 'kind' in routedNode.data.root
       && routedNode.data.root.kind === 'tool-result' && routedNode.data.root.isError)) && !foldable
-    ? <details><summary>Work details</summary>{rendered}</details>
+    ? <details data-work-details><summary>Work details</summary>{rendered}</details>
     : rendered
 })

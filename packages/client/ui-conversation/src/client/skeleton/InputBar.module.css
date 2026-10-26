@@ -370,15 +370,175 @@
 .trailing:has([data-voice-active]) [data-hivemind-dictation],
 .trailing:has([data-voice-active]) [data-composer-context-meter] { display: none; }
 
-/* Brain reference composer; native slots retain their behavior and state. */
-:global([data-brain-room]) .card { border-radius: 24px; padding-top: 10px; gap: 8px; box-shadow: 0 2px 14px #00000006, 0 0 0 1px var(--dsw-alias-border-l2); }
-:global([data-brain-room]) .row { padding: 2px 12px 8px; flex-wrap: wrap; }
-:global([data-brain-room]) .add { background: transparent; width: 30px; height: 36px; }
+/* Room composer: the Runtime OpenDot values (desktop pill row; phone glass plus beside a glass pill), keyed on the Brain room. */
+/* Product surface shared with desktop; phone geometry is owned below. */
+:global([data-brain-room]) .card { background: var(--dsw-alias-bg-base); color: var(--dsw-alias-label-primary); border: 1px solid var(--dsw-alias-border-l2); border-radius: 32px; box-shadow: 0 2px 12px rgb(0 0 0 / 3%); }
+:global([data-brain-room]) .primary { background: var(--dsw-alias-label-primary); color: var(--dsw-alias-label-primary-inverted); border-radius: 50%; corner-shape: round; }
+:global([data-brain-room]) .primary:hover:not(:disabled) { background: color-mix(in srgb, var(--dsw-alias-label-primary) 85%, transparent); }
+@media (min-width: 901px) {
+  :global([data-brain-room]) .card { gap: 8px; padding-top: 12px; }
+  :global([data-brain-room]) .row { padding: 0 12px 10px; }
+  :global([data-brain-room]) .trailing { gap: 12px; }
+}
+.desktopOptions { display: contents; }
+.brainConnectors { display: none; }
+.attachments { display: contents; }
+@media (max-width: 900px) {
+  :global([data-brain-room]) .card { gap: 4px; padding-top: 6px; border-radius: 24px; font-size: 16px; line-height: 24px; }
+  :global([data-brain-room]) .row { flex-wrap: nowrap; gap: 4px; padding: 0 6px 4px; }
+  :global([data-brain-room]) .tools, :global([data-brain-room]) .modes, :global([data-brain-room]) .trailing { gap: 4px; }
+  :global([data-brain-room]) .desktopOptions, :global([data-brain-room]) .desktopAttachment { display: none; }
+  :global([data-brain-room]) :global([data-hivemind-dictation]) { display: none; }
+  :global([data-brain-room]) .add, :global([data-brain-room]) .primary,
+  :global([data-brain-room]) :global([data-hivemind-live-voice]) button { width: 44px; height: 44px; border-radius: 50%; corner-shape: round; }
+}
+
+/* One phone dock: plus, autogrowing draft, puzzle and voice/send/stop.
+   Blur is confined to controls. Messages never depend on a glass backdrop. */
+@media (max-width: 600px) {
+  :global([data-brain-room]) .root { padding: 6px 10px 8px; }
+  :global([data-brain-room]) .card {
+    display: grid; grid-template-columns: 44px minmax(0, 1fr) 44px auto;
+    align-items: end; gap: 0; min-width: 0; padding: 3px; border-radius: 28px;
+    background: var(--dsw-alias-bg-base, var(--dsw-alias-label-primary-inverted));
+    background: color-mix(in srgb, var(--dsw-alias-bg-base, var(--dsw-alias-label-primary-inverted)) 94%, transparent);
+    color: var(--dsw-alias-label-primary);
+    border: 0; --dsw-elevation-stroke-color: var(--dsw-alias-border-l2);
+    box-shadow: var(--dsw-elevation-soft);
+    backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+    --dsw-alias-label-primary: inherit; --dsw-alias-label-secondary: inherit;
+  }
+  :global([data-brain-room]) .scroll { grid-column: 2; grid-row: 1; min-width: 0; margin: 0; max-height: min(144px, 28dvh); overscroll-behavior: contain; }
+  :global([data-brain-room]) .input { min-height: 44px; padding: 10px 4px; font-size: 16px; line-height: 24px; }
+  :global([data-brain-room]) .hero .input { min-height: 44px; }
+  :global([data-brain-room]) .placeholder { inset: 10px 4px auto; font-size: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  :global([data-brain-chat]) .placeholder { font-size: 0; }
+  :global([data-brain-chat]) .placeholder::before { content: 'Message Brain'; font-size: 16px; }
+  :global([data-brain-room]) .row, :global([data-brain-room]) .tools { display: contents; }
+  :global([data-brain-room]) .add { grid-column: 1; grid-row: 1; background: transparent; }
+  :global([data-brain-room]) .add svg { width: 22px; height: 22px; }
+  :global([data-brain-room]) .brainConnectors { display: grid; place-items: center; grid-column: 3; grid-row: 1; width: 44px; height: 44px; padding: 0; border: 0; border-radius: 50%; corner-shape: round; background: transparent; color: inherit; cursor: pointer; }
+  :global([data-brain-room]) .brainConnectors:disabled { opacity: .4; }
+  :global([data-brain-room]) .trailing { grid-column: 4; grid-row: 1; gap: 0; margin: 0; }
+  :global([data-brain-room]) .primary { transform: none; }
+  :global([data-brain-room]) .attachments { display: block; grid-column: 1 / -1; grid-row: 1; min-width: 0; }
+  :global([data-brain-room]) .attachments:empty { display: none; }
+  :global([data-brain-room]) .card:has(.attachments:not(:empty)) .scroll,
+  :global([data-brain-room]) .card:has(.attachments:not(:empty)) .add,
+  :global([data-brain-room]) .card:has(.attachments:not(:empty)) .brainConnectors,
+  :global([data-brain-room]) .card:has(.attachments:not(:empty)) .trailing { grid-row: 2; }
+  :global([data-brain-room]) .accessory { grid-column: 1 / -1; }
+  :global([data-brain-room]) :global([data-hivemind-live-voice]) details { display: none; }
+  :global([data-brain-room]) .trailing:has([data-native-composer-primary]:not([data-empty-send])) [data-hivemind-live-voice]:not([data-voice-active]) { display: none; }
+  :global([data-brain-room]) .add,
+  :global([data-brain-room]) .brainConnectors,
+  :global([data-brain-room]) .primary { touch-action: manipulation; transition: opacity 120ms ease, background-color 120ms ease; -webkit-tap-highlight-color: transparent; }
+  :global([data-brain-room]) .add:active:not(:disabled),
+  :global([data-brain-room]) .brainConnectors:active:not(:disabled),
+  :global([data-brain-room]) .primary:active:not(:disabled) { opacity: .65; }
+  :global([data-brain-room]) .card:focus-within { --dsw-elevation-stroke-color: var(--dsw-alias-state-business-primary); }
+  :global([data-brain-room]) .add:focus-visible,
+  :global([data-brain-room]) .brainConnectors:focus-visible,
+  :global([data-brain-room]) .primary:focus-visible { outline: 2px solid var(--dsw-alias-state-business-primary); outline-offset: 2px; }
+  :global(html[data-native-reduce-transparency='true']) :global([data-brain-room]) .card,
+  :global(html[data-native-increase-contrast='true']) :global([data-brain-room]) .card { background: var(--dsw-alias-bg-base, var(--dsw-alias-label-primary-inverted)); backdrop-filter: none; -webkit-backdrop-filter: none; }
+  :global(html[data-native-reduce-motion='true']) :global([data-brain-room]) .pending { animation: none; opacity: .7; }
+}
+
+/* HIVE chat: the send control is the OpenDots black circle, not the info blue, so the composer reads as one quiet surface. */
+:global(html[data-dsh-mode='hivemind-chat']) .primary {
+  background: var(--dsw-alias-label-primary);
+  color: var(--dsw-alias-label-primary-inverted);
+}
+:global(html[data-dsh-mode='hivemind-chat']) .primary:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--dsw-alias-label-primary) 85%, transparent);
+}
+:global(html[data-dsh-mode='hivemind-chat']) .primary:disabled {
+  opacity: 0.55;
+}
+
+
+/* Runtime room: the OpenDot composer (OpenDot Chat.tsx) — one pill row of +, draft, model and the black
+   voice/send/stop circle. Attach, access mode and modes open from + (MobileAddSheet); the context meter and the
+   dictation microphone are hidden. Keyed on the room, not the voice control, so the shape holds while a turn
+   runs. The live-voice control keeps its own rules, so the voice call strip is unchanged. */
+:global([data-brain-room]) .card {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 6px;
+  padding: 6px;
+  border: 1px solid rgb(0 0 0 / 10%);
+  border-radius: 26px;
+  background: var(--dsw-alias-bg-base, var(--dsw-alias-label-primary-inverted));
+  box-shadow: 0 8px 32px -12px rgb(0 0 0 / 15%);
+  transition: box-shadow 150ms ease;
+  font-size: 16px;
+  line-height: 1.45;
+}
+:global([data-brain-room]) .card:focus-within { box-shadow: 0 12px 40px -12px rgb(0 0 0 / 20%); }
+:global([data-brain-room]) .row { display: contents; }
+:global([data-brain-room]) .accessory { order: -1; flex-basis: 100%; }
+:global([data-brain-room]) .tools { order: 0; }
+:global([data-brain-room]) .scroll { order: 1; flex: 1 1 0; min-width: 0; min-height: 40px; }
+:global([data-brain-room]) .scroll { scrollbar-width: none; }
+:global([data-brain-room]) .scroll::-webkit-scrollbar { display: none; }
+:global([data-brain-room]) .input,
+:global([data-brain-room]) .placeholder { padding: 8px 0; }
+:global([data-brain-room]) .placeholder { color: color-mix(in srgb, var(--dsw-alias-label-primary) 35%, transparent); }
+:global([data-brain-room]) .trailing { order: 3; align-items: center; gap: 6px; margin-left: 0; }
+:global([data-brain-room]) .add { width: 36px; height: 36px; background: transparent; color: color-mix(in srgb, var(--dsw-alias-label-primary) 50%, transparent); }
+:global([data-brain-room]) .add:hover:not(:disabled) { background: rgb(0 0 0 / 5%); color: var(--dsw-alias-label-primary); }
 :global([data-brain-room]) .add svg { width: 20px; height: 20px; }
-:global([data-brain-room]) .primary { border-radius: 50%; }
-:global([data-brain-room]) .trailing { gap: 14px; }
-@media (max-width: 540px) {
-  :global([data-brain-room]) .card { border-radius: 24px; gap: 8px; }
-  :global([data-brain-room]) .tools { gap: 8px; }
-  :global([data-brain-room]) .trailing { gap: 8px; }
+:global([data-brain-room]) .desktopAttachment,
+:global([data-brain-room]) .brainConnectors,
+:global([data-brain-room]) .tools .desktopOptions,
+:global([data-brain-room]) :global([data-composer-context-meter]),
+:global([data-brain-room]) :global([data-hivemind-dictation]) { display: none; }
+:global([data-brain-room]) .trailing .desktopOptions :global(button) { height: 36px; padding: 0 6px; border: 1px solid rgb(0 0 0 / 10%); border-radius: 6px; font-size: 14px; color: color-mix(in srgb, var(--dsw-alias-label-primary) 75%, transparent); }
+:global([data-brain-room]) .primary { width: 36px; height: 36px; background: var(--dsw-alias-label-primary); color: var(--dsw-alias-label-primary-inverted); transform: none; }
+:global([data-brain-room]) .primary:hover:not(:disabled) { background: var(--dsw-alias-label-primary); opacity: 0.85; }
+
+/* Runtime phone room: the OpenDot room composer (ChatBubbles.module.css in hivemind-open-dot), value for value.
+   A 48px liquid-glass plus circle, 8px gap, and a 48px glass pill (radius 26, padding 2 3 2 14) that holds the
+   draft at 16px/1.45, the model picker (13px, at most 34%) and the 40px voice or send circle. The seat floats
+   12px from the sides and max(10px, safe area) from the bottom. Glass values are OpenDot's `.liquid-glass`. */
+@media (max-width: 600px) {
+  :global([data-brain-room]) .root { padding: 0 12px max(10px, env(safe-area-inset-bottom, 0px)); }
+  :global([data-brain-room]) .card {
+    position: relative; isolation: isolate; grid-template-columns: 48px minmax(0, 1fr) auto; gap: 0;
+    align-items: end; padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none;
+    -webkit-backdrop-filter: none; backdrop-filter: none; font-size: 16px; line-height: 1.45;
+  }
+  :global([data-brain-room]) .card:focus-within { box-shadow: none; }
+  :global([data-brain-room]) .card::before,
+  :global([data-brain-room]) .add {
+    border: 0;
+    background: linear-gradient(180deg, color-mix(in srgb, var(--dsw-alias-bg-base, #fff) 55%, transparent) 0%, color-mix(in srgb, var(--dsw-alias-bg-base, #fff) 8%, transparent) 48%, color-mix(in srgb, var(--dsw-alias-bg-base, #fff) 0%, transparent) 100%), color-mix(in srgb, var(--dsw-alias-bg-base, #fff) 56%, transparent);
+    box-shadow: inset 0 1px 0 color-mix(in srgb, var(--dsw-alias-bg-base, #fff) 95%, transparent), inset 0 -1px 0 rgb(0 0 0 / 0.035), 0 1px 1px rgb(0 0 0 / 0.04), 0 10px 28px -10px rgb(15 23 42 / 0.28);
+    -webkit-backdrop-filter: blur(22px) saturate(190%) brightness(1.04); backdrop-filter: blur(22px) saturate(190%) brightness(1.04);
+  }
+  :global([data-brain-room]) .card::before { content: ''; position: absolute; z-index: -1; inset: 0 0 0 56px; border-radius: 26px; transition: box-shadow 220ms ease; }
+  :global([data-brain-room]) .card:focus-within::before { box-shadow: inset 0 1px 0 color-mix(in srgb, var(--dsw-alias-bg-base, #fff) 95%, transparent), 0 0 0 2px color-mix(in srgb, var(--dsw-alias-label-primary) 12%, transparent), 0 12px 30px -10px rgb(15 23 42 / 0.32); }
+  :global([data-brain-room]) .add { position: relative; width: 48px; height: 48px; border-radius: 999px; color: color-mix(in srgb, var(--dsw-alias-label-primary) 72%, transparent); corner-shape: round; transition: transform 260ms cubic-bezier(0.2, 0.9, 0.25, 1.15); }
+  :global([data-brain-room]) .add:active:not(:disabled) { opacity: 1; transform: scale(0.94); }
+  :global([data-brain-room]) .add svg { width: 20px; height: 20px; }
+  :global([data-brain-room]) .scroll { grid-column: 2; margin-left: 22px; }
+  :global([data-brain-room]) .input { min-height: 48px; padding: 12px 0; font-size: 16px; line-height: 1.45; }
+  :global([data-brain-room]) .placeholder { inset: 0 0 auto; padding: 12px 0; font-size: 16px; line-height: 1.45; color: color-mix(in srgb, var(--dsw-alias-label-primary) 35%, transparent); }
+  :global([data-brain-room]) .trailing { grid-column: 3; display: flex; align-items: center; gap: 2px; min-height: 48px; padding: 4px 3px 4px 0; }
+  :global([data-brain-room]) .trailing .desktopOptions { display: flex; flex: 0 1 auto; min-width: 0; max-width: 34vw; }
+  :global([data-brain-room]) .trailing .desktopOptions :global(button) { max-width: 100%; height: 40px; padding: 0 6px; border: 0; background: transparent; font-size: 13px; color: color-mix(in srgb, var(--dsw-alias-label-primary) 60%, transparent); }
+  :global([data-brain-room]) .trailing .desktopOptions :global(button span) { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  :global([data-brain-room]) .primary { width: 40px; height: 40px; flex: 0 0 40px; background: var(--dsw-alias-label-primary); color: var(--dsw-alias-label-primary-inverted); }
+  /* Outranks the native-chat 44px voice circle, so the pill stays 48px high as in OpenDot. */
+  :global([data-brain-room]) .trailing :global([data-hivemind-live-voice]) button { width: 40px; height: 40px; }
+}
+@media (max-width: 600px) and (prefers-reduced-transparency: reduce) {
+  :global([data-brain-room]) .card::before, :global([data-brain-room]) .add { background: var(--dsw-alias-bg-base, var(--dsw-alias-label-primary-inverted)); -webkit-backdrop-filter: none; backdrop-filter: none; }
+}
+
+/* Plan and Read-only sit on their own row under the pill on phones. */
+@media (max-width: 600px) {
+  :global([data-brain-room]) .modes { grid-column: 1 / -1; grid-row: 2; padding: 0 4px 6px; }
 }

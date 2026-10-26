@@ -146,6 +146,23 @@ describe('ClientAssistantStream', () => {
     }))).toEqual({ type: 'settlement', attemptId: String(ATTEMPT), entry: durable })
   })
 
+  it('does not reopen a baseline attempt whose settlement is already in the replacement window', () => {
+    const stream = new ClientAssistantStream()
+    const visible = stream.replace([ordinary(4), messageEvent(5)], baseline(1))
+
+    expect(visible).toHaveLength(2)
+    expect(visible.some(entry => entry.type === 'transient')).toBe(false)
+    expect(stream.acceptFrame(start(LlmAttemptId('session:2')))).toBeUndefined()
+  })
+
+  it('publishes a replayed durable event at most once', () => {
+    const stream = new ClientAssistantStream()
+    stream.replace([], undefined)
+    const durable = ordinary(4)
+    expect(stream.acceptDurable(durable)).toEqual({ type: 'publish', entry: durable })
+    expect(stream.acceptDurable(durable)).toBeUndefined()
+  })
+
   it('rebaselines duplicate durable settlements or starts', () => {
     const duplicate = opened()
     const durable = attemptEvent(2)

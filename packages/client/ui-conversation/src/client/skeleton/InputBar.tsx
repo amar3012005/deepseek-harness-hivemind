@@ -13,7 +13,7 @@
  * trigger instead of a parallel tree.
  */
 
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import type { ChangeEvent, CSSProperties, KeyboardEvent, MouseEvent, ReactNode } from 'react'
 import clsx from 'clsx'
 import {
@@ -30,6 +30,10 @@ import type {} from '@deepseek-ai/dsh-goal/client'
 import type { Translate } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ComposerBarProps } from '../contract/slots.ts'
 import { ComposerContentEditable } from '../input/editor/ComposerContentEditable.tsx'
+import {
+  hostDraftParentOrigins, listenForHostDrafts, mergeHandoffDraft, readPendingDraft,
+  hostDraftRoomKey, subscribePendingDrafts, takePendingDraft, writePendingDraft,
+} from './pending-draft.ts'
 import { DecoratorPortals } from '../input/editor/DecoratorPortals.tsx'
 import { registerComposerKeymap } from '../input/editor/keymap.ts'
 import { resolveSubmitMode } from '../input/submission-policy.ts'
@@ -135,6 +139,34 @@ export const InputBar = memo(function InputBar({
   // parent-offline continuable child. An owner block also disables input;
   // adjudicating and submitting render read-only so the draft stays visible.
   const disabled = removed || inert || !live || blocked !== undefined || parentOffline
+  // Before the input machine attaches, a known room accepts typing into the
+  // pending buffer. Send and the model seat stay disabled until `live`.
+  const typable = !live && sessionId !== undefined && !inert && !removed && blocked === undefined && !parentOffline
+  const pendingText = useSyncExternalStore(
+    subscribePendingDrafts,
+    () => (sessionId === undefined ? '' : readPendingDraft(sessionId)),
+  )
+  // The machine draft is read through a ref so the host listener sees the
+  // draft at message time, not the value captured at mount.
+  const machineDraftRef = useRef('')
+  machineDraftRef.current = input?.draft ?? ''
+  useEffect(() => {
+    if (sessionId === undefined || typeof window === 'undefined') return
+    const roomId = hostDraftRoomKey(window.location.pathname)
+    if (roomId === undefined) return
+    return listenForHostDrafts(window, {
+      selfOrigin: window.location.origin,
+      allowedParentOrigins: hostDraftParentOrigins(),
+      roomId,
+      sessionId,
+      machineDraft: () => machineDraftRef.current,
+    })
+  }, [sessionId])
+  useEffect(() => {
+    if (!live || sessionId === undefined) return
+    const text = takePendingDraft(sessionId)
+    if (text !== '') inputActions.setDraft(mergeHandoffDraft(machineDraftRef.current, text))
+  }, [live, sessionId])
   const locked = disabled
   // The model seat is the ONE control a block leaves live: every block this
   // contract has is cleared by choosing a model, so locking it too would leave
@@ -147,7 +179,7 @@ export const InputBar = memo(function InputBar({
   // exists; the trigger itself is read-only rather than disabled so pointer
   // and keyboard users can reach the recovery action.
   const workspaceTrigger = inert && !removed && onRequestWorkspace !== undefined
-  const editorDisabled = removed || (locked && !workspaceTrigger)
+  const editorDisabled = removed || (locked && !workspaceTrigger && !typable)
   const editable = live && !locked && !machineBusy
   const steeringAvailable = subagent === null || subagent.address.mode === 'continuable'
   const canSteerQueue = !locked && !machineBusy && !commandMenuOpen && empty && running && steeringAvailable
@@ -462,23 +494,36 @@ export const InputBar = memo(function InputBar({
             browser's own. */}
         <div ref={scrollRef} className={css.scroll} data-input-scroll>
           <div className={css.grow}>
-            <ComposerContentEditable
-              editor={workspaceTrigger ? null : editor}
-              editable={editable}
-              className={clsx(css.input, editorDisabled && css.inputDisabled)}
-              data-phase={input?.phase ?? 'inert'}
-              aria-disabled={editorDisabled || undefined}
-              data-placeholder={placeholderText}
-              // The placeholder was the textarea's accessible name; a div's
-              // data attribute is not, so the label restores it.
-              aria-label={workspaceTrigger ? t('hero.chooseWorkspace') : placeholderText}
-              aria-haspopup={workspaceTrigger ? 'menu' : undefined}
-              aria-expanded={workspaceTrigger ? workspacePickerOpen : undefined}
-              tabIndex={workspaceTrigger ? 0 : undefined}
-              onKeyDown={workspaceTrigger ? onWorkspaceKeyDown : undefined}
-              style={hint === null ? undefined : { '--dsh-composer-hint': JSON.stringify(hint) } as CSSProperties}
-            />
-            {draft === '' && attachments.length === 0 && !claimActive && (
+            {typable ? (
+              <textarea
+                className={css.input}
+                value={pendingText}
+                onChange={(event: ChangeEvent<HTMLTextAreaElement>) => { writePendingDraft(sessionId, event.target.value) }}
+                placeholder={placeholderText}
+                aria-label={placeholderText}
+                data-composer-input
+                data-phase="pending"
+                rows={1}
+              />
+            ) : (
+              <ComposerContentEditable
+                editor={workspaceTrigger ? null : editor}
+                editable={editable}
+                className={clsx(css.input, editorDisabled && css.inputDisabled)}
+                data-phase={input?.phase ?? 'inert'}
+                aria-disabled={editorDisabled || undefined}
+                data-placeholder={placeholderText}
+                // The placeholder was the textarea's accessible name; a div's
+                // data attribute is not, so the label restores it.
+                aria-label={workspaceTrigger ? t('hero.chooseWorkspace') : placeholderText}
+                aria-haspopup={workspaceTrigger ? 'menu' : undefined}
+                aria-expanded={workspaceTrigger ? workspacePickerOpen : undefined}
+                tabIndex={workspaceTrigger ? 0 : undefined}
+                onKeyDown={workspaceTrigger ? onWorkspaceKeyDown : undefined}
+                style={hint === null ? undefined : { '--dsh-composer-hint': JSON.stringify(hint) } as CSSProperties}
+              />
+            )}
+            {draft === '' && attachments.length === 0 && !claimActive && !typable && (
               <div aria-hidden className={css.placeholder} data-composer-placeholder>
                 {placeholderText}
               </div>

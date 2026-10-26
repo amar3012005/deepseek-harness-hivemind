@@ -9,6 +9,7 @@ import type { AssistantStreamRecord } from '@deepseek-ai/dsh-llm/assistant-strea
 import type { LlmAttemptId } from '@deepseek-ai/dsh-llm/brand'
 import type {
   SessionAssistantSettlementEntry,
+  SessionEventLike,
   SessionEventLikeEntry,
   SessionLiveEventEntry,
   SessionTransientEventEntry,
@@ -56,7 +57,13 @@ export class ClientAssistantStream {
     this.pending.clear()
     this.transientInGap = 0
     this.activeAttempt = undefined
-    const opening = baseline?.activeAttempt
+    const baselineAttempt = baseline?.activeAttempt
+    // A window that already holds the attempt's settlement means the baseline
+    // predates its commit. Reconstructing it would duplicate chunks the durable
+    // entry supersedes and leave an attempt open that no end frame will close.
+    const opening = baselineAttempt !== undefined && entries.some(entry => settlesAttempt(entry.event, baselineAttempt))
+      ? undefined
+      : baselineAttempt
     if (opening !== undefined) {
       this.activeAttempt = {
         attemptId: opening.attemptId,
@@ -101,6 +108,8 @@ export class ClientAssistantStream {
    */
   acceptDurable(entry: SessionLiveEventEntry): ClientAssistantStreamResult {
     const event = entry.event
+    // A follow reconnect may redeliver an entry already in the window or published earlier.
+    if (this.publishedSeqs.has(event.seq)) return undefined
     this.durableCursor = Math.max(this.durableCursor, event.seq)
     this.transientInGap = 0
     const settlement = assistantSettlementEntry(entry)
@@ -198,6 +207,23 @@ export class ClientAssistantStream {
     this.publishedSeqs.add(entry.event.seq)
     return { type: 'publish', entry }
   }
+}
+
+/**
+ * Whether one durable event is the settlement that ends an attempt's transient presentation.
+ * @param event - durable event from a replacement window.
+ * @param attempt - baseline attempt identity: its turn, step, and start cursor.
+ * @returns true for a committed attempt record or an append-surface message of that step.
+ */
+function settlesAttempt(
+  event: SessionEventLike,
+  attempt: Pick<ActiveAttempt, 'startedAfterSeq' | 'turn' | 'step'>,
+): boolean {
+  if (event.type !== 'assistant/attempt' && event.type !== 'assistant/message') return false
+  if (event.type === 'assistant/message' && event.surfaceOp !== 'append') return false
+  return event.seq > attempt.startedAfterSeq
+    && event.data.turn === attempt.turn
+    && event.data.step === attempt.step
 }
 
 function assistantSettlementEntry(

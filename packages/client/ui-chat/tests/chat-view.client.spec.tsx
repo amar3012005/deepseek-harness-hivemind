@@ -2121,7 +2121,7 @@ describe('ChatView', () => {
     expect(view.container.querySelectorAll('h1')).toHaveLength(2)
   })
 
-  it('streaming partial frames update the tail without replacing a sibling Tool row', () => {
+  it('streaming partial frames update the tail without replacing a sibling Tool row', async () => {
     const h = makeHarness({
       nodes: [user(1, 'q'), assistant(2, 'old answer'), toolResult(3, 'a')],
     })
@@ -2134,7 +2134,8 @@ describe('ChatView', () => {
     act(() => {
       h.setChat({ partial: { turn: 2, step: 1, blocks: [{ kind: 'text', text: 'streaming… more' }] } })
     })
-    expect(view.getByText('streaming… more')).toBeTruthy()
+    // Streamed text is paced by animation frames, so the tail completes asynchronously.
+    await waitFor(() => { expect(view.getByText('streaming… more')).toBeTruthy() })
     expect(view.getByTestId('tool-seat-a')).toBe(tool)
     expect(tool.innerHTML).toBe(beforeHtml)
   })

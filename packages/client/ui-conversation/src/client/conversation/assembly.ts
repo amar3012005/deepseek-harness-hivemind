@@ -43,12 +43,23 @@ export interface ConversationBinding {
   ): ObservableSnapshot<ConversationViewSnapshotMap[Target] | undefined>
 }
 
+/**
+ * Quiet time after which the next animation-frame publication flushes on its own
+ * call instead of waiting a frame, so a stream's first token is not delayed.
+ */
+const STREAM_IDLE_MS = 100
+
+function monotonicNow(): number {
+  return typeof performance === 'undefined' ? Date.now() : performance.now()
+}
+
 class BoundConversation implements ConversationBinding {
   readonly snapshot: SnapshotStore<ConversationSnapshot>
   private readonly viewStore: ConversationViewSnapshotStore
   private readonly targetSources = new Map<string, ObservableSnapshot<unknown>>()
   private revision = -1
   private frame: number | undefined
+  private lastStreamFlushAt = Number.NEGATIVE_INFINITY
   private disposeFeed: () => void = () => {}
 
   constructor(
@@ -130,15 +141,16 @@ class BoundConversation implements ConversationBinding {
   private publish(publication: ConversationPublication): void {
     if (publication === 'none') return
     if (publication === 'animation-frame' && typeof requestAnimationFrame === 'function') {
+      // Frame-paced stream updates coalesce to one publication per paint. After
+      // a quiet gap the first update flushes at once, so a new token is not delayed.
       if (this.frame !== undefined) return
-      // Cross three paint opportunities before publishing high-frequency stream updates.
+      if (monotonicNow() - this.lastStreamFlushAt >= STREAM_IDLE_MS) {
+        this.flushStream()
+        return
+      }
       this.frame = requestAnimationFrame(() => {
-        this.frame = requestAnimationFrame(() => {
-          this.frame = requestAnimationFrame(() => {
-            this.frame = undefined
-            this.flush()
-          })
-        })
+        this.frame = undefined
+        this.flushStream()
       })
       return
     }
@@ -151,6 +163,11 @@ class BoundConversation implements ConversationBinding {
       cancelAnimationFrame(this.frame)
     }
     this.frame = undefined
+  }
+
+  private flushStream(): void {
+    this.lastStreamFlushAt = monotonicNow()
+    this.flush()
   }
 
   private flush(): void {

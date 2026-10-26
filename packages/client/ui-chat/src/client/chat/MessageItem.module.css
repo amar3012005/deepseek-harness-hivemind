@@ -349,3 +349,9 @@
 
 /* Agent-room user replies use one consistent blue treatment. */
 :global([data-agent-room]) .bubble { background: color-mix(in srgb, #3b82f6 16%, var(--dsw-alias-bg-base, #fff)); }
+
+/* Brain room phones: user bubbles match the OpenDot room bubble (9px 14px, radius 20). */
+@media (max-width: 600px) {
+  :global([data-brain-room]) .userStack { max-width: 80%; }
+  :global([data-brain-room]) .bubble { padding: 9px 14px; border-radius: 20px; font-size: max(14.5px, calc(var(--dsh-content-font-size, 16px) - 1.5px)); line-height: 1.45; }
+}

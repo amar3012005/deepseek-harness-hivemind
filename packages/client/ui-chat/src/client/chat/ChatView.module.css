@@ -256,3 +256,8 @@
 :global([data-agent-room]) .flowItem:has(:global([data-chat-agent-color="3"])) { --dsh-agent-bubble-color: color-mix(in srgb, #db2777 13%, var(--dsw-alias-bg-base, #fff)); }
 :global([data-agent-room]) .flowItem:has(:global([data-chat-agent-color="4"])) { --dsh-agent-bubble-color: color-mix(in srgb, #0891b2 13%, var(--dsw-alias-bg-base, #fff)); }
 :global([data-agent-room]) .flowItem:has(:global([data-chat-agent-color="5"])) { --dsh-agent-bubble-color: color-mix(in srgb, #ca8a04 13%, var(--dsw-alias-bg-base, #fff)); }
+
+/* Brain room phones hide the Work details fold; a failure stays visible in the turn's error row. */
+@media (max-width: 600px) {
+  :global([data-brain-room]) [data-work-details] { display: none; }
+}
