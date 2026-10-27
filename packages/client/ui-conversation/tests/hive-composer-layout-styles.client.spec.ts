@@ -29,12 +29,12 @@ describe('HIVE composer layout', () => {
     // Desktop: the base centred hero, with no flex-end dock or bottom reserve.
     expect(css).not.toMatch(/hm-brain-composer-floor/u)
     expect(css).not.toMatch(/@media \(min-width: 601px\)/u)
-    // Phones: the Brain hero packs to the floor with a 4px reserve; the dock's own padding adds 10px.
+    // Phones: the Brain hero packs to the floor with the Runtime room's width and 10px dock gap.
     const phoneBlock = css.slice(css.indexOf('Phones only. The Brain hero packs'))
     expect(phoneBlock).toMatch(
       new RegExp(
         String.raw`:global\(\[data-brain-chat\]\) \.root\[data-phase='hero'\] \.scrollBody,[\s\S]*?`
-        + String.raw`justify-content:\s*flex-end;\s*padding-bottom:\s*4px;`,
+        + String.raw`justify-content:\s*flex-end;\s*padding-bottom:\s*0;[\s\S]*?scrollbar-gutter:\s*auto;\s*margin-right:\s*0;`,
         'u',
       ),
     )

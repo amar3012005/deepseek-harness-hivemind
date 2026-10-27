@@ -45,3 +45,8 @@
 :global([data-hivemind-brain-welcome] > span:last-child) { display: block; min-width: 0; }
 :global([data-hivemind-brain-welcome] > span:last-child > span:first-child) { opacity: 1; font-weight: 400 !important; }
 :global([data-hivemind-brain-welcome] svg) { width: 1em; height: 1em; }
+
+/* Phones: the Brain badge is the "Brain: Let’s remember what matters" tagline above the composer. */
+@media (max-width: 600px) {
+  :global([data-brain-chat] [data-hivemind-brain-welcome] > span:last-child > span:last-child) { display: block !important; }
+}
