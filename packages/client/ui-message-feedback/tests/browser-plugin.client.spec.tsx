@@ -286,6 +286,22 @@ describe('ui-message-feedback browser plugin', () => {
     expect(reads.at(-1)?.request).toEqual({ sessionId: 'warm' })
   })
 
+  it('keeps a list the first generation already read, and refreshes it on a later one', async () => {
+    const b = await bench()
+    await b.fiber.await()
+    await b.entry()!.inject!(sid('warm')).ensure()
+    const reads = (): number => b.calls.filter(call => call.method === 'list').length
+    const before = reads()
+
+    b.ctx.emit('connection/reset', true)
+    await Promise.resolve()
+    expect(reads()).toBe(before)
+
+    b.ctx.emit('connection/reset', false)
+    await Promise.resolve()
+    expect(reads()).toBe(before + 1)
+  })
+
   it('withdraws the registrations and disposes surfaces with the plugin fiber', async () => {
     const b = await bench()
     await b.fiber.await()

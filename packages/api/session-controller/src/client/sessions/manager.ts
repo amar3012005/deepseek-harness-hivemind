@@ -225,7 +225,7 @@ export class SessionManager {
     this.selected = sessionId
     // Looking at the session consumes its completion reminder (dot clears).
     this.completedNotifications.delete(sessionId)
-    void this.refreshSubagents(sessionId)
+    this.ensureSubagents(sessionId)
     this.notifier.notifyNow()
   }
 
@@ -243,7 +243,7 @@ export class SessionManager {
     this.sessions.get(address.childSessionId)?.configureSubagent(address, catalog?.parentAvailable)
     this.selected = address.childSessionId
     this.completedNotifications.delete(address.childSessionId)
-    void this.refreshSubagents(address.childSessionId)
+    this.ensureSubagents(address.childSessionId)
     this.notifier.notifyNow()
   }
 
@@ -397,6 +397,22 @@ export class SessionManager {
     return store
   }
 
+  /** Catalog answers younger than this serve selection and menu-open triggers without another read. */
+  static readonly CATALOG_SHARE_MS = 4_000
+  private readonly catalogAnsweredAt = new Map<SessionId, number>()
+
+  /**
+   * Read a catalog for a view trigger (selecting a Session, opening its menu): skipped while a read is
+   * in flight or its answer is younger than {@link SessionManager.CATALOG_SHARE_MS}. Membership frames
+   * and reconnects use {@link SessionManager.refreshSubagents}, which always reads.
+   * @param parentSessionId - catalog owner.
+   */
+  private ensureSubagents(parentSessionId: SessionId): void {
+    const answeredAt = this.catalogAnsweredAt.get(parentSessionId)
+    if (answeredAt !== undefined && Date.now() - answeredAt < SessionManager.CATALOG_SHARE_MS) return
+    void this.refreshSubagents(parentSessionId)
+  }
+
   /**
    * Refresh one direct-child catalog, reusing its in-flight request.
    * @param parentSessionId - catalog owner.
@@ -420,6 +436,7 @@ export class SessionManager {
       try {
         const result = await this.remote.subagents.list(parentSessionId)
         if (result.ok) {
+          this.catalogAnsweredAt.set(parentSessionId, Date.now())
           const parentAvailable = this.catalogInflight.get(parentSessionId)?.parentAvailableOverride
             ?? result.value.parentAvailable
           this.catalogs.set(parentSessionId, {
@@ -485,7 +502,7 @@ export class SessionManager {
   setSubagentCatalogOpen(parentSessionId: SessionId, open: boolean): void {
     if (open) {
       this.openCatalogs.add(parentSessionId)
-      void this.refreshSubagents(parentSessionId)
+      this.ensureSubagents(parentSessionId)
     } else {
       this.openCatalogs.delete(parentSessionId)
       const timer = this.catalogDebounce.get(parentSessionId)

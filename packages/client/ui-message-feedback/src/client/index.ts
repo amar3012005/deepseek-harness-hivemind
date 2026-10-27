@@ -66,10 +66,13 @@ export function apply(ctx: ClientContext): void {
   }, 'ui-message-feedback: per-session surfaces')
 
   // A reconnect can only invalidate what was already read; a cold Session
-  // stays cold until something asks for it.
-  ctx.on('connection/reset', () => {
+  // stays cold until something asks for it. The first generation of the page keeps a list that was
+  // already read, or is being read, over HTTP.
+  ctx.on('connection/reset', (initial) => {
     for (const { feedback } of surfaces.values()) {
-      if (feedback.getSnapshot().status !== 'cold') void feedback.resync()
+      const { status } = feedback.getSnapshot()
+      if (status === 'cold' || (initial === true && (status === 'ready' || status === 'loading'))) continue
+      void feedback.resync()
     }
   })
 

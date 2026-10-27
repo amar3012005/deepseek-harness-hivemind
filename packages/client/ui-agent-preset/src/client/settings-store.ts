@@ -57,12 +57,34 @@ export type RosterRead = { ok: true; value: AgentPresetRoster } | { ok: false; e
 
 const EMPTY_ROSTER: AgentPresetRoster = { presets: [], authorable: false }
 
+/** How long an answered roster read serves the surfaces that load it in turn during one page load. */
+export const ROSTER_SHARE_MS = 4_000
+const rosterReads = new WeakMap<ClientContext, { readonly at: number; readonly read: Promise<RosterRead> }>()
+
+/**
+ * Read the roster once per page load for the chip, the header label and the settings section.
+ * A caller joins a pending read or an answer younger than {@link ROSTER_SHARE_MS}; a refusal is never shared.
+ * @param ctx - the browser plugin context carrying the Remote namespaces.
+ * @param fresh - the roster is known to have moved (a settings edit, an authored file, a reconnect): always read.
+ * @returns the roster, or the message to show in its place.
+ */
+export function readRoster(ctx: ClientContext, fresh = false): Promise<RosterRead> {
+  const shared = rosterReads.get(ctx)
+  if (!fresh && shared !== undefined && Date.now() - shared.at < ROSTER_SHARE_MS) return shared.read
+  const read = fetchRoster(ctx)
+  const entry = { at: Date.now(), read }
+  rosterReads.set(ctx, entry)
+  const drop = (): void => { if (rosterReads.get(ctx) === entry) rosterReads.delete(ctx) }
+  read.then((value) => { if (!value.ok) drop() }, drop)
+  return read
+}
+
 /**
  * Read the roster, turning a refusal into the message every surface shows.
  * @param ctx - the browser plugin context carrying the Remote namespaces.
  * @returns the roster, or the message to show in its place.
  */
-export async function readRoster(ctx: ClientContext): Promise<RosterRead> {
+async function fetchRoster(ctx: ClientContext): Promise<RosterRead> {
   const result = await ctx.remote.agentPresets.list()
   if (result.ok) return { ok: true, value: result.value }
   // Agent presets are optional: without that service every session uses the
@@ -81,16 +103,18 @@ export async function readRoster(ctx: ClientContext): Promise<RosterRead> {
  * failure. What differs between surfaces starts after this.
  * @param ctx - the browser plugin context carrying the Remote namespaces.
  * @param store - the surface's own snapshot store.
+ * @param fresh - bypass the page-load share; see {@link readRoster}.
  * @returns the roster, or undefined when the caller should return.
  */
 export async function beginRosterRead<S extends { status: string; error: string | null }>(
   ctx: ClientContext,
   store: SnapshotStore<S>,
+  fresh = false,
 ): Promise<AgentPresetRoster | undefined> {
   const before = store.getSnapshot()
   if (before.status === 'loading') return undefined
   store.set({ ...before, status: 'loading', error: null })
-  const roster = await readRoster(ctx)
+  const roster = await readRoster(ctx, fresh)
   if (roster.ok) return roster.value
   store.set({ ...store.getSnapshot(), status: 'error', error: roster.error })
   return undefined
@@ -155,10 +179,11 @@ export class AgentPresetSettingsController {
    * Load the roster. An empty roster means the deployment composes no
    * presets, which is a valid deployment rather than a failure — the
    * surfaces report `unavailable` and render nothing.
+   * @param fresh - the roster is known to have moved; skip the page-load share.
    * @returns once the snapshot reflects the host.
    */
-  async load(): Promise<void> {
-    const roster = await beginRosterRead(this.ctx, this.store)
+  async load(fresh = false): Promise<void> {
+    const roster = await beginRosterRead(this.ctx, this.store, fresh)
     if (roster === undefined) return
     const { presets } = roster
     if (presets.length === 0) {

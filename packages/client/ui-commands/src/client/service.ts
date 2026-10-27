@@ -109,7 +109,7 @@ export class CommandUiRuntime extends Service implements CommandUiContract {
     // registers nothing globally. Drop that key's old composition before
     // prewarming so a newly opened menu waits for the replacement catalog.
     ctx.remote.$on('agent-preset/selected', (sessionId) => { this.directory.resetSession(sessionId) })
-    ctx.on('connection/reset', () => { this.directory.resetConnected() })
+    ctx.on('connection/reset', (initial) => { this.directory.resetConnected(initial === true) })
   }
 
   /**

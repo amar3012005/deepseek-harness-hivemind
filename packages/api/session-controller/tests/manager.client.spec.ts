@@ -346,6 +346,34 @@ describe('subagent catalogs', () => {
     })
   })
 
+  it('reads a catalog once for selecting a Session and opening its menu, but not for membership frames', async () => {
+    vi.useFakeTimers()
+    try {
+      const api = new FakeApiClient()
+      api.onList = () => Promise.resolve(ok({ items: [summary(S1)] as never[] }))
+      const manager = new SessionManager(fakeRemote(api))
+      await manager.refreshList()
+      manager.select(S1)
+      manager.select(S1)
+      await vi.advanceTimersByTimeAsync(0)
+      manager.setSubagentCatalogOpen(S1, true)
+      await vi.advanceTimersByTimeAsync(0)
+      expect(api.callsOf('subagents.list')).toHaveLength(1)
+
+      manager.handleSessionAdded(summary(S2, { parentSessionId: S1 }))
+      await vi.advanceTimersByTimeAsync(50)
+      expect(api.callsOf('subagents.list')).toHaveLength(2)
+
+      await vi.advanceTimersByTimeAsync(5_000)
+      manager.setSubagentCatalogOpen(S1, false)
+      manager.setSubagentCatalogOpen(S1, true)
+      await vi.advanceTimersByTimeAsync(0)
+      expect(api.callsOf('subagents.list')).toHaveLength(3)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('refetches debounced membership only while the parent catalog is open', async () => {
     vi.useFakeTimers()
     try {

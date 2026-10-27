@@ -187,6 +187,24 @@ describe('resetConnected (reconnect hard)', () => {
   })
 })
 
+describe('resetConnected on the first generation of the page', () => {
+  it('keeps entries that are pending or ready, and still pulls entries that are cold or failed', async () => {
+    const { dir, pull, countOf } = bench()
+    const ready = dir.refresh(S1)
+    pull(S1, 0).resolve(CMDS)
+    await ready
+    void dir.refresh(S2)
+    dir.resetConnected(true)
+    expect(dir.status(S1)).toBe('ready')
+    expect(dir.resolve(S1, 'plan')).toBeDefined()
+    expect(countOf(S1)).toBe(1)
+    expect(countOf(S2)).toBe(1)
+    dir.resetConnected(false)
+    expect(countOf(S1)).toBe(2)
+    expect(countOf(S2)).toBe(2)
+  })
+})
+
 describe('resetSession (preset-change hard)', () => {
   it('drops and prewarms only the changed Session', async () => {
     const { dir, pull, countOf } = bench()

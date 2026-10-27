@@ -161,16 +161,17 @@ export class AgentPresetSectionController {
    * Load the roster. An empty roster means the deployment composes no
    * presets, which is a valid deployment rather than a failure — the section
    * reports `unavailable` and renders nothing.
+   * @param fresh - the roster is known to have moved; skip the page-load share.
    * @returns once the snapshot reflects the host.
    */
-  async load(): Promise<void> {
+  async load(fresh = false): Promise<void> {
     // Whether a preset's directory can be opened is the Host's opener
     // capability rather than a roster property, so the page joins the two.
     // Issued together: one round trip decides the page, and a load that waited
     // for them in turn would hold the section in `loading` twice as long,
     // where a concurrent reload silently returns instead of refreshing.
     const opener = this.ctx.remote.settings.canOpenAgentPresetDirectory()
-    const roster = await beginRosterRead(this.ctx, this.store)
+    const roster = await beginRosterRead(this.ctx, this.store, fresh)
     // A refused describe leaves the reveal-the-path path, which needs no opener.
     const described = await opener
     if (roster === undefined) return
@@ -273,7 +274,7 @@ export class AgentPresetSectionController {
       return
     }
     this.set({ copy: null })
-    await this.load()
+    await this.load(true)
     this.rosterChanged()
     // A preset is its files from here on (the dialog collected nothing
     // else), so landing in them is the completion, not a follow-up.
@@ -323,7 +324,7 @@ export class AgentPresetSectionController {
       return
     }
     this.set({ deleting: false, pendingDelete: null })
-    await this.load()
+    await this.load(true)
     this.rosterChanged()
   }
 
@@ -339,6 +340,6 @@ export class AgentPresetSectionController {
       this.set({ error: failure })
       return
     }
-    await this.load()
+    await this.load(true)
   }
 }

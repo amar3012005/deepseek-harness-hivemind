@@ -436,7 +436,7 @@ describe('the location action', () => {
     await controller.openLocation('mine')
     presets.delete('mine')
 
-    await controller.load()
+    await controller.load(true)
 
     expect(controller.store.getSnapshot().revealedPaths).toEqual({})
   })

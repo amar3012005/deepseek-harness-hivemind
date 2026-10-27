@@ -99,3 +99,29 @@ describe('AccountCacheScope', () => {
     expect(clear).not.toHaveBeenCalled()
   })
 })
+
+describe('page-wide account probe', () => {
+  it('sends one bootstrap request for every browser cache of the page, and retries after a failure', async () => {
+    const { createBrowserAccountCache, forgetPageAccountProbe } = await import('../src/client/cache/account-cache.ts')
+    forgetPageAccountProbe()
+    const body = { authenticated: true, user: { id: USER }, organization: { id: ORG } }
+    const json = { status: 200, headers: { 'content-type': 'application/json' } }
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify(body), json))
+    vi.stubGlobal('fetch', fetchMock)
+    try {
+      const factory = { open: () => { throw new Error('no indexedDB') } } as unknown as IDBFactory
+      const first = createBrowserAccountCache(factory)!, second = createBrowserAccountCache(factory)!
+      expect(await Promise.all([first.account(), second.account(), first.account()])).toEqual(Array(3).fill({ tenant: ORG, user: USER }))
+      expect(fetchMock).toHaveBeenCalledTimes(1)
+
+      forgetPageAccountProbe()
+      fetchMock.mockRejectedValueOnce(new Error('offline'))
+      const third = createBrowserAccountCache(factory)!
+      expect(await third.account()).toBeUndefined()
+      expect(await third.account()).toEqual({ tenant: ORG, user: USER })
+    } finally {
+      forgetPageAccountProbe()
+      vi.unstubAllGlobals()
+    }
+  })
+})

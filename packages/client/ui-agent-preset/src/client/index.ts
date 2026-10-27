@@ -68,7 +68,7 @@ export function apply(ctx: ClientContext): void {
   // subscribes here rather than being reached from this one.
   const rosterReaders = new Set<() => void>()
   const section = new AgentPresetSectionController(ctx, () => {
-    void controller.load()
+    void controller.load(true)
     for (const read of rosterReaders) read()
   })
 
@@ -80,11 +80,11 @@ export function apply(ctx: ClientContext): void {
     const refresh = (initial = false): void => {
       // The first generation keeps a roster that is loading or loaded over HTTP.
       const kept = (status: string): boolean => initial && status !== 'idle' && status !== 'error'
-      if (!kept(controller.store.getSnapshot().status)) void controller.load()
+      if (!kept(controller.store.getSnapshot().status)) void controller.load(!initial)
       // The section reads the same roster and marks the same default, so a
       // change made from either surface converges both.
       const sectionStatus = section.store.getSnapshot().status
-      if (sectionStatus !== 'idle' && !kept(sectionStatus)) void section.load()
+      if (sectionStatus !== 'idle' && !kept(sectionStatus)) void section.load(!initial)
     }
     const disposers = [
       ctx.remote.$on('settings/document-updated', (ns) => {
@@ -142,13 +142,13 @@ export function apply(ctx: ClientContext): void {
       // pick survives: `load()` prefers it over the refreshed fallback.
       const settingsMoved = scope.remote.$on('settings/document-updated', (ns) => {
         if (ns !== AGENT_PRESET_SETTINGS_NS) return
-        void seat.load()
+        void seat.load(true)
       })
       // Authoring writes a FILE, not a setting, so nothing on the wire
       // announces it — without this the screen that starts the next session
       // keeps offering the roster as it stood when the chip first loaded, and
       // a preset authored to be used is missing from the one place it is used.
-      const readRoster = (): void => { void seat.load() }
+      const readRoster = (): void => { void seat.load(true) }
       rosterReaders.add(readRoster)
       // Stage WITHOUT applying — the still-current running session would
       // refuse the swap and drop the stage — then start the session it lands

@@ -77,9 +77,12 @@ export class CommandDirectory {
   /**
    * Hard reset on reconnect: every entry drops its snapshot (the agent world
    * may have changed shape across the generation) and prewarms.
+   * @param initial - the first generation of this page: a pull that is in flight or answered over
+   * HTTP already describes it, so those entries keep it instead of repeating the read.
    */
-  resetConnected(): void {
+  resetConnected(initial = false): void {
     for (const [key, entry] of this.entries) {
+      if (initial && (entry.state === 'pending' || entry.state === 'ready')) continue
       entry.state = 'cold'
       entry.commands = []
       void this.refresh(key)

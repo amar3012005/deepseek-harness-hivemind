@@ -6,7 +6,7 @@
  * `default` field of the agent-presets namespace.
  */
 
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import type { RemoteErrorCode } from '@deepseek-ai/dsh-api-remotes/client'
 import { RemoteError } from '@deepseek-ai/dsh-client-test-runtime'
@@ -454,4 +454,29 @@ describe('the new-session chip controller', () => {
     expect(controller.store.getSnapshot()).toMatchObject({ error: 'host down', options: [] })
   })
 
+})
+
+describe('one roster read per page load', () => {
+  it('serves the chip, the header label and a settings reload from one list call, and re-reads on request', async () => {
+    const ctx = fakeRoster([{ id: 'a', trust: 'system', isDefault: true }])
+    const list = vi.spyOn((ctx as unknown as { remote: { agentPresets: { list: () => unknown } } }).remote.agentPresets, 'list')
+    const label = new AgentPresetSettingsController(ctx)
+    const seat = new AgentPresetSeatController(ctx, () => undefined)
+    await Promise.all([label.load(), seat.load()])
+    await label.load()
+    expect(list).toHaveBeenCalledTimes(1)
+    expect(label.store.getSnapshot().status).toBe('ready')
+
+    await seat.load(true)
+    expect(list).toHaveBeenCalledTimes(2)
+  })
+
+  it('does not share a refusal', async () => {
+    const ctx = fakeRoster([], { failList: 'down' })
+    const list = vi.spyOn((ctx as unknown as { remote: { agentPresets: { list: () => unknown } } }).remote.agentPresets, 'list')
+    const label = new AgentPresetSettingsController(ctx)
+    await label.load()
+    await label.load()
+    expect(list).toHaveBeenCalledTimes(2)
+  })
 })

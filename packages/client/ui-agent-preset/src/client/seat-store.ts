@@ -69,10 +69,11 @@ export class AgentPresetSeatController {
 
   /**
    * Read the roster and open the chip on the deployment default.
+  * @param fresh - the roster is known to have moved; skip the page-load share.
   * @returns once the snapshot reflects the host.
   */
-  async load(): Promise<void> {
-    const roster = await readRoster(this.ctx)
+  async load(fresh = false): Promise<void> {
+    const roster = await readRoster(this.ctx, fresh)
     if (!roster.ok) {
       this.set({ error: roster.error })
       return
