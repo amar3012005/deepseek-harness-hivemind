@@ -753,15 +753,18 @@
 
 /* Phones only. The Brain hero packs to the floor, the way the Runtime room does: the
    scope line sits just above the composer and the composer keeps its seat when the
-   transcript starts. The gap under the card is 14px: the phone dock's own bottom padding
-   (max(10px, safe area)) supplies 10px and this 4px reserve adds the rest. Desktop keeps
-   the base centred hero. */
+   transcript starts. The gap under the card is the phone dock's own bottom padding
+   (max(10px, safe area)), as in the Runtime room. Desktop keeps the base centred hero. */
 @media (max-width: 600px) {
   :global([data-brain-chat]) .root[data-phase='hero'] .scrollBody,
   :global([data-brain-chat]) .root[data-phase='settling'] .scrollBody {
     justify-content: flex-end;
-    padding-bottom: 4px;
+    padding-bottom: 0;
     box-sizing: border-box;
+    /* Same composer width and 10px floor gap as the Runtime room on phones: no reserved
+       scrollbar gutter or right margin while the composer sits inside the scroll body. */
+    scrollbar-gutter: auto;
+    margin-right: 0;
   }
 
   /* The composer stays hidden until its live dock (model picker, voice control, session
