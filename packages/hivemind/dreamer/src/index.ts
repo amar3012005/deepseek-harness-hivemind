@@ -2,6 +2,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import Schema from '@deepseek-ai/schemastery'
 import { Pool } from 'pg'
+import { containPoolErrors } from '@deepseek-ai/dsh-hivemind-execution-scope'
 import { z } from 'zod'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { installModelSelection, type Agent, type AgentHandle } from '@deepseek-ai/dsh-agent'
@@ -140,6 +141,7 @@ export function apply(ctx: Context, config: Config): void {
     max: 6,
     options: `-c search_path=${config.schema},public -c statement_timeout=15000`,
   })
+  containPoolErrors('dreamer', pool, ctx.logger)
   const store = new DreamStore(pool)
   const connectors = createDreamConnectorService(ctx, {
     ...(process.env.COMPOSIO_API_KEY ? { apiKey: process.env.COMPOSIO_API_KEY } : {}),

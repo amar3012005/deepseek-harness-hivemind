@@ -31,3 +31,4 @@ export default class HivemindExecutionScope extends Service {
     return principal
   }
 }
+export * from './postgres-resilience.ts'

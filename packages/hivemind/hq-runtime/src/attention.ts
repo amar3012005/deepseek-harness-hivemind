@@ -2,6 +2,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import Schema from '@deepseek-ai/schemastery'
 import { Pool } from 'pg'
+import { containPoolErrors } from '@deepseek-ai/dsh-hivemind-execution-scope'
 import { z } from 'zod'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { createUserMessage, type ContextFormed } from '@deepseek-ai/dsh-llm'
@@ -68,6 +69,7 @@ export function apply(ctx: Context, config: Config): void {
     throw new Error('runtime_attention_configuration_required')
   const pool = new Pool({ connectionString: process.env[config.connectionStringEnv], max: config.maxConnections,
     options: `-c search_path=${config.schema},public -c statement_timeout=${config.statementTimeoutMs}` })
+  containPoolErrors('attention', pool, ctx.logger)
   ctx.effect(() => () => pool.end())
   const tails = new Map<string, Promise<unknown>>()
   async function owned(input: z.infer<typeof request>): Promise<Row | undefined> {

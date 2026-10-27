@@ -248,7 +248,7 @@
 
     - id: hivemind-hq-ownership-postgres
       name: '@deepseek-ai/dsh-hivemind-hq-runtime/ownership-postgres'
-      config: {connectionStringEnv: DATABASE_URL, schema: hivemind, maxConnections: 4, statementTimeoutMs: 15000}
+      config: {connectionStringEnv: DATABASE_URL, schema: hivemind, maxConnections: 4, statementTimeoutMs: 15000, initAttempts: 5, initRetryDelayMs: 1000}
 
     # Optional server-to-server attention seam; no subscriptions or wakes until explicitly enabled.
     - id: hivemind-runtime-attention
@@ -317,6 +317,8 @@
         retryIntervalMs: 30000
         batchSize: 100
         maxConnections: 4
+        initAttempts: 5
+        initRetryDelayMs: 1000
         statementTimeoutMs: 15000
         maxTasksPerUser: 100
 

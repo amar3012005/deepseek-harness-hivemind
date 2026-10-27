@@ -2,30 +2,37 @@
 import { Service, type Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { Pool } from 'pg'
+import { containPoolErrors, probePostgresAtBoot, type PostgresBootRetryConfig } from '@deepseek-ai/dsh-hivemind-execution-scope'
 import { SessionId } from '@deepseek-ai/dsh-session/types'
-import type {} from '@deepseek-ai/dsh-hivemind-execution-scope'
 import type {} from './ownership.ts'
 
 /** Explicit deployment configuration for the native tenant database. */
-export interface Config { connectionStringEnv: string; schema: string; maxConnections: number; statementTimeoutMs: number }
+export interface Config extends PostgresBootRetryConfig {
+  connectionStringEnv: string
+  schema: string
+  maxConnections: number
+  statementTimeoutMs: number
+}
 /** Owns no tasks, messages, or model execution; only the immutable company pointer. */
 export default class PostgresHqOwnership extends Service {
   static inject = ['hivemindHqOwnership', 'hivemindExecutionScope']
   static Config: z<Config> = z.object({
     connectionStringEnv: z.string().required(), schema: z.string().required().pattern(/^[a-z_][a-z0-9_]*$/u),
     maxConnections: z.natural().min(1).required(), statementTimeoutMs: z.natural().min(1000).required(),
+    initAttempts: z.natural().min(1).default(1), initRetryDelayMs: z.natural().default(1000),
   })
   private readonly pool: Pool
-  constructor(ctx: Context, config: Config, testPool?: Pool) {
+  constructor(ctx: Context, private readonly config: Config, testPool?: Pool) {
     super(ctx, 'hivemindHqOwnershipPostgres')
     const url = process.env[config.connectionStringEnv]
     if (!testPool && !url) throw new Error('hq_ownership_database_required')
-    this.pool = testPool ?? new Pool({ connectionString: url, max: config.maxConnections,
-      options: `-c search_path=${config.schema},public -c statement_timeout=${config.statementTimeoutMs}` })
+    this.pool = testPool ?? containPoolErrors('hq-ownership-postgres', new Pool({ connectionString: url, max: config.maxConnections,
+      options: `-c search_path=${config.schema},public -c statement_timeout=${config.statementTimeoutMs}` }), ctx.logger)
   }
   async [Service.init](): Promise<() => Promise<void>> {
     try {
-      await this.pool.query('SELECT 1 FROM harness_company_hq LIMIT 0')
+      await probePostgresAtBoot('hq-ownership-postgres', () => this.pool.query('SELECT 1 FROM harness_company_hq LIMIT 0'),
+        this.config, this.ctx.logger)
       const unregister = this.ctx.hivemindHqOwnership.register({
         claim: id => this.claim(id), freshTargets: id => this.freshTargets(id),
         resetFresh: (id, ids) => this.resetFresh(id, ids),

@@ -2,6 +2,7 @@
 import { Service, type Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { Pool, type PoolClient } from 'pg'
+import { containPoolErrors, probePostgresAtBoot, type PostgresBootRetryConfig } from '@deepseek-ai/dsh-hivemind-execution-scope'
 import type { ScheduleId } from '@deepseek-ai/dsh-schedule/client'
 import type {} from '@deepseek-ai/dsh-agent-presets'
 import type { Agent } from '@deepseek-ai/dsh-agent'
@@ -15,7 +16,7 @@ import {
 } from '@deepseek-ai/dsh-schedule'
 
 /** Deployment controls for the shared PostgreSQL scheduler. */
-export interface Config {
+export interface Config extends PostgresBootRetryConfig {
   /** Native presets owned by this runner; other schedules remain untouched. */
   ownedPresets?: string[]
   connectionStringEnv: string
@@ -66,6 +67,7 @@ export default class PostgresScheduleBackend extends Service implements Schedule
     retryIntervalMs: z.natural().min(1000).required(),
     batchSize: z.natural().min(1).max(1000).required(),
     maxConnections: z.natural().min(1).required(),
+    initAttempts: z.natural().min(1).default(1), initRetryDelayMs: z.natural().default(1000),
     statementTimeoutMs: z.natural().min(1000).required(),
     maxTasksPerUser: z.natural().min(1).max(10000).required(),
   })
@@ -86,12 +88,14 @@ export default class PostgresScheduleBackend extends Service implements Schedule
     if (testPool === undefined && !url) throw new Error('Schedule database URL is required')
     this.pool =
       testPool ??
-      new Pool({ connectionString: url, max: config.maxConnections, options: `-c search_path=${config.schema},public` })
+      containPoolErrors('schedule-postgres', new Pool({ connectionString: url, max: config.maxConnections, options: `-c search_path=${config.schema},public` }), ctx.logger)
   }
   async [Service.init](): Promise<() => Promise<void>> {
     try {
-      await this.pool.query('SELECT 1 FROM harness_scheduled_tasks LIMIT 0')
-      await this.pool.query('SELECT 1 FROM harness_scheduled_due LIMIT 0')
+      await probePostgresAtBoot('schedule-postgres', async () => {
+        await this.pool.query('SELECT 1 FROM harness_scheduled_tasks LIMIT 0')
+        await this.pool.query('SELECT 1 FROM harness_scheduled_due LIMIT 0')
+      }, this.config, this.ctx.logger)
       return () => this.pool.end()
     } catch (error) {
       await this.pool.end()

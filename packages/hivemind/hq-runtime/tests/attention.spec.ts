@@ -6,6 +6,7 @@ import { attentionAdmitted, attentionAuthorization, attentionEvidence, attention
 
 const database = vi.hoisted(() => ({ row: undefined as unknown, queries: [] as unknown[] }))
 vi.mock('pg', () => ({ Pool: class {
+  on() { return this }
   async connect() { return { query: async (sql: string, args?: unknown[]) => {
     database.queries.push({ sql, args }); return { rows: sql.includes('SELECT h.session_id') && database.row ? [database.row] : [] }
   }, release() {} } }

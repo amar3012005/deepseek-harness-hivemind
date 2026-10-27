@@ -6,7 +6,7 @@ import { Pool, type PoolClient, type QueryResult, type QueryResultRow } from 'pg
 import { SessionLogOffset } from '@deepseek-ai/dsh-session'
 import type { Session, SessionEvent, SessionHeader, SessionId, SessionLogOffset as SessionLogOffsetType } from '@deepseek-ai/dsh-session'
 import type HivemindExecutionScope from '@deepseek-ai/dsh-hivemind-execution-scope'
-import type { HivemindPrincipal } from '@deepseek-ai/dsh-hivemind-execution-scope'
+import { containPoolErrors, probePostgresAtBoot, type HivemindPrincipal, type PostgresBootRetryConfig } from '@deepseek-ai/dsh-hivemind-execution-scope'
 import {
   SessionAlreadyExistsError, SessionAlreadyOwnedError, SessionHandleClosedError,
   SessionOwnershipLostError, SessionPersistence, SessionPersistenceNotFoundError,
@@ -20,15 +20,11 @@ import type {
   SessionPersistenceStatOptions,
 } from '@deepseek-ai/dsh-session-persistence'
 
-export interface Config {
+export interface Config extends PostgresBootRetryConfig {
   connectionStringEnv: string
   schema: string
   leaseTtlMs: number
   maxConnections: number
-  /** Boot reachability probes before init fails; a cross-region database can miss one connection timeout while it is busy. */
-  initAttempts?: number
-  /** First delay between boot probes; doubles after each failed attempt. */
-  initRetryDelayMs?: number
 }
 export const Config: z<Config> = z.object({
   connectionStringEnv: z.string().required(), schema: z.string().required().pattern(/^[a-z_][a-z0-9_]*$/u),
@@ -171,23 +167,15 @@ export class PostgresSessionPersistence extends SessionPersistence {
   constructor(ctx: Context, readonly config: Config, testPool?: Pool) {
     super(ctx)
     this.executionScope = ctx.hivemindExecutionScope
-    this.pool = testPool ?? new Pool({
+    this.pool = testPool ?? containPoolErrors('session-persistence-postgres', new Pool({
       connectionString: connectionString(config.connectionStringEnv),
       max: config.maxConnections,
       options: `-c search_path=${config.schema},public`,
-    })
+    }), ctx.logger)
   }
   protected async* [Service.init](): AsyncGenerator<() => Promise<void>, void, void> {
-    const probe = () => this.pool.query('SELECT 1 FROM harness_sessions LIMIT 0')
-    const attempts = this.config.initAttempts ?? 1
-    for (let attempt = 1; ; attempt++) {
-      try { await probe(); break } catch (error) {
-        if (attempt >= attempts) throw error
-        const delay = (this.config.initRetryDelayMs ?? 1000) * 2 ** (attempt - 1)
-        this.ctx.logger.warn(`session-persistence-postgres: boot probe ${attempt}/${attempts} failed, retrying in ${delay} ms: ${String(error)}`)
-        await new Promise(resolve => setTimeout(resolve, delay))
-      }
-    }
+    await probePostgresAtBoot('session-persistence-postgres', () => this.pool.query('SELECT 1 FROM harness_sessions LIMIT 0'),
+      this.config, this.ctx.logger)
     this.ctx.on('session/event', (session: Session, event) => {
       this.writers.get(session.id)?.enqueueLive(event, (error) => {
         this.ctx.logger.warn(`session-persistence-postgres: background write for session "${session.id}" failed (buffered events retained): ${String(error)}`)
