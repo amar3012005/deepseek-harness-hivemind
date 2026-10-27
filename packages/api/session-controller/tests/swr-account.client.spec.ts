@@ -22,6 +22,21 @@ describe('resolveAccountScope', () => {
     expect(await resolveAccountScope(bootstrap({ authenticated: false }))).toBeUndefined()
   })
 
+  it('reads the Worker JSON route first and skips an HTML app-shell reply for /v1/bootstrap', async () => {
+    const calls: string[] = []
+    const fetcher = (async (input: RequestInfo | URL) => {
+      calls.push(String(input))
+      return String(input) === '/v1/bootstrap'
+        ? new Response('<!doctype html><html></html>', { status: 200, headers: { 'content-type': 'text/html' } })
+        : new Response(JSON.stringify({ authenticated: true, user: { id: USER }, organization: { id: ORG } }),
+          { status: 200, headers: { 'content-type': 'application/json' } })
+    }) as typeof fetch
+    expect(await resolveAccountScope(fetcher)).toEqual({ tenant: ORG, user: USER })
+    expect(calls).toEqual(['/__hivemind/bootstrap'])
+    const htmlOnly = (async () => new Response('<!doctype html>', { status: 200, headers: { 'content-type': 'text/html' } })) as typeof fetch
+    expect(await resolveAccountScope(htmlOnly)).toBeUndefined()
+  })
+
   it('rejects non-UUID identities instead of keying the cache by them', async () => {
     expect(await resolveAccountScope(bootstrap({ user: { id: 'not-a-uuid' }, organization: { id: ORG } }))).toBeUndefined()
   })

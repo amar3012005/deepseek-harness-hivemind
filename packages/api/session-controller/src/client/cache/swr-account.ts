@@ -15,22 +15,38 @@ export interface AccountScope {
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu
 
+/** Bootstrap endpoints in preference order: the hosting Worker's JSON route, then Control's own path. */
+const BOOTSTRAP_PATHS = ['/__hivemind/bootstrap', '/v1/bootstrap'] as const
+
 /**
- * Resolve the signed-in account from `/v1/bootstrap`.
+ * Resolve the signed-in account from the bootstrap response.
+ * On the HIVEMIND hosts `/v1/bootstrap` is served by the web app shell as HTML, so the Worker's
+ * `/__hivemind/bootstrap` JSON route is tried first; a non-JSON reply moves on to the next path.
  * @param fetcher - fetch implementation with session cookies.
  * @returns the account scope, or undefined when the session is signed out.
- * @throws Error when the bootstrap request fails for a reason other than sign-out.
+ * @throws Error when no bootstrap path returns a JSON account and one failed for a reason other than sign-out.
  */
 export async function resolveAccountScope(fetcher: typeof fetch = fetch): Promise<AccountScope | undefined> {
-  const response = await fetcher('/v1/bootstrap', { credentials: 'include', cache: 'no-store', headers: { accept: 'application/json' } })
-  if (response.status === 401 || response.status === 403) return undefined
-  if (!response.ok) throw new Error(`account bootstrap unavailable (${response.status})`)
-  const body = await response.json() as { authenticated?: unknown; user?: { id?: unknown }; organization?: { id?: unknown } }
-  if (body.authenticated === false) return undefined
-  const user = body.user?.id
-  const tenant = body.organization?.id
-  if (typeof user !== 'string' || typeof tenant !== 'string' || !UUID.test(user) || !UUID.test(tenant)) return undefined
-  return { tenant, user }
+  let failure: Error | undefined
+  for (const path of BOOTSTRAP_PATHS) {
+    const response = await fetcher(path, { credentials: 'include', cache: 'no-store', headers: { accept: 'application/json' } })
+    if (response.status === 401 || response.status === 403) return undefined
+    if (!response.ok) { failure = new Error(`account bootstrap unavailable (${response.status})`); continue }
+    if ((response.headers.get('content-type') ?? '').includes('text/html')) continue
+    let body: { authenticated?: unknown; user?: { id?: unknown }; organization?: { id?: unknown } }
+    try {
+      body = await response.json() as typeof body
+    } catch {
+      continue // an app-shell or proxy page instead of the account JSON; the next path may answer
+    }
+    if (body.authenticated === false) return undefined
+    const user = body.user?.id
+    const tenant = body.organization?.id
+    if (typeof user !== 'string' || typeof tenant !== 'string' || !UUID.test(user) || !UUID.test(tenant)) return undefined
+    return { tenant, user }
+  }
+  if (failure !== undefined) throw failure
+  return undefined
 }
 
 /**
