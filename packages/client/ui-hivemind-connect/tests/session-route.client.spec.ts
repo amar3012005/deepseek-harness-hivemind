@@ -70,7 +70,7 @@ function hyperagentState(current?: string): SessionListState {
   return { ...list, byId }
 }
 
-beforeEach(() => { window.history.replaceState(null, '', HIVE_OVERVIEW_PATH) })
+beforeEach(() => { window.history.replaceState(null, '', HIVE_OVERVIEW_PATH); localStorage.clear() })
 const disposers: Array<() => void> = []
 afterEach(() => { while (disposers.length > 0) disposers.pop()?.() })
 
@@ -300,4 +300,67 @@ describe('dedicated Dreaming conversation route', () => {
     expect(f.open).not.toHaveBeenCalled()
     expect(window.location.search).toBe('?dreamingParent=session-parent')
   })
+})
+
+it('opens an exact Runtime route before the recent list finishes loading', async () => {
+  window.history.replaceState({}, '', `${HIVE_EMPLOYEE_HARNESS_PATH}/session/session-deep`)
+  const pending: SessionListState = { ...hyperagentState(), phase: 'pending', ids: [], byId: {} }
+  const f = fixture(pending)
+  f.sessions.resolveExisting = vi.fn(async (id) => {
+    f.set({ ...pending, ids: [id], byId: { [id]: { id, displayTitle: 'Runtime', updatedAt: 1, running: false, blank: false, agentPreset: 'hivemind-hq' } } })
+  })
+  install(f.sessions)
+  await vi.waitFor(() => expect(f.open).toHaveBeenCalledExactlyOnceWith('session-deep'))
+  expect(f.sessions.list.getSnapshot().phase).toBe('pending')
+  f.set({ ...hyperagentState('session-deep'), ids: [sid('session-deep')], byId: { ...f.sessions.list.getSnapshot().byId } })
+  expect(f.open).toHaveBeenCalledOnce()
+  expect(f.create).not.toHaveBeenCalled()
+  expect(window.location.pathname).toBe(`${HIVE_EMPLOYEE_HARNESS_PATH}/session/session-deep`)
+})
+
+it('defers a pending-list route that resolves to another mode to the ready-list redirect', async () => {
+  window.history.replaceState({}, '', `${HIVE_EMPLOYEE_HARNESS_PATH}/session/session-recent`)
+  const pending: SessionListState = { ...state(), phase: 'pending', ids: [], byId: {} }
+  const f = fixture(pending)
+  f.sessions.resolveExisting = vi.fn(async () => {
+    f.set({ ...pending, ids: [sid('session-recent')], byId: { [sid('session-recent')]: state().byId[sid('session-recent')]! } })
+  })
+  install(f.sessions)
+  await vi.waitFor(() => expect(f.sessions.resolveExisting).toHaveBeenCalled())
+  await Promise.resolve()
+  expect(f.open).not.toHaveBeenCalled()
+})
+
+it('reopens the last room of a base route before the recent list finishes loading', async () => {
+  localStorage.setItem(`hm.route.lastRoom:${HIVE_EMPLOYEE_HARNESS_PATH}`, 'session-last')
+  window.history.replaceState({}, '', HIVE_EMPLOYEE_HARNESS_PATH)
+  const pending: SessionListState = { ...hyperagentState(), phase: 'pending', ids: [], byId: {} }
+  const f = fixture(pending)
+  f.sessions.resolveExisting = vi.fn(async (id) => {
+    f.set({ ...pending, ids: [id], byId: { [id]: { id, displayTitle: 'Runtime', updatedAt: 1, running: false, blank: false, agentPreset: 'hivemind-hq' } } })
+  })
+  install(f.sessions)
+  await vi.waitFor(() => expect(f.open).toHaveBeenCalledExactlyOnceWith('session-last'))
+  expect(window.location.pathname).toBe(`${HIVE_EMPLOYEE_HARNESS_PATH}/session/session-last`)
+  expect(f.create).not.toHaveBeenCalled()
+})
+
+it('remembers the room a ready list opens for the next base-route visit', () => {
+  window.history.replaceState({}, '', HIVE_OVERVIEW_PATH)
+  const f = fixture(state())
+  install(f.sessions)
+  expect(f.open).toHaveBeenCalledWith('session-recent')
+  expect(localStorage.getItem(`hm.route.lastRoom:${HIVE_OVERVIEW_PATH}`)).toBe('session-recent')
+})
+
+it('falls back to the ready list when the remembered room cannot be resolved', async () => {
+  localStorage.setItem(`hm.route.lastRoom:${HIVE_OVERVIEW_PATH}`, 'session-gone')
+  window.history.replaceState({}, '', HIVE_OVERVIEW_PATH)
+  const pending: SessionListState = { ...state(), phase: 'pending', ids: [], byId: {} }
+  const f = fixture(pending)
+  f.sessions.resolveExisting = vi.fn(async () => { throw new Error('session/not-found') })
+  install(f.sessions)
+  await vi.waitFor(() => expect(f.sessions.resolveExisting).toHaveBeenCalled())
+  f.set(state())
+  expect(f.open).toHaveBeenCalledExactlyOnceWith('session-recent')
 })

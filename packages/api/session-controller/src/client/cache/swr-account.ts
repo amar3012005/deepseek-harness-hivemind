@@ -91,6 +91,10 @@ class IndexedDbSwrStore implements SwrStore {
     await this.run('readwrite', store => store.put(entry, key))
   }
 
+  async delete(key: string): Promise<void> {
+    await this.run('readwrite', store => store.delete(key))
+  }
+
   async deleteWhere(prefix: string): Promise<void> {
     const keys = await this.run<IDBValidKey[]>('readonly', store => store.getAllKeys())
     const doomed = keys.filter((key): key is string => typeof key === 'string' && key.startsWith(prefix))

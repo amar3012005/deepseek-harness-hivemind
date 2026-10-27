@@ -126,6 +126,25 @@ async function answerConnectionQuestion(
   }
 }
 
+type ScheduleCatalogRemote = ClientContext['remote']['schedule']
+const scheduleCatalogReads = new WeakMap<ScheduleCatalogRemote, ReturnType<ScheduleCatalogRemote['catalog']>>()
+
+/**
+ * Read the schedule catalog, sharing one in-flight request among this plugin's readers.
+ * @param remote - generated schedule Remote namespace.
+ * @param fresh - start a new read even when one is in flight, after a change notice.
+ * @returns the pending or new catalog read.
+ */
+function sharedScheduleCatalog(remote: ScheduleCatalogRemote, fresh = false): ReturnType<ScheduleCatalogRemote['catalog']> {
+  const running = scheduleCatalogReads.get(remote)
+  if (running !== undefined && !fresh) return running
+  const read = remote.catalog().finally(() => {
+    if (scheduleCatalogReads.get(remote) === read) scheduleCatalogReads.delete(remote)
+  }) as ReturnType<ScheduleCatalogRemote['catalog']>
+  scheduleCatalogReads.set(remote, read)
+  return read
+}
+
 /** Register the localized HIVE-MIND connection control above sidebar Settings. */
 export function apply(ctx: ClientContext): void {
   ctx.slots.inject('schedule.manager.external', () => ctx.slots.register({ name: 'schedule.manager.external', id: 'company-dreaming', order: 0 }, DreamingAutomation))
@@ -444,10 +463,10 @@ export function apply(ctx: ClientContext): void {
         ;(window as unknown as { __HIVEMIND_AGENT_ROOMS__: unknown }).__HIVEMIND_AGENT_ROOMS__ = rooms
         window.dispatchEvent(new CustomEvent('hivemind:agent-rooms', { detail: { rooms } }))
       }
-      const refreshSchedules = async (): Promise<void> => {
+      const refreshSchedules = async (fresh = false): Promise<void> => {
         const request = ++scheduleRead
         try {
-          const result = await ctx.remote.schedule.catalog()
+          const result = await sharedScheduleCatalog(ctx.remote.schedule, fresh)
           if (disposed || request !== scheduleRead) return
           scheduledRooms = new Set(result.ok ? result.value.filter(task => task.status === 'active').map(task => task.sessionId) : [])
         } catch {
@@ -645,7 +664,7 @@ export function apply(ctx: ClientContext): void {
           selectArtifact: (artifactId: string) => { scope.sidebarRight.openTabIn(sessionId, 'hivemind-workbench-preview', { params: { artifactId } }) },
           listEmployees,
           listRoutines: async () => {
-            const result = await scope.remote.schedule.catalog()
+            const result = await sharedScheduleCatalog(scope.remote.schedule)
             if (!result.ok) throw new Error('Routine list unavailable')
             return result.value.filter(task => task.sessionId === sessionId).map(task => ({
               id: task.id, title: task.title, kind: task.kind, active: task.status === 'active', next: task.scheduledAt,

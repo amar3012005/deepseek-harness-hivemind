@@ -18,6 +18,7 @@ export interface SwrEntry<T> {
 export interface SwrStore {
   get(key: string): Promise<SwrEntry<unknown> | undefined>
   set(key: string, entry: SwrEntry<unknown>): Promise<void>
+  delete(key: string): Promise<void>
   deleteWhere(prefix: string): Promise<void>
 }
 
@@ -118,6 +119,16 @@ export class SwrCache {
   }
 
   /**
+   * Remove one entry in this tab and in the store, then notify other tabs.
+   * @param key - key from {@link swrKey}.
+   */
+  async remove(key: string): Promise<void> {
+    this.memory.delete(key)
+    await this.store.delete(key)
+    this.channel?.postMessage({ type: 'set', key })
+  }
+
+  /**
    * Remove every entry of one account, in this tab and in the store, and tell other tabs.
    * @param tenant - tenant identifier.
    * @param user - user identifier.
@@ -190,7 +201,11 @@ export class MemorySwrStore implements SwrStore {
     return Promise.resolve()
   }
 
-  deleteWhere(prefix: string): Promise<void> {
+  async delete(key: string): Promise<void> {
+    this.entries.delete(key)
+  }
+
+  async deleteWhere(prefix: string): Promise<void> {
     for (const key of this.entries.keys()) {
       if (key.startsWith(prefix)) this.entries.delete(key)
     }

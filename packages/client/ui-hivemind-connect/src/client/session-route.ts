@@ -51,6 +51,38 @@ export function parseHivemindSessionRoute(pathname: string): Route {
   }
 }
 
+const LAST_ROOM_KEY = 'hm.route.lastRoom:'
+
+/** Browser storage holding the last opened room per route base. */
+export type LastRoomStorage = Pick<Storage, 'getItem' | 'setItem'>
+
+function defaultLastRoomStorage(): LastRoomStorage | undefined {
+  try {
+    return typeof localStorage === 'undefined' ? undefined : localStorage
+  } catch {
+    // Storage access throws when the browser blocks site data; the route then waits for the list.
+    return undefined
+  }
+}
+
+function readLastRoom(storage: LastRoomStorage | undefined, base: string): SessionId | undefined {
+  try {
+    const value = storage?.getItem(LAST_ROOM_KEY + base)
+    return value === null || value === undefined || value === '' || value.length > 256 ? undefined : value as SessionId
+  } catch {
+    // Unreadable storage is the same as no remembered room.
+    return undefined
+  }
+}
+
+function writeLastRoom(storage: LastRoomStorage | undefined, base: string, sessionId: SessionId): void {
+  try {
+    storage?.setItem(LAST_ROOM_KEY + base, sessionId)
+  } catch {
+    // A full or blocked store only loses the instant reopen; the list still selects a room.
+  }
+}
+
 export function hivemindSessionPath(sessionId: SessionId, base = HIVE_OVERVIEW_PATH): string {
   return `${base}/session/${encodeURIComponent(sessionId)}`
 }
@@ -99,6 +131,7 @@ function newestRoot(state: SessionListState, base: string): SessionId | undefine
 export function setupHivemindSessionRouting(
   sessions: ISessions,
   browser: BrowserRoute = window,
+  lastRooms: LastRoomStorage | undefined = defaultLastRoomStorage(),
 ): () => void {
   let disposed = false
   let applyingRoute = false
@@ -125,7 +158,12 @@ export function setupHivemindSessionRouting(
     return rootSession(state, id, currentBase)
   }
 
+  const remember = (path: string): void => {
+    const route = parseHivemindSessionRoute(path)
+    if (route.kind === 'session') writeLastRoom(lastRooms, routeBase(path), route.sessionId)
+  }
   const replace = (path: string): void => {
+    remember(path)
     if (browser.location.pathname !== path) browser.history.replaceState(browser.history.state, '', path)
   }
 
@@ -212,12 +250,45 @@ export function setupHivemindSessionRouting(
     if (route.kind !== 'session' || parent === null || !/^session-[a-z0-9-]+$/u.test(parent)) return undefined
     return { parentSessionId: parent as SessionId, childSessionId: route.sessionId, mode: 'continuable' as const }
   }
+  // An exact session URL resolves through the authorized follow seam while the
+  // recent list is still loading, so the conversation opens without waiting
+  // for session.list. A miss or mode mismatch defers to the ready-list path.
+  const openBeforeList = (sessionId: SessionId, fromBase = false): void => {
+    if (creating || resolving) return
+    const attempt = ++generation
+    resolving = true
+    void sessions.resolveExisting(sessionId, { open: true }).then(() => {
+      if (disposed || attempt !== generation || initialized) return
+      if (rootForRoute(sessions.list.getSnapshot(), sessionId) === undefined) return
+      applyingRoute = true
+      initialized = true
+      observedCurrent = sessionId
+      sessions.open(sessionId)
+      if (fromBase && parseHivemindSessionRoute(browser.location.pathname).kind === 'overview') replace(sessionPath(sessionId))
+      applyingRoute = false
+    }).catch(() => {
+      // The ready-list path owns error reporting and mode redirects.
+    }).finally(() => {
+      resolving = false
+      if (!disposed && attempt === generation && !initialized && sessions.list.getSnapshot().phase === 'ready') applyLocation()
+    })
+  }
+
   const applyLocation = (): void => {
     if (!isHivemindRoute(browser.location.pathname)) return
     currentBase = routeBase(browser.location.pathname)
     const state = sessions.list.getSnapshot()
-    if (state.phase !== 'ready') return
     const route = parseHivemindSessionRoute(browser.location.pathname)
+    if (state.phase !== 'ready') {
+      if (route.kind === 'session' && browser.location.pathname !== dreamPath && dreamingAddress() === undefined) {
+        openBeforeList(route.sessionId)
+      } else if (route.kind === 'overview' && browser.location.pathname !== dreamPath) {
+        // A base route reopens this browser's last room in that mode without waiting for session.list.
+        const last = readLastRoom(lastRooms, currentBase)
+        if (last !== undefined) openBeforeList(last, true)
+      }
+      return
+    }
     if (browser.location.pathname === dreamPath && directDream === undefined) {
       initialized = true
       if (resolvingDream) return
@@ -309,6 +380,7 @@ export function setupHivemindSessionRouting(
     if (current === observedCurrent) return
     observedCurrent = current
     const path = sessionPath(current)
+    remember(path)
     if (browser.location.pathname !== path) browser.history.pushState(browser.history.state, '', path)
   }
 

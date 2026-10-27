@@ -5,8 +5,8 @@
  * signed-out browser or an unknown identity never reads or writes the cache.
  */
 import type { SessionSummary } from '../../types.ts'
-import { openSwrStore, resolveAccountScope, AccountCacheScope } from './swr-account.ts'
-import { SwrCache, swrKey, type SwrChannel, type SwrMessage } from './swr-cache.ts'
+import { createBrowserAccountCache, type AccountScopedCache } from './account-cache.ts'
+import { swrKey, type SwrMessage } from './swr-cache.ts'
 
 /** Cache seam the manager reads and writes. */
 export interface SessionListCacheSeam {
@@ -14,6 +14,28 @@ export interface SessionListCacheSeam {
   read(): Promise<readonly SessionSummary[] | undefined>
   /** @param items - list returned by the server for the signed-in account. */
   write(items: readonly SessionSummary[]): Promise<void>
+}
+
+/**
+ * Build the session list cache over a shared account-scoped cache.
+ * @param shared - page-wide account-scoped cache.
+ * @returns the list cache.
+ */
+export function sessionListCache(shared: AccountScopedCache): SessionListCacheSeam {
+  return {
+    async read() {
+      const account = await shared.account()
+      if (account === undefined) return undefined
+      const cache = await shared.cache()
+      return cache.hydrate<readonly SessionSummary[]>(swrKey(account.tenant, account.user, 'sessions', 'list'))
+    },
+    async write(items) {
+      const account = await shared.account()
+      if (account === undefined) return
+      const cache = await shared.cache()
+      await cache.write(swrKey(account.tenant, account.user, 'sessions', 'list'), items)
+    },
+  }
 }
 
 /**
@@ -26,28 +48,8 @@ export function createSessionListCache(
   indexedDBFactory: IDBFactory | undefined,
   fetcher: typeof fetch = fetch,
 ): SessionListCacheSeam | undefined {
-  if (indexedDBFactory === undefined) return undefined
-  const channel = typeof BroadcastChannel === 'undefined' ? undefined : new BroadcastChannel('hm-swr-cache')
-  const ready = openSwrStore(indexedDBFactory).then((store) => {
-    const cache = new SwrCache(store, channel as SwrChannel | undefined)
-    return { cache, scope: new AccountCacheScope(cache) }
-  })
-  return {
-    async read() {
-      const account = await resolveAccountScope(fetcher).catch(() => undefined)
-      const { cache, scope } = await ready
-      await scope.bind(account)
-      if (account === undefined) return undefined
-      const value = await cache.hydrate<readonly SessionSummary[]>(swrKey(account.tenant, account.user, 'sessions', 'list'))
-      return value
-    },
-    async write(items) {
-      const account = await resolveAccountScope(fetcher).catch(() => undefined)
-      if (account === undefined) return
-      const { cache } = await ready
-      await cache.write(swrKey(account.tenant, account.user, 'sessions', 'list'), items)
-    },
-  }
+  const shared = createBrowserAccountCache(indexedDBFactory, fetcher)
+  return shared === undefined ? undefined : sessionListCache(shared)
 }
 
 export type { SwrMessage }

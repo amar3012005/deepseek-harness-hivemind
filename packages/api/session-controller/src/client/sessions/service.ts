@@ -31,7 +31,9 @@ import type { SessionFace } from '../contract/session.ts'
 import type { AgentContext, ISessions } from '../contract/sessions.ts'
 import { createScope, scopeOf as scopeTagOf } from '../scope.ts'
 import { SessionManager } from './manager.ts'
-import { createSessionListCache } from '../cache/session-list-cache.ts'
+import { createBrowserAccountCache } from '../cache/account-cache.ts'
+import { sessionListCache } from '../cache/session-list-cache.ts'
+import { sessionHistoryCache } from '../cache/session-history-cache.ts'
 import type { SessionRemotes } from './remotes.ts'
 import type { SessionListPhase, SessionSearchResultItem, SubagentCatalogSnapshot } from './manager.ts'
 import type { Session } from './session.ts'
@@ -228,12 +230,14 @@ export class ClientSessions implements ISessions {
       {},
       { persist: { name: 'dsh.sessions.current' } })
     const restored = this.selection.getSnapshot()
+    // One account probe and one store serve the list and history copies; browsers without IndexedDB stay live-only.
+    const localCopy = createBrowserAccountCache(typeof indexedDB === 'undefined' ? undefined : indexedDB)
     this.manager = new SessionManager(
       remote,
       restored.sessionId,
       restored.subagentAddress,
-      // Browsers without IndexedDB keep the live list only.
-      createSessionListCache(typeof indexedDB === 'undefined' ? undefined : indexedDB),
+      localCopy === undefined ? undefined : sessionListCache(localCopy),
+      localCopy === undefined ? undefined : sessionHistoryCache(localCopy),
     )
     this.list = createSnapshotStore<SessionListState>({
       ids: [], byId: {}, current: undefined, phase: 'pending',

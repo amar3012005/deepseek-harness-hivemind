@@ -6,6 +6,7 @@ import type { SubagentAddress, SubagentCatalog } from '@deepseek-ai/dsh-subagent
 import { SessionSeq, type SessionId, type SessionSeqCursor } from '@deepseek-ai/dsh-session/types'
 import type { WorkspaceId } from '@deepseek-ai/dsh-workspace/types'
 import type { SessionListCacheSeam } from '../cache/session-list-cache.ts'
+import type { SessionHistoryCacheSeam } from '../cache/session-history-cache.ts'
 import type {
   SessionControlBaseline,
   SessionControlFrame,
@@ -156,6 +157,7 @@ export class SessionManager {
     restoredSelection?: SessionId,
     restoredAddress?: SubagentAddress,
     private readonly listCache?: SessionListCacheSeam,
+    private readonly historyCache?: SessionHistoryCacheSeam,
   ) {
     this.selected = restoredSelection
     if (restoredAddress !== undefined) this.addresses.set(restoredAddress.childSessionId, restoredAddress)
@@ -368,6 +370,7 @@ export class SessionManager {
         this.recordMutation({ kind: 'engaged', sessionId: engaged.sessionId })
       },
       projections: this.projectionStore(sessionId),
+      ...(this.historyCache === undefined ? {} : { historyCache: this.historyCache }),
     })
   }
 
@@ -501,17 +504,20 @@ export class SessionManager {
     this.notifier.markDirty()
     this.listInflight = (async () => {
       try {
-        // Stale-while-revalidate: a cached list shows on the first load; the server pull below replaces it.
+        // The server pull starts first; a cached list shows while it is pending and the pull replaces it.
+        const pull = this.remote.session.list({})
         if (this.listPhase === 'pending' && this.listCache !== undefined) {
           const cached = await this.listCache.read().catch(() => undefined)
           if (cached !== undefined && this.listPendingNow() && this.summaries.length === 0) {
             this.summaries = [...cached]
             established = this.summaries
             this.listPhase = 'ready'
+            this.seedListProjections(cached)
             this.notifier.markDirty()
           }
         }
-        const result = await this.remote.session.list({})
+        const result = await pull
+        if (this.disposed || this.listReconnectPending) return
         if (result.ok) {
           void this.listCache?.write(result.value.items).catch(() => {})
           const baseline: SessionSummary[] = this.listPhase === 'pending'
@@ -551,13 +557,7 @@ export class SessionManager {
           // cold cache serves only version-matching keys — so an absent key
           // must not clear; higher-seq-wins still keeps a stale list block
           // from overwriting a newer push frame or tail baseline.
-          for (const s of result.value.items) {
-            const block = s.projections
-            if (block === undefined) continue
-            const store = this.projectionStore(s.sessionId)
-            const values = block.values as Record<string, unknown>
-            for (const key of Object.keys(values)) store.apply(key, values[key], sessionSeqCursor(block.asOfSeq))
-          }
+          this.seedListProjections(result.value.items)
         } else {
           this.listState = 'error'
           this.listError = result.error
@@ -573,6 +573,21 @@ export class SessionManager {
       }
     })()
     return this.listInflight
+  }
+
+  /**
+   * Seed each row's projection block into its per-session value store.
+   * Higher-seq-wins keeps an older block from overwriting a newer value.
+   * @param items - list rows from the server or the local list copy.
+   */
+  private seedListProjections(items: readonly SessionSummary[]): void {
+    for (const s of items) {
+      const block = s.projections
+      if (block === undefined) continue
+      const store = this.projectionStore(s.sessionId)
+      const values = block.values as Record<string, unknown>
+      for (const key of Object.keys(values)) store.apply(key, values[key], sessionSeqCursor(block.asOfSeq))
+    }
   }
 
   /**

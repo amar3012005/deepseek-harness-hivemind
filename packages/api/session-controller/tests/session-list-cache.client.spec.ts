@@ -3,7 +3,9 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { SessionId } from '@deepseek-ai/dsh-api-remotes/client'
 import { SessionManager } from '../src/client/sessions/manager.ts'
-import { createSessionListCache, type SessionListCacheSeam } from '../src/client/cache/session-list-cache.ts'
+import { createSessionListCache, sessionListCache, type SessionListCacheSeam } from '../src/client/cache/session-list-cache.ts'
+import { createAccountScopedCache } from '../src/client/cache/account-cache.ts'
+import { MemorySwrStore } from '../src/client/cache/swr-cache.ts'
 import { RemoteError } from '@deepseek-ai/dsh-typert-protocol'
 import { FakeApiClient, deferred, err, fakeRemote, ok } from './fake-api.client.ts'
 
@@ -71,28 +73,52 @@ describe('createSessionListCache account scope', () => {
   })
 
   it('reads nothing while signed out, and never serves one account\'s list to another', async () => {
-    const failing = {
-      open: () => {
-        const request: { onerror?: () => void; error: null } = { error: null }
-        queueMicrotask(() => request.onerror?.())
-        return request
-      },
-    } as unknown as IDBFactory
-    let identity: { user: string; org: string } | undefined = { user: USER, org: ORG }
-    const fetcher = (async () => {
-      if (identity === undefined) return new Response('{}', { status: 401 })
-      const body = { authenticated: true, user: { id: identity.user }, organization: { id: identity.org } }
-      return new Response(JSON.stringify(body), { status: 200 })
-    }) as typeof fetch
-    const cache = createSessionListCache(failing, fetcher)
-    expect(cache).toBeDefined()
-    await cache?.write([summary(S1)] as never[])
-    expect(await cache?.read()).toEqual([summary(S1)])
+    const store = new MemorySwrStore()
+    const page = (identity: { user: string; org: string } | undefined) => {
+      const fetcher = (async () => {
+        if (identity === undefined) return new Response('{}', { status: 401 })
+        const body = { authenticated: true, user: { id: identity.user }, organization: { id: identity.org } }
+        return new Response(JSON.stringify(body), { status: 200 })
+      }) as typeof fetch
+      return sessionListCache(createAccountScopedCache(Promise.resolve(store), undefined, fetcher))
+    }
+    const first = page({ user: USER, org: ORG })
+    await first.write([summary(S1)] as never[])
+    expect(await first.read()).toEqual([summary(S1)])
+    expect(await page({ user: USER, org: OTHER_ORG }).read()).toBeUndefined()
+    expect(await page(undefined).read()).toBeUndefined()
+  })
 
-    identity = { user: USER, org: OTHER_ORG }
-    expect(await cache?.read()).toBeUndefined()
+  it('probes bootstrap once per page for every read and write', async () => {
+    const calls: string[] = []
+    const fetcher = (async (input: string) => {
+      calls.push(input)
+      return new Response(JSON.stringify({ authenticated: true, user: { id: USER }, organization: { id: ORG } }), { status: 200 })
+    }) as unknown as typeof fetch
+    const cache = sessionListCache(createAccountScopedCache(Promise.resolve(new MemorySwrStore()), undefined, fetcher))
+    await Promise.all([cache.read(), cache.write([summary(S1)] as never[]), cache.read()])
+    await cache.read()
+    expect(calls).toEqual(['/__hivemind/bootstrap'])
+  })
 
-    identity = undefined
-    expect(await cache?.read()).toBeUndefined()
+  it('probes again after an unavailable bootstrap', async () => {
+    let status = 503
+    const fetcher = (async () => new Response(JSON.stringify({ authenticated: true, user: { id: USER }, organization: { id: ORG } }),
+      { status })) as typeof fetch
+    const cache = sessionListCache(createAccountScopedCache(Promise.resolve(new MemorySwrStore()), undefined, fetcher))
+    await cache.write([summary(S1)] as never[])
+    status = 200
+    await cache.write([summary(S1)] as never[])
+    expect(await cache.read()).toEqual([summary(S1)])
+  })
+
+  it('starts the server pull before the local copy is read', async () => {
+    const api = new FakeApiClient()
+    let pulled = false
+    api.onList = () => { pulled = true; return Promise.resolve(ok({ items: [] as never[] })) }
+    let pulledBeforeRead: boolean | undefined
+    const seam: SessionListCacheSeam = { read: async () => { pulledBeforeRead = pulled; return undefined }, write: async () => {} }
+    await new SessionManager(fakeRemote(api), undefined, undefined, seam).refreshList()
+    expect(pulledBeforeRead).toBe(true)
   })
 })

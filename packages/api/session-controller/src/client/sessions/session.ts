@@ -38,6 +38,7 @@ import type { ProjectionsBaseline } from './projection-store.ts'
 import { resolvedClientTimeZone } from '../time-zone.ts'
 import { SessionQueueMirror } from './queue-mirror.ts'
 import { SendOutbox } from './send-outbox.ts'
+import { cacheableTail, type SessionHistoryCacheSeam } from '../cache/session-history-cache.ts'
 import {
   ClientAssistantStream,
   type ClientAssistantStreamResult,
@@ -82,6 +83,12 @@ export interface SessionOptions {
    * private store (bare object-layer construction).
    */
   projections?: ProjectionValueStore
+  /**
+   * Account-scoped local copy of the durable history tail. A root Session
+   * draws the cached tail while its server tail page is pending, and stores
+   * its tail after the window settles. The server page always replaces it.
+   */
+  historyCache?: SessionHistoryCacheSeam
 }
 
 /** Prompt fields held by the outbox until the subscription opens. */
@@ -90,6 +97,9 @@ interface HeldPrompt {
   readonly mode: 'queue' | 'steer'
   readonly clientTimeZone: string
 }
+
+/** Quiet period before a changed window is written to the history cache. */
+const HISTORY_CACHE_WRITE_DELAY_MS = 1_000
 
 /**
  * Owns a session's event window, lifecycle state, and observable
@@ -102,6 +112,9 @@ export class Session implements SessionFace {
   private baseSeq = SessionLogOffset(0)
   private hasMore = false
   private openState: OpenState = 'cold'
+  /** Whether the current window came from the server rather than the local history copy. */
+  private serverWindow = false
+  private historyWriteTimer: ReturnType<typeof setTimeout> | undefined
   private openError: RemoteFailure | null = null
   private openPromise: Promise<void> | null = null
   /** Bumped by stream replacement to invalidate an in-flight doOpen. Stale
@@ -618,6 +631,7 @@ export class Session implements SessionFace {
       this.retireFailedSubmission(requestId)
     }
     this.openGeneration++
+    this.flushHistoryCache()
     const events = this.events
     this.events = undefined
     await events?.dispose()
@@ -641,10 +655,13 @@ export class Session implements SessionFace {
       },
     })
     this.events = events
+    this.serverWindow = false
+    this.drawCachedHistory(generation, events)
     try {
       await events.open({ maxMessages: initialHistoryMessages() })
       if (generation !== this.openGeneration || this.events !== events) return
       this.openState = 'open'
+      this.scheduleHistoryCacheWrite()
       void this.flushOutbox()
     } catch (error) {
       if (generation !== this.openGeneration || this.events !== events) return
@@ -657,8 +674,60 @@ export class Session implements SessionFace {
     }
   }
 
+  /**
+   * Draw the cached durable tail while the server tail page is pending.
+   * Only a root Session with an empty window uses it; a server page that
+   * lands first wins and the cached copy is discarded.
+   * @param generation - openGeneration of the pending open.
+   * @param events - stream of the pending open.
+   */
+  private drawCachedHistory(generation: number, events: SessionEventStream): void {
+    const cache = this.options.historyCache
+    if (cache === undefined || this.address !== undefined || this.eventSource.getSnapshot().entries.length > 0) return
+    void cache.read(this.sessionId).then((page) => {
+      if (page === undefined || this.serverWindow || generation !== this.openGeneration || this.events !== events
+        || this.openState !== 'loading' || this.eventSource.getSnapshot().entries.length > 0) return
+      // Display only: the cached rows carry no submission acknowledgements and
+      // set no paging cursor; the server replace re-derives both.
+      this.hasMore = page.hasMore
+      this.eventSource.replace(page.entries, page.hasMore)
+      this.notifier.markDirty()
+    }, () => {
+      // An unreadable local copy leaves the room waiting for its server page.
+    })
+  }
+
+  /** Write the settled window to the history cache after a quiet period. */
+  private scheduleHistoryCacheWrite(): void {
+    if (this.options.historyCache === undefined || this.address !== undefined || !this.serverWindow) return
+    clearTimeout(this.historyWriteTimer)
+    this.historyWriteTimer = setTimeout(() => { this.flushHistoryCache() }, HISTORY_CACHE_WRITE_DELAY_MS)
+  }
+
+  /** Write a pending history cache update now. */
+  private flushHistoryCache(): void {
+    if (this.historyWriteTimer === undefined) return
+    clearTimeout(this.historyWriteTimer)
+    this.historyWriteTimer = undefined
+    const cache = this.options.historyCache
+    if (cache === undefined || !this.serverWindow) return
+    const window = this.eventSource.getSnapshot()
+    const page = cacheableTail(window.entries, window.hasMore)
+    if (page !== undefined) {
+      void cache.write(this.sessionId, page).catch(() => {
+        // Storage refused the copy; the next settled window tries again.
+      })
+    }
+  }
+
   /** Apply one contiguous journal update already reconciled by the Remote stream. */
   private acceptEventChange(change: SessionJournalChange): void {
+    if (change.type === 'replace') this.serverWindow = true
+    this.applyEventChange(change)
+    if (this.openState === 'open' && change.type !== 'assistant-stream') this.scheduleHistoryCacheWrite()
+  }
+
+  private applyEventChange(change: SessionJournalChange): void {
     switch (change.type) {
       case 'replace':
         this.installWindow(
