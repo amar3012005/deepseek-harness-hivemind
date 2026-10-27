@@ -434,6 +434,15 @@ export class TestSessions implements ISessions {
    * store notify is microtask-batched so the next stabilized step observes it).
    * @param id - session id.
    */
+  /**
+   * Resolve an exact root: the double knows only its recorded rows.
+   * @param id - session id.
+   * @param _options - ignored; the double has no history page to start.
+   */
+  async resolveExisting(id: SessionId, _options?: { open?: boolean }): Promise<void> {
+    if (this.list.getSnapshot().byId[id] === undefined) throw new Error('session/not-found')
+  }
+
   open(id: SessionId): void {
     this.calls.push({ method: 'open', args: [id] })
     this.require(id)

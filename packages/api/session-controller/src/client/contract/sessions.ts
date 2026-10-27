@@ -42,8 +42,12 @@ export interface ISessions {
    * Select a session as current.
    * @param id - session id (must exist in the list; unknown ids fail loud).
    */
-  /** Resolve an exact durable root outside the recent list; never creates. */
-  resolveExisting(id: SessionId): Promise<void>
+  /**
+   * Resolve an exact durable root outside the recent list; never creates.
+   * @param id - exact root id.
+   * @param options - `open` loads the history page in parallel with resolution.
+   */
+  resolveExisting(id: SessionId, options?: { open?: boolean }): Promise<void>
   open(id: SessionId): void
   /**
    * Warm the local history copy of Sessions the user is likely to open next. Bounded per page, each Session

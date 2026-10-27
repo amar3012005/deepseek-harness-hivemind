@@ -171,12 +171,18 @@ export class SessionManager {
     this.listSnapshotCache = this.buildListSnapshot()
   }
 
-  /** Resolve an exact persisted root through the authorized native follow seam.
+  /**
+   * Resolve an exact persisted root through the authorized native follow seam.
    * Never create a Session merely because its id is absent from the list.
+   * @param sessionId - exact root id from the route.
+   * @param options - `open` starts the history page in parallel; a failed resolution disposes it.
    */
-  async resolveExisting(sessionId: SessionId): Promise<void> {
+  async resolveExisting(sessionId: SessionId, options: { open?: boolean } = {}): Promise<void> {
     if (this.summaries.some(row => row.sessionId === sessionId)) return
+    const opened = options.open === true && !this.sessions.has(sessionId) ? this.get(sessionId) : undefined
+    if (opened !== undefined) void opened.open().catch(() => {})
     const controller = new AbortController()
+    let resolved = false
     try {
       for await (const frame of this.remote.session.follow({
         address: { kind: 'session', sessionId }, maxMessages: 1,
@@ -198,10 +204,17 @@ export class SessionManager {
         }
         this.exactRoots.set(sessionId, summary)
         this.recordMutation({ kind: 'upsert', summary })
+        resolved = true
         return
       }
       throw new Error('Chat lookup ended without an opening snapshot.')
-    } finally { controller.abort() }
+    } finally {
+      controller.abort()
+      if (opened !== undefined && !resolved && this.sessions.get(sessionId) === opened) {
+        this.sessions.delete(sessionId)
+        void opened.dispose()
+      }
+    }
   }
 
   // ---- Selection ----

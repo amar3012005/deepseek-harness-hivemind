@@ -39,6 +39,9 @@ interface EffortChoice {
 /** Unplaced portal card: hidden but laid out at a fixed origin so offsetWidth/offsetHeight are real (Menu primitive's measure pass). */
 const MEASURE_STYLE: CSSProperties = { visibility: 'hidden', left: 0, top: 0 }
 
+/** The member's saved model connection as the status route returns it. */
+type Connection = { connected: boolean; selected_model: string | null }
+
 /** A status read younger than this answers every selector that mounts or regains focus. */
 export const CONNECTION_STATUS_SHARE_MS = 10_000
 let statusRead: { readonly at: number; readonly result: Promise<Connection | undefined> } | undefined

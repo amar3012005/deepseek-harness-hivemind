@@ -48,6 +48,21 @@ describe('SessionManager instances', () => {
 })
 
 describe('list lifecycle', () => {
+  it('sends one session.list per pull while a cached list shows first', async () => {
+    const api = new FakeApiClient()
+    const gate = deferred<Awaited<ReturnType<FakeApiClient['onList']>>>()
+    api.onList = () => gate.promise
+    const cached = [summary(S2)] as never[]
+    const listCache = { read: () => Promise.resolve(cached), write: () => Promise.resolve() }
+    const manager = new SessionManager(fakeRemote(api), undefined, undefined, listCache)
+    const pull = manager.refreshList()
+    await vi.waitFor(() => { expect(manager.getListSnapshot().items.map(i => i.sessionId)).toEqual([S2]) })
+    gate.resolve(ok({ items: [summary(S1)] as never[] }))
+    await pull
+    expect(api.callsOf('session.list')).toHaveLength(1)
+    expect(manager.getListSnapshot().items.map(i => i.sessionId)).toContain(S1)
+  })
+
   it('single-flights refreshList and preserves the Host baseline order', async () => {
     const api = new FakeApiClient()
     const gate = deferred<Awaited<ReturnType<FakeApiClient['onList']>>>()
@@ -1082,6 +1097,27 @@ describe('exact existing chat resolution', () => {
     expect(api.activeFollows(S1)).toBe(0)
     await manager.refreshList()
     expect(manager.getListSnapshot().current).toBe(S1)
+    await manager.dispose()
+  })
+  it('opens the history page in parallel and reuses it after selection', async () => {
+    const api = new FakeApiClient()
+    const manager = new SessionManager(fakeRemote(api))
+    const resolving = manager.resolveExisting(S1, { open: true })
+    expect(api.callsOf('session.follow')).toHaveLength(2)
+    await resolving
+    manager.select(S1)
+    await manager.get(S1).open()
+    expect(api.callsOf('session.follow')).toHaveLength(2)
+    expect(manager.get(S1).getSnapshot().openState).toBe('open')
+    await manager.dispose()
+  })
+  it('disposes a parallel history open when the exact chat cannot be resolved', async () => {
+    const api = new FakeApiClient()
+    api.onHistory = async () => err(new RemoteError('session/not-found', 'not found', { sessionId: S1 }))
+    const manager = new SessionManager(fakeRemote(api))
+    await expect(manager.resolveExisting(S1, { open: true })).rejects.toMatchObject({ code: 'session/not-found' })
+    expect(api.activeFollows(S1)).toBe(0)
+    expect(manager.getListSnapshot().current).toBeUndefined()
     await manager.dispose()
   })
   it('does not select or create a missing/denied exact chat', async () => {

@@ -276,8 +276,8 @@ export class ClientSessions implements ISessions {
    * @param id - listed or addressed session id.
    */
   /** Make an authorized exact root addressable without creating it. */
-  async resolveExisting(id: SessionId): Promise<void> {
-    await this.manager.resolveExisting(id)
+  async resolveExisting(id: SessionId, options?: { open?: boolean }): Promise<void> {
+    await this.manager.resolveExisting(id, options)
     this.projectList()
   }
 
