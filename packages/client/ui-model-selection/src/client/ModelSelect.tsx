@@ -39,6 +39,29 @@ interface EffortChoice {
 /** Unplaced portal card: hidden but laid out at a fixed origin so offsetWidth/offsetHeight are real (Menu primitive's measure pass). */
 const MEASURE_STYLE: CSSProperties = { visibility: 'hidden', left: 0, top: 0 }
 
+/** A status read younger than this answers every selector that mounts or regains focus. */
+export const CONNECTION_STATUS_SHARE_MS = 10_000
+let statusRead: { readonly at: number; readonly result: Promise<Connection | undefined> } | undefined
+
+/** Forget the shared status read so the next selector asks the Host (tests). */
+export function forgetConnectionStatusRead(): void { statusRead = undefined }
+
+/**
+ * Read the member's model connection once per window, whatever number of selectors ask.
+ * @returns the status, or undefined when the Host refused it or could not be reached.
+ */
+function sharedConnectionStatus(): Promise<Connection | undefined> {
+  if (statusRead !== undefined && Date.now() - statusRead.at < CONNECTION_STATUS_SHARE_MS) return statusRead.result
+  const result = fetch('/api/hivemind/model-connection/status', { credentials: 'include', cache: 'no-store' })
+    .then(async response => response.ok ? await response.json() as Connection : undefined)
+    .catch(() => undefined)
+  const entry = { at: Date.now(), result }
+  statusRead = entry
+  // An unanswered read is not shared, so the next ask retries.
+  void result.then((value) => { if (value === undefined && statusRead === entry) statusRead = undefined })
+  return result
+}
+
 /**
  * Render the composer model seat.
  * @param props - owner share (locked) + injected face (shared directory
@@ -62,8 +85,8 @@ export function ModelSelect(
     const refresh = async (): Promise<void> => {
       if (document.hidden) return
       try {
-        const response = await fetch('/api/hivemind/model-connection/status', { credentials: 'include', cache: 'no-store', signal: controller.signal })
-        if (response.ok) setConnection(await response.json())
+        const next = await sharedConnectionStatus()
+        if (next !== undefined && !controller.signal.aborted) setConnection(next)
       } catch { /* Keep the last confirmed connection during transient outages. */ }
     }
     void refresh()

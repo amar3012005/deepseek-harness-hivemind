@@ -17,6 +17,9 @@ export interface ConnectionGeneration {
   readonly host: ConnectionHostInfo
 }
 
+/** The hard readiness deadline passed; unlike an early failure, it makes the physical carrier suspect. */
+class GenerationReadyTimeout extends Error {}
+
 const MANUAL_RECONNECT = new Error('connection: manual reconnect requested')
 const NETWORK_STATE_CHANGED = new Error('connection: browser network state changed')
 
@@ -51,8 +54,13 @@ export interface ConnectionSinks {
   onConnected?: (host: ConnectionHostInfo) => void
   /** State transitions after the initial attempt has an outcome. Equivalent states are deduplicated. */
   onStateChange?: (state: ConnectionState) => void
-  /** Start one fresh physical-carrier attempt before each logical retry. */
-  onReconnectRequested?: () => void
+  /**
+   * Called before each logical retry. `replacePhysical` is true for a manual reconnect or a browser
+   * network change, or a generation that missed the hard readiness deadline; an automatic retry after
+   * an earlier generation failure keeps a carrier that is open or still connecting, because a slow
+   * Host is not a lost carrier.
+   */
+  onReconnectRequested?: (replacePhysical: boolean) => void
 }
 
 /**
@@ -81,6 +89,8 @@ export class ConnectionController {
   private retryDelay: AbortController | null = null
   private running = false
   private immediateRetry = false
+  private networkChanged = false
+  private carrierSuspect = false
   private networkAvailable = true
   private lastState: ConnectionState | undefined
   private readonly config: Required<ConnectionRecoveryConfig>
@@ -129,6 +139,7 @@ export class ConnectionController {
     this.networkAvailable = available
     this.attempt = 0
     this.immediateRetry = false
+    this.networkChanged = true
     if (!this.running) return
     this.emitState(available ? 'connecting' : 'disconnected')
     if (!this.isRunning()) return
@@ -194,7 +205,10 @@ export class ConnectionController {
           if (retryDelay.signal.aborted) continue
         }
         console.warn(`[connection] connection lost, retry #${String(attempt)}`)
-        this.callSink(() => { this.sinks.onReconnectRequested?.() })
+        const replacePhysical = manualAttempt || this.networkChanged || this.carrierSuspect
+        this.networkChanged = false
+        this.carrierSuspect = false
+        this.callSink(() => { this.sinks.onReconnectRequested?.(replacePhysical) })
         if (!this.isRunning()) return
       }
 
@@ -257,6 +271,7 @@ export class ConnectionController {
           this.callSink(() => { this.sinks.onConnected?.(host) })
         }
       } catch (error) {
+        if (error instanceof GenerationReadyTimeout) this.carrierSuspect = true
         if (!ac.signal.aborted) ac.abort(error)
       }
 
@@ -296,7 +311,7 @@ function waitForReady<T>(
       console.warn(`[connection] generation is still not ready after ${String(config.generationReadyWarnMs)}ms`)
     }, config.generationReadyWarnMs)
     const timeout = setTimeout(() => {
-      const error = new Error(`connection generation was not ready within ${String(config.generationReadyTimeoutMs)}ms`)
+      const error = new GenerationReadyTimeout(`connection generation was not ready within ${String(config.generationReadyTimeoutMs)}ms`)
       console.warn(`[connection] ${error.message}; cancelling generation`)
       finish({ error })
     }, config.generationReadyTimeoutMs)

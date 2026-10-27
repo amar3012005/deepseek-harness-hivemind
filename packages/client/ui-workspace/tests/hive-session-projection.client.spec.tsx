@@ -43,6 +43,7 @@ const actions = {
   renameSession: vi.fn(async () => {}),
   forkSession: vi.fn(),
   deleteSession: vi.fn(async () => {}),
+  prefetchHistory: vi.fn(),
 }
 
 describe('HIVE native session projection', () => {

@@ -13,7 +13,7 @@ const ready = (records: ScheduleRecord[]): RemoteResult<ScheduleRecord[]> => ({ 
 
 function harness() {
   let changed = () => {}
-  let reset = () => {}
+  let reset: (initial?: boolean) => void = () => {}
   const changedDisposed = vi.fn()
   const resetDisposed = vi.fn()
   const list = vi.fn<() => Promise<RemoteResult<ScheduleRecord[]>>>().mockResolvedValue(ready([row]))
@@ -25,7 +25,10 @@ function harness() {
     subscribeReset: (listener) => { reset = listener; return resetDisposed },
   })
   const source = entry.hooks.catalog
-  return { entry, source, list, remove, changed: () => { changed() }, reset: () => { reset() }, changedDisposed, resetDisposed }
+  return {
+    entry, source, list, remove, changed: () => { changed() }, reset: (initial?: boolean) => { reset(initial) },
+    changedDisposed, resetDisposed,
+  }
 }
 
 /**
@@ -42,6 +45,20 @@ async function flushed(): Promise<void> {
 }
 
 describe('Schedule catalog Remote source', () => {
+  it('keeps a read that is in flight or answered when the first generation connects', async () => {
+    const h = harness()
+    h.source.subscribe(vi.fn())
+    h.reset(true)
+    await flushed()
+    expect(h.list).toHaveBeenCalledTimes(1)
+    h.reset(true)
+    await flushed()
+    expect(h.list).toHaveBeenCalledTimes(1)
+    h.reset(false)
+    await flushed()
+    expect(h.list).toHaveBeenCalledTimes(2)
+  })
+
   it('queries on subscription and refreshes on changes and reconnection', async () => {
     const h = harness()
     const dispose = h.source.subscribe(vi.fn())

@@ -383,13 +383,15 @@ export function SearchResultItem({ result, currentId, onOpen, t }: {
  * @returns the session row.
  */
 export function SessionNodeItem({
-  node, currentId, now, onOpen, onRename, onFork, onArchive, onDelete, onShare, onReveal, drag, flat = false,
+  node, currentId, now, onOpen, onWarm, onRename, onFork, onArchive, onDelete, onShare, onReveal, drag, flat = false,
   showActions = true, actionsPersistent = false, visibleTitle, hoverTimestamp, hoverTitle, leading, recent = false, t,
 }: {
   node: SessionNode
   currentId: string | undefined
   now: number
   onOpen: (id: SessionNode['id']) => void
+  /** The pointer or keyboard focus reached this row: the owner may warm what opening it needs. */
+  onWarm?: ((id: SessionNode['id']) => void) | undefined
   /** Open the browser-owned session rename dialog (row menu action). */
   onRename: (id: SessionNode['id'], currentTitle: string) => void
   /** Fork a session at its last completed turn (row menu action). */
@@ -459,6 +461,8 @@ export function SessionNodeItem({
       aria-selected={selected}
       title={hoverTitle ?? hoverTimestamp}
       onClick={() => { onOpen(node.id) }}
+      onPointerEnter={onWarm === undefined ? undefined : () => { onWarm(node.id) }}
+      onFocus={onWarm === undefined ? undefined : () => { onWarm(node.id) }}
       draggable={drag !== undefined}
       onDragStart={drag === undefined
         ? undefined

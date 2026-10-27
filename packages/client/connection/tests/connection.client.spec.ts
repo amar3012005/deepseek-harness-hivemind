@@ -42,6 +42,30 @@ describe('connection lifecycle', () => {
     expect(source.activeCount).toBe(0)
   })
 
+  it('keeps the physical carrier on an automatic retry and replaces it on a manual one', async () => {
+    const source = new FakeGenerationSource()
+    const requested: boolean[] = []
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    let connected = 0
+    const controller = new ConnectionController(source.source, {
+      onConnected: () => { connected++ },
+      onReconnectRequested: (replacePhysical) => { requested.push(replacePhysical) },
+    }, FAST)
+    controller.start()
+    try {
+      await vi.waitFor(() => { expect(connected).toBe(1) })
+      source.fail(new Error('slow Host answered an error'))
+      await vi.waitFor(() => { expect(connected).toBe(2) })
+      expect(requested).toEqual([false])
+      controller.reconnect()
+      await vi.waitFor(() => { expect(connected).toBe(3) })
+      expect(requested).toEqual([false, true])
+    } finally {
+      controller.stop()
+      warnSpy.mockRestore()
+    }
+  })
+
   it('keeps retrying at the jittered cap and recovers after a prolonged outage', async () => {
     vi.useFakeTimers()
     const randomSpy = vi.spyOn(Math, 'random').mockReturnValue(0)

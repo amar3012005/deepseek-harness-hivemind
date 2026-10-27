@@ -175,6 +175,7 @@ export function apply(ctx: Context): void {
   ctx.slots.inject('conversation.input.right', () => ctx.slots.register({
     name: 'conversation.input.right', id: 'hivemind-live-voice', order: 100, locale: NS,
   }, HiveLiveVoiceButton))
+  const prefetchHistory: HiveSessionProjectionInjected['prefetchHistory'] = (ids, hovered) => { sessions.prefetchHistory(ids, hovered) }
   ctx.slots.inject('shell.sessionRail', () => ctx.slots.register({
     name: 'shell.sessionRail',
     children: { 'conversation.sidebar.viewTabs': { kind: 'single', scope: 'session' }, 'shell.sessionRail.avatar': { kind: 'single', scope: 'root' }, 'shell.sessionRail.artifacts': { kind: 'single', scope: 'root' } },
@@ -182,6 +183,7 @@ export function apply(ctx: Context): void {
     inject: (): HiveSessionProjectionInjected => ({
       createSession: () => sessions.create(),
       openSession,
+      prefetchHistory,
       renameSession: async (sessionId, title) => {
         const session = sessions.binding(sessionId)?.session
         if (session === undefined) throw new Error(`unknown session "${sessionId}"`)

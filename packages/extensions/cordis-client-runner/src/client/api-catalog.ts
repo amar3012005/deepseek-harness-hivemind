@@ -188,6 +188,11 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         parameters: [{ name: 'id', description: 'session id (must exist in the list; unknown ids fail loud).' }],
       },
       {
+        signature: 'prefetchHistory(ids: readonly SessionId[], hovered?: boolean): void',
+        description: 'Warm the local history copy of Sessions the user is likely to open next. Bounded per page, each Session once, never a resident Session; a failure is silent and the room opens from the network as before.',
+        parameters: [{ name: 'ids', description: 'listed root Sessions, most likely first.' }, { name: 'hovered', description: 'the first id is under the pointer and goes ahead of queued ones.' }],
+      },
+      {
         signature: 'openSubagent(address: SubagentAddress): void',
         description: 'Open a healthy catalog child through its exact direct-parent address.',
         parameters: [{ name: 'address', description: 'catalog-derived parent and child ids.' }],
@@ -421,10 +426,10 @@ export const EVENT_API: readonly EventApiEntry[] = [
   {
     name: 'connection/reset',
     mode: 'emit',
-    signature: '\'connection/reset\'(): void',
+    signature: '\'connection/reset\'(initial?: boolean): void',
     summary: 'A connection generation was established.',
     description: 'A connection generation was established. Wire-derived caches must repull; long-lived streams own their own resume and baseline lifecycle.',
-    parameters: [],
+    parameters: [{ name: 'initial', description: 'true for the first generation of this page. Caches that already read over HTTP (answered or in flight) keep that read instead of repeating it.' }],
   },
   {
     name: 'locale/change',
@@ -548,7 +553,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ConnectionSinks',
-    declaration: 'export interface ConnectionSinks {\n    onConnected?: (host: ConnectionHostInfo) => void;\n    onStateChange?: (state: ConnectionState) => void;\n    onReconnectRequested?: () => void;\n}',
+    declaration: 'export interface ConnectionSinks {\n    onConnected?: (host: ConnectionHostInfo) => void;\n    onStateChange?: (state: ConnectionState) => void;\n    onReconnectRequested?: (replacePhysical: boolean) => void;\n}',
   },
   {
     name: 'ConnectionState',

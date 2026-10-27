@@ -120,7 +120,11 @@ export function apply(ctx: ClientContext): void {
       ctx.remote.$on('settings/document-updated', () => { refreshModels() }),
       ctx.remote.$on('credentials/reference-updated', refreshModels),
       ctx.remote.$on('llm/adapters-updated', refreshModels),
-      ctx.on('connection/reset', refreshModels),
+      // The first generation keeps a page read that is loading or loaded over HTTP.
+      ctx.on('connection/reset', (initial) => {
+        if (initial === true && controller.store.getSnapshot().status !== 'error') return
+        refreshModels()
+      }),
     ]
     return () => {
       welcomeController.dispose()

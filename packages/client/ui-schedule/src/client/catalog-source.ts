@@ -47,7 +47,8 @@ export interface CatalogDependencies<Item extends { readonly id: ScheduleId } = 
   readonly list: () => Promise<RemoteResult<Item[]>>
   readonly remove: (id: ScheduleId) => Promise<RemoteResult<ScheduleDeleteResult>>
   readonly subscribeChanged: (listener: () => void) => () => void
-  readonly subscribeReset: (listener: () => void) => () => void
+  /** The listener receives `initial` for the page's first connection generation. */
+  readonly subscribeReset: (listener: (initial?: boolean) => void) => () => void
 }
 
 /** Props injected through a catalog slot. */
@@ -170,7 +171,11 @@ export function createCatalogSource<Item extends { readonly id: ScheduleId } = S
           listeners.add(listener)
           if (listeners.size === 1) {
             lifecycle++
-            disposers = [deps.subscribeChanged(invalidate), deps.subscribeReset(invalidate)]
+            disposers = [deps.subscribeChanged(invalidate), deps.subscribeReset((initial) => {
+              // The first generation keeps a read that is in flight or answered over HTTP.
+              if (initial === true && (inFlight !== undefined || snapshot.settled)) return
+              invalidate()
+            })]
             invalidate()
           }
           return () => {

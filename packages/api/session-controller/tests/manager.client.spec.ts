@@ -760,6 +760,55 @@ describe('remaining branches', () => {
 })
 
 describe('connected generation', () => {
+  it('keeps a list pull that started before the first generation and re-pulls on a later one', async () => {
+    const api = new FakeApiClient()
+    const gate = deferred<Awaited<ReturnType<FakeApiClient['onList']>>>()
+    api.onList = () => gate.promise
+    const manager = new SessionManager(fakeRemote(api))
+    const pull = manager.refreshList()
+    manager.handleConnected()
+    gate.resolve(ok({ items: [summary(S1)] as never[] }))
+    await pull
+    expect(api.callsOf('session.list')).toHaveLength(1)
+    expect(manager.getListSnapshot().items.map(item => item.sessionId)).toEqual([S1])
+    api.onList = () => Promise.resolve(ok({ items: [summary(S1)] as never[] }))
+    manager.handleConnected()
+    await vi.waitFor(() => { expect(api.callsOf('session.list')).toHaveLength(2) })
+  })
+
+  it('does not repeat a subagent catalog the first generation already read', async () => {
+    const api = new FakeApiClient()
+    const manager = new SessionManager(fakeRemote(api), S1)
+    await manager.refreshSubagents(S1)
+    const before = api.callsOf('subagents.list').length
+    manager.handleConnected()
+    await Promise.resolve()
+    expect(api.callsOf('subagents.list')).toHaveLength(before)
+    manager.handleConnected()
+    await vi.waitFor(() => { expect(api.callsOf('subagents.list').length).toBeGreaterThan(before) })
+  })
+
+  it('warms the newest history page of listed idle rooms once, within budget, ahead for a hovered one', async () => {
+    const api = new FakeApiClient()
+    api.onList = () => Promise.resolve(ok({ items: [summary(S1), summary(S2)] as never[] }))
+    api.onHistory = () => Promise.resolve(ok({
+      records: entries(plainTurn(SessionSeq(0), 0, 'a', 'b')) as never[],
+      hasMore: false,
+      modelSelection: { provider: 'deepseek-official', model: 'deepseek-chat' },
+    }))
+    const written: string[] = []
+    const cache = { read: () => Promise.resolve(undefined), write: (id: SessionId) => { written.push(id); return Promise.resolve() } }
+    const manager = new SessionManager(fakeRemote(api), undefined, undefined, undefined, cache)
+    await manager.refreshList()
+    manager.prefetchHistory([S1, S2])
+    manager.prefetchHistory([S1, S2])
+    await vi.waitFor(() => { expect(written.sort()).toEqual([S1, S2]) })
+    expect(api.callsOf('session.history')).toHaveLength(2)
+    manager.get(S1)
+    manager.prefetchHistory([S1], true)
+    expect(api.callsOf('session.history')).toHaveLength(2)
+  })
+
   it('refreshes query baselines without rebuilding independently resumed Session sources', async () => {
     const api = new FakeApiClient()
     api.onHistory = () => Promise.resolve(ok({

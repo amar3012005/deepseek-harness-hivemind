@@ -78,6 +78,13 @@ export interface SessionOptions {
    */
   onEngaged?(session: Session): void
   /**
+   * A live `turn/start` or `turn/end` arrived on this Session's own event stream. The stream proves the
+   * runner state even while the Host-wide status frames are delayed.
+   * @param session - the Session whose stream delivered the event.
+   * @param running - true for `turn/start`, false for `turn/end`.
+   */
+  onLiveTurn?(session: Session, running: boolean): void
+  /**
    * Manager-owned projection value store to adopt (frames route through the
    * manager and values outlive instantiation); omitted, the Session owns a
    * private store (bare object-layer construction).
@@ -844,6 +851,7 @@ export class Session implements SessionFace {
     if (event.type === 'turn/start') this.firstPromptPendingTurn = false
     const queueChanged = this.queueMirror.acceptDurable(event)
     this.eventSource.append(entry)
+    if (event.type === 'turn/start' || event.type === 'turn/end') this.options.onLiveTurn?.(this, event.type === 'turn/start')
     // After the feed append: the conversation assembly's animation frame is
     // registered by the feed subscribers above, so the echo-retirement frame
     // scheduled here always runs after the durable node became renderable.

@@ -13,7 +13,12 @@ export interface HiveSessionProjectionInjected {
   renameSession: (id: SessionId, title: string) => Promise<void>
   forkSession: (id: SessionId) => void
   deleteSession: (id: SessionId) => Promise<void>
+  /** Warm the local history copy of rooms likely to open next; the first id may be under the pointer. */
+  prefetchHistory: (ids: readonly SessionId[], hovered?: boolean) => void
 }
+
+/** Rows at the top of the rail whose newest history page is warmed while the rail is visible. */
+export const VISIBLE_PREFETCH_ROWS = 6
 
 type Props = PropsRuntime<'shell.sessionRail'>
   & PropsLocale<'workspace'>
@@ -33,7 +38,7 @@ export function sessionTimestamp(updatedAt: number, now: number, locale: string)
 /** Native session rows projected into the host-owned HIVE canvas. */
 export function HiveSessionProjection({
   useSessions, useSessionPendingInteraction, createSession, openSession,
-  renameSession, forkSession, deleteSession, renderSlot, t,
+  renameSession, forkSession, deleteSession, prefetchHistory, renderSlot, t,
 }: Props) {
   const [creating, setCreating] = useState(false)
   const [historyOpen, setHistoryOpen] = useState(false)
@@ -72,6 +77,10 @@ export function HiveSessionProjection({
     }),
     [list, pending, hyperagentRoute],
   )
+  const topIds = rows.slice(0, VISIBLE_PREFETCH_ROWS).map(row => row.id).join('\n')
+  useEffect(() => {
+    if (topIds !== '') prefetchHistory(topIds.split('\n') as SessionId[])
+  }, [topIds, prefetchHistory])
   const start = () => {
     if (creating) return
     if (hyperagentRoute) {
@@ -149,6 +158,7 @@ export function HiveSessionProjection({
           currentId={list.current}
           now={now}
           onOpen={openSession}
+          onWarm={(id) => { prefetchHistory([id], true) }}
           onRename={requestRename}
           onFork={forkSession}
           onArchive={() => {}}

@@ -20,8 +20,10 @@ declare module '@deepseek-ai/cordis' {
      * A connection generation was established. Wire-derived caches must
      * repull; long-lived streams own their own resume and baseline lifecycle.
      * @mode emit
+     * @param initial - true for the first generation of this page. Caches that already read over HTTP
+     * (answered or in flight) keep that read instead of repeating it.
      */
-    'connection/reset'(): void
+    'connection/reset'(initial?: boolean): void
   }
 }
 

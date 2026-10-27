@@ -197,7 +197,7 @@ export class TestSessions implements ISessions {
 
   /** Calls observed on the service-level face, newest last. */
   readonly calls: {
-    method: 'create' | 'open' | 'openSubagent' | 'setSubagentCatalogOpen' | 'refreshSubagents'
+    method: 'create' | 'open' | 'prefetchHistory' | 'openSubagent' | 'setSubagentCatalogOpen' | 'refreshSubagents'
       | 'clear' | 'refresh' | 'search' | 'fork'
     args: unknown[]
   }[] = []
@@ -441,6 +441,11 @@ export class TestSessions implements ISessions {
       draft.current = id
       draft.currentAddress = undefined
     })
+  }
+
+  /** Record a history warm-up request; the fixture has no remote history to warm. */
+  prefetchHistory(ids: readonly SessionId[], hovered?: boolean): void {
+    this.calls.push({ method: 'prefetchHistory', args: [ids, hovered] })
   }
 
   /** Open an existing fixture through its catalog address. */

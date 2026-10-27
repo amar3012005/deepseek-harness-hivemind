@@ -463,21 +463,29 @@ export function apply(ctx: ClientContext): void {
         ;(window as unknown as { __HIVEMIND_AGENT_ROOMS__: unknown }).__HIVEMIND_AGENT_ROOMS__ = rooms
         window.dispatchEvent(new CustomEvent('hivemind:agent-rooms', { detail: { rooms } }))
       }
+      let scheduleAsked = false
       const refreshSchedules = async (fresh = false): Promise<void> => {
         const request = ++scheduleRead
+        scheduleAsked = true
         try {
           const result = await sharedScheduleCatalog(ctx.remote.schedule, fresh)
           if (disposed || request !== scheduleRead) return
-          scheduledRooms = new Set(result.ok ? result.value.filter(task => task.status === 'active').map(task => task.sessionId) : [])
+          if (!result.ok) { scheduleAsked = false; return }
+          scheduledRooms = new Set(result.value.filter(task => task.status === 'active').map(task => task.sessionId))
         } catch {
+          scheduleAsked = false
           if (disposed || request !== scheduleRead) return
           scheduledRooms = new Set()
         }
         publish()
       }
       const stopApproval = ctx.uiSession.pendingInteractions.subscribe(publish)
-      const stopSchedule = ctx.remote.$on('schedule/changed', () => { void refreshSchedules() })
-      const stopReset = ctx.on('connection/reset', () => { scheduledRooms = new Set(); publish(); void refreshSchedules() })
+      const stopSchedule = ctx.remote.$on('schedule/changed', () => { void refreshSchedules(true) })
+      // The first generation keeps a catalog that already answered or is in flight over HTTP.
+      const stopReset = ctx.on('connection/reset', (initial) => {
+        if (initial === true && scheduleAsked) { publish(); return }
+        scheduledRooms = new Set(); publish(); void refreshSchedules(true)
+      })
       void refreshSchedules()
       const stop = ctx.sessions.list.subscribe(publish)
       window.addEventListener('hivemind:request-agent-rooms', publish)

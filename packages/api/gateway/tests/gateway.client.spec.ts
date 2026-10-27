@@ -604,6 +604,58 @@ describe('Client Remote transport readiness', () => {
     })
   })
 
+  it('keeps a still-connecting or open socket on an automatic retry and replaces it on request', async () => {
+    await withFakeWebSocket('https://harness.example', async () => {
+      FakeWebSocket.autoOpen = false
+      const { client, start } = await benchFiber(
+        vi.fn<ConnectionHandle['rpc']['call']>(),
+        'web',
+      )
+      try {
+        expect(FakeWebSocket.sockets).toHaveLength(1)
+        start.mock.calls[0]![0].onReconnectRequested?.(false)
+        await Promise.resolve()
+        expect(FakeWebSocket.sockets).toHaveLength(1)
+        FakeWebSocket.sockets[0]!.open()
+        await Promise.resolve()
+        start.mock.calls[0]![0].onReconnectRequested?.(false)
+        await Promise.resolve()
+        expect(FakeWebSocket.sockets).toHaveLength(1)
+        start.mock.calls[0]![0].onReconnectRequested?.(true)
+        await vi.waitFor(() => { expect(FakeWebSocket.sockets).toHaveLength(2) })
+      } finally {
+        await client.dispose()
+      }
+    })
+  })
+
+  it('marks only the first connection generation as initial', async () => {
+    const ctx = new Context()
+    await ctx.plugin(TypertRegistry)
+    const live = { snapshot: undefined as { id: number; host: { home: string } } | undefined }
+    const start = vi.fn<ConnectionHandle['start']>(() => ({ stop: () => {} }))
+    ctx.provide('connection', {
+      isLoopback: true,
+      generation: { getSnapshot: () => live.snapshot, subscribe: () => () => {} },
+      rpc: { call: vi.fn<ConnectionHandle['rpc']['call']>(), open: () => unexpectedInProcessStream() },
+      registerGenerationSource: new GenerationHarness().register,
+      start,
+    } as unknown as ConnectionHandle)
+    const client = ctx.plugin({ inject, apply })
+    await client
+    try {
+      const resets: unknown[] = []
+      ctx.on('connection/reset', (initial) => { resets.push(initial) })
+      live.snapshot = { id: 1, host: { home: '/h' } }
+      start.mock.calls[0]![0].onConnected?.({ home: '/h' })
+      live.snapshot = { id: 2, host: { home: '/h' } }
+      start.mock.calls[0]![0].onConnected?.({ home: '/h' })
+      expect(resets).toEqual([true, false])
+    } finally {
+      await client.dispose()
+    }
+  })
+
   it.each([false, true])('replaces a stalled carrier and restores events (socket opened: %s)', async (autoOpen) => {
     await withFakeWebSocket('https://harness.example', async () => {
       vi.useFakeTimers()

@@ -166,9 +166,9 @@ class ClientRemoteService extends Service implements ClientRemote {
       if (disposed) return
       if (connection.rpc.open === undefined) this.streams.start()
       loop = connection.start({
-        onConnected: () => { this.ownerCtx.emit('connection/reset') },
-        onReconnectRequested: () => {
-          if (connection.rpc.open === undefined) this.streams.reconnect()
+        onConnected: () => { this.ownerCtx.emit('connection/reset', connection.generation.getSnapshot()?.id === 1) },
+        onReconnectRequested: (replacePhysical) => {
+          if (connection.rpc.open === undefined) this.streams.reconnect(replacePhysical)
         },
       })
     }

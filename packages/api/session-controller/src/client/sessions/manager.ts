@@ -25,8 +25,15 @@ import { flattenLineage } from './lineage.ts'
 import type {} from '@deepseek-ai/dsh-session-title/client'
 import { Notifier } from './notifier.ts'
 import { ProjectionValueStore } from './projection-store.ts'
-import { Session } from './session.ts'
+import { Session, initialHistoryMessages } from './session.ts'
+import { cacheableTail } from '../cache/session-history-cache.ts'
+import { readHistoryTail } from '../transport.ts'
 import type { SessionRemotes } from './remotes.ts'
+
+/** Sessions warmed into the local history copy per page. */
+export const HISTORY_PREFETCH_MAX = 12
+/** Warm-up page requests in flight at once. */
+export const HISTORY_PREFETCH_PARALLEL = 2
 
 function sessionSeqCursor(value: number): SessionSeqCursor {
   return value === -1 ? -1 : SessionSeq(value)
@@ -291,6 +298,8 @@ export class SessionManager {
    * @returns when every Session Remote iterator has completed teardown.
    */
   async dispose(): Promise<void> {
+    this.disposed = true
+    this.listReconnectPending = false
     for (const timer of this.catalogDebounce.values()) clearTimeout(timer)
     this.catalogDebounce.clear()
     this.catalogStale.clear()
@@ -369,6 +378,7 @@ export class SessionManager {
       onEngaged: (engaged) => {
         this.recordMutation({ kind: 'engaged', sessionId: engaged.sessionId })
       },
+      onLiveTurn: (session, running) => { this.handleSessionStatus(session.sessionId, running) },
       projections: this.projectionStore(sessionId),
       ...(this.historyCache === undefined ? {} : { historyCache: this.historyCache }),
     })
@@ -494,7 +504,15 @@ export class SessionManager {
     return this.listPhase === 'pending'
   }
 
+  /** Set once {@link dispose} runs; late list pulls and warm-ups then stop. */
+  private disposed = false
+  /** A newer connection generation asked for a list pull while one was in flight; it runs when that pull settles. */
+  private listReconnectPending = false
+  /** Whether a connection generation has opened yet. */
+  private connected = false
+
   refreshList(): Promise<void> {
+    if (this.disposed) return Promise.resolve()
     if (this.listInflight !== null) return this.listInflight
     this.listState = 'loading'
     this.listError = null
@@ -563,6 +581,7 @@ export class SessionManager {
           this.listError = result.error
         }
       } catch (error) {
+        if (this.disposed || this.listReconnectPending) return
         if (!isRemoteFailure(error)) throw error
         this.listState = 'error'
         this.listError = error
@@ -570,6 +589,10 @@ export class SessionManager {
         this.listMutations = null
         this.listInflight = null
         this.notifier.markDirty()
+        if (!this.disposed && this.listReconnectPending) {
+          this.listReconnectPending = false
+          void this.refreshList()
+        }
       }
     })()
     return this.listInflight
@@ -869,11 +892,74 @@ export class SessionManager {
    * Opened Session follow streams resume independently through API Gateway.
    */
   handleConnected(): void {
-    void this.refreshList()
+    if (this.disposed) return
+    // The first open skips the list pull when a list already answered before the transport opened.
+    const first = !this.connected
+    this.connected = true
+    const listCurrent = first && this.listPhase !== 'pending' && this.listState === 'idle'
+    // A pull that started before the first generation is already current; a later generation supersedes it.
+    if (this.listInflight !== null) this.listReconnectPending = !first
+    else if (!listCurrent) void this.refreshList()
     const selectedAddress = this.selected === undefined ? undefined : this.addresses.get(this.selected)
-    if (selectedAddress !== undefined) void this.refreshSubagents(selectedAddress.parentSessionId)
-    if (this.selected !== undefined) void this.refreshSubagents(this.selected)
-    for (const parentSessionId of this.openCatalogs) void this.refreshSubagents(parentSessionId)
+    // The first generation keeps a catalog that was already read or is being read over HTTP.
+    const refreshCatalog = (parentSessionId: SessionId): void => {
+      if (first && (this.catalogs.has(parentSessionId) || this.catalogInflight.has(parentSessionId))) return
+      void this.refreshSubagents(parentSessionId)
+    }
+    if (selectedAddress !== undefined) refreshCatalog(selectedAddress.parentSessionId)
+    if (this.selected !== undefined) refreshCatalog(this.selected)
+    for (const parentSessionId of this.openCatalogs) refreshCatalog(parentSessionId)
+  }
+
+  /** Sessions whose newest history page was requested for the local copy; bounded by {@link HISTORY_PREFETCH_MAX}. */
+  private readonly prefetched = new Set<SessionId>()
+  private readonly prefetchQueue: SessionId[] = []
+  private prefetchActive = 0
+
+  /**
+   * Warm the local history copy of Sessions the user is likely to open next, within a small budget:
+   * at most {@link HISTORY_PREFETCH_MAX} Sessions per page, {@link HISTORY_PREFETCH_PARALLEL} requests
+   * at once, each Session once, never a resident Session, and nothing when no local copy exists.
+   * @param sessionIds - listed root Sessions, most likely first.
+   * @param hovered - the user is pointing at the first id: it goes ahead of queued ones.
+   */
+  prefetchHistory(sessionIds: readonly SessionId[], hovered = false): void {
+    if (this.disposed || this.historyCache === undefined) return
+    const wanted = sessionIds.filter(id => !this.prefetched.has(id) && !this.sessions.has(id)
+      && this.summaries.some(row => row.sessionId === id && row.origin !== 'subagent'))
+    const admitted = wanted.slice(0, Math.max(0, HISTORY_PREFETCH_MAX - this.prefetched.size))
+    for (const id of admitted) this.prefetched.add(id)
+    if (hovered) this.prefetchQueue.unshift(...admitted)
+    else this.prefetchQueue.push(...admitted)
+    this.pumpPrefetch()
+  }
+
+  private pumpPrefetch(): void {
+    while (this.prefetchActive < HISTORY_PREFETCH_PARALLEL) {
+      const id = this.prefetchQueue.shift()
+      if (id === undefined) return
+      this.prefetchActive++
+      void this.prefetchOne(id).finally(() => {
+        this.prefetchActive--
+        this.pumpPrefetch()
+      })
+    }
+  }
+
+  private async prefetchOne(sessionId: SessionId): Promise<void> {
+    const cache = this.historyCache
+    if (cache === undefined || this.disposed || this.sessions.has(sessionId)) return
+    try {
+      const page = await readHistoryTail(this.remote.session, sessionId, {
+        maxMessages: initialHistoryMessages(),
+      })
+      // A Session opened meanwhile owns the copy and writes its own settled window.
+      if (page === undefined || this.disposed || this.sessions.has(sessionId)) return
+      const tail = cacheableTail(page.entries, page.hasMore)
+      if (tail !== undefined) await cache.write(sessionId, tail)
+    } catch {
+      // A failed warm-up leaves the room to open normally from the network.
+    }
   }
 
   /** Debounce membership refetches while one parent catalog is selected or open. */

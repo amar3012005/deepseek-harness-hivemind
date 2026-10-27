@@ -50,8 +50,8 @@ export class ModelDirectoryResolver extends Service {
     this.blockReason = config.blockReason
     this.catalog = new ModelCatalogDirectory(ctx)
     void this.catalog.load().catch(() => { /* selectors expose the shared error */ })
-    ctx.on('connection/reset', () => {
-      this.catalog.resetGeneration()
+    ctx.on('connection/reset', (initial) => {
+      this.catalog.resetGeneration(initial === true)
       for (const directory of this.live.directories.values()) directory.resetConnected()
     })
     ctx.remote.$on('llm/adapters-updated', () => { this.catalog.refresh() })

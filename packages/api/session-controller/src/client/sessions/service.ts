@@ -401,6 +401,15 @@ export class ClientSessions implements ISessions {
     this.manager.handleSessionError(...args)
   }
 
+  /**
+   * Warm the local history copy of likely next rooms within a small budget.
+   * @param sessionIds - listed root Sessions, most likely first.
+   * @param hovered - the first id is under the pointer and goes ahead of queued ones.
+   */
+  prefetchHistory(sessionIds: readonly SessionId[], hovered = false): void {
+    this.manager.prefetchHistory(sessionIds, hovered)
+  }
+
   /** Rebuild the Session baseline and every opened window after connection. */
   handleConnected(): void {
     this.manager.handleConnected()

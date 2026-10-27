@@ -5,7 +5,7 @@ import type { ModelSelection } from '@deepseek-ai/dsh-api-remotes/client'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type { ComponentProps } from 'react'
 import type { ModelDirectoryState } from '../src/client/directory.ts'
-import { ModelSelect } from '../src/client/ModelSelect.tsx'
+import { ModelSelect, forgetConnectionStatusRead } from '../src/client/ModelSelect.tsx'
 import { zh } from '../src/client/locales.ts'
 import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts'
 
@@ -51,6 +51,7 @@ function state(overrides: Partial<ModelDirectoryState> = {}): ModelDirectoryStat
 }
 
 afterEach(cleanup)
+afterEach(forgetConnectionStatusRead)
 
 afterEach(() => {
   vi.unstubAllGlobals()

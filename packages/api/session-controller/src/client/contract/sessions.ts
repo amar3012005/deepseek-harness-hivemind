@@ -46,6 +46,13 @@ export interface ISessions {
   resolveExisting(id: SessionId): Promise<void>
   open(id: SessionId): void
   /**
+   * Warm the local history copy of Sessions the user is likely to open next. Bounded per page, each Session
+   * once, never a resident Session; a failure is silent and the room opens from the network as before.
+   * @param ids - listed root Sessions, most likely first.
+   * @param hovered - the first id is under the pointer and goes ahead of queued ones.
+   */
+  prefetchHistory(ids: readonly SessionId[], hovered?: boolean): void
+  /**
    * Open a healthy catalog child through its exact direct-parent address.
    * @param address - catalog-derived parent and child ids.
    */

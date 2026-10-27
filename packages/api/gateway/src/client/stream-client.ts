@@ -51,9 +51,15 @@ export class RemoteStreamMuxClient {
     else void pending.then(() => { this.maintain() })
   }
 
-  /** Cancel the current socket or retry wait and start a fresh attempt immediately. */
-  reconnect(): void {
+  /**
+   * Replace the physical socket. Without `replace`, an open or still-connecting socket is kept and
+   * only a missing attempt is started: a slow Host is not a lost carrier, and replacing the socket
+   * would restart every logical stream's open.
+   * @param replace - cancel the current socket or connection attempt and start a fresh one.
+   */
+  reconnect(replace = true): void {
     if (!this.running || this.disposed) return
+    if (!replace && (this.socket?.readyState === WebSocket.OPEN || this.cancelCandidate !== undefined)) return
     const failure = new RemoteStreamCarrierError('api gateway: Remote stream reconnect requested')
     const pending = this.keepAlive
     this.revision++

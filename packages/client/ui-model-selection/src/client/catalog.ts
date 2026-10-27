@@ -82,8 +82,12 @@ export class ModelCatalogDirectory {
     void this.load().catch(() => { /* the selector exposes the shared error */ })
   }
 
-  /** Clear Host-specific values and load the replacement Host generation. */
-  resetGeneration(): void {
+  /**
+   * Clear Host-specific values and load the replacement Host generation.
+   * @param initial - the first generation of the page: a catalog that is loading or loaded over HTTP stays.
+   */
+  resetGeneration(initial = false): void {
+    if (initial && ['loading', 'ready'].includes(this.store.getSnapshot().status)) return
     this.invalidate(true)
     void this.load().catch(() => { /* the selector exposes the shared error */ })
   }

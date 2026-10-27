@@ -27,6 +27,7 @@ import {
 } from './sessions/history-records.ts'
 import type { SessionEventLikeEntry, SessionLiveEventEntry } from './contract/events.ts'
 import type { SessionRemotes } from './sessions/remotes.ts'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { assertSessionWireEvent } from './session-wire-event.ts'
 import { adaptHiveWireEvent } from './hive-wire-compat.ts'
 
@@ -246,4 +247,25 @@ export class SessionEventStream extends RemoteJournalStream<
   ): ClientSessionPageRequest {
     return request.maxMessages === undefined ? {} : { maxMessages: request.maxMessages }
   }
+}
+
+/**
+ * Read one Session's newest history page over the unary page route, with the same event validation as the
+ * follow stream, for the local history copy.
+ * @param remote - generated Session namespace.
+ * @param sessionId - ordinary root Session.
+ * @param request - page size, matching what an open of the same Session asks for.
+ * @param signal - cancellation.
+ * @returns validated entries in ascending order and whether older history exists, or undefined when refused.
+ */
+export async function readHistoryTail(
+  remote: Pick<SessionRemote, 'page'>,
+  sessionId: SessionId,
+  request: ClientSessionPageRequest,
+  signal?: AbortSignal,
+): Promise<{ readonly entries: readonly SessionEventLikeEntry[]; readonly hasMore: boolean } | undefined> {
+  const result = await remote.page({ address: { kind: 'session', sessionId }, ...request }, signal)
+  if (!result.ok) return undefined
+  const records = result.value.records.map(record => ({ ...record, event: acceptedWireEvent(record.event) }))
+  return { entries: historyEntries(records), hasMore: result.value.hasMore }
 }

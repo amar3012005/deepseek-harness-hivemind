@@ -32,6 +32,24 @@ describe('ModelCatalogDirectory', () => {
     expect(models).toHaveBeenCalledTimes(2)
   })
 
+  it('keeps a loading or loaded catalog on the first generation and reloads on a later one or after a failure', async () => {
+    const models = vi.fn().mockResolvedValue({ ok: true, value: catalog('one') })
+    const subject = directory(models)
+    const loading = subject.load()
+    subject.resetGeneration(true)
+    await loading
+    subject.resetGeneration(true)
+    expect(models).toHaveBeenCalledTimes(1)
+    expect(subject.store.getSnapshot()).toMatchObject({ value: catalog('one'), status: 'ready' })
+    subject.resetGeneration()
+    await vi.waitFor(() => { expect(models).toHaveBeenCalledTimes(2) })
+    const failing = directory(vi.fn().mockResolvedValueOnce({ ok: false, error: new RemoteError('gateway/internal', 'x', {}) })
+      .mockResolvedValue({ ok: true, value: catalog('two') }))
+    await failing.load().catch(() => {})
+    failing.resetGeneration(true)
+    await vi.waitFor(() => { expect(failing.store.getSnapshot().status).toBe('ready') })
+  })
+
   it('does not publish a successful result from an invalidated generation', async () => {
     const first = Promise.withResolvers<unknown>()
     const second = Promise.withResolvers<unknown>()

@@ -77,18 +77,21 @@ export function apply(ctx: ClientContext): void {
   ctx.effect(() => {
     // The roster is a live directory and the default is a settings field, so
     // both an external settings edit and a reconnect can move this row.
-    const refresh = (): void => {
-      void controller.load()
+    const refresh = (initial = false): void => {
+      // The first generation keeps a roster that is loading or loaded over HTTP.
+      const kept = (status: string): boolean => initial && status !== 'idle' && status !== 'error'
+      if (!kept(controller.store.getSnapshot().status)) void controller.load()
       // The section reads the same roster and marks the same default, so a
       // change made from either surface converges both.
-      if (section.store.getSnapshot().status !== 'idle') void section.load()
+      const sectionStatus = section.store.getSnapshot().status
+      if (sectionStatus !== 'idle' && !kept(sectionStatus)) void section.load()
     }
     const disposers = [
       ctx.remote.$on('settings/document-updated', (ns) => {
         if (ns !== AGENT_PRESET_SETTINGS_NS) return
         refresh()
       }),
-      ctx.on('connection/reset', () => { refresh() }),
+      ctx.on('connection/reset', (initial) => { refresh(initial === true) }),
     ]
     return () => { for (const dispose of disposers) dispose() }
   }, 'ui-agent-preset: settings refresh')

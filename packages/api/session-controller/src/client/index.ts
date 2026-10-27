@@ -116,6 +116,8 @@ export function apply(ctx: Context): void {
     failed: (error) => { console.error('[session-controller] control stream failed:', error) },
   })
   control.start()
+  // The list is plain HTTP: start it now instead of after the push stream's readiness.
+  void sessions.refresh()
   ctx.on('connection/reset', () => { sessions.handleConnected() })
   if (ctx.remote.$host.home !== undefined) sessions.handleConnected()
   ctx.typert.contexts.registerClient('agent', {
