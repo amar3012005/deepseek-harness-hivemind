@@ -41,6 +41,19 @@ export function RoomHeroMark({ size = 34, className }: {
   return <SingulanceMark size={size} className={className} />
 }
 
+/** Phone breakpoint for the Brain hero layout; matches the CSS in ConversationRoot and HeroShell. */
+const BRAIN_PHONE_QUERY = '(max-width: 600px)'
+
+/**
+ * Brain greeting for the empty-session hero: "Hey there, <FirstName>" when the host
+ * publishes the viewer's first name on `data-viewer-first-name`, otherwise "Hey there".
+ * @returns the greeting line.
+ */
+function brainGreeting(): string {
+  const firstName = document.querySelector('[data-viewer-first-name]')?.getAttribute('data-viewer-first-name')?.trim()
+  return firstName ? `Hey there, ${firstName}` : 'Hey there'
+}
+
 /** Show the requested welcome only in the native empty-room hero. */
 export function setupSingulanceHeadline(
   getPreset?: () => unknown,
@@ -48,8 +61,14 @@ export function setupSingulanceHeadline(
   getIdentity?: () => RoomIdentity | undefined,
 ): () => void {
   const originals = new Map<HTMLElement, { display: string; title: string; badgeDisplay: string; badgeText: string }>()
+  const phoneQuery = typeof window !== 'undefined' && typeof window.matchMedia === 'function'
+    ? window.matchMedia(BRAIN_PHONE_QUERY)
+    : undefined
   const apply = (): void => {
     if (typeof document === 'undefined') return
+    // Phones: "Hey there, <Name>" with the tagline above the composer. Desktop keeps the base
+    // headline "Brain: Let’s remember what matters" with the Singulance mark inline.
+    const phone = phoneQuery?.matches === true
     for (const headline of document.querySelectorAll('[data-conversation-intro-headline]')) {
       if (!(headline instanceof HTMLElement)) continue
       const title = headline.lastElementChild?.firstElementChild
@@ -68,11 +87,12 @@ export function setupSingulanceHeadline(
         headline.removeAttribute('data-hivemind-hero-headline')
         continue
       }
-      const text = brain ? 'Brain: Let’s remember what matters' : runtime ? 'RUNTIME : Lets Shape your company together' : 'Hyperagents : Lets do the real work.'
+      const brainTagline = 'Brain: Let’s remember what matters'
+      const text = brain ? (phone ? brainGreeting() : brainTagline) : runtime ? 'RUNTIME : Lets Shape your company together' : 'Hyperagents : Lets do the real work.'
       if (title.textContent !== text) title.textContent = text
       if (badge instanceof HTMLElement) {
-        badge.style.display = brain ? 'none' : originals.get(headline)?.badgeDisplay ?? ''
-        const badgeText = brain ? 'Let’s remember what matters' : originals.get(headline)?.badgeText ?? ''
+        badge.style.display = brain && !phone ? 'none' : originals.get(headline)?.badgeDisplay ?? ''
+        const badgeText = brain ? (phone ? brainTagline : 'Let’s remember what matters') : originals.get(headline)?.badgeText ?? ''
         if (badge.textContent !== badgeText) badge.textContent = badgeText
       }
       headline.toggleAttribute('data-hivemind-brain-welcome', brain)
@@ -82,9 +102,11 @@ export function setupSingulanceHeadline(
   const observer = new MutationObserver(apply)
   observer.observe(document.body, { childList: true, subtree: true })
   const unsubscribe = subscribe?.(apply)
+  phoneQuery?.addEventListener('change', apply)
   apply()
   return () => {
     unsubscribe?.()
+    phoneQuery?.removeEventListener('change', apply)
     observer.disconnect()
     for (const [headline, original] of originals) {
       headline.style.display = original.display

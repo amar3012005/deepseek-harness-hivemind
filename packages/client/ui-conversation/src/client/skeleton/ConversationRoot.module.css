@@ -751,14 +751,30 @@
 .root[data-brain-room][data-phase='active'] .composerSeat { margin-top: auto; }
 .root[data-brain-room] .composerSeat:has(:global([data-room-call-strip])) { padding-top: 56px; }
 
-/* Brain chat docks its composer at the floor in every phase, as the Runtime room
-   does: before the first message the column packs to the bottom, so the greeting and
-   scope sit just above the composer and the composer keeps its seat when the
-   transcript starts. The bottom reserve keeps the host's "Connect to your ChatGPT"
-   footer (absolutely positioned under the room) clear of the composer. */
-:global([data-brain-chat]) .root[data-phase='hero'] .scrollBody,
-:global([data-brain-chat]) .root[data-phase='settling'] .scrollBody {
-  justify-content: flex-end;
-  padding-bottom: calc(var(--hm-brain-composer-floor, 108px) + env(safe-area-inset-bottom));
-  box-sizing: border-box;
+/* Phones only. The Brain hero packs to the floor, the way the Runtime room does: the
+   scope line sits just above the composer and the composer keeps its seat when the
+   transcript starts. The gap under the card is 14px: the phone dock's own bottom padding
+   (max(10px, safe area)) supplies 10px and this 4px reserve adds the rest. Desktop keeps
+   the base centred hero. */
+@media (max-width: 600px) {
+  :global([data-brain-chat]) .root[data-phase='hero'] .scrollBody,
+  :global([data-brain-chat]) .root[data-phase='settling'] .scrollBody {
+    justify-content: flex-end;
+    padding-bottom: 4px;
+    box-sizing: border-box;
+  }
+
+  /* The composer stays hidden until its live dock (model picker, voice control, session
+     binding) is mounted. Before that the fallback bar renders a clipped placeholder and a
+     bare send button, so the stack keeps its layout but is not painted. */
+  :global([data-brain-room]) .composerSeat:not([data-hivemind-composer-ready]) .composerStack {
+    visibility: hidden;
+  }
+
+  /* The hero stack has no bottom padding on phones, so the card sits at the floor with the
+     scope line directly above it. */
+  :global([data-brain-chat]) .composerHero {
+    gap: 0;
+    padding-bottom: 0;
+  }
 }

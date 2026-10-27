@@ -229,3 +229,75 @@
   line-height: 18px;
   color: var(--dsw-alias-state-error-primary);
 }
+
+/* Phones only. Brain's new-session hero: the star mark and the greeting centre on the chat
+   body, and the scope line stays in flow directly above the composer card. Desktop keeps the
+   base headline with the Singulance mark inline. */
+@media (max-width: 600px) {
+  :global([data-brain-chat]) .root {
+    padding: 0;
+  }
+
+  :global([data-brain-chat]) .stack {
+    gap: 0;
+    max-width: none;
+    width: 100%;
+  }
+
+  :global([data-brain-chat]) .headline {
+    display: block;
+    font-size: inherit;
+    line-height: inherit;
+    font-weight: inherit;
+  }
+
+  :global([data-brain-chat]) .body {
+    display: none;
+  }
+
+  :global([data-brain-chat]) .fishHitbox {
+    position: absolute;
+    top: calc(50% - 49px);
+    left: 50%;
+    width: 48px;
+    height: 48px;
+    transform: translateX(-50%);
+  }
+
+  :global([data-brain-chat]) .fish {
+    width: 48px;
+    height: 48px;
+  }
+
+  :global([data-brain-chat]) .titleGroup {
+    display: block;
+  }
+
+  :global([data-brain-chat]) .titleGroup > span:first-child {
+    position: absolute;
+    top: calc(50% + 15px);
+    left: 0;
+    right: 0;
+    font-size: 28px;
+    font-weight: 500;
+    line-height: 35px;
+    color: #141413;
+    text-align: center;
+    white-space: nowrap;
+  }
+
+  :global([data-brain-chat]) .previewBadge {
+    display: block;
+    margin: 0 0 8px;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: #6b7280;
+    font-family: inherit;
+    font-size: 14px;
+    font-weight: 400;
+    line-height: 18px;
+    text-align: center;
+    white-space: normal;
+  }
+}
