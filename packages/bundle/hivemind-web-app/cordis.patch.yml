@@ -271,6 +271,8 @@
         schema: hivemind
         leaseTtlMs: 30000
         maxConnections: 10
+        initAttempts: 5
+        initRetryDelayMs: 1000
 
     - id: hivemind-web-runner
       name: '@deepseek-ai/dsh-hivemind-web-runner'

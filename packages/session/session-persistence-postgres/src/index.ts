@@ -20,11 +20,22 @@ import type {
   SessionPersistenceStatOptions,
 } from '@deepseek-ai/dsh-session-persistence'
 
-export interface Config { connectionStringEnv: string; schema: string; leaseTtlMs: number; maxConnections: number }
+export interface Config {
+  connectionStringEnv: string
+  schema: string
+  leaseTtlMs: number
+  maxConnections: number
+  /** Boot reachability probes before init fails; a cross-region database can miss one connection timeout while it is busy. */
+  initAttempts?: number
+  /** First delay between boot probes; doubles after each failed attempt. */
+  initRetryDelayMs?: number
+}
 export const Config: z<Config> = z.object({
   connectionStringEnv: z.string().required(), schema: z.string().required().pattern(/^[a-z_][a-z0-9_]*$/u),
   leaseTtlMs: z.natural().min(1000).required(),
   maxConnections: z.natural().min(1).required(),
+  initAttempts: z.natural().min(1).default(1),
+  initRetryDelayMs: z.natural().default(1000),
 })
 interface SessionRow extends QueryResultRow {
   header: SessionHeader
@@ -167,7 +178,16 @@ export class PostgresSessionPersistence extends SessionPersistence {
     })
   }
   protected async* [Service.init](): AsyncGenerator<() => Promise<void>, void, void> {
-    await this.pool.query('SELECT 1 FROM harness_sessions LIMIT 0')
+    const probe = () => this.pool.query('SELECT 1 FROM harness_sessions LIMIT 0')
+    const attempts = this.config.initAttempts ?? 1
+    for (let attempt = 1; ; attempt++) {
+      try { await probe(); break } catch (error) {
+        if (attempt >= attempts) throw error
+        const delay = (this.config.initRetryDelayMs ?? 1000) * 2 ** (attempt - 1)
+        this.ctx.logger.warn(`session-persistence-postgres: boot probe ${attempt}/${attempts} failed, retrying in ${delay} ms: ${String(error)}`)
+        await new Promise(resolve => setTimeout(resolve, delay))
+      }
+    }
     this.ctx.on('session/event', (session: Session, event) => {
       this.writers.get(session.id)?.enqueueLive(event, (error) => {
         this.ctx.logger.warn(`session-persistence-postgres: background write for session "${session.id}" failed (buffered events retained): ${String(error)}`)
