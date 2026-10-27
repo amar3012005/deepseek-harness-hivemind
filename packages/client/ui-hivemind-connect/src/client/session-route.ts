@@ -65,9 +65,23 @@ function defaultLastRoomStorage(): LastRoomStorage | undefined {
   }
 }
 
+/** Id prefix of OpenDot employee-linked Sessions, which Runtime owns and Brain chat never lists. */
+const OPEN_DOT_SESSION_PREFIX = 'session-open-dot-'
+
+/**
+ * Whether a Session may be a Brain chat room: not Runtime-owned by id and not
+ * created under a non-chat preset. An absent preset is a Chat creation header
+ * that has not projected its selection yet.
+ */
+function isBrainChatSession(sessionId: SessionId, preset: string | undefined): boolean {
+  return !sessionId.startsWith(OPEN_DOT_SESSION_PREFIX)
+    && (preset == null || preset === 'hivemind-chat' || preset.startsWith('hivemind-chat-'))
+}
+
 function readLastRoom(storage: LastRoomStorage | undefined, base: string): SessionId | undefined {
   try {
     const value = storage?.getItem(LAST_ROOM_KEY + base)
+    if (value?.startsWith(OPEN_DOT_SESSION_PREFIX) === true) return undefined
     return value === null || value === undefined || value === '' || value.length > 256 ? undefined : value as SessionId
   } catch {
     // Unreadable storage is the same as no remembered room.
@@ -97,6 +111,7 @@ function matchesMode(state: SessionListState, sessionId: SessionId, base: string
   // selection event lands. A saved HyperAgents selection must still win.
   if (summary.blank && base === HIVE_EMPLOYEE_HARNESS_PATH && sessionId === state.current
     && preset === 'hivemind-chat' && summary.projectionValues?.agentPreset == null) return true
+  if (base !== HIVE_EMPLOYEE_HARNESS_PATH && !isBrainChatSession(sessionId, preset)) return false
   if (summary.blank && preset == null) return true
   const hyperagent = preset === 'hivemind-hyperagents' || preset === 'hivemind-hq'
     || preset === 'hyperagents' || preset === 'hyperagents-compressed'
@@ -160,7 +175,9 @@ export function setupHivemindSessionRouting(
 
   const remember = (path: string): void => {
     const route = parseHivemindSessionRoute(path)
-    if (route.kind === 'session') writeLastRoom(lastRooms, routeBase(path), route.sessionId)
+    if (route.kind === 'session' && !route.sessionId.startsWith(OPEN_DOT_SESSION_PREFIX)) {
+      writeLastRoom(lastRooms, routeBase(path), route.sessionId)
+    }
   }
   const replace = (path: string): void => {
     remember(path)
@@ -255,6 +272,8 @@ export function setupHivemindSessionRouting(
   // for session.list. A miss or mode mismatch defers to the ready-list path.
   const openBeforeList = (sessionId: SessionId, fromBase = false): void => {
     if (creating || resolving) return
+    // Runtime-owned rooms are never opened on the Brain surface; the ready-list path redirects.
+    if (currentBase !== HIVE_EMPLOYEE_HARNESS_PATH && sessionId.startsWith(OPEN_DOT_SESSION_PREFIX)) return
     const attempt = ++generation
     resolving = true
     void sessions.resolveExisting(sessionId, { open: true }).then(() => {

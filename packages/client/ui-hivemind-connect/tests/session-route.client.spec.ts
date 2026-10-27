@@ -137,6 +137,47 @@ describe('HIVE native session routes', () => {
     expect(window.location.pathname).toBe(`${HIVE_OVERVIEW_PATH}/session/session-recent`)
   })
 
+  it('skips open-dot and non-chat sessions when selecting the newest Brain room', () => {
+    const list = state()
+    const dot = sid('session-open-dot-abc')
+    const hq = sid('session-hq')
+    const chat = sid('session-chat')
+    const ids = [dot, hq, chat, ...list.ids]
+    const byId = {
+      ...list.byId,
+      [dot]: { id: dot, displayTitle: 'Dot', running: false, blank: false, updatedAt: 9 },
+      [hq]: { id: hq, displayTitle: 'HQ', running: false, blank: false, updatedAt: 8, agentPreset: 'hivemind-runtime' },
+      [chat]: { id: chat, displayTitle: 'Chat', running: false, blank: false, updatedAt: 7, agentPreset: 'hivemind-chat' },
+    }
+    const harness = fixture({ ...list, ids, byId })
+    install(harness.sessions)
+    expect(harness.open).toHaveBeenCalledWith('session-chat')
+    expect(window.location.pathname).toBe(hivemindSessionPath(chat))
+  })
+
+  it('ignores a remembered open-dot room and falls back to the newest valid chat', () => {
+    localStorage.setItem('hm.route.lastRoom:' + HIVE_OVERVIEW_PATH, 'session-open-dot-abc')
+    const resolveExisting = vi.fn(async () => {})
+    const harness = fixture({ ...state(), phase: 'loading' } as SessionListState)
+    ;(harness.sessions as unknown as { resolveExisting: unknown }).resolveExisting = resolveExisting
+    install(harness.sessions)
+    expect(resolveExisting).not.toHaveBeenCalled()
+    harness.set(state())
+    expect(harness.open).toHaveBeenCalledWith('session-recent')
+    expect(localStorage.getItem('hm.route.lastRoom:' + HIVE_OVERVIEW_PATH)).toBe('session-recent')
+  })
+
+  it('creates a blank chat when only Runtime-owned sessions exist', async () => {
+    const dot = sid('session-open-dot-abc')
+    const harness = fixture({
+      ...state(), ids: [dot],
+      byId: { [dot]: { id: dot, displayTitle: 'Dot', running: false, blank: false, updatedAt: 9 } },
+    })
+    install(harness.sessions)
+    await vi.waitFor(() => { expect(harness.create).toHaveBeenCalledTimes(1) })
+    expect(harness.open).not.toHaveBeenCalledWith(dot)
+  })
+
   it('does not admit a blank HyperAgents session into a BRAIN route', async () => {
     window.history.replaceState(null, '', `${HIVE_OVERVIEW_PATH}/session/session-older`)
     const mixed = state('session-older')
