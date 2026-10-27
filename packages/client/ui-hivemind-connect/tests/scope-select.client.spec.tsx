@@ -32,14 +32,31 @@ describe('HIVE-MIND read scope control', () => {
 })
 
 describe('HIVE-MIND hero branding', () => {
-  it('restores one company Brain welcome line', () => {
+  it('greets the viewer by first name and shows the Brain tagline as the line above the composer', () => {
+    const host = document.createElement('div')
+    host.setAttribute('data-viewer-first-name', 'Amar')
+    document.body.appendChild(host)
     const view = render(<div data-testid="welcome" data-conversation-intro-headline><span /><span><span>Into the Unknown</span><span>Preview</span></span></div>)
     const dispose = setupSingulanceHeadline(() => 'hivemind-chat')
-    expect(view.getByText('Brain: Let’s remember what matters')).toBeTruthy()
+    expect(view.getByText('Hey there, Amar')).toBeTruthy()
+    expect(view.getByText('Brain: Let’s remember what matters').style.display).toBe('')
     expect(view.queryByText('Preview')).toBeNull()
     dispose()
+    host.remove()
     expect(view.getByText('Into the Unknown')).toBeTruthy()
     expect(view.getByText('Preview').style.display).toBe('')
+  })
+
+  it('falls back to a plain "Hey there" greeting when no viewer name is published', () => {
+    const view = render(
+      <div data-testid="welcome" data-conversation-intro-headline>
+        <span />
+        <span><span>Into the Unknown</span><span>Preview</span></span>
+      </div>,
+    )
+    const dispose = setupSingulanceHeadline(() => 'hivemind-chat')
+    expect(view.getByText('Hey there')).toBeTruthy()
+    dispose()
   })
   it('preserves the introductory headline outside a branded HIVE mode', () => {
     const view = render(<div>

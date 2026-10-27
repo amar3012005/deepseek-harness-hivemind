@@ -25,15 +25,24 @@ describe('HIVE composer layout', () => {
     expect(css).toMatch(/\.root \.header \.headerUtilities\s*\{\s*display:\s*none;/u)
   })
 
-  it('docks the Brain composer at the floor in the hero phase and keeps the greeting above it', () => {
+  it('docks the Brain composer 14px above the bottom edge in the hero phase', () => {
     // The data-brain-chat marker sits on the host surface, so the rule scopes through an ancestor.
-    // Before the first message the column packs to the floor and reserves room for the host footer.
+    // Phones: the dock's own max(10px, safe area) bottom padding adds to the 4px reserve.
+    // Desktop: the dock has no bottom padding, so the reserve supplies the full 14px.
     expect(css).toMatch(
       new RegExp(String.raw`:global\(\[data-brain-chat\]\) \.root\[data-phase='hero'\] \.scrollBody,[\s\S]*?\{\s*`
-        + String.raw`justify-content:\s*flex-end;\s*padding-bottom:\s*calc\(var\(--hm-brain-composer-floor, 108px\)`, 'u'),
+        + String.raw`justify-content:\s*flex-end;\s*padding-bottom:\s*4px;`, 'u'),
     )
+    expect(css).toMatch(/@media \(min-width: 601px\)\s*\{[\s\S]*?padding-bottom:\s*calc\(14px \+ env\(safe-area-inset-bottom/u)
+    expect(css).not.toMatch(/hm-brain-composer-floor/u)
     // No rule may grow the composer stack past the column, which pushed the composer below the fold.
     expect(css).not.toMatch(/\.composerSeat,[\s\S]*?flex:\s*1 0 auto/u)
+  })
+
+  it('hides the Brain composer until its live dock is mounted', () => {
+    expect(css).toMatch(
+      /:global\(\[data-brain-room\]\) \.composerSeat:not\(\[data-hivemind-composer-ready\]\) \.composerStack\s*\{\s*visibility:\s*hidden;/u,
+    )
   })
 
   it('keeps the Brain read-scope selector out of the phone row and never paints it empty', () => {

@@ -41,6 +41,16 @@ export function RoomHeroMark({ size = 34, className }: {
   return <SingulanceMark size={size} className={className} />
 }
 
+/**
+ * Brain greeting for the empty-session hero: "Hey there, <FirstName>" when the host
+ * publishes the viewer's first name on `data-viewer-first-name`, otherwise "Hey there".
+ * @returns the greeting line.
+ */
+function brainGreeting(): string {
+  const firstName = document.querySelector('[data-viewer-first-name]')?.getAttribute('data-viewer-first-name')?.trim()
+  return firstName ? `Hey there, ${firstName}` : 'Hey there'
+}
+
 /** Show the requested welcome only in the native empty-room hero. */
 export function setupSingulanceHeadline(
   getPreset?: () => unknown,
@@ -68,11 +78,11 @@ export function setupSingulanceHeadline(
         headline.removeAttribute('data-hivemind-hero-headline')
         continue
       }
-      const text = brain ? 'Brain: Let’s remember what matters' : runtime ? 'RUNTIME : Lets Shape your company together' : 'Hyperagents : Lets do the real work.'
+      const text = brain ? brainGreeting() : runtime ? 'RUNTIME : Lets Shape your company together' : 'Hyperagents : Lets do the real work.'
       if (title.textContent !== text) title.textContent = text
       if (badge instanceof HTMLElement) {
-        badge.style.display = brain ? 'none' : originals.get(headline)?.badgeDisplay ?? ''
-        const badgeText = brain ? 'Let’s remember what matters' : originals.get(headline)?.badgeText ?? ''
+        badge.style.display = brain ? '' : originals.get(headline)?.badgeDisplay ?? ''
+        const badgeText = brain ? 'Brain: Let’s remember what matters' : originals.get(headline)?.badgeText ?? ''
         if (badge.textContent !== badgeText) badge.textContent = badgeText
       }
       headline.toggleAttribute('data-hivemind-brain-welcome', brain)
