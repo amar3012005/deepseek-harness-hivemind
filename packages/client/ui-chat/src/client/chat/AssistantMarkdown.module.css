@@ -79,10 +79,11 @@
   background: var(--dsh-agent-bubble-color, color-mix(in srgb, currentColor 5%, transparent));
 }
 
-/* Brain phone chat: assistant text sits in a quiet bubble frame, as in the Runtime room. */
+/* Brain phone chat: assistant text sits in the Runtime room's bubble (9px 13px, radius 20), one content step smaller. */
 @media (max-width: 600px) {
+  :global([data-brain-chat]) .root { font-size: max(14.5px, calc(var(--dsh-content-font-size, 16px) - 1.5px)); line-height: 1.5; }
   :global([data-brain-chat]) .body[data-assistant-text] {
-    box-sizing: border-box; min-width: 0; padding: 9px 12px; border-radius: 3px 14px 14px 14px;
-    background: var(--dsw-alias-interactive-bg-hover); overflow-wrap: anywhere; gap: 10px;
+    box-sizing: border-box; min-width: 0; padding: 9px 13px; border-radius: 20px;
+    background: var(--dsw-alias-interactive-bg-hover); overflow-wrap: anywhere; gap: 8px;
   }
 }

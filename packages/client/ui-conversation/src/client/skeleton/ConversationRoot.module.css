@@ -774,6 +774,14 @@
     visibility: hidden;
   }
 
+  /* The shell's room bar (controls end at 56px) floats over the transcript: the first message rests at 68px, and
+     text moving up is hidden down to 48px and fades in by 68px, so nothing reads through around the controls. */
+  :global([data-brain-chat]) .root:not([data-phase='hero']):not([data-phase='settling']) .scrollBody {
+    padding-top: 68px; scroll-padding-top: 68px;
+    -webkit-mask-image: linear-gradient(to bottom, transparent 48px, #000 68px);
+    mask-image: linear-gradient(to bottom, transparent 48px, #000 68px);
+  }
+
   /* The hero stack has no bottom padding on phones, so the card sits at the floor with the
      scope line directly above it. */
   :global([data-brain-chat]) .composerHero {

@@ -99,3 +99,8 @@
   clip: rect(0 0 0 0);
   white-space: nowrap;
 }
+
+/* Brain phone chat, as the Runtime room: no time or copy row under the user's own messages. */
+@media (max-width: 600px) {
+  :global([data-brain-chat]) :is([data-chat-flow-kind='user'], [data-chat-flow-kind='steering']) .actions { display: none; }
+}
