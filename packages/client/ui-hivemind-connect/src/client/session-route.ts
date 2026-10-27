@@ -111,7 +111,7 @@ function matchesMode(state: SessionListState, sessionId: SessionId, base: string
   // selection event lands. A saved HyperAgents selection must still win.
   if (summary.blank && base === HIVE_EMPLOYEE_HARNESS_PATH && sessionId === state.current
     && preset === 'hivemind-chat' && summary.projectionValues?.agentPreset == null) return true
-  if (base !== HIVE_EMPLOYEE_HARNESS_PATH && !isBrainChatSession(sessionId, preset)) return false
+  if (base !== HIVE_EMPLOYEE_HARNESS_PATH && !isBrainChatSession(sessionId, preset ?? undefined)) return false
   if (summary.blank && preset == null) return true
   const hyperagent = preset === 'hivemind-hyperagents' || preset === 'hivemind-hq'
     || preset === 'hyperagents' || preset === 'hyperagents-compressed'
