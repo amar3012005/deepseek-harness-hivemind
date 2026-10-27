@@ -25,22 +25,26 @@ describe('HIVE composer layout', () => {
     expect(css).toMatch(/\.root \.header \.headerUtilities\s*\{\s*display:\s*none;/u)
   })
 
-  it('docks the Brain composer 14px above the bottom edge in the hero phase', () => {
-    // The data-brain-chat marker sits on the host surface, so the rule scopes through an ancestor.
-    // Phones: the dock's own max(10px, safe area) bottom padding adds to the 4px reserve.
-    // Desktop: the dock has no bottom padding, so the reserve supplies the full 14px.
-    expect(css).toMatch(
-      new RegExp(String.raw`:global\(\[data-brain-chat\]\) \.root\[data-phase='hero'\] \.scrollBody,[\s\S]*?\{\s*`
-        + String.raw`justify-content:\s*flex-end;\s*padding-bottom:\s*4px;`, 'u'),
-    )
-    expect(css).toMatch(/@media \(min-width: 601px\)\s*\{[\s\S]*?padding-bottom:\s*calc\(14px \+ env\(safe-area-inset-bottom/u)
+  it('keeps the desktop Brain hero centred; the floor dock applies on phones only', () => {
+    // Desktop: the base centred hero, with no flex-end dock or bottom reserve.
     expect(css).not.toMatch(/hm-brain-composer-floor/u)
+    expect(css).not.toMatch(/@media \(min-width: 601px\)/u)
+    // Phones: the Brain hero packs to the floor with a 4px reserve; the dock's own padding adds 10px.
+    const phoneBlock = css.slice(css.indexOf('Phones only. The Brain hero packs'))
+    expect(phoneBlock).toMatch(
+      new RegExp(
+        String.raw`:global\(\[data-brain-chat\]\) \.root\[data-phase='hero'\] \.scrollBody,[\s\S]*?`
+        + String.raw`justify-content:\s*flex-end;\s*padding-bottom:\s*4px;`,
+        'u',
+      ),
+    )
     // No rule may grow the composer stack past the column, which pushed the composer below the fold.
     expect(css).not.toMatch(/\.composerSeat,[\s\S]*?flex:\s*1 0 auto/u)
   })
 
-  it('hides the Brain composer until its live dock is mounted', () => {
-    expect(css).toMatch(
+  it('hides the Brain composer until its live dock is mounted, on phones only', () => {
+    const phoneBlock = css.slice(css.indexOf('Phones only. The Brain hero packs'))
+    expect(phoneBlock).toMatch(
       /:global\(\[data-brain-room\]\) \.composerSeat:not\(\[data-hivemind-composer-ready\]\) \.composerStack\s*\{\s*visibility:\s*hidden;/u,
     )
   })

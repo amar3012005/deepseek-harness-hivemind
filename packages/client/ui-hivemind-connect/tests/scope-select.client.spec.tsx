@@ -4,7 +4,29 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { ScopeSelect } from '../src/client/ScopeSelect.tsx'
 import { setupSingulanceHeadline, SingulanceMark } from '../src/client/SingulanceMark.tsx'
 
-afterEach(() => { cleanup(); window.history.replaceState({}, '', '/') })
+afterEach(() => { cleanup(); window.history.replaceState({}, '', '/'); vi.unstubAllGlobals() })
+
+/**
+ * Stubs `matchMedia` with one live query object, as a browser MediaQueryList is: `matches` is
+ * updated in place and `change` listeners are fired by `setPhone`.
+ */
+function stubViewport(phone: boolean): { setPhone(next: boolean): void; listeners: Set<() => void> } {
+  const listeners = new Set<() => void>()
+  const query = {
+    matches: phone,
+    media: '(max-width: 600px)',
+    addEventListener: (_type: string, listener: () => void) => { listeners.add(listener) },
+    removeEventListener: (_type: string, listener: () => void) => { listeners.delete(listener) },
+  }
+  vi.stubGlobal('matchMedia', vi.fn(() => query))
+  return {
+    listeners,
+    setPhone(next: boolean) {
+      query.matches = next
+      for (const listener of listeners) listener()
+    },
+  }
+}
 
 describe('HIVE-MIND read scope control', () => {
   it('uses the native folder mark for the Full scope read union', () => {
@@ -32,7 +54,8 @@ describe('HIVE-MIND read scope control', () => {
 })
 
 describe('HIVE-MIND hero branding', () => {
-  it('greets the viewer by first name and shows the Brain tagline as the line above the composer', () => {
+  it('phone: greets the viewer by first name and shows the Brain tagline as the line above the composer', () => {
+    stubViewport(true)
     const host = document.createElement('div')
     host.setAttribute('data-viewer-first-name', 'Amar')
     document.body.appendChild(host)
@@ -47,7 +70,8 @@ describe('HIVE-MIND hero branding', () => {
     expect(view.getByText('Preview').style.display).toBe('')
   })
 
-  it('falls back to a plain "Hey there" greeting when no viewer name is published', () => {
+  it('phone: falls back to a plain "Hey there" greeting when no viewer name is published', () => {
+    stubViewport(true)
     const view = render(
       <div data-testid="welcome" data-conversation-intro-headline>
         <span />
@@ -58,11 +82,43 @@ describe('HIVE-MIND hero branding', () => {
     expect(view.getByText('Hey there')).toBeTruthy()
     dispose()
   })
+
+  it('desktop: keeps the base headline "Brain: Let’s remember what matters" with the badge hidden', () => {
+    stubViewport(false)
+    const host = document.createElement('div')
+    host.setAttribute('data-viewer-first-name', 'Amar')
+    document.body.appendChild(host)
+    const view = render(<div data-testid="welcome" data-conversation-intro-headline><span /><span><span>Into the Unknown</span><span>Preview</span></span></div>)
+    const dispose = setupSingulanceHeadline(() => 'hivemind-chat')
+    expect(view.getByText('Brain: Let’s remember what matters')).toBeTruthy()
+    expect(view.queryByText('Hey there, Amar')).toBeNull()
+    expect(view.getByText('Let’s remember what matters').style.display).toBe('none')
+    dispose()
+    host.remove()
+    expect(view.getByText('Into the Unknown')).toBeTruthy()
+    expect(view.getByText('Preview').style.display).toBe('')
+  })
+
+  it('re-applies the headline when the viewport crosses the phone breakpoint', () => {
+    const viewport = stubViewport(false)
+    const view = render(<div data-testid="welcome" data-conversation-intro-headline><span /><span><span>Into the Unknown</span><span>Preview</span></span></div>)
+    const dispose = setupSingulanceHeadline(() => 'hivemind-chat')
+    expect(view.getByText('Brain: Let’s remember what matters')).toBeTruthy()
+    expect(viewport.listeners.size).toBe(1)
+    viewport.setPhone(true)
+    expect(view.getByText('Hey there')).toBeTruthy()
+    expect(view.getByText('Brain: Let’s remember what matters').style.display).toBe('')
+    viewport.setPhone(false)
+    expect(view.getByText('Brain: Let’s remember what matters')).toBeTruthy()
+    expect(view.getByText('Let’s remember what matters').style.display).toBe('none')
+    dispose()
+    expect(viewport.listeners.size).toBe(0)
+  })
   it('preserves the introductory headline outside a branded HIVE mode', () => {
     const view = render(<div>
       <div data-testid="headline" data-conversation-intro-headline><span><span data-hivemind-hero-brand="singulance"><img alt="Runtime" /></span></span><span><span>Beyond Horizon Of Intelligence</span><span>Preview</span></span></div>
     </div>)
-    vi.stubGlobal('matchMedia', vi.fn(() => ({ matches: true })))
+    stubViewport(true)
     Object.defineProperty(view.getByText('Beyond Horizon Of Intelligence'), 'getAnimations', { value: () => [] })
     const dispose = setupSingulanceHeadline()
     expect(view.getByTestId('headline').hasAttribute('data-hivemind-hero-headline')).toBe(false)
