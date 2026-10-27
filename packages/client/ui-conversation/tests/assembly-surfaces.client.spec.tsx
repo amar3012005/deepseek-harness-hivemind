@@ -245,8 +245,11 @@ describe('prompt rejection through the assembled composer', () => {
         error: new RemoteError('session/agent-busy', 'prompt rejected before acceptance', { reason: 'busy' }),
       }
     })
-    const alert = await view.findByRole('alert')
-    expect(alert.textContent).toContain('prompt rejected before acceptance (session/agent-busy)')
+    // One plain sentence with Retry; the RPC text and code never reach the person.
+    const failed = await waitFor(() => view.container.querySelector<HTMLElement>('[data-send-state="failed"]')!)
+    expect(failed.textContent).toContain('消息未能发送。')
+    expect(within(failed).getByRole('button', { name: '重试' })).toBeTruthy()
+    expect(view.container.textContent).not.toContain('session/agent-busy')
     await waitFor(() => {
       expect(shell.snapshot.draft).toBe('do not lose this')
     })

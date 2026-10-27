@@ -29,6 +29,16 @@
   line-height: 18px;
 }
 
+.sendRetry {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
 .card {
   box-sizing: border-box;
   position: relative; /* overlay anchor positioning context */

@@ -1,15 +1,16 @@
-/** Session history through the local copy: the cached tail draws first, the server page replaces it, and stored tails stay bounded. */
+/** Session local resilience: cached tails draw first, stored tails stay bounded, and sends to an unreachable Host are held. */
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { SessionSeq, type SessionEvent } from '@deepseek-ai/dsh-session/types'
 import type { SessionId } from '@deepseek-ai/dsh-api-remotes/client'
-import { Session } from '../src/client/sessions/session.ts'
+import { Session, isUnreachableSendFailure } from '../src/client/sessions/session.ts'
+import { RemoteError } from '@deepseek-ai/dsh-typert-protocol'
 import {
   cacheableTail, sessionHistoryCache, type CachedHistoryPage, type SessionHistoryCacheSeam,
 } from '../src/client/cache/session-history-cache.ts'
 import { createAccountScopedCache } from '../src/client/cache/account-cache.ts'
 import { MemorySwrStore } from '../src/client/cache/swr-cache.ts'
-import { FakeApiClient, deferred, fakeRemote, ok } from './fake-api.client.ts'
+import { FakeApiClient, deferred, err, fakeRemote, ok } from './fake-api.client.ts'
 import { historyValue, plainTurn } from './event-script.client.ts'
 
 const SID = 'fk-h1' as SessionId
@@ -110,5 +111,49 @@ describe('sessionHistoryCache', () => {
     const reopened = sessionHistoryCache(createAccountScopedCache(Promise.resolve(store), undefined, fetcher))
     expect(await reopened.read('fk-0' as SessionId)).toBeUndefined()
     expect(await reopened.read('fk-60' as SessionId)).toEqual(page)
+  })
+})
+
+describe('held sends while the Host is unreachable', () => {
+  it('holds a transport failure and resends it with the same requestId until the Host accepts', async () => {
+    vi.useFakeTimers()
+    const api = new FakeApiClient()
+    const session = new Session(SID, fakeRemote(api))
+    await session.open()
+    const requests: unknown[] = []
+    let reachable = false
+    api.onPrompt = (payload) => {
+      requests.push((payload as { requestId: string }).requestId)
+      return Promise.resolve(reachable ? ok({ accepted: true as const })
+        : err(new RemoteError('gateway/internal', 'transport failure for /api/session/prompt: HTTP 400', {})))
+    }
+    const { requestId } = session.beginSubmission({ content: [{ type: 'text', text: 'hi' }] } as never)
+    const result = await session.prompt([{ type: 'text', text: 'hi' }], 'queue', undefined, requestId)
+    expect(result.ok).toBe(true)
+    expect(session.getSnapshot().promptError).toBeNull()
+    expect(session.getSnapshot().heldSends).toBe(1)
+    reachable = true
+    await vi.advanceTimersByTimeAsync(1_000)
+    expect(requests).toEqual([requestId, requestId])
+    expect(session.getSnapshot().promptError).toBeNull()
+  })
+
+  it('reports a real rejection instead of holding it', async () => {
+    const api = new FakeApiClient()
+    const session = new Session(SID, fakeRemote(api))
+    await session.open()
+    api.onPrompt = () => Promise.resolve(err(new RemoteError('session/agent-busy', 'busy', { reason: 'busy' })))
+    const result = await session.prompt([{ type: 'text', text: 'hi' }], 'queue')
+    expect(result.ok).toBe(false)
+    expect(session.getSnapshot().heldSends).toBe(0)
+    expect(session.getSnapshot().promptError?.error.code).toBe('session/agent-busy')
+  })
+})
+
+describe('isUnreachableSendFailure', () => {
+  it('separates an unreachable Host from a rejected message', () => {
+    expect(isUnreachableSendFailure({ code: 'gateway/internal', message: 'x' })).toBe(true)
+    expect(isUnreachableSendFailure({ code: 'x/y', message: 'transport failure for /api/session/prompt: HTTP 502' })).toBe(true)
+    expect(isUnreachableSendFailure({ code: 'session/agent-busy', message: 'busy' })).toBe(false)
   })
 })

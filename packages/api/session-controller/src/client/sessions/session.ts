@@ -91,6 +91,23 @@ export interface SessionOptions {
   historyCache?: SessionHistoryCacheSeam
 }
 
+/** Failure codes a restarting or unreachable Host produces; the message stays held and is sent again. */
+const UNREACHABLE_CODES = new Set(['gateway/internal', 'gateway/unavailable', 'gateway/timeout', 'transport/unavailable'])
+
+/**
+ * Whether a send failed because the Host was unreachable or restarting, rather than rejecting the message.
+ * @param error - the prompt failure.
+ * @returns true for transport, 5xx, closed-socket and `gateway/internal` failures.
+ */
+export function isUnreachableSendFailure(error: { readonly code: string; readonly message: string }): boolean {
+  return UNREACHABLE_CODES.has(error.code)
+    || /transport failure|HTTP 5\d\d|socket|network|fetch failed|ECONNRE|connection (?:lost|closed|reset)/iu.test(error.message)
+}
+
+/** First delay before a held send is retried; doubles up to {@link HELD_SEND_MAX_DELAY_MS}. */
+const HELD_SEND_FIRST_DELAY_MS = 1_000
+const HELD_SEND_MAX_DELAY_MS = 15_000
+
 /** Prompt fields held by the outbox until the subscription opens. */
 interface HeldPrompt {
   readonly content: PromptContentPart[]
@@ -148,6 +165,9 @@ export class Session implements SessionFace {
   private blankBit = true
   private removed = false
   private promptError: PromptError | null = null
+  /** Held sends wait for the Host to become reachable again. */
+  private heldSendTimer: ReturnType<typeof setTimeout> | undefined
+  private heldSendDelay = HELD_SEND_FIRST_DELAY_MS
   private lastAgentError: string | null = null
   /** Local submission echoes, insertion-ordered (see SessionSnapshot.pendingSubmissions). */
   private pendingSubmissions: readonly PendingSubmission[] = []
@@ -282,13 +302,26 @@ export class Session implements SessionFace {
         this.outbox.enqueue({ content, mode, clientTimeZone }, requestId)
         return { ok: true, value: { accepted: true } }
       }
-      result = await this.remote.session.prompt({
-        requestId: requestId ?? randomUUID() as SessionRequestId,
-        sessionId: this.sessionId,
-        mode,
-        content,
-        clientTimeZone,
-      }, signal)
+      const submissionId = requestId ?? randomUUID() as SessionRequestId
+      try {
+        result = await this.remote.session.prompt({
+          requestId: submissionId,
+          sessionId: this.sessionId,
+          mode,
+          content,
+          clientTimeZone,
+        }, signal)
+      } catch (error) {
+        if (signal?.aborted === true || !isRemoteFailure(error)) throw error
+        result = { ok: false, error }
+      }
+      if (!result.ok && signal?.aborted !== true && isUnreachableSendFailure(result.error)) {
+        // The Host deduplicates by requestId, so resending the held prompt can never add a second message.
+        this.outbox.enqueue({ content, mode, clientTimeZone }, submissionId)
+        this.scheduleHeldSend()
+        this.notifier.markDirty()
+        return { ok: true, value: { accepted: true } }
+      }
     } else if (content.some(part => part.type === 'file')) {
       result = {
         ok: false,
@@ -631,6 +664,8 @@ export class Session implements SessionFace {
       this.retireFailedSubmission(requestId)
     }
     this.openGeneration++
+    clearTimeout(this.heldSendTimer)
+    this.heldSendTimer = undefined
     this.flushHistoryCache()
     const events = this.events
     this.events = undefined
@@ -828,12 +863,34 @@ export class Session implements SessionFace {
         content,
         clientTimeZone,
       })
-      if (result.ok) return
+      if (result.ok) {
+        this.heldSendDelay = HELD_SEND_FIRST_DELAY_MS
+        return
+      }
+      if (isUnreachableSendFailure(result.error)) {
+        this.scheduleHeldSend()
+        throw new Error('held send: Host unreachable')
+      }
       this.outbox.acknowledge(entry.rpcId)
       this.retireFailedSubmission(entry.rpcId as SessionRequestId)
       this.promptError = { op: 'send', error: result.error }
       this.notifier.markDirty()
-    })
+    }).catch(() => {
+      // A thrown send keeps its entry; the held-send timer retries it with the same requestId.
+      this.scheduleHeldSend()
+    }).finally(() => { this.notifier.markDirty() })
+  }
+
+  /** Retry held sends with doubling delay until the Host accepts or rejects them. */
+  private scheduleHeldSend(): void {
+    if (this.heldSendTimer !== undefined || this.outbox.snapshot().length === 0) return
+    const delay = this.heldSendDelay
+    this.heldSendDelay = Math.min(HELD_SEND_MAX_DELAY_MS, delay * 2)
+    this.heldSendTimer = setTimeout(() => {
+      this.heldSendTimer = undefined
+      this.outbox.beginConnection()
+      void this.flushOutbox()
+    }, delay)
   }
 
   /** Retire the matching echo when a durable browser-prompt `user/message` becomes visible. */
@@ -927,6 +984,7 @@ export class Session implements SessionFace {
       hasMore: this.hasMore,
       loadingOlder: this.loadingOlder,
       promptError: this.promptError,
+      heldSends: this.openState === 'open' ? this.outbox.snapshot().length : 0,
       blank: this.blankBit,
       lastAgentError: this.lastAgentError,
       promptAttempted: this.promptAttempted,

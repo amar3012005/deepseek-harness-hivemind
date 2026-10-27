@@ -1057,7 +1057,7 @@ describe('blank mirror', () => {
     const b = bench()
     await feedList(b, [{ id: 's1', blank: true, cwd: '/w/a' }])
     const session = b.svc.binding(sid('s1'))!.session
-    b.api.onPrompt = () => Promise.resolve(err(new RemoteError('gateway/internal', 'agent busy', {})))
+    b.api.onPrompt = () => Promise.resolve(err(new RemoteError('session/agent-busy', 'agent busy', { reason: 'busy' })))
     const result = await session.prompt([{ type: 'text', text: 'hi' }], 'queue')
     expect(result.ok).toBe(false)
     // No flip on failure: local stays aligned with the host authority

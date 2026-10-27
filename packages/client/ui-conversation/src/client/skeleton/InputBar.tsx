@@ -68,6 +68,7 @@ export const InputBar = memo(function InputBar({
   void useLexicon // hook seat stays bound by the inject compartment; text-ref decoration rides the shell's editor transforms
   const commandMenuOpen = useMenuLauncher(source => source === 'command' || source === 'composer-actions')
   const promptError = useSession(s => s.promptError) ?? null
+  const heldSends = useSession(s => s.heldSends) ?? 0
   const running = useSession(s => s.running) ?? false
   const subagent = useSession(s => s.subagent) ?? null
   const removed = useSession(s => s.removed) ?? false
@@ -118,14 +119,17 @@ export const InputBar = memo(function InputBar({
   // an unresolved promptError deliberately re-announces it once — the failure
   // is still pending, and a transient banner is its only surface. Attachment
   // rejections show product copy keyed by the wire reason — whichever domain
-  // refused them; other codes are developer-facing and keep the raw message
-  // plus code.
+  // refused them; every other failure shows one plain sentence, never the
+  // transport or RPC text. An unreachable Host never reaches promptError: the
+  // Session holds that message and resends it (heldSends).
+  const attachmentRejected = promptError !== null
+    && (promptError.error.code === 'session/attachment-invalid' || promptError.error.code === 'subagent/attachment-invalid')
   useEffect(() => {
     if (promptError === null) return
     const { error } = promptError
     showToast(error.code === 'session/attachment-invalid' || error.code === 'subagent/attachment-invalid'
       ? attachmentErrorText(t, error.details.reason, imageLimits)
-      : `${error.message} (${error.code})`)
+      : t(promptError.op === 'stop' ? 'input.stopFailed' : 'input.sendFailed'))
   }, [promptError, showToast, t, imageLimits])
   useEffect(() => {
     if (notice?.level === 'error') showToast(notice.text)
@@ -469,6 +473,15 @@ export const InputBar = memo(function InputBar({
           anchor={cardRef.current}
           onDone={dismissToast}
         />
+      )}
+      {heldSends > 0 && (
+        <div className={css.notice} role="status" data-send-state="held">{t('input.sendHeld')}</div>
+      )}
+      {heldSends === 0 && promptError?.op === 'send' && !attachmentRejected && !empty && (
+        <div className={css.notice} role="alert" data-send-state="failed">
+          {t('input.sendFailed')}{' '}
+          <button type="button" className={css.sendRetry} onClick={onPrimary} disabled={primaryDisabled}>{t('input.retry')}</button>
+        </div>
       )}
       {notice?.level === 'info' && (
         <div className={css.notice} role="status">

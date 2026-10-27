@@ -79,6 +79,7 @@ interface BenchOptions {
   workspacePickerOpen?: boolean
   onRequestWorkspace?: () => void
   promptError?: SessionSnapshot['promptError']
+  heldSends?: number
   /** Authoritative queue rows served to the machine overlay (empty = none). */
   queue?: SessionSnapshot['queue']
   /** The hub's steer-all face (empty-draft accelerated Enter). */
@@ -123,6 +124,7 @@ function bench(over?: BenchOptions) {
     subagent: over?.subagent ?? null,
     removed: over?.disabled ?? false,
     promptError: over?.promptError ?? null,
+    heldSends: over?.heldSends ?? 0,
     queue: over?.queue ?? [],
   }))
   type ShellDeps = ConstructorParameters<typeof SessionInputShell>[0]
@@ -411,7 +413,7 @@ describe('image draft rail', () => {
     expect(attachmentOwner(result.slotCalls).dropLimits).toEqual({ count: 20, size: '5MB' })
   })
 
-  it('announces server attachment rejections as product copy, other codes as developer text', () => {
+  it('announces server attachment rejections as product copy, other failures as one plain sentence', () => {
     const attachmentError = (reason: string): SessionSnapshot['promptError'] => ({
       op: 'send',
       error: new RemoteError('session/attachment-invalid', 'raw wire text', { reason }),
@@ -436,7 +438,14 @@ describe('image draft rail', () => {
     const other = bench({
       promptError: { op: 'send', error: new RemoteError('gateway/internal', 'boom', {}) },
     })
-    expect(other.view.getByRole('alert').textContent).toContain('boom (gateway/internal)')
+    expect(other.view.getByRole('alert').textContent).toContain('消息未能发送。')
+    expect(other.view.container.textContent).not.toContain('gateway/internal')
+  })
+
+  it('shows a quiet reconnecting line while sends are held for an unreachable Host', () => {
+    const held = bench({ heldSends: 1 })
+    expect(held.view.container.querySelector('[data-send-state="held"]')?.textContent).toBe('正在重新连接…消息会自动发送')
+    expect(held.view.queryByRole('alert')).toBeNull()
   })
 
   it('marks the attachment slot unavailable while the composer is locked', () => {
@@ -1433,7 +1442,7 @@ describe('insertText (scoped event body)', () => {
 })
 
 describe('strips and variants', () => {
-  it('announces promptError as a fading toast (ordinary failure — no transaction UI, no Retry)', () => {
+  it('announces promptError as a fading toast with one plain sentence', () => {
     vi.useFakeTimers()
     try {
       const send = bench({
@@ -1441,8 +1450,8 @@ describe('strips and variants', () => {
       })
       // The toast body-portals (transformed ancestors must not trap it), so
       // queries go through the view's document-bound helpers.
-      expect(send.view.getByRole('alert').textContent).toContain('boom (session/agent-busy)')
-      expect(send.view.queryByRole('button', { name: 'Retry' })).toBeNull()
+      expect(send.view.getByRole('alert').textContent).toContain('消息未能发送。')
+      expect(send.view.container.textContent).not.toContain('session/agent-busy')
       act(() => { vi.advanceTimersByTime(4000) })
       expect(send.view.queryByRole('alert')).toBeNull()
     } finally {

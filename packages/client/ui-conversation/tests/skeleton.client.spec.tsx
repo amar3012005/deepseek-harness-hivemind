@@ -640,8 +640,10 @@ describe('ConversationRoot resident composer', () => {
     const b = mount(sessionSnapshotOf({
       promptError: { op: 'send', error: { code: 'offline', message: 'Message send failed' } as never },
     }))
-    expect(b.view.getByRole('alert').textContent).toContain('Message send failed (offline)')
-    expect(b.view.queryByRole('button', { name: 'Retry' })).toBeNull()
+    const alerts = b.view.getAllByRole('alert')
+    expect(alerts.length).toBeGreaterThan(0)
+    for (const alert of alerts) expect(alert.textContent).toContain('消息未能发送。')
+    expect(b.view.container.textContent).not.toContain('offline')
   })
 
   it('publishes the column width as a px variable for the shared width axis', () => {

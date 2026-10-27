@@ -99,6 +99,13 @@ export interface SessionSnapshot {
   readonly hasMore: boolean
   readonly loadingOlder: boolean
   readonly promptError: PromptError | null
+  /**
+   * Accepted-for-sending messages held because the Host was unreachable or
+   * restarting. Each is resent with its original requestId until the Host
+   * answers. Zero while history is still opening: those prompts are held for
+   * the open, not for a reconnect.
+   */
+  readonly heldSends?: number
   readonly blank: boolean
   readonly lastAgentError: string | null
   /** A prompt call has begun on this Client Session object. */
