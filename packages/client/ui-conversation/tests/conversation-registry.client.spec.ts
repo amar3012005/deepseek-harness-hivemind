@@ -247,6 +247,47 @@ describe('Conversation registries', () => {
     await binding.ctx.fiber.dispose()
   })
 
+  it('publishes a coalesced stream update from the timer when the animation frame never fires', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance'] })
+    vi.stubGlobal('requestAnimationFrame', vi.fn(() => 1))
+    vi.stubGlobal('cancelAnimationFrame', vi.fn())
+    const { uiConversation, binding, events, views } = await bootRegistries()
+    events.register({
+      kind: 'frame-probe',
+      target: 'chat',
+      match: event => event.type === 'turn/start'
+        ? { id: String(event.data.turn), role: 'start' }
+        : event.type === 'assistant/live-chunk' ? { id: String(event.data.turn), role: 'update' } : null,
+      start: () => 0,
+      update: context => context.state + 1,
+      publication: match => match.event.type === 'assistant/live-chunk' ? 'animation-frame' : 'immediate',
+      buildViewNode: context => ({ key: context.key, kind: 'frame-probe', id: context.id, target: 'chat', data: context.state }),
+    } satisfies ConversationNodeDefinition<number>)
+    views.register(viewDefinition('chat'))
+    await Promise.resolve()
+    const conversation = uiConversation.binding(binding)
+    conversation.activate('chat')
+    const listener = vi.fn()
+    const unsubscribe = conversation.snapshot.subscribe(listener)
+    const source = binding.eventSource as MutableSessionEventSource
+    const chunk = (seq: number): SessionEventLike => ({
+      seq: SessionSeq(seq), time: seq, type: 'assistant/live-chunk',
+      data: { attemptId: LlmAttemptId('timer-probe'), turn: 1, step: 1, chunk: { type: 'text-delta', index: 0, text: 'x' } },
+    })
+    source.append({ type: 'event', event: { seq: SessionSeq(1), time: 1, type: 'turn/start', data: { turn: 1 } } })
+    source.append({ type: 'transient', event: chunk(2) })
+    listener.mockClear()
+    source.append({ type: 'transient', event: chunk(3) })
+    source.append({ type: 'transient', event: chunk(4) })
+    expect(listener).not.toHaveBeenCalled()
+    vi.advanceTimersByTime(60)
+    expect(listener).toHaveBeenCalledOnce()
+
+    unsubscribe()
+    vi.useRealTimers()
+    await binding.ctx.fiber.dispose()
+  })
+
   it('rejects duplicate Event Definitions and disposes an ordinary registration once', async () => {
     const { events } = await bootRegistries()
     const definition = eventDefinition('message')

@@ -49,6 +49,13 @@ export interface ConversationBinding {
  */
 const STREAM_IDLE_MS = 100
 
+/**
+ * Timer that publishes a pending stream update when no animation frame arrives.
+ * A background tab or busy renderer can defer frames indefinitely, which would
+ * hold received text back until the message completes.
+ */
+const STREAM_FRAME_FALLBACK_MS = 50
+
 function monotonicNow(): number {
   return typeof performance === 'undefined' ? Date.now() : performance.now()
 }
@@ -59,6 +66,7 @@ class BoundConversation implements ConversationBinding {
   private readonly targetSources = new Map<string, ObservableSnapshot<unknown>>()
   private revision = -1
   private frame: number | undefined
+  private frameFallback: ReturnType<typeof setTimeout> | undefined
   private lastStreamFlushAt = Number.NEGATIVE_INFINITY
   private disposeFeed: () => void = () => {}
 
@@ -148,10 +156,12 @@ class BoundConversation implements ConversationBinding {
         this.flushStream()
         return
       }
-      this.frame = requestAnimationFrame(() => {
-        this.frame = undefined
+      const publish = (): void => {
+        this.cancelFrame()
         this.flushStream()
-      })
+      }
+      this.frame = requestAnimationFrame(publish)
+      this.frameFallback = setTimeout(publish, STREAM_FRAME_FALLBACK_MS)
       return
     }
     this.cancelFrame()
@@ -163,6 +173,8 @@ class BoundConversation implements ConversationBinding {
       cancelAnimationFrame(this.frame)
     }
     this.frame = undefined
+    if (this.frameFallback !== undefined) clearTimeout(this.frameFallback)
+    this.frameFallback = undefined
   }
 
   private flushStream(): void {

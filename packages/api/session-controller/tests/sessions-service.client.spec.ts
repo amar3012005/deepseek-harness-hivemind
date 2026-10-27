@@ -208,6 +208,47 @@ describe('scope tree', () => {
     dispose()
   })
 
+  it('publishes one progressive event-source update per forwarded text delta before the settlement', async () => {
+    const b = bench()
+    await feedList(b, [{ id: 's1' }])
+    b.svc.open(sid('s1'))
+    const binding = b.svc.binding(sid('s1'))
+    if (binding === undefined) throw new Error('expected Session binding')
+    await vi.waitFor(() => {
+      expect(binding.session.getSnapshot().openState).toBe('open')
+    })
+    const attemptId = LlmAttemptId('progressive-attempt')
+    const deltas = ['Fast ', 'software ', 'feels ', 'good.']
+    const received: string[] = []
+    const dispose = binding.eventSource.subscribe(() => {
+      received.push(binding.eventSource.getSnapshot().entries.map(entry => (
+        entry.event.type === 'assistant/live-chunk' && entry.event.data.chunk.type === 'text-delta'
+          ? entry.event.data.chunk.text
+          : ''
+      )).join(''))
+    })
+
+    await b.api.pushFollow(sid('s1'), {
+      type: 'assistant-stream',
+      frame: { type: 'start', attemptId, revision: 1, startedAfterSeq: -1, turn: 1, step: 1 },
+    })
+    for (const [index, text] of deltas.entries()) {
+      await b.api.pushFollow(sid('s1'), {
+        type: 'assistant-stream',
+        frame: {
+          type: 'chunk', attemptId, revision: index + 2, index, time: index,
+          chunk: { type: 'text-delta', index: 0, text },
+        },
+      })
+      // Each delta is visible to subscribers before the next one arrives.
+      await vi.waitFor(() => {
+        expect(received.at(-1)).toBe(deltas.slice(0, index + 1).join(''))
+      })
+    }
+    expect(received).toEqual(deltas.map((_, index) => deltas.slice(0, index + 1).join('')))
+    dispose()
+  })
+
   it('replaces an active assistant baseline on reconnect without duplicate chunks', async () => {
     const b = bench()
     const attemptId = LlmAttemptId('reconnect-attempt')
