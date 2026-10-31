@@ -6,6 +6,8 @@ Profile-only host plugin for embedded HIVE chat. It verifies 60-second HMAC-SHA2
 
 The ticket secret and Redis URL are read from named environment variables so resolved profile dumps never contain credentials. Parent origins are injected into the SPA as an explicit allowlist; ticket claims remain server-side.
 
+A ticket for a native mobile session carries `native_session_hash`, which Control derives from its authenticated native session. The runner keeps the hash in the signed cookie principal and in every Runner service token it mints. Before it issues the cookie, on `/api/hivemind/boot` and on every tenant RPC, it reads Control's `/internal/v1/harness-chat/core/principal` without caching; Control accepts only a live native session with the same user and organization and current AI consent. A refusal or an unreachable Control denies the request. Web principals carry no hash and make no extra Control request.
+
 `GET /api/hivemind/employees` uses the existing authenticated Connection principal and short-lived runner-to-control-plane token. It returns only authorized employee IDs, names, roles, avatar URLs and status for the HyperAgents picker; anonymous requests fail closed. No Core or Da-vinci frontend change is required.
 
 ## Live voice

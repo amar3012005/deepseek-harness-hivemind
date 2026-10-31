@@ -16,6 +16,8 @@ import { join } from 'node:path'
 import { projectHyperagentProfiles } from '@deepseek-ai/dsh-hivemind-employee-directory'
 import { registerMediaAuth } from './media-auth.ts'
 import { liveVoicePlugin, type LiveVoiceConfig } from './live-voice.ts'
+import { nativeSessionBinding, nativePrincipalAllowed } from './native-consent.ts'
+import { principalMembershipActive } from './principal-membership.ts'
 
 export const name = 'hivemind-web-runner'
 export const inject = ['webServer', 'connection', 'sessionPersistence', 'hivemindExecutionScope']
@@ -93,6 +95,8 @@ export interface TicketClaims {
   org_id: string
   profile: 'hivemind-chat'
   project_id?: string
+  /** Signed hash of the Control Plane native mobile session; absent for web sessions. */
+  native_session_hash?: string
   variation: string
   jti: string
   iat: number
@@ -159,6 +163,7 @@ export function verifyTicket(token: string, secret: string, nowSeconds = Math.fl
     || (value.project_id !== undefined && !nonEmpty(value.project_id))) {
     throw new AdmissionError('invalid_ticket_claims')
   }
+  try { nativeSessionBinding(value.native_session_hash) } catch { throw new AdmissionError('invalid_ticket_claims') }
   const issuedAt = value.iat as number
   const expiresAt = value.exp as number
   if (issuedAt > nowSeconds + CLOCK_SKEW_SECONDS || expiresAt <= nowSeconds
@@ -257,6 +262,7 @@ function serviceToken(principal: Record<string, string>, secret: string): string
     iss: 'hivemind-harness-runner', aud: 'hivemind-control-plane-harness-proxy',
     sub: principal.user_id, org_id: principal.org_id, profile: 'hivemind-chat',
     ...(principal.project_id === undefined ? {} : { project_id: principal.project_id }),
+    ...(principal.native_session_hash === undefined ? {} : { native_session_hash: nativeSessionBinding(principal.native_session_hash) }),
     iat: now, exp: now + 30, jti: randomUUID(),
   }
   const input = `${encode({ alg: 'HS256', typ: 'JWT' })}.${encode(claims)}`
@@ -322,7 +328,15 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
       ...principal['project_id'] === undefined ? {} : { projectId: principal['project_id'] },
     }, action)
   }), 'hivemind-web-runner: principal execution scope')
-  ctx.effect(() => ctx.connection.registerPrincipalRpcGuard(async (_principal, endpoint, args, signal) => {
+  // A native mobile principal is revalidated against Control on every RPC, uncached: Control checks the live native
+  // session, exact user and organization, and current AI consent. Web principals carry no binding and are unchanged.
+  const nativeAllowed = (principal: Readonly<Record<string, string>>, signal: AbortSignal): Promise<boolean> =>
+    nativePrincipalAllowed({ ...principal }, () => principalMembershipActive(
+      projectCatalogBase.origin, serviceToken({ ...principal }, projectCatalogSecret), signal))
+  ctx.effect(() => ctx.connection.registerPrincipalRpcGuard(async (principal, endpoint, args, signal) => {
+    if (!await nativeAllowed(principal, signal)) {
+      return { code: 'auth/unauthorized', message: 'Native session or AI consent is no longer valid.', details: {} }
+    }
     const ids = referencedSessionIds(args)
     if (endpoint === 'session/create' && ids.size > 0) {
       return { code: 'session/not-found', message: 'session not found', details: {} }
@@ -372,8 +386,10 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
         profile: claims.profile,
         variation: claims.variation,
         ...claims.project_id === undefined ? {} : { project_id: claims.project_id },
+        ...claims.native_session_hash === undefined ? {} : { native_session_hash: claims.native_session_hash },
       }
       const authorityHost = publicHost(req)
+      if (!await nativeAllowed(principal, AbortSignal.timeout(10_000))) throw new AdmissionError('native_session_denied')
       const cookie = ctx.connection.authorizePrincipal({
         headers: { host: authorityHost || req.headers.host, cookie: req.headers.cookie },
       }, principal, expiresAt)
@@ -396,6 +412,10 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
       })
       if (principal?.['profile'] !== 'hivemind-chat') {
         json(res, 401, { ok: false, diagnostic: 'authentication_required' })
+        return
+      }
+      if (!await nativeAllowed(principal, AbortSignal.timeout(10_000))) {
+        json(res, 403, { ok: false, diagnostic: 'native_session_denied' })
         return
       }
       const injections: IndexInjection[] = []

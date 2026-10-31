@@ -6,6 +6,8 @@
 
 票据密钥和 Redis URL 从指定环境变量读取，因此解析后的配置输出不会包含凭证。父页面来源以明确允许列表注入 SPA；票据声明保留在服务器。
 
+原生移动会话的票据携带 `native_session_hash`，由 Control 从其已认证的原生会话派生。runner 将该哈希保留在签名 Cookie 主体以及其签发的每个 Runner 服务令牌中。签发 Cookie 前、在 `/api/hivemind/boot` 上以及每次租户 RPC 时，runner 都会不经缓存读取 Control 的 `/internal/v1/harness-chat/core/principal`；Control 只接受用户与组织一致、AI 同意仍有效的在线原生会话。拒绝或 Control 不可达时请求被拒绝。Web 主体不携带哈希，也不产生额外的 Control 请求。
+
 `GET /api/hivemind/employees` 使用现有经过认证的 Connection 主体以及短期运行器到控制平面令牌。它仅返回获授权的员工 ID、姓名、角色、头像 URL 与状态，供 HyperAgents 选择器使用；匿名请求默认拒绝。无需改动 Core 或 Da-vinci 前端。
 
 ## 实时语音
